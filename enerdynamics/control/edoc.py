@@ -39,7 +39,6 @@ class EDOCArgs:
     action_extra_sigma: float = 0.0
     action_stage_ratio: float = 1.0
     action_score_mode: str = "energy"  # ["reward", "energy", "learned"]
-    action_sampling: bool = False
     action_nsample: int = 256
     use_antithetic: bool = True
     dyn_loss_coeff: float = 1.0
@@ -111,7 +110,6 @@ class EDOCPlanner:
         action_extra_sigma: float = 0.0,
         action_stage_ratio: float = 0.5,
         action_score_mode: str = "reward",
-        action_sampling: bool = True,
         action_nsample: int = 256,
         use_antithetic: bool = False,
         dyn_loss_coeff: float = 1.0,
@@ -140,7 +138,6 @@ class EDOCPlanner:
         self.action_extra_sigma = action_extra_sigma
         self.action_stage_ratio = np.clip(action_stage_ratio, 0.0, 1.0)
         self.action_score_mode = action_score_mode
-        self.action_sampling = action_sampling
         self.action_nsample = max(1, int(action_nsample))
         self.dyn_loss_coeff = float(max(0.0, dyn_loss_coeff))
         self.dyn_loss_mode = dyn_loss_mode
@@ -287,8 +284,6 @@ class EDOCPlanner:
         if clip_actions:
             control_limit = float(control_limit)
 
-        action_sampling = bool(self.action_sampling)
-
         if mode == "reward":
             score_fn = self._batch_reward_mean_fn
             def transform_scores(values):
@@ -321,7 +316,7 @@ class EDOCPlanner:
 
             def body(carry, idx):
                 rng_curr, Ybar_curr = carry
-                rng_next, noise_key, sample_key, extra_key = jax.random.split(rng_curr, 4)
+                rng_next, noise_key, extra_key = jax.random.split(rng_curr, 3)
 
                 sqrt_alpha_bar_i = jnp.sqrt(alphas_bar[idx])
                 sigma_i = sigmas[idx]
@@ -354,11 +349,7 @@ class EDOCPlanner:
                 )
                 weights = jax.nn.softmax(logw)
 
-                if action_sampling:
-                    idx_sample = jax.random.categorical(sample_key, logw)
-                    Ybar_weighted = Y0s[idx_sample]
-                else:
-                    Ybar_weighted = jnp.tensordot(weights, Y0s, axes=([0], [0]))
+                Ybar_weighted = jnp.tensordot(weights, Y0s, axes=([0], [0]))
 
                 one_minus_alpha_bar = 1.0 - alphas_bar[idx]
                 score_val = (-Yi + sqrt_alpha_bar_i * Ybar_weighted) / one_minus_alpha_bar
@@ -757,11 +748,7 @@ class EDOCPlanner:
                 
                 weights = np.asarray(weights, dtype=np.float32)
 
-                if self.action_sampling:
-                    idx = int(self._np_rng.choice(num_particles, p=weights))
-                    Ybar_weighted = Y0s[idx]
-                else:
-                    Ybar_weighted = np.tensordot(weights, Y0s, axes=([0], [0]))
+                Ybar_weighted = np.tensordot(weights, Y0s, axes=([0], [0]))
 
                 score = (-Yi + np.sqrt(alphas_bar[i]) * Ybar_weighted) / (1.0 - alphas_bar[i])
                 Yim1 = (Yi + (1.0 - alphas_bar[i]) * score) / np.sqrt(alphas[i])
@@ -853,7 +840,6 @@ def run_edoc(args: EDOCArgs):
         action_extra_sigma=args.action_extra_sigma,
         action_stage_ratio=args.action_stage_ratio,
         action_score_mode=args.action_score_mode,
-        action_sampling=args.action_sampling,
         action_nsample=args.action_nsample,
         use_antithetic=args.use_antithetic,
         dyn_loss_coeff=args.dyn_loss_coeff,
@@ -914,7 +900,6 @@ if __name__ == "__main__":
     parser.add_argument("--action_extra_sigma", type=float, default=0.01)
     parser.add_argument("--action_stage_ratio", type=float, default=1.0)
     parser.add_argument("--action_score_mode", type=str, default="reward")
-    parser.add_argument("--no_action_sampling", action="store_true", help="Disable stochastic resampling; use weighted mean instead.", default=False)
     parser.add_argument("--action_nsample", type=int, default=256)
     parser.add_argument("--no_antithetic", action="store_true", default=False, help="Disable antithetic pairing when sampling action trajectories.")
     parser.add_argument("--dyn_loss_coeff", type=float, default=0.0)
@@ -942,7 +927,6 @@ if __name__ == "__main__":
         action_extra_sigma=cli_args.action_extra_sigma,
         action_stage_ratio=cli_args.action_stage_ratio,
         action_score_mode=cli_args.action_score_mode,
-        action_sampling=not cli_args.no_action_sampling,
         action_nsample=cli_args.action_nsample,
         use_antithetic=not cli_args.no_antithetic,
         dyn_loss_coeff=cli_args.dyn_loss_coeff,
