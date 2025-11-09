@@ -12,6 +12,7 @@ from enerdynamics.core.constraints import project_box
 from enerdynamics.core.integrators import langevin_step
 
 from enerdynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
+from enerdynamics.envs.double_integrator_box_2d import DoubleIntegratorBox2DEnv
 
 
 # =========================================================
@@ -39,7 +40,7 @@ class EDOCArgs:
     action_extra_sigma: float = 0.0
     action_stage_ratio: float = 1.0
     action_score_mode: str = "energy"  # ["reward", "energy", "learned"]
-    action_nsample: int = 256
+    action_nsample: int = 128
     use_antithetic: bool = True
     dyn_loss_coeff: float = 1.0
     dyn_loss_mode: str = "trajectory"  # ["terminal", "trajectory"]
@@ -58,6 +59,8 @@ class EDOCArgs:
 def make_env(name: str):
     if name == "double_integrator_box":
         return DoubleIntegratorBoxEnv()
+    if name == "double_integrator_box_2d":
+        return DoubleIntegratorBox2DEnv()
     else:
         raise ValueError(f"unknown env {name}")
 
@@ -77,6 +80,23 @@ def make_energy(env_name: str) -> EnergyFunctional:
             pos_violate = jnp.maximum(0.0, jnp.abs(x[0]) - p_max)
             vel_violate = jnp.maximum(0.0, jnp.abs(x[1]) - v_max)
             pen = pos_violate ** 2 + vel_violate ** 2
+            return pen
+
+        return EnergyFunctional({
+            "task": EnergyTerm(task_energy, 1.0),
+            "box": EnergyTerm(box_energy, 1.0),
+        })
+    if env_name == "double_integrator_box_2d":
+        def task_energy(x, u, ctx):
+            pos = x[:2]
+            vel = x[2:]
+            return jnp.sum((pos - jnp.array([0.0, 0.0], dtype=jnp.float32)) ** 2) + jnp.sum(vel ** 2)
+
+        def box_energy(x, u, ctx):
+            p_max, v_max = 2.0, 2.0
+            pos_violate = jnp.maximum(0.0, jnp.abs(x[:2]) - p_max)
+            vel_violate = jnp.maximum(0.0, jnp.abs(x[2:]) - v_max)
+            pen = jnp.sum(pos_violate ** 2 + vel_violate ** 2)
             return pen
 
         return EnergyFunctional({
@@ -372,13 +392,18 @@ class EDOCPlanner:
                     Ybar_next,
                 )
 
-                return (rng_next, Ybar_next), reward_val
+                return (rng_next, Ybar_next), (reward_val, Ybar_next, Y0s)
 
-            (rng_out, Ybar_final), reward_hist = jax.lax.scan(
+            (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist) = jax.lax.scan(
                 body, (rng_key, Ybar_init), diffusion_indices
             )
             reward_hist = reward_hist[::-1]
-            return rng_out, Ybar_final, reward_hist
+            Ybar_hist = Ybar_hist[::-1]
+            Ysamples_hist = Ysamples_hist[::-1]
+            if clip_actions:
+                Ybar_hist = jnp.clip(Ybar_hist, -control_limit, control_limit)
+                Ysamples_hist = jnp.clip(Ysamples_hist, -control_limit, control_limit)
+            return rng_out, Ybar_final, reward_hist, Ybar_hist, Ysamples_hist
 
         self._reverse_diffuse_jit = jax.jit(reverse_diffuse)
 
@@ -638,12 +663,16 @@ class EDOCPlanner:
 
         x0_jnp = jnp.asarray(x0, dtype=jnp.float32)
         reward_history_arr = None
+        diffusion_actions_traj_arr = None
+        diffusion_samples_traj_arr = None
 
         if self._reverse_diffuse_jit is not None:
             rng, diffuse_key = jax.random.split(rng)
-            _, actions_jnp, reward_hist_jnp = self._reverse_diffuse_jit(diffuse_key, x0_jnp)
+            _, actions_jnp, reward_hist_jnp, traj_jnp, samples_jnp = self._reverse_diffuse_jit(diffuse_key, x0_jnp)
             actions_np_final = np.asarray(actions_jnp, dtype=np.float32)
             reward_history_arr = jnp.asarray(reward_hist_jnp, dtype=jnp.float32)
+            diffusion_actions_traj_arr = jnp.asarray(traj_jnp, dtype=jnp.float32)
+            diffusion_samples_traj_arr = jnp.asarray(samples_jnp, dtype=jnp.float32)
         else:
             betas = np.linspace(beta0, betaT, Ndiffuse, dtype=np.float32)
             alphas = 1.0 - betas
@@ -658,6 +687,8 @@ class EDOCPlanner:
             )
 
             reward_history = []
+            Ybar_history = []
+            Ysamples_history = []
             stage_switch = max(1, int(self.action_stage_ratio * (Ndiffuse - 1)))
 
             for i in range(Ndiffuse - 1, 0, -1):
@@ -755,6 +786,14 @@ class EDOCPlanner:
                 Ybar = Yim1 / np.sqrt(alphas_bar[i - 1])
                 Ybar = self._add_extra_noise(Ybar, extra_sigmas[i])
 
+                if control_limit is not None:
+                    limit = float(control_limit)
+                    Ybar_history.append(np.clip(Ybar, -limit, limit))
+                    Ysamples_history.append(np.clip(Y0s, -limit, limit))
+                else:
+                    Ybar_history.append(np.array(Ybar, copy=True))
+                    Ysamples_history.append(np.array(Y0s, copy=True))
+
             if control_limit is not None:
                 limit = float(control_limit)
                 actions_final = np.clip(Ybar, -limit, limit)
@@ -763,6 +802,8 @@ class EDOCPlanner:
 
             actions_np_final = np.asarray(actions_final, dtype=np.float32)
             reward_history_arr = jnp.asarray(np.array(reward_history[::-1], dtype=np.float32))
+            diffusion_actions_traj_arr = jnp.asarray(np.array(Ybar_history[::-1], dtype=np.float32))
+            diffusion_samples_traj_arr = jnp.asarray(np.array(Ysamples_history[::-1], dtype=np.float32))
 
         x = np.array(x0, dtype=np.float32)
         xs = [x]
@@ -801,6 +842,8 @@ class EDOCPlanner:
             "actions": jnp.asarray(actions_np_final, dtype=jnp.float32),
             "initial_state": xs[0],
             "reward_history": reward_history_arr if reward_history_arr is not None else jnp.asarray([], dtype=jnp.float32),
+            "diffusion_actions_traj": diffusion_actions_traj_arr if diffusion_actions_traj_arr is not None else jnp.asarray([], dtype=jnp.float32),
+            "diffusion_sampled_actions": diffusion_samples_traj_arr if diffusion_samples_traj_arr is not None else jnp.asarray([], dtype=jnp.float32),
         }
 
 
@@ -891,7 +934,7 @@ if __name__ == "__main__":
     parser.add_argument("--use_state_box", action="store_true", default=True)
     parser.add_argument("--state_low", type=float, default=-2.0)
     parser.add_argument("--state_high", type=float, default=2.0)
-    parser.add_argument("--action_space", action="store_true", default=False)
+    parser.add_argument("--action_space", action="store_true", default=True)
     parser.add_argument("--diffusion_mode", type=str, default="reverse")
     parser.add_argument("--action_diffuse_steps", type=int, default=100)
     parser.add_argument("--action_beta0", type=float, default=1e-4)

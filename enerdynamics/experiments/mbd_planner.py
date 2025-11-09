@@ -2,27 +2,18 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
 
 from enerdynamics.control.edoc import make_energy
 from enerdynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
-
-
-class EnvParams(NamedTuple):
-    dt: float
-    p_max: float
-    v_max: float
-    target: float
-    vel_weight: float
-    control_limit: float
-
+from enerdynamics.envs.double_integrator_box_2d import DoubleIntegratorBox2DEnv
 
 @dataclass
 class DiffusionArgs:
     seed: int = 0
+    env_name: str = "double_integrator_box"
     horizon: int = 80
     dt: float = 0.1
     Nsample: int = 2048
@@ -33,60 +24,76 @@ class DiffusionArgs:
     action_limit: float = 1.0
     verbose: bool = True
 
-
-def transition(state: jax.Array, action: jax.Array, params: EnvParams) -> jax.Array:
-    u = jnp.clip(action[..., 0], -params.control_limit, params.control_limit)
-    p = state[..., 0]
-    v = state[..., 1]
-    v_next = v + params.dt * u
-    p_next = p + params.dt * v_next
-    p_next = jnp.clip(p_next, -params.p_max, params.p_max)
-    v_next = jnp.clip(v_next, -params.v_max, params.v_max)
-    return jnp.stack([p_next, v_next], axis=-1)
-
-
-def state_cost(state: jax.Array, params: EnvParams) -> jax.Array:
-    pos_err = (state[..., 0] - params.target) ** 2
-    vel_err = params.vel_weight * (state[..., 1] ** 2)
-    return pos_err + vel_err
-
-
-@jax.jit
-def rollout_rewards(state_init: jax.Array, actions: jax.Array, params: EnvParams) -> jax.Array:
-    def step_fn(carry, action):
-        next_state = transition(carry, action, params)
-        reward = -state_cost(next_state, params)
-        return next_state, reward
-
-    _, rewards = jax.lax.scan(step_fn, state_init, actions)
-    return rewards
-
-
-@jax.jit
-def rollout_states(state_init: jax.Array, actions: jax.Array, params: EnvParams) -> jax.Array:
-    def step_fn(carry, action):
-        next_state = transition(carry, action, params)
-        return next_state, next_state
-
-    _, states = jax.lax.scan(step_fn, state_init, actions)
-    return jnp.concatenate([state_init[None, :], states], axis=0)
-
-
 def run_diffusion(args: DiffusionArgs):
-    env = DoubleIntegratorBoxEnv(
-        dt=args.dt,
-        horizon=args.horizon,
-        control_limit=args.action_limit,
-    )
-    params = EnvParams(
-        dt=env.dt,
-        p_max=env.p_max,
-        v_max=env.v_max,
-        target=env.target,
-        vel_weight=env.vel_weight,
-        control_limit=env.control_limit,
-    )
-    energy_fn = make_energy("double_integrator_box")
+    if args.env_name == "double_integrator_box":
+        env = DoubleIntegratorBoxEnv(
+            dt=args.dt,
+            horizon=args.horizon,
+            control_limit=args.action_limit,
+        )
+        target = jnp.asarray([env.target], dtype=jnp.float32)
+        pos_dim = 1
+        energy_fn = make_energy("double_integrator_box")
+    elif args.env_name == "double_integrator_box_2d":
+        env = DoubleIntegratorBox2DEnv(
+            dt=args.dt,
+            horizon=args.horizon,
+            control_limit=args.action_limit,
+        )
+        target = jnp.asarray(env.target, dtype=jnp.float32)
+        pos_dim = target.shape[0]
+        energy_fn = make_energy("double_integrator_box_2d")
+    else:
+        raise ValueError(f"Unsupported env_name {args.env_name!r} in run_diffusion.")
+
+    dt = env.dt
+    p_max = env.p_max
+    v_max = env.v_max
+    vel_weight = env.vel_weight
+    control_limit = env.control_limit
+    pos_dim_int = int(pos_dim)
+
+    def transition_fn(state: jax.Array, action: jax.Array) -> jax.Array:
+        u = jnp.clip(action, -control_limit, control_limit)
+        pos = state[..., :pos_dim_int]
+        vel = state[..., pos_dim_int:]
+        v_next = vel + dt * u
+        p_next = pos + dt * v_next
+        p_next = jnp.clip(p_next, -p_max, p_max)
+        v_next = jnp.clip(v_next, -v_max, v_max)
+        return jnp.concatenate([p_next, v_next], axis=-1)
+
+    transition_fn = jax.jit(transition_fn)
+
+    def state_cost_fn(state: jax.Array) -> jax.Array:
+        pos = state[..., :pos_dim_int]
+        vel = state[..., pos_dim_int:]
+        pos_err = jnp.sum((pos - target) ** 2, axis=-1)
+        vel_err = vel_weight * jnp.sum(vel ** 2, axis=-1)
+        return pos_err + vel_err
+
+    state_cost_fn = jax.jit(state_cost_fn)
+
+    def rollout_rewards_fn(state_init_local: jax.Array, actions: jax.Array) -> jax.Array:
+        def step_fn(carry, action):
+            next_state = transition_fn(carry, action)
+            reward = -state_cost_fn(next_state)
+            return next_state, reward
+
+        _, rewards_local = jax.lax.scan(step_fn, state_init_local, actions)
+        return rewards_local
+
+    rollout_rewards_fn = jax.jit(rollout_rewards_fn)
+
+    def rollout_states_fn(state_init_local: jax.Array, actions: jax.Array) -> jax.Array:
+        def step_fn(carry, action):
+            next_state = transition_fn(carry, action)
+            return next_state, next_state
+
+        _, states_local = jax.lax.scan(step_fn, state_init_local, actions)
+        return jnp.concatenate([state_init_local[None, :], states_local], axis=0)
+
+    rollout_states_fn = jax.jit(rollout_states_fn)
 
     rng = jax.random.PRNGKey(args.seed)
     state_init_np, _ = env.reset(rng)
@@ -97,7 +104,7 @@ def run_diffusion(args: DiffusionArgs):
     action_dim = env.act_dim
     Nsample = args.Nsample
     temp_sample = args.temp_sample
-    control_limit = params.control_limit
+    control_limit = env.control_limit
 
     betas = jnp.linspace(args.beta0, args.betaT, args.Ndiffuse, dtype=jnp.float32)
     alphas = 1.0 - betas
@@ -117,7 +124,7 @@ def run_diffusion(args: DiffusionArgs):
             Y0s = eps * sigmas[idx] + Ybar_curr
             Y0s = jnp.clip(Y0s, -control_limit, control_limit)
 
-            rews = jax.vmap(lambda acts: rollout_rewards(state_init, acts, params))(Y0s)
+            rews = jax.vmap(lambda acts: rollout_rewards_fn(state_init, acts))(Y0s)
             rews_mean = jnp.mean(rews, axis=-1)
 
             rew_mean = jnp.mean(rews_mean)
@@ -134,21 +141,28 @@ def run_diffusion(args: DiffusionArgs):
             Yim1 = (Yi + (1.0 - alphas_bar[idx]) * score) / jnp.sqrt(alphas[idx])
             Ybar_next = Yim1 / jnp.sqrt(alphas_bar[idx - 1])
 
-            return (rng_curr, Ybar_next), jnp.mean(rews_mean)
+            return (rng_curr, Ybar_next), (jnp.mean(rews_mean), Ybar_next, Y0s)
 
-        (rng_out, Ybar_final), reward_hist = jax.lax.scan(
+        (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist) = jax.lax.scan(
             body, (rng_in, Ybar_init), diffusion_indices
         )
-        return rng_out, Ybar_final, reward_hist
+        reward_hist = reward_hist[::-1]
+        Ybar_hist = Ybar_hist[::-1]
+        Ysamples_hist = Ysamples_hist[::-1]
+        return rng_out, Ybar_final, reward_hist, Ybar_hist, Ysamples_hist
 
     reverse_diffuse_jit = jax.jit(reverse_diffuse)
 
     Ybar_init = jnp.zeros((horizon, action_dim), dtype=jnp.float32)
-    diffuse_rng, Ybar_final, reward_history = reverse_diffuse_jit(diffuse_rng, Ybar_init)
+    diffuse_rng, Ybar_final, reward_history, Ybar_hist, Ysamples_hist = reverse_diffuse_jit(
+        diffuse_rng, Ybar_init
+    )
 
     final_actions = jnp.clip(Ybar_final, -control_limit, control_limit)
-    rewards = rollout_rewards(state_init, final_actions, params)
-    states = rollout_states(state_init, final_actions, params)
+    diffusion_actions_traj = jnp.clip(Ybar_hist, -control_limit, control_limit)
+    diffusion_samples_traj = jnp.clip(Ysamples_hist, -control_limit, control_limit)
+    rewards = rollout_rewards_fn(state_init, final_actions)
+    states = rollout_states_fn(state_init, final_actions)
     total_reward = rewards.sum()
     mean_reward = rewards.mean()
 
@@ -170,8 +184,10 @@ def run_diffusion(args: DiffusionArgs):
         "total_reward": total_reward,
         "mean_reward": mean_reward,
         "initial_state": state_init,
-        "reward_history": reward_history[::-1],
+        "reward_history": reward_history,
         "energies": energies,
+        "diffusion_actions_traj": diffusion_actions_traj,
+        "diffusion_sampled_actions": diffusion_samples_traj,
     }
 
     if args.verbose:
