@@ -12,8 +12,8 @@ from enerdynamics.experiments.mppi_planner import MPPIArgs, run_mppi
 from enerdynamics.experiments.cem_planner import CEMArgs, run_cem
 
 EDOC_COLOR = "#1f77b4"
-MBD_COLOR = "#35B779"
-MPPI_COLOR = "#ff7f0e"
+MBD_COLOR = "#ff7f0e"
+MPPI_COLOR = "#35B779"
 CEM_COLOR = "#d95f02"
 DIFFUSION_FRACTIONS = (0.1, 0.5, 0.9)
 MAX_SAMPLE_TRAJ_PLOT = 80
@@ -61,12 +61,55 @@ def compare(seed: int, horizon: int, dt: float, noise_std: float,
     diff_out = run_diffusion(diff_args)
     print("Running for mbd:", round(time.time() - start, 2))
 
+    shared_initial_state = np.asarray(edoc_out["initial_state"], dtype=np.float32)
+
+    mppi_args = MPPIArgs(
+        seed=seed,
+        env_name=env_name,
+        horizon=horizon,
+        dt=dt,
+        num_samples=Nsample,
+        num_iterations=max(3, min(8, Ndiffuse // 10)) if Ndiffuse > 0 else 5,
+        noise_sigma=noise_std if noise_std > 0 else 0.3,
+        lambda_=1.0,
+        action_limit=action_limit,
+        verbose=False,
+    )
+    start = time.time()
+    mppi_out = run_mppi(mppi_args, initial_state=shared_initial_state)
+    print("Running for mppi:", round(time.time() - start, 2))
+
+    cem_args = CEMArgs(
+        seed=seed,
+        env_name=env_name,
+        horizon=horizon,
+        dt=dt,
+        num_samples=Nsample,
+        num_iterations=max(3, min(8, Ndiffuse // 10)) if Ndiffuse > 0 else 5,
+        elite_frac=0.1,
+        init_std=max(0.1, noise_std),
+        min_std=0.05,
+        action_limit=action_limit,
+        verbose=False,
+    )
+    start = time.time()
+    cem_out = run_cem(cem_args, initial_state=shared_initial_state)
+    print("Running for cem:", round(time.time() - start, 2))
+
     edoc_states = np.asarray(edoc_out["states"])
     diff_states = np.asarray(diff_out["states"])
+    mppi_states = np.asarray(mppi_out["states"])
+    cem_states = np.asarray(cem_out["states"])
+
     edoc_energies = np.asarray(edoc_out.get("energies", []), dtype=np.float32)
     diff_energies = np.asarray(diff_out.get("energies", []), dtype=np.float32)
+    mppi_energies = np.asarray(mppi_out.get("energies", []), dtype=np.float32)
+    cem_energies = np.asarray(cem_out.get("energies", []), dtype=np.float32)
+
     edoc_rewards = np.asarray(edoc_out.get("rewards", []), dtype=np.float32)
     diff_rewards = np.asarray(diff_out.get("rewards", []), dtype=np.float32)
+    mppi_rewards = np.asarray(mppi_out.get("rewards", []), dtype=np.float32)
+    cem_rewards = np.asarray(cem_out.get("rewards", []), dtype=np.float32)
     edoc_diffusion_actions = np.asarray(edoc_out.get("diffusion_actions_traj", []), dtype=np.float32)
     edoc_diffusion_samples = np.asarray(edoc_out.get("diffusion_sampled_actions", []), dtype=np.float32)
     mbd_diffusion_actions = np.asarray(diff_out.get("diffusion_actions_traj", []), dtype=np.float32)
@@ -74,9 +117,18 @@ def compare(seed: int, horizon: int, dt: float, noise_std: float,
 
     T_edoc = edoc_states.shape[0] - 1
     T_diff = diff_states.shape[0] - 1
+    T_mppi = mppi_states.shape[0] - 1
+    T_cem = cem_states.shape[0] - 1
     time_edoc = np.arange(T_edoc + 1) * dt
     time_diff = np.arange(T_diff + 1) * dt
-    reward_time = np.arange(edoc_rewards.shape[0]) * dt if edoc_rewards.size else None
+    time_mppi = np.arange(T_mppi + 1) * dt
+    time_cem = np.arange(T_cem + 1) * dt
+    reward_times = {
+        "EDOC": np.arange(edoc_rewards.shape[0]) * dt if edoc_rewards.size else None,
+        "MBD": np.arange(diff_rewards.shape[0]) * dt if diff_rewards.size else None,
+        "MPPI": np.arange(mppi_rewards.shape[0]) * dt if mppi_rewards.size else None,
+        "CEM": np.arange(cem_rewards.shape[0]) * dt if cem_rewards.size else None,
+    }
 
     state_dim = edoc_states.shape[1]
     pos_dim = state_dim // 2
@@ -84,31 +136,69 @@ def compare(seed: int, horizon: int, dt: float, noise_std: float,
     fig_state_timeseries = None
     fig_energy_field = None
 
+    planner_series = [
+        ("EDOC", time_edoc, edoc_states, EDOC_COLOR, "-"),
+        ("MBD", time_diff, diff_states, MBD_COLOR, "--"),
+        ("MPPI", time_mppi, mppi_states, MPPI_COLOR, ":"),
+        ("CEM", time_cem, cem_states, CEM_COLOR, "-."),
+    ]
+
     if pos_dim <= 1:
         fig_traj, axs = plt.subplots(1, 2, figsize=(10, 4), sharex=False, sharey=False)
-        axs[0].plot(time_edoc, edoc_states[:, 0], label="EDOC position")
-        axs[0].plot(time_diff, diff_states[:, 0], label="MBD position", linestyle="--")
-        axs[0].set_xlabel("time")
-        axs[0].set_ylabel("position")
-        axs[0].legend()
-        axs[0].grid(True, alpha=0.3)
-
-        axs[1].plot(time_edoc, edoc_states[:, pos_dim], label="EDOC velocity")
-        axs[1].plot(time_diff, diff_states[:, pos_dim], label="MBD velocity", linestyle="--")
-        axs[1].set_xlabel("time")
-        axs[1].set_ylabel("velocity")
-        axs[1].legend()
-        axs[1].grid(True, alpha=0.3)
+        for label, t_axis, states_arr, color, style in planner_series:
+            axs[0].plot(
+                t_axis,
+                states_arr[:, 0],
+                label=f"{label} position",
+                linestyle=style,
+                color=color,
+            )
+            axs[1].plot(
+                t_axis,
+                states_arr[:, pos_dim],
+                label=f"{label} velocity",
+                linestyle=style,
+                color=color,
+            )
+        for ax, y_label in zip(axs, ["position", "velocity"]):
+            ax.set_xlabel("time")
+            ax.set_ylabel(y_label)
+            ax.legend()
+            ax.grid(True, alpha=0.3)
 
         fig_traj.suptitle("Double Integrator Trajectories")
         fig_traj.tight_layout()
     else:
         fig_traj, ax_traj = plt.subplots(1, 1, figsize=(6, 6))
-        ax_traj.plot(edoc_states[:, 0], edoc_states[:, 1], label="EDOC trajectory")
-        ax_traj.plot(diff_states[:, 0], diff_states[:, 1], label="MBD trajectory", linestyle="--")
-        ax_traj.scatter(edoc_states[0, 0], edoc_states[0, 1], c="green", marker="o", label="start")
-        ax_traj.scatter(edoc_states[-1, 0], edoc_states[-1, 1], c="blue", marker="x", label="EDOC final")
-        ax_traj.scatter(diff_states[-1, 0], diff_states[-1, 1], c="red", marker="^", label="MBD final")
+        for idx, (label, _, states_arr, color, style) in enumerate(planner_series):
+            ax_traj.scatter(
+                states_arr[0, 0],
+                states_arr[0, 1],
+                marker="o",
+                s=35,
+                facecolors="white",
+                edgecolors=color,
+                linewidths=1.0,
+                label="Start" if idx == 0 else "_nolegend_",
+            )
+            ax_traj.plot(
+                states_arr[:, 0],
+                states_arr[:, 1],
+                linestyle=style,
+                color=color,
+                linewidth=2.0,
+                label=f"{label} trajectory",
+            )
+            ax_traj.scatter(
+                states_arr[-1, 0],
+                states_arr[-1, 1],
+                marker="o",
+                s=60,
+                facecolors=color,
+                edgecolors=color,
+                linewidths=0.5,
+                # label=f"{label} final",
+            )
         ax_traj.set_xlabel("x position")
         ax_traj.set_ylabel("y position")
         ax_traj.set_title("Planar Trajectories")
@@ -123,18 +213,16 @@ def compare(seed: int, horizon: int, dt: float, noise_std: float,
             ("x velocity", pos_dim),
             ("y velocity", pos_dim + 1),
         ]
-        series = [
-            (time_edoc, edoc_states[:, labels[i][1]], "EDOC", "-", axs_state[i])
-            for i in range(4)
-        ]
-        series += [
-            (time_diff, diff_states[:, labels[i][1]], "MBD", "--", axs_state[i])
-            for i in range(4)
-        ]
-        for t_vals, values, lbl, style, ax in series:
-            ax.plot(t_vals, values, label=lbl, linestyle=style)
+        for ax, (title, idx_state) in zip(axs_state, labels):
+            for label, t_axis, states_arr, color, style in planner_series:
+                ax.plot(
+                    t_axis,
+                    states_arr[:, idx_state],
+                    label=label,
+                    linestyle=style,
+                    color=color,
+                )
             ax.set_xlabel("time")
-        for ax, (title, _) in zip(axs_state, labels):
             ax.set_title(title)
             ax.grid(True, alpha=0.3)
             ax.legend()
@@ -152,12 +240,8 @@ def compare(seed: int, horizon: int, dt: float, noise_std: float,
                 state = np.array([X_grid[j, i], Y_grid[j, i], 0.0, 0.0], dtype=np.float32)
                 energy_grid[j, i] = float(energy_fn.compute(state, zero_action, {"t": 0}))
 
-        stages = [
-            ("Diffusion 10%", 0.1),
-            ("Diffusion 50%", 0.5),
-            ("Diffusion 90%", 0.9),
-            ("Final Plan", None),
-        ]
+        stages = [(f"Diffusion {int(frac * 100)}%", frac) for frac in DIFFUSION_FRACTIONS]
+        stages.append(("Final Plan", None))
         fig_energy_field, axs_field = plt.subplots(1, 4, figsize=(20, 5), constrained_layout=True)
         if not isinstance(axs_field, np.ndarray):
             axs_field = np.array([axs_field])
@@ -185,9 +269,9 @@ def compare(seed: int, horizon: int, dt: float, noise_std: float,
                         samples_actions = diffusion_samples[idx_local]
                         samples_actions = np.asarray(samples_actions, dtype=np.float32)
                         if samples_actions.shape[0] > 0:
-                            if samples_actions.shape[0] > 80:
+                            if samples_actions.shape[0] > MAX_SAMPLE_TRAJ_PLOT:
                                 sample_idx = np.linspace(
-                                    0, samples_actions.shape[0] - 1, 80, dtype=int
+                                    0, samples_actions.shape[0] - 1, MAX_SAMPLE_TRAJ_PLOT, dtype=int
                                 )
                                 samples_actions = samples_actions[sample_idx]
                             light_rgba = mcolors.to_rgba(color_base, alpha=0.3)
@@ -221,8 +305,8 @@ def compare(seed: int, horizon: int, dt: float, noise_std: float,
                     linewidths=0.5,
                 )
 
-            plot_trajs(edoc_out, "#1f77b4", edoc_diffusion_actions, edoc_diffusion_samples)
-            plot_trajs(diff_out, "#ff7f0e", mbd_diffusion_actions, mbd_diffusion_samples)
+            plot_trajs(edoc_out, EDOC_COLOR, edoc_diffusion_actions, edoc_diffusion_samples)
+            plot_trajs(diff_out, MBD_COLOR, mbd_diffusion_actions, mbd_diffusion_samples)
 
             ax.set_title(stage_label)
             ax.set_xlabel("x position")
@@ -239,6 +323,12 @@ def compare(seed: int, horizon: int, dt: float, noise_std: float,
     if diff_energies.size > 0:
         time_energy_diff = np.arange(diff_energies.shape[0]) * dt
         ax_energy.plot(time_energy_diff, diff_energies, label="MBD energy", linestyle="--")
+    if mppi_energies.size > 0:
+        time_energy_mppi = np.arange(mppi_energies.shape[0]) * dt
+        ax_energy.plot(time_energy_mppi, mppi_energies, label="MPPI energy", linestyle=":")
+    if cem_energies.size > 0:
+        time_energy_cem = np.arange(cem_energies.shape[0]) * dt
+        ax_energy.plot(time_energy_cem, cem_energies, label="CEM energy", linestyle="-.")
     ax_energy.set_xlabel("time")
     ax_energy.set_ylabel("Energy")
     ax_energy.set_title("Energy along rollout")
@@ -246,11 +336,15 @@ def compare(seed: int, horizon: int, dt: float, noise_std: float,
     ax_energy.grid(True, alpha=0.3)
 
     fig_reward, ax_reward = plt.subplots(1, 1, figsize=(6, 4))
-    if edoc_rewards.size > 0 and reward_time is not None:
-        ax_reward.plot(reward_time, edoc_rewards, label="EDOC reward")
-    if diff_rewards.size > 0:
-        diff_reward_time = np.arange(diff_rewards.shape[0]) * dt
-        ax_reward.plot(diff_reward_time, diff_rewards, label="MBD reward", linestyle="--")
+    for label, rewards_arr, color, style in [
+        ("EDOC", edoc_rewards, EDOC_COLOR, "-"),
+        ("MBD", diff_rewards, MBD_COLOR, "--"),
+        ("MPPI", mppi_rewards, MPPI_COLOR, ":"),
+        ("CEM", cem_rewards, CEM_COLOR, "-."),
+    ]:
+        t_axis = reward_times[label]
+        if rewards_arr.size > 0 and t_axis is not None:
+            ax_reward.plot(t_axis, rewards_arr, label=f"{label} reward", linestyle=style, color=color)
     ax_reward.set_xlabel("time")
     ax_reward.set_ylabel("Reward")
     ax_reward.set_title("Instantaneous reward")
@@ -276,16 +370,26 @@ def compare(seed: int, horizon: int, dt: float, noise_std: float,
 
     print(f"EDOC total reward: {float(np.sum(edoc_rewards)):.3f}")
     print(f"MBD total reward: {float(np.sum(diff_rewards)):.3f}")
+    print(f"MPPI total reward: {float(np.sum(mppi_rewards)):.3f}")
+    print(f"CEM total reward: {float(np.sum(cem_rewards)):.3f}")
     if edoc_energies.size > 0:
         print(f"EDOC total energy: {float(np.sum(edoc_energies)):.3f}")
         print(f"EDOC final energy: {float(edoc_energies[-1]):.3f}")
     if diff_energies.size > 0:
         print(f"MBD total energy: {float(np.sum(diff_energies)):.3f}")
         print(f"MBD final energy: {float(diff_energies[-1]):.3f}")
+    if mppi_energies.size > 0:
+        print(f"MPPI total energy: {float(np.sum(mppi_energies)):.3f}")
+        print(f"MPPI final energy: {float(mppi_energies[-1]):.3f}")
+    if cem_energies.size > 0:
+        print(f"CEM total energy: {float(np.sum(cem_energies)):.3f}")
+        print(f"CEM final energy: {float(cem_energies[-1]):.3f}")
     print(f"Initial state (EDOC): {np.asarray(edoc_out['initial_state'])}")
     print(f"Initial state (Diffusion): {np.asarray(diff_out['initial_state'])}")
     print(f"Final state (EDOC): {edoc_states[-1]}")
     print(f"Final state (MBD): {diff_states[-1]}")
+    print(f"Final state (MPPI): {mppi_states[-1]}")
+    print(f"Final state (CEM): {cem_states[-1]}")
 
 
 def main():
@@ -300,8 +404,8 @@ def main():
     parser.add_argument("--action_limit", type=float, default=1.0)
     parser.add_argument("--beta0", type=float, default=1e-4)
     parser.add_argument("--betaT", type=float, default=1e-2)
-    parser.add_argument("--env_name", type=str, default="double_integrator_box")
-    parser.add_argument("--save_path", type=str, default="compare_di.png")
+    parser.add_argument("--env_name", type=str, default="double_integrator_box_2d")
+    parser.add_argument("--save_path", type=str, default="compare_di_2d.png")
 
     args = parser.parse_args()
     compare(

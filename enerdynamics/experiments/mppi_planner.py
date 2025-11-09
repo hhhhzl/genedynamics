@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 from enerdynamics.control.edoc import make_energy, make_env
@@ -16,7 +17,7 @@ class MPPIArgs:
     horizon: int = 80
     dt: float = 0.1
     num_samples: int = 512
-    num_iterations: int = 5
+    num_iterations: int = 6
     noise_sigma: float = 0.3
     lambda_: float = 1.0
     action_limit: float = 1.0
@@ -31,105 +32,129 @@ def _prepare_env(env_name: str, dt: float, horizon: int, action_limit: float):
         env.horizon = horizon
     if hasattr(env, "control_limit"):
         env.control_limit = action_limit
+
+    for attr in ("jax_env_transition", "jax_transition"):
+        if hasattr(env, attr):
+            transition_fn = getattr(env, attr)
+            break
+    else:
+        raise ValueError("Environment must provide a JAX transition function.")
+    if not hasattr(env, "jax_cost"):
+        raise ValueError("Environment must provide a JAX cost function.")
+
+    transition_fn = jax.jit(transition_fn)
+    cost_fn = jax.jit(env.jax_cost)
     energy_fn = make_energy(env_name)
-    return env, energy_fn
+    return env, energy_fn, transition_fn, cost_fn
 
 
-def _rollout(env, energy_fn, state_init: np.ndarray, actions: np.ndarray):
-    state = np.asarray(state_init, dtype=np.float32)
-    act_seq = np.asarray(actions, dtype=np.float32)
+def _build_rollout_functions(transition_fn, cost_fn):
+    @jax.jit
+    def rollout_rewards(state_init: jax.Array, actions: jax.Array):
+        def step_fn(carry, action):
+            next_state = transition_fn(carry, action)
+            reward = -cost_fn(next_state)
+            return next_state, reward
 
-    control_limit = getattr(env, "control_limit", None)
-    if control_limit is not None:
-        act_seq = np.clip(act_seq, -control_limit, control_limit)
+        _, rewards = jax.lax.scan(step_fn, state_init, actions)
+        return rewards
 
-    states = [state]
-    rewards = []
+    @jax.jit
+    def rollout_states(state_init: jax.Array, actions: jax.Array):
+        def step_fn(carry, action):
+            next_state = transition_fn(carry, action)
+            return next_state, next_state
+
+        _, states = jax.lax.scan(step_fn, state_init, actions)
+        return jnp.concatenate([state_init[None, :], states], axis=0)
+
+    rollout_rewards_batch = jax.jit(jax.vmap(rollout_rewards, in_axes=(None, 0)))
+    return rollout_rewards, rollout_rewards_batch, rollout_states
+
+
+def _compute_energies_np(energy_fn, states: np.ndarray, actions: np.ndarray):
     energies = []
     info: Dict = {}
-    for t, act in enumerate(act_seq):
-        next_state_pred = env.transition(state, act)
-        ctx = {"t": t, **info}
-        energies.append(float(energy_fn.compute(state, act, ctx)))
-        next_state, cost, done, info_next = env.step(
-            np.array(next_state_pred, dtype=np.float32),
-            np.array(act, dtype=np.float32),
-            t,
-            info,
-        )
-        rewards.append(float(-cost))
-        states.append(next_state)
-        state = next_state
-        info = info_next
-        if done:
-            break
-
-    return (
-        np.stack(states, axis=0),
-        np.asarray(rewards, dtype=np.float32),
-        np.asarray(energies, dtype=np.float32),
-    )
+    for t in range(actions.shape[0]):
+        energies.append(float(energy_fn.compute(states[t], actions[t], {"t": t, **info})))
+    return np.asarray(energies, dtype=np.float32)
 
 
 def run_mppi(args: MPPIArgs, initial_state: Optional[np.ndarray] = None):
-    rng = np.random.default_rng(args.seed)
-    env, energy_fn = _prepare_env(args.env_name, args.dt, args.horizon, args.action_limit)
+    env, energy_fn, transition_fn, cost_fn = _prepare_env(
+        args.env_name, args.dt, args.horizon, args.action_limit
+    )
+    rollout_rewards, rollout_rewards_batch, rollout_states = _build_rollout_functions(
+        transition_fn, cost_fn
+    )
 
     if initial_state is None:
-        state_init, _ = env.reset()
+        state_init_np, _ = env.reset()
     else:
-        state_init = np.asarray(initial_state, dtype=np.float32)
+        state_init_np = np.asarray(initial_state, dtype=np.float32)
+    state_init = jnp.asarray(state_init_np, dtype=jnp.float32)
 
     act_dim = env.act_dim
     horizon = args.horizon
     control_limit = getattr(env, "control_limit", None)
 
-    mean_actions = np.zeros((horizon, act_dim), dtype=np.float32)
+    rng = jax.random.PRNGKey(args.seed)
+    mean_actions = jnp.zeros((horizon, act_dim), dtype=jnp.float32)
+    best_actions = mean_actions
+    best_return = -jnp.inf
 
-    best_actions = mean_actions.copy()
-    best_cost = np.inf
     reward_history = []
 
-    for _ in range(args.num_iterations):
-        noise = rng.normal(0.0, args.noise_sigma, size=(args.num_samples, horizon, act_dim)).astype(
-            np.float32
-        )
+    for _ in range(max(1, int(args.num_iterations))):
+        rng, noise_key = jax.random.split(rng)
+        noise = jax.random.normal(
+            noise_key, (args.num_samples, horizon, act_dim), dtype=jnp.float32
+        ) * float(args.noise_sigma)
         candidates = mean_actions[None, :, :] + noise
         if control_limit is not None:
-            candidates = np.clip(candidates, -control_limit, control_limit)
+            candidates = jnp.clip(candidates, -control_limit, control_limit)
 
-        costs = np.zeros((args.num_samples,), dtype=np.float32)
-        rewards_buffer = np.zeros((args.num_samples,), dtype=np.float32)
-        for i in range(args.num_samples):
-            _, rewards, _ = _rollout(env, energy_fn, state_init, candidates[i])
-            total_cost = -float(np.sum(rewards))
-            costs[i] = total_cost
-            rewards_buffer[i] = float(np.sum(rewards))
-            if total_cost < best_cost:
-                best_cost = total_cost
-                best_actions = candidates[i]
+        rewards_seq = rollout_rewards_batch(state_init, candidates)
+        total_returns = jnp.sum(rewards_seq, axis=1)
 
-        beta = np.min(costs)
-        weights = np.exp(-(costs - beta) / max(args.lambda_, 1e-6))
+        total_returns_np = np.asarray(total_returns)
+        candidates_np = np.asarray(candidates)
+
+        best_idx = int(np.argmax(total_returns_np))
+        if total_returns_np[best_idx] > float(best_return):
+            best_return = total_returns[best_idx]
+            best_actions = candidates[best_idx]
+
+        costs_np = -total_returns_np
+        beta = np.min(costs_np)
+        weights = np.exp(-(costs_np - beta) / max(args.lambda_, 1e-6))
         weights_sum = np.sum(weights) + 1e-8
-        mean_actions = np.einsum("i,ijk->jk", weights, candidates) / weights_sum
+        mean_actions = jnp.asarray(
+            np.einsum("i,ijk->jk", weights, candidates_np) / weights_sum, dtype=jnp.float32
+        )
 
-        reward_history.append(float(np.mean(rewards_buffer)))
+        reward_history.append(float(np.mean(total_returns_np)))
 
     if control_limit is not None:
-        mean_actions = np.clip(mean_actions, -control_limit, control_limit)
+        best_actions = jnp.clip(best_actions, -control_limit, control_limit)
 
-    final_actions = mean_actions if best_cost == np.inf else best_actions
-    states, rewards, energies = _rollout(env, energy_fn, state_init, final_actions)
+    rewards_final = rollout_rewards(state_init, best_actions)
+    states_final = rollout_states(state_init, best_actions)
+
+    actions_np = np.asarray(best_actions, dtype=np.float32)
+    states_np = np.asarray(states_final, dtype=np.float32)
+    rewards_np = np.asarray(rewards_final, dtype=np.float32)
+    energies_np = _compute_energies_np(energy_fn, states_np, actions_np)
+
     result = {
-        "actions": np.asarray(final_actions, dtype=np.float32),
-        "states": states,
-        "rewards": rewards,
-        "total_reward": float(np.sum(rewards)),
-        "mean_reward": float(np.mean(rewards)) if rewards.size > 0 else 0.0,
-        "initial_state": np.asarray(state_init, dtype=np.float32),
+        "actions": actions_np,
+        "states": states_np,
+        "rewards": rewards_np,
+        "total_reward": float(np.sum(rewards_np)),
+        "mean_reward": float(np.mean(rewards_np)) if rewards_np.size > 0 else 0.0,
+        "initial_state": state_init_np,
         "reward_history": np.asarray(reward_history, dtype=np.float32),
-        "energies": energies,
+        "energies": energies_np,
     }
     if args.verbose:
         print(f"MPPI total reward: {result['total_reward']:.3f}")
