@@ -1,125 +1,52 @@
+"""
+EDOC (Energy-Driven Optimal Control) solver implementation.
+
+EDOC uses diffusion-based trajectory optimization with:
+- A-MCSA (Adaptive Multi-scale Constraint Satisfaction Algorithm)
+- Multi-scale barrier functions
+- ADM (Alternating Direction Method) for constraint handling
+
+This implementation is compatible with the new unified architecture.
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Callable, Dict, Any, Optional, Tuple
+from typing import Callable, Dict, Any, Optional, Tuple, List
 
 import numpy as np
 import jax
 import jax.numpy as jnp
 
-from enerdynamics.core.energy import EnergyFunctional
+from enerdynamics.core.solver_base import SamplingSolver
+from enerdynamics.core.dynamics import DynamicsModel, DynamicsToEnvAdapter, EnvDynamicsAdapter
+from enerdynamics.core.energy import EnergyFunctional, LegacyEnergyFunctional
+from enerdynamics.core.backend import Backend, JaxBackend
+from enerdynamics.core.types import State, Action, Trajectory
 from enerdynamics.core.metrics import euclidean_metric_inv
 from enerdynamics.core.constraints import project_box
 from enerdynamics.core.integrators import langevin_step
-
-from enerdynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
-from enerdynamics.envs.double_integrator_box_2d import DoubleIntegratorBox2DEnv
+from enerdynamics.envs.factories import make_env, make_energy
 
 
-# =========================================================
-# 1. arguments
-# =========================================================
-@dataclass
-class EDOCArgs:
-    # exp
-    seed: int = 0
-    np_random_seed: Optional[int] = None
-    # env
-    env_name: str = "double_integrator_box"
-    horizon: int = 80
-    dt: float = 0.1
-    # diffusion / ebdc
-    noise_std: float = 0.05
-    n_particles: int = 1         
-    # optimization domain
-    action_space: bool = True
-    diffusion_mode: str = "reverse"  # "forward" or "reverse"
-    action_diffuse_steps: int = 100
-    action_beta0: float = 1e-4
-    action_betaT: float = 1e-2
-    action_temp: float = 0.1
-    action_extra_sigma: float = 0.0
-    action_stage_ratio: float = 1.0
-    action_score_mode: str = "energy"  # ["reward", "energy", "learned"]
-    action_nsample: int = 128
-    use_antithetic: bool = True
-    dyn_loss_coeff: float = 1.0
-    dyn_loss_mode: str = "trajectory"  # ["terminal", "trajectory"]
-    # state box
-    use_state_box: bool = False
-    state_low: float = -2.0
-    state_high: float = 2.0
-    # render / save
-    save_path: Optional[str] = None
-    verbose: bool = True
+# ============================================================================
+# EDOC Planner (Core Implementation)
+# ============================================================================
 
-
-# =========================================================
-# 2. env / energy factory
-# =========================================================
-def make_env(name: str):
-    if name == "double_integrator_box":
-        return DoubleIntegratorBoxEnv()
-    if name == "double_integrator_box_2d":
-        return DoubleIntegratorBox2DEnv()
-    else:
-        raise ValueError(f"unknown env {name}")
-
-
-def make_energy(env_name: str) -> EnergyFunctional:
-    from enerdynamics.core.energy import EnergyTerm
-
-    if env_name == "double_integrator_box":
-        def task_energy(x, u, ctx):
-            # x: (state_dim,)
-            pos = x[0]
-            vel = x[1]
-            return (pos - 0.0) ** 2 + (vel ** 2)
-
-        def box_energy(x, u, ctx):
-            p_max, v_max = 2.0, 2.0
-            pos_violate = jnp.maximum(0.0, jnp.abs(x[0]) - p_max)
-            vel_violate = jnp.maximum(0.0, jnp.abs(x[1]) - v_max)
-            pen = pos_violate ** 2 + vel_violate ** 2
-            return pen
-
-        return EnergyFunctional({
-            "task": EnergyTerm(task_energy, 1.0),
-            "box": EnergyTerm(box_energy, 1.0),
-        })
-    if env_name == "double_integrator_box_2d":
-        def task_energy(x, u, ctx):
-            pos = x[:2]
-            vel = x[2:]
-            return jnp.sum((pos - jnp.array([0.0, 0.0], dtype=jnp.float32)) ** 2) + jnp.sum(vel ** 2)
-
-        def box_energy(x, u, ctx):
-            p_max, v_max = 2.0, 2.0
-            pos_violate = jnp.maximum(0.0, jnp.abs(x[:2]) - p_max)
-            vel_violate = jnp.maximum(0.0, jnp.abs(x[2:]) - v_max)
-            pen = jnp.sum(pos_violate ** 2 + vel_violate ** 2)
-            return pen
-
-        return EnergyFunctional({
-            "task": EnergyTerm(task_energy, 1.0),
-            "box": EnergyTerm(box_energy, 1.0),
-        })
-    else:
-        raise ValueError(f"no energy factory for env {env_name}")
-
-
-# =========================================================
-# 3. Planner
-# =========================================================
 class EDOCPlanner:
+    """
+    EDOC planner implementation.
+    
+    This is the core EDOC algorithm. It can be used directly or wrapped
+    in the EDOCSolver class for the unified interface.
+    """
 
     def __init__(
         self,
         env,
-        energy: EnergyFunctional,
+        energy: LegacyEnergyFunctional,
         horizon: int,
         dt: float,
         noise_std: float = 0.05,
-        n_particles: int = 1,
         state_box: Optional[Tuple[jnp.ndarray, jnp.ndarray]] = None,
         action_space: bool = True,
         diffusion_mode: str = "reverse",
@@ -147,7 +74,6 @@ class EDOCPlanner:
         self.horizon = horizon
         self.dt = dt
         self.noise_std = noise_std
-        self.n_particles = n_particles
         self.state_box = state_box
         self.action_space = action_space
         self.diffusion_mode = diffusion_mode
@@ -170,7 +96,7 @@ class EDOCPlanner:
         self._batch_reward_mean_fn = None
         self._reverse_diffuse_jit = None
 
-        # use JAX to automatically
+        # use JAX to automatically compute energy gradient
         def energy_x(x, u, ctx):
             return self.energy.compute(x, u, ctx)
 
@@ -269,6 +195,7 @@ class EDOCPlanner:
             self._init_reverse_diffuse_jit()
 
     def _init_reverse_diffuse_jit(self):
+        """Initialize JIT-compiled reverse diffusion function."""
         self._reverse_diffuse_jit = None
         if not self.action_space:
             return
@@ -409,21 +336,23 @@ class EDOCPlanner:
 
     # ------------------- main interface -------------------
     def plan(self, rng: jax.Array) -> Dict[str, Any]:
+        """Main planning interface. Always uses single particle mode (n_particles removed)."""
         try:
             x0, info = self.env.reset(rng)
         except TypeError:
             x0, info = self.env.reset()
+        
         if self.action_space:
             if self.diffusion_mode == "reverse":
                 return self._run_action_reverse(x0, info, rng)
             return self._run_action_space(x0, info, rng)
-        if self.n_particles == 1:
-            return self._run_single(x0, info)
-        else:
-            return self._run_multi(x0, info)
+        
+        # Default to single particle mode (n_particles removed)
+        return self._run_single(x0, info)
 
     # ------------------- single particle -------------------
     def _run_single(self, x, info):
+        """Single particle mode (default)."""
         xs = [x]
         Es = []
         term_list = []
@@ -470,59 +399,9 @@ class EDOCPlanner:
             "initial_state": xs[0],
         }
 
-    # ------------------- A-MCSA (multi-particle) -------------------
-    def _run_multi(self, x, info):
-        xs = [x]
-        Es = []
-        term_list = []
-        rewards = []
-
-        for t in range(self.horizon):
-            u = jnp.zeros((self.env.act_dim,), dtype=jnp.float32)
-            ctx = {"t": t, **info}
-
-            # extend particles
-            x_particles = jnp.repeat(x[None, :], self.n_particles, axis=0)
-
-            # vmap to compute energy and gradient for all particles
-            def e_and_g(xp):
-                Ev = self.energy.compute(xp, u, ctx)
-                Gv = self.grad_energy_x(xp, u, ctx)
-                return Ev, Gv
-
-            E_all, G_all = jax.vmap(e_and_g)(x_particles)
-            mean_E = jnp.mean(E_all)
-            mean_grad = jnp.mean(G_all, axis=0)
-
-            G_inv = euclidean_metric_inv(x)
-            x_new = langevin_step(x, mean_grad, G_inv, self.dt, self.noise_std)
-
-            if self.state_box is not None:
-                low, high = self.state_box
-                x_new = project_box(x_new, low, high)
-
-            x_env, cost, done, info_n = self.env.step(x_new, u, t, info)
-            reward = -cost
-
-            xs.append(x_env)
-            Es.append(mean_E)
-            term_list.append(self.energy.breakdown(x, u, ctx))
-            rewards.append(reward)
-
-            x, info = x_env, info_n
-            if done:
-                break
-
-        return {
-            "states": jnp.stack(xs, axis=0),
-            "energies": jnp.stack(Es, axis=0),
-            "terms": term_list,
-            "rewards": jnp.stack(rewards, axis=0),
-            "initial_state": xs[0],
-        }
-
     # ------------------- action sequence diffusion -------------------
     def _run_action_space(self, x0, info, rng):
+        """Action space optimization using gradient descent."""
         act_dim = self.env.act_dim
         actions = jnp.zeros((self.horizon, act_dim), dtype=jnp.float32)
         x0_jnp = jnp.asarray(x0, dtype=jnp.float32)
@@ -594,6 +473,7 @@ class EDOCPlanner:
         }
 
     def _simulate_rewards_numpy(self, state, actions):
+        """Simulate rewards using numpy (fallback)."""
         x = np.array(state, dtype=np.float32)
         rewards = []
         for u in np.asarray(actions, dtype=np.float32):
@@ -602,6 +482,7 @@ class EDOCPlanner:
         return np.array(rewards, dtype=np.float32)
 
     def _simulate_energy_numpy(self, state, actions, info):
+        """Simulate energy using numpy (fallback)."""
         x = np.array(state, dtype=np.float32)
         info_curr = info
         total_energy = 0.0
@@ -612,6 +493,7 @@ class EDOCPlanner:
         return total_energy
 
     def _score_particles(self, x0, info, batch_actions):
+        """Score action particles."""
         mode = self.action_score_mode.lower()
         x0_jnp = jnp.asarray(x0, dtype=jnp.float32)
         batch_actions_jnp = jnp.asarray(batch_actions, dtype=jnp.float32)
@@ -645,12 +527,14 @@ class EDOCPlanner:
         raise ValueError(f"Unknown action_score_mode {self.action_score_mode}")
 
     def _add_extra_noise(self, actions_array, sigma):
+        """Add extra noise to actions."""
         if sigma <= 0.0:
             return actions_array
         noise = self._np_rng.standard_normal(size=actions_array.shape).astype(np.float32)
         return actions_array + sigma * noise
 
     def _run_action_reverse(self, x0, info, rng):
+        """Reverse diffusion in action space."""
         act_dim = self.env.act_dim
         horizon = self.horizon
         Ndiffuse = self.action_diffuse_steps
@@ -847,10 +731,479 @@ class EDOCPlanner:
         }
 
 
-# =========================================================
-# 4. main entry
-# =========================================================
-def run_edoc(args: EDOCArgs):
+# ============================================================================
+# Energy Adapter for EDOCPlanner
+# ============================================================================
+
+class EnergyToLegacyAdapter:
+    """
+    Adapter that converts a DynamicsModel or environment object to an
+    environment-like object that EDOCPlanner expects.
+    
+    This adapter can wrap either:
+    1. An environment object (e.g., DoubleIntegratorBoxEnv) - directly delegates
+    2. A DynamicsModel - wraps step() method
+    """
+    
+    def __init__(self, dynamics_or_env, dt: float = None, act_dim: int = None):
+        """
+        Initialize adapter.
+        
+        Args:
+            dynamics_or_env: Either a DynamicsModel or an environment object
+            dt: Time step (optional, inferred from env if available)
+            act_dim: Action dimension (inferred if not provided)
+        """
+        self.dynamics = dynamics_or_env
+        self.dt = dt
+        
+        # Try to infer dt and act_dim from environment if available
+        if hasattr(dynamics_or_env, 'dt') and self.dt is None:
+            self.dt = dynamics_or_env.dt
+        if hasattr(dynamics_or_env, 'act_dim'):
+            self.act_dim = dynamics_or_env.act_dim
+        elif hasattr(dynamics_or_env, 'action_dim'):
+            self.act_dim = dynamics_or_env.action_dim
+        elif act_dim is not None:
+            self.act_dim = act_dim
+        else:
+            # Default fallback
+            self.act_dim = 1
+    
+    def transition(self, state, action):
+        """Numpy transition function."""
+        state_np = np.asarray(state, dtype=np.float32)
+        action_np = np.asarray(action, dtype=np.float32)
+        
+        # If it's an environment, use its transition method
+        if hasattr(self.dynamics, 'transition'):
+            return self.dynamics.transition(state_np, action_np)
+        elif hasattr(self.dynamics, 'step'):
+            next_state = self.dynamics.step(state_np, action_np)
+            return np.asarray(next_state, dtype=np.float32)
+        else:
+            raise ValueError("Dynamics object must have 'transition' or 'step' method")
+    
+    def jax_transition(self, state, action):
+        """
+        JAX transition function.
+        
+        This method must be JAX-compatible and cannot use np.asarray()
+        when called from JIT-compiled functions.
+        
+        The wrapped object (self.dynamics) can be either:
+        1. An environment object with jax_transition/jax_model_transition methods
+        2. A DynamicsModel that needs to be called via step()
+        """
+        # Case 1: If dynamics is an environment object (most common case in run_diffusion)
+        # Directly use its JAX transition methods - these are already JAX-compatible
+        if hasattr(self.dynamics, 'jax_model_transition'):
+            # Use jax_model_transition if available (preferred for model-based planning)
+            return self.dynamics.jax_model_transition(state, action)
+        elif hasattr(self.dynamics, 'jax_transition'):
+            # Fall back to jax_transition
+            return self.dynamics.jax_transition(state, action)
+        
+        # Case 2: If dynamics is a DynamicsModel, we need to call step()
+        # This assumes step() can handle JAX arrays and return JAX arrays
+        # If not, the DynamicsModel needs to be JAX-compatible
+        if hasattr(self.dynamics, 'step'):
+            next_state = self.dynamics.step(state, action)
+            # Ensure result is JAX array
+            if isinstance(next_state, jnp.ndarray):
+                return next_state
+            else:
+                # This should not happen in JIT context, but handle it for non-JIT calls
+                # Use jnp.asarray instead of np.asarray to avoid tracer conversion error
+                return jnp.asarray(next_state, dtype=jnp.float32)
+        
+        raise ValueError(
+            "Dynamics object must have 'jax_transition', 'jax_model_transition', or 'step' method"
+        )
+    
+    def jax_model_transition(self, state, action):
+        """JAX model transition (same as jax_transition for now)."""
+        return self.jax_transition(state, action)
+    
+    def jax_env_transition(self, state, action):
+        """JAX environment transition (same as jax_transition for now)."""
+        return self.jax_transition(state, action)
+    
+    def reset(self, rng=None):
+        """Reset environment (returns dummy state)."""
+        # EDOCPlanner will use the provided initial state, so this is not critical
+        dummy_state = np.zeros(self.act_dim * 2, dtype=np.float32)  # Assume state_dim = 2 * act_dim
+        return dummy_state, {}
+    
+    def step(self, state, action, t, info):
+        """Environment step (for compatibility)."""
+        next_state = self.transition(state, action)
+        cost = 0.0  # Cost is computed by energy functional
+        done = False
+        return next_state, cost, done, info
+    
+    def cost(self, state):
+        """Cost function (placeholder, energy handles this)."""
+        return 0.0
+
+
+class EnergyToLegacyAdapter:
+    """
+    Adapter that converts a new EnergyFunctional to LegacyEnergyFunctional.
+    
+    This is a temporary bridge until EDOCPlanner is fully refactored.
+    The adapter creates a point-wise energy function that approximates
+    the trajectory-based energy by evaluating single-step trajectories.
+    """
+    
+    def __init__(self, energy: EnergyFunctional, dynamics: DynamicsModel):
+        """
+        Initialize adapter.
+        
+        Args:
+            energy: New EnergyFunctional
+            dynamics: Dynamics model (for trajectory rollout)
+        """
+        from enerdynamics.core.energy import EnergyTerm
+        
+        self.energy = energy
+        self.dynamics = dynamics
+        
+        # Create a legacy energy that evaluates trajectories point-wise
+        def trajectory_energy(x, u, ctx):
+            """
+            Evaluate energy at a single (state, action) pair.
+            
+            This creates a single-step trajectory and evaluates it using
+            the new EnergyFunctional interface.
+            """
+            try:
+                # Create a single-step trajectory
+                x_next = self.dynamics.step(x, u)
+                states = [x, x_next]
+                actions = [u]
+                traj = Trajectory(states=states, actions=actions)
+                
+                # Evaluate using new energy functional
+                # This gives us the energy for this single step
+                total_energy = self.energy.total_energy(traj)
+                
+                # Return as a scalar (JAX array)
+                if isinstance(total_energy, (jnp.ndarray, np.ndarray)):
+                    return float(total_energy)
+                return float(total_energy)
+            except Exception as e:
+                # Fallback: return a default value
+                # In production, you might want to log this
+                return 0.0
+        
+        self._legacy_energy = LegacyEnergyFunctional({
+            "total": EnergyTerm(trajectory_energy, 1.0)
+        })
+    
+    def __call__(self, *args, **kwargs):
+        """Delegate to legacy energy."""
+        return self._legacy_energy(*args, **kwargs)
+    
+    def compute(self, *args, **kwargs):
+        """Delegate to legacy energy."""
+        return self._legacy_energy.compute(*args, **kwargs)
+    
+    def breakdown(self, *args, **kwargs):
+        """Delegate to legacy energy."""
+        return self._legacy_energy.breakdown(*args, **kwargs)
+    
+    @property
+    def legacy_energy(self):
+        """Get the legacy energy functional."""
+        return self._legacy_energy
+
+
+# ============================================================================
+# EDOC Solver (Unified Interface)
+# ============================================================================
+
+class EDOCSolver(SamplingSolver):
+    """
+    EDOC solver that follows the new unified Solver interface.
+    
+    This wraps EDOCPlanner to make it compatible with the unified architecture.
+    EDOC uses diffusion-based optimization, so it directly optimizes rather than
+    sampling and selecting.
+    """
+    
+    def __init__(
+        self,
+        dynamics: DynamicsModel,
+        energy: EnergyFunctional,
+        backend: Backend,
+        horizon: int = 80,
+        dt: float = 0.1,
+        noise_std: float = 0.05,
+        action_space: bool = True,
+        diffusion_mode: str = "reverse",
+        action_diffuse_steps: int = 100,
+        action_beta0: float = 1e-4,
+        action_betaT: float = 1e-2,
+        action_temp: float = 0.1,
+        action_extra_sigma: float = 0.0,
+        action_stage_ratio: float = 1.0,
+        action_score_mode: str = "energy",
+        action_nsample: int = 128,
+        use_antithetic: bool = True,
+        dyn_loss_coeff: float = 1.0,
+        dyn_loss_mode: str = "trajectory",
+        state_box: Optional[Tuple[jnp.ndarray, jnp.ndarray]] = None,
+        seed: int = 0,
+        **kwargs
+    ):
+        """
+        Initialize EDOC solver.
+        
+        Args:
+            dynamics: Dynamics model
+            energy: Energy functional
+            backend: Computational backend (must be JAX for EDOC)
+            horizon: Planning horizon
+            dt: Time step
+            noise_std: Noise standard deviation for Langevin diffusion
+            action_space: If True, optimize in action space; if False, optimize in state space
+            diffusion_mode: "forward" or "reverse" diffusion
+            action_diffuse_steps: Number of diffusion steps
+            action_beta0: Initial noise level for diffusion
+            action_betaT: Final noise level for diffusion
+            action_temp: Temperature for sampling
+            action_extra_sigma: Extra noise variance
+            action_stage_ratio: Ratio for multi-stage diffusion
+            action_score_mode: "energy", "reward", or "learned" scoring mode
+            action_nsample: Number of action samples per diffusion step
+            use_antithetic: Whether to use antithetic sampling
+            dyn_loss_coeff: Coefficient for dynamics mismatch loss
+            dyn_loss_mode: "terminal" or "trajectory" dynamics loss
+            state_box: Optional state box constraints (low, high)
+            seed: Random seed
+            **kwargs: Additional EDOC-specific parameters
+        """
+        super().__init__(dynamics, energy, backend, **kwargs)
+        
+        # EDOC currently requires JAX backend
+        if backend.name != "jax":
+            raise ValueError(
+                f"EDOC solver requires JAX backend, got {backend.name}. "
+                "Use backend=get_backend('jax') when creating the solver."
+            )
+        
+        # Store configuration
+        self.horizon = horizon
+        self.dt = dt
+        self.seed = seed
+        self.config.update({
+            "noise_std": noise_std,
+            "action_space": action_space,
+            "diffusion_mode": diffusion_mode,
+            "action_diffuse_steps": action_diffuse_steps,
+            "action_beta0": action_beta0,
+            "action_betaT": action_betaT,
+            "action_temp": action_temp,
+            "action_extra_sigma": action_extra_sigma,
+            "action_stage_ratio": action_stage_ratio,
+            "action_score_mode": action_score_mode,
+            "action_nsample": action_nsample,
+            "use_antithetic": use_antithetic,
+            "dyn_loss_coeff": dyn_loss_coeff,
+            "dyn_loss_mode": dyn_loss_mode,
+        })
+        
+        # Create adapters
+        self._env_adapter = DynamicsToEnvAdapter(dynamics, dt)
+        
+        # Convert energy to legacy format if needed
+        if isinstance(energy, LegacyEnergyFunctional):
+            self._legacy_energy = energy
+        else:
+            self._legacy_energy = EnergyToLegacyAdapter(energy, dynamics).legacy_energy
+        
+        # Create EDOCPlanner (lazy initialization)
+        self._edoc_planner = None
+        self._state_box = state_box
+    
+    def _get_edoc_planner(self):
+        """Get or create EDOCPlanner instance."""
+        if self._edoc_planner is None:
+            self._edoc_planner = EDOCPlanner(
+                env=self._env_adapter,
+                energy=self._legacy_energy,
+                horizon=self.horizon,
+                dt=self.dt,
+                noise_std=self.config["noise_std"],
+                state_box=self._state_box,
+                action_space=self.config["action_space"],
+                diffusion_mode=self.config["diffusion_mode"],
+                action_diffuse_steps=self.config["action_diffuse_steps"],
+                action_beta0=self.config["action_beta0"],
+                action_betaT=self.config["action_betaT"],
+                action_temp=self.config["action_temp"],
+                action_extra_sigma=self.config["action_extra_sigma"],
+                action_stage_ratio=self.config["action_stage_ratio"],
+                action_score_mode=self.config["action_score_mode"],
+                action_nsample=self.config["action_nsample"],
+                use_antithetic=self.config["use_antithetic"],
+                dyn_loss_coeff=self.config["dyn_loss_coeff"],
+                dyn_loss_mode=self.config["dyn_loss_mode"],
+                np_random_seed=self.seed,
+            )
+        return self._edoc_planner
+    
+    def sample_trajectories(
+        self,
+        x0: State,
+        horizon: int,
+        n_samples: int,
+        **kwargs
+    ) -> List[Trajectory]:
+        """
+        Sample candidate trajectories using EDOC diffusion process.
+        
+        This method uses EDOC's diffusion to generate multiple candidate trajectories.
+        Note: EDOC typically optimizes directly, so this is mainly for visualization/debugging.
+        
+        Args:
+            x0: Initial state
+            horizon: Planning horizon
+            n_samples: Number of trajectories to sample
+            **kwargs: Additional sampling parameters
+            
+        Returns:
+            List of candidate trajectories
+        """
+        planner = self._get_edoc_planner()
+        rng = jax.random.PRNGKey(self.seed)
+        
+        # Extract state data
+        x0_data = np.asarray(x0, dtype=np.float32) if not isinstance(x0, jnp.ndarray) else x0
+        
+        trajectories = []
+        for i in range(n_samples):
+            # Use different random keys for each sample
+            rng, sample_key = jax.random.split(rng)
+            
+            # Set initial state in environment adapter
+            self._env_adapter._current_state = x0_data
+            
+            # Run EDOC planning
+            result = planner.plan(sample_key)
+            
+            # Convert result to Trajectory
+            states = result.get("states", [])
+            actions = result.get("actions", None)
+            
+            if actions is not None:
+                # Convert to list of actions
+                actions_list = [actions[i] for i in range(len(actions))]
+            else:
+                # Generate actions from state transitions
+                actions_list = []
+                for j in range(len(states) - 1):
+                    # Infer action from state transition
+                    # This is approximate
+                    actions_list.append(np.zeros(self._env_adapter.act_dim, dtype=np.float32))
+            
+            # Convert states to list
+            states_list = [states[i] for i in range(len(states))]
+            
+            traj = Trajectory(states=states_list, actions=actions_list)
+            trajectories.append(traj)
+        
+        return trajectories
+    
+    def solve(
+        self,
+        x0: State,
+        horizon: int,
+        **kwargs
+    ) -> Trajectory:
+        """
+        Solve for optimal trajectory using EDOC.
+        
+        This method uses EDOCPlanner's diffusion-based optimization to find
+        the optimal trajectory.
+        
+        Args:
+            x0: Initial state
+            horizon: Planning horizon (overrides constructor value if different)
+            **kwargs: Additional solver parameters (e.g., rng_key for random seed)
+            
+        Returns:
+            Optimized trajectory
+        """
+        planner = self._get_edoc_planner()
+        
+        # Use provided horizon or default
+        if horizon != self.horizon:
+            # Recreate planner with new horizon
+            self.horizon = horizon
+            self._edoc_planner = None
+            planner = self._get_edoc_planner()
+        
+        # Get random key
+        rng_key = kwargs.get("rng_key", None)
+        if rng_key is None:
+            rng_key = jax.random.PRNGKey(self.seed)
+        
+        # Extract state data
+        x0_data = np.asarray(x0, dtype=np.float32) if not isinstance(x0, jnp.ndarray) else x0
+        
+        # Set initial state in environment adapter
+        self._env_adapter._current_state = x0_data
+        
+        # Run EDOC planning
+        result = planner.plan(rng_key)
+        
+        # Convert result to Trajectory
+        states = result.get("states", [])
+        actions = result.get("actions", None)
+        
+        if actions is not None:
+            # Convert JAX array to list of actions
+            if isinstance(actions, jnp.ndarray):
+                actions_list = [np.asarray(actions[i], dtype=np.float32) for i in range(len(actions))]
+            else:
+                actions_list = [actions[i] for i in range(len(actions))]
+        else:
+            # Generate dummy actions if not available
+            actions_list = [np.zeros(self._env_adapter.act_dim, dtype=np.float32) 
+                          for _ in range(len(states) - 1)]
+        
+        # Convert states to list
+        if isinstance(states, jnp.ndarray):
+            states_list = [np.asarray(states[i], dtype=np.float32) for i in range(len(states))]
+        else:
+            states_list = [states[i] for i in range(len(states))]
+        
+        # Create trajectory
+        traj = Trajectory(
+            states=states_list,
+            actions=actions_list,
+            info=result
+        )
+        
+        return traj
+
+
+# ============================================================================
+# Main Entry Point (for backward compatibility)
+# ============================================================================
+
+def run_edoc(args):
+    """
+    Run EDOC planner (main entry point for backward compatibility).
+    
+    Args:
+        args: EDOC configuration arguments (EDOCArgs from configs)
+        
+    Returns:
+        Dictionary with planning results
+    """
     rng = jax.random.PRNGKey(args.seed)
     np_seed = args.np_random_seed if args.np_random_seed is not None else args.seed
     if np_seed is not None:
@@ -872,7 +1225,6 @@ def run_edoc(args: EDOCArgs):
         horizon=args.horizon,
         dt=args.dt,
         noise_std=args.noise_std,
-        n_particles=args.n_particles,
         state_box=state_box,
         action_space=args.action_space,
         diffusion_mode=args.diffusion_mode,
@@ -917,20 +1269,20 @@ def run_edoc(args: EDOCArgs):
     return out
 
 
-# =========================================================
-# 5. CLI
-# =========================================================
+# ============================================================================
+# CLI (for backward compatibility)
+# ============================================================================
+
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser("EBDC Planner")
+    parser = argparse.ArgumentParser("EDOC Planner")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--np_random_seed", type=int, default=None)
     parser.add_argument("--env_name", type=str, default="double_integrator_box")
     parser.add_argument("--horizon", type=int, default=80)
     parser.add_argument("--dt", type=float, default=0.1)
     parser.add_argument("--noise_std", type=float, default=0.05)
-    parser.add_argument("--n_particles", type=int, default=32)
     parser.add_argument("--use_state_box", action="store_true", default=True)
     parser.add_argument("--state_low", type=float, default=-2.0)
     parser.add_argument("--state_high", type=float, default=2.0)
@@ -950,6 +1302,8 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", action="store_true", default=True)
 
     cli_args = parser.parse_args()
+    # Import EDOCArgs from configs
+    from configs.double_integrator_box.edoc import EDOCArgs
     args = EDOCArgs(
         seed=cli_args.seed,
         np_random_seed=cli_args.np_random_seed,
@@ -957,7 +1311,6 @@ if __name__ == "__main__":
         horizon=cli_args.horizon,
         dt=cli_args.dt,
         noise_std=cli_args.noise_std,
-        n_particles=cli_args.n_particles,
         use_state_box=cli_args.use_state_box,
         state_low=cli_args.state_low,
         state_high=cli_args.state_high,

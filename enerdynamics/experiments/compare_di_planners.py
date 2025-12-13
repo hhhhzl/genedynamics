@@ -6,10 +6,15 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
 import time
-from enerdynamics.control.edoc import EDOCArgs, run_edoc, make_energy, make_env
-from enerdynamics.experiments.mbd_planner import DiffusionArgs, run_diffusion
-from enerdynamics.experiments.mppi_planner import MPPIArgs, run_mppi
-from enerdynamics.experiments.cem_planner import CEMArgs, run_cem
+from enerdynamics.solvers.edoc import run_edoc
+from enerdynamics.solvers.mbd import run_mbd
+from enerdynamics.solvers.mppi import run_mppi
+from enerdynamics.solvers.cem import run_cem
+from enerdynamics.envs.factories import make_energy, make_env
+from configs.double_integrator_box.edoc import EDOCArgs
+from configs.double_integrator_box.mbd import DiffusionArgs
+from configs.double_integrator_box.mppi import MPPIArgs
+from configs.double_integrator_box.cem import CEMArgs
 
 EDOC_COLOR = "#1f77b4"
 MBD_COLOR = "#ff7f0e"
