@@ -3,6 +3,8 @@ numpy>=1.26.0
 scipy>=1.13.0
 pyyaml>=6.0.1
 tqdm>=4.65.0
+trimesh==4.10.1
+pinocchio==0.4.3
 
 # Visualization
 matplotlib>=3.8.0
@@ -22,6 +24,6 @@ robosuite>=1.4.1
 cvxopt>=1.3.2
 
 # Dev tools
-pytest>=8.0.0
+pytest>=9.0.2
 black>=24.3.0
 flake8>=7.0.0

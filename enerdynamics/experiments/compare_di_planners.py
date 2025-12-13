@@ -63,7 +63,7 @@ def compare(seed: int, horizon: int, dt: float, noise_std: float,
         verbose=False,
     )
     start = time.time()
-    diff_out = run_diffusion(diff_args)
+    diff_out = run_mbd(diff_args)
     print("Running for mbd:", round(time.time() - start, 2))
 
     shared_initial_state = np.asarray(edoc_out["initial_state"], dtype=np.float32)

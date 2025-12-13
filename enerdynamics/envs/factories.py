@@ -7,16 +7,18 @@ creation logic.
 """
 
 import jax.numpy as jnp
+from typing import Optional, Any
 
 from enerdynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
 
 
-def make_env(name: str):
+def make_env(name: str, **kwargs):
     """
     Factory function to create environments.
     
     Args:
         name: Environment name (e.g., "double_integrator_box", "double_integrator_box_2d")
+        **kwargs: Additional environment parameters
         
     Returns:
         Environment instance
@@ -26,12 +28,36 @@ def make_env(name: str):
     """
     if name == "double_integrator_box":
         from enerdynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
-        return DoubleIntegratorBoxEnv()
+        return DoubleIntegratorBoxEnv(**kwargs)
     elif name == "double_integrator_box_2d":
         from enerdynamics.envs.double_integrator_box_2d import DoubleIntegratorBox2DEnv
-        return DoubleIntegratorBox2DEnv()
+        return DoubleIntegratorBox2DEnv(**kwargs)
     else:
         raise ValueError(f"Unknown environment name: {name}")
+
+
+def make_env_adapter(
+    env: Any,
+    backend: str = "numpy",
+    obstacles: Optional[list] = None,
+    **kwargs
+):
+    """
+    Factory function to create environment adapter.
+    
+    Automatically detects environment type and wraps with appropriate adapter.
+    
+    Args:
+        env: Environment to wrap (Gymnasium, Brax, or native enerdynamics)
+        backend: Computational backend ("numpy", "jax", "torch")
+        obstacles: List of obstacles (optional)
+        **kwargs: Additional adapter parameters
+        
+    Returns:
+        UnifiedEnvAdapter instance
+    """
+    from enerdynamics.envs.adapters.unified_adapter import UnifiedEnvAdapter
+    return UnifiedEnvAdapter(env, backend=backend, obstacles=obstacles, **kwargs)
 
 
 def make_energy(env_name: str) -> LegacyEnergyFunctional:
