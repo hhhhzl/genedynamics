@@ -12,7 +12,7 @@ seaborn>=0.13.0
 pandas>=2.2.0
 
 # Optional autodiff (JAX)
-jax>=0.4.31
+jax==0.4.35
 
 # Optional environments
 gymnasium>=0.29.1
