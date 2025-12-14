@@ -23,7 +23,7 @@ from enerdynamics.solvers.edoc import (
     EDOCPlanner,
     run_edoc,
 )
-from enerdynamics.solvers.mbd import MBDSolver, run_diffusion
+from enerdynamics.solvers.mbd import MBDSolver, run_mbd
 from enerdynamics.solvers.mppi import MPPISolver, run_mppi
 from enerdynamics.solvers.cem import CEMSolver, run_cem
 from enerdynamics.solvers.ilqr import iLQRSolver
@@ -40,7 +40,7 @@ __all__ = [
     "run_edoc",
     # MBD
     "MBDSolver",
-    "run_diffusion",
+    "run_mbd",
     # MPPI
     "MPPISolver",
     "run_mppi",

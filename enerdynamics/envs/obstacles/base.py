@@ -7,11 +7,24 @@ and provides an ObstacleManager for managing multiple obstacles.
 
 from typing import Protocol, Optional, List, Any, runtime_checkable
 import numpy as np
+from typing import Literal, Union
 
 try:
     import jax.numpy as jnp
 except ImportError:
     jnp = None
+
+try:
+    import torch
+except Exception:
+    torch = None
+
+try:
+    import jax
+except Exception:
+    jax = None
+
+from enerdynamics.envs.obstacles.sdf_texture import SDFTexture2D
 
 
 @runtime_checkable
@@ -116,14 +129,28 @@ class ObstacleManager:
     distance computation, and SDF evaluation across multiple obstacles.
     """
     
-    def __init__(self, obstacles: Optional[List[Obstacle]] = None):
+    def __init__(self, obstacles: Optional[List[Obstacle]] = None, use_spatial_index: bool = False):
         """
         Initialize obstacle manager.
         
         Args:
             obstacles: Initial list of obstacles
+            use_spatial_index: Whether to use spatial indexing for faster queries
+                              (requires scipy and obstacles with center/bounds attributes)
         """
         self.obstacles: List[Obstacle] = obstacles or []
+        self.use_spatial_index = use_spatial_index
+        self._spatial_index = None
+        self._sdf_texture_2d: Optional[SDFTexture2D] = None
+        
+        if use_spatial_index:
+            try:
+                from enerdynamics.envs.obstacles.spatial_index import SpatialIndex
+                self._spatial_index = SpatialIndex(self.obstacles, method="kdtree")
+            except (ImportError, Exception):
+                # Fallback to no spatial index if scipy unavailable or setup fails
+                self.use_spatial_index = False
+                self._spatial_index = None
     
     def add(self, obstacle: Obstacle) -> None:
         """
@@ -133,6 +160,11 @@ class ObstacleManager:
             obstacle: Obstacle to add
         """
         self.obstacles.append(obstacle)
+        # Invalidate any cached SDF texture (environment changed)
+        self._sdf_texture_2d = None
+        # Rebuild spatial index if enabled
+        if self.use_spatial_index and self._spatial_index is not None:
+            self._spatial_index.update()
     
     def remove(self, obstacle: Obstacle) -> None:
         """
@@ -143,10 +175,75 @@ class ObstacleManager:
         """
         if obstacle in self.obstacles:
             self.obstacles.remove(obstacle)
+            self._sdf_texture_2d = None
+            # Rebuild spatial index if enabled
+            if self.use_spatial_index and self._spatial_index is not None:
+                self._spatial_index.update()
     
     def clear(self) -> None:
         """Remove all obstacles."""
         self.obstacles.clear()
+        self._sdf_texture_2d = None
+        # Rebuild spatial index if enabled
+        if self.use_spatial_index and self._spatial_index is not None:
+            self._spatial_index.update()
+
+    # --------------------------------------------------------------------- fast SDF
+    def build_sdf_texture_2d(
+        self,
+        *,
+        x_min: float,
+        x_max: float,
+        y_min: float,
+        y_max: float,
+        res: float = 0.01,
+        force_rebuild: bool = False,
+    ) -> Optional[SDFTexture2D]:
+        """
+        Build a MDOC-style SDF texture for fast SDF/gradient sampling.
+
+        Notes:
+        - This is an *approximation* of the exact geometric SDF.
+        - It is intended for fast inner-loop queries (diffusion rollouts / CBF filters).
+        """
+        if self._sdf_texture_2d is not None and not force_rebuild:
+            return self._sdf_texture_2d
+        if not self.obstacles:
+            self._sdf_texture_2d = None
+            return None
+
+        def sdf_fn(p: np.ndarray) -> float:
+            return float(self.sdf(np.asarray(p, dtype=np.float32)))
+
+        self._sdf_texture_2d = SDFTexture2D.build_from_sdf_fn(
+            sdf_fn,
+            x_min=float(x_min),
+            x_max=float(x_max),
+            y_min=float(y_min),
+            y_max=float(y_max),
+            res=float(res),
+        )
+        return self._sdf_texture_2d
+
+    def get_sdf_texture_2d(self) -> Optional[SDFTexture2D]:
+        return self._sdf_texture_2d
+
+    def sample_sdf_and_grad_2d(
+        self,
+        points: Union[np.ndarray, "torch.Tensor", "jax.Array"],
+        *,
+        backend: Literal["numpy", "torch", "jax"] = "numpy",
+        device: Optional[Union[str, "torch.device"]] = None,
+    ):
+        """
+        Sample (sdf, grad) using the cached 2D SDF texture.
+        Call build_sdf_texture_2d() once before using this.
+        """
+        if self._sdf_texture_2d is None:
+            raise RuntimeError(
+                "SDF texture not built. Call ObstacleManager.build_sdf_texture_2d(...) first."
+            )
+        return self._sdf_texture_2d.sample(points, backend=backend, device=device)
     
     def contains(self, point: np.ndarray) -> bool:
         """
@@ -186,6 +283,9 @@ class ObstacleManager:
         For union, we take the minimum SDF (closest obstacle).
         Negative values indicate point is inside at least one obstacle.
         
+        Optimized with spatial indexing when enabled: only queries obstacles
+        near each point, reducing computation for sparse obstacle distributions.
+        
         Args:
             points: Points to evaluate, shape (N, dim) or (dim,)
             
@@ -199,17 +299,57 @@ class ObstacleManager:
             else:
                 return np.full(len(points), float('inf'))
         
-        # Compute SDF for each obstacle
-        sdfs = []
-        for obstacle in self.obstacles:
-            sdf_vals = obstacle.sdf(points)
-            sdfs.append(sdf_vals)
+        points_array = np.asarray(points, dtype=np.float32)
+        is_single_point = points_array.ndim == 1
+        if is_single_point:
+            points_array = points_array[None, :]
         
-        # Union: take minimum (closest obstacle)
-        sdf_array = np.stack(sdfs, axis=0)
-        min_sdf = np.min(sdf_array, axis=0)
+        num_points = len(points_array)
         
-        return min_sdf
+        # For batch queries (many points), use standard batch processing
+        # Obstacles' sdf methods can efficiently handle batch inputs
+        # Spatial index is more beneficial for single-point or small-batch queries
+        if num_points > 1 or not self.use_spatial_index or self._spatial_index is None:
+            # Standard batch approach: compute SDF for all obstacles
+            # This is efficient when obstacles support batch SDF computation
+            sdfs = []
+            for obstacle in self.obstacles:
+                sdf_vals = obstacle.sdf(points_array)
+                sdfs.append(sdf_vals)
+            
+            # Union: take minimum (closest obstacle)
+            sdf_array = np.stack(sdfs, axis=0)
+            result = np.min(sdf_array, axis=0)
+        else:
+            # Single point query with spatial index: only query nearby obstacles
+            # This is beneficial when there are many obstacles
+            point = points_array[0]
+            nearby_indices = self._spatial_index.query_nearby(point, radius=5.0)
+            
+            if not nearby_indices or len(nearby_indices) == len(self.obstacles):
+                # No spatial filtering benefit, use all obstacles
+                sdfs = []
+                for obstacle in self.obstacles:
+                    sdf_val = obstacle.sdf(point)
+                    sdfs.append(sdf_val)
+                result = np.array([np.min(sdfs)])
+            else:
+                # Only compute SDF for nearby obstacles
+                point_sdfs = []
+                for idx in nearby_indices:
+                    if idx < len(self.obstacles):
+                        sdf_val = self.obstacles[idx].sdf(point)
+                        point_sdfs.append(sdf_val)
+                
+                if point_sdfs:
+                    result = np.array([np.min(point_sdfs)])
+                else:
+                    result = np.array([float('inf')])
+        
+        # Return scalar for single point, array otherwise
+        if is_single_point:
+            return float(result[0]) if result.size == 1 else result[0]
+        return result
     
     def collision_check(self, state: np.ndarray) -> bool:
         """

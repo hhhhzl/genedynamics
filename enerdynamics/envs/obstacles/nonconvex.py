@@ -255,17 +255,50 @@ class UnionObstacle(Obstacle):
         self.name = name or "union"
         
         # Compute bounding box (union of all bounds)
-        bounds_min = np.array([np.inf, np.inf, np.inf], dtype=np.float32)
-        bounds_max = np.array([-np.inf, -np.inf, -np.inf], dtype=np.float32)
+        # Determine dimension from first obstacle with bounds
+        dim = None
+        for obs in obstacles:
+            if hasattr(obs, 'bounds') and obs.bounds is not None:
+                obs_min, obs_max = obs.bounds
+                obs_min = np.asarray(obs_min)
+                dim = len(obs_min)
+                break
+        
+        # Fallback: try to get dimension from center
+        if dim is None:
+            for obs in obstacles:
+                if hasattr(obs, 'center') and obs.center is not None:
+                    center = np.asarray(obs.center)
+                    dim = len(center)
+                    break
+        
+        # Final fallback: default to 2D (for double integrator 2D)
+        if dim is None:
+            dim = 2
+        
+        # Initialize bounds with correct dimension
+        bounds_min = np.full(dim, np.inf, dtype=np.float32)
+        bounds_max = np.full(dim, -np.inf, dtype=np.float32)
         
         for obs in obstacles:
             if hasattr(obs, 'bounds') and obs.bounds is not None:
                 obs_min, obs_max = obs.bounds
+                obs_min = np.asarray(obs_min, dtype=np.float32)
+                obs_max = np.asarray(obs_max, dtype=np.float32)
+                
+                # Ensure same dimension (pad if necessary)
+                if len(obs_min) < dim:
+                    obs_min = np.pad(obs_min, (0, dim - len(obs_min)), constant_values=-np.inf)
+                    obs_max = np.pad(obs_max, (0, dim - len(obs_max)), constant_values=np.inf)
+                elif len(obs_min) > dim:
+                    obs_min = obs_min[:dim]
+                    obs_max = obs_max[:dim]
+                
                 bounds_min = np.minimum(bounds_min, obs_min)
                 bounds_max = np.maximum(bounds_max, obs_max)
         
         self.bounds = (bounds_min, bounds_max) if np.all(np.isfinite(bounds_min)) else None
-        self.center = (bounds_min + bounds_max) / 2.0 if self.bounds else np.zeros(3, dtype=np.float32)
+        self.center = (bounds_min + bounds_max) / 2.0 if self.bounds else np.zeros(dim, dtype=np.float32)
     
     def sdf(self, points: np.ndarray) -> np.ndarray:
         """

@@ -13,6 +13,10 @@ from typing import Callable, Optional, List
 from enerdynamics.core.constraints.base import SoftConstraint, HardConstraint
 from enerdynamics.core.types import Trajectory, State
 from enerdynamics.envs.obstacles.base import ObstacleManager
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from enerdynamics.core.constraints.schedule import ConstraintScheduleManager
 
 try:
     import jax.numpy as jnp
@@ -37,6 +41,7 @@ class ObstacleSoftConstraint(SoftConstraint):
         alpha: float = 1.0,
         beta: float = 10.0,
         position_extractor: Optional[Callable[[State], np.ndarray]] = None,
+        schedule_manager: Optional["ConstraintScheduleManager"] = None,
     ):
         """
         Initialize soft obstacle constraint.
@@ -47,14 +52,39 @@ class ObstacleSoftConstraint(SoftConstraint):
             beta: Barrier sharpness (higher = sharper barrier)
             position_extractor: Function to extract position from state
                               (if None, uses default: first 2 dims for 2D, first 1 dim for 1D)
+            schedule_manager: Optional schedule manager for dynamic alpha/beta
         """
         self.obstacles = obstacles
         self.alpha = alpha
         self.beta = beta
         self.position_extractor = position_extractor or self._default_extract_position
+        self.schedule_manager = schedule_manager
     
-    def evaluate(self, trajectory: Trajectory) -> float:
-        """Compute barrier energy: Σ_h Σ_m α * exp(-β * sdf(x^h))"""
+    def evaluate(
+        self, 
+        trajectory: Trajectory,
+        step: Optional[int] = None,
+        total_steps: Optional[int] = None
+    ) -> float:
+        """
+        Compute barrier energy: Σ_h Σ_m α * exp(-β * sdf(x^h))
+        
+        Args:
+            trajectory: Trajectory to evaluate
+            step: Current step (optional, for scheduling)
+            total_steps: Total steps (optional, for scheduling)
+        """
+        # Get scheduled alpha and beta if available
+        alpha = self.alpha
+        beta = self.beta
+        if self.schedule_manager is not None:
+            alpha = self.schedule_manager.get_soft_alpha(
+                default=self.alpha, step=step, total_steps=total_steps
+            )
+            beta = self.schedule_manager.get_soft_beta(
+                default=self.beta, step=step, total_steps=total_steps
+            )
+        
         total = 0.0
         for state in trajectory.states:
             pos = self.position_extractor(state)
@@ -63,8 +93,77 @@ class ObstacleSoftConstraint(SoftConstraint):
             sdf = float(np.asarray(sdf).item() if hasattr(sdf, 'item') else sdf)
             # Barrier: high when close to obstacles (negative or small SDF)
             # Using exponential barrier: exp(-β * sdf) grows as sdf becomes negative
-            total += self.alpha * np.exp(-self.beta * sdf)
+            total += alpha * np.exp(-beta * sdf)
         return float(total)
+    
+    def evaluate_batch(
+        self,
+        trajectories: List[Trajectory],
+        step: Optional[int] = None,
+        total_steps: Optional[int] = None
+    ) -> np.ndarray:
+        """
+        Batch evaluate barrier energy for multiple trajectories.
+        
+        Optimized version that extracts all positions at once and computes
+        SDF in batch, then computes barrier energy vectorized.
+        
+        Args:
+            trajectories: List of trajectories to evaluate
+            step: Current step (optional, for scheduling)
+            total_steps: Total steps (optional, for scheduling)
+            
+        Returns:
+            Array of barrier energies, shape (len(trajectories),)
+        """
+        # Get scheduled alpha and beta if available
+        alpha = self.alpha
+        beta = self.beta
+        if self.schedule_manager is not None:
+            alpha = self.schedule_manager.get_soft_alpha(
+                default=self.alpha, step=step, total_steps=total_steps
+            )
+            beta = self.schedule_manager.get_soft_beta(
+                default=self.beta, step=step, total_steps=total_steps
+            )
+        
+        # Extract all positions from all trajectories
+        all_positions = []
+        traj_lengths = []
+        for traj in trajectories:
+            positions = [self.position_extractor(state) for state in traj.states]
+            all_positions.extend(positions)
+            traj_lengths.append(len(traj.states))
+        
+        if not all_positions:
+            return np.zeros(len(trajectories), dtype=np.float32)
+        
+        # Stack all positions into array for batch SDF computation
+        # Shape: (total_states, dim)
+        positions_array = np.stack(all_positions, axis=0).astype(np.float32)
+        
+        # Batch compute SDF for all positions at once
+        # This is the key optimization: single batch call instead of N*H calls
+        sdfs = self.obstacles.sdf(positions_array)
+        
+        # Ensure sdfs is 1D array
+        if not isinstance(sdfs, np.ndarray):
+            sdfs = np.array([sdfs] * len(all_positions), dtype=np.float32)
+        elif sdfs.ndim == 0:
+            sdfs = np.full(len(all_positions), float(sdfs), dtype=np.float32)
+        
+        # Compute barrier energy vectorized
+        barrier_energies = alpha * np.exp(-beta * sdfs)  # Shape: (total_states,)
+        
+        # Sum over states for each trajectory
+        energies = []
+        start_idx = 0
+        for length in traj_lengths:
+            traj_energy = np.sum(barrier_energies[start_idx:start_idx + length])
+            energies.append(float(traj_energy))
+            start_idx += length
+        
+        return np.array(energies, dtype=np.float32)
     
     @staticmethod
     def _default_extract_position(state: State) -> np.ndarray:
@@ -93,6 +192,7 @@ class ObstacleHardConstraint(HardConstraint):
         obstacles: ObstacleManager,
         clearance: float = 0.0,
         position_extractor: Optional[Callable[[State], np.ndarray]] = None,
+        schedule_manager: Optional["ConstraintScheduleManager"] = None,
     ):
         """
         Initialize hard obstacle constraint.
@@ -101,10 +201,12 @@ class ObstacleHardConstraint(HardConstraint):
             obstacles: ObstacleManager containing obstacles
             clearance: Safety margin (minimum SDF required)
             position_extractor: Function to extract position from state
+            schedule_manager: Optional schedule manager for dynamic clearance
         """
         self.obstacles = obstacles
         self.clearance = clearance
         self.position_extractor = position_extractor or self._default_extract_position
+        self.schedule_manager = schedule_manager
     
     def is_feasible(self, trajectory: Trajectory) -> bool:
         """Check if trajectory avoids all obstacles with clearance."""
@@ -167,8 +269,10 @@ class ObstacleHardConstraint(HardConstraint):
     
     def _get_clearance(self, step: Optional[int], total_steps: Optional[int]) -> float:
         """Get clearance, optionally scheduled."""
-        # Default: use fixed clearance
-        # Can override to implement schedule: relaxed early, strict late
+        if self.schedule_manager is not None:
+            return self.schedule_manager.get_hard_clearance(
+                default=self.clearance, step=step, total_steps=total_steps
+            )
         return self.clearance
     
     def _project_point_simple(self, point: np.ndarray, clearance: float) -> np.ndarray:

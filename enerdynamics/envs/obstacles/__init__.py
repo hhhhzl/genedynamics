@@ -18,6 +18,7 @@ from enerdynamics.envs.obstacles.collision import (
     compute_distances,
     compute_sdf_batch,
 )
+from enerdynamics.envs.obstacles.sdf_texture import SDFTexture2D
 
 # Non-convex obstacles (optional, may require trimesh)
 try:
@@ -42,6 +43,7 @@ try:
         "check_collision_batch",
         "compute_distances",
         "compute_sdf_batch",
+        "SDFTexture2D",
     ]
 except ImportError:
     __all__ = [
@@ -55,6 +57,7 @@ except ImportError:
         "check_collision_batch",
         "compute_distances",
         "compute_sdf_batch",
+        "SDFTexture2D",
     ]
 
 # SDF tools (optional)

@@ -16,14 +16,6 @@ from typing import Callable, Dict, Any, Optional, Tuple, List
 import numpy as np
 import jax
 import jax.numpy as jnp
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-    # Dummy tqdm if not available
-    def tqdm(iterable, *args, **kwargs):
-        return iterable
 
 from enerdynamics.core.solvers import SamplingSolver
 from enerdynamics.core.dynamics import DynamicsModel, DynamicsToEnvAdapter, EnvDynamicsAdapter
@@ -32,7 +24,6 @@ from enerdynamics.core.backends import Backend, JaxBackend
 from enerdynamics.core.types import State, Action, Trajectory
 from enerdynamics.core.metrics import euclidean_metric_inv
 from enerdynamics.core.constraints.base import project_box
-from enerdynamics.core.constraints import ConstraintManager
 from enerdynamics.core.integrators import langevin_step
 from enerdynamics.envs.factories import make_env, make_energy
 
@@ -71,13 +62,6 @@ class EDOCPlanner:
         dyn_loss_coeff: float = 1.0,
         dyn_loss_mode: str = "terminal",
         np_random_seed: Optional[int] = None,
-        # ===== UX / profiling =====
-        show_tqdm: bool = True,
-        tqdm_chunk_len: int = 10,
-        # ===== Constraint system integration =====
-        constraint_manager: Optional[ConstraintManager] = None,
-        lambda_energy: float = 1.0,  # Energy scaling in E_soft = (1/λ)J + S
-        use_constraint_in_scoring: bool = True,  # Include soft constraints in scoring
     ):
         if action_score_mode not in {"reward", "energy", "learned"}:
             raise ValueError(f"Unknown action_score_mode {action_score_mode}")
@@ -104,12 +88,6 @@ class EDOCPlanner:
         self.dyn_loss_coeff = float(max(0.0, dyn_loss_coeff))
         self.dyn_loss_mode = dyn_loss_mode
         self._np_rng = np.random.default_rng(np_random_seed)
-        self.show_tqdm = bool(show_tqdm)
-        
-        # ===== Constraint system =====
-        self.constraint_manager = constraint_manager
-        self.lambda_energy = float(lambda_energy) if lambda_energy > 0 else 1.0
-        self.use_constraint_in_scoring = bool(use_constraint_in_scoring)
         self._rollout_states_energy_fn = None
         self._rollout_env_states_fn = None
         self._rollout_energy_fn = None
@@ -117,12 +95,6 @@ class EDOCPlanner:
         self._reward_mean_fn = None
         self._batch_reward_mean_fn = None
         self._reverse_diffuse_jit = None
-        self._reverse_diffuse_chunk_jit = None
-        self._reverse_diffuse_chunk_len = int(max(1, tqdm_chunk_len))
-        # Jacobian of model transition w.r.t. action (for tracking projected state trajectories)
-        self._jac_model_u_fn = None
-        # Optional JAX action safety filter (CBF-style) from ConstraintManager
-        self._jax_action_filter = None
 
         # use JAX to automatically compute energy gradient
         def energy_x(x, u, ctx):
@@ -151,32 +123,13 @@ class EDOCPlanner:
             else:
                 env_transition_fn = transition_fn
 
-            # For mapping projected state trajectories back to actions (tracking),
-            # we need the Jacobian of the model transition w.r.t. action.
-            # This is a lightweight SCP/Gauss-Newton step used only when hard projection edits states.
-            self._jac_model_u_fn = jax.jit(jax.jacrev(transition_fn, argnums=1))
-
-            # Get optional action filter from constraint manager (JAX callable)
-            if self.constraint_manager is not None:
-                self._jax_action_filter = self.constraint_manager.get_jax_action_filter()
-            else:
-                self._jax_action_filter = None
-
-            if self._jax_action_filter is None:
-                def apply_action_filter(s, act, hard_clearance, hard_enabled):
-                    return act
-            else:
-                def apply_action_filter(s, act, hard_clearance, hard_enabled):
-                    return self._jax_action_filter(s, act, hard_clearance, hard_enabled)
-
-            def rollout_states_and_energy(state, actions, hard_clearance, hard_enabled):
+            def rollout_states_and_energy(state, actions):
                 def body(carry, inputs):
                     s = carry
                     t, act = inputs
                     ctx = {"t": t}
-                    act_safe = apply_action_filter(s, act, hard_clearance, hard_enabled)
-                    e_val = energy_fn.compute(s, act_safe, ctx)
-                    s_next = transition_fn(s, act_safe)
+                    e_val = energy_fn.compute(s, act, ctx)
+                    s_next = transition_fn(s, act)
                     return s_next, (s_next, e_val)
 
                 _, (states_seq, energy_seq) = jax.lax.scan(
@@ -185,12 +138,11 @@ class EDOCPlanner:
                 states_full = jnp.concatenate([state[None, :], states_seq], axis=0)
                 return states_full, energy_seq
 
-            def rollout_env_states(state, actions, hard_clearance, hard_enabled):
+            def rollout_env_states(state, actions):
                 def body(carry, inputs):
                     s = carry
                     _, act = inputs
-                    act_safe = apply_action_filter(s, act, hard_clearance, hard_enabled)
-                    s_next = env_transition_fn(s, act_safe)
+                    s_next = env_transition_fn(s, act)
                     return s_next, s_next
 
                 _, states_seq = jax.lax.scan(
@@ -199,11 +151,11 @@ class EDOCPlanner:
                 states_full = jnp.concatenate([state[None, :], states_seq], axis=0)
                 return states_full
 
-            def total_energy(state, actions, hard_clearance, hard_enabled):
-                states_full, energy_seq = rollout_states_and_energy(state, actions, hard_clearance, hard_enabled)
+            def total_energy(state, actions):
+                states_full, energy_seq = rollout_states_and_energy(state, actions)
                 total = jnp.sum(energy_seq)
                 if dyn_coeff > 0.0:
-                    env_states_full = rollout_env_states(state, actions, hard_clearance, hard_enabled)
+                    env_states_full = rollout_env_states(state, actions)
                     if dyn_mode == "terminal":
                         diff = states_full[-1] - env_states_full[-1]
                         dyn_loss = jnp.sum(diff * diff)
@@ -216,12 +168,11 @@ class EDOCPlanner:
 
             if reward_cost_fn is not None:
 
-                def mean_reward(state, actions, hard_clearance, hard_enabled):
+                def mean_reward(state, actions):
                     def body(carry, inputs):
                         s = carry
                         _, act = inputs
-                        act_safe = apply_action_filter(s, act, hard_clearance, hard_enabled)
-                        s_next = env_transition_fn(s, act_safe)
+                        s_next = env_transition_fn(s, act)
                         reward = -reward_cost_fn(s_next)
                         return s_next, reward
 
@@ -232,25 +183,26 @@ class EDOCPlanner:
 
                 self._reward_mean_fn = jax.jit(mean_reward)
                 self._batch_reward_mean_fn = jax.jit(
-                    jax.vmap(self._reward_mean_fn, in_axes=(None, 0, None, None))
+                    jax.vmap(self._reward_mean_fn, in_axes=(None, 0))
                 )
 
             self._rollout_states_energy_fn = jax.jit(rollout_states_and_energy)
             self._rollout_env_states_fn = jax.jit(rollout_env_states)
             self._rollout_energy_fn = jax.jit(total_energy)
             self._batch_rollout_energy_fn = jax.jit(
-                jax.vmap(self._rollout_energy_fn, in_axes=(None, 0, None, None))
+                jax.vmap(self._rollout_energy_fn, in_axes=(None, 0))
             )
             self._init_reverse_diffuse_jit()
 
     def _init_reverse_diffuse_jit(self):
         """Initialize JIT-compiled reverse diffusion function."""
         self._reverse_diffuse_jit = None
-        self._reverse_diffuse_chunk_jit = None
         if not self.action_space:
             return
         mode = self.action_score_mode.lower()
         if mode == "learned":
+            return
+        if self.use_antithetic:
             return
         if mode == "reward" and self._batch_reward_mean_fn is None:
             return
@@ -280,15 +232,11 @@ class EDOCPlanner:
             control_limit = float(control_limit)
 
         if mode == "reward":
-            score_fn_base = self._batch_reward_mean_fn
-            def score_fn(state_init, actions, hard_clearance, hard_enabled):
-                return score_fn_base(state_init, actions, hard_clearance, hard_enabled)
+            score_fn = self._batch_reward_mean_fn
             def transform_scores(values):
                 return values
         else:
-            score_fn_base = self._batch_rollout_energy_fn
-            def score_fn(state_init, actions, hard_clearance, hard_enabled):
-                return score_fn_base(state_init, actions, hard_clearance, hard_enabled)
+            score_fn = self._batch_rollout_energy_fn
             def transform_scores(values):
                 return -values
 
@@ -307,68 +255,7 @@ class EDOCPlanner:
             dtype=jnp.float32,
         )
 
-        # Optional JAX soft obstacle penalty (MDOC-style, using SDFTexture2D if available)
-        use_soft_jax = (
-            bool(self.use_constraint_in_scoring)
-            and (self.constraint_manager is not None)
-            and self.constraint_manager.has_soft()
-        )
-
-        soft_sampler = None
-        if use_soft_jax and self.constraint_manager is not None:
-            try:
-                from enerdynamics.core.constraints.obstacle_constraints import ObstacleSoftConstraint
-                for c in self.constraint_manager.soft_constraints:
-                    if isinstance(c, ObstacleSoftConstraint):
-                        tex = c.obstacles.get_sdf_texture_2d()
-                        if tex is not None:
-                            tex_j = tex.to_jax()
-                            x_min = float(tex.x_min)
-                            y_min = float(tex.y_min)
-                            res = float(tex.res)
-                            H_tex = int(tex.H)
-                            W_tex = int(tex.W)
-
-                            def _sample_sdf(p2):
-                                p2 = jnp.asarray(p2, dtype=jnp.float32)
-                                shp = p2.shape[:-1]
-                                pts = p2.reshape((-1, 2))
-                                ix = (pts[:, 0] - x_min) / res
-                                iy = (pts[:, 1] - y_min) / res
-                                ix = jnp.clip(ix, 0.0, W_tex - 1.0)
-                                iy = jnp.clip(iy, 0.0, H_tex - 1.0)
-                                x0 = jnp.floor(ix).astype(jnp.int32)
-                                y0 = jnp.floor(iy).astype(jnp.int32)
-                                x1 = jnp.minimum(x0 + 1, W_tex - 1)
-                                y1 = jnp.minimum(y0 + 1, H_tex - 1)
-                                wx = (ix - x0).astype(jnp.float32)
-                                wy = (iy - y0).astype(jnp.float32)
-                                v00 = tex_j[0, y0, x0]
-                                v10 = tex_j[0, y0, x1]
-                                v01 = tex_j[0, y1, x0]
-                                v11 = tex_j[0, y1, x1]
-                                v0 = v00 * (1.0 - wx) + v10 * wx
-                                v1 = v01 * (1.0 - wx) + v11 * wx
-                                v = v0 * (1.0 - wy) + v1 * wy
-                                return v.reshape(shp)
-
-                            soft_sampler = _sample_sdf
-                            soft_alpha_default = float(getattr(c, "alpha", 1.0))
-                            soft_beta_default = float(getattr(c, "beta", 10.0))
-                            break
-            except Exception:
-                soft_sampler = None
-
-        lambda_energy = jnp.float32(self.lambda_energy)
-
-        def reverse_diffuse(
-            rng_key,
-            state_init,
-            hard_clearance_by_idx,
-            hard_enabled_by_idx,
-            soft_alpha_by_idx,
-            soft_beta_by_idx,
-        ):
+        def reverse_diffuse(rng_key, state_init):
             rng_key, init_key = jax.random.split(rng_key)
             Ybar_init = jax.random.normal(
                 init_key, (horizon, action_dim), dtype=jnp.float32
@@ -381,64 +268,18 @@ class EDOCPlanner:
                 sqrt_alpha_bar_i = jnp.sqrt(alphas_bar[idx])
                 sigma_i = sigmas[idx]
                 Yi = Ybar_curr * sqrt_alpha_bar_i
-
-                # Scheduled hard parameters for this diffusion index
-                hard_clearance = hard_clearance_by_idx[idx]
-                hard_enabled = hard_enabled_by_idx[idx]
-
-                # Antithetic sampling (static shapes; num_particles known at compile time)
-                if self.use_antithetic and num_particles > 1:
-                    half = num_particles // 2
-                    has_extra = num_particles % 2
-                    sample_count = half + has_extra
-                    eps_core = jax.random.normal(
-                        noise_key, (sample_count, horizon, action_dim), dtype=jnp.float32
-                    )
-                    eps_half = eps_core[:half]
-                    Y_pos = Ybar_curr[None, ...] + sigma_i * eps_half
-                    Y_neg = Ybar_curr[None, ...] - sigma_i * eps_half
-                    if has_extra:
-                        eps_extra = eps_core[-1:]
-                        Y_extra = Ybar_curr[None, ...] + sigma_i * eps_extra
-                        Y0s = jnp.concatenate([Y_pos, Y_neg, Y_extra], axis=0)
-                    else:
-                        Y0s = jnp.concatenate([Y_pos, Y_neg], axis=0)
-                else:
                 eps = jax.random.normal(
                     noise_key, (num_particles, horizon, action_dim), dtype=jnp.float32
                 )
                 Y0s = eps * sigma_i + Ybar_curr
-
                 if clip_actions:
                     Y0s = jnp.clip(Y0s, -control_limit, control_limit)
 
                 use_uniform = idx >= stage_switch_val
 
                 def score_branch(actions):
-                    raw_scores = score_fn(state_init, actions, hard_clearance, hard_enabled)
+                    raw_scores = score_fn(state_init, actions)
                     scores = transform_scores(raw_scores)
-
-                    # Optional soft obstacle penalty (approx) using SDF texture
-                    if soft_sampler is not None:
-                        alpha = soft_alpha_by_idx[idx]
-                        beta = soft_beta_by_idx[idx]
-
-                        def one_penalty(action_seq):
-                            def p_body(s, act):
-                                # Keep penalty consistent with rollout: apply action filter if enabled.
-                                act_safe = act
-                                if self._jax_action_filter is not None:
-                                    act_safe = self._jax_action_filter(s, act, hard_clearance, hard_enabled)
-                                s_next = self.jax_transition(s, act_safe)
-                                p = s_next[0:2]
-                                sdf_val = soft_sampler(p)
-                                return s_next, jnp.exp(-beta * sdf_val)
-                            _, vals = jax.lax.scan(p_body, state_init, action_seq)
-                            return alpha * jnp.sum(vals)
-
-                        soft_pen = jax.vmap(one_penalty)(actions)
-                        scores = (scores / lambda_energy) - soft_pen
-
                     score_mean = jnp.mean(scores)
                     score_std = jnp.std(scores)
                     score_std = jnp.where(score_std < 1e-4, 1.0, score_std)
@@ -492,145 +333,6 @@ class EDOCPlanner:
             return rng_out, Ybar_final, reward_hist, Ybar_hist, Ysamples_hist
 
         self._reverse_diffuse_jit = jax.jit(reverse_diffuse)
-
-        # Chunked variant for a real-time tqdm progress bar without de-optimizing the inner loop:
-        # Each chunk runs a small lax.scan under JIT; Python updates the bar once per chunk.
-        chunk_len = int(self._reverse_diffuse_chunk_len)
-        if chunk_len < 1:
-            chunk_len = 1
-
-        def reverse_diffuse_chunk(
-            rng_key,
-            state_init,
-            Ybar_curr,
-            idx_chunk,
-            valid_chunk,
-            hard_clearance_by_idx,
-            hard_enabled_by_idx,
-            soft_alpha_by_idx,
-            soft_beta_by_idx,
-        ):
-            def step_one(carry, inputs):
-                rng_curr, Ybar_in = carry
-                idx, is_valid = inputs
-
-                def do_step(args):
-                    rng_curr_, Ybar_in_, idx_ = args
-                    rng_next, noise_key, extra_key = jax.random.split(rng_curr_, 3)
-
-                    sqrt_alpha_bar_i = jnp.sqrt(alphas_bar[idx_])
-                    sigma_i = sigmas[idx_]
-                    Yi = Ybar_in_ * sqrt_alpha_bar_i
-
-                    hard_clearance = hard_clearance_by_idx[idx_]
-                    hard_enabled = hard_enabled_by_idx[idx_]
-
-                    if self.use_antithetic and num_particles > 1:
-                        half = num_particles // 2
-                        has_extra = num_particles % 2
-                        sample_count = half + has_extra
-                        eps_core = jax.random.normal(
-                            noise_key, (sample_count, horizon, action_dim), dtype=jnp.float32
-                        )
-                        eps_half = eps_core[:half]
-                        Y_pos = Ybar_in_[None, ...] + sigma_i * eps_half
-                        Y_neg = Ybar_in_[None, ...] - sigma_i * eps_half
-                        if has_extra:
-                            eps_extra = eps_core[-1:]
-                            Y_extra = Ybar_in_[None, ...] + sigma_i * eps_extra
-                            Y0s_ = jnp.concatenate([Y_pos, Y_neg, Y_extra], axis=0)
-                        else:
-                            Y0s_ = jnp.concatenate([Y_pos, Y_neg], axis=0)
-                    else:
-                        eps = jax.random.normal(
-                            noise_key, (num_particles, horizon, action_dim), dtype=jnp.float32
-                        )
-                        Y0s_ = eps * sigma_i + Ybar_in_
-
-                    if clip_actions:
-                        Y0s_ = jnp.clip(Y0s_, -control_limit, control_limit)
-
-                    use_uniform = idx_ >= stage_switch_val
-
-                    def score_branch(actions):
-                        raw_scores = score_fn(state_init, actions, hard_clearance, hard_enabled)
-                        scores = transform_scores(raw_scores)
-                        if soft_sampler is not None:
-                            alpha = soft_alpha_by_idx[idx_]
-                            beta = soft_beta_by_idx[idx_]
-
-                            def one_penalty(action_seq):
-                                def p_body(s, act):
-                                    act_safe = act
-                                    if self._jax_action_filter is not None:
-                                        act_safe = self._jax_action_filter(s, act, hard_clearance, hard_enabled)
-                                    s_next = self.jax_transition(s, act_safe)
-                                    p = s_next[0:2]
-                                    sdf_val = soft_sampler(p)
-                                    return s_next, jnp.exp(-beta * sdf_val)
-                                _, vals = jax.lax.scan(p_body, state_init, action_seq)
-                                return alpha * jnp.sum(vals)
-
-                            soft_pen = jax.vmap(one_penalty)(actions)
-                            scores = (scores / lambda_energy) - soft_pen
-
-                        score_mean = jnp.mean(scores)
-                        score_std = jnp.std(scores)
-                        score_std = jnp.where(score_std < 1e-4, 1.0, score_std)
-                        logw = (scores - score_mean) / (score_std * temp_val)
-                        logw = logw - jnp.max(logw)
-                        reward_val_ = jnp.mean(scores)
-                        return logw, reward_val_
-
-                    logw, reward_val_ = jax.lax.cond(
-                        use_uniform,
-                        lambda _: (uniform_logw, jnp.nan),
-                        lambda acts: score_branch(acts),
-                        Y0s_,
-                    )
-                    weights = jax.nn.softmax(logw)
-                    Ybar_weighted = jnp.tensordot(weights, Y0s_, axes=([0], [0]))
-
-                    one_minus_alpha_bar = 1.0 - alphas_bar[idx_]
-                    score_val = (-Yi + sqrt_alpha_bar_i * Ybar_weighted) / one_minus_alpha_bar
-                    Yim1 = (Yi + one_minus_alpha_bar * score_val) / jnp.sqrt(alphas[idx_])
-                    sqrt_alpha_bar_prev = jnp.sqrt(alphas_bar[idx_ - 1])
-                    Ybar_next = Yim1 / sqrt_alpha_bar_prev
-
-                    extra_sigma = extra_sigmas[idx_]
-                    def add_noise(y_in):
-                        noise = jax.random.normal(
-                            extra_key, (horizon, action_dim), dtype=jnp.float32
-                        )
-                        return y_in + extra_sigma * noise
-                    Ybar_next = jax.lax.cond(
-                        jnp.abs(extra_sigma) > 0.0,
-                        add_noise,
-                        lambda y_in: y_in,
-                        Ybar_next,
-                    )
-
-                    return (rng_next, Ybar_next), (reward_val_, Ybar_next, Y0s_)
-
-                def do_noop(args):
-                    rng_curr_, Ybar_in_, _ = args
-                    zeros_Y0s = jnp.zeros((num_particles, horizon, action_dim), dtype=jnp.float32)
-                    return (rng_curr_, Ybar_in_), (jnp.nan, Ybar_in_, zeros_Y0s)
-
-                (rng_out, Ybar_out), outs = jax.lax.cond(
-                    is_valid,
-                    do_step,
-                    do_noop,
-                    (rng_curr, Ybar_in, idx),
-                )
-                return (rng_out, Ybar_out), outs
-
-            (rng_out, Ybar_out), (reward_chunk, Ybar_chunk, Ysamples_chunk) = jax.lax.scan(
-                step_one, (rng_key, Ybar_curr), (idx_chunk, valid_chunk)
-            )
-            return rng_out, Ybar_out, reward_chunk, Ybar_chunk, Ysamples_chunk
-
-        self._reverse_diffuse_chunk_jit = jax.jit(reverse_diffuse_chunk)
 
     # ------------------- main interface -------------------
     def plan(self, rng: jax.Array) -> Dict[str, Any]:
@@ -704,7 +406,7 @@ class EDOCPlanner:
         actions = jnp.zeros((self.horizon, act_dim), dtype=jnp.float32)
         x0_jnp = jnp.asarray(x0, dtype=jnp.float32)
 
-        energy_from_actions = lambda seq: self._rollout_energy_fn(x0_jnp, seq, 0.0, False)
+        energy_from_actions = lambda seq: self._rollout_energy_fn(x0_jnp, seq)
         energy_and_grad = jax.jit(jax.value_and_grad(energy_from_actions))
 
         energy_hist = []
@@ -790,118 +492,7 @@ class EDOCPlanner:
             x = self.env.transition(x, u)
         return total_energy
 
-    def _actions_to_trajectory(self, x0, actions):
-        """
-        Convert actions array to Trajectory for constraint evaluation.
-        
-        Args:
-            x0: Initial state
-            actions: Action sequence (horizon, act_dim) or single action (act_dim)
-            
-        Returns:
-            Trajectory object
-        """
-        actions_array = np.asarray(actions, dtype=np.float32)
-        if actions_array.ndim == 1:
-            # Single action, create single-step trajectory
-            actions_array = actions_array[None, :]
-        
-        states = [np.asarray(x0, dtype=np.float32)]
-        x = np.asarray(x0, dtype=np.float32)
-        
-        actions_list = []
-        for act in actions_array:
-            actions_list.append(act)
-            x_next = self.env.transition(x, act)
-            states.append(x_next)
-            x = x_next
-        
-        return Trajectory(states=states, actions=actions_list)
-    
-    def _extract_actions_from_trajectory(self, trajectory: Trajectory):
-        """
-        Extract actions array from trajectory.
-        
-        Args:
-            trajectory: Trajectory object
-            
-        Returns:
-            Actions array (horizon, act_dim)
-        """
-        if not trajectory.actions:
-            return np.zeros((self.horizon, self.env.act_dim), dtype=np.float32)
-        return np.stack([np.asarray(act, dtype=np.float32) for act in trajectory.actions], axis=0)
-
-    def _track_actions_to_projected_states(
-        self,
-        x0,
-        actions_init,
-        target_states,
-        *,
-        gn_iters: int = 2,
-        reg: float = 1e-3,
-    ) -> np.ndarray:
-        """
-        Map a projected state trajectory back to an executable action sequence.
-
-        Hard feasibility operators like CFS typically edit *states*.
-        EDOC runs diffusion in *action space*, so if we don't re-solve actions,
-        the projected trajectory won't affect Ybar (actions stay unchanged).
-
-        We use a lightweight Gauss-Newton/SCP step per timestep:
-            u <- u + (B^T B + reg I)^{-1} B^T (x_target - f(x,u))
-        where B = ∂f/∂u at the current (x,u).
-        """
-        if not self.action_space or self._jac_model_u_fn is None:
-            return np.asarray(actions_init, dtype=np.float32)
-
-        actions = np.asarray(actions_init, dtype=np.float32).copy()
-        if actions.ndim != 2:
-            return np.asarray(actions_init, dtype=np.float32)
-
-        if not target_states or len(target_states) < 2:
-            return actions
-
-        horizon = actions.shape[0]
-        T = min(horizon, len(target_states) - 1)
-        if T <= 0:
-            return actions
-
-        limit = getattr(self.env, "control_limit", None)
-        limit_val = float(limit) if limit is not None else None
-
-        x = jnp.asarray(x0, dtype=jnp.float32)
-        for t in range(T):
-            u = jnp.asarray(actions[t], dtype=jnp.float32)
-            x_tgt = jnp.asarray(target_states[t + 1], dtype=jnp.float32)
-
-            for _ in range(max(1, int(gn_iters))):
-                x_pred = self.jax_model_transition(x, u)
-                B = self._jac_model_u_fn(x, u)  # (state_dim, act_dim)
-                Bt = jnp.swapaxes(B, -2, -1)   # (act_dim, state_dim)
-                BtB = Bt @ B
-                act_dim = int(BtB.shape[-1])
-                BtB_reg = BtB + (float(reg) * jnp.eye(act_dim, dtype=jnp.float32))
-                rhs = Bt @ (x_tgt - x_pred)
-                delta = jnp.linalg.solve(BtB_reg, rhs)
-                u = u + delta
-                if limit_val is not None:
-                    u = jnp.clip(u, -limit_val, limit_val)
-
-            # Advance using updated action
-            x = self.jax_model_transition(x, u)
-            actions[t] = np.asarray(u, dtype=np.float32)
-
-        return actions
-
-    def _score_particles(
-        self, 
-        x0, 
-        info, 
-        batch_actions,
-        step: Optional[int] = None,
-        total_steps: Optional[int] = None,
-    ):
+    def _score_particles(self, x0, info, batch_actions):
         """Score action particles."""
         mode = self.action_score_mode.lower()
         x0_jnp = jnp.asarray(x0, dtype=jnp.float32)
@@ -909,72 +500,31 @@ class EDOCPlanner:
 
         if mode == "reward":
             if self._batch_reward_mean_fn is not None:
-                hard_enabled = False
-                hard_clearance = 0.0
-                if self.constraint_manager and self.constraint_manager.action_filter_operator is not None:
-                    hard_enabled = True
-                if self.constraint_manager and self.constraint_manager.schedule_manager is not None:
-                    hard_enabled = bool(self.constraint_manager.schedule_manager.is_hard_active(step, total_steps))
-                    hard_clearance = float(
-                        self.constraint_manager.schedule_manager.get_hard_clearance(
-                            default=0.0, step=step, total_steps=total_steps
-                        )
-                    )
-                rewards_mean = self._batch_reward_mean_fn(x0_jnp, batch_actions_jnp, hard_clearance, hard_enabled)
-                scores = np.asarray(rewards_mean, dtype=np.float32)
-            else:
-                num = batch_actions.shape[0]
-                scores = np.zeros((num,), dtype=np.float32)
-                for idx in range(num):
-                    rewards = self._simulate_rewards_numpy(x0, batch_actions[idx])
-                    scores[idx] = float(np.mean(rewards))
+                rewards_mean = self._batch_reward_mean_fn(x0_jnp, batch_actions_jnp)
+                return np.asarray(rewards_mean, dtype=np.float32)
+            num = batch_actions.shape[0]
+            scores = np.zeros((num,), dtype=np.float32)
+            for idx in range(num):
+                rewards = self._simulate_rewards_numpy(x0, batch_actions[idx])
+                scores[idx] = float(np.mean(rewards))
+            return scores
         elif mode == "energy":
             if self._batch_rollout_energy_fn is not None:
-                hard_enabled = False
-                hard_clearance = 0.0
-                if self.constraint_manager and self.constraint_manager.action_filter_operator is not None:
-                    hard_enabled = True
-                if self.constraint_manager and self.constraint_manager.schedule_manager is not None:
-                    hard_enabled = bool(self.constraint_manager.schedule_manager.is_hard_active(step, total_steps))
-                    hard_clearance = float(
-                        self.constraint_manager.schedule_manager.get_hard_clearance(
-                            default=0.0, step=step, total_steps=total_steps
-                        )
-                    )
-                energy_vals = self._batch_rollout_energy_fn(x0_jnp, batch_actions_jnp, hard_clearance, hard_enabled)
-                scores = -np.asarray(energy_vals, dtype=np.float32)
-            else:
-                num = batch_actions.shape[0]
-                scores = np.zeros((num,), dtype=np.float32)
-                for idx in range(num):
-                    energy_val = float(
-                        self._rollout_energy_fn(
-                            x0_jnp,
-                            jnp.asarray(batch_actions[idx], dtype=jnp.float32),
-                            0.0,
-                            False,
-                        )
-                    )
-                    scores[idx] = -energy_val
-        elif mode == "learned":
-            scores = np.zeros((batch_actions.shape[0],), dtype=np.float32)
-        else:
-            raise ValueError(f"Unknown action_score_mode {self.action_score_mode}")
-        
-        # Add soft constraint penalties if enabled
-        if self.use_constraint_in_scoring and self.constraint_manager and self.constraint_manager.has_soft():
-            # Scale energy/reward by lambda_energy (E_soft = (1/λ)J + S)
-            scores = scores / self.lambda_energy
-            
-            # Batch compute soft constraint penalties (optimized)
+                energy_vals = self._batch_rollout_energy_fn(x0_jnp, batch_actions_jnp)
+                return -np.asarray(energy_vals, dtype=np.float32)
             num = batch_actions.shape[0]
-            trajectories = [self._actions_to_trajectory(x0, batch_actions[idx]) for idx in range(num)]
-            soft_penalties = self.constraint_manager.compute_soft_energy_batch(
-                trajectories, step=step, total_steps=total_steps
-            )
-            scores = scores - soft_penalties  # Subtract penalty (higher penalty = lower score)
-        
-        return scores
+            scores = np.zeros((num,), dtype=np.float32)
+            for idx in range(num):
+                energy_val = float(
+                    self._rollout_energy_fn(
+                        x0_jnp, jnp.asarray(batch_actions[idx], dtype=jnp.float32)
+                    )
+                )
+                scores[idx] = -energy_val
+            return scores
+        elif mode == "learned":
+            return np.zeros((batch_actions.shape[0],), dtype=np.float32)
+        raise ValueError(f"Unknown action_score_mode {self.action_score_mode}")
 
     def _add_extra_noise(self, actions_array, sigma):
         """Add extra noise to actions."""
@@ -1001,121 +551,8 @@ class EDOCPlanner:
         diffusion_samples_traj_arr = None
 
         if self._reverse_diffuse_jit is not None:
-            # Precompute scheduled hard/soft parameters as arrays indexed by diffusion idx (0..Ndiffuse-1),
-            # so the reverse diffusion loop can remain pure JAX.
-            hard_clearance_by_idx = jnp.zeros((Ndiffuse,), dtype=jnp.float32)
-            hard_enabled_by_idx = jnp.zeros((Ndiffuse,), dtype=jnp.bool_)
-            soft_alpha_by_idx = jnp.zeros((Ndiffuse,), dtype=jnp.float32)
-            soft_beta_by_idx = jnp.zeros((Ndiffuse,), dtype=jnp.float32)
-
-            # Resolve soft defaults if an ObstacleSoftConstraint exists (for JAX soft penalty)
-            soft_alpha_default = 0.0
-            soft_beta_default = 10.0
-            if self.constraint_manager is not None and self.constraint_manager.has_soft():
-                try:
-                    from enerdynamics.core.constraints.obstacle_constraints import ObstacleSoftConstraint
-                    for c in self.constraint_manager.soft_constraints:
-                        if isinstance(c, ObstacleSoftConstraint):
-                            soft_alpha_default = float(getattr(c, "alpha", 1.0))
-                            soft_beta_default = float(getattr(c, "beta", 10.0))
-                            break
-                except Exception:
-                    pass
-
-            if self.constraint_manager is not None and self.constraint_manager.schedule_manager is not None:
-                sched = self.constraint_manager.schedule_manager
-                total_steps = max(1, Ndiffuse - 2)
-                hard_filter_exists = self.constraint_manager.action_filter_operator is not None
-                hc = []
-                he = []
-                sa = []
-                sb = []
-                for idx in range(Ndiffuse):
-                    step_k = idx - 1 if idx > 0 else 0
-                    if hard_filter_exists:
-                        he.append(bool(sched.is_hard_active(step_k, total_steps)))
-                        hc.append(float(sched.get_hard_clearance(default=0.0, step=step_k, total_steps=total_steps)))
-                    else:
-                        he.append(False)
-                        hc.append(0.0)
-                    # Soft schedules (alpha/beta) are used only if a JAX soft penalty exists
-                    sa.append(float(sched.get_soft_alpha(default=soft_alpha_default, step=step_k, total_steps=total_steps)))
-                    sb.append(float(sched.get_soft_beta(default=soft_beta_default, step=step_k, total_steps=total_steps)))
-
-                hard_clearance_by_idx = jnp.asarray(np.asarray(hc, dtype=np.float32), dtype=jnp.float32)
-                hard_enabled_by_idx = jnp.asarray(np.asarray(he, dtype=bool))
-                soft_alpha_by_idx = jnp.asarray(np.asarray(sa, dtype=np.float32), dtype=jnp.float32)
-                soft_beta_by_idx = jnp.asarray(np.asarray(sb, dtype=np.float32), dtype=jnp.float32)
-            else:
-                # No schedule: enable hard filter if present, with clearance=0; soft uses defaults.
-                if self.constraint_manager is not None and self.constraint_manager.action_filter_operator is not None:
-                    hard_enabled_by_idx = jnp.ones((Ndiffuse,), dtype=jnp.bool_)
-                soft_alpha_by_idx = jnp.full((Ndiffuse,), jnp.float32(soft_alpha_default), dtype=jnp.float32)
-                soft_beta_by_idx = jnp.full((Ndiffuse,), jnp.float32(soft_beta_default), dtype=jnp.float32)
-
-            # If enabled, run in JITted chunks to show a real-time progress bar
-            # without de-optimizing the inner loop.
-            if self.show_tqdm and HAS_TQDM and self._reverse_diffuse_chunk_jit is not None:
-                chunk_len = int(getattr(self, "_reverse_diffuse_chunk_len", 10))
-                if chunk_len < 1:
-                    chunk_len = 1
-                total_steps = Ndiffuse - 1
-                diffusion_indices = np.arange(Ndiffuse - 1, 0, -1, dtype=np.int32)
-
-                rng, init_key = jax.random.split(rng)
-                Ybar = jax.random.normal(init_key, (horizon, act_dim), dtype=jnp.float32)
-
-                reward_chunks = []
-                ybar_chunks = []
-                ysamp_chunks = []
-                pbar = tqdm(total=total_steps, desc="EDOC Diffusion", unit="step", leave=False)
-                try:
-                    for start in range(0, total_steps, chunk_len):
-                        sub = diffusion_indices[start:start + chunk_len]
-                        valid = np.ones((len(sub),), dtype=bool)
-                        if len(sub) < chunk_len:
-                            pad_n = chunk_len - len(sub)
-                            sub = np.pad(sub, (0, pad_n), mode="constant", constant_values=1)
-                            valid = np.pad(valid, (0, pad_n), mode="constant", constant_values=False)
-                        idx_chunk = jnp.asarray(sub, dtype=jnp.int32)
-                        valid_chunk = jnp.asarray(valid, dtype=jnp.bool_)
-                        rng, Ybar, r_c, y_c, s_c = self._reverse_diffuse_chunk_jit(
-                            rng,
-                            x0_jnp,
-                            Ybar,
-                            idx_chunk,
-                            valid_chunk,
-                            hard_clearance_by_idx,
-                            hard_enabled_by_idx,
-                            soft_alpha_by_idx,
-                            soft_beta_by_idx,
-                        )
-                        reward_chunks.append(r_c)
-                        ybar_chunks.append(y_c)
-                        ysamp_chunks.append(s_c)
-                        pbar.update(int(np.sum(valid)))
-                finally:
-                    pbar.close()
-
-                reward_hist = jnp.concatenate(reward_chunks, axis=0)[:total_steps]
-                Ybar_hist = jnp.concatenate(ybar_chunks, axis=0)[:total_steps]
-                Ysamples_hist = jnp.concatenate(ysamp_chunks, axis=0)[:total_steps]
-
-                # Match the full-jit function output convention (reverse to early→late)
-                reward_hist_jnp = reward_hist[::-1]
-                traj_jnp = Ybar_hist[::-1]
-                samples_jnp = Ysamples_hist[::-1]
-                actions_jnp = Ybar
-            else:
             rng, diffuse_key = jax.random.split(rng)
-                _, actions_jnp, reward_hist_jnp, traj_jnp, samples_jnp = self._reverse_diffuse_jit(
-                    diffuse_key,
-                    x0_jnp,
-                    hard_clearance_by_idx,
-                    hard_enabled_by_idx,
-                    soft_alpha_by_idx,
-                    soft_beta_by_idx,
-                )
+            _, actions_jnp, reward_hist_jnp, traj_jnp, samples_jnp = self._reverse_diffuse_jit(diffuse_key, x0_jnp)
             actions_np_final = np.asarray(actions_jnp, dtype=np.float32)
             reward_history_arr = jnp.asarray(reward_hist_jnp, dtype=jnp.float32)
             diffusion_actions_traj_arr = jnp.asarray(traj_jnp, dtype=jnp.float32)
@@ -1138,13 +575,7 @@ class EDOCPlanner:
             Ysamples_history = []
             stage_switch = max(1, int(self.action_stage_ratio * (Ndiffuse - 1)))
 
-            # Create progress bar for reverse diffusion
-            diffusion_iter = range(Ndiffuse - 1, 0, -1)
-            if HAS_TQDM:
-                diffusion_iter = tqdm(diffusion_iter, desc="EDOC Diffusion", unit="step", 
-                                     total=Ndiffuse-1, leave=False)
-
-            for i in diffusion_iter:
+            for i in range(Ndiffuse - 1, 0, -1):
                 Yi = Ybar * np.sqrt(alphas_bar[i])
 
                 rng, sample_key = jax.random.split(rng)
@@ -1194,44 +625,13 @@ class EDOCPlanner:
                     limit = float(control_limit)
                     Y0s = np.clip(Y0s, -limit, limit)
 
-                # Convert diffusion index to constraint step
-                # i goes from Ndiffuse-1 (initial noise) to 1 (near final)
-                # For reverse_mode constraint scheduling: step=0 is initial, step=total_steps is final
-                constraint_step = i - 1 if i > 1 else 0  # Map i to constraint step range
-                constraint_total_steps = Ndiffuse - 2  # Total steps for constraints
-                
                 use_uniform = i >= stage_switch and self.action_score_mode != "learned"
                 if use_uniform:
                     weights = np.full((num_particles,), 1.0 / num_particles, dtype=np.float32)
                     reward_history.append(np.nan)
                 elif self.action_score_mode == "energy":
                     actions_batch = jnp.asarray(Y0s, dtype=jnp.float32)
-                    hard_enabled = False
-                    hard_clearance = 0.0
-                    if self.constraint_manager and self.constraint_manager.action_filter_operator is not None:
-                        hard_enabled = True
-                    if self.constraint_manager and self.constraint_manager.schedule_manager is not None:
-                        hard_enabled = bool(self.constraint_manager.schedule_manager.is_hard_active(constraint_step, constraint_total_steps))
-                        hard_clearance = float(
-                            self.constraint_manager.schedule_manager.get_hard_clearance(
-                                default=0.0, step=constraint_step, total_steps=constraint_total_steps
-                            )
-                        )
-                    energy_vals = np.asarray(self._batch_rollout_energy_fn(x0_jnp, actions_batch, hard_clearance, hard_enabled))
-                    
-                    # Add soft constraint penalties if enabled
-                    if self.use_constraint_in_scoring and self.constraint_manager and self.constraint_manager.has_soft():
-                        # Scale energy by lambda_energy
-                        energy_vals = energy_vals / self.lambda_energy
-                        
-                        # Batch compute soft constraint penalties (optimized)
-                        # Instead of looping over each particle, batch process all trajectories
-                        trajectories = [self._actions_to_trajectory(x0, Y0s[idx]) for idx in range(len(Y0s))]
-                        soft_penalties = self.constraint_manager.compute_soft_energy_batch(
-                            trajectories, step=constraint_step, total_steps=constraint_total_steps
-                        )
-                        energy_vals = energy_vals + soft_penalties
-                    
+                    energy_vals = np.asarray(self._batch_rollout_energy_fn(x0_jnp, actions_batch))
                     energy_mean = float(np.mean(energy_vals))
                     energy_std = float(np.std(energy_vals))
                     if energy_std < 1e-4:
@@ -1247,11 +647,7 @@ class EDOCPlanner:
                     if self.action_score_mode == "learned":
                         scores = np.zeros((num_particles,), dtype=np.float32)
                     else:
-                        scores = self._score_particles(
-                            x0, info, Y0s, 
-                            step=constraint_step, 
-                            total_steps=constraint_total_steps
-                        )
+                        scores = self._score_particles(x0, info, Y0s)
 
                     score_std = float(scores.std())
                     if score_std < 1e-4:
@@ -1273,10 +669,6 @@ class EDOCPlanner:
                 Yim1 = (Yi + (1.0 - alphas_bar[i]) * score) / np.sqrt(alphas[i])
                 Ybar = Yim1 / np.sqrt(alphas_bar[i - 1])
                 Ybar = self._add_extra_noise(Ybar, extra_sigmas[i])
-                
-                # Note: hard constraints are now intended to be enforced as an action-space
-                # safety filter inside the rollout/score functions (JAX-jitted). We avoid
-                # expensive Python-side state projection + tracking here for performance.
 
                 if control_limit is not None:
                     limit = float(control_limit)
@@ -1286,13 +678,6 @@ class EDOCPlanner:
                     Ybar_history.append(np.array(Ybar, copy=True))
                     Ysamples_history.append(np.array(Y0s, copy=True))
 
-            # Final hard constraint projection (step 0, final state)
-            # Apply action-space hard filter once to the final action sequence (if configured)
-            if self.constraint_manager and self.constraint_manager.action_filter_operator is not None:
-                Ybar = self.constraint_manager.filter_actions(
-                    x0, Ybar, step=0, total_steps=constraint_total_steps
-                )
-            
             if control_limit is not None:
                 limit = float(control_limit)
                 actions_final = np.clip(Ybar, -limit, limit)
@@ -1304,37 +689,42 @@ class EDOCPlanner:
             diffusion_actions_traj_arr = jnp.asarray(np.array(Ybar_history[::-1], dtype=np.float32))
             diffusion_samples_traj_arr = jnp.asarray(np.array(Ysamples_history[::-1], dtype=np.float32))
 
-        # JAX rollout for final trajectory (GPU/JIT-friendly).
-        # We intentionally skip env.step/info/terms here for speed; experiments mainly use states/energies/rewards.
-        actions_jnp_final = jnp.asarray(actions_np_final, dtype=jnp.float32)
-        reward_cost_fn = getattr(self.env, "jax_cost", None)
+        x = np.array(x0, dtype=np.float32)
+        xs = [x]
+        rewards = []
+        energies = []
+        terms = []
+        info_curr = info
 
-        def rollout_final(state0, actions_seq):
-            def body(s, inputs):
-                t, u = inputs
-                ctx = {"t": t}
-                e_val = self.energy.compute(s, u, ctx)
-                s_next = self.jax_transition(s, u)
-                if reward_cost_fn is None:
-                    r = jnp.float32(0.0)
-                else:
-                    r = -reward_cost_fn(s_next)
-                return s_next, (s_next, e_val, r)
+        for t in range(horizon):
+            u = actions_np_final[t]
+            ctx = {"t": t, **info_curr}
+            E_val = self.energy.compute(x, u, ctx)
+            energies.append(E_val)
+            terms.append(self.energy.breakdown(x, u, ctx))
 
-            t_idx = jnp.arange(actions_seq.shape[0], dtype=jnp.int32)
-            _, (states_seq, energies_seq, rewards_seq) = jax.lax.scan(body, state0, (t_idx, actions_seq))
-            states_full = jnp.concatenate([state0[None, :], states_seq], axis=0)
-            return states_full, energies_seq, rewards_seq
+            x_pred = self.env.transition(x, u)
+            x_env, cost, done, info_next = self.env.step(
+                np.array(x_pred, dtype=np.float32),
+                np.array(u, dtype=np.float32),
+                t,
+                info_curr,
+            )
 
-        states_full, energies_arr, rewards_arr = jax.jit(rollout_final)(x0_jnp, actions_jnp_final)
+            rewards.append(-cost)
+            xs.append(x_env)
+            x = x_env
+            info_curr = info_next
+            if done:
+                break
 
         return {
-            "states": states_full,
-            "energies": energies_arr,
-            "terms": [],
-            "rewards": rewards_arr,
+            "states": jnp.stack(xs, axis=0),
+            "energies": jnp.stack(np.array(energies, dtype=np.float32), axis=0),
+            "terms": terms,
+            "rewards": jnp.stack(np.array(rewards, dtype=np.float32), axis=0),
             "actions": jnp.asarray(actions_np_final, dtype=jnp.float32),
-            "initial_state": states_full[0],
+            "initial_state": xs[0],
             "reward_history": reward_history_arr if reward_history_arr is not None else jnp.asarray([], dtype=jnp.float32),
             "diffusion_actions_traj": diffusion_actions_traj_arr if diffusion_actions_traj_arr is not None else jnp.asarray([], dtype=jnp.float32),
             "diffusion_sampled_actions": diffusion_samples_traj_arr if diffusion_samples_traj_arr is not None else jnp.asarray([], dtype=jnp.float32),
