@@ -7,10 +7,10 @@ linearizes the dynamics and solves a quadratic program at each iteration.
 
 from typing import Any, Dict, Optional
 
-from enerdynamics.core.solver_base import OptimizationSolver
+from enerdynamics.core.solvers import OptimizationSolver
 from enerdynamics.core.dynamics import DynamicsModel
 from enerdynamics.core.energy import EnergyFunctional
-from enerdynamics.core.backend import Backend
+from enerdynamics.core.backends import Backend
 from enerdynamics.core.types import State, Trajectory
 
 

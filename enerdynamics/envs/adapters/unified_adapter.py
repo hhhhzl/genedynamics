@@ -9,7 +9,7 @@ from typing import Optional, Any, Tuple
 import numpy as np
 
 from enerdynamics.core.types import State, Action
-from enerdynamics.core.backend import Backend
+from enerdynamics.core.backends import Backend
 
 
 class UnifiedEnvAdapter:

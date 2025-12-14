@@ -1,131 +1,21 @@
 """
-Dynamics model abstraction for the energy-driven control framework.
+Environment adapters for dynamics models.
 
-This module defines the DynamicsModel interface, which represents system dynamics
-that can be either:
-- True physics models (e.g., rigid body dynamics, double integrator)
-- Learned world models (e.g., neural network dynamics, flow matching models)
-
-All dynamics models must implement the step() method for single-step transitions,
-and can optionally implement rollout() for efficient batch rollouts.
-
-This module also provides adapters to convert environment objects to DynamicsModel
-for backward compatibility.
+This module provides adapters that bridge between environments and dynamics models:
+- EnvDynamicsAdapter: Wraps an environment to implement DynamicsModel
+- DynamicsToEnvAdapter: Converts a DynamicsModel to an environment-like object
 """
 
-from abc import ABC, abstractmethod
-from typing import Any, List, Optional
-
 import numpy as np
-import jax.numpy as jnp
 
-from enerdynamics.core.types import State, Action, Trajectory
+try:
+    import jax.numpy as jnp
+except ImportError:
+    jnp = None
 
+from enerdynamics.core.dynamics.base import DynamicsModel
+from enerdynamics.core.types import State, Action
 
-class DynamicsModel(ABC):
-    """
-    Abstract base class for system dynamics models.
-    
-    A dynamics model defines the transition function x_{t+1} = f(x_t, u_t).
-    This can represent:
-    - True physics (e.g., double integrator, quadrotor dynamics)
-    - Learned models (e.g., neural network world models, flow matching)
-    - Hybrid models (e.g., physics-informed neural networks)
-    
-    All solvers depend only on this interface, allowing easy swapping of
-    dynamics models without changing solver code.
-    """
-    
-    @abstractmethod
-    def step(self, x: State, u: Action) -> State:
-        """
-        Single-step dynamics transition: x_{t+1} = f(x_t, u_t).
-        
-        Args:
-            x: Current state
-            u: Control action
-            
-        Returns:
-            Next state x_{t+1}
-        """
-        pass
-    
-    def rollout(self, x0: State, actions: List[Action]) -> Trajectory:
-        """
-        Roll out a sequence of actions from initial state.
-        
-        This is a default implementation that calls step() repeatedly.
-        Subclasses can override this for more efficient batch rollouts
-        (e.g., using JAX vmap or parallel execution).
-        
-        Args:
-            x0: Initial state
-            actions: List of actions [u_0, u_1, ..., u_{T-1}]
-            
-        Returns:
-            Trajectory containing states and actions
-        """
-        states = [x0]
-        for u in actions:
-            x_next = self.step(states[-1], u)
-            states.append(x_next)
-        
-        return Trajectory(states=states, actions=actions)
-    
-    def rollout_batch(self, x0_batch: List[State], actions_batch: List[List[Action]]) -> List[Trajectory]:
-        """
-        Roll out multiple trajectories in parallel (optional).
-        
-        Default implementation processes sequentially. Backends with
-        vectorization support (JAX, PyTorch) can override for efficiency.
-        
-        Args:
-            x0_batch: List of initial states
-            actions_batch: List of action sequences
-            
-        Returns:
-            List of trajectories
-        """
-        return [self.rollout(x0, actions) for x0, actions in zip(x0_batch, actions_batch)]
-
-
-class DeterministicDynamicsModel(DynamicsModel):
-    """
-    Base class for deterministic dynamics models.
-    
-    This is a convenience class for models that don't have stochasticity.
-    Most physics models fall into this category.
-    """
-    pass
-
-
-class StochasticDynamicsModel(DynamicsModel):
-    """
-    Base class for stochastic dynamics models.
-    
-    For models with process noise: x_{t+1} = f(x_t, u_t) + w_t
-    where w_t is random noise.
-    """
-    
-    @abstractmethod
-    def step(self, x: State, u: Action, rng_key: Optional[Any] = None) -> State:
-        """
-        Single-step stochastic dynamics transition.
-        
-        Args:
-            x: Current state
-            u: Control action
-            rng_key: Random key/seed for noise generation
-            
-        Returns:
-            Next state (with noise)
-        """
-        pass
-
-
-# ============================================================================
-# Environment Adapters
-# ============================================================================
 
 class EnvDynamicsAdapter(DynamicsModel):
     """
@@ -155,10 +45,10 @@ class EnvDynamicsAdapter(DynamicsModel):
         Returns:
             Next state
         """
-        x_data = np.asarray(x, dtype=np.float32) if not isinstance(x, jnp.ndarray) else x
-        u_data = np.asarray(u, dtype=np.float32) if not isinstance(u, jnp.ndarray) else u
+        x_data = np.asarray(x, dtype=np.float32) if not (jnp and isinstance(x, jnp.ndarray)) else x
+        u_data = np.asarray(u, dtype=np.float32) if not (jnp and isinstance(u, jnp.ndarray)) else u
         
-        if isinstance(x_data, jnp.ndarray) or isinstance(u_data, jnp.ndarray):
+        if (jnp and (isinstance(x_data, jnp.ndarray) or isinstance(u_data, jnp.ndarray))):
             # Use JAX transition if available
             if hasattr(self.env, 'jax_model_transition'):
                 return self.env.jax_model_transition(x_data, u_data)
@@ -244,12 +134,15 @@ class DynamicsToEnvAdapter:
         if hasattr(self.dynamics, 'step'):
             next_state = self.dynamics.step(state, action)
             # Ensure result is JAX array
-            if isinstance(next_state, jnp.ndarray):
+            if jnp and isinstance(next_state, jnp.ndarray):
                 return next_state
             else:
                 # This should not happen in JIT context, but handle it for non-JIT calls
                 # Use jnp.asarray instead of np.asarray to avoid tracer conversion error
-                return jnp.asarray(next_state, dtype=jnp.float32)
+                if jnp:
+                    return jnp.asarray(next_state, dtype=jnp.float32)
+                else:
+                    return np.asarray(next_state, dtype=np.float32)
         
         raise ValueError(
             "Dynamics object must have 'jax_transition', 'jax_model_transition', or 'step' method"
@@ -279,4 +172,3 @@ class DynamicsToEnvAdapter:
     def cost(self, state):
         """Cost function (placeholder, energy handles this)."""
         return 0.0
-

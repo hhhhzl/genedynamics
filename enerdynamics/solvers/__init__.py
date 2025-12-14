@@ -15,7 +15,7 @@ All solvers share the same interface:
     trajectory = solver.solve(x0, horizon)
 """
 
-from enerdynamics.core.solver_base import Solver, SamplingSolver, OptimizationSolver
+from enerdynamics.core.solvers import Solver, SamplingSolver, OptimizationSolver
 
 # Solver implementations
 from enerdynamics.solvers.edoc import (

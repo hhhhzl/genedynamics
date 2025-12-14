@@ -21,7 +21,7 @@ except ImportError:
     jnp = None
 
 from enerdynamics.core.types import State, Action
-from enerdynamics.core.backend import Backend
+from enerdynamics.core.backends import Backend
 from enerdynamics.core.backends.render import RenderBackend
 from enerdynamics.core.backends.physics import PhysicsBackend
 

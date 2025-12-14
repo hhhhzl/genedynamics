@@ -1,14 +1,22 @@
+"""
+Base integrator functions for numerical integration.
+
+Provides Langevin and Euler integration steps for optimization algorithms.
+"""
+
 import jax
 import jax.numpy as jnp
 from jax import Array
 
 
-def langevin_step(x: Array,
-                  grad: Array,
-                  metric_inv: Array,
-                  dt: float,
-                  noise_std: float = 0.0,
-                  rng_key: jax.random.PRNGKey = None) -> Array:
+def langevin_step(
+    x: Array,
+    grad: Array,
+    metric_inv: Array,
+    dt: float,
+    noise_std: float = 0.0,
+    rng_key: jax.random.PRNGKey = None
+) -> Array:
     """
     Single Langevin diffusion update (fully JAX-compatible).
 
@@ -35,10 +43,12 @@ def langevin_step(x: Array,
     return x_next
 
 
-def euler_step(x: Array,
-               grad: Array,
-               metric_inv: Array,
-               dt: float) -> Array:
-    """no noise version"""
+def euler_step(
+    x: Array,
+    grad: Array,
+    metric_inv: Array,
+    dt: float
+) -> Array:
+    """No noise version of Langevin step (deterministic gradient descent)."""
     drift = metric_inv @ grad
     return x - dt * drift

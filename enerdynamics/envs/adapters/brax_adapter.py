@@ -25,7 +25,7 @@ except ImportError:
     jnp = None
 
 from enerdynamics.core.types import State, Action
-from enerdynamics.core.backend import Backend, get_backend
+from enerdynamics.core.backends import Backend, get_backend
 from enerdynamics.envs.obstacles.base import ObstacleManager
 
 

@@ -14,10 +14,10 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from enerdynamics.core.solver_base import SamplingSolver
+from enerdynamics.core.solvers import SamplingSolver
 from enerdynamics.core.dynamics import DynamicsModel, DynamicsToEnvAdapter
 from enerdynamics.core.energy import EnergyFunctional, LegacyEnergyFunctional
-from enerdynamics.core.backend import Backend, JaxBackend
+from enerdynamics.core.backends import Backend, JaxBackend
 from enerdynamics.core.types import State, Action, Trajectory
 from enerdynamics.solvers.edoc import EnergyToLegacyAdapter
 

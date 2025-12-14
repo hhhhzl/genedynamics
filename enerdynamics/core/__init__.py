@@ -16,7 +16,7 @@ easy swapping of implementations and backends.
 from enerdynamics.core.types import State, Action, Trajectory, StateType, ActionType, TrajectoryType
 
 # Backend abstraction
-from enerdynamics.core.backend import (
+from enerdynamics.core.backends import (
     Backend,
     JaxBackend,
     NumpyBackend,
@@ -42,14 +42,16 @@ from enerdynamics.core.energy import (
 )
 
 # Solver base classes
-from enerdynamics.core.solver_base import (
+from enerdynamics.core.solvers import (
     Solver,
     SamplingSolver,
     OptimizationSolver,
 )
 
 # Legacy utilities (for backward compatibility)
-from enerdynamics.core.constraints import project_box, soft_box_energy
+# Note: project_box and soft_box_energy are now in constraints.base for backward compatibility
+# New code should use enerdynamics.core.constraints for the full constraint system
+from enerdynamics.core.constraints.base import project_box, soft_box_energy
 from enerdynamics.core.metrics import euclidean_metric_inv
 from enerdynamics.core.integrators import langevin_step, euler_step
 

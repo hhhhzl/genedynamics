@@ -285,4 +285,3 @@ def get_backend(name: str = "jax") -> Backend:
         )
     
     return backends[name]()
-

@@ -17,13 +17,13 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from enerdynamics.core.solver_base import SamplingSolver
+from enerdynamics.core.solvers import SamplingSolver
 from enerdynamics.core.dynamics import DynamicsModel, DynamicsToEnvAdapter, EnvDynamicsAdapter
 from enerdynamics.core.energy import EnergyFunctional, LegacyEnergyFunctional
-from enerdynamics.core.backend import Backend, JaxBackend
+from enerdynamics.core.backends import Backend, JaxBackend
 from enerdynamics.core.types import State, Action, Trajectory
 from enerdynamics.core.metrics import euclidean_metric_inv
-from enerdynamics.core.constraints import project_box
+from enerdynamics.core.constraints.base import project_box
 from enerdynamics.core.integrators import langevin_step
 from enerdynamics.envs.factories import make_env, make_energy
 

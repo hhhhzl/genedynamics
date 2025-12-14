@@ -17,7 +17,7 @@ class TestComputationalBackends:
     
     def test_numpy_backend(self):
         """Test NumPy backend."""
-        from enerdynamics.core.backend import NumpyBackend
+        from enerdynamics.core.backends import NumpyBackend
         
         backend = NumpyBackend()
         assert backend.name == "numpy"
@@ -34,7 +34,7 @@ class TestComputationalBackends:
     def test_jax_backend(self):
         """Test JAX backend."""
         try:
-            from enerdynamics.core.backend import JaxBackend
+            from enerdynamics.core.backends import JaxBackend
             import jax.numpy as jnp
             
             backend = JaxBackend()

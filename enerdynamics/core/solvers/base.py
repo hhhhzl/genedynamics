@@ -1,7 +1,7 @@
 """
-Solver base class for the energy-driven control framework.
+Base solver classes for trajectory optimization.
 
-This module defines the Solver abstract interface, which represents any
+This module defines the abstract Solver interface, which represents any
 algorithm that can solve the energy minimization problem:
     minimize E(trajectory) subject to dynamics constraints
 
@@ -22,7 +22,7 @@ from typing import Any, Dict, Optional
 from enerdynamics.core.types import State, Trajectory
 from enerdynamics.core.dynamics import DynamicsModel
 from enerdynamics.core.energy import EnergyFunctional
-from enerdynamics.core.backend import Backend
+from enerdynamics.core.backends import Backend
 
 
 class Solver(ABC):
@@ -218,4 +218,3 @@ class OptimizationSolver(Solver):
     ) -> Trajectory:
         """Solve by calling optimize()."""
         return self.optimize(x0, horizon, **kwargs)
-
