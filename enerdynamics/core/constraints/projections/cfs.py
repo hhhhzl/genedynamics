@@ -587,6 +587,7 @@ class CFSProjection(FeasibilityOperator):
         With identity Hessian, the optimum lies on an intersection of up to 'dim' active constraints.
         We enumerate candidate active sets up to dimension 2/3 (works well for 2D planning).
         """
+        print(f"Solving projection QP with x0 shape {x0.shape}, A shape {A.shape}, b shape {b.shape}")
         x0 = np.asarray(x0, dtype=np.float32).flatten()
         A = np.asarray(A, dtype=np.float32)
         b = np.asarray(b, dtype=np.float32).flatten()

@@ -42,7 +42,6 @@ from enerdynamics.core.constraints import (
     ObstacleSoftConstraint,
     ObstacleHardConstraint,
     CFSProjection,
-    CBFDoubleIntegrator2DActionFilter,
     ConstraintScheduleManager,
 )
 from enerdynamics.core.types import Trajectory, State, Action
@@ -57,7 +56,7 @@ from enerdynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
 EDOC_COLOR = "#1f77b4"  # Blue
 OBSTACLE_COLOR = "gray"
 OBSTACLE_ALPHA = 0.5
-DIFFUSION_FRACTIONS = (0.1, 0.5, 0.90)  # 90%, 50%, 10%
+DIFFUSION_FRACTIONS = (0.1, 0.5, 0.9)  # 90%, 50%, 10%
 MAX_SAMPLE_TRAJ_PLOT = 80
 ROBOT_RADIUS = 0.05  # Robot radius for collision checking and visualization
 MIN_OBSTACLE_MARGIN = 4 * ROBOT_RADIUS  # Minimum margin between obstacles
@@ -1023,31 +1022,35 @@ def run_single_experiment(
         if hard_constraint is not None:
             hard_constraint.schedule_manager = schedule_manager
 
-    # Create action-space hard filter (CBF-style) (only for level > 0)
-    action_filter_op = None
+    # Create feasibility operator (CFS-QP) (only for level > 0)
+    feasibility_op = None
+    cfs_enabled = False
     if level > 0:
-        action_filter_op = CBFDoubleIntegrator2DActionFilter(
+        feasibility_op = CFSProjection(
             obstacles=obstacles,
-            robot_radius=ROBOT_RADIUS,
-            dt=env.dt,
-            tau=0.05,
-            k0=1.0,
-            k1=4.0,
             schedule_manager=schedule_manager,
+            use_late_stage_only=True,
+            late_stage_ratio=0.0,
+            use_trajectory_qp=True,
+            smoothness_weight=0.0,
+            reconstruct_velocity=True,
+            velocity_dt=env.dt,
+            max_iterations=18,
         )
-    action_filter_enabled = action_filter_op is not None
+        cfs_enabled = True
 
     # Create constraint manager
     soft_constraints_list = [soft_constraint] if soft_constraint is not None else []
     hard_constraints_list = []
-    # Obstacle avoidance is enforced by the action-space filter; keep hard obstacle constraint optional.
+    if hard_constraint is not None:
+        hard_constraints_list.append(hard_constraint)
     hard_constraints_list.append(accel_constraint)
 
     constraint_manager = ConstraintManager(
         soft_constraints=soft_constraints_list,
         hard_constraints=hard_constraints_list,
-        feasibility_operator=None,
-        action_filter_operator=action_filter_op if level > 0 else None,
+        feasibility_operator=feasibility_op if level > 0 else None,
+        action_filter_operator=None,
         schedule_manager=schedule_manager if level > 0 else None
     )
 
@@ -1127,7 +1130,7 @@ def run_single_experiment(
         'task_success': ssr_metrics['task_success'],
         'distance_to_target': float(ssr_metrics['distance_to_target']),
         'planning_time': float(planning_time),
-        'action_filter_enabled': bool(action_filter_enabled),
+        'cfs_enabled': bool(cfs_enabled),
         'trajectory': {
             'states': [s.tolist() for s in states_list],
             'actions': [a.tolist() for a in actions_list],
@@ -1155,8 +1158,8 @@ def run_single_experiment(
         Ndiffuse = diffusion_actions.shape[0]
 
         for ax, frac in zip(axes_diff, DIFFUSION_FRACTIONS):
-            step_idx = int((1.0 - frac) * (Ndiffuse - 1))  # Convert to reverse diffusion index
-            step_idx = max(0, min(step_idx, Ndiffuse - 1))
+            step_idx = int((1.0 - frac) * (Ndiffuse))  # Convert to reverse diffusion index
+            step_idx = max(0, min(step_idx, Ndiffuse))
 
             action_seq = diffusion_actions[step_idx]
             sample_acts = None
@@ -1170,7 +1173,7 @@ def run_single_experiment(
                 feasible_set_trajectory=None,
                 clearance=0.0,
                 robot_radius=ROBOT_RADIUS,
-                title=f"Diffusion {step_idx}%"
+                title=f"Diffusion {int(frac * 100)}%"
             )
     else:
         # Fallback: show final trajectory 3 times
@@ -1356,7 +1359,7 @@ if __name__ == "__main__":
         # Single experiment
         output_dir = Path(args.output_dir)
         edoc_config = {
-            'dt': 0.07,
+            'dt': 0.05,
             'horizon': 64,
             'action_diffuse_steps': 100,
             'action_nsample': 64,

@@ -252,6 +252,11 @@ class EDOCPlanner:
         mode = self.action_score_mode.lower()
         if mode == "learned":
             return
+        # If we have a state-space feasibility operator (e.g., CFSProjection), we must run
+        # the Python diffusion loop to apply per-step projection + tracking. Keep JIT for the
+        # fast action-filter path only.
+        if self.constraint_manager is not None and getattr(self.constraint_manager, "feasibility_operator", None) is not None:
+            return
         if mode == "reward" and self._batch_reward_mean_fn is None:
             return
         if mode == "energy" and self._batch_rollout_energy_fn is None:
@@ -404,10 +409,10 @@ class EDOCPlanner:
                     else:
                         Y0s = jnp.concatenate([Y_pos, Y_neg], axis=0)
                 else:
-                eps = jax.random.normal(
-                    noise_key, (num_particles, horizon, action_dim), dtype=jnp.float32
-                )
-                Y0s = eps * sigma_i + Ybar_curr
+                    eps = jax.random.normal(
+                        noise_key, (num_particles, horizon, action_dim), dtype=jnp.float32
+                    )
+                    Y0s = eps * sigma_i + Ybar_curr
 
                 if clip_actions:
                     Y0s = jnp.clip(Y0s, -control_limit, control_limit)
@@ -1031,7 +1036,15 @@ class EDOCPlanner:
                 sa = []
                 sb = []
                 for idx in range(Ndiffuse):
-                    step_k = idx - 1 if idx > 0 else 0
+                    # Map diffusion index (idx) to schedule step in reverse_mode:
+                    # diffusion runs i = Ndiffuse-1 (most noisy) -> 1 (most clean)
+                    # schedule expects step = 0 (most noisy) -> total_steps (most clean)
+                    # so: step_k = (Ndiffuse - 1) - idx, clamped to [0, total_steps]
+                    step_k = int((Ndiffuse - 1) - idx)
+                    if step_k < 0:
+                        step_k = 0
+                    if step_k > total_steps:
+                        step_k = total_steps
                     if hard_filter_exists:
                         he.append(bool(sched.is_hard_active(step_k, total_steps)))
                         hc.append(float(sched.get_hard_clearance(default=0.0, step=step_k, total_steps=total_steps)))
@@ -1107,7 +1120,7 @@ class EDOCPlanner:
                 samples_jnp = Ysamples_hist[::-1]
                 actions_jnp = Ybar
             else:
-            rng, diffuse_key = jax.random.split(rng)
+                rng, diffuse_key = jax.random.split(rng)
                 _, actions_jnp, reward_hist_jnp, traj_jnp, samples_jnp = self._reverse_diffuse_jit(
                     diffuse_key,
                     x0_jnp,
@@ -1197,7 +1210,7 @@ class EDOCPlanner:
                 # Convert diffusion index to constraint step
                 # i goes from Ndiffuse-1 (initial noise) to 1 (near final)
                 # For reverse_mode constraint scheduling: step=0 is initial, step=total_steps is final
-                constraint_step = i - 1 if i > 1 else 0  # Map i to constraint step range
+                constraint_step = (Ndiffuse - 1) - i  # i=Ndiffuse-1 -> 0, i=1 -> Ndiffuse-2
                 constraint_total_steps = Ndiffuse - 2  # Total steps for constraints
                 
                 use_uniform = i >= stage_switch and self.action_score_mode != "learned"
@@ -1274,9 +1287,32 @@ class EDOCPlanner:
                 Ybar = Yim1 / np.sqrt(alphas_bar[i - 1])
                 Ybar = self._add_extra_noise(Ybar, extra_sigmas[i])
                 
-                # Note: hard constraints are now intended to be enforced as an action-space
-                # safety filter inside the rollout/score functions (JAX-jitted). We avoid
-                # expensive Python-side state projection + tracking here for performance.
+                # ===== Apply hard constraint projection (state-space feasibility operator, e.g., CFS) =====
+                if self.constraint_manager and self.constraint_manager.has_hard():
+                    trajectory = self._actions_to_trajectory(x0, Ybar)
+                    projected_trajectory = self.constraint_manager.project_hard(
+                        trajectory,
+                        step=constraint_step,
+                        total_steps=constraint_total_steps,
+                    )
+
+                    # If projection edits states, map back to actions (tracking).
+                    states_changed = True
+                    try:
+                        traj_states = np.asarray(trajectory.states, dtype=np.float32)
+                        proj_states = np.asarray(projected_trajectory.states, dtype=np.float32)
+                        if traj_states.shape == proj_states.shape:
+                            max_delta = float(np.max(np.linalg.norm(traj_states - proj_states, axis=-1)))
+                            states_changed = max_delta > 1e-6
+                    except Exception:
+                        states_changed = True
+
+                    if states_changed:
+                        Ybar = self._track_actions_to_projected_states(
+                            x0, Ybar, projected_trajectory.states
+                        )
+                    else:
+                        Ybar = self._extract_actions_from_trajectory(projected_trajectory)
 
                 if control_limit is not None:
                     limit = float(control_limit)
@@ -1287,10 +1323,13 @@ class EDOCPlanner:
                     Ysamples_history.append(np.array(Y0s, copy=True))
 
             # Final hard constraint projection (step 0, final state)
-            # Apply action-space hard filter once to the final action sequence (if configured)
-            if self.constraint_manager and self.constraint_manager.action_filter_operator is not None:
-                Ybar = self.constraint_manager.filter_actions(
-                    x0, Ybar, step=0, total_steps=constraint_total_steps
+            if self.constraint_manager and self.constraint_manager.has_hard():
+                trajectory = self._actions_to_trajectory(x0, Ybar)
+                projected_trajectory = self.constraint_manager.project_hard(
+                    trajectory, step=0, total_steps=constraint_total_steps
+                )
+                Ybar = self._track_actions_to_projected_states(
+                    x0, Ybar, projected_trajectory.states
                 )
             
             if control_limit is not None:
