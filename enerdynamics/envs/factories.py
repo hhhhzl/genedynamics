@@ -32,6 +32,9 @@ def make_env(name: str, **kwargs):
     elif name == "double_integrator_box_2d":
         from enerdynamics.envs.double_integrator_box_2d import DoubleIntegratorBox2DEnv
         return DoubleIntegratorBox2DEnv(**kwargs)
+    elif name == "single_integrator_box_2d":
+        from enerdynamics.envs.single_integrator_box_2d import SingleIntegratorBox2DEnv
+        return SingleIntegratorBox2DEnv(**kwargs)
     else:
         raise ValueError(f"Unknown environment name: {name}")
 
@@ -101,6 +104,21 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
             pos_violate = jnp.maximum(0.0, jnp.abs(x[:2]) - p_max)
             vel_violate = jnp.maximum(0.0, jnp.abs(x[2:]) - v_max)
             pen = jnp.sum(pos_violate ** 2 + vel_violate ** 2)
+            return pen
+
+        return LegacyEnergyFunctional({
+            "task": EnergyTerm(task_energy, 2.0),
+            "box": EnergyTerm(box_energy, 1.0),
+        })
+    elif env_name == "single_integrator_box_2d":
+        def task_energy(x, u, ctx):
+            pos = x[:2]
+            return jnp.sum((pos - jnp.array([0.0, 0.0], dtype=jnp.float32)) ** 2)
+
+        def box_energy(x, u, ctx):
+            p_max = 2.0
+            pos_violate = jnp.maximum(0.0, jnp.abs(x[:2]) - p_max)
+            pen = jnp.sum(pos_violate ** 2)
             return pen
 
         return LegacyEnergyFunctional({

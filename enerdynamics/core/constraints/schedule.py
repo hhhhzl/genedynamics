@@ -325,15 +325,19 @@ class ConstraintScheduleManager:
     
     def _convert_step(self, step: Optional[int], total_steps: Optional[int]) -> Optional[int]:
         """
-        Convert step from reverse mode to forward mode (internal schedule convention).
-        
-        Internal schedules always use forward mode:
-        - step=0: final state (clean)
-        - step=total_steps: initial noise
-        
-        If reverse_mode=True, we need to convert:
-        - Input step=0 (initial noise) → Forward step=total_steps
-        - Input step=total_steps (final) → Forward step=0
+        Convert step between indexing modes.
+
+        IMPORTANT:
+        - Schedules in this codebase are defined in the *same* indexing convention that
+          users supply to `get_*` methods.
+        - Therefore, we do NOT remap `step` internally.
+
+        The two supported conventions are:
+        - Forward mode (reverse_mode=False): step=0 is final/clean, step=total_steps is initial/noisy
+        - Reverse mode (reverse_mode=True): step=0 is initial/noisy, step=total_steps is final/clean
+
+        It is the caller's responsibility to pass `step` in the intended convention.
+        EDOC's diffusion loop typically uses reverse mode (step increases from noisy → clean).
         
         Args:
             step: Step in user's convention
@@ -342,16 +346,7 @@ class ConstraintScheduleManager:
         Returns:
             Converted step for internal schedule (forward mode)
         """
-        if not self.reverse_mode:
-            return step
-        
-        # Reverse mode: convert to forward
-        if step is None or total_steps is None or total_steps == 0:
-            return step
-        
-        # Reverse: step=0 → initial noise → forward: step=total_steps
-        # Reverse: step=total_steps → final → forward: step=0
-        return total_steps - step
+        return step
     
     def get_soft_alpha(
         self, 
