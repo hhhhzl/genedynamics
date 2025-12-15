@@ -897,49 +897,49 @@ class CFSProjection(FeasibilityOperator):
             
             return jnp.stack(sdf_rows, axis=0)  # (M, N)
         
-            # Build gradient function for individual obstacles
-            def grad_single(point: jnp.ndarray, obs_idx: int) -> jnp.ndarray:
-                """
-                Compute gradient for a single obstacle at a single point.
-                
-                Args:
-                    point: Shape (dim,)
-                    obs_idx: Index of obstacle
-                    
-                Returns:
-                    Gradient, shape (dim,)
-                """
-                obs = obstacles_list[obs_idx]
-                
-                # All obstacles are guaranteed to have jax_sdf at this point
-                if hasattr(obs, "jax_gradient"):
-                    grad = obs.jax_gradient(point)
-                else:
-                    # Use finite differences with JAX (pure JAX implementation)
-                    grad = _finite_difference_gradient_jax(obs, point)
-                
-                return jnp.asarray(grad, dtype=jnp.float32).flatten()
+        # Build gradient function for individual obstacles
+        def grad_single(point: jnp.ndarray, obs_idx: int) -> jnp.ndarray:
+            """
+            Compute gradient for a single obstacle at a single point.
             
-            # Create a function that computes gradients for multiple obstacles
-            def grad_multiple(point: jnp.ndarray, obs_indices: jnp.ndarray) -> jnp.ndarray:
-                """
-                Compute gradients for multiple obstacles at a single point.
+            Args:
+                point: Shape (dim,)
+                obs_idx: Index of obstacle
                 
-                Args:
-                    point: Shape (dim,)
-                    obs_indices: Indices of obstacles, shape (k,)
-                    
-                Returns:
-                    Gradients, shape (k, dim)
-                """
-                # Use JAX-compatible indexing (cannot use NumPy in JIT function)
-                num_indices = obs_indices.shape[0]
-                grads = []
-                for i in range(num_indices):
-                    idx = int(obs_indices[i])  # Convert JAX array element to Python int
-                    grad = grad_single(point, idx)
-                    grads.append(grad)
-                return jnp.stack(grads, axis=0) if grads else jnp.zeros((0, point.shape[0]), dtype=jnp.float32)
+            Returns:
+                Gradient, shape (dim,)
+            """
+            obs = obstacles_list[obs_idx]
+            
+            # All obstacles are guaranteed to have jax_sdf at this point
+            if hasattr(obs, "jax_gradient"):
+                grad = obs.jax_gradient(point)
+            else:
+                # Use finite differences with JAX (pure JAX implementation)
+                grad = _finite_difference_gradient_jax(obs, point)
+            
+            return jnp.asarray(grad, dtype=jnp.float32).flatten()
+        
+        # Create a function that computes gradients for multiple obstacles
+        def grad_multiple(point: jnp.ndarray, obs_indices: jnp.ndarray) -> jnp.ndarray:
+            """
+            Compute gradients for multiple obstacles at a single point.
+            
+            Args:
+                point: Shape (dim,)
+                obs_indices: Indices of obstacles, shape (k,)
+                
+            Returns:
+                Gradients, shape (k, dim)
+            """
+            # Use JAX-compatible indexing (cannot use NumPy in JIT function)
+            num_indices = obs_indices.shape[0]
+            grads = []
+            for i in range(num_indices):
+                idx = int(obs_indices[i])  # Convert JAX array element to Python int
+                grad = grad_single(point, idx)
+                grads.append(grad)
+            return jnp.stack(grads, axis=0) if grads else jnp.zeros((0, point.shape[0]), dtype=jnp.float32)
         
         return sdf_batch, grad_multiple
 
