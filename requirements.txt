@@ -13,6 +13,7 @@ pandas>=2.2.0
 
 # Optional autodiff (JAX)
 jax==0.4.35
+jaxopt==0.8.5
 
 # Optional environments
 gymnasium>=0.29.1

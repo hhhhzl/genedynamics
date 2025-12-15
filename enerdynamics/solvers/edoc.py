@@ -61,10 +61,11 @@ class EDOCPlanner:
         diffusion_mode: str = "reverse",
         action_diffuse_steps: int = 100,
         action_beta0: float = 1e-4,
-        action_betaT: float = 1e-2,
-        action_temp: float = 0.1,
+        action_betaT: float = 1e-1,
+        action_temp: float = 0.5,
         action_extra_sigma: float = 0.0,
-        action_stage_ratio: float = 0.5,
+        # NOTE: action_stage_ratio is deprecated; EDOC now uses guided scoring at all steps.
+        action_stage_ratio: float = 0.8,
         action_score_mode: str = "reward",
         action_nsample: int = 256,
         use_antithetic: bool = False,
@@ -78,6 +79,8 @@ class EDOCPlanner:
         constraint_manager: Optional[ConstraintManager] = None,
         lambda_energy: float = 1.0,  # Energy scaling in E_soft = (1/λ)J + S
         use_constraint_in_scoring: bool = True,  # Include soft constraints in scoring
+        # ===== Terminal cost (for energy-mode) =====
+        terminal_energy_weight: float = 0.0,
     ):
         if action_score_mode not in {"reward", "energy", "learned"}:
             raise ValueError(f"Unknown action_score_mode {action_score_mode}")
@@ -98,6 +101,7 @@ class EDOCPlanner:
         self.action_betaT = action_betaT
         self.action_temp = action_temp
         self.action_extra_sigma = action_extra_sigma
+        # Deprecated (kept for backward compatibility)
         self.action_stage_ratio = np.clip(action_stage_ratio, 0.0, 1.0)
         self.action_score_mode = action_score_mode
         self.action_nsample = max(1, int(action_nsample))
@@ -110,6 +114,7 @@ class EDOCPlanner:
         self.constraint_manager = constraint_manager
         self.lambda_energy = float(lambda_energy) if lambda_energy > 0 else 1.0
         self.use_constraint_in_scoring = bool(use_constraint_in_scoring)
+        self.terminal_energy_weight = float(max(0.0, terminal_energy_weight))
         self._rollout_states_energy_fn = None
         self._rollout_env_states_fn = None
         self._rollout_energy_fn = None
@@ -202,6 +207,11 @@ class EDOCPlanner:
             def total_energy(state, actions, hard_clearance, hard_enabled):
                 states_full, energy_seq = rollout_states_and_energy(state, actions, hard_clearance, hard_enabled)
                 total = jnp.sum(energy_seq)
+                if self.terminal_energy_weight > 0.0:
+                    # Add an explicit terminal energy on the final reached state s_T.
+                    u0 = jnp.zeros((self.env.act_dim,), dtype=jnp.float32)
+                    ctxT = {"t": jnp.int32(horizon)}
+                    total = total + (jnp.float32(self.terminal_energy_weight) * energy_fn.compute(states_full[-1], u0, ctxT))
                 if dyn_coeff > 0.0:
                     env_states_full = rollout_env_states(state, actions, hard_clearance, hard_enabled)
                     if dyn_mode == "terminal":
@@ -252,11 +262,25 @@ class EDOCPlanner:
         mode = self.action_score_mode.lower()
         if mode == "learned":
             return
-        # If we have a state-space feasibility operator (e.g., CFSProjection), we must run
-        # the Python diffusion loop to apply per-step projection + tracking. Keep JIT for the
-        # fast action-filter path only.
-        if self.constraint_manager is not None and getattr(self.constraint_manager, "feasibility_operator", None) is not None:
-            return
+        # Check if we have a state-space feasibility operator (e.g., CFSProjection)
+        # If it has a JAX version, we can use it in the JIT loop; otherwise fall back to Python loop.
+        self._jax_cfs_projector = None
+        if self.constraint_manager is not None:
+            feasibility_op = getattr(self.constraint_manager, "feasibility_operator", None)
+            if feasibility_op is not None:
+                # Try to get JAX version of the projector
+                if hasattr(feasibility_op, "make_jax_projector"):
+                    try:
+                        self._jax_cfs_projector = feasibility_op.make_jax_projector()
+                        if self._jax_cfs_projector is None:
+                            # JAX projector not available, fall back to Python loop
+                            return
+                    except Exception:
+                        # Failed to create JAX projector, fall back to Python loop
+                        return
+                else:
+                    # No JAX support, must use Python loop
+                    return
         if mode == "reward" and self._batch_reward_mean_fn is None:
             return
         if mode == "energy" and self._batch_rollout_energy_fn is None:
@@ -277,7 +301,6 @@ class EDOCPlanner:
         beta0 = float(self.action_beta0)
         betaT = float(self.action_betaT)
         extra_sigma0 = float(self.action_extra_sigma)
-        stage_switch = max(1, int(self.action_stage_ratio * (Ndiffuse - 1)))
 
         control_limit = getattr(self.env, "control_limit", None)
         clip_actions = control_limit is not None
@@ -303,14 +326,8 @@ class EDOCPlanner:
         sigmas = jnp.sqrt(1.0 - alphas_bar)
         extra_sigmas = jnp.linspace(extra_sigma0, 0.0, Ndiffuse, dtype=jnp.float32)
         diffusion_indices = jnp.arange(Ndiffuse - 1, 0, -1, dtype=jnp.int32)
-        stage_switch_val = jnp.int32(stage_switch)
         temp_val = jnp.float32(temp)
-        num_particles_f = jnp.array(num_particles, dtype=jnp.float32)
-        uniform_logw = jnp.full(
-            (num_particles,),
-            -jnp.log(num_particles_f),
-            dtype=jnp.float32,
-        )
+        # Always-guided scoring: no uniform stage.
 
         # Optional JAX soft obstacle penalty (MDOC-style, using SDFTexture2D if available)
         use_soft_jax = (
@@ -366,6 +383,123 @@ class EDOCPlanner:
 
         lambda_energy = jnp.float32(self.lambda_energy)
 
+        # JAX version of tracking projected states back to actions
+        # This is used when CFS projection modifies states
+        # Capture variables from outer scope (important for JIT compilation)
+        jac_model_u_fn = self._jac_model_u_fn
+        jax_model_transition = self.jax_model_transition
+        jax_action_filter = self._jax_action_filter
+        jax_cfs_projector = self._jax_cfs_projector  # Capture CFS projector for JIT
+        jax_transition = self.jax_transition  # Capture for use in body function
+        
+        # Get env_transition_fn for rollout (use the one from __init__ if available)
+        # Otherwise create a new one
+        if hasattr(self, "_rollout_env_states_fn") and self._rollout_env_states_fn is not None:
+            # Use existing rollout function
+            rollout_env_states_fn = self._rollout_env_states_fn
+        else:
+            # Create a simple rollout function
+            if hasattr(self.env, "jax_env_transition"):
+                env_transition_fn_local = jax.jit(self.env.jax_env_transition)
+            else:
+                env_transition_fn_local = jax_model_transition
+            
+            def rollout_env_states_simple(state, actions, hard_clearance, hard_enabled):
+                def body(carry, act):
+                    s = carry
+                    act_safe = act
+                    if jax_action_filter is not None:
+                        act_safe = jax_action_filter(s, act, hard_clearance, hard_enabled)
+                    s_next = env_transition_fn_local(s, act_safe)
+                    return s_next, s_next
+                
+                _, states_seq = jax.lax.scan(body, state, actions)
+                states_full = jnp.concatenate([state[None, :], states_seq], axis=0)
+                return states_full
+            
+            rollout_env_states_fn = rollout_env_states_simple
+        
+        def track_projected_states_jax(state_init, actions_init, projected_positions, gn_iters=2, reg=1e-3):
+            """
+            Map projected positions back to actions using Gauss-Newton tracking.
+            
+            Args:
+                state_init: Initial state, shape (state_dim,)
+                actions_init: Initial actions, shape (horizon, act_dim)
+                projected_positions: Projected positions, shape (horizon+1, 2)
+                gn_iters: Number of Gauss-Newton iterations
+                reg: Regularization for tracking
+            
+            Returns:
+                Updated actions, shape (horizon, act_dim)
+            """
+            if jac_model_u_fn is None:
+                return actions_init
+            
+            actions = actions_init
+            x = state_init
+            horizon_act = actions.shape[0]
+            
+            for t in range(horizon_act):
+                if t + 1 >= projected_positions.shape[0]:
+                    break
+                
+                u = actions[t]
+                x_tgt = projected_positions[t + 1]  # Target position (2D)
+                
+                # Extract position from full state if needed
+                state_dim = state_init.shape[0]
+                if state_dim >= 2:
+                    # Position is first 2 elements
+                    x_tgt_full = jnp.zeros_like(x)
+                    x_tgt_full = x_tgt_full.at[:2].set(x_tgt[:2])
+                else:
+                    x_tgt_full = x_tgt
+                
+                for _ in range(gn_iters):
+                    x_pred = jax_model_transition(x, u)
+                    
+                    # Extract position from predicted state
+                    if state_dim >= 2:
+                        x_pred_pos = x_pred[:2]
+                        x_tgt_pos = x_tgt_full[:2]
+                    else:
+                        x_pred_pos = x_pred
+                        x_tgt_pos = x_tgt_full
+                    
+                    # Compute error in position space
+                    pos_err = x_tgt_pos - x_pred_pos
+                    
+                    # Get Jacobian w.r.t. action
+                    B = jac_model_u_fn(x, u)  # (state_dim, act_dim)
+                    
+                    # Extract position rows from Jacobian
+                    if state_dim >= 2:
+                        B_pos = B[:2, :]  # (2, act_dim)
+                    else:
+                        B_pos = B
+                    
+                    # Gauss-Newton step: u <- u + (B^T B + reg I)^{-1} B^T (x_tgt - x_pred)
+                    Bt = jnp.swapaxes(B_pos, -2, -1)  # (act_dim, 2)
+                    act_dim_curr = actions.shape[1]
+                    H = Bt @ B_pos + reg * jnp.eye(act_dim_curr, dtype=jnp.float32)
+                    try:
+                        delta_u = jnp.linalg.solve(H, Bt @ pos_err)
+                    except Exception:
+                        # Fallback if solve fails
+                        delta_u = jnp.zeros((act_dim_curr,), dtype=jnp.float32)
+                    
+                    u = u + delta_u
+                    
+                    # Clip to control limits if needed
+                    if clip_actions:
+                        u = jnp.clip(u, -control_limit, control_limit)
+                
+                actions = actions.at[t].set(u)
+                x = jax_model_transition(x, u)
+            
+            return actions
+
         def reverse_diffuse(
             rng_key,
             state_init,
@@ -417,8 +551,6 @@ class EDOCPlanner:
                 if clip_actions:
                     Y0s = jnp.clip(Y0s, -control_limit, control_limit)
 
-                use_uniform = idx >= stage_switch_val
-
                 def score_branch(actions):
                     raw_scores = score_fn(state_init, actions, hard_clearance, hard_enabled)
                     scores = transform_scores(raw_scores)
@@ -432,9 +564,9 @@ class EDOCPlanner:
                             def p_body(s, act):
                                 # Keep penalty consistent with rollout: apply action filter if enabled.
                                 act_safe = act
-                                if self._jax_action_filter is not None:
-                                    act_safe = self._jax_action_filter(s, act, hard_clearance, hard_enabled)
-                                s_next = self.jax_transition(s, act_safe)
+                                if jax_action_filter is not None:
+                                    act_safe = jax_action_filter(s, act, hard_clearance, hard_enabled)
+                                s_next = jax_transition(s, act_safe)
                                 p = s_next[0:2]
                                 sdf_val = soft_sampler(p)
                                 return s_next, jnp.exp(-beta * sdf_val)
@@ -452,12 +584,7 @@ class EDOCPlanner:
                     reward_val = jnp.mean(scores)
                     return logw, reward_val
 
-                logw, reward_val = jax.lax.cond(
-                    use_uniform,
-                    lambda _: (uniform_logw, jnp.nan),
-                    lambda acts: score_branch(acts),
-                    Y0s,
-                )
+                logw, reward_val = score_branch(Y0s)
                 weights = jax.nn.softmax(logw)
 
                 Ybar_weighted = jnp.tensordot(weights, Y0s, axes=([0], [0]))
@@ -483,6 +610,37 @@ class EDOCPlanner:
                     Ybar_next,
                 )
 
+                # Apply JAX CFS projection if available
+                # Use captured jax_cfs_projector instead of self._jax_cfs_projector (for JIT compatibility)
+                if jax_cfs_projector is not None:
+                    # Check if hard constraints are enabled for this step
+                    def apply_cfs_projection(y_actions):
+                        # Rollout states from actions using the rollout function
+                        states_full = rollout_env_states_fn(
+                            state_init, y_actions, hard_clearance, hard_enabled
+                        )  # (horizon+1, state_dim)
+                        
+                        # Extract positions (first 2 elements of state)
+                        positions = states_full[:, :2]  # (horizon+1, 2)
+                        
+                        # Apply CFS projection using captured projector
+                        projected_positions = jax_cfs_projector(positions, hard_clearance)
+                        
+                        # Track projected positions back to actions
+                        y_updated = track_projected_states_jax(
+                            state_init, y_actions, projected_positions
+                        )
+                        
+                        return y_updated
+                    
+                    # Only apply if hard constraints are enabled
+                    Ybar_next = jax.lax.cond(
+                        hard_enabled,
+                        apply_cfs_projection,
+                        lambda y_in: y_in,
+                        Ybar_next,
+                    )
+
                 return (rng_next, Ybar_next), (reward_val, Ybar_next, Y0s)
 
             (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist) = jax.lax.scan(
@@ -503,6 +661,9 @@ class EDOCPlanner:
         chunk_len = int(self._reverse_diffuse_chunk_len)
         if chunk_len < 1:
             chunk_len = 1
+        
+        # Capture additional variables for reverse_diffuse_chunk
+        use_antithetic_chunk = self.use_antithetic
 
         def reverse_diffuse_chunk(
             rng_key,
@@ -530,7 +691,7 @@ class EDOCPlanner:
                     hard_clearance = hard_clearance_by_idx[idx_]
                     hard_enabled = hard_enabled_by_idx[idx_]
 
-                    if self.use_antithetic and num_particles > 1:
+                    if use_antithetic_chunk and num_particles > 1:
                         half = num_particles // 2
                         has_extra = num_particles % 2
                         sample_count = half + has_extra
@@ -555,8 +716,6 @@ class EDOCPlanner:
                     if clip_actions:
                         Y0s_ = jnp.clip(Y0s_, -control_limit, control_limit)
 
-                    use_uniform = idx_ >= stage_switch_val
-
                     def score_branch(actions):
                         raw_scores = score_fn(state_init, actions, hard_clearance, hard_enabled)
                         scores = transform_scores(raw_scores)
@@ -567,9 +726,9 @@ class EDOCPlanner:
                             def one_penalty(action_seq):
                                 def p_body(s, act):
                                     act_safe = act
-                                    if self._jax_action_filter is not None:
-                                        act_safe = self._jax_action_filter(s, act, hard_clearance, hard_enabled)
-                                    s_next = self.jax_transition(s, act_safe)
+                                    if jax_action_filter is not None:
+                                        act_safe = jax_action_filter(s, act, hard_clearance, hard_enabled)
+                                    s_next = jax_transition(s, act_safe)
                                     p = s_next[0:2]
                                     sdf_val = soft_sampler(p)
                                     return s_next, jnp.exp(-beta * sdf_val)
@@ -587,12 +746,7 @@ class EDOCPlanner:
                         reward_val_ = jnp.mean(scores)
                         return logw, reward_val_
 
-                    logw, reward_val_ = jax.lax.cond(
-                        use_uniform,
-                        lambda _: (uniform_logw, jnp.nan),
-                        lambda acts: score_branch(acts),
-                        Y0s_,
-                    )
+                    logw, reward_val_ = score_branch(Y0s_)
                     weights = jax.nn.softmax(logw)
                     Ybar_weighted = jnp.tensordot(weights, Y0s_, axes=([0], [0]))
 
@@ -614,6 +768,26 @@ class EDOCPlanner:
                         lambda y_in: y_in,
                         Ybar_next,
                     )
+
+                    # Apply JAX CFS projection if available (same as in reverse_diffuse)
+                    if jax_cfs_projector is not None:
+                        def apply_cfs_projection_chunk(y_actions):
+                            states_full = rollout_env_states_fn(
+                                state_init, y_actions, hard_clearance, hard_enabled
+                            )
+                            positions = states_full[:, :2]
+                            projected_positions = jax_cfs_projector(positions, hard_clearance)
+                            y_updated = track_projected_states_jax(
+                                state_init, y_actions, projected_positions
+                            )
+                            return y_updated
+                        
+                        Ybar_next = jax.lax.cond(
+                            hard_enabled,
+                            apply_cfs_projection_chunk,
+                            lambda y_in: y_in,
+                            Ybar_next,
+                        )
 
                     return (rng_next, Ybar_next), (reward_val_, Ybar_next, Y0s_)
 
@@ -793,6 +967,10 @@ class EDOCPlanner:
             ctx = {"t": t, **info_curr}
             total_energy += float(self.energy.compute(x, u, ctx))
             x = self.env.transition(x, u)
+        if self.terminal_energy_weight > 0.0:
+            u0 = np.zeros((self.env.act_dim,), dtype=np.float32)
+            ctxT = {"t": int(len(np.asarray(actions)))}  # terminal index
+            total_energy += float(self.terminal_energy_weight) * float(self.energy.compute(x, u0, ctxT))
         return total_energy
 
     def _actions_to_trajectory(self, x0, actions):
@@ -1030,7 +1208,11 @@ class EDOCPlanner:
             if self.constraint_manager is not None and self.constraint_manager.schedule_manager is not None:
                 sched = self.constraint_manager.schedule_manager
                 total_steps = max(1, Ndiffuse - 2)
-                hard_filter_exists = self.constraint_manager.action_filter_operator is not None
+                # Check for any hard constraint operator (action filter OR feasibility operator like CFS)
+                hard_filter_exists = (
+                    (self.constraint_manager.action_filter_operator is not None) or
+                    (self.constraint_manager.feasibility_operator is not None)
+                )
                 hc = []
                 he = []
                 sa = []
@@ -1061,8 +1243,18 @@ class EDOCPlanner:
                 soft_beta_by_idx = jnp.asarray(np.asarray(sb, dtype=np.float32), dtype=jnp.float32)
             else:
                 # No schedule: enable hard filter if present, with clearance=0; soft uses defaults.
-                if self.constraint_manager is not None and self.constraint_manager.action_filter_operator is not None:
-                    hard_enabled_by_idx = jnp.ones((Ndiffuse,), dtype=jnp.bool_)
+                # Check for any hard constraint operator (action filter OR feasibility operator like CFS)
+                if self.constraint_manager is not None:
+                    has_hard = (
+                        (self.constraint_manager.action_filter_operator is not None) or
+                        (self.constraint_manager.feasibility_operator is not None)
+                    )
+                    if has_hard:
+                        hard_enabled_by_idx = jnp.ones((Ndiffuse,), dtype=jnp.bool_)
+                    else:
+                        hard_enabled_by_idx = jnp.zeros((Ndiffuse,), dtype=jnp.bool_)
+                else:
+                    hard_enabled_by_idx = jnp.zeros((Ndiffuse,), dtype=jnp.bool_)
                 soft_alpha_by_idx = jnp.full((Ndiffuse,), jnp.float32(soft_alpha_default), dtype=jnp.float32)
                 soft_beta_by_idx = jnp.full((Ndiffuse,), jnp.float32(soft_beta_default), dtype=jnp.float32)
 
@@ -1149,7 +1341,7 @@ class EDOCPlanner:
             reward_history = []
             Ybar_history = []
             Ysamples_history = []
-            stage_switch = max(1, int(self.action_stage_ratio * (Ndiffuse - 1)))
+            # Always-guided scoring: no uniform stage.
 
             # Create progress bar for reverse diffusion
             diffusion_iter = range(Ndiffuse - 1, 0, -1)
@@ -1213,11 +1405,7 @@ class EDOCPlanner:
                 constraint_step = (Ndiffuse - 1) - i  # i=Ndiffuse-1 -> 0, i=1 -> Ndiffuse-2
                 constraint_total_steps = Ndiffuse - 2  # Total steps for constraints
                 
-                use_uniform = i >= stage_switch and self.action_score_mode != "learned"
-                if use_uniform:
-                    weights = np.full((num_particles,), 1.0 / num_particles, dtype=np.float32)
-                    reward_history.append(np.nan)
-                elif self.action_score_mode == "energy":
+                if self.action_score_mode == "energy":
                     actions_batch = jnp.asarray(Y0s, dtype=jnp.float32)
                     hard_enabled = False
                     hard_clearance = 0.0
@@ -1322,15 +1510,25 @@ class EDOCPlanner:
                     Ybar_history.append(np.array(Ybar, copy=True))
                     Ysamples_history.append(np.array(Y0s, copy=True))
 
-            # Final hard constraint projection (step 0, final state)
+            # Final hard constraint projection (use the *final* schedule step so it matches the
+            # late-stage constraints used near convergence).
             if self.constraint_manager and self.constraint_manager.has_hard():
                 trajectory = self._actions_to_trajectory(x0, Ybar)
                 projected_trajectory = self.constraint_manager.project_hard(
-                    trajectory, step=0, total_steps=constraint_total_steps
+                    trajectory, step=constraint_total_steps, total_steps=constraint_total_steps
                 )
                 Ybar = self._track_actions_to_projected_states(
                     x0, Ybar, projected_trajectory.states
                 )
+
+                # Keep visualization consistent: overwrite the last stored diffusion frame
+                # with the final projected action sequence.
+                if len(Ybar_history) > 0:
+                    if control_limit is not None:
+                        limit = float(control_limit)
+                        Ybar_history[-1] = np.clip(np.asarray(Ybar, dtype=np.float32), -limit, limit)
+                    else:
+                        Ybar_history[-1] = np.asarray(Ybar, dtype=np.float32)
             
             if control_limit is not None:
                 limit = float(control_limit)
@@ -1366,6 +1564,12 @@ class EDOCPlanner:
             return states_full, energies_seq, rewards_seq
 
         states_full, energies_arr, rewards_arr = jax.jit(rollout_final)(x0_jnp, actions_jnp_final)
+        terminal_energy = jnp.asarray(0.0, dtype=jnp.float32)
+        if self.terminal_energy_weight > 0.0:
+            u0 = jnp.zeros((act_dim,), dtype=jnp.float32)
+            terminal_energy = jnp.float32(self.terminal_energy_weight) * self.energy.compute(
+                states_full[-1], u0, {"t": jnp.int32(horizon)}
+            )
 
         return {
             "states": states_full,
@@ -1374,6 +1578,7 @@ class EDOCPlanner:
             "rewards": rewards_arr,
             "actions": jnp.asarray(actions_np_final, dtype=jnp.float32),
             "initial_state": states_full[0],
+            "terminal_energy": terminal_energy,
             "reward_history": reward_history_arr if reward_history_arr is not None else jnp.asarray([], dtype=jnp.float32),
             "diffusion_actions_traj": diffusion_actions_traj_arr if diffusion_actions_traj_arr is not None else jnp.asarray([], dtype=jnp.float32),
             "diffusion_sampled_actions": diffusion_samples_traj_arr if diffusion_samples_traj_arr is not None else jnp.asarray([], dtype=jnp.float32),
@@ -1481,9 +1686,10 @@ class EDOCSolver(SamplingSolver):
         diffusion_mode: str = "reverse",
         action_diffuse_steps: int = 100,
         action_beta0: float = 1e-4,
-        action_betaT: float = 1e-2,
-        action_temp: float = 0.1,
+        action_betaT: float = 1e-1,
+        action_temp: float = 2,
         action_extra_sigma: float = 0.0,
+        # Deprecated (kept for backward compatibility; EDOC is guided at all steps)
         action_stage_ratio: float = 1.0,
         action_score_mode: str = "energy",
         action_nsample: int = 128,
@@ -1543,7 +1749,7 @@ class EDOCSolver(SamplingSolver):
             "action_betaT": action_betaT,
             "action_temp": action_temp,
             "action_extra_sigma": action_extra_sigma,
-            "action_stage_ratio": action_stage_ratio,
+            "action_stage_ratio": action_stage_ratio,  # deprecated
             "action_score_mode": action_score_mode,
             "action_nsample": action_nsample,
             "use_antithetic": use_antithetic,

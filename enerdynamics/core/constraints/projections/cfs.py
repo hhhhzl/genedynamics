@@ -35,9 +35,21 @@ except Exception:  # pragma: no cover
     sp = None
 
 try:
+    import jax
     import jax.numpy as jnp
+    JAX_AVAILABLE = True
 except ImportError:
+    jax = None
     jnp = None
+    JAX_AVAILABLE = False
+
+try:
+    # Optional: JAX-based QP solver
+    import jaxopt
+    JAXOPT_AVAILABLE = True
+except ImportError:
+    jaxopt = None
+    JAXOPT_AVAILABLE = False
 
 
 class CFSProjection(FeasibilityOperator):
@@ -680,3 +692,683 @@ class CFSProjection(FeasibilityOperator):
         elif len(state_np) == 2:
             new_state[:2] = new_pos[:2]
         return new_state
+
+    def make_jax_projector(self):
+        """
+        Create a JAX-compatible projection function for GPU acceleration.
+        
+        Returns a JAX-callable function that projects positions onto the CFS.
+        Falls back to None if JAX is not available or obstacles are not JAX-compatible.
+        
+        Returns:
+            Optional[Callable]: JAX function (positions_jax, clearance) -> projected_positions_jax,
+                              or None if JAX projection is not available
+        """
+        if not JAX_AVAILABLE or jnp is None:
+            return None
+        
+        # Check if obstacles can be converted to JAX-compatible functions
+        obstacles_list = list(self.obstacles)
+        if len(obstacles_list) == 0:
+            # No obstacles: return identity function
+            @jax.jit
+            def identity_projector(positions, clearance):
+                return positions
+            return identity_projector
+        
+        # Check if ObstacleManager has SDF texture (preferred method for JAX)
+        # If ObstacleManager has sample_sdf_and_grad_2d, we can use it directly
+        # Otherwise, we need to check individual obstacles
+        use_manager_sdf = hasattr(self.obstacles, "sample_sdf_and_grad_2d")
+        if use_manager_sdf:
+            # Check if SDF texture is built
+            if not hasattr(self.obstacles, "_sdf_texture_2d") or self.obstacles._sdf_texture_2d is None:
+                import warnings
+                warnings.warn(
+                    "ObstacleManager has sample_sdf_and_grad_2d but SDF texture not built. "
+                    "Call obstacles.build_sdf_texture_2d(...) before creating CFSProjection to enable JAX acceleration.",
+                    UserWarning
+                )
+                use_manager_sdf = False
+        
+        # Try to build JAX-compatible SDF and gradient functions
+        try:
+            sdf_fn, grad_fn = self._build_jax_obstacle_functions(obstacles_list, use_manager_sdf=use_manager_sdf)
+        except RuntimeError as e:
+            # Obstacles don't support JAX - return None to fall back to NumPy version
+            # The error message is informative, but we don't want to fail here
+            # Instead, EDOC will use the Python loop with NumPy CFS projection
+            import warnings
+            warnings.warn(
+                f"JAX CFS projection not available: {str(e)}. "
+                "Falling back to NumPy version (Python loop). "
+                "To use JAX acceleration, ensure all obstacles support JAX "
+                "(e.g., use SDF texture with build_sdf_texture_2d()).",
+                UserWarning
+            )
+            return None
+        except Exception as e:
+            # Other unexpected errors - also fall back gracefully
+            import warnings
+            warnings.warn(
+                f"Failed to create JAX CFS projector: {str(e)}. "
+                "Falling back to NumPy version.",
+                UserWarning
+            )
+            return None
+        
+        # Create JAX projection function
+        max_iter = self.max_iterations
+        conv_tol = self.convergence_tol
+        max_constraints = self.max_constraints_per_point
+        constraint_margin = self.constraint_margin
+        
+        @jax.jit
+        def jax_project(positions: jnp.ndarray, clearance: jnp.ndarray) -> jnp.ndarray:
+            """
+            JAX-compatible CFS projection.
+            
+            Args:
+                positions: Points to project, shape (N, dim) as JAX array
+                clearance: Minimum clearance required (scalar or array)
+                
+            Returns:
+                Projected positions, shape (N, dim) as JAX array
+            """
+            return _project_cfs_jax(
+                positions,
+                sdf_fn,
+                grad_fn,
+                clearance,
+                max_iterations=max_iter,
+                convergence_tol=conv_tol,
+                max_constraints_per_point=max_constraints,
+                constraint_margin=constraint_margin,
+            )
+        
+        return jax_project
+    
+    def _build_jax_obstacle_functions(
+        self, obstacles_list: List, use_manager_sdf: bool = False
+    ) -> Tuple[Callable, Callable]:
+        """
+        Build JAX-compatible SDF and gradient functions from obstacles.
+        
+        Args:
+            obstacles_list: List of obstacles
+            use_manager_sdf: If True, use ObstacleManager's sample_sdf_and_grad_2d method
+                           (requires SDF texture to be built)
+            
+        Returns:
+            Tuple of (sdf_fn, grad_fn) where:
+            - sdf_fn: (points) -> sdf_values, shape (M, N) for M obstacles and N points
+            - grad_fn: (point) -> gradient, shape (M, dim) for M obstacles
+        """
+        if not JAX_AVAILABLE:
+            raise RuntimeError("JAX is not available")
+        
+        # If using ObstacleManager's SDF texture, we can use it directly
+        if use_manager_sdf:
+            # Use ObstacleManager's sample_sdf_and_grad_2d (which uses SDF texture)
+            def sdf_batch(points: jnp.ndarray) -> jnp.ndarray:
+                """
+                Compute SDF for all obstacles using ObstacleManager's SDF texture.
+                
+                Args:
+                    points: Shape (N, dim)
+                    
+                Returns:
+                    SDF matrix, shape (M, N) where M is number of obstacles
+                """
+                # Get union SDF from ObstacleManager (closest obstacle)
+                sdf_vals, _ = self.obstacles.sample_sdf_and_grad_2d(points, backend="jax")
+                sdf_vals = jnp.asarray(sdf_vals)
+                
+                # Ensure shape is (N,)
+                if sdf_vals.ndim == 0:
+                    sdf_vals = jnp.full((points.shape[0],), float(sdf_vals), dtype=jnp.float32)
+                
+                # For union SDF, we return a single row (M=1) representing the closest obstacle
+                # This is sufficient for CFS projection which only needs the minimum SDF
+                return sdf_vals[None, :]  # (1, N)
+            
+            def grad_multiple(point: jnp.ndarray, obs_indices: jnp.ndarray) -> jnp.ndarray:
+                """
+                Compute gradients using ObstacleManager's SDF texture.
+                
+                Args:
+                    point: Shape (dim,)
+                    obs_indices: Not used when using manager SDF (union gradient)
+                    
+                Returns:
+                    Gradient, shape (1, dim) for union gradient
+                """
+                _, grad = self.obstacles.sample_sdf_and_grad_2d(point[None, :], backend="jax")
+                grad = jnp.asarray(grad[0])  # Extract first (and only) point
+                return grad[None, :]  # (1, dim)
+            
+            return sdf_batch, grad_multiple
+        
+        # Otherwise, check individual obstacles
+        # Check if all obstacles support JAX (required for JIT compilation)
+        # We cannot convert JAX arrays to NumPy inside JIT functions
+        for obs in obstacles_list:
+            has_jax_support = hasattr(obs, "jax_sdf")
+            if not has_jax_support:
+                # This obstacle doesn't support JAX - cannot use in JIT function
+                raise RuntimeError(
+                    f"Obstacle {type(obs).__name__} does not support JAX. "
+                    "All obstacles must have either 'jax_sdf' method or use ObstacleManager's "
+                    "'sample_sdf_and_grad_2d' method (requires build_sdf_texture_2d()) "
+                    "to use JAX CFS projection."
+                )
+        
+        # Build SDF function for all obstacles (all are JAX-compatible now)
+        def sdf_batch(points: jnp.ndarray) -> jnp.ndarray:
+            """
+            Compute SDF for all obstacles at given points.
+            
+            Args:
+                points: Shape (N, dim)
+                
+            Returns:
+                SDF matrix, shape (M, N) where M is number of obstacles
+            """
+            sdf_rows = []
+            for obs in obstacles_list:
+                # All obstacles are guaranteed to have jax_sdf at this point
+                if hasattr(obs, "jax_sdf"):
+                    sdf_vals = obs.jax_sdf(points)
+                else:
+                    # This should not happen due to check above, but add safety
+                    raise RuntimeError(f"Obstacle {type(obs).__name__} does not support JAX")
+                
+                # Ensure shape is (N,)
+                if sdf_vals.ndim == 0:
+                    sdf_vals = jnp.full((points.shape[0],), float(sdf_vals), dtype=jnp.float32)
+                elif sdf_vals.ndim > 1:
+                    sdf_vals = sdf_vals.flatten()[:points.shape[0]]
+                
+                sdf_rows.append(sdf_vals)
+            
+            if not sdf_rows:
+                # No obstacles: return large positive values
+                return jnp.full((1, points.shape[0]), 1e6, dtype=jnp.float32)
+            
+            return jnp.stack(sdf_rows, axis=0)  # (M, N)
+        
+            # Build gradient function for individual obstacles
+            def grad_single(point: jnp.ndarray, obs_idx: int) -> jnp.ndarray:
+                """
+                Compute gradient for a single obstacle at a single point.
+                
+                Args:
+                    point: Shape (dim,)
+                    obs_idx: Index of obstacle
+                    
+                Returns:
+                    Gradient, shape (dim,)
+                """
+                obs = obstacles_list[obs_idx]
+                
+                # All obstacles are guaranteed to have jax_sdf at this point
+                if hasattr(obs, "jax_gradient"):
+                    grad = obs.jax_gradient(point)
+                else:
+                    # Use finite differences with JAX (pure JAX implementation)
+                    grad = _finite_difference_gradient_jax(obs, point)
+                
+                return jnp.asarray(grad, dtype=jnp.float32).flatten()
+            
+            # Create a function that computes gradients for multiple obstacles
+            def grad_multiple(point: jnp.ndarray, obs_indices: jnp.ndarray) -> jnp.ndarray:
+                """
+                Compute gradients for multiple obstacles at a single point.
+                
+                Args:
+                    point: Shape (dim,)
+                    obs_indices: Indices of obstacles, shape (k,)
+                    
+                Returns:
+                    Gradients, shape (k, dim)
+                """
+                # Use JAX-compatible indexing (cannot use NumPy in JIT function)
+                num_indices = obs_indices.shape[0]
+                grads = []
+                for i in range(num_indices):
+                    idx = int(obs_indices[i])  # Convert JAX array element to Python int
+                    grad = grad_single(point, idx)
+                    grads.append(grad)
+                return jnp.stack(grads, axis=0) if grads else jnp.zeros((0, point.shape[0]), dtype=jnp.float32)
+        
+        return sdf_batch, grad_multiple
+
+
+# ============================================================================
+# JAX-compatible CFS projection functions
+# ============================================================================
+
+if JAX_AVAILABLE:
+
+    def _finite_difference_gradient_jax(obstacle, point: jnp.ndarray, eps: float = 1e-4) -> jnp.ndarray:
+        """
+        Numerically approximate ∇sdf(x) with central differences using JAX.
+        
+        This function requires the obstacle to have JAX-compatible SDF method.
+        It cannot use NumPy conversion inside JIT functions.
+        
+        Args:
+            obstacle: Obstacle with jax_sdf or sample_sdf_and_grad_2d method
+            point: Point to evaluate, shape (dim,) as JAX array
+            eps: Step size for finite differences
+            
+        Returns:
+            Gradient, shape (dim,)
+        """
+        point = jnp.asarray(point, dtype=jnp.float32).flatten()
+        dim = point.shape[0]
+        
+        # Use JAX-compatible SDF computation (cannot convert to NumPy in JIT)
+        grad = jnp.zeros((dim,), dtype=jnp.float32)
+        
+        for k in range(dim):
+            # Create shifted points using JAX operations
+            xp = point.at[k].add(eps)
+            xm = point.at[k].add(-eps)
+            
+            # Compute SDF using JAX-compatible method
+            if hasattr(obstacle, "jax_sdf"):
+                dp = obstacle.jax_sdf(xp[None, :])  # Add batch dimension
+                dm = obstacle.jax_sdf(xm[None, :])
+                dp_val = dp[0] if dp.ndim > 0 else dp
+                dm_val = dm[0] if dm.ndim > 0 else dm
+            elif hasattr(obstacle, "sample_sdf_and_grad_2d"):
+                dp, _ = obstacle.sample_sdf_and_grad_2d(xp[None, :], backend="jax")
+                dm, _ = obstacle.sample_sdf_and_grad_2d(xm[None, :], backend="jax")
+                dp_val = dp[0] if dp.ndim > 0 else dp
+                dm_val = dm[0] if dm.ndim > 0 else dm
+            else:
+                # This should not happen if check above passed
+                raise RuntimeError(f"Obstacle {type(obstacle).__name__} does not support JAX for finite differences")
+            
+            # Compute gradient using JAX operations
+            grad = grad.at[k].set((dp_val - dm_val) / (2.0 * eps))
+        
+        return grad
+
+    def _is_feasible_jax(A: jnp.ndarray, b: jnp.ndarray, x: jnp.ndarray, tol: float = 1e-7) -> bool:
+        """
+        Check A x >= b within a tolerance (JAX version).
+        
+        Args:
+            A: Constraint matrix, shape (m, dim)
+            b: Constraint vector, shape (m,)
+            x: Point to check, shape (dim,)
+            tol: Tolerance
+            
+        Returns:
+            Boolean indicating if all constraints are satisfied
+        """
+        if A.size == 0:
+            return True
+        lhs = A @ x
+        return bool(jnp.all(lhs + tol >= b).item())
+
+    def _solve_projection_qp_identity_jax(
+        x0: jnp.ndarray, A: jnp.ndarray, b: jnp.ndarray
+    ) -> jnp.ndarray:
+        """
+        Solve: min 0.5||x - x0||^2 s.t. A x >= b (JAX version).
+        
+        Uses enumeration of active sets for small problems (works well for 2D planning).
+        For larger problems, consider using JAXOpt.
+        
+        Args:
+            x0: Reference point, shape (dim,)
+            A: Constraint matrix, shape (m, dim)
+            b: Constraint vector, shape (m,)
+            
+        Returns:
+            Projected point, shape (dim,)
+        """
+        x0 = jnp.asarray(x0, dtype=jnp.float32).flatten()
+        A = jnp.asarray(A, dtype=jnp.float32)
+        b = jnp.asarray(b, dtype=jnp.float32).flatten()
+        m, dim = A.shape
+        
+        # Filter out zero rows (invalid constraints) before solving
+        # Zero rows have zero norm - these are masked out constraints
+        row_norms = jnp.linalg.norm(A, axis=1)
+        valid_mask = row_norms > 1e-8
+        
+        # Mask invalid constraints by setting b to very negative (always satisfied)
+        b_masked = jnp.where(valid_mask, b, jnp.full((m,), -1e6, dtype=jnp.float32))
+        
+        # Check if already feasible (use JAX-compatible check)
+        lhs = A @ x0
+        feasible = jnp.all(lhs + 1e-7 >= b_masked)
+        
+        def solve_qp():
+            # Try using JAXOpt if available
+            if JAXOPT_AVAILABLE and jaxopt is not None:
+                try:
+                    from jaxopt import BoxOSQP
+                    
+                    # Convert to standard QP form: min 0.5 x^T P x + q^T x s.t. G x <= h
+                    P = jnp.eye(dim, dtype=jnp.float32)
+                    q = -x0
+                    G = -A  # A x >= b  =>  -A x <= -b
+                    h = -b_masked
+                    
+                    # BoxOSQP requires box constraints, so we use large bounds
+                    lower = jnp.full((dim,), -1e6, dtype=jnp.float32)
+                    upper = jnp.full((dim,), 1e6, dtype=jnp.float32)
+                    
+                    qp = BoxOSQP()
+                    sol = qp.run(P=P, q=q, G=G, h=h, lower=lower, upper=upper).params
+                    return sol.primal.astype(jnp.float32)
+                except Exception:
+                    # Fallback to enumeration if JAXOpt fails
+                    pass
+            
+            # Fallback: enumeration method (similar to NumPy version)
+            # For JAX compatibility, we'll use a simplified approach
+            # Project onto the most violated constraint as a simple solution
+            violations = b_masked - (A @ x0)
+            # Mask out invalid constraints
+            violations_masked = jnp.where(valid_mask, violations, jnp.full((m,), -1e6, dtype=jnp.float32))
+            i = jnp.argmax(violations_masked)
+            a = A[i]
+            denom = jnp.dot(a, a)
+            denom = jnp.where(denom < 1e-12, 1e-12, denom)
+            alpha = (b[i] - jnp.dot(a, x0)) / denom
+            best_x = x0 + alpha * a
+            
+            # Verify feasibility
+            lhs_check = A @ best_x
+            is_feasible = jnp.all(lhs_check + 1e-7 >= b_masked)
+            
+            def return_projected():
+                return best_x
+            
+            def return_original():
+                return x0
+            
+            return jax.lax.cond(is_feasible, return_projected, return_original)
+        
+        def return_original():
+            return x0
+        
+        # Use cond to handle feasibility check
+        return jax.lax.cond(feasible, return_original, solve_qp)
+        
+        # Try using JAXOpt if available
+        if JAXOPT_AVAILABLE and jaxopt is not None:
+            try:
+                from jaxopt import BoxOSQP
+                
+                # Convert to standard QP form: min 0.5 x^T P x + q^T x s.t. G x <= h
+                P = jnp.eye(dim, dtype=jnp.float32)
+                q = -x0
+                G = -A  # A x >= b  =>  -A x <= -b
+                h = -b
+                
+                # BoxOSQP requires box constraints, so we use large bounds
+                # For unconstrained variables, use very large bounds
+                lower = jnp.full((dim,), -1e6, dtype=jnp.float32)
+                upper = jnp.full((dim,), 1e6, dtype=jnp.float32)
+                
+                qp = BoxOSQP()
+                sol = qp.run(P=P, q=q, G=G, h=h, lower=lower, upper=upper).params
+                return sol.primal.astype(jnp.float32)
+            except Exception:
+                # Fallback to enumeration if JAXOpt fails
+                pass
+        
+        # Fallback: enumeration method (similar to NumPy version)
+        best_x = None
+        best_obj = jnp.inf
+        
+        # Active set size 1: projection onto a single hyperplane
+        for i in range(m):
+            a = A[i]
+            denom = jnp.dot(a, a)
+            denom = jnp.where(denom < 1e-12, 1e-12, denom)
+            alpha = (b[i] - jnp.dot(a, x0)) / denom
+            x = x0 + alpha * a
+            if _is_feasible_jax(A, b, x):
+                obj = jnp.sum((x - x0) ** 2)
+                if best_x is None or obj < best_obj:
+                    best_obj = obj
+                    best_x = x
+        
+        # Active sets of size 2..dim
+        max_k = min(dim, m)
+        for k in range(2, max_k + 1):
+            # Generate combinations (using JAX-compatible approach)
+            # For small k, we can enumerate
+            if k > 3:  # Limit enumeration to avoid combinatorial explosion
+                break
+            
+            # Use itertools.combinations converted to JAX
+            from itertools import combinations
+            for idxs in combinations(range(m), k):
+                AI = A[list(idxs)]
+                bI = b[list(idxs)]
+                rhs = bI - (AI @ x0)
+                M = AI @ AI.T
+                
+                # Check rank (simplified: check determinant)
+                det = jnp.linalg.det(M)
+                if jnp.abs(det) < 1e-10:
+                    continue
+                
+                try:
+                    lam = jnp.linalg.solve(M, rhs)
+                    x = x0 + (AI.T @ lam)
+                    if _is_feasible_jax(A, b, x):
+                        obj = jnp.sum((x - x0) ** 2)
+                        if best_x is None or obj < best_obj:
+                            best_obj = obj
+                            best_x = x
+                except Exception:
+                    continue
+        
+        # Fallback: step along most violated constraint
+        if best_x is None:
+            violations = b - (A @ x0)
+            i = jnp.argmax(violations)
+            a = A[i]
+            denom = jnp.dot(a, a)
+            denom = jnp.where(denom < 1e-12, 1e-12, denom)
+            alpha = (b[i] - jnp.dot(a, x0)) / denom
+            best_x = x0 + alpha * a
+        
+        return best_x.astype(jnp.float32)
+
+    def _project_cfs_jax(
+        positions: jnp.ndarray,
+        sdf_fn: Callable,
+        grad_fn: Callable,
+        clearance: jnp.ndarray,
+        max_iterations: int = 5,
+        convergence_tol: float = 1e-6,
+        max_constraints_per_point: int = 8,
+        constraint_margin: float = 0.25,
+    ) -> jnp.ndarray:
+        """
+        JAX-compatible batch CFS projection.
+        
+        Projects multiple points onto CFS using linearized constraints and QP.
+        This is the JAX version of _project_cfs_batch, designed for GPU acceleration.
+        
+        Note: This is a simplified implementation that processes points sequentially.
+        For better performance with many points, consider using vmap or batching.
+        
+        Args:
+            positions: Points to project, shape (N, dim) as JAX array
+            sdf_fn: Function that computes SDF for all obstacles, (points) -> (M, N)
+            grad_fn: Function that computes gradients, (point, obs_indices) -> (k, dim)
+            clearance: Minimum clearance required (scalar or broadcastable)
+            max_iterations: Maximum iterations for iterative projection
+            convergence_tol: Convergence tolerance
+            max_constraints_per_point: Maximum constraints per point
+            constraint_margin: Margin for constraint selection
+            
+        Returns:
+            Projected positions, shape (N, dim) as JAX array
+        """
+        positions = jnp.asarray(positions, dtype=jnp.float32)
+        if positions.ndim == 1:
+            positions = positions.reshape(1, -1)
+        
+        N, dim = positions.shape
+        
+        if N == 0:
+            return positions
+        
+        clearance = jnp.asarray(clearance, dtype=jnp.float32)
+        if clearance.ndim > 0:
+            clearance = clearance[0]  # Use first element if array
+        
+        current = positions
+        
+        # Project a single point (used in loop)
+        def project_single_point(x_ref: jnp.ndarray, sdf_vals: jnp.ndarray, obs_list_len: int) -> jnp.ndarray:
+            """
+            Project a single point using CFS.
+            
+            Args:
+                x_ref: Reference point, shape (dim,)
+                sdf_vals: SDF values for all obstacles at this point, shape (M,)
+                obs_list_len: Number of obstacles (M)
+                
+            Returns:
+                Projected point, shape (dim,)
+            """
+            threshold = clearance + constraint_margin
+            cand_mask = sdf_vals < threshold
+            
+            # Select candidate obstacles (closest k)
+            num_candidates = jnp.sum(cand_mask.astype(jnp.int32))
+            k = jnp.minimum(max_constraints_per_point, jnp.maximum(1, num_candidates))
+            
+            # Get k closest obstacles (use fixed size for JIT compatibility)
+            sorted_indices = jnp.argsort(sdf_vals)
+            # Take up to max_constraints_per_point indices
+            cand_indices = sorted_indices[:max_constraints_per_point]
+            
+            # Compute gradients for candidate obstacles
+            grads = grad_fn(x_ref, cand_indices)  # (max_constraints_per_point, dim)
+            
+            # Build linearized constraints A x >= b
+            # Build constraints for all candidate indices, then select first k
+            max_k = max_constraints_per_point
+            
+            def build_constraint(i):
+                """Build constraint for obstacle at index i."""
+                j = cand_indices[i]
+                grad = grads[i]
+                d0 = sdf_vals[j]
+                
+                gnorm = jnp.linalg.norm(grad)
+                gnorm = jnp.where(gnorm < 1e-8, 1e-8, gnorm)
+                g = grad / gnorm
+                b_val = (clearance - d0) / gnorm + jnp.dot(g, x_ref)
+                return g, b_val
+            
+            # Build all constraints using vmap
+            gs, bs = jax.vmap(build_constraint)(jnp.arange(max_k))
+            # gs shape: (max_k, dim), bs shape: (max_k,)
+            
+            # Select only the first k constraints using a mask
+            # Create mask: first k are valid
+            valid_mask = jnp.arange(max_k) < k
+            # Mask out invalid constraints (set to very small values to make them inactive)
+            # For invalid rows, set A to zero (no constraint) and b to very negative (satisfied constraint)
+            A_masked = jnp.where(valid_mask[:, None], gs, jnp.zeros((max_k, dim), dtype=jnp.float32))
+            b_masked = jnp.where(valid_mask, bs, jnp.full((max_k,), -1e6, dtype=jnp.float32))
+            
+            # Check if we have any valid constraints
+            has_constraints = k > 0
+            
+            def solve_with_constraints():
+                # Use all constraints (invalid ones are automatically satisfied due to large negative b)
+                return _solve_projection_qp_identity_jax(x_ref, A_masked, b_masked)
+            
+            def return_original():
+                return x_ref
+            
+            # Use cond to handle empty constraints case
+            return jax.lax.cond(
+                has_constraints,
+                solve_with_constraints,
+                return_original
+            )
+        
+        # Iteratively linearize + solve QP (CFS outer loop)
+        # Use fori_loop instead of Python for loop to be JIT-compatible
+        def iteration_body(i, current_pos):
+            """Single iteration of CFS projection."""
+            # Compute SDF for all obstacles at all points
+            sdf_matrix = sdf_fn(current_pos)  # (M, N)
+            
+            # Union SDF: closest obstacle
+            union_sdf = jnp.min(sdf_matrix, axis=0)  # (N,)
+            violating_mask = union_sdf < clearance
+            
+            # Check if all feasible (use jnp.all result as condition)
+            all_feasible = jnp.all(~violating_mask)
+            
+            prev = current_pos
+            
+            # Project each violating point (use jnp.where to handle condition)
+            def project_point(idx):
+                """Project a single point if it's violating."""
+                is_violating = violating_mask[idx]
+                sdf_vals = sdf_matrix[:, idx]  # (M,)
+                projected = project_single_point(current_pos[idx], sdf_vals, sdf_matrix.shape[0])
+                # Only update if violating, otherwise keep original
+                return jnp.where(is_violating, projected, current_pos[idx])
+            
+            # Project all points using vmap
+            new_pos = jax.vmap(project_point)(jnp.arange(N))
+            
+            # Check convergence
+            max_step = jnp.max(jnp.linalg.norm(new_pos - prev, axis=1))
+            converged = max_step < convergence_tol
+            
+            # Final feasibility check if converged
+            def check_final_feasibility(pos):
+                sdf_matrix_final = sdf_fn(pos)
+                union_sdf_final = jnp.min(sdf_matrix_final, axis=0)
+                return jnp.all(union_sdf_final >= clearance)
+            
+            # If converged, check final feasibility; otherwise assume not converged
+            final_feasible = jax.lax.cond(
+                converged,
+                check_final_feasibility,
+                lambda _: jnp.array(False),
+                new_pos
+            )
+            
+            # Continue if not all feasible and not converged
+            # Use jnp.logical_and for boolean operations
+            should_continue = jnp.logical_and(~all_feasible, ~jnp.logical_and(converged, final_feasible))
+            
+            # Return new position (always update, fori_loop will handle stopping)
+            return new_pos
+        
+        # Run iterations using fori_loop
+        # Note: fori_loop always runs all iterations, but that's okay for JIT compatibility
+        current = jax.lax.fori_loop(0, max_iterations, iteration_body, current)
+        
+        return current
+
+else:
+    # JAX not available: provide dummy functions
+    def _project_cfs_jax(*args, **kwargs):
+        raise RuntimeError("JAX is not available. Cannot use JAX CFS projection.")
+    
+    def _finite_difference_gradient_jax(*args, **kwargs):
+        raise RuntimeError("JAX is not available. Cannot use JAX gradient computation.")
