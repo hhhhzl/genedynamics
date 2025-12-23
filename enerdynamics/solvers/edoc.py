@@ -29,6 +29,7 @@ from enerdynamics.core.solvers import SamplingSolver
 from enerdynamics.core.dynamics import DynamicsModel, DynamicsToEnvAdapter, EnvDynamicsAdapter
 from enerdynamics.core.energy import EnergyFunctional, LegacyEnergyFunctional
 from enerdynamics.core.backends import Backend, JaxBackend
+from enerdynamics.core.backends.runtime import RuntimeBackendManager
 from enerdynamics.core.types import State, Action, Trajectory
 from enerdynamics.core.metrics import euclidean_metric_inv
 from enerdynamics.core.constraints.base import project_box
@@ -61,11 +62,11 @@ class EDOCPlanner:
         diffusion_mode: str = "reverse",
         action_diffuse_steps: int = 100,
         action_beta0: float = 1e-4,
-        action_betaT: float = 1e-1,
+        action_betaT: float = 1e-2,
         action_temp: float = 0.5,
         action_extra_sigma: float = 0.0,
         # NOTE: action_stage_ratio is deprecated; EDOC now uses guided scoring at all steps.
-        action_stage_ratio: float = 0.8,
+        action_stage_ratio: float = 1,
         action_score_mode: str = "reward",
         action_nsample: int = 256,
         use_antithetic: bool = False,
@@ -110,8 +111,27 @@ class EDOCPlanner:
         self._np_rng = np.random.default_rng(np_random_seed)
         self.show_tqdm = bool(show_tqdm)
         
+        # ===== Backend detection =====
+        # Detect current backend to determine if we should use Python-only paths
+        try:
+            backend = RuntimeBackendManager.get_backend()
+            self._use_numpy_backend = (backend.name == "numpy")
+            if self._use_numpy_backend:
+                print(f"[EDOC] Detected NumPy backend, using Python-only paths (CFS will use cvxopt)")
+        except Exception:
+            # If backend detection fails, default to False (use JAX)
+            self._use_numpy_backend = False
+        
         # ===== Constraint system =====
         self.constraint_manager = constraint_manager
+        
+        # If using NumPy backend, ensure CFS uses Python backend (cvxopt)
+        if self._use_numpy_backend and self.constraint_manager is not None:
+            feasibility_op = self.constraint_manager.feasibility_operator
+            if feasibility_op is not None and hasattr(feasibility_op, '_use_python_backend'):
+                # Force CFS to use Python backend
+                feasibility_op._use_python_backend = True
+                print(f"[EDOC] Forced CFS to use Python backend (cvxopt) for NumPy backend")
         self.lambda_energy = float(lambda_energy) if lambda_energy > 0 else 1.0
         self.use_constraint_in_scoring = bool(use_constraint_in_scoring)
         self.terminal_energy_weight = float(max(0.0, terminal_energy_weight))
@@ -654,7 +674,11 @@ class EDOCPlanner:
                 Ysamples_hist = jnp.clip(Ysamples_hist, -control_limit, control_limit)
             return rng_out, Ybar_final, reward_hist, Ybar_hist, Ysamples_hist
 
-        self._reverse_diffuse_jit = jax.jit(reverse_diffuse)
+        # Only use JIT if not using NumPy backend
+        if self._use_numpy_backend:
+            self._reverse_diffuse_jit = None
+        else:
+            self._reverse_diffuse_jit = jax.jit(reverse_diffuse)
 
         # Chunked variant for a real-time tqdm progress bar without de-optimizing the inner loop:
         # Each chunk runs a small lax.scan under JIT; Python updates the bar once per chunk.
@@ -809,11 +833,48 @@ class EDOCPlanner:
             )
             return rng_out, Ybar_out, reward_chunk, Ybar_chunk, Ysamples_chunk
 
-        self._reverse_diffuse_chunk_jit = jax.jit(reverse_diffuse_chunk)
+        # Only use JIT if not using NumPy backend
+        if self._use_numpy_backend:
+            self._reverse_diffuse_chunk_jit = None
+        else:
+            self._reverse_diffuse_chunk_jit = jax.jit(reverse_diffuse_chunk)
 
     # ------------------- main interface -------------------
-    def plan(self, rng: jax.Array) -> Dict[str, Any]:
-        """Main planning interface. Always uses single particle mode (n_particles removed)."""
+    def plan(self, rng: Any) -> Dict[str, Any]:
+        """
+        Main planning interface. Always uses single particle mode (n_particles removed).
+        
+        Args:
+            rng: Random number generator. Can be:
+                - JAX PRNG key (jax.Array) for JAX backend
+                - Integer seed for NumPy/PyTorch backends (will be converted to JAX PRNG key)
+                - Other backend-specific RNG state (will be converted to JAX PRNG key)
+        
+        Note: EDOC algorithm internally uses JAX for JIT compilation and automatic differentiation.
+        If a non-JAX RNG is provided, it will be converted to a JAX PRNG key for internal use.
+        """
+        # Convert non-JAX RNG to JAX PRNG key if needed
+        # EDOC algorithm requires JAX internally, so we always use JAX PRNG keys
+        # Check if rng is a JAX PRNG key by checking if it has the expected attributes
+        is_jax_key = False
+        try:
+            if hasattr(rng, 'shape') and hasattr(rng, 'dtype'):
+                if len(rng.shape) == 1 and rng.shape[0] == 2:
+                    is_jax_key = True
+        except (AttributeError, TypeError):
+            pass
+        
+        if not is_jax_key:
+            if isinstance(rng, (int, np.integer)):
+                rng = jax.random.PRNGKey(int(rng))
+            else:
+                try:
+                    seed = int(rng) if hasattr(rng, '__int__') else hash(rng) % (2**31)
+                    rng = jax.random.PRNGKey(seed)
+                except (TypeError, ValueError):
+                    # Fallback to default seed
+                    rng = jax.random.PRNGKey(0)
+        
         try:
             x0, info = self.env.reset(rng)
         except TypeError:

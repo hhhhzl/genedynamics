@@ -69,18 +69,21 @@ def test_cfs_projection_comparison():
     )
     print("SDF texture built.")
     
+    clearance = 0.1
     # Create CFS projection
+    # Set use_trajectory_qp=False to align with JAX version (pointwise projection)
     cfs = CFSProjection(
         obstacles=obstacles,
+        clearance_schedule=lambda step, total: clearance,
         max_iterations=10,
         convergence_tol=1e-6,
         max_constraints_per_point=8,
         constraint_margin=0.25,
+        use_trajectory_qp=False,  # Align with JAX: use pointwise projection
     )
     
     # Create test trajectory
     trajectory = create_test_trajectory()
-    clearance = 0.1
     
     print(f"\nTest trajectory: {len(trajectory.states)} states")
     print("Initial positions:")
@@ -161,8 +164,16 @@ def test_cfs_projection_single_point():
         res=0.01,
         force_rebuild=True,
     )
-    
-    cfs = CFSProjection(obstacles=obstacles)
+    clearance = 0.1
+    cfs = CFSProjection(
+        obstacles=obstacles,
+        use_trajectory_qp=False,  # Align with JAX: use pointwise projection
+        clearance_schedule=lambda step, total: clearance,
+        max_iterations=10,
+        convergence_tol=1e-6,
+        max_constraints_per_point=8,
+        constraint_margin=0.25,
+    )
     
     # Single point inside obstacle
     test_points = [
@@ -170,8 +181,6 @@ def test_cfs_projection_single_point():
         np.array([0.25, 0.25], dtype=np.float32),  # Inside obstacle
         np.array([0.6, 0.6], dtype=np.float32),  # Inside obstacle
     ]
-    
-    clearance = 0.1
     
     for point in test_points:
         print(f"\n--- Testing point: {point} ---")

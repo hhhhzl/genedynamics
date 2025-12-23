@@ -19,8 +19,6 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
 
 import numpy as np
-import jax
-
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from collections import deque
@@ -44,6 +42,7 @@ from enerdynamics.core.constraints import (
 from enerdynamics.core.types import Trajectory
 from enerdynamics.solvers.edoc import EDOCPlanner
 from enerdynamics.envs.factories import make_energy
+from enerdynamics.core.backends.runtime import RuntimeBackendManager
 
 # Alias for 2D: SphereObstacle is CircleObstacle in 2D
 CircleObstacle = SphereObstacle
@@ -1156,7 +1155,27 @@ def run_single_experiment(
     seed: int,
     output_dir: Path,
     edoc_config: Dict[str, Any],
+    backend_name: str = "jax",
+    device: str = "cpu",
 ) -> Dict[str, Any]:
+    """
+    Run single experiment with given level and seed.
+    
+    Args:
+        level: Obstacle level (0-10)
+        seed: Random seed
+        output_dir: Output directory for results
+        edoc_config: EDOC configuration dictionary
+        backend_name: Computational backend name ("jax", "numpy", "torch")
+        device: Device name ("cpu", "gpu", "webgpu")
+    
+    Returns:
+        Dictionary with results
+    """
+    # Set up runtime backend
+    RuntimeBackendManager.set_backend(backend_name, device=device)
+    backend = RuntimeBackendManager.get_backend()
+    print(f"  Using backend: {backend_name} on {device}")
     print(f"\n{'=' * 60}")
     print(f"Starting Experiment: Level {level}, Seed {seed}")
     print(f"{'=' * 60}")
@@ -1236,7 +1255,7 @@ def run_single_experiment(
             schedule_manager=schedule_manager,
             use_late_stage_only=True,
             late_stage_ratio=0.2,
-            use_trajectory_qp=True,
+            use_trajectory_qp=False,
             smoothness_weight=0.0,
             reconstruct_velocity=False,
             velocity_dt=None,
@@ -1278,7 +1297,7 @@ def run_single_experiment(
     initial_state = start_pos.astype(np.float32)
 
     print("  Starting EDOC planning...")
-    rng = jax.random.PRNGKey(seed)
+    rng = backend.create_rng(seed)
     original_reset = env.reset
 
     def custom_reset(rng=None):
@@ -1440,7 +1459,19 @@ def run_all_experiments(
     output_dir: Path = Path("results/single2d"),
     num_seeds: int = 10,
     edoc_config: Optional[Dict[str, Any]] = None,
+    backend_name: str = "jax",
+    device: str = "cpu",
 ):
+    """
+    Run all experiments across all levels and seeds.
+    
+    Args:
+        output_dir: Output directory for results
+        num_seeds: Number of random seeds per level
+        edoc_config: EDOC configuration
+        backend_name: Computational backend name ("jax", "numpy", "torch")
+        device: Device name ("cpu", "gpu", "webgpu")
+    """
     if edoc_config is None:
         edoc_config = {
             "dt": 0.05,
@@ -1460,6 +1491,7 @@ def run_all_experiments(
     print("  Levels: 0-10 (11 levels)")
     print(f"  Seeds per level: {num_seeds}")
     print(f"  Total experiments: {11 * num_seeds}")
+    print(f"  Backend: {backend_name} on {device}")
     print(f"  EDOC config: {edoc_config}")
     print(f"{'#' * 70}\n")
 
@@ -1470,7 +1502,7 @@ def run_all_experiments(
         for seed in range(num_seeds):
             try:
                 print(f"  Seed {seed}/{num_seeds - 1}...")
-                result = run_single_experiment(level, seed, output_dir, edoc_config)
+                result = run_single_experiment(level, seed, output_dir, edoc_config, backend_name, device)
                 level_results.append(result)
                 all_results.append(result)
             except Exception as e:
@@ -1581,20 +1613,28 @@ if __name__ == "__main__":
     parser.add_argument("--num_seeds", type=int, default=10, help="Number of seeds per level")
     parser.add_argument("--level", type=int, default=None, help="Run single level only")
     parser.add_argument("--seed", type=int, default=None, help="Run single seed only")
+    parser.add_argument("--backend", type=str, default="jax", choices=["jax", "numpy", "torch"],
+                       help="Computational backend (jax, numpy, torch)")
+    parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "gpu", "webgpu"],
+                       help="Device to use (cpu, gpu, webgpu)")
 
     args = parser.parse_args()
 
     if args.level is not None and args.seed is not None:
         output_dir = Path(args.output_dir)
         edoc_config = {
-            "dt": 0.07,
-            "horizon": 64,
+            "dt": 0.05,
+            "horizon": 80,
             "u_max": 1.0,
             "action_diffuse_steps": 100,
             "action_nsample": 64,
             "use_antithetic": True,
         }
-        run_single_experiment(args.level, args.seed, output_dir, edoc_config)
+        run_single_experiment(args.level, args.seed, output_dir, edoc_config, args.backend, args.device)
     else:
-        run_all_experiments(output_dir=Path(args.output_dir), num_seeds=args.num_seeds)
-
+        run_all_experiments(
+            output_dir=Path(args.output_dir),
+            num_seeds=args.num_seeds,
+            backend_name=args.backend,
+            device=args.device
+        )

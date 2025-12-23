@@ -27,7 +27,6 @@ from enerdynamics.solvers.mbd import MBDSolver, run_mbd
 from enerdynamics.solvers.mppi import MPPISolver, run_mppi
 from enerdynamics.solvers.cem import CEMSolver, run_cem
 from enerdynamics.solvers.ilqr import iLQRSolver
-from enerdynamics.solvers.flow_matching import FlowMatchingSolver
 
 __all__ = [
     # Base classes
@@ -49,7 +48,6 @@ __all__ = [
     "run_cem",
     # Other implementations
     "iLQRSolver",
-    "FlowMatchingSolver",
 ]
 
 # Note: Configuration Args classes have been moved to configs/<env_name>/<solver>.py

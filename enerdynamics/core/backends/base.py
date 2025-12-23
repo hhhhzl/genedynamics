@@ -25,7 +25,8 @@ class Backend(Protocol):
     capabilities. All solvers depend only on this interface, not specific frameworks.
     """
     
-    name: str  # "jax", "torch", "rust", "wasm", "remote"
+    name: str  # "jax", "torch", "numpy", "rust", "wasm", "remote"
+    device: str  # "cpu", "gpu", "webgpu"
     
     @abstractmethod
     def tensor(self, x: Any, dtype: Optional[Any] = None) -> Any:
@@ -95,6 +96,92 @@ class Backend(Protocol):
         """
         ...
     
+    @abstractmethod
+    def create_rng(self, seed: int) -> Any:
+        """
+        Create a random number generator/PRNG key from seed.
+        
+        Args:
+            seed: Random seed
+            
+        Returns:
+            RNG state or PRNG key (backend-specific)
+        """
+        ...
+    
+    @abstractmethod
+    def split_rng(self, rng: Any, num: int = 2) -> Any:
+        """
+        Split RNG state/key into multiple states/keys.
+        
+        For JAX, this splits PRNG keys. For NumPy/PyTorch, this may
+        return the same state or create new generators.
+        
+        Args:
+            rng: RNG state or PRNG key
+            num: Number of states/keys to create
+            
+        Returns:
+            Tuple of RNG states/keys or single state/key
+        """
+        ...
+    
+    @abstractmethod
+    def uniform(self, rng: Any, shape: tuple, minval: float = 0.0, maxval: float = 1.0) -> Any:
+        """
+        Generate uniform random samples.
+        
+        Args:
+            rng: RNG state or PRNG key
+            shape: Shape of output array
+            minval: Minimum value
+            maxval: Maximum value
+            
+        Returns:
+            Random array with uniform distribution
+        """
+        ...
+    
+    @abstractmethod
+    def normal(self, rng: Any, shape: tuple, mean: float = 0.0, std: float = 1.0) -> Any:
+        """
+        Generate normal random samples.
+        
+        Args:
+            rng: RNG state or PRNG key
+            shape: Shape of output array
+            mean: Mean value
+            std: Standard deviation
+            
+        Returns:
+            Random array with normal distribution
+        """
+        ...
+    
+    @abstractmethod
+    def to_device(self, x: Any, device: str = None) -> Any:
+        """
+        Move tensor/array to specified device.
+        
+        Args:
+            x: Tensor/array to move
+            device: Target device ("cpu", "gpu", "webgpu")
+            
+        Returns:
+            Tensor/array on target device
+        """
+        ...
+    
+    @abstractmethod
+    def get_device(self) -> str:
+        """
+        Get current device.
+        
+        Returns:
+            Device name ("cpu", "gpu", "webgpu")
+        """
+        ...
+    
     def register_dynamics_kernel(self, key: str, fn: Callable) -> None:
         """
         Register a high-performance dynamics kernel (optional).
@@ -122,156 +209,30 @@ class Backend(Protocol):
         pass
 
 
-class JaxBackend:
-    """
-    JAX backend implementation.
-    
-    Provides JIT compilation, automatic differentiation, and efficient
-    vectorization using JAX's vmap and jit decorators.
-    """
-    
-    name = "jax"
-    
-    def __init__(self):
-        try:
-            import jax
-            import jax.numpy as jnp
-            self.jax = jax
-            self.jnp = jnp
-        except ImportError:
-            raise ImportError(
-                "JAX backend requires JAX to be installed. "
-                "Install with: pip install jax jaxlib"
-            )
-    
-    def tensor(self, x: Any, dtype: Optional[Any] = None) -> Any:
-        """Convert to JAX array."""
-        if dtype is None:
-            return self.jnp.asarray(x)
-        return self.jnp.asarray(x, dtype=dtype)
-    
-    def concat(self, xs: list, axis: int = 0) -> Any:
-        """Concatenate JAX arrays."""
-        return self.jnp.concatenate(xs, axis=axis)
-    
-    def randn(self, shape: tuple, rng_key: Optional[Any] = None) -> Any:
-        """Generate random normal samples using JAX."""
-        if rng_key is None:
-            rng_key = self.jax.random.PRNGKey(0)
-        return self.jax.random.normal(rng_key, shape)
-    
-    def vmap(self, fn: Callable) -> Callable:
-        """Vectorize function using JAX vmap."""
-        return self.jax.vmap(fn)
-    
-    def jit(self, fn: Callable) -> Callable:
-        """JIT compile function using JAX."""
-        return self.jax.jit(fn)
-
-
-class NumpyBackend:
-    """
-    NumPy backend implementation (reference/fallback).
-    
-    This is a simple backend for testing and environments that don't
-    require JIT compilation or automatic differentiation.
-    """
-    
-    name = "numpy"
-    
-    def __init__(self):
-        self.np = np
-    
-    def tensor(self, x: Any, dtype: Optional[Any] = None) -> Any:
-        """Convert to NumPy array."""
-        if dtype is None:
-            return np.asarray(x)
-        return np.asarray(x, dtype=dtype)
-    
-    def concat(self, xs: list, axis: int = 0) -> Any:
-        """Concatenate NumPy arrays."""
-        return np.concatenate(xs, axis=axis)
-    
-    def randn(self, shape: tuple, rng_key: Optional[Any] = None) -> Any:
-        """Generate random normal samples using NumPy."""
-        if rng_key is not None:
-            np.random.seed(rng_key if isinstance(rng_key, int) else hash(rng_key) % 2**32)
-        return np.random.randn(*shape)
-    
-    def vmap(self, fn: Callable) -> Callable:
-        """Vectorize function (no-op for NumPy, just returns function)."""
-        return fn
-    
-    def jit(self, fn: Callable) -> Callable:
-        """JIT compile (no-op for NumPy, just returns function)."""
-        return fn
-
-
-class TorchBackend:
-    """
-    PyTorch backend implementation (stub for future implementation).
-    
-    This backend would provide PyTorch tensor operations and support
-    for neural network-based dynamics and energy models.
-    """
-    
-    name = "torch"
-    
-    def __init__(self):
-        try:
-            import torch
-            self.torch = torch
-        except ImportError:
-            raise ImportError(
-                "Torch backend requires PyTorch to be installed. "
-                "Install with: pip install torch"
-            )
-    
-    def tensor(self, x: Any, dtype: Optional[Any] = None) -> Any:
-        """Convert to PyTorch tensor."""
-        if dtype is None:
-            return self.torch.as_tensor(x)
-        return self.torch.as_tensor(x, dtype=dtype)
-    
-    def concat(self, xs: list, axis: int = 0) -> Any:
-        """Concatenate PyTorch tensors."""
-        return self.torch.cat(xs, dim=axis)
-    
-    def randn(self, shape: tuple, rng_key: Optional[Any] = None) -> Any:
-        """Generate random normal samples using PyTorch."""
-        if rng_key is not None:
-            generator = self.torch.Generator()
-            if isinstance(rng_key, int):
-                generator.manual_seed(rng_key)
-            else:
-                generator.manual_seed(hash(rng_key) % 2**32)
-            return self.torch.randn(shape, generator=generator)
-        return self.torch.randn(shape)
-    
-    def vmap(self, fn: Callable) -> Callable:
-        """Vectorize function (PyTorch doesn't have vmap, use manual batching)."""
-        # PyTorch doesn't have vmap, so we return the function as-is
-        # Users should manually batch operations
-        return fn
-    
-    def jit(self, fn: Callable) -> Callable:
-        """JIT compile function using TorchScript."""
-        return self.torch.jit.script(fn)
-
+# Import runtime backends (concrete implementations)
+from enerdynamics.core.backends.runtime import (
+    JaxBackend,
+    NumpyBackend,
+    TorchBackend,
+    RuntimeBackendManager,
+)
 
 # Factory function for creating backends
-def get_backend(name: str = "jax") -> Backend:
+def get_backend(name: str = "jax", device: str = "cpu", **kwargs) -> Backend:
     """
     Factory function to create a backend by name.
     
     Args:
         name: Backend name ("jax", "numpy", "torch", etc.)
+        device: Device name ("cpu", "gpu", "webgpu")
+        **kwargs: Additional backend-specific arguments
         
     Returns:
         Backend instance
         
     Raises:
         ValueError: If backend name is not recognized
+        ImportError: If required backend library is not installed
     """
     backends = {
         "jax": JaxBackend,
@@ -284,4 +245,5 @@ def get_backend(name: str = "jax") -> Backend:
             f"Unknown backend: {name}. Available backends: {list(backends.keys())}"
         )
     
-    return backends[name]()
+    backend_class = backends[name]
+    return backend_class(device=device, **kwargs)
