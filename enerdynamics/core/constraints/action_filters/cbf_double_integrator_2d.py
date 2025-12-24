@@ -20,6 +20,22 @@ try:
 except Exception:  # pragma: no cover
     torch = None
 
+# Import registry system
+try:
+    from enerdynamics.core.registry.action_filters import get_action_filter_registry
+    REGISTRY_AVAILABLE = True
+except ImportError:
+    REGISTRY_AVAILABLE = False
+    get_action_filter_registry = None
+
+# Import RuntimeBackendManager to detect backend
+try:
+    from enerdynamics.core.backends.runtime import RuntimeBackendManager
+    BACKEND_MANAGER_AVAILABLE = True
+except ImportError:
+    BACKEND_MANAGER_AVAILABLE = False
+    RuntimeBackendManager = None
+
 if TYPE_CHECKING:
     from enerdynamics.core.constraints.schedule import ConstraintScheduleManager
 
@@ -46,6 +62,46 @@ class CBFDoubleIntegrator2DActionFilter(ActionFilterOperator):
     k0: float = 1.0
     k1: float = 4.0
     schedule_manager: Optional["ConstraintScheduleManager"] = None
+    
+    def __post_init__(self):
+        """Initialize backend implementation after dataclass initialization."""
+        # Determine backend name from RuntimeBackendManager
+        backend_name = None
+        if BACKEND_MANAGER_AVAILABLE and RuntimeBackendManager is not None:
+            try:
+                backend = RuntimeBackendManager.get_backend()
+                backend_name = backend.name
+            except Exception:
+                # If backend detection fails, default to "numpy"
+                backend_name = "numpy"
+        else:
+            backend_name = "numpy"  # Default to numpy if manager not available
+        
+        # Get backend implementation from registry
+        self._backend_impl = None
+        if REGISTRY_AVAILABLE and get_action_filter_registry is not None:
+            registry = get_action_filter_registry()
+            impl_class = registry.get("cbf_double_integrator_2d", backend_name)
+            if impl_class is not None:
+                # Create backend implementation instance
+                config = {
+                    'robot_radius': self.robot_radius,
+                    'dt': self.dt,
+                    'tau': self.tau,
+                    'k0': self.k0,
+                    'k1': self.k1,
+                    'schedule_manager': self.schedule_manager,
+                }
+                try:
+                    self._backend_impl = impl_class(self.obstacles, **config)
+                    print(f"[CBF ActionFilter] Using {backend_name} backend implementation from registry")
+                except Exception as e:
+                    print(f"[CBF ActionFilter] WARNING: Failed to create {backend_name} backend implementation: {e}")
+                    self._backend_impl = None
+            else:
+                available_backends = registry.list_backends("cbf_double_integrator_2d")
+                print(f"[CBF ActionFilter] WARNING: {backend_name} backend not found in registry. "
+                      f"Available backends: {available_backends}. Falling back to legacy implementation.")
 
     def _get_clearance(self, step: Optional[int], total_steps: Optional[int]) -> float:
         if self.schedule_manager is None:
@@ -62,6 +118,12 @@ class CBFDoubleIntegrator2DActionFilter(ActionFilterOperator):
         step: Optional[int] = None,
         total_steps: Optional[int] = None,
     ) -> np.ndarray:
+        """Filter actions using backend implementation or legacy NumPy implementation."""
+        # Use registry-based backend implementation if available
+        if self._backend_impl is not None:
+            return self._backend_impl.filter_actions(x0, actions, step, total_steps)
+        
+        # Fallback to legacy NumPy implementation
         actions = np.asarray(actions, dtype=np.float32).copy()
         if actions.ndim != 2 or actions.shape[1] != 2:
             return actions
@@ -103,6 +165,15 @@ class CBFDoubleIntegrator2DActionFilter(ActionFilterOperator):
         return actions
 
     def make_jax_filter(self):
+        """Create JAX filter function using backend implementation or legacy code."""
+        # Try to use backend implementation first
+        if self._backend_impl is not None:
+            if hasattr(self._backend_impl, 'make_jax_filter'):
+                jax_filter = self._backend_impl.make_jax_filter()
+                if jax_filter is not None:
+                    return jax_filter
+        
+        # Fallback to legacy JAX implementation
         if jnp is None or jax is None:
             return None
         tex = self.obstacles.get_sdf_texture_2d()
@@ -167,6 +238,15 @@ class CBFDoubleIntegrator2DActionFilter(ActionFilterOperator):
         return filter_fn
 
     def make_torch_filter(self):
+        """Create PyTorch filter function using backend implementation or legacy code."""
+        # Try to use backend implementation first
+        if self._backend_impl is not None:
+            if hasattr(self._backend_impl, 'make_torch_filter'):
+                torch_filter = self._backend_impl.make_torch_filter()
+                if torch_filter is not None:
+                    return torch_filter
+        
+        # Fallback to legacy PyTorch implementation
         if torch is None:
             return None
         tex = self.obstacles.get_sdf_texture_2d()

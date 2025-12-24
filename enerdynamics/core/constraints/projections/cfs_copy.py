@@ -27,14 +27,6 @@ except ImportError:
     BACKEND_MANAGER_AVAILABLE = False
     RuntimeBackendManager = None
 
-# Import registry system
-try:
-    from enerdynamics.core.registry.projections import get_projection_registry
-    REGISTRY_AVAILABLE = True
-except ImportError:
-    REGISTRY_AVAILABLE = False
-    get_projection_registry = None
-
 try:
     # Optional: used for true trajectory-level CFS-QP.
     import cvxopt  # type: ignore
@@ -136,58 +128,32 @@ class CFSProjection(FeasibilityOperator):
         self.constraint_margin = float(max(0.0, constraint_margin))
         self.schedule_manager = schedule_manager
         
-        # Determine backend name from RuntimeBackendManager or force_python_backend
-        backend_name = None
+        # Detect backend: if NumPy backend is used, force Python/cvxopt path
         if force_python_backend is None:
             if BACKEND_MANAGER_AVAILABLE and RuntimeBackendManager is not None:
                 try:
                     backend = RuntimeBackendManager.get_backend()
-                    backend_name = backend.name
+                    self._use_python_backend = (backend.name == "numpy")
+                    if self._use_python_backend:
+                        print(f"[CFS] Detected NumPy backend, using Python/cvxopt path (not JAX)")
                 except Exception:
-                    # If backend detection fails, default to "numpy"
-                    backend_name = "numpy"
+                    # If backend detection fails, default to False (use JAX if available)
+                    self._use_python_backend = False
             else:
-                backend_name = "numpy"  # Default to numpy if manager not available
+                self._use_python_backend = False
         else:
-            # force_python_backend is legacy parameter for backward compatibility
-            backend_name = "numpy" if force_python_backend else "jax"
-            if force_python_backend:
-                print(f"[CFS] Force Python backend enabled, using NumPy implementation")
-        
-        # Get backend implementation from registry
-        self._backend_impl = None
-        if REGISTRY_AVAILABLE and get_projection_registry is not None:
-            registry = get_projection_registry()
-            impl_class = registry.get("cfs", backend_name)
-            if impl_class is not None:
-                # Create backend implementation instance
-                config = {
-                    'max_iterations': self.max_iterations,
-                    'convergence_tol': self.convergence_tol,
-                    'max_constraints_per_point': self.max_constraints_per_point,
-                    'constraint_margin': self.constraint_margin,
-                    'use_trajectory_qp': self.use_trajectory_qp,
-                    'smoothness_weight': self.smoothness_weight,
-                }
-                try:
-                    self._backend_impl = impl_class(obstacles, **config)
-                    print(f"[CFS] Using {backend_name} backend implementation from registry")
-                except Exception as e:
-                    print(f"[CFS] WARNING: Failed to create {backend_name} backend implementation: {e}")
-                    self._backend_impl = None
-            else:
-                available_backends = registry.list_backends("cfs")
-                print(f"[CFS] WARNING: {backend_name} backend not found in registry. "
-                      f"Available backends: {available_backends}. Falling back to legacy implementation.")
-        
-        # Fallback: use legacy _use_python_backend flag for backward compatibility
-        if self._backend_impl is None:
-            self._use_python_backend = (backend_name == "numpy")
+            self._use_python_backend = bool(force_python_backend)
             if self._use_python_backend:
-                print(f"[CFS] Using legacy NumPy/cvxopt path (not JAX)")
-                if cvx_solvers is None or cvx_matrix is None:
-                    print(f"[CFS] WARNING: Python backend requested but cvxopt is not available. "
-                          f"CFS will fall back to pointwise projection.")
+                print(f"[CFS] Force Python backend enabled, using cvxopt (not JAX)")
+        
+        # If using Python backend, ensure we use cvxopt (not JAX qpax)
+        if self._use_python_backend:
+            # Force use_trajectory_qp to use cvxopt path
+            # The _project_cfs_batch will check _use_python_backend to ensure cvxopt is used
+            # Verify cvxopt is available
+            if cvx_solvers is None or cvx_matrix is None:
+                print(f"[CFS] WARNING: Python backend requested but cvxopt is not available. "
+                      f"CFS will fall back to pointwise projection.")
 
     def should_apply(self, step: Optional[int] = None, total_steps: Optional[int] = None) -> bool:
         """Check if projection should be applied at current step."""
@@ -243,27 +209,12 @@ class CFSProjection(FeasibilityOperator):
         else:
             positions = np.zeros((0, 2), dtype=np.float32)  # Empty trajectory
 
-        # Batch project all positions using backend implementation or legacy method
-        if self._backend_impl is not None:
-            # Use registry-based backend implementation
-            projected_positions = self._backend_impl.project_batch(
-                positions=positions,
-                clearance=clearance,
-                step=step,
-                max_iterations=self.max_iterations,
-                convergence_tol=self.convergence_tol,
-                max_constraints_per_point=self.max_constraints_per_point,
-                constraint_margin=self.constraint_margin,
-                use_trajectory_qp=self.use_trajectory_qp,
-                smoothness_weight=self.smoothness_weight,
-            )
-        else:
-            # Fallback to legacy implementation
-            projected_positions = self._project_cfs_batch(
-                positions,
-                clearance,
-                step
-            )
+        # Batch project all positions
+        projected_positions = self._project_cfs_batch(
+            positions,
+            clearance,
+            step
+        )
 
         # Optionally reconstruct velocities (for 4D [px,py,vx,vy] states) from the projected positions.
         vel_from_pos = None
