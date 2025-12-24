@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
 import time
-from enerdynamics.solvers.edoc import run_edoc
+from enerdynamics.solvers.single.edoc import run_edoc
 from enerdynamics.solvers.mbd import run_mbd
 from enerdynamics.solvers.mppi import run_mppi
 from enerdynamics.solvers.cem import run_cem

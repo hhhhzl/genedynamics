@@ -40,7 +40,7 @@ from enerdynamics.core.constraints import (
     ConstraintScheduleManager,
 )
 from enerdynamics.core.types import Trajectory
-from enerdynamics.solvers.edoc import EDOCPlanner
+from enerdynamics.solvers.single.edoc import EDOCPlanner
 from enerdynamics.envs.factories import make_energy
 from enerdynamics.core.backends.runtime import RuntimeBackendManager
 
@@ -1613,7 +1613,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_seeds", type=int, default=10, help="Number of seeds per level")
     parser.add_argument("--level", type=int, default=None, help="Run single level only")
     parser.add_argument("--seed", type=int, default=None, help="Run single seed only")
-    parser.add_argument("--backend", type=str, default="jax", choices=["jax", "numpy", "torch"],
+    parser.add_argument("--backend", type=str, default="numpy", choices=["jax", "numpy", "torch"],
                        help="Computational backend (jax, numpy, torch)")
     parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "gpu", "webgpu"],
                        help="Device to use (cpu, gpu, webgpu)")

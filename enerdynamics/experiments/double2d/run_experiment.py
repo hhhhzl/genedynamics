@@ -44,7 +44,7 @@ from enerdynamics.core.constraints import (
     ConstraintScheduleManager,
 )
 from enerdynamics.core.types import Trajectory, State, Action
-from enerdynamics.solvers.edoc import EDOCPlanner
+from enerdynamics.solvers.single.edoc import EDOCPlanner
 from enerdynamics.envs.factories import make_energy
 from enerdynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
 from enerdynamics.core.backends.runtime import RuntimeBackendManager

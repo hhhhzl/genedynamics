@@ -10,6 +10,14 @@ except ImportError:  # pragma: no cover - JAX is optional at runtime
     jax = None
     jnp = None
 
+# Register environment to registry
+try:
+    from enerdynamics.core.registry.environments import register_env
+    REGISTRY_AVAILABLE = True
+except ImportError:
+    REGISTRY_AVAILABLE = False
+    register_env = None
+
 Array = np.ndarray
 
 
@@ -129,4 +137,9 @@ class DoubleIntegratorBox2DEnv:
         if jnp is None:
             raise RuntimeError("jax_env_transition requires JAX to be installed.")
         return self.jax_transition(state, action)
+
+
+# Register environment to registry
+if REGISTRY_AVAILABLE and register_env is not None:
+    register_env("double_integrator_box_2d", DoubleIntegratorBox2DEnv)
 

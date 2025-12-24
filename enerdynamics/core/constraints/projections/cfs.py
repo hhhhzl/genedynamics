@@ -35,6 +35,12 @@ except ImportError:
     REGISTRY_AVAILABLE = False
     get_projection_registry = None
 
+# Import backend implementations to trigger registration
+try:
+    from enerdynamics.core.constraints.projections import backends  # noqa: F401
+except ImportError:
+    pass  # Backends may not be available
+
 try:
     # Optional: used for true trajectory-level CFS-QP.
     import cvxopt  # type: ignore
@@ -158,23 +164,36 @@ class CFSProjection(FeasibilityOperator):
         self._backend_impl = None
         if REGISTRY_AVAILABLE and get_projection_registry is not None:
             registry = get_projection_registry()
+            config = {
+                'max_iterations': self.max_iterations,
+                'convergence_tol': self.convergence_tol,
+                'max_constraints_per_point': self.max_constraints_per_point,
+                'constraint_margin': self.constraint_margin,
+                'use_trajectory_qp': self.use_trajectory_qp,
+                'smoothness_weight': self.smoothness_weight,
+            }
+            
+            # Try to get the requested backend
             impl_class = registry.get("cfs", backend_name)
             if impl_class is not None:
-                # Create backend implementation instance
-                config = {
-                    'max_iterations': self.max_iterations,
-                    'convergence_tol': self.convergence_tol,
-                    'max_constraints_per_point': self.max_constraints_per_point,
-                    'constraint_margin': self.constraint_margin,
-                    'use_trajectory_qp': self.use_trajectory_qp,
-                    'smoothness_weight': self.smoothness_weight,
-                }
                 try:
                     self._backend_impl = impl_class(obstacles, **config)
                     print(f"[CFS] Using {backend_name} backend implementation from registry")
                 except Exception as e:
                     print(f"[CFS] WARNING: Failed to create {backend_name} backend implementation: {e}")
                     self._backend_impl = None
+                    
+                    # If JAX backend failed, try NumPy backend as fallback
+                    if backend_name == "jax":
+                        numpy_class = registry.get("cfs", "numpy")
+                        if numpy_class is not None:
+                            try:
+                                self._backend_impl = numpy_class(obstacles, **config)
+                                print(f"[CFS] Falling back to numpy backend implementation")
+                                backend_name = "numpy"  # Update backend_name for consistency
+                            except Exception as e2:
+                                print(f"[CFS] WARNING: Failed to create numpy backend implementation: {e2}")
+                                self._backend_impl = None
             else:
                 available_backends = registry.list_backends("cfs")
                 print(f"[CFS] WARNING: {backend_name} backend not found in registry. "

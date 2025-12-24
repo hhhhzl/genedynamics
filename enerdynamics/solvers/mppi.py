@@ -19,7 +19,7 @@ from enerdynamics.core.dynamics import DynamicsModel, DynamicsToEnvAdapter
 from enerdynamics.core.energy import EnergyFunctional, LegacyEnergyFunctional
 from enerdynamics.core.backends import Backend, JaxBackend
 from enerdynamics.core.types import State, Action, Trajectory
-from enerdynamics.solvers.edoc import EnergyToLegacyAdapter
+from enerdynamics.solvers.single.edoc import EnergyToLegacyAdapter
 
 
 class MPPISolver(SamplingSolver):

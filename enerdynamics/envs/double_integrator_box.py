@@ -10,6 +10,14 @@ except ImportError:  # pragma: no cover - JAX is optional at runtime
     jax = None
     jnp = None
 
+# Register environment to registry
+try:
+    from enerdynamics.core.registry.environments import register_env
+    REGISTRY_AVAILABLE = True
+except ImportError:
+    REGISTRY_AVAILABLE = False
+    register_env = None
+
 Array = np.ndarray
 
 
@@ -138,3 +146,8 @@ class DoubleIntegratorBoxEnv:
         p_next = jnp.clip(p_next, -self.p_max, self.p_max)
         v_next = jnp.clip(v_next, -self.v_max, self.v_max)
         return jnp.stack([p_next, v_next], axis=-1)
+
+
+# Register environment to registry
+if REGISTRY_AVAILABLE and register_env is not None:
+    register_env("double_integrator_box", DoubleIntegratorBoxEnv)

@@ -37,6 +37,22 @@ from enerdynamics.core.constraints import ConstraintManager
 from enerdynamics.core.integrators import langevin_step
 from enerdynamics.envs.factories import make_env, make_energy
 
+# Register solver to registry
+try:
+    from enerdynamics.core.registry.solvers import register_solver
+    REGISTRY_AVAILABLE = True
+except ImportError:
+    REGISTRY_AVAILABLE = False
+    register_solver = None
+
+# Register solver to registry
+try:
+    from enerdynamics.core.registry.solvers import register_solver
+    REGISTRY_AVAILABLE = True
+except ImportError:
+    REGISTRY_AVAILABLE = False
+    register_solver = None
+
 
 # ============================================================================
 # EDOC Planner (Core Implementation)
@@ -124,6 +140,25 @@ class EDOCPlanner:
         
         # ===== Constraint system =====
         self.constraint_manager = constraint_manager
+        
+        # If using NumPy backend, ensure CFS uses Python backend (cvxopt)
+        # This ensures CFS projection aligns with the runtime backend choice
+        # Note: With the new registry system, CFS automatically uses the correct backend
+        # based on RuntimeBackendManager, so this logic is mainly for backward compatibility
+        if self._use_numpy_backend and self.constraint_manager is not None:
+            feasibility_op = self.constraint_manager.feasibility_operator
+            if feasibility_op is not None:
+                # Use registry system if available, otherwise use legacy attribute
+                if hasattr(feasibility_op, '_backend_impl') and feasibility_op._backend_impl is not None:
+                    # Registry-based: backend_impl should already be set correctly by CFSProjection.__init__
+                    # Check if it's using NumPy backend
+                    backend_impl_type = type(feasibility_op._backend_impl).__name__
+                    if "Numpy" not in backend_impl_type:
+                        print(f"[EDOC] Warning: NumPy backend detected but CFS is using {backend_impl_type}")
+                elif hasattr(feasibility_op, '_use_python_backend'):
+                    # Legacy: force CFS to use Python backend
+                    feasibility_op._use_python_backend = True
+                    print(f"[EDOC] Forced CFS to use Python backend (cvxopt) for NumPy backend")
         
         # If using NumPy backend, ensure CFS uses Python backend (cvxopt)
         if self._use_numpy_backend and self.constraint_manager is not None:
@@ -1992,6 +2027,11 @@ class EDOCSolver(SamplingSolver):
         )
         
         return traj
+
+
+# Register EDOC solver to registry
+if REGISTRY_AVAILABLE and register_solver is not None:
+    register_solver("edoc", EDOCPlanner)
 
 
 # ============================================================================
