@@ -51,7 +51,7 @@ from enerdynamics.core.solvers import (
 # Legacy utilities (for backward compatibility)
 # Note: project_box and soft_box_energy are now in constraints.base for backward compatibility
 # New code should use enerdynamics.core.constraints for the full constraint system
-from enerdynamics.core.constraints.base import project_box, soft_box_energy
+from enerdynamics.core.constraints.legacy.base import project_box, soft_box_energy
 from enerdynamics.core.metrics import euclidean_metric_inv
 from enerdynamics.core.integrators import langevin_step, euler_step
 

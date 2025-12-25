@@ -14,7 +14,7 @@ from enerdynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
 
 def make_env(name: str, **kwargs):
     """
-    Factory function to create environments.
+    Factory function to create environments using the registry system.
     
     Args:
         name: Environment name (e.g., "double_integrator_box", "double_integrator_box_2d")
@@ -26,6 +26,18 @@ def make_env(name: str, **kwargs):
     Raises:
         ValueError: If environment name is not recognized
     """
+    # Try to use registry first
+    try:
+        from enerdynamics.core.registry.environments import get_environment_registry
+        registry = get_environment_registry()
+        env_class = registry.get_class(name)
+        if env_class is not None:
+            return registry.create(name, **kwargs)
+    except (ImportError, AttributeError):
+        # Registry not available, fall back to legacy hardcoded logic
+        pass
+    
+    # Fallback to legacy hardcoded logic for backward compatibility
     if name == "double_integrator_box":
         from enerdynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
         return DoubleIntegratorBoxEnv(**kwargs)
@@ -36,7 +48,20 @@ def make_env(name: str, **kwargs):
         from enerdynamics.envs.single_integrator_box_2d import SingleIntegratorBox2DEnv
         return SingleIntegratorBox2DEnv(**kwargs)
     else:
-        raise ValueError(f"Unknown environment name: {name}")
+        available = []
+        try:
+            from enerdynamics.core.registry.environments import get_environment_registry
+            registry = get_environment_registry()
+            available = registry.list_available()
+        except (ImportError, AttributeError):
+            pass
+        if available:
+            raise ValueError(
+                f"Unknown environment name: {name}. "
+                f"Available environments: {available}"
+            )
+        else:
+            raise ValueError(f"Unknown environment name: {name}")
 
 
 def make_env_adapter(
@@ -65,7 +90,7 @@ def make_env_adapter(
 
 def make_energy(env_name: str) -> LegacyEnergyFunctional:
     """
-    Factory function to create energy functionals for environments.
+    Factory function to create energy functionals for environments using the registry system.
     
     Args:
         env_name: Environment name
@@ -76,6 +101,22 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
     Raises:
         ValueError: If environment name is not recognized
     """
+    # Try to use energy registry first
+    try:
+        from enerdynamics.core.registry.energy import get_energy_registry
+        registry = get_energy_registry()
+        # Check if registered (has factory or class)
+        if registry.is_registered(env_name):
+            # Use registry.create which handles factories automatically
+            return registry.create(env_name)
+    except (ImportError, AttributeError, TypeError):
+        # Registry not available or error, fall back to legacy hardcoded logic
+        pass
+    except ValueError:
+        # Not found in registry, fall back to legacy
+        pass
+    
+    # Fallback to legacy hardcoded logic for backward compatibility
     if env_name == "double_integrator_box":
         def task_energy(x, u, ctx):
             pos = x[0]

@@ -1,15 +1,21 @@
 """
-Constraint system for EDOC: Soft and hard constraints with flexible scheduling.
+High-Performance Multi-Backend Constraint System.
 
 This module provides:
-- Base classes: SoftConstraint, HardConstraint, FeasibilityOperator, ConstraintManager
-- Obstacle constraints: ObstacleSoftConstraint, ObstacleHardConstraint
-- Projection operators: CFSProjection (Convex Feasible Set)
-- Scheduling system: ConstraintSchedule, ConstraintScheduleManager
-- Utility functions: project_box, soft_box_energy
+- New Architecture (recommended): HighPerformanceConstraintPipeline, Convexifiers, Operators, Schedulers
+- Legacy Architecture (deprecated): ConstraintManager, SoftConstraint, HardConstraint, etc.
+
+⚠️ For new code, use the new architecture:
+  from enerdynamics.core.constraints.core import HighPerformanceConstraintPipeline
+
+⚠️ Legacy components are kept for backward compatibility only.
+  See legacy/MIGRATION_GUIDE.md for migration instructions.
 """
 
-from enerdynamics.core.constraints.base import (
+# Legacy imports (deprecated - use new architecture instead)
+# See legacy/MIGRATION_GUIDE.md for migration instructions
+# These are kept for backward compatibility with existing experiments and solvers
+from enerdynamics.core.constraints.legacy.base import (
     SoftConstraint,
     HardConstraint,
     FeasibilityOperator,
@@ -18,17 +24,17 @@ from enerdynamics.core.constraints.base import (
     project_box,
     soft_box_energy,
 )
-from enerdynamics.core.constraints.obstacle_constraints import (
+from enerdynamics.core.constraints.legacy.obstacle_constraints import (
     ObstacleSoftConstraint,
     ObstacleHardConstraint,
 )
-from enerdynamics.core.constraints.projections.cfs import (
+from enerdynamics.core.constraints.legacy.projections import (
     CFSProjection,
 )
-from enerdynamics.core.constraints.action_filters import (
+from enerdynamics.core.constraints.legacy.action_filters import (
     CBFDoubleIntegrator2DActionFilter,
 )
-from enerdynamics.core.constraints.schedule import (
+from enerdynamics.core.constraints.legacy.schedule import (
     ConstraintSchedule,
     ConstantSchedule,
     LinearSchedule,
