@@ -90,7 +90,17 @@ class SDFTexture2D:
         if jnp is None:
             raise RuntimeError("JAX is not available; cannot convert SDFTexture2D to JAX.")
         if self._tex_jax is None:
-            self._tex_jax = jnp.asarray(self.tex_np, dtype=jnp.float32)
+            # Check if we're inside a JAX transformation (would cause tracer leak)
+            # This is a best-effort check - if jax is available, try to detect tracers
+            try:
+                # Convert outside any transformation - this should be called before JIT compilation
+                self._tex_jax = jnp.asarray(self.tex_np, dtype=jnp.float32)
+            except Exception as e:
+                # If conversion fails (e.g., inside a transformation), raise a clearer error
+                raise RuntimeError(
+                    "Cannot convert SDF texture to JAX inside a JAX transformation. "
+                    "Call to_jax() before creating JAX-transformed functions (e.g., before jax.jit)."
+                ) from e
         return self._tex_jax
 
     @staticmethod

@@ -216,6 +216,64 @@ class SphereObstacle:
         
         return vec / dist
     
+    def jax_sdf(self, points):
+        """
+        Compute SDF for sphere using JAX.
+        
+        Args:
+            points: Points to evaluate, shape (N, dim) or (dim,) as JAX array
+            
+        Returns:
+            SDF values, shape (N,) or scalar as JAX array
+        """
+        if jnp is None:
+            raise RuntimeError("JAX is not available")
+        
+        points = jnp.asarray(points, dtype=jnp.float32)
+        single_point = points.ndim == 1
+        if single_point:
+            points = points.reshape(1, -1)
+        
+        # Convert center to JAX array
+        center_jax = jnp.asarray(self.center, dtype=jnp.float32)
+        radius_jax = jnp.asarray(self.radius, dtype=jnp.float32)
+        
+        # Distance from center
+        dists = jnp.linalg.norm(points - center_jax, axis=-1)
+        
+        # SDF = distance - radius
+        sdf_vals = dists - radius_jax
+        
+        return sdf_vals[0] if single_point else sdf_vals
+    
+    def jax_gradient(self, point):
+        """
+        Compute SDF gradient using JAX.
+        
+        For sphere, gradient points from center to point (normalized).
+        
+        Args:
+            point: Point to evaluate, shape (dim,) as JAX array
+            
+        Returns:
+            Gradient, shape (dim,) as JAX array
+        """
+        if jnp is None:
+            raise RuntimeError("JAX is not available")
+        
+        point = jnp.asarray(point, dtype=jnp.float32)
+        center_jax = jnp.asarray(self.center, dtype=jnp.float32)
+        
+        vec = point - center_jax
+        dist = jnp.linalg.norm(vec)
+        
+        # Handle case where dist is very small
+        dist_safe = jnp.where(dist < 1e-6, 1e-6, dist)
+        grad = vec / dist_safe
+        
+        # Return zero gradient if at center
+        return jnp.where(dist < 1e-6, jnp.zeros_like(point), grad)
+    
     def to_backend(self, backend: str) -> dict:
         """Convert to backend representation."""
         return {

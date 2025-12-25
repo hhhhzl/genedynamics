@@ -13,10 +13,15 @@ physics and rendering backends handle environment-specific operations.
 # Computational backend (base abstraction)
 from enerdynamics.core.backends.base import (
     Backend,
+    get_backend,
+)
+
+# Runtime backends (concrete implementations)
+from enerdynamics.core.backends.runtime import (
     JaxBackend,
     NumpyBackend,
     TorchBackend,
-    get_backend,
+    RuntimeBackendManager,
 )
 
 # Physics and rendering backends
@@ -38,6 +43,7 @@ __all__ = [
     "NumpyBackend",
     "TorchBackend",
     "get_backend",
+    "RuntimeBackendManager",
     # Physics and rendering
     "PhysicsBackend",
     "RenderBackend",
