@@ -12,7 +12,7 @@ from enerdynamics.core.constraints import (
     ConstraintManager,
     ObstacleSoftConstraint,
     ObstacleHardConstraint,
-    CFSProjection,
+    CFSProjection,  # Deprecated: Use new architecture (CFSConvexifier + PerStepQPFilter)
     ConstraintScheduleManager,
     HardConstraint,
 )

@@ -85,7 +85,7 @@ class EDOCBackendJax(EDOCBackendBase):
         soft_beta_default = 10.0
         if self.constraint_manager is not None and self.constraint_manager.has_soft():
             try:
-                from enerdynamics.core.constraints.obstacle_constraints import ObstacleSoftConstraint
+                from enerdynamics.core.constraints.legacy.obstacle_constraints import ObstacleSoftConstraint
                 for c in self.constraint_manager.soft_constraints:
                     if isinstance(c, ObstacleSoftConstraint):
                         soft_alpha_default = float(getattr(c, "alpha", 1.0))

@@ -67,6 +67,35 @@ class ExperimentConfig:
         """Post-initialization: convert output_dir to Path if needed."""
         if isinstance(self.output_dir, str):
             self.output_dir = Path(self.output_dir)
+        
+        # If output_dir is relative, resolve it relative to project root
+        if not self.output_dir.is_absolute():
+            # Find project root (directory containing setup.py, pyproject.toml, or .git)
+            project_root = self._find_project_root()
+            if project_root:
+                self.output_dir = (project_root / self.output_dir).resolve()
+    
+    @staticmethod
+    def _find_project_root() -> Optional[Path]:
+        """
+        Find project root directory by looking for setup.py, pyproject.toml, or .git.
+        
+        Returns:
+            Path to project root, or None if not found
+        """
+        current = Path(__file__).resolve()
+        # Start from this file and go up: enerdynamics/experiments/framework/config.py
+        # -> enerdynamics/experiments/framework -> enerdynamics/experiments -> enerdynamics -> project_root
+        for parent in [current.parent.parent.parent.parent, current.parent.parent.parent]:
+            if (parent / "setup.py").exists() or (parent / "pyproject.toml").exists() or (parent / ".git").exists():
+                return parent
+        
+        # Fallback: try current working directory
+        cwd = Path.cwd()
+        if (cwd / "setup.py").exists() or (cwd / "pyproject.toml").exists() or (cwd / ".git").exists():
+            return cwd
+        
+        return None
     
     @classmethod
     def from_yaml(cls, path: Path) -> 'ExperimentConfig':
@@ -92,7 +121,13 @@ class ExperimentConfig:
         
         # Convert output_dir string to Path if present
         if 'output_dir' in data and isinstance(data['output_dir'], str):
-            data['output_dir'] = Path(data['output_dir'])
+            output_dir = Path(data['output_dir'])
+            # If relative, resolve relative to project root
+            if not output_dir.is_absolute():
+                project_root = cls._find_project_root()
+                if project_root:
+                    output_dir = (project_root / output_dir).resolve()
+            data['output_dir'] = output_dir
         
         return cls(**data)
     
@@ -112,7 +147,13 @@ class ExperimentConfig:
         
         # Convert output_dir string to Path if present
         if 'output_dir' in data and isinstance(data['output_dir'], str):
-            data['output_dir'] = Path(data['output_dir'])
+            output_dir = Path(data['output_dir'])
+            # If relative, resolve relative to project root
+            if not output_dir.is_absolute():
+                project_root = cls._find_project_root()
+                if project_root:
+                    output_dir = (project_root / output_dir).resolve()
+            data['output_dir'] = output_dir
         
         return cls(**data)
     
