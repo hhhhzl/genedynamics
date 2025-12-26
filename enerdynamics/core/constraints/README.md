@@ -11,7 +11,7 @@ This is a complete rewrite of the constraint system with a focus on:
 ## Architecture
 
 ```
-Terms (定义) → Convexify (编译) → Operators (执行) → Schedulers (调度)
+Terms → Convexify → Operators → Schedulers
 ```
 
 ### Key Principles
