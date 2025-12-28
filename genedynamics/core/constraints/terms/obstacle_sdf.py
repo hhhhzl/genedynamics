@@ -198,3 +198,4 @@ class ObstacleSDFTerm(ConstraintTerm):
     # Uses legacy_extract_position when no custom position_extractor (same as CFS, pipeline).
 
 
+
