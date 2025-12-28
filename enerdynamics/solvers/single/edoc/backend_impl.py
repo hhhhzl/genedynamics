@@ -77,6 +77,7 @@ class EDOCBackendBase(ABC):
         self.env = planner.env
         self.energy = planner.energy
         self.horizon = planner.horizon
+        self.action_space = planner.action_space
         self.action_diffuse_steps = planner.action_diffuse_steps
         self.action_beta0 = planner.action_beta0
         self.action_betaT = planner.action_betaT

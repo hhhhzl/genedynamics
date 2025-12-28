@@ -10,10 +10,10 @@ This test verifies:
 
 import numpy as np
 import pytest
-from enerdynamics.core.constraints.projections.cfs import CFSProjection
+from enerdynamics.core.constraints.legacy.projections.cfs import CFSProjection
 from enerdynamics.envs.obstacles.base import ObstacleManager
 from enerdynamics.envs.obstacles.convex import BoxObstacle
-from enerdynamics.core.constraints.schedule import ConstraintScheduleManager
+from enerdynamics.core.constraints.legacy.schedule import ConstraintScheduleManager
 
 try:
     import jax

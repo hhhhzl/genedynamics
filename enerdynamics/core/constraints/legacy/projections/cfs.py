@@ -173,6 +173,40 @@ class CFSProjection(FeasibilityOperator):
         self._backend_impl = None
         if REGISTRY_AVAILABLE and get_projection_registry is not None:
             registry = get_projection_registry()
+            
+            # Auto-detect use_jit for JAX backend
+            use_jit = True  # Default to JIT mode
+            if backend_name == "jax":
+                # Check if all obstacles support JAX (have jax_sdf method)
+                obstacles_list = list(obstacles)
+                all_support_jax = all(hasattr(obs, "jax_sdf") for obs in obstacles_list) if obstacles_list else True
+                
+                # Check if qpax is available (required for JIT mode)
+                try:
+                    import qpax
+                    qpax_available = True
+                except ImportError:
+                    qpax_available = False
+                
+                # Auto-detect: use JIT only if all obstacles support JAX and qpax is available
+                use_jit = all_support_jax and qpax_available
+                
+                if not use_jit:
+                    # Check if cvxopt is available (required for non-JIT mode)
+                    try:
+                        import cvxopt
+                        cvxopt_available = True
+                    except ImportError:
+                        cvxopt_available = False
+                    
+                    if not cvxopt_available:
+                        print(f"[CFS] WARNING: JAX backend requires either qpax (for JIT) or cvxopt (for non-JIT). "
+                              f"Falling back to NumPy backend.")
+                        backend_name = "numpy"
+                        use_jit = False
+                    else:
+                        print(f"[CFS] Using JAX backend in non-JIT mode (cvxopt) - obstacles may not have jax_sdf")
+            
             config = {
                 'max_iterations': self.max_iterations,
                 'convergence_tol': self.convergence_tol,
@@ -182,12 +216,17 @@ class CFSProjection(FeasibilityOperator):
                 'smoothness_weight': self.smoothness_weight,
             }
             
+            # Add use_jit to config for JAX backend
+            if backend_name == "jax":
+                config['use_jit'] = use_jit
+            
             # Try to get the requested backend
             impl_class = registry.get("cfs", backend_name)
             if impl_class is not None:
                 try:
                     self._backend_impl = impl_class(obstacles, **config)
-                    print(f"[CFS] Using {backend_name} backend implementation from registry")
+                    jit_status = f" (JIT: {use_jit})" if backend_name == "jax" else ""
+                    print(f"[CFS] Using {backend_name} backend implementation from registry{jit_status}")
                 except Exception as e:
                     print(f"[CFS] WARNING: Failed to create {backend_name} backend implementation: {e}")
                     self._backend_impl = None
@@ -197,7 +236,9 @@ class CFSProjection(FeasibilityOperator):
                         numpy_class = registry.get("cfs", "numpy")
                         if numpy_class is not None:
                             try:
-                                self._backend_impl = numpy_class(obstacles, **config)
+                                numpy_config = config.copy()
+                                numpy_config.pop('use_jit', None)  # Remove use_jit for NumPy
+                                self._backend_impl = numpy_class(obstacles, **numpy_config)
                                 print(f"[CFS] Falling back to numpy backend implementation")
                                 backend_name = "numpy"  # Update backend_name for consistency
                             except Exception as e2:

@@ -21,7 +21,7 @@ except ImportError:
     jax = None
     jnp = None
 
-from enerdynamics.core.constraints.projections.cfs import CFSProjection
+from enerdynamics.core.constraints.legacy.projections.cfs import CFSProjection
 from enerdynamics.envs.obstacles.base import ObstacleManager
 from enerdynamics.envs.obstacles.convex import SphereObstacle
 from enerdynamics.core.types import Trajectory

@@ -1,0 +1,80 @@
+# EDOC experiment configuration for double_integrator_box_2d environment
+name: double2d_edoc_default
+output_dir: results/double2d/edoc
+
+env_name: double_integrator_box_2d
+env_params:
+  dt: 0.05
+  horizon: 80
+  p_max: 2.0
+  v_max: 2.0
+  control_limit: 1.0
+
+method: edoc
+method_params:
+  action_diffuse_steps: 100
+  action_nsample: 256
+  use_antithetic: true
+  action_score_mode: energy
+  terminal_energy_weight: 50.0
+
+obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+obstacle_config:
+  generator: box2d
+  robot_radius: 0.05
+  obstacle_radius_scale: 1.3
+  p_max: 2.0
+  map_bounds:
+    x_min: -1.5
+    x_max: 1.0
+    y_min: -2.0
+    y_max: 0.5
+  enable_connectivity_check: true
+  enable_nonconvexity_check: true
+
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+backend: jax
+device: cpu
+
+metrics:
+  - ssr
+  - obstacle_density
+  - nonconvexity
+
+visualizations:
+  - trajectory
+  - diffusion
+  - energy_reward
+  - states
+
+constraint_config:
+  soft_constraint:
+    enabled: true
+    alpha: 1.0
+    beta: 10.0
+  hard_constraint:
+    enabled: true
+    clearance: 0.1
+  schedule:
+    enabled: true
+    type: soft_to_hard
+    soft_alpha_start: 1.0
+    soft_alpha_end: 0.0
+    hard_clearance_start: 0.5
+    hard_clearance_end: 0.1
+    schedule_type: linear
+    reverse_mode: true
+  cfs:
+    enabled: true
+    use_trajectory_qp: true
+    max_iterations: 15
+    use_late_stage_only: true
+    late_stage_ratio: 0.2
+    reconstruct_velocity: true
+    smoothness_weight: 0.0
+  action_constraint_type: acceleration
+
+metadata:
+  description: "Default EDOC configuration for double integrator 2D environment"
+  author: "enerdynamics"
+
