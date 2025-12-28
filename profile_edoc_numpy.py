@@ -14,12 +14,12 @@ from enerdynamics.core.backends.runtime import RuntimeBackendManager
 def profile_edoc_numpy():
     """Profile EDOC NumPy backend."""
     # Force NumPy backend before creating planner
-    RuntimeBackendManager.set_backend("numpy", device="cpu")
+    RuntimeBackendManager.set_backend("jax", device="cpu")
     
     # Setup environment (adjust parameters as needed)
     env = make_env("single_integrator_box_2d")
     env.dt = 0.05
-    env.horizon = 80
+    env.horizon = 64
     env.control_limit = 1.0
     
     energy = make_energy("single_integrator_box_2d")
@@ -28,9 +28,9 @@ def profile_edoc_numpy():
     planner = EDOCPlanner(
         env=env,
         energy=energy,
-        horizon=80,
+        horizon=64,
         dt=0.05,
-        action_diffuse_steps=10,  # Reduce for faster profiling
+        action_diffuse_steps=100,  # Reduce for faster profiling
         action_nsample=64,  # Reduce for faster profiling
         action_score_mode="energy",
     )
