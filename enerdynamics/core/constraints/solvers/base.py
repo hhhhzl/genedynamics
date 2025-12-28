@@ -130,3 +130,4 @@ class QPSolver(ABC):
             
             return self.solve_qp(P, q, G, h, **kwargs)
 
+
