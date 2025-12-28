@@ -160,3 +160,4 @@ class CompositeTerm(ConstraintTerm):
         
         return feasible_flags
 
+

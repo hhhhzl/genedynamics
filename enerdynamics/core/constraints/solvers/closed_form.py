@@ -169,3 +169,4 @@ class ClosedFormSolver(QPSolver):
         
         return np.clip(u_nom, lb, ub)
 
+

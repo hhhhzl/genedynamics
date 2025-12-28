@@ -187,3 +187,4 @@ class BoundsTerm(ConstraintTerm):
         
         return np.array(violations, dtype=np.float32)
 
+

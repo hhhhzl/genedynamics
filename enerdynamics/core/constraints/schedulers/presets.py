@@ -136,3 +136,4 @@ def dual_anneal_scheduler(**kwargs) -> DualAnnealScheduler:
     """Create dual annealing scheduler."""
     return create_preset_scheduler("dual_anneal", **kwargs)
 
+
