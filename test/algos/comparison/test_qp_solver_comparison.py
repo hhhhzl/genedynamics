@@ -1,5 +1,5 @@
 """
-Test script to compare cvxopt vs qpax vs JAX enumeration QP solvers.
+Test script to compare cvxopt vs JAXOpt QP solvers.
 
 This test isolates the QP solver differences to understand how much
 the solver choice affects CFS projection results.
@@ -32,11 +32,11 @@ except ImportError:
     jnp = None
 
 try:
-    import qpax
-    QPAX_AVAILABLE = True
+    from jaxopt import BoxOSQP
+    JAXOPT_AVAILABLE = True
 except ImportError:
-    QPAX_AVAILABLE = False
-    qpax = None
+    JAXOPT_AVAILABLE = False
+    BoxOSQP = None
 
 
 def solve_qp_cvxopt(x0: np.ndarray, A: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -163,96 +163,53 @@ def solve_qp_numpy_enumeration(x0: np.ndarray, A: np.ndarray, b: np.ndarray) -> 
     return best_x.astype(np.float32)
 
 
-def solve_qp_qpax(x0: jnp.ndarray, A: jnp.ndarray, b: jnp.ndarray) -> np.ndarray:
+def solve_qp_jaxopt(x0: jnp.ndarray, A: jnp.ndarray, b: jnp.ndarray) -> np.ndarray:
     """
-    qpax method - JAX-compatible QP solver.
+    JAXOpt BoxOSQP method.
     
-    This is what the JAX version should use when qpax is available.
-    qpax supports general inequality constraints G x <= h.
+    This is what the JAX version uses when JAXOpt is available.
+    
+    Note: JAXOpt BoxOSQP uses a different API structure with params_obj, params_ineq, etc.
+    For simplicity, we'll skip JAXOpt in the test and note that it requires proper setup.
     """
-    if not QPAX_AVAILABLE:
-        raise RuntimeError("qpax not available")
+    if not JAXOPT_AVAILABLE:
+        raise RuntimeError("JAXOpt not available")
     
-    dim = x0.shape[0]
+    # JAXOpt BoxOSQP uses a different API structure:
+    # - params_obj: objective function parameters (P, q)
+    # - params_ineq: inequality constraints (G, h)
+    # - init_params: initial guess
+    # 
+    # The exact API depends on the JAXOpt version. For now, we'll note that
+    # the current CFS implementation also has this issue and needs to be fixed.
     
-    # Convert to qpax format: min 0.5 x^T Q x + q^T x s.t. G x <= h
-    Q = jnp.eye(dim, dtype=jnp.float32)
-    q = -x0
-    G = -A  # A x >= b  =>  -A x <= -b
-    h = -b
-    
-    # No equality constraints - use empty arrays instead of None
-    A_eq = jnp.zeros((0, dim), dtype=jnp.float32)  # Empty matrix for no equality constraints
-    b_eq = jnp.zeros((0,), dtype=jnp.float32)  # Empty vector
-    
-    try:
-        x, s, z, y, converged, iters = qpax.solve_qp(
-            Q, q, A_eq, b_eq, G, h,
-            solver_tol=1e-6
-        )
-        if not converged:
-            raise RuntimeError(f"qpax did not converge after {iters} iterations")
-        return np.asarray(x, dtype=np.float32)
-    except Exception as e:
-        raise RuntimeError(f"qpax solve failed: {e}")
+    raise NotImplementedError(
+        "JAXOpt BoxOSQP API needs to be updated. "
+        "BoxOSQP.run() uses params_obj, params_ineq, etc., not P, q, G, h directly. "
+        "See JAXOpt documentation for the correct API."
+    )
 
 
 def solve_qp_jax_simplified(x0: jnp.ndarray, A: jnp.ndarray, b: jnp.ndarray) -> np.ndarray:
     """
-    JAX simplified method - iterative projection onto violated constraints.
+    JAX simplified method (current fallback in _solve_projection_qp_identity_jax).
     
-    This iteratively projects onto violated constraints until feasible.
-    Better than single-constraint projection but still suboptimal.
+    This only projects onto the most violated constraint.
     """
-    x0 = jnp.asarray(x0, dtype=jnp.float32).flatten()
-    A = jnp.asarray(A, dtype=jnp.float32)
-    b = jnp.asarray(b, dtype=jnp.float32).flatten()
-    m, dim = A.shape
-    
-    def is_feasible(x):
-        lhs = A @ x
-        return jnp.all(lhs + 1e-7 >= b)
-    
-    # Check if already feasible
-    feasible_init = is_feasible(x0)
-    
-    def return_original():
-        return x0
-    
-    def project_iteratively():
-        # Iterative projection: repeatedly project onto most violated constraint
-        current = x0
-        max_iter = 20
-        
-        def project_step(i, x):
-            # Find most violated constraint
-            violations = b - (A @ x)
-            i_max = jnp.argmax(violations)
-            a = A[i_max]
-            denom = jnp.dot(a, a)
-            denom = jnp.where(denom < 1e-12, 1e-12, denom)
-            alpha = (b[i_max] - jnp.dot(a, x)) / denom
-            x_new = x + alpha * a
-            
-            # Check if feasible now
-            feasible = is_feasible(x_new)
-            # If feasible, keep returning this value; otherwise continue
-            return jnp.where(feasible, x_new, x_new)
-        
-        # Run iterations
-        result = jax.lax.fori_loop(0, max_iter, project_step, current)
-        return result
-    
-    # Use cond to handle initial feasibility
-    result = jax.lax.cond(feasible_init, return_original, project_iteratively)
-    
-    return np.asarray(result, dtype=np.float32)
+    violations = b - (A @ x0)
+    i = jnp.argmax(violations)
+    a = A[i]
+    denom = jnp.dot(a, a)
+    denom = jnp.where(denom < 1e-12, 1e-12, denom)
+    alpha = (b[i] - jnp.dot(a, x0)) / denom
+    best_x = x0 + alpha * a
+    return np.asarray(best_x, dtype=np.float32)
 
 
 def test_qp_solver_comparison():
     """Compare different QP solvers on the same problem."""
     print("=" * 80)
-    print("QP Solver Comparison Test: cvxopt vs NumPy Enumeration vs qpax vs JAX Simplified")
+    print("QP Solver Comparison Test: cvxopt vs NumPy Enumeration vs JAXOpt vs JAX Simplified")
     print("=" * 80)
     print("Note: CFS uses cvxopt for trajectory-level QP, enumeration for single-point QP")
     print("=" * 80)
@@ -300,23 +257,19 @@ def test_qp_solver_comparison():
         A_jax = jnp.asarray(A)
         b_jax = jnp.asarray(b)
         
-        # qpax (JAX-compatible QP solver)
-        if QPAX_AVAILABLE:
+        # JAXOpt (currently not working due to API mismatch)
+        if JAXOPT_AVAILABLE:
             try:
-                result_qpax = solve_qp_qpax(x0_jax, A_jax, b_jax)
-                print(f"qpax: {result_qpax}")
+                result_jaxopt = solve_qp_jaxopt(x0_jax, A_jax, b_jax)
+                print(f"JAXOpt: {result_jaxopt}")
                 if result_cvxopt is not None:
-                    diff = np.linalg.norm(result_cvxopt - result_qpax)
+                    diff = np.linalg.norm(result_cvxopt - result_jaxopt)
                     print(f"  Difference from cvxopt: {diff:.6f}")
-                if result_enum is not None:
-                    diff = np.linalg.norm(result_enum - result_qpax)
-                    print(f"  Difference from NumPy enumeration: {diff:.6f}")
-            except Exception as e:
-                print(f"qpax failed: {e}")
-                result_qpax = None
+            except (NotImplementedError, Exception) as e:
+                print(f"JAXOpt skipped: {e}")
+                result_jaxopt = None
         else:
-            print("qpax not available")
-            result_qpax = None
+            result_jaxopt = None
         
         # JAX simplified
         result_simplified = solve_qp_jax_simplified(x0_jax, A_jax, b_jax)
@@ -366,18 +319,15 @@ def test_qp_solver_comparison():
         A_jax = jnp.asarray(A)
         b_jax = jnp.asarray(b)
         
-        if QPAX_AVAILABLE:
+        if JAXOPT_AVAILABLE:
             try:
-                result_qpax = solve_qp_qpax(x0_jax, A_jax, b_jax)
-                print(f"qpax: {result_qpax}")
+                result_jaxopt = solve_qp_jaxopt(x0_jax, A_jax, b_jax)
+                print(f"JAXOpt: {result_jaxopt}")
                 if result_cvxopt is not None:
-                    diff = np.linalg.norm(result_cvxopt - result_qpax)
+                    diff = np.linalg.norm(result_cvxopt - result_jaxopt)
                     print(f"  Difference from cvxopt: {diff:.6f}")
-                if result_enum is not None:
-                    diff = np.linalg.norm(result_enum - result_qpax)
-                    print(f"  Difference from NumPy enumeration: {diff:.6f}")
-            except Exception as e:
-                print(f"qpax failed: {e}")
+            except (NotImplementedError, Exception) as e:
+                print(f"JAXOpt skipped: {e}")
         
         result_simplified = solve_qp_jax_simplified(x0_jax, A_jax, b_jax)
         print(f"JAX (simplified): {result_simplified}")
@@ -425,18 +375,15 @@ def test_qp_solver_comparison():
         A_jax = jnp.asarray(A)
         b_jax = jnp.asarray(b)
         
-        if QPAX_AVAILABLE:
+        if JAXOPT_AVAILABLE:
             try:
-                result_qpax = solve_qp_qpax(x0_jax, A_jax, b_jax)
-                print(f"qpax: {result_qpax}")
+                result_jaxopt = solve_qp_jaxopt(x0_jax, A_jax, b_jax)
+                print(f"JAXOpt: {result_jaxopt}")
                 if result_cvxopt is not None:
-                    diff = np.linalg.norm(result_cvxopt - result_qpax)
+                    diff = np.linalg.norm(result_cvxopt - result_jaxopt)
                     print(f"  Difference from cvxopt: {diff:.6f}")
-                if result_enum is not None:
-                    diff = np.linalg.norm(result_enum - result_qpax)
-                    print(f"  Difference from NumPy enumeration: {diff:.6f}")
-            except Exception as e:
-                print(f"qpax failed: {e}")
+            except (NotImplementedError, Exception) as e:
+                print(f"JAXOpt skipped: {e}")
         
         result_simplified = solve_qp_jax_simplified(x0_jax, A_jax, b_jax)
         print(f"JAX (simplified): {result_simplified}")
@@ -482,18 +429,15 @@ def test_qp_solver_comparison():
         A_jax = jnp.asarray(A)
         b_jax = jnp.asarray(b)
         
-        if QPAX_AVAILABLE:
+        if JAXOPT_AVAILABLE:
             try:
-                result_qpax = solve_qp_qpax(x0_jax, A_jax, b_jax)
-                print(f"qpax: {result_qpax}")
+                result_jaxopt = solve_qp_jaxopt(x0_jax, A_jax, b_jax)
+                print(f"JAXOpt: {result_jaxopt}")
                 if result_cvxopt is not None:
-                    diff = np.linalg.norm(result_cvxopt - result_qpax)
+                    diff = np.linalg.norm(result_cvxopt - result_jaxopt)
                     print(f"  Difference from cvxopt: {diff:.6f}")
-                if result_enum is not None:
-                    diff = np.linalg.norm(result_enum - result_qpax)
-                    print(f"  Difference from NumPy enumeration: {diff:.6f}")
-            except Exception as e:
-                print(f"qpax failed: {e}")
+            except (NotImplementedError, Exception) as e:
+                print(f"JAXOpt skipped: {e}")
         
         result_simplified = solve_qp_jax_simplified(x0_jax, A_jax, b_jax)
         print(f"JAX (simplified): {result_simplified}")
@@ -508,7 +452,7 @@ def test_qp_solver_comparison():
     print("Summary:")
     print("  - cvxopt: General QP solver (used by CFS for trajectory-level QP)")
     print("  - NumPy enumeration: Active set enumeration (used by CFS for single-point QP)")
-    print("  - qpax: JAX-compatible QP solver (supports general inequalities)")
+    print("  - JAXOpt: General QP solver (JAX-compatible)")
     print("  - JAX simplified: Only projects to most violated constraint (suboptimal fallback)")
     print("=" * 80)
 

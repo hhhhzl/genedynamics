@@ -24,7 +24,7 @@ class Trajectory:
 def _install_enerdynamics_stubs():
     """
     Your cfs.py imports:
-      - enerdynamics.core.constraints.base.FeasibilityOperator
+      - enerdynamics.core.constraints.legacy.base.FeasibilityOperator
       - enerdynamics.core.types.Trajectory, State
       - enerdynamics.envs.obstacles.base.ObstacleManager
     This installs minimal stubs into sys.modules so cfs.py can be imported standalone.
@@ -33,7 +33,7 @@ def _install_enerdynamics_stubs():
         "enerdynamics",
         "enerdynamics.core",
         "enerdynamics.core.constraints",
-        "enerdynamics.core.constraints.base",
+        "enerdynamics.core.constraints.legacy.base",
         "enerdynamics.core.types",
         "enerdynamics.envs",
         "enerdynamics.envs.obstacles",
@@ -57,7 +57,7 @@ def _install_enerdynamics_stubs():
     ensure_mod("enerdynamics.envs")
     ensure_mod("enerdynamics.envs.obstacles")
 
-    base_constraints = ensure_mod("enerdynamics.core.constraints.base")
+    base_constraints = ensure_mod("enerdynamics.core.constraints.legacy.base")
     types_mod = ensure_mod("enerdynamics.core.types")
     obstacles_base = ensure_mod("enerdynamics.envs.obstacles.base")
 
@@ -151,7 +151,7 @@ def import_cfs_module(path_to_cfs_py: str):
 def cfs():
     # Change this path if needed.
     # If your cfs.py lives inside your repo, point to that file instead.
-    path = "enerdynamics/core/constraints/projections/cfs.py"
+    path = "enerdynamics/core/constraints/legacy/projections/cfs.py"
     return import_cfs_module(path)
 
 

@@ -58,11 +58,15 @@ class EDOCBackendNumpy(EDOCBackendBase):
         state = np.asarray(state, dtype=np.float32)
         actions = np.asarray(actions, dtype=np.float32)
         horizon = actions.shape[0]
+        state_dim = state.shape[0]
         
-        states = [state.copy()]
+        # Pre-allocate arrays for better performance
+        states = np.zeros((horizon + 1, state_dim), dtype=np.float32)
         energies = np.zeros((horizon,), dtype=np.float32)
+        states[0] = state
         
-        x = state.copy()
+        # Use states[0] directly to avoid unnecessary copy
+        x = states[0]
         for t in range(horizon):
             act = actions[t]
             # Apply action filter if needed
@@ -75,9 +79,9 @@ class EDOCBackendNumpy(EDOCBackendBase):
             
             # State transition
             x = self.env.transition(x, act_safe)
-            states.append(x.copy())
+            states[t + 1] = x  # Direct assignment instead of append
         
-        return np.array(states, dtype=np.float32), energies
+        return states, energies
     
     def rollout_env_states(
         self,
@@ -90,16 +94,19 @@ class EDOCBackendNumpy(EDOCBackendBase):
         state = np.asarray(state, dtype=np.float32)
         actions = np.asarray(actions, dtype=np.float32)
         horizon = actions.shape[0]
+        state_dim = state.shape[0]
         
-        states = [state.copy()]
-        x = state.copy()
+        # Pre-allocate arrays for better performance
+        states = np.zeros((horizon + 1, state_dim), dtype=np.float32)
+        states[0] = state
         
-        for act in actions:
+        x = state  # Use reference, no need to copy since we're modifying in-place
+        for t, act in enumerate(actions):
             act_safe = self._apply_action_filter_numpy(x, act, hard_clearance, hard_enabled)
             x = self.env.transition(x, act_safe)
-            states.append(x.copy())
+            states[t + 1] = x  # Direct assignment instead of append
         
-        return np.array(states, dtype=np.float32)
+        return states
     
     def compute_total_energy(
         self,
@@ -228,16 +235,24 @@ class EDOCBackendNumpy(EDOCBackendBase):
         if actions_array.ndim == 1:
             actions_array = actions_array[None, :]
         
-        states = [np.asarray(x0, dtype=np.float32).copy()]
-        x = np.asarray(x0, dtype=np.float32).copy()
+        x0_arr = np.asarray(x0, dtype=np.float32)
+        state_dim = x0_arr.shape[0]
+        horizon = actions_array.shape[0]
+        
+        # Pre-allocate arrays for better performance
+        states = np.zeros((horizon + 1, state_dim), dtype=np.float32)
+        states[0] = x0_arr
         actions_list = []
         
-        for act in actions_array:
-            actions_list.append(act.copy())
+        x = x0_arr.copy()
+        for t, act in enumerate(actions_array):
+            actions_list.append(act.copy())  # Keep copy for Trajectory
             x = self.env.transition(x, act)
-            states.append(x.copy())
+            states[t + 1] = x  # Direct assignment instead of append
         
-        return Trajectory(states=states, actions=actions_list)
+        # Convert to list format for Trajectory (required by interface)
+        states_list = [states[i] for i in range(horizon + 1)]
+        return Trajectory(states=states_list, actions=actions_list)
     
     def extract_actions_from_trajectory(
         self,
@@ -484,7 +499,7 @@ class EDOCBackendNumpy(EDOCBackendBase):
             # Score particles in batch
             scores = self.score_particles(
                 state_init, Y0s, constraint_step, constraint_total_steps
-            )
+                        )
             
             # Compute weights from scores
             score_std = float(np.std(scores))

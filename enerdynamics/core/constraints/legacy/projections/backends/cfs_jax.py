@@ -25,6 +25,17 @@ except ImportError:
     qpax = None
     QPAX_AVAILABLE = False
 
+try:
+    # Optional: cvxopt for non-JIT mode (compatible with JAX arrays)
+    import cvxopt
+    from cvxopt import matrix as cvx_matrix, solvers as cvx_solvers
+    CVXOPT_AVAILABLE = True
+except ImportError:
+    cvxopt = None
+    cvx_matrix = None
+    cvx_solvers = None
+    CVXOPT_AVAILABLE = False
+
 from enerdynamics.core.constraints.legacy.projections.backend_impl import CFSProjectionBase
 from enerdynamics.core.registry.projections import register_projection
 from enerdynamics.envs.obstacles.base import ObstacleManager
@@ -972,16 +983,22 @@ if JAX_AVAILABLE:
         """
         JAX backend implementation of CFS projection.
         
-        This implementation uses JAX operations and qpax for QP solving,
-        optimized for GPU acceleration and JIT compilation.
+        Supports two modes:
+        - use_jit=True: Uses qpax (JAX-compatible QP solver) for JIT compilation.
+          Requires all obstacles to have jax_sdf method.
+        - use_jit=False: Uses cvxopt (NumPy-based, compatible with JAX arrays).
+          Can use NumPy SDF functions, no jax_sdf required.
         """
         
-        def __init__(self, obstacles: ObstacleManager, **config):
+        def __init__(self, obstacles: ObstacleManager, use_jit: bool = True, **config):
             """
             Initialize JAX backend CFS projection.
             
             Args:
                 obstacles: ObstacleManager containing obstacles
+                use_jit: Whether to use JIT compilation (default: True)
+                    - If True: Uses qpax, requires all obstacles to have jax_sdf
+                    - If False: Uses cvxopt, can use NumPy SDF functions
                 **config: Configuration parameters:
                     - max_iterations: Maximum iterations for iterative projection
                     - convergence_tol: Convergence tolerance
@@ -991,6 +1008,7 @@ if JAX_AVAILABLE:
                     - smoothness_weight: Smoothness regularization weight
             """
             super().__init__(obstacles, **config)
+            self.use_jit = use_jit
             self.max_iterations = config.get('max_iterations', 5)
             self.convergence_tol = config.get('convergence_tol', 1e-6)
             self.max_constraints_per_point = config.get('max_constraints_per_point', 8)
@@ -998,13 +1016,16 @@ if JAX_AVAILABLE:
             self.use_trajectory_qp = config.get('use_trajectory_qp', True)
             self.smoothness_weight = config.get('smoothness_weight', 0.0)
             
-            # Build JAX-compatible obstacle functions
+            # Build obstacle functions based on JIT mode
             self._sdf_fn = None
             self._grad_fn = None
-            self._build_obstacle_functions()
+            if self.use_jit:
+                self._build_obstacle_functions_jit()
+            else:
+                self._build_obstacle_functions_no_jit()
         
-        def _build_obstacle_functions(self):
-            """Build JAX-compatible SDF and gradient functions from obstacles."""
+        def _build_obstacle_functions_jit(self):
+            """Build JAX-compatible SDF and gradient functions for JIT mode (requires jax_sdf)."""
             obstacles_list = list(self.obstacles)
             if len(obstacles_list) == 0:
                 # No obstacles: create identity functions
@@ -1079,8 +1100,98 @@ if JAX_AVAILABLE:
             else:
                 raise RuntimeError(
                     "Not all obstacles support JAX. "
-                    "All obstacles must have 'jax_sdf' method to use JAX CFS projection."
+                    "All obstacles must have 'jax_sdf' method to use JAX CFS projection with JIT. "
+                    "Set use_jit=False to use cvxopt instead."
                 )
+        
+        def _build_obstacle_functions_no_jit(self):
+            """
+            Build obstacle functions for non-JIT mode (uses NumPy SDF, compatible with cvxopt).
+            
+            In this mode, we can use NumPy SDF functions and convert to JAX arrays.
+            This allows using cvxopt for QP solving without requiring jax_sdf.
+            """
+            obstacles_list = list(self.obstacles)
+            if len(obstacles_list) == 0:
+                # No obstacles: create identity functions
+                def sdf_batch(points):
+                    return jnp.full((1, points.shape[0]), 1e6, dtype=jnp.float32)
+                
+                def grad_multiple(point, obs_indices):
+                    return jnp.zeros((obs_indices.shape[0], point.shape[0]), dtype=jnp.float32)
+                
+                self._sdf_fn = sdf_batch
+                self._grad_fn = grad_multiple
+                return
+            
+            # Non-JIT mode: use NumPy SDF, convert to JAX arrays
+            def sdf_batch(points: jnp.ndarray) -> jnp.ndarray:
+                """Compute SDF using NumPy, convert to JAX arrays (batch optimized)."""
+                points_np = np.asarray(points, dtype=np.float32)
+                N = points_np.shape[0]
+                M = len(obstacles_list)
+                
+                # Batch compute SDF for all obstacles and points (optimized)
+                sdf_matrix = np.zeros((M, N), dtype=np.float32)
+                # Batch process all obstacles
+                sdf_results = [obs.sdf(points_np) for obs in obstacles_list]
+                for i, sdf_vals in enumerate(sdf_results):
+                    sdf_vals = np.asarray(sdf_vals, dtype=np.float32)
+                    
+                    # Handle shape broadcasting (vectorized operations)
+                    if sdf_vals.ndim == 0:
+                        sdf_matrix[i, :] = float(sdf_vals)
+                    elif sdf_vals.ndim == 1:
+                        if sdf_vals.shape[0] == N:
+                            sdf_matrix[i, :] = sdf_vals
+                        elif sdf_vals.shape[0] < N:
+                            sdf_matrix[i, :sdf_vals.shape[0]] = sdf_vals
+                            sdf_matrix[i, sdf_vals.shape[0]:] = sdf_vals[-1] if sdf_vals.shape[0] > 0 else 1e6
+                        else:
+                            sdf_matrix[i, :] = sdf_vals[:N]
+                    else:
+                        sdf_flat = sdf_vals.flatten()
+                        sdf_matrix[i, :] = sdf_flat[:N] if len(sdf_flat) >= N else np.pad(
+                            sdf_flat, (0, N - len(sdf_flat)), constant_values=(sdf_flat[-1] if len(sdf_flat) > 0 else 1e6)
+                        )[:N]
+                
+                return jnp.asarray(sdf_matrix, dtype=jnp.float32)
+            
+            def grad_multiple(point: jnp.ndarray, obs_indices: jnp.ndarray) -> jnp.ndarray:
+                """Compute gradients using NumPy finite differences, convert to JAX (batch optimized)."""
+                point_np = np.asarray(point, dtype=np.float32)
+                obs_indices_np = np.asarray(obs_indices, dtype=np.int32)
+                num_grads = obs_indices_np.shape[0]
+                dim = point_np.shape[0]
+                
+                # Batch compute gradients for all requested obstacles (vectorized)
+                obs_list_for_grads = [obstacles_list[int(idx)] for idx in obs_indices_np]
+                grads = np.array([self._finite_difference_gradient_numpy(obs, point_np) for obs in obs_list_for_grads], dtype=np.float32)
+                
+                return jnp.asarray(grads, dtype=jnp.float32)
+            
+            self._sdf_fn = sdf_batch
+            self._grad_fn = grad_multiple
+        
+        def _finite_difference_gradient_numpy(self, obstacle, point: np.ndarray, eps: float = 1e-4) -> np.ndarray:
+            """Compute gradient using NumPy finite differences (for non-JIT mode, batch optimized)."""
+            point = np.asarray(point, dtype=np.float32).flatten()
+            dim = point.shape[0]
+            
+            # Batch compute finite differences (vectorized)
+            xp_batch = np.tile(point[None, :], (dim, 1))  # (dim, dim)
+            xm_batch = np.tile(point[None, :], (dim, 1))  # (dim, dim)
+            diag_indices = np.arange(dim)
+            xp_batch[diag_indices, diag_indices] += eps
+            xm_batch[diag_indices, diag_indices] -= eps
+            
+            # Batch compute SDF for all perturbations (vectorized)
+            sdf_p = np.array([obstacle.sdf(xp_batch[i]) for i in range(dim)], dtype=np.float32)
+            sdf_m = np.array([obstacle.sdf(xm_batch[i]) for i in range(dim)], dtype=np.float32)
+            
+            # Compute gradient (vectorized)
+            grad = (sdf_p - sdf_m) / (2.0 * eps)
+            return grad
         
         def project_batch(
             self,
@@ -1090,7 +1201,7 @@ if JAX_AVAILABLE:
             **kwargs
         ) -> np.ndarray:
             """
-            Batch project multiple points onto CFS using JAX.
+            Batch project multiple points onto CFS.
             
             Args:
                 positions: Points to project, shape (N, dim)
@@ -1101,6 +1212,21 @@ if JAX_AVAILABLE:
             Returns:
                 Projected positions, shape (N, dim)
             """
+            if self.use_jit:
+                # JIT mode: use qpax
+                return self._project_batch_jit(positions, clearance, step, **kwargs)
+            else:
+                # Non-JIT mode: use cvxopt
+                return self._project_batch_no_jit(positions, clearance, step, **kwargs)
+        
+        def _project_batch_jit(
+            self,
+            positions: np.ndarray,
+            clearance: float,
+            step: Optional[int],
+            **kwargs
+        ) -> np.ndarray:
+            """Project batch using JIT-compiled JAX functions with qpax."""
             # Override config with kwargs if provided
             max_iterations = kwargs.get('max_iterations', self.max_iterations)
             convergence_tol = kwargs.get('convergence_tol', self.convergence_tol)
@@ -1130,6 +1256,94 @@ if JAX_AVAILABLE:
             # Convert back to NumPy
             return np.asarray(projected_jax)
         
+        def _project_batch_no_jit(
+            self,
+            positions: np.ndarray,
+            clearance: float,
+            step: Optional[int],
+            **kwargs
+        ) -> np.ndarray:
+            """
+            Project batch using cvxopt (non-JIT mode).
+            
+            This version uses NumPy SDF functions and cvxopt for QP solving,
+            compatible with JAX arrays but not requiring JIT compilation.
+            """
+            if not CVXOPT_AVAILABLE:
+                raise RuntimeError("cvxopt is required for non-JIT CFS projection")
+            
+            # Override config with kwargs if provided
+            max_iterations = kwargs.get('max_iterations', self.max_iterations)
+            convergence_tol = kwargs.get('convergence_tol', self.convergence_tol)
+            max_constraints_per_point = kwargs.get('max_constraints_per_point', self.max_constraints_per_point)
+            constraint_margin = kwargs.get('constraint_margin', self.constraint_margin)
+            use_trajectory_qp = kwargs.get('use_trajectory_qp', self.use_trajectory_qp)
+            smoothness_weight = kwargs.get('smoothness_weight', self.smoothness_weight)
+            
+            positions = np.asarray(positions, dtype=np.float32)
+            if positions.ndim == 1:
+                positions = positions.reshape(1, -1)
+            
+            N, dim = positions.shape
+            current = positions.copy()
+            
+            if N == 0:
+                return current
+            
+            obstacles_list = list(self.obstacles)
+            
+            for iteration in range(max_iterations):
+                prev = current.copy()
+                
+                # Compute SDF using NumPy (converted to JAX arrays)
+                positions_jax = jnp.asarray(current, dtype=jnp.float32)
+                sdf_matrix = self._sdf_fn(positions_jax)  # (M, N)
+                union_sdf = jnp.min(sdf_matrix, axis=0)  # (N,)
+                
+                # Find violating points
+                violating_mask = np.asarray(union_sdf < clearance)
+                
+                if not np.any(violating_mask):
+                    break
+                
+                # Use cvxopt for QP solving
+                if use_trajectory_qp and N > 1:
+                    # Trajectory-level QP using cvxopt
+                    current = self._solve_trajectory_qp_cvxopt(
+                        current, clearance, sdf_matrix, violating_mask, 
+                        obstacles_list, smoothness_weight, max_constraints_per_point, constraint_margin
+                    )
+                else:
+                    # Pointwise QP using cvxopt (batch process violating points)
+                    violating_indices = np.where(violating_mask)[0]
+                    # Batch process all violating points
+                    if len(violating_indices) > 0:
+                        # Extract all violating points and their SDF values (vectorized)
+                        violating_points = current[violating_indices]  # (num_violating, dim)
+                        violating_sdf = np.asarray(sdf_matrix[:, violating_indices], dtype=np.float32).T  # (num_violating, M)
+                        
+                        # Process each violating point (can't fully vectorize QP solving, but batch data extraction)
+                        for i, idx in enumerate(violating_indices):
+                            x_ref = violating_points[i]
+                            sdf_vals = violating_sdf[i]
+                            A, b = self._build_constraints_for_point_cvxopt(
+                                x_ref, clearance, sdf_vals, obstacles_list, 
+                                max_constraints_per_point, constraint_margin
+                            )
+                            if A.size > 0:
+                                current[idx] = self._solve_projection_qp_cvxopt(x_ref, A, b)
+                
+                # Check convergence
+                max_step = float(np.max(np.linalg.norm(current - prev, axis=1)))
+                if max_step < convergence_tol:
+                    # Final feasibility check
+                    sdf_matrix_final = self._sdf_fn(jnp.asarray(current, dtype=jnp.float32))
+                    union_sdf_final = jnp.min(sdf_matrix_final, axis=0)
+                    if np.all(np.asarray(union_sdf_final) >= clearance):
+                        break
+            
+            return current
+        
         def solve_projection_qp(
             self,
             x0: np.ndarray,
@@ -1137,7 +1351,7 @@ if JAX_AVAILABLE:
             b: np.ndarray,
         ) -> np.ndarray:
             """
-            Solve pointwise projection QP using JAX.
+            Solve pointwise projection QP.
             
             Args:
                 x0: Reference point, shape (dim,)
@@ -1147,16 +1361,287 @@ if JAX_AVAILABLE:
             Returns:
                 Projected point, shape (dim,)
             """
-            # Convert to JAX arrays
-            x0_jax = jnp.asarray(x0, dtype=jnp.float32)
-            A_jax = jnp.asarray(A, dtype=jnp.float32)
-            b_jax = jnp.asarray(b, dtype=jnp.float32)
+            if self.use_jit:
+                # JIT mode: use JAX qpax
+                x0_jax = jnp.asarray(x0, dtype=jnp.float32)
+                A_jax = jnp.asarray(A, dtype=jnp.float32)
+                b_jax = jnp.asarray(b, dtype=jnp.float32)
+                result_jax = _solve_projection_qp_identity_jax(x0_jax, A_jax, b_jax)
+                return np.asarray(result_jax)
+            else:
+                # Non-JIT mode: use cvxopt
+                return self._solve_projection_qp_cvxopt(x0, A, b)
+        
+        def _build_constraints_for_point_cvxopt(
+            self,
+            x_ref: np.ndarray,
+            clearance: float,
+            sdf_vals: np.ndarray,
+            obstacles_list: List,
+            max_constraints_per_point: int,
+            constraint_margin: float,
+        ) -> Tuple[np.ndarray, np.ndarray]:
+            """
+            Build halfspace constraints A x >= b for a single point using cvxopt-compatible format.
             
-            # Solve using JAX QP solver
-            result_jax = _solve_projection_qp_identity_jax(x0_jax, A_jax, b_jax)
+            Args:
+                x_ref: Reference point, shape (dim,)
+                clearance: Clearance value
+                sdf_vals: SDF values for all obstacles, shape (M,)
+                obstacles_list: List of obstacles
+                max_constraints_per_point: Maximum constraints to use
+                constraint_margin: Margin for constraint selection
+                
+            Returns:
+                Tuple of (A, b) where A is constraint matrix and b is constraint vector
+            """
+            x_ref = np.asarray(x_ref, dtype=np.float32).flatten()
+            dim = x_ref.shape[0]
+            M = len(obstacles_list)
             
-            # Convert back to NumPy
-            return np.asarray(result_jax)
+            # Select candidate obstacles (violating or close)
+            violating_mask = sdf_vals < (clearance + constraint_margin)
+            violating_indices = np.where(violating_mask)[0]
+            
+            if len(violating_indices) == 0:
+                return np.zeros((0, dim), dtype=np.float32), np.zeros((0,), dtype=np.float32)
+            
+            # Limit number of constraints
+            if len(violating_indices) > max_constraints_per_point:
+                # Sort by violation (most negative first)
+                violations = clearance - sdf_vals[violating_indices]
+                sorted_idx = np.argsort(violations)[:max_constraints_per_point]
+                cand_indices = violating_indices[sorted_idx]
+            else:
+                cand_indices = violating_indices
+            
+            # Build constraints (batch compute gradients for all candidates)
+            cand_obstacles = [obstacles_list[int(j)] for j in cand_indices]
+            cand_d0 = np.asarray([float(sdf_vals[int(j)]) for j in cand_indices], dtype=np.float32)
+            
+            # Batch compute all gradients
+            grads = np.array([self._finite_difference_gradient_numpy(obs, x_ref) for obs in cand_obstacles], dtype=np.float32)
+            gnorms = np.linalg.norm(grads, axis=1)
+            
+            # Filter valid constraints (vectorized)
+            valid_mask = np.isfinite(gnorms) & (gnorms >= 1e-8)
+            if not np.any(valid_mask):
+                return np.zeros((0, dim), dtype=np.float32), np.zeros((0,), dtype=np.float32)
+            
+            # Build constraint matrices (vectorized)
+            valid_grads = grads[valid_mask] / gnorms[valid_mask, None]
+            valid_d0 = cand_d0[valid_mask]
+            valid_gnorms = gnorms[valid_mask]
+            
+            # Compute b values (vectorized)
+            g_dot_x_ref = np.dot(valid_grads, x_ref)
+            b_vals = (clearance - valid_d0) / valid_gnorms + g_dot_x_ref
+            
+            A = valid_grads.astype(np.float32)
+            b = b_vals.astype(np.float32)
+            
+            return A, b
+        
+        def _solve_projection_qp_cvxopt(
+            self,
+            x0: np.ndarray,
+            A: np.ndarray,
+            b: np.ndarray,
+        ) -> np.ndarray:
+            """
+            Solve pointwise projection QP using cvxopt: min 0.5||x - x0||^2 s.t. A x >= b.
+            
+            Args:
+                x0: Reference point, shape (dim,)
+                A: Constraint matrix, shape (m, dim)
+                b: Constraint vector, shape (m,)
+                
+            Returns:
+                Projected point, shape (dim,)
+            """
+            if not CVXOPT_AVAILABLE:
+                raise RuntimeError("cvxopt is required for non-JIT CFS projection")
+            
+            x0 = np.asarray(x0, dtype=np.float64).flatten()
+            A = np.asarray(A, dtype=np.float64)
+            b = np.asarray(b, dtype=np.float64).flatten()
+            m, dim = A.shape
+            
+            # Check if already feasible
+            if m == 0:
+                return x0.astype(np.float32)
+            
+            lhs = A @ x0
+            if np.all(lhs + 1e-7 >= b):
+                return x0.astype(np.float32)
+            
+            # Convert to cvxopt format: min 0.5 x^T Q x + p^T x s.t. G x <= h
+            # Original: min 0.5||x - x0||^2 = 0.5 x^T I x - x0^T x + const
+            Q = cvx_matrix(np.eye(dim, dtype=np.float64))
+            p = cvx_matrix(-x0)
+            G = cvx_matrix(-A)  # A x >= b  =>  -A x <= -b
+            h = cvx_matrix(-b)
+            
+            # Solve QP
+            cvx_solvers.options['show_progress'] = False
+            cvx_solvers.options['abstol'] = 1e-7
+            cvx_solvers.options['reltol'] = 1e-7
+            try:
+                result = cvx_solvers.qp(Q, p, G, h)
+                if result['status'] == 'optimal':
+                    x_opt = np.asarray(result['x'], dtype=np.float32).flatten()
+                    return x_opt
+                else:
+                    # Fallback: step along most violated constraint
+                    violations = b - (A @ x0)
+                    i = int(np.argmax(violations))
+                    a = A[i]
+                    denom = float(np.dot(a, a))
+                    if denom > 1e-12:
+                        alpha = float((b[i] - np.dot(a, x0)) / denom)
+                        return (x0 + alpha * a).astype(np.float32)
+                    else:
+                        return x0.astype(np.float32)
+            except Exception:
+                # Fallback: step along most violated constraint
+                violations = b - (A @ x0)
+                i = int(np.argmax(violations))
+                a = A[i]
+                denom = float(np.dot(a, a))
+                if denom > 1e-12:
+                    alpha = float((b[i] - np.dot(a, x0)) / denom)
+                    return (x0 + alpha * a).astype(np.float32)
+                else:
+                    return x0.astype(np.float32)
+        
+        def _solve_trajectory_qp_cvxopt(
+            self,
+            current: np.ndarray,
+            clearance: float,
+            sdf_matrix: jnp.ndarray,
+            violating_mask: np.ndarray,
+            obstacles_list: List,
+            smoothness_weight: float,
+            max_constraints_per_point: int,
+            constraint_margin: float,
+        ) -> np.ndarray:
+            """
+            Solve trajectory-level QP using cvxopt.
+            
+            Minimizes: 0.5 ||x - x0||^2 + 0.5 * w * ||D2 x||^2
+            Subject to: A x >= b
+            
+            Args:
+                current: Current trajectory, shape (N, dim)
+                clearance: Clearance value
+                sdf_matrix: SDF matrix for all obstacles and points, shape (M, N)
+                violating_mask: Boolean mask for violating points, shape (N,)
+                obstacles_list: List of obstacles
+                smoothness_weight: Weight for smoothness regularization
+                max_constraints_per_point: Maximum constraints per point
+                constraint_margin: Margin for constraint selection
+                
+            Returns:
+                Projected trajectory, shape (N, dim)
+            """
+            if not CVXOPT_AVAILABLE:
+                raise RuntimeError("cvxopt is required for non-JIT trajectory QP")
+            
+            current = np.asarray(current, dtype=np.float64)
+            if current.ndim == 1:
+                current = current.reshape(1, -1)
+            N, dim = current.shape
+            
+            if N == 0:
+                return current.astype(np.float32)
+            
+            violating_indices = np.where(violating_mask)[0]
+            if len(violating_indices) == 0:
+                return current.astype(np.float32)
+            
+            # Build constraint matrix A and vector b (sparse format for efficiency)
+            # Batch extract all violating points and their SDF values
+            violating_points = current[violating_indices]  # (num_violating, dim)
+            violating_sdf = np.asarray(sdf_matrix[:, violating_indices], dtype=np.float32).T  # (num_violating, M)
+            
+            # Build constraints for all violating points (batch process)
+            A_data = []
+            A_row = []
+            A_col = []
+            b_list = []
+            n_cons = 0
+            
+            for i, idx in enumerate(violating_indices):
+                x_ref = violating_points[i]
+                sdf_vals = violating_sdf[i]
+                A_point, b_point = self._build_constraints_for_point_cvxopt(
+                    x_ref, clearance, sdf_vals, obstacles_list,
+                    max_constraints_per_point, constraint_margin
+                )
+                
+                if A_point.size > 0:
+                    m_point = A_point.shape[0]
+                    # Add constraints: A_point @ x[idx] >= b_point (vectorized row/col construction)
+                    # In flattened trajectory: x[idx] = x[idx*dim:(idx+1)*dim]
+                    row_indices = np.arange(n_cons, n_cons + m_point)[:, None]  # (m_point, 1)
+                    col_indices = np.arange(idx * dim, (idx + 1) * dim)[None, :]  # (1, dim)
+                    A_data.extend(A_point.flatten().tolist())
+                    A_row.extend(row_indices.repeat(dim, axis=1).flatten().tolist())
+                    A_col.extend(col_indices.repeat(m_point, axis=0).flatten().tolist())
+                    b_list.extend(b_point.tolist())
+                    n_cons += m_point
+            
+            if n_cons == 0:
+                return current.astype(np.float32)
+            
+            # Flatten reference trajectory
+            x0 = current.flatten()
+            n_vars = x0.shape[0]
+            
+            # Build Hessian: I + w * (D2^T D2) kron I_dim
+            w = max(0.0, smoothness_weight)
+            if w > 0.0 and N >= 3:
+                # Build second-difference operator D2: (N-2) x N
+                D2 = np.zeros((N - 2, N), dtype=np.float64)
+                for i in range(N - 2):
+                    D2[i, i] = 1.0
+                    D2[i, i + 1] = -2.0
+                    D2[i, i + 2] = 1.0
+                K = D2.T @ D2  # (N, N)
+                P_time = np.eye(N, dtype=np.float64) + w * K
+                # Kronecker product: P_time kron I_dim
+                P = np.kron(P_time, np.eye(dim, dtype=np.float64))
+            else:
+                P = np.eye(n_vars, dtype=np.float64)
+            
+            # Build constraint matrix A from sparse format
+            A = np.zeros((n_cons, n_vars), dtype=np.float64)
+            for k in range(len(A_data)):
+                A[A_row[k], A_col[k]] += A_data[k]
+            
+            b = np.asarray(b_list, dtype=np.float64)
+            
+            # Convert to cvxopt format: min 0.5 x^T Q x + p^T x s.t. G x <= h
+            Q = cvx_matrix(P)
+            p = cvx_matrix(-x0)
+            G = cvx_matrix(-A)  # A x >= b  =>  -A x <= -b
+            h = cvx_matrix(-b)
+            
+            # Solve QP
+            cvx_solvers.options['show_progress'] = False
+            cvx_solvers.options['abstol'] = 1e-7
+            cvx_solvers.options['reltol'] = 1e-7
+            try:
+                result = cvx_solvers.qp(Q, p, G, h)
+                if result['status'] == 'optimal':
+                    x_opt = np.asarray(result['x'], dtype=np.float32).flatten()
+                    return x_opt.reshape(N, dim)
+                else:
+                    # Fallback: return original
+                    return current.astype(np.float32)
+            except Exception:
+                # Fallback: return original
+                return current.astype(np.float32)
 
 else:
     # JAX not available - don't register the class

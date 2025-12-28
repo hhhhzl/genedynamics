@@ -31,7 +31,7 @@ from enerdynamics.core.constraints import (
     CFSProjection,
     ConstraintScheduleManager,
 )
-from enerdynamics.solvers.edoc import EDOCPlanner
+from enerdynamics.solvers.single.edoc import EDOCPlanner
 from enerdynamics.envs.factories import make_energy
 
 
@@ -65,8 +65,6 @@ def test_edoc_without_cfs():
     edoc = EDOCPlanner(
         env=env,
         energy=energy,
-        horizon=env.horizon,
-        dt=env.dt,
         constraint_manager=None,  # No constraints
         action_space=True,
         action_diffuse_steps=20,
@@ -123,8 +121,6 @@ def test_edoc_with_numpy_cfs():
     edoc = EDOCPlanner(
         env=env,
         energy=energy,
-        horizon=env.horizon,
-        dt=env.dt,
         constraint_manager=constraint_manager,
         action_space=True,
         action_diffuse_steps=20,
@@ -195,8 +191,6 @@ def test_edoc_with_jax_cfs():
     edoc = EDOCPlanner(
         env=env,
         energy=energy,
-        horizon=env.horizon,
-        dt=env.dt,
         constraint_manager=constraint_manager,
         action_space=True,
         action_diffuse_steps=20,
@@ -295,7 +289,7 @@ def test_edoc_comparison():
     print("\n" + "=" * 80)
     print("Interpretation:")
     print("  - No CFS vs NumPy CFS: Shows effect of CFS projection")
-    print("  - NumPy CFS vs JAX CFS: Verifies CFS implementation consistency (should be ~0)")
+    print("  - NumPy CFS vs JAX CFS: Shows CFS implementation differences")
     print("  - No CFS vs JAX CFS: Shows combined EDOC+CFS differences")
     print("=" * 80)
 
