@@ -154,12 +154,14 @@ class EDOCBackendNumpy(EDOCBackendBase):
             return 0.0
         
         x = np.asarray(state, dtype=np.float32).copy()
-        rewards = []
+        horizon = len(actions)
+        # Pre-allocate array for rewards
+        rewards = np.empty(horizon, dtype=np.float32)
         
-        for act in actions:
+        for i, act in enumerate(actions):
             act_safe = self._apply_action_filter_numpy(x, act, hard_clearance, hard_enabled)
             x = self.env.transition(x, act_safe)
-            rewards.append(-float(reward_cost_fn(x)))
+            rewards[i] = -float(reward_cost_fn(x))
         
         return float(np.mean(rewards))
     

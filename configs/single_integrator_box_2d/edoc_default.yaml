@@ -5,19 +5,19 @@ output_dir: results/single2d/edoc
 env_name: single_integrator_box_2d
 env_params:
   dt: 0.05
-  horizon: 80
+  horizon: 64
   p_max: 2.0
   control_limit: 1.0
 
 method: edoc
 method_params:
   action_diffuse_steps: 100
-  action_nsample: 256
+  action_nsample: 64
   use_antithetic: true
   action_score_mode: energy
   terminal_energy_weight: 50.0
 
-obstacle_levels: [0]
+obstacle_levels: [6]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05

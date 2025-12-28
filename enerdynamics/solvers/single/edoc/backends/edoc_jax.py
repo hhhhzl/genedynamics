@@ -783,16 +783,18 @@ class EDOCBackendJax(EDOCBackendBase):
                 Ybar_next
             )
             
-            # Apply CFS projection if available (use JAX conditional for traced context)
-            # Note: CFS projection requires NumPy conversions which fail in traced context
-            # For now, skip CFS projection in traced context
-            # TODO: Implement JAX-compatible CFS projection for traced context
+            # Apply CFS projection if available (JAX-compatible version)
+            # self._jax_cfs_projector is a JIT-compiled JAX function that accepts JAX arrays
+            # It can be used directly in traced context
             if self._jax_cfs_projector is not None:
                 # Use jax.lax.cond since hard_enabled is traced
                 def apply_cfs_projection(ybar):
-                    # In traced context, cannot convert to NumPy or call Python functions
-                    # Skip CFS projection for now - would need JAX-compatible implementation
-                    return ybar
+                    # ybar shape: (horizon, act_dim)
+                    # self._jax_cfs_projector expects (N, dim) positions and clearance scalar/array
+                    clearance_jax = jnp.asarray(hard_clearance, dtype=jnp.float32)
+                    # Project: jax_projector(positions, clearance) -> projected_positions
+                    projected = self._jax_cfs_projector(ybar, clearance_jax)
+                    return projected
                 
                 def skip_cfs_projection(ybar):
                     return ybar
