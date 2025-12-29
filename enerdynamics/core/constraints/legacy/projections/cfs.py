@@ -117,6 +117,10 @@ class CFSProjection(FeasibilityOperator):
             schedule_manager: Optional["ConstraintScheduleManager"] = None,
             # Backend detection: if None, auto-detect from RuntimeBackendManager
             force_python_backend: Optional[bool] = None,
+            robot_radius: float = 0.0,
+            # Advanced options
+            fix_initial_state: bool = False,
+            monitor_objective: bool = False,
     ):
         """
         Initialize CFS projection operator.
@@ -135,6 +139,9 @@ class CFSProjection(FeasibilityOperator):
             max_iterations: Maximum iterations for iterative projection
             convergence_tol: Convergence tolerance for iterative projection
             schedule_manager: Optional ConstraintScheduleManager (overrides clearance_schedule if provided)
+            robot_radius: Robot radius - clearance will be at least this value to ensure robot doesn't collide
+            fix_initial_state: If True, add equality constraint to fix initial state (default: False)
+            monitor_objective: If True, monitor objective function for dual convergence check (default: False)
         """
         self.obstacles = obstacles
         self.clearance_schedule = clearance_schedule  # Legacy support
@@ -150,6 +157,9 @@ class CFSProjection(FeasibilityOperator):
         self.max_constraints_per_point = int(max(1, max_constraints_per_point))
         self.constraint_margin = float(max(0.0, constraint_margin))
         self.schedule_manager = schedule_manager
+        self.robot_radius = float(max(0.0, robot_radius))
+        self.fix_initial_state = bool(fix_initial_state)
+        self.monitor_objective = bool(monitor_objective)
         
         # Determine backend name from RuntimeBackendManager or force_python_backend
         backend_name = None
@@ -181,31 +191,25 @@ class CFSProjection(FeasibilityOperator):
                 obstacles_list = list(obstacles)
                 all_support_jax = all(hasattr(obs, "jax_sdf") for obs in obstacles_list) if obstacles_list else True
                 
-                # Check if qpax is available (required for JIT mode)
+                # Check if jaxopt is available (required for both JIT and non-JIT modes)
                 try:
-                    import qpax
-                    qpax_available = True
+                    from jaxopt import OSQP
+                    jaxopt_available = True
                 except ImportError:
-                    qpax_available = False
+                    jaxopt_available = False
                 
-                # Auto-detect: use JIT only if all obstacles support JAX and qpax is available
-                use_jit = all_support_jax and qpax_available
+                # Auto-detect: use JIT only if all obstacles support JAX and jaxopt is available
+                use_jit = all_support_jax and jaxopt_available
                 
                 if not use_jit:
-                    # Check if cvxopt is available (required for non-JIT mode)
-                    try:
-                        import cvxopt
-                        cvxopt_available = True
-                    except ImportError:
-                        cvxopt_available = False
-                    
-                    if not cvxopt_available:
-                        print(f"[CFS] WARNING: JAX backend requires either qpax (for JIT) or cvxopt (for non-JIT). "
+                    # Non-JIT mode also requires jaxopt (to avoid pure_callback overhead from cvxopt)
+                    if not jaxopt_available:
+                        print(f"[CFS] WARNING: JAX backend requires jaxopt.OSQP (for both JIT and non-JIT modes). "
                               f"Falling back to NumPy backend.")
                         backend_name = "numpy"
                         use_jit = False
                     else:
-                        print(f"[CFS] Using JAX backend in non-JIT mode (cvxopt) - obstacles may not have jax_sdf")
+                        print(f"[CFS] Using JAX backend in non-JIT mode (using jaxopt.OSQP) - obstacles may not have jax_sdf")
             
             config = {
                 'max_iterations': self.max_iterations,
@@ -214,6 +218,8 @@ class CFSProjection(FeasibilityOperator):
                 'constraint_margin': self.constraint_margin,
                 'use_trajectory_qp': self.use_trajectory_qp,
                 'smoothness_weight': self.smoothness_weight,
+                'fix_initial_state': self.fix_initial_state,
+                'monitor_objective': self.monitor_objective,
             }
             
             # Add use_jit to config for JAX backend
@@ -302,6 +308,10 @@ class CFSProjection(FeasibilityOperator):
             clearance = self.clearance_schedule(step, total_steps)
         else:
             clearance = 0.0  # Default
+        
+        # Ensure clearance is at least robot_radius to prevent collisions
+        # This ensures the robot center maintains at least robot_radius distance from obstacles
+        clearance = max(float(clearance), self.robot_radius)
 
         # Extract all positions at once (batch processing)
         # Use list comprehension then stack for better performance
@@ -325,6 +335,8 @@ class CFSProjection(FeasibilityOperator):
                 constraint_margin=self.constraint_margin,
                 use_trajectory_qp=self.use_trajectory_qp,
                 smoothness_weight=self.smoothness_weight,
+                fix_initial_state=self.fix_initial_state,
+                monitor_objective=self.monitor_objective,
             )
         else:
             # Fallback to legacy implementation
@@ -1028,7 +1040,13 @@ class CFSProjection(FeasibilityOperator):
         # Then try per-obstacle jax_sdf/jax_gradient (accurate, aligns with NumPy version)
         # This optimization avoids the expensive pure_callback conversions that cause performance issues
         
-        # Check if SDF texture is available first (preferred for performance)
+        # Priority 1: Check if all obstacles support jax_sdf (per-obstacle, correct and fast)
+        # This is preferred because it provides correct per-obstacle SDF values,
+        # which is essential for accurate CFS candidate selection
+        all_support_jax = all(hasattr(obs, "jax_sdf") for obs in obstacles_list) if obstacles_list else True
+        
+        # Priority 2: Check if SDF texture is available (fallback, but less accurate)
+        # SDF texture provides union SDF only, which causes all obstacles to have the same value
         has_sdf_texture = (hasattr(self.obstacles, 'sample_sdf_and_grad_2d') and
                           hasattr(self.obstacles, 'get_sdf_texture_2d') and
                           self.obstacles.get_sdf_texture_2d() is not None)
@@ -1051,45 +1069,85 @@ class CFSProjection(FeasibilityOperator):
                     has_sdf_texture = False  # Fall back to per-obstacle method
         
         try:
-            if has_sdf_texture:
-                # Use SDF texture directly - this is the fastest path and avoids pure_callback
+            if all_support_jax:
+                # Priority 1: Use per-obstacle jax_sdf (correct and fast)
+                # This provides accurate per-obstacle SDF values for correct candidate selection
+                try:
+                    use_manager_sdf = False
+                    sdf_fn, grad_fn = self._build_jax_obstacle_functions(obstacles_list,
+                                                                         use_manager_sdf=use_manager_sdf)
+                except RuntimeError as e:
+                    # Per-obstacle method failed, try SDF texture as fallback
+                    if has_sdf_texture:
+                        try:
+                            use_manager_sdf = True
+                            sdf_fn, grad_fn = self._build_jax_obstacle_functions(obstacles_list,
+                                                                                 use_manager_sdf=use_manager_sdf)
+                            import warnings
+                            warnings.warn(
+                                f"Per-obstacle jax_sdf failed: {str(e)}. "
+                                "Falling back to SDF texture (less accurate - all obstacles share union SDF).",
+                                UserWarning
+                            )
+                        except RuntimeError as e2:
+                            # Both methods failed - fall back to NumPy version
+                            import warnings
+                            warnings.warn(
+                                f"JAX CFS projection not available: {str(e2)}. "
+                                "Falling back to NumPy version (Python loop). "
+                                "To use JAX acceleration, ensure all obstacles support JAX "
+                                "(e.g., implement jax_sdf method).",
+                                UserWarning
+                            )
+                            return None
+                    else:
+                        # No fallback available - fall back to NumPy version
+                        import warnings
+                        warnings.warn(
+                            f"JAX CFS projection not available: {str(e)}. "
+                            "Falling back to NumPy version (Python loop). "
+                            "To use JAX acceleration, ensure all obstacles support JAX "
+                            "(e.g., implement jax_sdf method).",
+                            UserWarning
+                        )
+                        return None
+            elif has_sdf_texture:
+                # Priority 2: Use SDF texture (less accurate but better than nothing)
+                # WARNING: This uses union SDF, so all obstacles will have the same value
+                # This may cause incorrect candidate selection in CFS projection
                 try:
                     use_manager_sdf = True
                     sdf_fn, grad_fn = self._build_jax_obstacle_functions(obstacles_list,
                                                                          use_manager_sdf=use_manager_sdf)
+                    import warnings
+                    warnings.warn(
+                        "Using SDF texture for JAX CFS projection. "
+                        "This provides union SDF only (all obstacles share the same value), "
+                        "which may cause incorrect candidate selection. "
+                        "For accurate results, implement jax_sdf method for all obstacles.",
+                        UserWarning
+                    )
                 except RuntimeError as e:
-                    # SDF texture method failed, try per-obstacle method
-                    try:
-                        use_manager_sdf = False
-                        sdf_fn, grad_fn = self._build_jax_obstacle_functions(obstacles_list,
-                                                                             use_manager_sdf=use_manager_sdf)
-                    except RuntimeError as e2:
-                        # Both methods failed - fall back to NumPy version
-                        import warnings
-                        warnings.warn(
-                            f"JAX CFS projection not available: {str(e2)}. "
-                            "Falling back to NumPy version (Python loop). "
-                            "To use JAX acceleration, ensure all obstacles support JAX "
-                            "(e.g., use SDF texture with build_sdf_texture_2d()).",
-                            UserWarning
-                        )
-                        return None
-            else:
-                # No SDF texture - try per-obstacle method
-                try:
-                    use_manager_sdf = False
-                    sdf_fn, grad_fn = self._build_jax_obstacle_functions(obstacles_list, use_manager_sdf=use_manager_sdf)
-                except RuntimeError as e:
-                    # Per-obstacle method failed - fall back to NumPy version
+                    # SDF texture method failed - fall back to NumPy version
                     import warnings
                     warnings.warn(
                         f"JAX CFS projection not available: {str(e)}. "
                         "Falling back to NumPy version (Python loop). "
                         "To use JAX acceleration, ensure all obstacles support JAX "
-                        "(e.g., use SDF texture with build_sdf_texture_2d()).",
+                        "(e.g., implement jax_sdf method or use SDF texture).",
                         UserWarning
                     )
                     return None
+            else:
+                # No JAX support available - fall back to NumPy version
+                import warnings
+                warnings.warn(
+                    "JAX CFS projection not available: obstacles do not support JAX. "
+                    "Falling back to NumPy version (Python loop). "
+                    "To use JAX acceleration, implement jax_sdf method for all obstacles.",
+                    UserWarning
+                )
+                return None
         except Exception as e:
             # Other unexpected errors - also fall back gracefully
             import warnings
@@ -1108,6 +1166,9 @@ class CFSProjection(FeasibilityOperator):
         use_traj_qp = self.use_trajectory_qp
         smooth_weight = self.smoothness_weight
 
+        # Capture robot_radius for use in jax_project closure
+        robot_radius_jax = jnp.asarray(self.robot_radius, dtype=jnp.float32)
+        
         @jax.jit
         def jax_project(positions: jnp.ndarray, clearance: jnp.ndarray) -> jnp.ndarray:
             """
@@ -1120,6 +1181,13 @@ class CFSProjection(FeasibilityOperator):
             Returns:
                 Projected positions, shape (N, dim) as JAX array
             """
+            # Ensure clearance is at least robot_radius to prevent collisions
+            # This ensures the robot center maintains at least robot_radius distance from obstacles
+            clearance = jnp.asarray(clearance, dtype=jnp.float32)
+            if clearance.ndim > 0:
+                clearance = clearance[0]
+            clearance = jnp.maximum(clearance, robot_radius_jax)
+            
             return _project_cfs_jax(
                 positions,
                 sdf_fn,
@@ -1686,18 +1754,16 @@ if JAX_AVAILABLE:
         
         # Solve with qpax
         try:
+            # qpax.solve_qp signature: (Q, q, A_eq, b_eq, G, h, ...)
+            # Note: qpax API may not support max_iter or solver_tol parameters
             x, s, z, y, converged, iters = qpax.solve_qp(
-                Q, q, A_eq, b_eq, G, h,
-                solver_tol=1e-7,  # Tight tolerance for accuracy
-                max_iter=200,  # Increased iterations
+                Q, q, A_eq, b_eq, G, h
             )
             
             if not converged:
-                # If not converged, try with looser tolerance
+                # If not converged, try again (qpax may have internal retry logic)
                 x, s, z, y, converged, iters = qpax.solve_qp(
-                    Q, q, A_eq, b_eq, G, h,
-                    solver_tol=1e-6,
-                    max_iter=200,
+                    Q, q, A_eq, b_eq, G, h
                 )
             
             if not converged:
@@ -1762,12 +1828,10 @@ if JAX_AVAILABLE:
                         A_eq = jnp.zeros((0, dim), dtype=jnp.float32)  # Empty matrix
                         b_eq = jnp.zeros((0,), dtype=jnp.float32)  # Empty vector
 
-                        # Use tighter tolerance to match NumPy enumeration accuracy
-                        # Increased max iterations for better convergence
+                        # qpax.solve_qp signature: (Q, q, A_eq, b_eq, G, h, ...)
+                        # Note: qpax API may not support max_iter or solver_tol parameters
                         x, s, z, y, converged, iters = qpax.solve_qp(
-                            Q, q, A_eq, b_eq, G, h,
-                            solver_tol=1e-7,  # Tighter tolerance to match NumPy precision
-                            max_iter=200,  # Increase max iterations for better convergence
+                            Q, q, A_eq, b_eq, G, h
                         )
                         # Return result and convergence flag (ensure converged is JAX bool)
                         converged_bool = jnp.asarray(converged, dtype=jnp.bool_)

@@ -323,14 +323,23 @@ class EDOCBackendNumpy(EDOCBackendBase):
                 
                 # Gauss-Newton step
                 pos_err = x_tgt_pos - x_pred_pos
-                Bt = B_pos.T
-                BtB = Bt @ B_pos
-                act_dim_curr = actions.shape[1]
-                H = BtB + reg * np.eye(act_dim_curr, dtype=np.float32)
-                try:
-                    delta_u = np.linalg.solve(H, Bt @ pos_err)
-                except np.linalg.LinAlgError:
-                    delta_u = np.zeros((act_dim_curr,), dtype=np.float32)
+                
+                # Check for NaN/inf in position error before solving
+                if not np.all(np.isfinite(pos_err)):
+                    # If position error contains NaN/inf, skip this update
+                    delta_u = np.zeros((actions.shape[1],), dtype=np.float32)
+                else:
+                    Bt = B_pos.T
+                    BtB = Bt @ B_pos
+                    act_dim_curr = actions.shape[1]
+                    H = BtB + reg * np.eye(act_dim_curr, dtype=np.float32)
+                    try:
+                        delta_u = np.linalg.solve(H, Bt @ pos_err)
+                        # Check if solution is valid
+                        if not np.all(np.isfinite(delta_u)):
+                            delta_u = np.zeros((act_dim_curr,), dtype=np.float32)
+                    except np.linalg.LinAlgError:
+                        delta_u = np.zeros((act_dim_curr,), dtype=np.float32)
                 
                 u = u + delta_u
                 if limit_val is not None:

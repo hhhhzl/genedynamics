@@ -50,6 +50,8 @@ class CFSProjectionNumpy(CFSProjectionBase):
                 - constraint_margin: Margin for constraint selection
                 - use_trajectory_qp: Whether to use trajectory-level QP
                 - smoothness_weight: Smoothness regularization weight
+                - fix_initial_state: Whether to fix initial state with equality constraint (default: False)
+                - monitor_objective: Whether to monitor objective function for convergence (default: False)
         """
         super().__init__(obstacles, **config)
         self.max_iterations = config.get('max_iterations', 5)
@@ -58,6 +60,8 @@ class CFSProjectionNumpy(CFSProjectionBase):
         self.constraint_margin = config.get('constraint_margin', 0.25)
         self.use_trajectory_qp = config.get('use_trajectory_qp', True)
         self.smoothness_weight = config.get('smoothness_weight', 0.0)
+        self.fix_initial_state = config.get('fix_initial_state', False)
+        self.monitor_objective = config.get('monitor_objective', False)
     
     def project_batch(
         self,
@@ -88,6 +92,8 @@ class CFSProjectionNumpy(CFSProjectionBase):
         constraint_margin = kwargs.get('constraint_margin', self.constraint_margin)
         use_trajectory_qp = kwargs.get('use_trajectory_qp', self.use_trajectory_qp)
         smoothness_weight = kwargs.get('smoothness_weight', self.smoothness_weight)
+        fix_initial_state = kwargs.get('fix_initial_state', self.fix_initial_state)
+        monitor_objective = kwargs.get('monitor_objective', self.monitor_objective)
         
         positions = np.asarray(positions, dtype=np.float32)
         if positions.ndim == 1:
@@ -111,6 +117,19 @@ class CFSProjectionNumpy(CFSProjectionBase):
             and cvx_spmatrix is not None
             and sp is not None
         )
+        
+        # Store initial state for equality constraint (if enabled)
+        initial_state_flat = None
+        if fix_initial_state and N > 0:
+            initial_state_flat = positions[0].flatten().astype(np.float64)
+        
+        # Initialize objective function tracking (if enabled)
+        objective_prev = None
+        if monitor_objective:
+            # Compute initial objective: 0.5 * ||x - x0||^2 + smoothness term
+            objective_prev = self._compute_objective(
+                current, positions, smoothness_weight, dim, N
+            )
         
         # Iteratively linearize + solve QP (CFS outer loop)
         for iteration in range(max_iterations):
@@ -203,7 +222,18 @@ class CFSProjectionNumpy(CFSProjectionBase):
                         dim=int(dim),
                         T=int(N),
                         smoothness_weight=float(smoothness_weight),
+                        fix_initial_state=fix_initial_state,
+                        initial_state=initial_state_flat,
                     )
+                    # Check for numerical issues before converting to float32
+                    if not np.all(np.isfinite(x_new_flat)):
+                        raise RuntimeError("QP solution contains non-finite values (inf or NaN)")
+                    
+                    # Check for overflow before converting to float32
+                    x_max = np.max(np.abs(x_new_flat))
+                    if x_max > np.finfo(np.float32).max:
+                        raise RuntimeError(f"QP solution values too large for float32: max={x_max}")
+                    
                     current = x_new_flat.reshape(N, dim).astype(np.float32)
                 except RuntimeError as e:
                     # If trajectory QP fails, fall back to pointwise
@@ -245,15 +275,42 @@ class CFSProjectionNumpy(CFSProjectionBase):
                         continue
                     current[idx] = self.solve_projection_qp(x_ref, A, b)
             
-            # Check convergence
-            max_step = float(np.max(np.linalg.norm(current - prev, axis=1)))
-            if max_step < convergence_tol:
+            # Check convergence (dual criteria: trajectory change + objective change)
+            # Check for NaN/inf before computing norm
+            if not np.all(np.isfinite(current)) or not np.all(np.isfinite(prev)):
+                raise RuntimeError("Non-finite values in trajectory during CFS projection")
+            
+            diff = current - prev
+            if not np.all(np.isfinite(diff)):
+                raise RuntimeError("Non-finite values in trajectory difference during CFS projection")
+            
+            max_step = float(np.max(np.linalg.norm(diff, axis=1)))
+            
+            # Compute objective function change (if monitoring enabled)
+            objective_change = 0.0
+            if monitor_objective:
+                objective_curr = self._compute_objective(
+                    current, positions, smoothness_weight, dim, N
+                )
+                if objective_prev is not None:
+                    objective_change = abs(objective_curr - objective_prev)
+                objective_prev = objective_curr
+            
+            # Dual convergence check: trajectory change AND (optionally) objective change
+            trajectory_converged = max_step < convergence_tol
+            objective_converged = True  # Default: always true if not monitoring
+            if monitor_objective:
+                objective_converged = objective_change < convergence_tol
+            
+            if trajectory_converged and objective_converged:
                 # Final feasibility check
                 union_sdf2 = np.asarray(self.obstacles.sdf(current), dtype=np.float32)
                 if union_sdf2.ndim == 0:
                     union_sdf2 = np.full((N,), float(union_sdf2), dtype=np.float32)
                 if np.any(union_sdf2 < clearance):
                     break  # Stagnating, stop iterating
+                # Both converged and feasible
+                break
         
         return current
     
@@ -413,12 +470,15 @@ class CFSProjectionNumpy(CFSProjectionBase):
         dim: int,
         T: int,
         smoothness_weight: float,
+        fix_initial_state: bool = False,
+        initial_state: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """
         Solve trajectory-level CFS-QP using cvxopt.
         
         Minimizes: 0.5 ||x - x0||^2 + 0.5 * w * ||D2 x||^2
         Subject to: A x >= b
+                    (optionally) Aeq x = beq (for fixing initial state)
         
         where x is flattened trajectory and D2 is second-difference operator.
         
@@ -431,6 +491,8 @@ class CFSProjectionNumpy(CFSProjectionBase):
             dim: Dimension of each point
             T: Number of time steps
             smoothness_weight: Weight for smoothness regularization
+            fix_initial_state: If True, add equality constraint to fix initial state
+            initial_state: Initial state to fix (shape (dim,)), required if fix_initial_state=True
             
         Returns:
             Flattened projected trajectory, shape (n_vars,)
@@ -485,6 +547,34 @@ class CFSProjectionNumpy(CFSProjectionBase):
         G_cvx = self._coo_to_cvx_spmatrix(G_sp.data, G_sp.row, G_sp.col, G_sp.shape)
         h_cvx = cvx_matrix((-np.asarray(b, dtype=np.float64)).reshape(-1))
         
+        # Build equality constraints for fixing initial state (if enabled)
+        Aeq_cvx = None
+        beq_cvx = None
+        if fix_initial_state and initial_state is not None:
+            initial_state = np.asarray(initial_state, dtype=np.float64).flatten()
+            if initial_state.shape[0] != dim:
+                raise ValueError(
+                    f"initial_state has shape {initial_state.shape}, expected ({dim},)"
+                )
+            
+            # Equality constraint: x[0:dim] = initial_state
+            # Aeq: [I_dim, 0, 0, ...] where I_dim is identity matrix for first dim variables
+            Aeq_data: List[float] = []
+            Aeq_row: List[int] = []
+            Aeq_col: List[int] = []
+            for i in range(dim):
+                Aeq_data.append(1.0)
+                Aeq_row.append(i)
+                Aeq_col.append(i)
+            
+            Aeq_sp = sp.coo_matrix(
+                (np.asarray(Aeq_data, dtype=np.float64), (np.asarray(Aeq_row), np.asarray(Aeq_col))),
+                shape=(dim, n_vars),
+                dtype=np.float64,
+            )
+            Aeq_cvx = self._coo_to_cvx_spmatrix(Aeq_sp.data, Aeq_sp.row, Aeq_sp.col, Aeq_sp.shape)
+            beq_cvx = cvx_matrix(initial_state.astype(np.float64))
+        
         # Solve QP with improved numerical stability options
         old_show = cvx_solvers.options.get("show_progress", True)
         old_maxiters = cvx_solvers.options.get("maxiters", 100)
@@ -502,7 +592,11 @@ class CFSProjectionNumpy(CFSProjectionBase):
         cvx_solvers.options["refinement"] = 2
         
         try:
-            sol = cvx_solvers.qp(P_cvx, q_cvx, G_cvx, h_cvx)
+            # Solve QP with optional equality constraints
+            if Aeq_cvx is not None and beq_cvx is not None:
+                sol = cvx_solvers.qp(P_cvx, q_cvx, G_cvx, h_cvx, Aeq_cvx, beq_cvx)
+            else:
+                sol = cvx_solvers.qp(P_cvx, q_cvx, G_cvx, h_cvx)
         finally:
             # Restore original options
             cvx_solvers.options["show_progress"] = old_show
@@ -533,7 +627,69 @@ class CFSProjectionNumpy(CFSProjectionBase):
             raise RuntimeError(f"cvxopt qp failed: status={status}")
         
         x = np.asarray(sol["x"], dtype=np.float64).reshape(-1)
+        
+        # Validate solution: check for inf/NaN and clamp extreme values
+        if not np.all(np.isfinite(x)):
+            raise RuntimeError("cvxopt QP solution contains non-finite values (inf or NaN)")
+        
+        # Clamp extreme values to prevent overflow when converting to float32
+        max_val = np.finfo(np.float32).max * 0.9  # Use 90% of max to be safe
+        x = np.clip(x, -max_val, max_val)
+        
         return x
+    
+    def _compute_objective(
+        self,
+        current: np.ndarray,
+        x0: np.ndarray,
+        smoothness_weight: float,
+        dim: int,
+        T: int,
+    ) -> float:
+        """
+        Compute objective function value for convergence monitoring.
+        
+        Objective: 0.5 * ||x - x0||^2 + 0.5 * w * ||D2 x||^2
+        
+        Args:
+            current: Current trajectory, shape (T, dim)
+            x0: Reference trajectory, shape (T, dim)
+            smoothness_weight: Weight for smoothness regularization
+            dim: Dimension of each point
+            T: Number of time steps
+            
+        Returns:
+            Objective function value
+        """
+        current_flat = current.reshape(-1).astype(np.float64)
+        x0_flat = x0.reshape(-1).astype(np.float64)
+        
+        # Position error term: 0.5 * ||x - x0||^2
+        position_error = 0.5 * float(np.sum((current_flat - x0_flat) ** 2))
+        
+        # Smoothness term: 0.5 * w * ||D2 x||^2
+        # This matches the computation in _solve_trajectory_qp_identity_cvxopt
+        smoothness_term = 0.0
+        if smoothness_weight > 0.0 and T >= 3 and sp is not None:
+            # Build second-difference operator for time dimension
+            r = []
+            c = []
+            d = []
+            for t in range(T - 2):
+                r.extend([t, t, t])
+                c.extend([t, t + 1, t + 2])
+                d.extend([1.0, -2.0, 1.0])
+            D2_time = sp.coo_matrix((d, (r, c)), shape=(T - 2, T), dtype=np.float64).tocsr()
+            
+            # Apply D2 to each dimension separately (matching kron(P_time, I_dim))
+            # For flattened trajectory [x0, y0, x1, y1, ...], extract each dimension
+            for d_idx in range(dim):
+                # Extract dimension d_idx: [x0, x1, ...] or [y0, y1, ...]
+                x_dim = current_flat[d_idx::dim]  # Shape: (T,)
+                D2x_dim = D2_time @ x_dim  # Shape: (T-2,)
+                smoothness_term += 0.5 * smoothness_weight * float(np.sum(D2x_dim ** 2))
+        
+        return position_error + smoothness_term
     
     @staticmethod
     def _coo_to_cvx_spmatrix(
