@@ -23,7 +23,7 @@ except ImportError:
 
 from enerdynamics.envs.obstacles.base import ObstacleManager
 from enerdynamics.envs.obstacles.convex import SphereObstacle
-from enerdynamics.core.constraints.projections.cfs import CFSProjection
+from enerdynamics.core.constraints.legacy.projections.cfs import CFSProjection
 
 
 def create_test_obstacles():

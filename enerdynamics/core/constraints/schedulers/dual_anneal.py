@@ -147,3 +147,4 @@ class DualAnnealScheduler(Scheduler):
                     (1 - alpha) * self.current_feasible_rate
                 )
 
+

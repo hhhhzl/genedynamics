@@ -343,6 +343,26 @@ class ConstraintManager:
             return None
         return self.action_filter_operator.make_jax_filter()
 
+    def get_jax_soft_sdf_sampler(self):
+        """
+        Return a JAX-compatible SDF sampler function for soft constraints.
+        
+        Returns the first available JAX SDF sampler from soft constraints.
+        Used for efficient GPU-accelerated soft penalty computation in JIT-compiled code.
+        
+        Returns:
+            JAX function (positions) -> sdf_values, or None if not available.
+        """
+        if not self.has_soft():
+            return None
+        
+        for constraint in self.soft_constraints:
+            if hasattr(constraint, 'get_jax_sdf_sampler'):
+                sampler = constraint.get_jax_sdf_sampler()
+                if sampler is not None:
+                    return sampler
+        return None
+
     def get_torch_action_filter(self):
         """Return the action filter callable for Torch, if provided by the operator."""
         if self.action_filter_operator is None:
