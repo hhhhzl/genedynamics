@@ -39,3 +39,4 @@ class CFSNumpyConvexifier(CFSConvexifier):
         """
         return super().build_constraints(ref, params, state)
 
+

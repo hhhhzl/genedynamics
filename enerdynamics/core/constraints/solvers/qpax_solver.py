@@ -193,3 +193,4 @@ class QPAXSolver(QPSolver):
             except ImportError:
                 raise RuntimeError(f"Failed to solve QP: {e}")
 
+

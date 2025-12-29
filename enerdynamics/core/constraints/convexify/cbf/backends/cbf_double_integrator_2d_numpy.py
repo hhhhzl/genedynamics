@@ -38,3 +38,4 @@ class CBFNumpyConvexifier(CBFConvexifier):
         """
         return super().build_constraints(ref, params, state)
 
+

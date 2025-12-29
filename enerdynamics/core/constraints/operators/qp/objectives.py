@@ -186,3 +186,4 @@ def trajectory_objective(
     
     return P, q
 
+

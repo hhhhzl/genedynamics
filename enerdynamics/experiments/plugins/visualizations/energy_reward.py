@@ -64,20 +64,7 @@ class EnergyRewardVisualizationPlugin(VisualizationPlugin):
             time_rewards = np.arange(len(rewards)) * dt
             ax_reward.plot(time_rewards, rewards, color=EDOC_COLOR, linewidth=2.0, label='Reward')
             
-            # Plot diffusion reward history if available
-            if reward_history is not None and len(reward_history) > 0:
-                if hasattr(reward_history, 'tolist'):
-                    reward_hist = np.asarray(reward_history, dtype=np.float32)
-                else:
-                    reward_hist = np.array(reward_history, dtype=np.float32)
-                
-                if len(reward_hist) > 0 and len(time_rewards) > 0:
-                    diffusion_steps = np.linspace(0, time_rewards[-1], len(reward_hist))
-                    ax_reward.plot(
-                        diffusion_steps, reward_hist, '--',
-                        color=EDOC_COLOR, linewidth=1, alpha=0.5,
-                        label='Diffusion Reward'
-                    )
+            # Diffusion reward history plotting removed per user request
             
             ax_reward.set_xlabel('Time (s)')
             ax_reward.set_ylabel('Reward')

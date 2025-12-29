@@ -234,3 +234,4 @@ class RepairOperator(Operator):
             max_violation = max(max_violation, violations.max())
         return float(max_violation)
 
+

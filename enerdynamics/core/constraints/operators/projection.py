@@ -294,3 +294,4 @@ class ProjectionOperator(Operator):
         violations = np.maximum(0, b - A @ traj_flat)
         return float(violations.max())
 
+

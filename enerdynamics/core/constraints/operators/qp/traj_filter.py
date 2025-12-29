@@ -203,3 +203,4 @@ class TrajQPFilter(Operator):
             u_nom, A, b, rho=None
         )
 
+

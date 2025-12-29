@@ -170,6 +170,72 @@ class ObstacleSoftConstraint(SoftConstraint):
         
         return np.array(energies, dtype=np.float32)
     
+    def get_jax_sdf_sampler(self) -> Optional[Callable]:
+        """
+        Return a JAX-compatible SDF sampler function for JIT compilation.
+        
+        Uses SDF texture with bilinear interpolation for efficient GPU computation.
+        Returns None if SDF texture is not available or JAX is not available.
+        
+        Returns:
+            JAX function (positions) -> sdf_values, where:
+            - positions: JAX array, shape (..., 2) for 2D or (..., 1) for 1D
+            - sdf_values: JAX array, shape (...,) with SDF values
+            Returns None if not available.
+        """
+        if jnp is None:
+            return None
+        
+        tex = self.obstacles.get_sdf_texture_2d()
+        if tex is None:
+            return None
+        
+        try:
+            tex_j = tex.to_jax()
+            x_min, y_min, res = float(tex.x_min), float(tex.y_min), float(tex.res)
+            H_tex, W_tex = int(tex.H), int(tex.W)
+            
+            def sample_sdf(positions):
+                """
+                Sample SDF values using bilinear interpolation from texture.
+                
+                Args:
+                    positions: JAX array, shape (..., 2) for 2D
+                
+                Returns:
+                    SDF values, shape (...,)
+                """
+                positions = jnp.asarray(positions, dtype=jnp.float32)
+                shp = positions.shape[:-1]
+                pts = positions.reshape((-1, 2))
+                
+                # Compute texture coordinates
+                coords = (pts - jnp.array([x_min, y_min])) / res
+                coords = jnp.clip(coords, 0.0, [W_tex - 1.0, H_tex - 1.0])
+                
+                # Bilinear interpolation
+                x0 = jnp.floor(coords[:, 0]).astype(jnp.int32)
+                y0 = jnp.floor(coords[:, 1]).astype(jnp.int32)
+                x1 = jnp.minimum(x0 + 1, W_tex - 1)
+                y1 = jnp.minimum(y0 + 1, H_tex - 1)
+                wx = (coords[:, 0] - x0).astype(jnp.float32)
+                wy = (coords[:, 1] - y0).astype(jnp.float32)
+                
+                # Sample texture values
+                v00 = tex_j[0, y0, x0]
+                v10 = tex_j[0, y0, x1]
+                v01 = tex_j[0, y1, x0]
+                v11 = tex_j[0, y1, x1]
+                
+                # Interpolate
+                v0 = v00 * (1.0 - wx) + v10 * wx
+                v1 = v01 * (1.0 - wx) + v11 * wx
+                return (v0 * (1.0 - wy) + v1 * wy).reshape(shp)
+            
+            return sample_sdf
+        except Exception:
+            return None
+    
     @staticmethod
     def _default_extract_position(state: State) -> np.ndarray:
         """Default position extractor: assumes first dims are position."""

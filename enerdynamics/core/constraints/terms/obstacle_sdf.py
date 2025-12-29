@@ -204,3 +204,4 @@ class ObstacleSDFTerm(ConstraintTerm):
             return state_np[:1]
         return state_np[:min(2, len(state_np))]
 
+

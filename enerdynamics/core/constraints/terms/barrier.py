@@ -154,3 +154,4 @@ class BarrierTerm(ConstraintTerm):
         
         return np.array(violations, dtype=np.float32)
 
+
