@@ -8,12 +8,21 @@ import io
 import numpy as np
 from enerdynamics.solvers.single.edoc import EDOCPlanner
 from enerdynamics.envs.factories import make_env, make_energy
-from enerdynamics.core.constraints import ConstraintManager
+from enerdynamics.core.constraints import (
+    ConstraintManager,
+    ObstacleSoftConstraint,
+    ObstacleHardConstraint,
+    CFSProjection,
+    ConstraintScheduleManager,
+)
 from enerdynamics.core.backends.runtime import RuntimeBackendManager
+from enerdynamics.experiments.common.constraints import SpeedConstraint
+from enerdynamics.envs.obstacles import ObstacleManager
+from enerdynamics.experiments.common.obstacle_generation import generate_box2d_obstacles
 
 def profile_edoc_numpy():
     """Profile EDOC NumPy backend."""
-    # Force NumPy backend before creating planner
+    # Force JAX backend before creating planner
     RuntimeBackendManager.set_backend("jax", device="cpu")
     
     # Setup environment (adjust parameters as needed)
@@ -24,19 +33,102 @@ def profile_edoc_numpy():
     
     energy = make_energy("single_integrator_box_2d")
     
-    # Create planner (will use NumPy backend from RuntimeBackendManager)
+    # Create obstacles (similar to level 6)
+    start_pos = np.array([-0.2, -1.5], dtype=np.float32)
+    target_pos = np.array([0.0, 0.0], dtype=np.float32)
+    
+    obstacle_config = {
+        'robot_radius': 0.05,
+        'obstacle_radius_scale': 1.3,
+        'p_max': 2.0,
+        'map_bounds': {
+            'x_min': -1.5,
+            'x_max': 1.0,
+            'y_min': -2.0,
+            'y_max': 0.5
+        },
+        'enable_connectivity_check': True,
+        'enable_nonconvexity_check': True,
+    }
+    
+    obstacles = generate_box2d_obstacles(
+        level=6,
+        seed=0,
+        start_pos=start_pos,
+        target_pos=target_pos,
+        config=obstacle_config,
+    )
+    
+    # Build SDF texture for JAX acceleration (critical for CFS performance)
+    # This matches what the actual experiment framework does
+    if len(obstacles) > 0:
+        obstacles.build_sdf_texture_2d(
+            x_min=-1.5,
+            x_max=1.0,
+            y_min=-2.0,
+            y_max=0.5,
+            res=0.01,
+            force_rebuild=True,
+        )
+    
+    # Create constraint manager with CFS (matching real config)
+    soft_constraint = ObstacleSoftConstraint(
+        obstacles=obstacles,
+        alpha=1.0,
+        beta=10.0,
+    )
+    
+    hard_constraint = ObstacleHardConstraint(
+        obstacles=obstacles,
+        clearance=0.1,
+    )
+    
+    speed_constraint = SpeedConstraint(
+        u_max=1.0,
+    )
+    
+    schedule_manager = ConstraintScheduleManager.create_soft_to_hard(
+        soft_alpha_start=1.0,
+        soft_alpha_end=0.0,
+        hard_clearance_start=0.5,
+        hard_clearance_end=0.1,
+        schedule_type="linear",
+        reverse_mode=True,
+    )
+    
+    feasibility_op = CFSProjection(
+        obstacles=obstacles,
+        schedule_manager=schedule_manager,
+        use_late_stage_only=True,
+        late_stage_ratio=0.2,
+        use_trajectory_qp=False,
+        smoothness_weight=0.0,
+        reconstruct_velocity=False,
+        velocity_dt=None,
+        max_iterations=5,
+    )
+    
+    constraint_manager = ConstraintManager(
+        soft_constraints=[soft_constraint],
+        hard_constraints=[hard_constraint, speed_constraint],
+        feasibility_operator=feasibility_op,
+        schedule_manager=schedule_manager,
+    )
+    
+    # Create planner with constraint manager
     planner = EDOCPlanner(
         env=env,
         energy=energy,
         horizon=64,
         dt=0.05,
-        action_diffuse_steps=100,  # Reduce for faster profiling
-        action_nsample=64,  # Reduce for faster profiling
+        action_diffuse_steps=100,
+        action_nsample=64,
         action_score_mode="energy",
+        constraint_manager=constraint_manager,
+        terminal_energy_weight=50.0,
     )
     
-    # Initial state
-    x0 = np.array([-0.2, -1.5], dtype=np.float32)
+    # Initial state (already defined above)
     rng = 42
     
     # Profile
@@ -47,6 +139,8 @@ def profile_edoc_numpy():
         result = planner.plan(rng)
     except Exception as e:
         print(f"Error during planning: {e}")
+        import traceback
+        traceback.print_exc()
         profiler.disable()
         return
     

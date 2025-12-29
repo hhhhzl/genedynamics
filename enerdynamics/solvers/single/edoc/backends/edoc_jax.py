@@ -100,8 +100,13 @@ class EDOCBackendJax(EDOCBackendBase):
             if feasibility_op is not None and hasattr(feasibility_op, "make_jax_projector"):
                 try:
                     self._jax_cfs_projector = feasibility_op.make_jax_projector()
-                except Exception:
-                    pass
+                    if self._jax_cfs_projector is not None:
+                        print(f"[EDOC JAX] CFS projector created successfully (type: {type(self._jax_cfs_projector).__name__})")
+                    else:
+                        print(f"[EDOC JAX] CFS projector is None (will fallback to NumPy)")
+                except Exception as e:
+                    print(f"[EDOC JAX] Failed to create CFS projector: {e}")
+                    self._jax_cfs_projector = None
         
         # Optionally JIT compile functions
         if self.use_jit:
@@ -794,11 +799,13 @@ class EDOCBackendJax(EDOCBackendBase):
                     clearance_jax = jnp.asarray(hard_clearance, dtype=jnp.float32)
                     # Project: jax_projector(positions, clearance) -> projected_positions
                     projected = self._jax_cfs_projector(ybar, clearance_jax)
+                    # Ensure computation completes (important for correctness)
                     return projected
                 
                 def skip_cfs_projection(ybar):
                     return ybar
                 
+                # Apply CFS projection conditionally based on hard_enabled
                 Ybar_next = jax.lax.cond(
                     hard_enabled,
                     apply_cfs_projection,

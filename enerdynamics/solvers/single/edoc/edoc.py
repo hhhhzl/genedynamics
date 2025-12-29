@@ -71,11 +71,11 @@ class EDOCPlanner:
         diffusion_mode: str = "reverse",
         action_diffuse_steps: int = 100,
         action_beta0: float = 1e-4,
-        action_betaT: float = 1e-2,
+        action_betaT: float = 1e-1,
         action_temp: float = 0.5,
         action_extra_sigma: float = 0.0,
         # NOTE: action_stage_ratio is deprecated; EDOC now uses guided scoring at all steps.
-        action_stage_ratio: float = 1,
+        action_stage_ratio: float = 0.95,
         action_score_mode: str = "reward",
         action_nsample: int = 256,
         use_antithetic: bool = False,
