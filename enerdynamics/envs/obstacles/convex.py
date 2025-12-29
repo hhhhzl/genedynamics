@@ -124,6 +124,52 @@ class BoxObstacle:
         
         return grad
     
+    def jax_sdf(self, points):
+        """
+        Compute SDF for box using JAX.
+        
+        Args:
+            points: Points to evaluate, shape (N, dim) or (dim,) as JAX array
+            
+        Returns:
+            SDF values, shape (N,) or scalar as JAX array
+        """
+        if jnp is None:
+            raise RuntimeError("JAX is not available")
+        
+        points = jnp.asarray(points, dtype=jnp.float32)
+        single_point = points.ndim == 1
+        if single_point:
+            points = points.reshape(1, -1)
+        
+        # Convert center and half_extents to JAX arrays
+        center_jax = jnp.asarray(self.center, dtype=jnp.float32)
+        half_extents_jax = jnp.asarray(self.half_extents, dtype=jnp.float32)
+        
+        # Relative position from center
+        q = points - center_jax
+        
+        # Distance to box boundary
+        # For each dimension, compute distance to nearest face
+        d = jnp.abs(q) - half_extents_jax
+        
+        # Inside box: use max of negative distances
+        # Outside box: use length of positive distances
+        max_d = jnp.maximum(d, 0.0)
+        length = jnp.linalg.norm(max_d, axis=-1)
+        
+        # If inside, add the max negative distance
+        inside = jnp.all(d < 0, axis=-1)
+        # Handle inside case: use max of negative distances
+        min_d = jnp.minimum(jnp.maximum(d, -jnp.inf), 0.0)
+        length = jnp.where(
+            inside,
+            jnp.max(min_d, axis=-1),  # Inside: max negative distance
+            length  # Outside: length of positive distances
+        )
+        
+        return length[0] if single_point else length
+    
     def to_backend(self, backend: str) -> dict:
         """Convert to backend representation."""
         return {

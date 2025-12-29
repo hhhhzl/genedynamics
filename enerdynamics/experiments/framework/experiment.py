@@ -134,7 +134,8 @@ class ExperimentRunner:
         # 5. Setup constraints
         constraint_config = self.config.constraint_config or {}
         constraint_manager = create_constraint_manager(
-            obstacles, level, env, constraint_config, self.config.backend
+            obstacles, level, env, constraint_config, self.config.backend,
+            obstacle_config=self.config.obstacle_config,
         )
         
         # 6. Create planner
@@ -149,18 +150,34 @@ class ExperimentRunner:
         rng = backend.create_rng(seed)
         
         # Warmup call to exclude JIT compilation time from planning time measurement
-        # This ensures any JIT compilation or first-call overhead is excluded
-        try:
-            warmup_result = method_plugin.plan(planner, start_pos, rng)
-            # For JAX, ensure computation is complete before timing
+        # Only needed for JAX backend with JIT enabled (NumPy backend doesn't need warmup)
+        needs_warmup = False
+        if self.config.backend == "jax":
+            # Check if planner uses JIT
             if hasattr(planner, '_backend_impl') and hasattr(planner._backend_impl, 'use_jit'):
+                if planner._backend_impl.use_jit:
+                    needs_warmup = True
+            
+            # Also check if constraint manager uses JIT
+            if not needs_warmup and constraint_manager is not None:
+                if hasattr(constraint_manager, 'feasibility_operator'):
+                    feas_op = constraint_manager.feasibility_operator
+                    if feas_op is not None:
+                        if hasattr(feas_op, '_backend_impl') and hasattr(feas_op._backend_impl, 'use_jit'):
+                            if feas_op._backend_impl.use_jit:
+                                needs_warmup = True
+        
+        if needs_warmup:
+            try:
+                warmup_result = method_plugin.plan(planner, start_pos, rng)
+                # For JAX, ensure computation is complete before timing
                 import jax
                 jax.block_until_ready(warmup_result)
-        except Exception:
-            pass  # If warmup fails, continue anyway
-        
-        # Recreate rng to ensure same random seed for actual planning
-        rng = backend.create_rng(seed)
+            except Exception:
+                pass  # If warmup fails, continue anyway
+            
+            # Recreate rng to ensure same random seed for actual planning
+            rng = backend.create_rng(seed)
         
         planning_start = time.time()
         result = method_plugin.plan(planner, start_pos, rng)

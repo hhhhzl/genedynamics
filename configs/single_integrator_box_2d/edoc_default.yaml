@@ -32,7 +32,7 @@ obstacle_config:
   enable_nonconvexity_check: true
 
 seeds: [0]
-backend: jax
+backend: numpy
 device: cpu
 
 metrics:
@@ -53,7 +53,7 @@ constraint_config:
     beta: 10.0
   hard_constraint:
     enabled: true
-    clearance: 0.1
+    clearance: 0.2
   schedule:
     enabled: true
     type: soft_to_hard
@@ -65,12 +65,12 @@ constraint_config:
     reverse_mode: true
   cfs:
     enabled: true
-    use_trajectory_qp: false
-    max_iterations: 5
+    use_trajectory_qp: true
+    max_iterations: 30
     use_late_stage_only: true
     late_stage_ratio: 0.2
     reconstruct_velocity: false
-    smoothness_weight: 0.0
+    smoothness_weight: 1.0
   action_constraint_type: speed
 
 metadata:

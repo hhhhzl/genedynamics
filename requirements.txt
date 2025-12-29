@@ -13,7 +13,6 @@ pandas>=2.2.0
 
 # Optional autodiff (JAX)
 jax==0.4.35
-jaxopt==0.8.5
 
 # Optional environments
 gymnasium>=0.29.1
@@ -24,6 +23,7 @@ robosuite>=1.4.1
 # Optional optimization
 cvxopt>=1.3.2
 qpax==0.0.9
+jaxopt==0.8.5
 
 # Dev tools
 pytest>=9.0.2

@@ -123,7 +123,8 @@ def create_constraint_manager(
     level: int,
     env: Any,
     config: Dict[str, Any],
-    backend_name: str = "jax"
+    backend_name: str = "jax",
+    obstacle_config: Optional[Dict[str, Any]] = None,
 ) -> Optional[ConstraintManager]:
     """
     Create constraint manager with configuration.
@@ -139,6 +140,7 @@ def create_constraint_manager(
             - cfs: Dict with CFS projection parameters
             - action_constraint_type: 'acceleration' or 'speed'
         backend_name: Computational backend name
+        obstacle_config: Optional obstacle configuration dictionary (for getting robot_radius)
         
     Returns:
         ConstraintManager instance or None if level==0 and no constraints
@@ -208,6 +210,15 @@ def create_constraint_manager(
     cfs_config = config.get('cfs', {})
     if cfs_config.get('enabled', True):
         force_python = (backend_name == "numpy")
+        
+        # Get robot_radius from obstacle_config if available
+        robot_radius = 0.0
+        if obstacle_config is not None:
+            robot_radius = float(obstacle_config.get('robot_radius', 0.0))
+        # Also check if config contains obstacle_config (for backward compatibility)
+        elif 'obstacle_config' in config:
+            robot_radius = float(config['obstacle_config'].get('robot_radius', 0.0))
+        
         feasibility_op = CFSProjection(
             obstacles=obstacles,
             schedule_manager=schedule_manager,
@@ -219,6 +230,7 @@ def create_constraint_manager(
             velocity_dt=getattr(env, 'dt', 0.1) if cfs_config.get('reconstruct_velocity', True) else None,
             max_iterations=int(cfs_config.get('max_iterations', 15)),
             force_python_backend=force_python,
+            robot_radius=robot_radius,
         )
     
     # Action constraints
