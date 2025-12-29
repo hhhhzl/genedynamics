@@ -1024,45 +1024,72 @@ class CFSProjection(FeasibilityOperator):
 
             return identity_projector
 
-        # Try per-obstacle jax_sdf/jax_gradient first (most accurate, aligns with NumPy version)
-        # If that fails (e.g., UnionObstacle doesn't support JAX), fall back to SDF texture
-        use_manager_sdf = False  # First try per-obstacle method
-
-        # Try to build JAX-compatible SDF and gradient functions
+        # Priority: Use SDF texture if available (fastest, avoids pure_callback overhead)
+        # Then try per-obstacle jax_sdf/jax_gradient (accurate, aligns with NumPy version)
+        # This optimization avoids the expensive pure_callback conversions that cause performance issues
+        
+        # Check if SDF texture is available first (preferred for performance)
+        has_sdf_texture = (hasattr(self.obstacles, 'sample_sdf_and_grad_2d') and
+                          hasattr(self.obstacles, 'get_sdf_texture_2d') and
+                          self.obstacles.get_sdf_texture_2d() is not None)
+        
+        # Pre-convert SDF texture to JAX BEFORE creating JAX functions to avoid tracer leaks
+        # This ensures the texture is converted outside any JAX transformation
+        if has_sdf_texture:
+            sdf_texture = self.obstacles.get_sdf_texture_2d()
+            if sdf_texture is not None:
+                try:
+                    # Pre-convert texture to JAX - this must happen before JAX transformations
+                    _ = sdf_texture.to_jax()
+                except Exception as e:
+                    import warnings
+                    warnings.warn(
+                        f"Failed to pre-convert SDF texture to JAX: {str(e)}. "
+                        "Falling back to per-obstacle method.",
+                        UserWarning
+                    )
+                    has_sdf_texture = False  # Fall back to per-obstacle method
+        
         try:
-            sdf_fn, grad_fn = self._build_jax_obstacle_functions(obstacles_list, use_manager_sdf=use_manager_sdf)
-        except RuntimeError as e:
-            # If per-obstacle method fails, try using SDF texture (if available)
-            # This handles cases like UnionObstacle that don't have jax_sdf but can use texture
-            if (hasattr(self.obstacles, 'sample_sdf_and_grad_2d') and
-                    hasattr(self.obstacles, 'get_sdf_texture_2d') and
-                    self.obstacles.get_sdf_texture_2d() is not None):
+            if has_sdf_texture:
+                # Use SDF texture directly - this is the fastest path and avoids pure_callback
                 try:
                     use_manager_sdf = True
                     sdf_fn, grad_fn = self._build_jax_obstacle_functions(obstacles_list,
                                                                          use_manager_sdf=use_manager_sdf)
-                except RuntimeError as e2:
-                    # Both methods failed - fall back to NumPy version
+                except RuntimeError as e:
+                    # SDF texture method failed, try per-obstacle method
+                    try:
+                        use_manager_sdf = False
+                        sdf_fn, grad_fn = self._build_jax_obstacle_functions(obstacles_list,
+                                                                             use_manager_sdf=use_manager_sdf)
+                    except RuntimeError as e2:
+                        # Both methods failed - fall back to NumPy version
+                        import warnings
+                        warnings.warn(
+                            f"JAX CFS projection not available: {str(e2)}. "
+                            "Falling back to NumPy version (Python loop). "
+                            "To use JAX acceleration, ensure all obstacles support JAX "
+                            "(e.g., use SDF texture with build_sdf_texture_2d()).",
+                            UserWarning
+                        )
+                        return None
+            else:
+                # No SDF texture - try per-obstacle method
+                try:
+                    use_manager_sdf = False
+                    sdf_fn, grad_fn = self._build_jax_obstacle_functions(obstacles_list, use_manager_sdf=use_manager_sdf)
+                except RuntimeError as e:
+                    # Per-obstacle method failed - fall back to NumPy version
                     import warnings
                     warnings.warn(
-                        f"JAX CFS projection not available: {str(e2)}. "
+                        f"JAX CFS projection not available: {str(e)}. "
                         "Falling back to NumPy version (Python loop). "
                         "To use JAX acceleration, ensure all obstacles support JAX "
                         "(e.g., use SDF texture with build_sdf_texture_2d()).",
                         UserWarning
                     )
                     return None
-            else:
-                # No SDF texture available - fall back to NumPy version
-                import warnings
-                warnings.warn(
-                    f"JAX CFS projection not available: {str(e)}. "
-                    "Falling back to NumPy version (Python loop). "
-                    "To use JAX acceleration, ensure all obstacles support JAX "
-                    "(e.g., use SDF texture with build_sdf_texture_2d()).",
-                    UserWarning
-                )
-                return None
         except Exception as e:
             # Other unexpected errors - also fall back gracefully
             import warnings
@@ -1106,13 +1133,21 @@ class CFSProjection(FeasibilityOperator):
                 smoothness_weight=smooth_weight,
             )
 
-        # Warmup: Pre-compile the JAX function to avoid first-call slowdown
-        # Use dummy inputs with typical shapes (typical trajectory: 21 points for horizon=20, 2D)
+        # Warmup: Pre-compile the JAX function with multiple common shapes to avoid
+        # repeated compilation during execution (reduces backend_compile overhead)
+        # Common trajectory lengths: 21 (horizon=20), 64 (horizon=64), 100 (long trajectories)
         try:
-            dummy_positions = jnp.zeros((21, 2), dtype=jnp.float32)
             dummy_clearance = jnp.asarray(0.1, dtype=jnp.float32)
-            # Trigger compilation (block_until_ready ensures compilation completes)
-            _ = jax_project(dummy_positions, dummy_clearance).block_until_ready()
+            # Pre-compile for common trajectory shapes to reduce dynamic compilation
+            common_shapes = [(21, 2), (64, 2), (100, 2)]
+            for shape in common_shapes:
+                try:
+                    dummy_positions = jnp.zeros(shape, dtype=jnp.float32)
+                    # Trigger compilation (block_until_ready ensures compilation completes)
+                    _ = jax_project(dummy_positions, dummy_clearance).block_until_ready()
+                except Exception:
+                    # Skip this shape if compilation fails
+                    continue
         except Exception:
             # Warmup failed, but that's okay - will compile on first real use
             pass
@@ -1138,11 +1173,19 @@ class CFSProjection(FeasibilityOperator):
         if not JAX_AVAILABLE:
             raise RuntimeError("JAX is not available")
 
-        # If using ObstacleManager's SDF texture, we can use it directly
-        # BUT: For alignment with NumPy version, we need per-obstacle SDF values for candidate selection
-        # So we compute per-obstacle SDF even when using texture for gradients
+        # If using ObstacleManager's SDF texture, use it directly for optimal performance
+        # This avoids pure_callback overhead and provides JAX-native acceleration
         if use_manager_sdf:
-            # Check if obstacles support JAX (needed for per-obstacle SDF)
+            # Check if SDF texture is available and supports JAX
+            if not (hasattr(self.obstacles, 'sample_sdf_and_grad_2d') and
+                    hasattr(self.obstacles, 'get_sdf_texture_2d') and
+                    self.obstacles.get_sdf_texture_2d() is not None):
+                raise RuntimeError(
+                    "SDF texture not available. Call obstacles.build_sdf_texture_2d() first."
+                )
+            
+            # Check if obstacles support JAX (needed for per-obstacle SDF for candidate selection)
+            # If they do, use per-obstacle method; otherwise use SDF texture directly
             all_support_jax = all(hasattr(obs, "jax_sdf") for obs in obstacles_list)
 
             if all_support_jax:
@@ -1164,8 +1207,11 @@ class CFSProjection(FeasibilityOperator):
                         else:
                             raise RuntimeError(f"Obstacle {type(obs).__name__} does not support JAX")
 
-                        # Ensure shape is (N,)
-                        sdf_vals = jnp.asarray(sdf_vals, dtype=jnp.float32)
+                        # jax_sdf should return JAX array, but ensure type and dtype for safety
+                        if not isinstance(sdf_vals, jnp.ndarray):
+                            sdf_vals = jnp.asarray(sdf_vals, dtype=jnp.float32)
+                        elif sdf_vals.dtype != jnp.float32:
+                            sdf_vals = sdf_vals.astype(jnp.float32)
                         if sdf_vals.ndim == 0:
                             # Scalar: broadcast to (N,)
                             sdf_vals = jnp.broadcast_to(sdf_vals, (points.shape[0],))
@@ -1233,8 +1279,11 @@ class CFSProjection(FeasibilityOperator):
                         branches = tuple(grad_fns)
 
                         # Use switch to select the appropriate gradient function
+                        # jax.lax.switch returns JAX array, ensure dtype and flatten
                         grad = jax.lax.switch(idx_int, branches, point)
-                        return jnp.asarray(grad, dtype=jnp.float32).flatten()
+                        if grad.dtype != jnp.float32:
+                            grad = grad.astype(jnp.float32)
+                        return grad.flatten()
 
                     # Compute gradients for all indices using vmap
                     grads = jax.vmap(compute_grad_for_idx)(obs_indices)
@@ -1242,83 +1291,82 @@ class CFSProjection(FeasibilityOperator):
 
                 return sdf_batch, grad_multiple
             else:
-                # Fallback: compute per-obstacle SDF using pure_callback (for candidate selection)
-                # This ensures candidate selection matches NumPy version even when obstacles don't support JAX
+                # Use SDF texture directly - this is much faster than pure_callback
+                # The texture's sample_sdf_and_grad_2d supports JAX backend natively
+                # 
+                # Note: SDF texture provides union SDF (distance to nearest obstacle).
+                # For CFS candidate selection, we use a heuristic: if union SDF < threshold,
+                # we consider all obstacles as candidates. This is less precise than per-obstacle
+                # SDF but avoids the expensive pure_callback overhead.
                 def sdf_batch(points: jnp.ndarray) -> jnp.ndarray:
                     """
-                    Compute SDF for all obstacles (matching NumPy version for candidate selection).
-                    Uses pure_callback to call NumPy sdf methods.
+                    Compute SDF using SDF texture (JAX-native, avoids pure_callback overhead).
+                    
+                    Args:
+                        points: Shape (N, dim)
+                        
+                    Returns:
+                        SDF matrix, shape (M, N) where M is number of obstacles
                     """
+                    # Use SDF texture's JAX-native method to get union SDF
+                    # sample_sdf_and_grad_2d with backend="jax" returns JAX arrays, no conversion needed
+                    sdf_vals, _ = self.obstacles.sample_sdf_and_grad_2d(points, backend="jax")
+                    
+                    # Only convert if not already a JAX array (shouldn't happen, but safe check)
+                    if not isinstance(sdf_vals, jnp.ndarray):
+                        sdf_vals = jnp.asarray(sdf_vals, dtype=jnp.float32)
+                    else:
+                        # Ensure dtype is float32 (may already be, but ensure consistency)
+                        if sdf_vals.dtype != jnp.float32:
+                            sdf_vals = sdf_vals.astype(jnp.float32)
+                    
+                    # Ensure shape is (N,)
+                    if sdf_vals.ndim == 0:
+                        sdf_vals = jnp.broadcast_to(sdf_vals, (points.shape[0],))
+                    elif sdf_vals.ndim > 1:
+                        sdf_vals = sdf_vals.flatten()[:points.shape[0]]
+                    
+                    # For candidate selection, we use union SDF for all obstacles
+                    # This means: if union SDF < threshold, all obstacles are considered candidates
+                    # This is a reasonable approximation that avoids pure_callback overhead
                     num_obstacles = len(obstacles_list)
-                    num_points = points.shape[0]
-
-                    # Compute SDF for each obstacle at each point using pure_callback
-                    sdf_rows = []
-                    for obs_idx in range(num_obstacles):
-                        obs = obstacles_list[obs_idx]
-
-                        def numpy_sdf_batch(pts):
-                            """NumPy SDF computation for batch of points."""
-                            return np.asarray([obs.sdf(p) for p in pts], dtype=np.float32)
-
-                        # Use pure_callback to call NumPy sdf from JAX (vectorized)
-                        sdf_vals = jax.pure_callback(
-                            numpy_sdf_batch,
-                            jax.ShapeDtypeStruct((num_points,), jnp.float32),
-                            points,
-                            vectorized=True
-                        )
-                        sdf_rows.append(sdf_vals)
-
-                    if not sdf_rows:
-                        return jnp.full((1, num_points), 1e6, dtype=jnp.float32)
-
-                    return jnp.stack(sdf_rows, axis=0)  # (M, N)
-
+                    return jnp.tile(sdf_vals[None, :], (num_obstacles, 1))
+                
                 def grad_multiple(point: jnp.ndarray, obs_indices: jnp.ndarray) -> jnp.ndarray:
                     """
-                    Compute gradients for specific obstacles using finite differences with pure_callback.
-                    This matches NumPy version's gradient computation.
+                    Compute gradients using SDF texture (JAX-native, avoids pure_callback overhead).
+                    
+                    Args:
+                        point: Shape (dim,)
+                        obs_indices: Indices of obstacles, shape (k,)
+                        
+                    Returns:
+                        Gradients, shape (k, dim)
                     """
-                    num_indices = obs_indices.shape[0]
-                    dim = point.shape[0]
-
-                    # Create a function that computes all gradients at once (avoids tracer issues)
-                    def compute_all_grads(args):
-                        """Compute gradients for all obstacles (runs in Python, not JIT)."""
-                        point_np, indices_np = args
-                        point_np = np.asarray(point_np, dtype=np.float32)
-                        indices_np = np.asarray(indices_np, dtype=np.int32)
-
-                        grads_list = []
-                        for idx in indices_np:
-                            obs = obstacles_list[int(idx)]
-                            grad_np = np.zeros((dim,), dtype=np.float32)
-
-                            for k in range(dim):
-                                xp = point_np.copy()
-                                xm = point_np.copy()
-                                xp[k] += 1e-4
-                                xm[k] -= 1e-4
-                                dp = float(obs.sdf(xp))
-                                dm = float(obs.sdf(xm))
-                                grad_np[k] = (dp - dm) / (2.0 * 1e-4)
-
-                            grads_list.append(grad_np)
-
-                        return np.stack(grads_list, axis=0) if grads_list else np.zeros((0, dim), dtype=np.float32)
-
-                    # Use pure_callback to compute all gradients at once
-                    grads = jax.pure_callback(
-                        compute_all_grads,
-                        jax.ShapeDtypeStruct((num_indices, dim), jnp.float32),
-                        (point, obs_indices),
-                        vectorized=False
+                    # Use SDF texture's JAX-native method to get union gradient
+                    # sample_sdf_and_grad_2d with backend="jax" returns JAX arrays, no conversion needed
+                    _, grads_union = self.obstacles.sample_sdf_and_grad_2d(
+                        point[None, :], backend="jax"
                     )
-
-                    return grads
-
-            return sdf_batch, grad_multiple
+                    
+                    # Extract first gradient (since we passed point[None, :] with shape (1, dim))
+                    # grads_union should be shape (1, dim), so grads_union[0] is (dim,)
+                    grad_union = grads_union[0] if grads_union.ndim > 1 else grads_union
+                    
+                    # Only convert if not already a JAX array (shouldn't happen, but safe check)
+                    if not isinstance(grad_union, jnp.ndarray):
+                        grad_union = jnp.asarray(grad_union, dtype=jnp.float32)
+                    else:
+                        # Ensure dtype is float32 (may already be, but ensure consistency)
+                        if grad_union.dtype != jnp.float32:
+                            grad_union = grad_union.astype(jnp.float32)
+                    
+                    # For multiple obstacles, use union gradient for all
+                    # This points towards the nearest obstacle, which is reasonable for projection
+                    num_indices = obs_indices.shape[0]
+                    return jnp.tile(grad_union[None, :], (num_indices, 1))
+                
+                return sdf_batch, grad_multiple
 
         # Otherwise, check individual obstacles
         # Check if all obstacles support JAX (required for JIT compilation)
@@ -1354,8 +1402,11 @@ class CFSProjection(FeasibilityOperator):
                     # This should not happen due to check above, but add safety
                     raise RuntimeError(f"Obstacle {type(obs).__name__} does not support JAX")
 
-                # Ensure shape is (N,)
-                sdf_vals = jnp.asarray(sdf_vals, dtype=jnp.float32)
+                # jax_sdf should return JAX array, but ensure type and dtype for safety
+                if not isinstance(sdf_vals, jnp.ndarray):
+                    sdf_vals = jnp.asarray(sdf_vals, dtype=jnp.float32)
+                elif sdf_vals.dtype != jnp.float32:
+                    sdf_vals = sdf_vals.astype(jnp.float32)
                 if sdf_vals.ndim == 0:
                     # Scalar: broadcast to (N,)
                     sdf_vals = jnp.broadcast_to(sdf_vals, (points.shape[0],))

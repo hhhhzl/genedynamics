@@ -147,6 +147,21 @@ class ExperimentRunner:
         
         # 7. Run planning
         rng = backend.create_rng(seed)
+        
+        # Warmup call to exclude JIT compilation time from planning time measurement
+        # This ensures any JIT compilation or first-call overhead is excluded
+        try:
+            warmup_result = method_plugin.plan(planner, start_pos, rng)
+            # For JAX, ensure computation is complete before timing
+            if hasattr(planner, '_backend_impl') and hasattr(planner._backend_impl, 'use_jit'):
+                import jax
+                jax.block_until_ready(warmup_result)
+        except Exception:
+            pass  # If warmup fails, continue anyway
+        
+        # Recreate rng to ensure same random seed for actual planning
+        rng = backend.create_rng(seed)
+        
         planning_start = time.time()
         result = method_plugin.plan(planner, start_pos, rng)
         planning_time = time.time() - planning_start
