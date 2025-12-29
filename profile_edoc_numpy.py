@@ -102,11 +102,17 @@ def profile_edoc_numpy():
         use_late_stage_only=True,
         late_stage_ratio=0.2,
         use_trajectory_qp=False,
-        smoothness_weight=0.0,
+        smoothness_weight=1.0,
         reconstruct_velocity=False,
         velocity_dt=None,
         max_iterations=5,
     )
+    
+    # Force non-JIT mode for comparison (using jaxopt.OSQP)
+    if hasattr(feasibility_op, '_backend_impl') and feasibility_op._backend_impl is not None:
+        if hasattr(feasibility_op._backend_impl, 'use_jit'):
+            feasibility_op._backend_impl.use_jit = False
+            print(f"[CFS] Forced use_jit=False for comparison (using jaxopt.OSQP)")
     
     constraint_manager = ConstraintManager(
         soft_constraints=[soft_constraint],
