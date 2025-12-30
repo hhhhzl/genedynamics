@@ -16,7 +16,7 @@ from enerdynamics.core.backends.runtime import RuntimeBackendManager
 
 from .config import ExperimentConfig
 from .registry import PluginRegistry
-from ..common.constraints import create_constraint_manager
+from ..common.constraints import create_constraint_manager, create_constraint_pipeline
 
 
 def convert_to_json_serializable(obj: Any) -> Any:
@@ -133,16 +133,28 @@ class ExperimentRunner:
         
         # 5. Setup constraints
         constraint_config = self.config.constraint_config or {}
-        constraint_manager = create_constraint_manager(
+        
+        # Use new pipeline architecture (preferred)
+        constraint_pipeline = create_constraint_pipeline(
             obstacles, level, env, constraint_config, self.config.backend,
             obstacle_config=self.config.obstacle_config,
         )
+        
+        # Also create legacy constraint_manager for backward compatibility
+        # (only if explicitly requested or if pipeline is None)
+        constraint_manager = None
+        if constraint_config.get('use_legacy', False) or constraint_pipeline is None:
+            constraint_manager = create_constraint_manager(
+                obstacles, level, env, constraint_config, self.config.backend,
+                obstacle_config=self.config.obstacle_config,
+            )
         
         # 6. Create planner
         method_plugin = self.registry.get_plugin('method', self.config.method)
         method_config = {
             **self.config.method_params,
-            'constraint_manager': constraint_manager,
+            'constraint_manager': constraint_manager,  # Legacy (for backward compatibility)
+            'constraint_pipeline': constraint_pipeline,  # New architecture (preferred)
         }
         planner = method_plugin.create_planner(env, energy, method_config)
         

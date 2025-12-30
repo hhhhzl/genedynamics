@@ -157,28 +157,61 @@ class HighPerformanceConstraintPipeline:
         """Get operator implementation."""
         impl_class = self.registry.get("operator", name, backend)
         if impl_class is None:
-            raise ValueError(
-                f"Operator '{name}' with backend '{backend}' not found. "
-                f"Available backends: {self.registry.list_backends('operator', name)}"
-            )
-        return impl_class(**self.kwargs)
+            # Try to fallback to numpy backend if JAX not available
+            if backend == "jax":
+                impl_class = self.registry.get("operator", name, "numpy")
+                if impl_class is not None:
+                    # Use numpy backend but keep the original backend name for compatibility
+                    pass
+                else:
+                    raise ValueError(
+                        f"Operator '{name}' with backend '{backend}' not found. "
+                        f"Available backends: {self.registry.list_backends('operator', name)}"
+                    )
+            else:
+                raise ValueError(
+                    f"Operator '{name}' with backend '{backend}' not found. "
+                    f"Available backends: {self.registry.list_backends('operator', name)}"
+                )
+        # Filter kwargs to only include operator-relevant parameters
+        operator_kwargs = {}
+        operator_param_names = [
+            'use_slack', 'solver_backend', 'solver', 'use_jit',
+            'project_states', 'project_actions', 'max_iterations', 'tolerance',
+        ]
+        for key in operator_param_names:
+            if key in self.kwargs:
+                operator_kwargs[key] = self.kwargs[key]
+        return impl_class(**operator_kwargs)
     
     def _get_scheduler(self, name: str):
         """Get scheduler implementation."""
+        # Filter kwargs to only include scheduler-relevant parameters
+        # Schedulers typically only need margin/rho parameters, not obstacles, etc.
+        scheduler_kwargs = {}
+        scheduler_param_names = [
+            'margin_start', 'margin_end', 'rho_start', 'rho_end',
+            'topK_start', 'topK_end', 'topL_start', 'topL_end',
+            'qp_gate_start', 'qp_gate_end', 'qp_prob_start', 'qp_prob_end',
+        ]
+        for key in scheduler_param_names:
+            if key in self.kwargs:
+                scheduler_kwargs[key] = self.kwargs[key]
+        
         # Try registry first
         impl_class = self.registry.get("scheduler", name, "numpy")
         if impl_class is not None:
-            return impl_class(**self.kwargs)
+            return impl_class(**scheduler_kwargs)
         
         # Fallback: try to import from schedulers module
         try:
             if name == "cosine_anneal":
                 from enerdynamics.core.constraints.schedulers import CosineAnnealScheduler
-                return CosineAnnealScheduler(**self.kwargs)
+                return CosineAnnealScheduler(**scheduler_kwargs)
             else:
                 # Try generic import
                 from enerdynamics.core.constraints.schedulers import get_scheduler
-                return get_scheduler(name, **self.kwargs)
+                return get_scheduler(name, **scheduler_kwargs)
         except:
             raise ValueError(
                 f"Scheduler '{name}' not found. "
@@ -192,39 +225,44 @@ class HighPerformanceConstraintPipeline:
         
         try:
             # JIT compile convexifier if it has build_constraints method
+            # Note: We cannot JIT compile methods that take Trajectory objects as arguments
+            # because Trajectory is a Python object, not a JAX array. Skip JIT compilation
+            # for methods that take Trajectory objects.
             if hasattr(self.convexifier, 'build_constraints'):
                 original_build = self.convexifier.build_constraints
                 
                 # Check if it's already JIT compiled
                 if not hasattr(original_build, '_jax_jit'):
-                    @jax.jit
-                    def jit_build(ref, params, state):
-                        return original_build(ref, params, state)
-                    
-                    self.convexifier.build_constraints = jit_build
+                    # Skip JIT compilation for methods that take Trajectory objects
+                    # Individual backend implementations (like CFSJAXConvexifier) may
+                    # have their own JIT compilation for internal methods that work with arrays.
                     if self.config.verbose:
-                        print("[Pipeline] JIT compiled convexifier.build_constraints")
+                        print("[Pipeline] Skipping JIT compilation for convexifier.build_constraints (Trajectory objects not JAX-compatible)")
+                    # Don't wrap with JIT - use original method
+                    pass
             
             # JIT compile operator if it has apply method
+            # Note: We cannot JIT compile methods that take Trajectory objects as arguments
             if hasattr(self.operator, 'apply'):
                 original_apply = self.operator.apply
                 
                 # Check if it's already JIT compiled
                 if not hasattr(original_apply, '_jax_jit'):
-                    @jax.jit
-                    def jit_apply(nominal, constraints, params, state):
-                        return original_apply(nominal, constraints, params, state)
-                    
-                    self.operator.apply = jit_apply
+                    # Skip JIT compilation for methods that take Trajectory objects
                     if self.config.verbose:
-                        print("[Pipeline] JIT compiled operator.apply")
+                        print("[Pipeline] Skipping JIT compilation for operator.apply (Trajectory objects not JAX-compatible)")
+                    # Don't wrap with JIT - use original method
+                    pass
             
             # Note: _pipeline_step_jax will be defined if needed
             # JIT compilation of full pipeline step is done lazily
             
-            self._jit_compiled = True
+            # Since we're not JIT compiling methods that take Trajectory objects,
+            # we mark JIT as not compiled at the pipeline level
+            # Individual components may still have their own JIT compilation
+            self._jit_compiled = False
             if self.config.verbose:
-                print("[Pipeline] JIT compilation complete")
+                print("[Pipeline] JIT compilation skipped (Trajectory objects not JAX-compatible)")
         except Exception as e:
             if self.config.verbose:
                 print(f"[Pipeline] JIT compilation failed: {e}")
@@ -352,13 +390,84 @@ class HighPerformanceConstraintPipeline:
         # 1. Get schedule parameters
         params = self._get_params(state)
         
-        # 2. Build convex constraints
-        constraints = self._get_constraints(ref, params, state)
+        # Check if we need iterative refinement (for CFS with TrajQPFilter)
+        # This matches legacy CFSProjection behavior
+        needs_iteration = (
+            hasattr(self.convexifier, '__class__') and 
+            'cfs' in str(type(self.convexifier)).lower() and
+            hasattr(self.operator, 'max_iterations') and
+            self.operator.max_iterations > 1
+        )
         
-        # 3. Apply operator
-        repaired, info = self.operator.apply(nominal, constraints, params, state)
-        
-        return repaired, info
+        if needs_iteration:
+            # Iterative refinement (like legacy CFSProjection)
+            max_iterations = getattr(self.operator, 'max_iterations', 30)
+            convergence_tol = getattr(self.operator, 'convergence_tol', 1e-6)
+            
+            current = nominal
+            all_info = []
+            
+            for iteration in range(max_iterations):
+                # Build constraints based on current trajectory (iterative linearization)
+                constraints = self._get_constraints(current, params, state)
+                
+                # Apply operator
+                repaired, info = self.operator.apply(current, constraints, params, state)
+                all_info.append(info)
+                
+                # Check convergence (align with legacy: max_step < convergence_tol)
+                if iteration > 0:
+                    # Compute change in trajectory (max step size)
+                    prev_positions = np.stack([np.asarray(s[:2], dtype=np.float32) for s in current.states])
+                    curr_positions = np.stack([np.asarray(s[:2], dtype=np.float32) for s in repaired.states])
+                    max_step = float(np.max(np.linalg.norm(curr_positions - prev_positions, axis=1)))
+                    
+                    if max_step < convergence_tol:
+                        # Final feasibility check (align with legacy)
+                        # Check if all points satisfy clearance requirement
+                        if hasattr(self.convexifier, 'obstacles') and self.convexifier.obstacles is not None:
+                            from enerdynamics.core.constraints.core.types import ScheduleParams
+                            current_params = self._get_params(state)
+                            clearance = current_params.margin
+                            
+                            # Compute SDF for all positions
+                            all_feasible = True
+                            for s in repaired.states:
+                                pos = np.asarray(s[:2], dtype=np.float32)
+                                sdf = self.convexifier.obstacles.sdf(pos)
+                                sdf_val = float(sdf) if np.isscalar(sdf) else float(sdf[0])
+                                if sdf_val < clearance:
+                                    all_feasible = False
+                                    break
+                            
+                            if all_feasible:
+                                # Converged and feasible
+                                if self.config.verbose:
+                                    print(f"[Pipeline] Converged after {iteration + 1} iterations (max_step={max_step:.6e})")
+                                break
+                        else:
+                            # No obstacles, just check convergence
+                            if self.config.verbose:
+                                print(f"[Pipeline] Converged after {iteration + 1} iterations (max_step={max_step:.6e})")
+                            break
+                
+                current = repaired
+            
+            # Merge info from all iterations
+            merged_info = self._merge_info(all_info)
+            merged_info['iterations'] = len(all_info)
+            merged_info['converged'] = len(all_info) < max_iterations
+            
+            return current, merged_info
+        else:
+            # Single pass (non-iterative)
+            # 2. Build convex constraints
+            constraints = self._get_constraints(ref, params, state)
+            
+            # 3. Apply operator
+            repaired, info = self.operator.apply(nominal, constraints, params, state)
+            
+            return repaired, info
     
     def _apply_batch_jax(
         self,
@@ -510,21 +619,53 @@ class HighPerformanceConstraintPipeline:
         
         return constraints
     
-    def _merge_info(self, info_list: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Merge info dictionaries from batch processing."""
+    def _merge_info(self, info_list: List[Any]) -> Dict[str, Any]:
+        """Merge info dictionaries or OperatorInfo objects from batch processing."""
         if not info_list:
             return {}
         
+        # Convert OperatorInfo objects to dictionaries if needed
+        from enerdynamics.core.constraints.core.types import OperatorInfo
+        info_dicts = []
+        for info in info_list:
+            if isinstance(info, OperatorInfo):
+                # Convert OperatorInfo to dict
+                info_dict = {
+                    "success": info.success,
+                    "violation_before": info.violation_before,
+                    "violation_after": info.violation_after,
+                    "iterations": info.iterations,
+                    "time": info.time,
+                }
+                if hasattr(info, 'extra') and info.extra:
+                    info_dict.update(info.extra)
+                info_dicts.append(info_dict)
+            elif isinstance(info, dict):
+                info_dicts.append(info)
+            else:
+                # Try to convert to dict using vars or __dict__
+                try:
+                    info_dicts.append(vars(info) if hasattr(info, '__dict__') else {})
+                except:
+                    info_dicts.append({})
+        
+        if not info_dicts:
+            return {}
+        
         merged = {}
-        for key in info_list[0].keys():
-            values = [info.get(key) for info in info_list]
+        for key in info_dicts[0].keys():
+            values = [info.get(key) for info in info_dicts]
             # Aggregate based on type
             if all(isinstance(v, (int, float)) for v in values if v is not None):
-                merged[key] = {
-                    "mean": np.mean([v for v in values if v is not None]),
-                    "min": np.min([v for v in values if v is not None]),
-                    "max": np.max([v for v in values if v is not None]),
-                }
+                valid_values = [v for v in values if v is not None]
+                if valid_values:
+                    merged[key] = {
+                        "mean": float(np.mean(valid_values)),
+                        "min": float(np.min(valid_values)),
+                        "max": float(np.max(valid_values)),
+                    }
+                else:
+                    merged[key] = None
             else:
                 merged[key] = values
         

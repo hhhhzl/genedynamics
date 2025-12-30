@@ -9,6 +9,15 @@ import time
 from typing import Tuple
 import numpy as np
 
+try:
+    import jax
+    import jax.numpy as jnp
+    JAX_AVAILABLE = True
+except ImportError:
+    JAX_AVAILABLE = False
+    jax = None
+    jnp = None
+
 from enerdynamics.core.constraints.operators.base import Operator
 from enerdynamics.core.constraints.core.types import (
     ScheduleState,
@@ -96,8 +105,35 @@ class PerStepQPFilter(Operator):
         violation_after = 0.0
         qp_count = 0
         
-        A = np.asarray(constraints.A, dtype=np.float32)
-        b = np.asarray(constraints.b, dtype=np.float32)
+        # Get constraints - handle BackendArray wrapper
+        from enerdynamics.core.constraints.core.array_interface import BackendArray
+        
+        # Use BackendArray.to_numpy() method which handles all conversions properly
+        if isinstance(constraints.A, BackendArray):
+            A = constraints.A.to_numpy()
+        else:
+            if JAX_AVAILABLE:
+                try:
+                    if hasattr(constraints.A, 'block_until_ready'):
+                        constraints.A.block_until_ready()
+                    A = np.asarray(jax.device_get(constraints.A), dtype=np.float32)
+                except (TypeError, AttributeError, ValueError):
+                    A = np.asarray(constraints.A, dtype=np.float32)
+            else:
+                A = np.asarray(constraints.A, dtype=np.float32)
+        
+        if isinstance(constraints.b, BackendArray):
+            b = constraints.b.to_numpy()
+        else:
+            if JAX_AVAILABLE:
+                try:
+                    if hasattr(constraints.b, 'block_until_ready'):
+                        constraints.b.block_until_ready()
+                    b = np.asarray(jax.device_get(constraints.b), dtype=np.float32)
+                except (TypeError, AttributeError, ValueError):
+                    b = np.asarray(constraints.b, dtype=np.float32)
+            else:
+                b = np.asarray(constraints.b, dtype=np.float32)
         
         # Handle batched per-step constraints: A shape (H, m, dim) or (m, dim)
         if A.ndim == 3:
@@ -234,7 +270,16 @@ class PerStepQPFilter(Operator):
     ) -> Tuple[np.ndarray, float]:
         """Solve slack-QP."""
         if self.solver is not None:
-            return self.solver.solve_slack_qp(u_nom, A, b, params.rho)
+            # Check if solver has solve_slack_qp method
+            if hasattr(self.solver, 'solve_slack_qp'):
+                return self.solver.solve_slack_qp(u_nom, A, b, params.rho)
+            # Otherwise use solve_least_squares_with_constraints
+            elif hasattr(self.solver, 'solve_least_squares_with_constraints'):
+                solution, info = self.solver.solve_least_squares_with_constraints(
+                    u_nom, A, b, rho=params.rho
+                )
+                violation = float(np.maximum(0, b - A @ solution).max())
+                return solution, violation
         
         # Fallback: use qpax if available
         if QPAX_AVAILABLE:
@@ -290,7 +335,16 @@ class PerStepQPFilter(Operator):
     ) -> Tuple[np.ndarray, float]:
         """Solve hard-QP (projection onto feasible set)."""
         if self.solver is not None:
-            return self.solver.solve_hard_qp(u_nom, A, b)
+            # Check if solver has solve_hard_qp method
+            if hasattr(self.solver, 'solve_hard_qp'):
+                return self.solver.solve_hard_qp(u_nom, A, b)
+            # Otherwise use solve_least_squares_with_constraints
+            elif hasattr(self.solver, 'solve_least_squares_with_constraints'):
+                solution, info = self.solver.solve_least_squares_with_constraints(
+                    u_nom, A, b, rho=None
+                )
+                violation = float(np.maximum(0, b - A @ solution).max())
+                return solution, violation
         
         # Fallback: simple clipping (not optimal but works)
         u_star = u_nom.copy()

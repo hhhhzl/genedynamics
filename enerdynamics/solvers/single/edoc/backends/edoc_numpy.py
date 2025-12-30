@@ -539,15 +539,28 @@ class EDOCBackendNumpy(EDOCBackendBase):
             Ybar = self.add_extra_noise(Ybar, extra_sigmas[i])
             
             # Apply hard constraint projection if enabled
-            if (self.constraint_manager and 
-                self.constraint_manager.has_hard() and 
-                hard_enabled_by_idx[i]):
+            if hard_enabled_by_idx[i]:
                 trajectory = self.actions_to_trajectory(state_init, Ybar)
-                projected_trajectory = self.constraint_manager.project_hard(
-                    trajectory,
-                    step=constraint_step,
-                    total_steps=constraint_total_steps,
-                )
+                
+                # Use new pipeline if available, otherwise fallback to legacy constraint_manager
+                if self.constraint_pipeline is not None:
+                    from enerdynamics.core.constraints.core.types import ScheduleState
+                    state = ScheduleState(k=constraint_step, K=constraint_total_steps)
+                    repaired_trajectory, _ = self.constraint_pipeline.apply(
+                        nominal=trajectory,
+                        ref=trajectory,
+                        state=state
+                    )
+                    projected_trajectory = repaired_trajectory
+                elif (self.constraint_manager and 
+                      self.constraint_manager.has_hard()):
+                    projected_trajectory = self.constraint_manager.project_hard(
+                        trajectory,
+                        step=constraint_step,
+                        total_steps=constraint_total_steps,
+                    )
+                else:
+                    projected_trajectory = trajectory
                 
                 # Check if states changed
                 states_changed = True
@@ -578,11 +591,23 @@ class EDOCBackendNumpy(EDOCBackendBase):
                 Ysamples_history.append(Y0s.copy())
         
         # Final hard constraint projection
-        if self.constraint_manager and self.constraint_manager.has_hard():
+        if self.constraint_pipeline is not None or (self.constraint_manager and self.constraint_manager.has_hard()):
             trajectory = self.actions_to_trajectory(state_init, Ybar)
-            projected_trajectory = self.constraint_manager.project_hard(
-                trajectory, step=constraint_total_steps, total_steps=constraint_total_steps
-            )
+            
+            if self.constraint_pipeline is not None:
+                from enerdynamics.core.constraints.core.types import ScheduleState
+                state = ScheduleState(k=constraint_total_steps, K=constraint_total_steps)
+                repaired_trajectory, _ = self.constraint_pipeline.apply(
+                    nominal=trajectory,
+                    ref=trajectory,
+                    state=state
+                )
+                projected_trajectory = repaired_trajectory
+            else:
+                projected_trajectory = self.constraint_manager.project_hard(
+                    trajectory, step=constraint_total_steps, total_steps=constraint_total_steps
+                )
+            
             Ybar = self.track_actions_to_projected_states(
                 state_init, Ybar, projected_trajectory.states
             )

@@ -5,7 +5,7 @@ Converts nonlinear safety constraints into linear inequalities in control space
 using CBF theory: h_dot >= -alpha * h => linear constraint in u.
 """
 
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
 import numpy as np
 
 from enerdynamics.core.constraints.convexify.base import Convexifier
