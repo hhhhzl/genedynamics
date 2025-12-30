@@ -16,6 +16,16 @@ from enerdynamics.core.constraints import (
     ConstraintScheduleManager,
     HardConstraint,
 )
+from enerdynamics.core.constraints.core import (
+    HighPerformanceConstraintPipeline,
+    PipelineConfig,
+)
+from enerdynamics.core.constraints.schedulers import CosineAnnealScheduler
+
+# Import to trigger registration of all components
+from enerdynamics.core.constraints.convexify import cfs  # noqa: F401
+from enerdynamics.core.constraints.operators import qp  # noqa: F401
+from enerdynamics.core.constraints.solvers import jaxopt_osqp_solver  # noqa: F401
 from enerdynamics.core.types import Trajectory
 from enerdynamics.envs.obstacles.base import ObstacleManager
 
@@ -258,4 +268,140 @@ def create_constraint_manager(
         action_filter_operator=None,
         schedule_manager=schedule_manager,
     )
+
+
+def create_constraint_pipeline(
+    obstacles: ObstacleManager,
+    level: int,
+    env: Any,
+    config: Dict[str, Any],
+    backend_name: str = "jax",
+    obstacle_config: Optional[Dict[str, Any]] = None,
+) -> Optional[HighPerformanceConstraintPipeline]:
+    """
+    Create constraint pipeline with new architecture.
+    
+    This replaces create_constraint_manager with the new high-performance pipeline.
+    
+    Args:
+        obstacles: Obstacle manager instance
+        level: Obstacle level (0 means no obstacles)
+        env: Environment instance (for getting control limits)
+        config: Constraint configuration dictionary with keys:
+            - soft_constraint: Dict with 'enabled', 'alpha', 'beta'
+            - hard_constraint: Dict with 'enabled', 'clearance'
+            - schedule: Dict with schedule parameters
+            - cfs: Dict with CFS projection parameters
+            - action_constraint_type: 'acceleration' or 'speed'
+        backend_name: Computational backend name ("numpy" or "jax")
+        obstacle_config: Optional obstacle configuration dictionary (for getting robot_radius)
+        
+    Returns:
+        HighPerformanceConstraintPipeline instance or None if level==0 and no constraints
+    """
+    if level == 0 or len(obstacles) == 0:
+        # No obstacles, no pipeline needed
+        # Action constraints are handled separately in the solver
+        return None
+    
+    # Get CFS configuration
+    cfs_config = config.get('cfs', {})
+    if not cfs_config.get('enabled', True):
+        return None
+    
+    # Get robot_radius from obstacle_config if available
+    robot_radius = 0.0
+    if obstacle_config is not None:
+        robot_radius = float(obstacle_config.get('robot_radius', 0.0))
+    elif 'obstacle_config' in config:
+        robot_radius = float(config['obstacle_config'].get('robot_radius', 0.0))
+    
+    # Get schedule configuration
+    schedule_config = config.get('schedule', {})
+    
+    # Create scheduler
+    scheduler = None
+    if schedule_config.get('enabled', True):
+        schedule_type = schedule_config.get('type', 'soft_to_hard')
+        if schedule_type == 'soft_to_hard':
+            # Map legacy schedule parameters to new scheduler
+            # Legacy: soft_alpha_start/end, hard_clearance_start/end
+            # New: margin_start/end (maps to hard_clearance), rho_start/end (for slack penalty)
+            scheduler = CosineAnnealScheduler(
+                margin_start=float(schedule_config.get('hard_clearance_start', 0.5)),
+                margin_end=float(schedule_config.get('hard_clearance_end', 0.1)),
+                rho_start=float(schedule_config.get('rho_start', 0.1)),
+                rho_end=float(schedule_config.get('rho_end', 10.0)),
+            )
+        else:
+            # Default scheduler
+            scheduler = CosineAnnealScheduler(
+                margin_start=0.5,
+                margin_end=0.1,
+                rho_start=0.1,
+                rho_end=10.0,
+            )
+    else:
+        # Fixed parameters (no scheduling)
+        hard_config = config.get('hard_constraint', {})
+        clearance = float(hard_config.get('clearance', 0.1))
+        scheduler = CosineAnnealScheduler(
+            margin_start=clearance,
+            margin_end=clearance,
+            rho_start=1.0,
+            rho_end=1.0,
+        )
+    
+    # Create pipeline configuration
+    # Disable JIT for now to test JAX backend without JIT compilation issues
+    pipeline_config = PipelineConfig(
+        backend=backend_name,
+        use_jit=False,  # Disable JIT for testing (can enable later)
+        use_batch=True,
+        cache_constraints=True,
+        cache_params=True,
+        verbose=False,
+    )
+    
+    # Determine operator based on CFS config
+    # CFS constraints are on states (positions), not actions, so we need to use
+    # a state projection operator instead of per-step QP filter
+    use_trajectory_qp = cfs_config.get('use_trajectory_qp', False)
+    if use_trajectory_qp:
+        operator_name = "traj_qp"
+    else:
+        # Use projection operator for state constraints (CFS projects states, not actions)
+        operator_name = "projection"
+    
+    # Create pipeline
+    # Note: Action constraints (SpeedConstraint, AccelerationConstraint) are handled
+    # separately in the solver, not in the pipeline
+    pipeline = HighPerformanceConstraintPipeline(
+        convexifier_name="cfs",
+        operator_name=operator_name,
+        scheduler_name="cosine_anneal",
+        config=pipeline_config,
+        obstacles=obstacles,
+        position_extractor=None,  # Use default
+        max_constraints_per_point=int(cfs_config.get('max_constraints_per_point', 8)),
+        constraint_margin=float(cfs_config.get('constraint_margin', 0.25)),
+        robot_radius=robot_radius,
+        # Operator parameters
+        project_states=True,  # CFS projects states (positions)
+        project_actions=False,  # CFS doesn't project actions
+        use_slack=True,  # Use slack-QP by default (if using traj_qp)
+        solver_backend=backend_name,
+        # JAX convexifier parameters
+        use_jit=False,  # Disable JIT for testing (can enable later)
+        # Scheduler parameters (passed to scheduler if it needs them)
+        margin_start=scheduler.margin_start,
+        margin_end=scheduler.margin_end,
+        rho_start=scheduler.rho_start,
+        rho_end=scheduler.rho_end,
+    )
+    
+    # Override scheduler with the one we created
+    pipeline.scheduler = scheduler
+    
+    return pipeline
 

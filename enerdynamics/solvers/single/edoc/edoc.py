@@ -22,6 +22,8 @@ from enerdynamics.core.backends.runtime import RuntimeBackendManager
 from enerdynamics.core.types import State, Action, Trajectory
 from enerdynamics.core.constraints.legacy.base import project_box
 from enerdynamics.core.constraints import ConstraintManager
+from enerdynamics.core.constraints.core import HighPerformanceConstraintPipeline
+from enerdynamics.core.constraints.core.types import ScheduleState
 from enerdynamics.envs.factories import make_env, make_energy
 
 # Register solver to registry
@@ -87,6 +89,7 @@ class EDOCPlanner:
         tqdm_chunk_len: int = 10,
         # ===== Constraint system integration =====
         constraint_manager: Optional[ConstraintManager] = None,
+        constraint_pipeline: Optional[HighPerformanceConstraintPipeline] = None,
         lambda_energy: float = 1.0,  # Energy scaling in E_soft = (1/λ)J + S
         use_constraint_in_scoring: bool = True,  # Include soft constraints in scoring
         # ===== Terminal cost (for energy-mode) =====
@@ -114,6 +117,7 @@ class EDOCPlanner:
         assert isinstance(show_tqdm, bool), "Show tqdm must be a boolean"
         assert tqdm_chunk_len > 0 and isinstance(tqdm_chunk_len, int), "Tqdm chunk length must be a positive integer"
         assert constraint_manager is None or isinstance(constraint_manager, ConstraintManager), "Constraint manager must be a ConstraintManager or None"
+        assert constraint_pipeline is None or isinstance(constraint_pipeline, HighPerformanceConstraintPipeline), "Constraint pipeline must be a HighPerformanceConstraintPipeline or None"
         assert lambda_energy >= 0 and isinstance(lambda_energy, float), "Lambda energy must be non-negative"
         assert isinstance(use_constraint_in_scoring, bool), "Use constraint in scoring must be a boolean"
         assert terminal_energy_weight >= 0 and isinstance(terminal_energy_weight, float), "Terminal energy weight must be non-negative"
@@ -142,8 +146,9 @@ class EDOCPlanner:
         self.show_tqdm = bool(show_tqdm)
         
         # ===== Constraint system =====
-        # Initialize constraint_manager and related attributes early so they're available for backend initialization
+        # Initialize constraint_manager and constraint_pipeline early so they're available for backend initialization
         self.constraint_manager = constraint_manager
+        self.constraint_pipeline = constraint_pipeline
         self.lambda_energy = float(lambda_energy) if lambda_energy > 0 else 1.0
         self.use_constraint_in_scoring = bool(use_constraint_in_scoring)
         self.terminal_energy_weight = float(max(0.0, terminal_energy_weight))

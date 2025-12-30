@@ -9,6 +9,15 @@ import time
 from typing import Tuple, Optional, Dict, Any
 import numpy as np
 
+try:
+    import jax
+    import jax.numpy as jnp
+    JAX_AVAILABLE = True
+except ImportError:
+    JAX_AVAILABLE = False
+    jax = None
+    jnp = None
+
 from enerdynamics.core.constraints.operators.base import Operator
 from enerdynamics.core.constraints.core.types import (
     ScheduleState,
@@ -80,9 +89,39 @@ class ProjectionOperator(Operator):
         """
         start_time = time.time()
         
-        # Get constraints
-        A = np.asarray(constraints.A, dtype=np.float32)
-        b = np.asarray(constraints.b, dtype=np.float32)
+        # Get constraints - convert from JAX arrays to NumPy if needed
+        # Handle BackendArray wrapper if present
+        from enerdynamics.core.constraints.core.array_interface import BackendArray
+        
+        # Use BackendArray.to_numpy() method which handles all conversions properly
+        if isinstance(constraints.A, BackendArray):
+            A = constraints.A.to_numpy()
+        else:
+            # Not a BackendArray, convert directly
+            if JAX_AVAILABLE:
+                try:
+                    # For JAX arrays, use device_get
+                    if hasattr(constraints.A, 'block_until_ready'):
+                        constraints.A.block_until_ready()
+                    A = np.asarray(jax.device_get(constraints.A), dtype=np.float32)
+                except (TypeError, AttributeError, ValueError):
+                    A = np.asarray(constraints.A, dtype=np.float32)
+            else:
+                A = np.asarray(constraints.A, dtype=np.float32)
+        
+        if isinstance(constraints.b, BackendArray):
+            b = constraints.b.to_numpy()
+        else:
+            # Not a BackendArray, convert directly
+            if JAX_AVAILABLE:
+                try:
+                    if hasattr(constraints.b, 'block_until_ready'):
+                        constraints.b.block_until_ready()
+                    b = np.asarray(jax.device_get(constraints.b), dtype=np.float32)
+                except (TypeError, AttributeError, ValueError):
+                    b = np.asarray(constraints.b, dtype=np.float32)
+            else:
+                b = np.asarray(constraints.b, dtype=np.float32)
         
         if A.size == 0:
             # No constraints - return nominal
@@ -182,6 +221,20 @@ class ProjectionOperator(Operator):
         state_dim = len(nominal.states[0])
         
         states_flat = np.stack([np.asarray(s) for s in nominal.states]).flatten()
+        expected_dim = H * state_dim
+        
+        # Check and fix dimension mismatch
+        if A.size > 0 and A.shape[1] != expected_dim:
+            # Constraint matrix was generated for a different trajectory length
+            # We need to either truncate or pad the constraint matrix
+            if A.shape[1] > expected_dim:
+                # Truncate: take only the first expected_dim columns
+                A = A[:, :expected_dim]
+            else:
+                # Pad: add zeros for the extra states (shouldn't happen, but handle it)
+                pad_dim = expected_dim - A.shape[1]
+                A = np.pad(A, ((0, 0), (0, pad_dim)), mode='constant', constant_values=0)
+        
         states_proj_flat = self._iterative_projection(states_flat, A, b)
         states_proj = states_proj_flat.reshape(H, state_dim)
         
@@ -288,7 +341,30 @@ class ProjectionOperator(Operator):
         
         states_flat = np.stack([np.asarray(s) for s in trajectory.states]).flatten()
         actions_flat = np.stack([np.asarray(a) for a in trajectory.actions]).flatten() if trajectory.actions else np.array([])
-        traj_flat = np.concatenate([states_flat, actions_flat])
+        
+        # Determine expected dimension based on what we're projecting
+        if self.project_states and self.project_actions:
+            traj_flat = np.concatenate([states_flat, actions_flat])
+            expected_dim = H * state_dim + (H - 1) * action_dim if trajectory.actions else H * state_dim
+        elif self.project_states:
+            traj_flat = states_flat
+            expected_dim = H * state_dim
+        elif self.project_actions:
+            traj_flat = actions_flat
+            expected_dim = (H - 1) * action_dim if trajectory.actions else 0
+        else:
+            return 0.0
+        
+        # Check and fix dimension mismatch
+        if A.shape[1] != expected_dim:
+            # Constraint matrix was generated for a different trajectory length
+            if A.shape[1] > expected_dim:
+                # Truncate: take only the first expected_dim columns
+                A = A[:, :expected_dim]
+            else:
+                # Pad: add zeros for the extra states (shouldn't happen, but handle it)
+                pad_dim = expected_dim - A.shape[1]
+                A = np.pad(A, ((0, 0), (0, pad_dim)), mode='constant', constant_values=0)
         
         # Compute violations
         violations = np.maximum(0, b - A @ traj_flat)

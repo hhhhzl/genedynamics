@@ -87,6 +87,7 @@ class EDOCBackendBase(ABC):
         self.action_nsample = planner.action_nsample
         self.use_antithetic = planner.use_antithetic
         self.constraint_manager = planner.constraint_manager
+        self.constraint_pipeline = getattr(planner, 'constraint_pipeline', None)
         self.lambda_energy = planner.lambda_energy
         self.use_constraint_in_scoring = planner.use_constraint_in_scoring
         self.terminal_energy_weight = planner.terminal_energy_weight

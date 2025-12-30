@@ -95,7 +95,13 @@ class EDOCBackendJax(EDOCBackendBase):
         self._jac_model_u_fn = jax.jacrev(self._jax_model_transition, argnums=1)
         
         # Get JAX CFS projector if available
-        if self.constraint_manager is not None:
+        # Priority: constraint_pipeline > constraint_manager
+        if self.constraint_pipeline is not None:
+            # For new pipeline, we'll use it in non-JIT context (similar to numpy backend)
+            # TODO: Create JAX-compatible projector for full JIT support
+            self._jax_cfs_projector = None
+            print(f"[EDOC JAX] Using new constraint pipeline (non-JIT mode for now)")
+        elif self.constraint_manager is not None:
             feasibility_op = getattr(self.constraint_manager, "feasibility_operator", None)
             if feasibility_op is not None and hasattr(feasibility_op, "make_jax_projector"):
                 try:
@@ -788,9 +794,9 @@ class EDOCBackendJax(EDOCBackendBase):
                 Ybar_next
             )
             
-            # Apply CFS projection if available (JAX-compatible version)
-            # self._jax_cfs_projector is a JIT-compiled JAX function that accepts JAX arrays
-            # It can be used directly in traced context
+            # Apply CFS projection if available
+            # For JAX-compatible projector (legacy), use in traced context
+            # For new pipeline, we'll apply it outside the scan loop (non-JIT)
             if self._jax_cfs_projector is not None:
                 # Use jax.lax.cond since hard_enabled is traced
                 def apply_cfs_projection(ybar):
@@ -812,6 +818,8 @@ class EDOCBackendJax(EDOCBackendBase):
                     skip_cfs_projection,
                     Ybar_next
                 )
+            # Note: New pipeline (constraint_pipeline) will be applied after scan loop
+            # to avoid JIT compilation issues with Trajectory objects
             
             # Clip final actions
             if control_limit is not None:
@@ -830,6 +838,20 @@ class EDOCBackendJax(EDOCBackendBase):
         reward_hist = reward_hist[::-1]
         Ybar_hist = Ybar_hist[::-1]
         Ysamples_hist = Ysamples_hist[::-1]
+        
+        # Apply new pipeline if available (outside JIT context)
+        if self.constraint_pipeline is not None:
+            # Apply pipeline to final trajectory
+            trajectory = self.actions_to_trajectory(state_init, Ybar_final)
+            from enerdynamics.core.constraints.core.types import ScheduleState
+            state = ScheduleState(k=len(reward_hist), K=len(reward_hist))
+            repaired_trajectory, _ = self.constraint_pipeline.apply(
+                nominal=trajectory,
+                ref=trajectory,
+                state=state
+            )
+            Ybar_final = self.extract_actions_from_trajectory(repaired_trajectory)
+            Ybar_final = jnp.asarray(Ybar_final, dtype=jnp.float32)
         
         # Convert to NumPy
         actions_np_final = np.asarray(Ybar_final, dtype=np.float32)

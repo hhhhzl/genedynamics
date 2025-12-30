@@ -7,6 +7,7 @@ similar to diffusion schedule annealing.
 
 import numpy as np
 
+from typing import Optional
 from enerdynamics.core.constraints.schedulers.base import Scheduler
 from enerdynamics.core.constraints.core.types import (
     ScheduleState,
