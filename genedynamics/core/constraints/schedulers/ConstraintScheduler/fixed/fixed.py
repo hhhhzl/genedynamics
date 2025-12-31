@@ -8,9 +8,9 @@ Useful for ablation studies, deterministic behavior, and simple baselines.
 from typing import Optional, Dict, Any
 import numpy as np
 
-from genedynamics.core.constraints.schedulers.ConstraintScheduler.base import ConstraintScheduler
-from genedynamics.core.constraints.core.types import ScheduleState
-from genedynamics.core.constraints.core.registry import get_registry
+from enerdynamics.core.constraints.schedulers.ConstraintScheduler.base import ConstraintScheduler
+from enerdynamics.core.constraints.core.types import ScheduleState
+from enerdynamics.core.constraints.core.registry import get_registry
 
 
 class FixedConstraintScheduler(ConstraintScheduler):

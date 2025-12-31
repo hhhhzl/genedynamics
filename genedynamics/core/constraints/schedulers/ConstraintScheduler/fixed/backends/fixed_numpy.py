@@ -6,9 +6,9 @@ Optimized for performance with pre-computed parameter cache.
 """
 
 from typing import Dict, Any
-from genedynamics.core.constraints.schedulers.ConstraintScheduler.fixed.fixed import FixedConstraintScheduler
-from genedynamics.core.constraints.core.types import ScheduleState
-from genedynamics.core.constraints.core.registry import register
+from enerdynamics.core.constraints.schedulers.ConstraintScheduler.fixed.fixed import FixedConstraintScheduler
+from enerdynamics.core.constraints.core.types import ScheduleState
+from enerdynamics.core.constraints.core.registry import register
 
 
 @register("scheduler", "fixed_constraint", "numpy")

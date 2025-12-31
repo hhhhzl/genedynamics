@@ -8,11 +8,11 @@ Uses pre-computed constants and efficient mathematical operations.
 from typing import Dict, Any, Optional
 import numpy as np
 
-from genedynamics.core.constraints.schedulers.DiffusionScheduler.dualcontrol.dual_control import (
+from enerdynamics.core.constraints.schedulers.DiffusionScheduler.dualcontrol.dual_control import (
     DualControlDiffusionScheduler
 )
-from genedynamics.core.constraints.core.types import ScheduleState
-from genedynamics.core.constraints.core.registry import register
+from enerdynamics.core.constraints.core.types import ScheduleState
+from enerdynamics.core.constraints.core.registry import register
 
 
 @register("scheduler", "dual_control_diffusion", "numpy")

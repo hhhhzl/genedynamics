@@ -10,23 +10,17 @@ Constraint schedulers are responsible for constraint-related parameters:
 """
 
 # Import to trigger registration
-from . import base
-from . import fixed
-from . import emergingbarrier
-from . import almadaptive
-from . import twogo
+from . import base  # noqa: F401
+from . import fixed  # noqa: F401
+from . import dualcontrol  # noqa: F401
 
 from .base import ConstraintScheduler
 from .fixed import FixedConstraintScheduler
-from .emergingbarrier import EmergingBarrierConstraintScheduler
-from .almadaptive import ALMAdaptiveConstraintScheduler
-from .twogo import TwoGOConstraintScheduler
+from .dualcontrol import DualControlConstraintScheduler
 
 __all__ = [
     "ConstraintScheduler",
     "FixedConstraintScheduler",
-    "EmergingBarrierConstraintScheduler",
-    "ALMAdaptiveConstraintScheduler",
-    "TwoGOConstraintScheduler",
+    "DualControlConstraintScheduler",
 ]
 

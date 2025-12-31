@@ -6,9 +6,9 @@ Optimized for performance with pre-computed parameter cache.
 """
 
 from typing import Dict, Any
-from genedynamics.core.constraints.schedulers.DiffusionScheduler.fixed.fixed import FixedDiffusionScheduler
-from genedynamics.core.constraints.core.types import ScheduleState
-from genedynamics.core.constraints.core.registry import register
+from enerdynamics.core.constraints.schedulers.DiffusionScheduler.fixed.fixed import FixedDiffusionScheduler
+from enerdynamics.core.constraints.core.types import ScheduleState
+from enerdynamics.core.constraints.core.registry import register
 
 
 @register("scheduler", "fixed_diffusion", "numpy")
@@ -40,11 +40,5 @@ class FixedDiffusionSchedulerNumpy(FixedDiffusionScheduler):
         }
         if self.s_k is not None:
             params["s_k"] = self.s_k
-        if getattr(self, "beta0", None) is not None:
-            params["beta0"] = self.beta0
-        if getattr(self, "betaT", None) is not None:
-            params["betaT"] = self.betaT
-        if getattr(self, "Ndiffuse", None) is not None:
-            params["Ndiffuse"] = self.Ndiffuse
         return params
 
