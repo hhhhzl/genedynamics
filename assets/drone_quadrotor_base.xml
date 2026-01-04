@@ -1,0 +1,67 @@
+<mujoco model="quadrotor">
+  <option timestep="0.01" gravity="0 0 -9.81"/>
+  
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" 
+             rgb1="0.1 0.2 0.3" rgb2="0.2 0.3 0.4"/>
+    <material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance="0.2"/>
+    <material name="obstacle" rgba="0.8 0.2 0.2 0.5"/>
+  </asset>
+  
+  <worldbody>
+    <!-- Ground plane -->
+    <geom name="floor" pos="0 0 0" size="10 10 0.1" type="plane" 
+          material="grid" condim="3" friction="1 0.005 0.0001"/>
+    
+    <!-- Quadrotor body -->
+    <body name="quadrotor" pos="0 0 1">
+      <!-- Main body (box) -->
+      <geom name="body" type="box" size="0.05 0.05 0.02" 
+            mass="0.5" rgba="0.3 0.3 0.3 1"/>
+      
+      <!-- Motors (4 motors at corners) -->
+      <body name="motor_fl" pos="0.17 0.17 0">
+        <geom name="motor_fl_geom" type="cylinder" size="0.02 0.01" 
+              mass="0.01" rgba="0.8 0.2 0.2 1"/>
+        <joint name="motor_fl_joint" type="hinge" axis="0 0 1" damping="0.01"/>
+      </body>
+      
+      <body name="motor_fr" pos="0.17 -0.17 0">
+        <geom name="motor_fr_geom" type="cylinder" size="0.02 0.01" 
+              mass="0.01" rgba="0.2 0.8 0.2 1"/>
+        <joint name="motor_fr_joint" type="hinge" axis="0 0 1" damping="0.01"/>
+      </body>
+      
+      <body name="motor_bl" pos="-0.17 0.17 0">
+        <geom name="motor_bl_geom" type="cylinder" size="0.02 0.01" 
+              mass="0.01" rgba="0.2 0.2 0.8 1"/>
+        <joint name="motor_bl_joint" type="hinge" axis="0 0 1" damping="0.01"/>
+      </body>
+      
+      <body name="motor_br" pos="-0.17 -0.17 0">
+        <geom name="motor_br_geom" type="cylinder" size="0.02 0.01" 
+              mass="0.01" rgba="0.8 0.8 0.2 1"/>
+        <joint name="motor_br_joint" type="hinge" axis="0 0 1" damping="0.01"/>
+      </body>
+      
+      <!-- Free joint for 6 DOF motion -->
+      <freejoint name="quadrotor_free"/>
+    </body>
+    
+    <!-- Obstacles will be inserted here by model generator -->
+  </worldbody>
+  
+  <actuator>
+    <!-- Motor actuators (thrust control) -->
+    <motor name="motor_fl_act" joint="motor_fl_joint" gear="1" 
+           ctrllimited="true" ctrlrange="0 1"/>
+    <motor name="motor_fr_act" joint="motor_fr_joint" gear="1" 
+           ctrllimited="true" ctrlrange="0 1"/>
+    <motor name="motor_bl_act" joint="motor_bl_joint" gear="1" 
+           ctrllimited="true" ctrlrange="0 1"/>
+    <motor name="motor_br_act" joint="motor_br_joint" gear="1" 
+           ctrllimited="true" ctrlrange="0 1"/>
+  </actuator>
+</mujoco>
+
+

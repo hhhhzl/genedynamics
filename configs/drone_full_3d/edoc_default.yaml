@@ -1,11 +1,40 @@
-# EDOC experiment configuration for drone_full_3d environment
-# Full quadrotor model with 12D state and 4D motor thrust control
+# Unified EDOC experiment configuration for drone_full_3d environment
+# Supports multiple physics backends (drone_model, mujoco, isaac) and renderers
 name: drone_full_3d_edoc_default
 output_dir: results/drone_full_3d/edoc
 
-env_name: drone_full_3d
+# Environment configuration
+env_name: drone_full_3d_physics
 env_params:
-  dt: 0.05
+  # === Physics Backend Selection ===
+  # Options: 'drone_model', 'mujoco', 'isaac', None
+  # - 'drone_model': Use DroneModel (NumPy-based, default)
+  # - 'mujoco': Use MuJoCo physics engine
+  # - 'isaac': Use Isaac Sim physics engine
+  # - None: Pure JAX mode (no physics backend)
+  physics_backend: drone_model
+  use_physics_backend: true
+  
+  # === Renderer Selection ===
+  # Options: 'matplotlib', 'mujoco', 'isaac', None
+  # - 'matplotlib': 2D/3D Matplotlib visualization (default)
+  # - 'mujoco': MuJoCo interactive viewer
+  # - 'isaac': Isaac Sim rendering
+  # - None: No rendering
+  renderer: matplotlib
+  
+  # === JAX Configuration ===
+  # Use JAX-native dynamics for planning (high performance)
+  use_jax_dynamics: true
+  jax_jit: true  # Enable JIT compilation for JAX functions
+  jax_batch_size: 256  # Batch size for parallel computation
+  
+  # === Model Paths (optional, set by specific backends) ===
+  model_path_mujoco: assets/drone_quadrotor.xml
+  model_path_isaac: assets/drone_quadrotor.usd
+  
+  # === Environment Parameters ===
+  dt: 0.01
   horizon: 80
   p_max: 2.0
   v_max: 2.0
@@ -13,7 +42,8 @@ env_params:
   target: [0.0, 0.0, 1.0]
   vel_weight: 0.1
   orientation_weight: 0.1
-  # DroneModel parameters
+  
+  # === Physical Parameters ===
   mass: 0.5
   Ixx: 0.0023
   Iyy: 0.0023
@@ -23,15 +53,17 @@ env_params:
   km: 7.94e-12
   gravity: 9.81
 
+# Planning method configuration
 method: edoc
 method_params:
   action_diffuse_steps: 100
-  action_nsample: 512  # Increased for more complex dynamics
+  action_nsample: 512
   use_antithetic: true
   action_score_mode: energy
   terminal_energy_weight: 50.0
 
-obstacle_levels: [0, 1, 2, 3, 4, 5]  # Start with fewer levels for testing
+# Obstacle configuration
+obstacle_levels: [0, 1, 2, 3, 4, 5]
 obstacle_config:
   generator: box3d
   robot_radius: 0.1
@@ -46,20 +78,29 @@ obstacle_config:
     z_min: 0.0
     z_max: 2.0
 
+# Random seeds
 seeds: [0, 1, 2]
-backend: numpy  # Use numpy for now (DroneModel.step is not JAX-compatible)
-device: cpu
 
+# Computational backend
+# Options: 'numpy', 'jax'
+# - 'numpy': NumPy backend (compatible with all physics backends)
+# - 'jax': JAX backend (requires use_jax_dynamics=true for best performance)
+backend: jax
+device: cpu  # Options: 'cpu', 'gpu' (for JAX backend)
+
+# Metrics to compute
 metrics:
   - ssr
   - obstacle_density
 
+# Visualizations
 visualizations:
   - trajectory_3d
   - diffusion_3d
   - energy_reward
   - states
 
+# Constraint configuration
 constraint_config:
   soft_constraint:
     enabled: true
@@ -85,9 +126,9 @@ constraint_config:
     late_stage_ratio: 0.2
     reconstruct_velocity: true
     smoothness_weight: 0.0
-  action_constraint_type: motor_thrust  # Motor thrusts instead of acceleration
+  action_constraint_type: motor_thrust
 
+# Metadata
 metadata:
-  description: "Default EDOC configuration for full 3D quadrotor environment with complete dynamics"
+  description: "Unified EDOC configuration for full 3D quadrotor with multiple backend support"
   author: "enerdynamics"
-

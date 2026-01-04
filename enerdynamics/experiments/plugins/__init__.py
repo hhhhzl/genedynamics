@@ -20,6 +20,7 @@ from .environments import (
     DroneEnvironmentPlugin,
     DroneBox3DPlugin,
     DroneFull3DPlugin,
+    DroneFull3DPhysicsPlugin,
     ManipulatorEnvironmentPlugin,
 )
 
@@ -53,6 +54,7 @@ __all__ = [
     'DroneEnvironmentPlugin',
     'DroneBox3DPlugin',
     'DroneFull3DPlugin',
+    'DroneFull3DPhysicsPlugin',
     'ManipulatorEnvironmentPlugin',
     # Metrics
     'SSRMetricsPlugin',

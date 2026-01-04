@@ -106,12 +106,12 @@ class ExperimentRunner:
         
         # 2. Setup environment
         env_plugin = self.registry.get_plugin('environment', self.config.env_name)
-        env = env_plugin.create_env(self.config.env_params)
-        energy = env_plugin.create_energy()
         
-        # 3. Generate start/target positions
-        target_pos = np.asarray(env.target, dtype=np.float32)
-        start_pos = self._generate_start_position(level, seed, env, env_plugin)
+        # 3. Generate start/target positions (before obstacles, for obstacle generation)
+        # We need a temporary env to get target position
+        temp_env = env_plugin.create_env(self.config.env_params)
+        target_pos = np.asarray(temp_env.target, dtype=np.float32)
+        start_pos = self._generate_start_position(level, seed, temp_env, env_plugin)
         
         # 4. Generate obstacles
         obstacle_gen_name = self.config.obstacle_config.get('generator', 'box2d')
@@ -123,13 +123,26 @@ class ExperimentRunner:
         }
         obstacles = obstacle_gen.generate(level, seed, start_pos, target_pos, obstacle_config_with_env)
         
+        # 5. Create environment with obstacles (for physics backends that need obstacles in model)
+        env_params_with_obstacles = {**self.config.env_params}
+        # Add obstacles to env_params if using physics backend that needs them
+        physics_backend = env_params_with_obstacles.get('physics_backend', None)
+        if physics_backend in ['mujoco', 'isaac'] and len(obstacles) > 0:
+            env_params_with_obstacles['obstacles'] = obstacles
+        
+        env = env_plugin.create_env(env_params_with_obstacles)
+        energy = env_plugin.create_energy()
+        
         # Build SDF texture if needed (only for 2D environments)
         # For 3D environments, skip 2D SDF texture building
         if level > 0 and len(obstacles) > 0:
             # Check if this is a 3D environment by checking env_name or obstacle generator
+            physics_backend = self.config.env_params.get('physics_backend', None)
             is_3d_env = (
-                self.config.env_name in ['drone_box_3d', 'drone'] or
-                self.config.obstacle_config.get('generator', '') == 'box3d'
+                self.config.env_name in ['drone_box_3d', 'drone', 'drone_full_3d', 'drone_full_3d_physics', 
+                                         'drone_full_3d_mujoco', 'drone_full_3d_isaac'] or
+                self.config.obstacle_config.get('generator', '') == 'box3d' or
+                physics_backend in ['mujoco', 'isaac']
             )
             
             if not is_3d_env:
@@ -144,7 +157,7 @@ class ExperimentRunner:
                     force_rebuild=True,
                 )
         
-        # 5. Setup constraints
+        # 6. Setup constraints
         constraint_config = self.config.constraint_config or {}
         
         # Use new pipeline architecture (preferred)
@@ -162,7 +175,7 @@ class ExperimentRunner:
                 obstacle_config=self.config.obstacle_config,
             )
         
-        # 6. Create scheduler (if configured)
+        # 7. Create scheduler (if configured)
         scheduler = None
         scheduler_config = getattr(self.config, 'scheduler_config', None)
         if scheduler_config:
@@ -174,7 +187,7 @@ class ExperimentRunner:
                 obstacle_config=self.config.obstacle_config,  # Fix B3: Pass obstacle_config for robot_radius
             )
         
-        # 7. Create planner
+        # 8. Create planner
         method_plugin = self.registry.get_plugin('method', self.config.method)
         method_config = {
             **self.config.method_params,
@@ -225,13 +238,13 @@ class ExperimentRunner:
         if result is None:
             raise ValueError("Planning returned None. Planning may have failed.")
         
-        # 8. Extract trajectory
+        # 9. Extract trajectory
         trajectory = self._extract_trajectory(result, env)
         
-        # 9. Compute metrics
+        # 10. Compute metrics
         metrics = self._compute_metrics(trajectory, env, obstacles, constraint_manager, level)
         
-        # 10. Prepare results
+        # 11. Prepare results
         # Add obstacle statistics for backward compatibility
         num_obstacles = len(obstacles) if obstacles else 0
         num_union_obstacles = 0
@@ -265,7 +278,7 @@ class ExperimentRunner:
             'cfs_enabled': cfs_enabled,
         }
         
-        # 11. Generate visualizations
+        # 12. Generate visualizations
         if self.config.visualizations:
             self._generate_visualizations(experiment_result, env, obstacles, env_plugin)
         

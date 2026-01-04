@@ -20,6 +20,7 @@ from enerdynamics.experiments.plugins import (
     DroneEnvironmentPlugin,
     DroneBox3DPlugin,
     DroneFull3DPlugin,
+    DroneFull3DPhysicsPlugin,
     ManipulatorEnvironmentPlugin,
     SSRMetricsPlugin,
     ObstacleDensityMetricsPlugin,
@@ -155,6 +156,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(DroneEnvironmentPlugin(), 'environment')
     runner.register_plugin(DroneBox3DPlugin(), 'environment')
     runner.register_plugin(DroneFull3DPlugin(), 'environment')
+    runner.register_plugin(DroneFull3DPhysicsPlugin(), 'environment')
     runner.register_plugin(ManipulatorEnvironmentPlugin(), 'environment')
     
     # Metrics plugins
