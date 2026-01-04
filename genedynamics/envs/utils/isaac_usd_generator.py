@@ -20,8 +20,8 @@ except ImportError:
     Gf = None
     UsdPhysics = None
 
-from genedynamics.envs.obstacles.base import ObstacleManager
-from genedynamics.envs.obstacles.convex import SphereObstacle, BoxObstacle
+from enerdynamics.envs.obstacles.base import ObstacleManager
+from enerdynamics.envs.obstacles.convex import SphereObstacle, BoxObstacle
 
 
 def add_obstacle_to_usd(
@@ -204,13 +204,5 @@ def create_base_quadrotor_usd(
         body_size=body_size,
         motor_radius=motor_radius
     )
-
-
-
-
-
-
-
-
 
 
