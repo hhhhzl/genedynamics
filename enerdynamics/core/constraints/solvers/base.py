@@ -129,5 +129,50 @@ class QPSolver(ABC):
             h = -b if b.size > 0 else None
             
             return self.solve_qp(P, q, G, h, **kwargs)
+    
+    def solve_traj_qp_with_smoothness(
+        self,
+        x_nom: np.ndarray,
+        A: np.ndarray,
+        b: np.ndarray,
+        rho: Optional[float],
+        T: int,
+        dim: int,
+        smoothness_weight: float,
+        use_slack: bool = True,
+        fix_initial_state: bool = True,
+        initial_state: Optional[np.ndarray] = None,
+        **kwargs
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """
+        Solve trajectory QP with smoothness term.
+        
+        min 0.5 ||x - x0||^2 + 0.5 * w * ||D2 x||^2 + ρ||ξ||^2
+        s.t. A x >= b - ξ, ξ >= 0
+        
+        where D2 is the second-difference operator for smoothness.
+        
+        This method should be implemented by subclasses using backend-native operations.
+        
+        Args:
+            x_nom: Nominal flattened positions, shape (T * dim,)
+            A: Constraint matrix, shape (m, T * dim)
+            b: Constraint RHS, shape (m,)
+            rho: Slack penalty weight (if None, use hard constraints)
+            T: Number of time steps
+            dim: Position dimension (usually 2 for 2D)
+            smoothness_weight: Weight for smoothness regularization
+            use_slack: If True, use slack-QP; if False, use hard-QP
+            fix_initial_state: If True, add equality constraint to fix initial state
+            initial_state: Initial state position, shape (dim,). Required if fix_initial_state=True
+            **kwargs: Solver-specific options
+            
+        Returns:
+            Tuple of (optimized positions, info)
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement solve_traj_qp_with_smoothness. "
+            f"Subclasses should implement this method using backend-native operations."
+        )
 
 

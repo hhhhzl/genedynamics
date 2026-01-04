@@ -6,8 +6,28 @@ functionals for different environments. This centralizes environment
 creation logic.
 """
 
-import jax.numpy as jnp
 from typing import Optional, Any
+
+try:
+    import jax.numpy as jnp
+    JAX_AVAILABLE = True
+except ImportError:
+    JAX_AVAILABLE = False
+    # Create a dummy jnp for type hints
+    class DummyJNP:
+        @staticmethod
+        def array(*args, **kwargs):
+            raise RuntimeError("JAX is required but not installed")
+        @staticmethod
+        def maximum(*args, **kwargs):
+            raise RuntimeError("JAX is required but not installed")
+        @staticmethod
+        def abs(*args, **kwargs):
+            raise RuntimeError("JAX is required but not installed")
+        @staticmethod
+        def sum(*args, **kwargs):
+            raise RuntimeError("JAX is required but not installed")
+    jnp = DummyJNP()
 
 from enerdynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
 
@@ -47,6 +67,21 @@ def make_env(name: str, **kwargs):
     elif name == "single_integrator_box_2d":
         from enerdynamics.envs.single_integrator_box_2d import SingleIntegratorBox2DEnv
         return SingleIntegratorBox2DEnv(**kwargs)
+    elif name == "drone_box_3d":
+        from enerdynamics.envs.drone_box_3d import DroneBox3DEnv
+        return DroneBox3DEnv(**kwargs)
+    elif name == "drone_full_3d":
+        from enerdynamics.envs.drone_full_3d import DroneFull3DEnv
+        return DroneFull3DEnv(**kwargs)
+    elif name == "drone_full_3d_physics":
+        from enerdynamics.envs.drone_full_3d_physics import DroneFull3DPhysicsEnv
+        return DroneFull3DPhysicsEnv(**kwargs)
+    elif name == "drone_full_3d_mujoco":
+        from enerdynamics.envs.drone_full_3d_mujoco import DroneFull3DMujocoEnv
+        return DroneFull3DMujocoEnv(**kwargs)
+    elif name == "drone_full_3d_isaac":
+        from enerdynamics.envs.drone_full_3d_isaac import DroneFull3DIsaacEnv
+        return DroneFull3DIsaacEnv(**kwargs)
     else:
         available = []
         try:
@@ -164,6 +199,72 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
 
         return LegacyEnergyFunctional({
             "task": EnergyTerm(task_energy, 1.0),
+            "box": EnergyTerm(box_energy, 1.0),
+        })
+    elif env_name == "drone_box_3d":
+        def task_energy(x, u, ctx):
+            pos = x[:3]
+            vel = x[3:6]
+            return jnp.sum((pos - jnp.array([0.0, 0.0, 1.0], dtype=jnp.float32)) ** 2) + jnp.sum(vel ** 2)
+
+        def box_energy(x, u, ctx):
+            p_max, v_max = 2.0, 2.0
+            pos_violate = jnp.maximum(0.0, jnp.abs(x[:3]) - p_max)
+            vel_violate = jnp.maximum(0.0, jnp.abs(x[3:6]) - v_max)
+            pen = jnp.sum(pos_violate ** 2 + vel_violate ** 2)
+            return pen
+
+        return LegacyEnergyFunctional({
+            "task": EnergyTerm(task_energy, 2.0),
+            "box": EnergyTerm(box_energy, 1.0),
+        })
+    elif env_name == "drone_full_3d":
+        def task_energy(x, u, ctx):
+            pos = x[:3]
+            vel = x[3:6]
+            euler = x[6:9]
+            target = jnp.array([0.0, 0.0, 1.0], dtype=jnp.float32)
+            pos_err = jnp.sum((pos - target) ** 2)
+            vel_err = jnp.sum(vel ** 2)
+            orientation_err = jnp.sum(euler ** 2)
+            return pos_err + 0.1 * vel_err + 0.1 * orientation_err
+
+        def box_energy(x, u, ctx):
+            p_max, v_max = 2.0, 2.0
+            pos_violate = jnp.maximum(0.0, jnp.abs(x[:3]) - p_max)
+            vel_violate = jnp.maximum(0.0, jnp.abs(x[3:6]) - v_max)
+            # Orientation bounds
+            euler_violate = jnp.maximum(0.0, jnp.abs(x[6:9]) - jnp.pi)
+            pen = jnp.sum(pos_violate ** 2 + vel_violate ** 2 + euler_violate ** 2)
+            return pen
+
+        return LegacyEnergyFunctional({
+            "task": EnergyTerm(task_energy, 2.0),
+            "box": EnergyTerm(box_energy, 1.0),
+        })
+    elif env_name == "drone_full_3d_physics":
+        # Same energy functional as drone_full_3d
+        def task_energy(x, u, ctx):
+            pos = x[:3]
+            vel = x[3:6]
+            euler = x[6:9]
+            target = jnp.array([0.0, 0.0, 1.0], dtype=jnp.float32)
+            pos_err = jnp.sum((pos - target) ** 2)
+            vel_err = jnp.sum(vel ** 2)
+            orientation_err = jnp.sum(euler ** 2)
+            return pos_err + 0.1 * vel_err + 0.1 * orientation_err
+
+        def box_energy(x, u, ctx):
+            p_max, v_max = 2.0, 2.0
+            pos_violate = jnp.maximum(0.0, jnp.abs(x[:3]) - p_max)
+            vel_violate = jnp.maximum(0.0, jnp.abs(x[3:6]) - v_max)
+            # Orientation bounds
+            euler_violate = jnp.maximum(0.0, jnp.abs(x[6:9]) - jnp.pi)
+            pen = jnp.sum(pos_violate ** 2 + vel_violate ** 2 + euler_violate ** 2)
+            return pen
+
+        return LegacyEnergyFunctional({
+            "task": EnergyTerm(task_energy, 2.0),
             "box": EnergyTerm(box_energy, 1.0),
         })
     else:

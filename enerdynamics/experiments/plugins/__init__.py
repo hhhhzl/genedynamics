@@ -18,6 +18,9 @@ from .environments import (
     SingleIntegrator2DPlugin,
     DoubleIntegrator2DPlugin,
     DroneEnvironmentPlugin,
+    DroneBox3DPlugin,
+    DroneFull3DPlugin,
+    DroneFull3DPhysicsPlugin,
     ManipulatorEnvironmentPlugin,
 )
 
@@ -29,13 +32,17 @@ from .metrics import (
 
 from .visualizations import (
     TrajectoryVisualizationPlugin,
+    Trajectory3DVisualizationPlugin,
     DiffusionVisualizationPlugin,
+    Diffusion3DVisualizationPlugin,
     EnergyRewardVisualizationPlugin,
     StatesVisualizationPlugin,
+    SchedulerParamsVisualizationPlugin,
 )
 
 from .obstacles import (
     Box2DObstacleGeneratorPlugin,
+    Box3DObstacleGeneratorPlugin,
 )
 
 __all__ = [
@@ -45,6 +52,9 @@ __all__ = [
     'SingleIntegrator2DPlugin',
     'DoubleIntegrator2DPlugin',
     'DroneEnvironmentPlugin',
+    'DroneBox3DPlugin',
+    'DroneFull3DPlugin',
+    'DroneFull3DPhysicsPlugin',
     'ManipulatorEnvironmentPlugin',
     # Metrics
     'SSRMetricsPlugin',
@@ -52,10 +62,14 @@ __all__ = [
     'NonconvexityMetricsPlugin',
     # Visualizations
     'TrajectoryVisualizationPlugin',
+    'Trajectory3DVisualizationPlugin',
     'DiffusionVisualizationPlugin',
+    'Diffusion3DVisualizationPlugin',
     'EnergyRewardVisualizationPlugin',
     'StatesVisualizationPlugin',
+    'SchedulerParamsVisualizationPlugin',
     # Obstacles
     'Box2DObstacleGeneratorPlugin',
+    'Box3DObstacleGeneratorPlugin',
 ]
 

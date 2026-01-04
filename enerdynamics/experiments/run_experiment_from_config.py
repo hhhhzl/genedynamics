@@ -18,15 +18,22 @@ from enerdynamics.experiments.plugins import (
     SingleIntegrator2DPlugin,
     DoubleIntegrator2DPlugin,
     DroneEnvironmentPlugin,
+    DroneBox3DPlugin,
+    DroneFull3DPlugin,
+    DroneFull3DPhysicsPlugin,
     ManipulatorEnvironmentPlugin,
     SSRMetricsPlugin,
     ObstacleDensityMetricsPlugin,
     NonconvexityMetricsPlugin,
     TrajectoryVisualizationPlugin,
+    Trajectory3DVisualizationPlugin,
     DiffusionVisualizationPlugin,
+    Diffusion3DVisualizationPlugin,
     EnergyRewardVisualizationPlugin,
     StatesVisualizationPlugin,
+    SchedulerParamsVisualizationPlugin,
     Box2DObstacleGeneratorPlugin,
+    Box3DObstacleGeneratorPlugin,
 )
 
 
@@ -147,6 +154,9 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(SingleIntegrator2DPlugin(), 'environment')
     runner.register_plugin(DoubleIntegrator2DPlugin(), 'environment')
     runner.register_plugin(DroneEnvironmentPlugin(), 'environment')
+    runner.register_plugin(DroneBox3DPlugin(), 'environment')
+    runner.register_plugin(DroneFull3DPlugin(), 'environment')
+    runner.register_plugin(DroneFull3DPhysicsPlugin(), 'environment')
     runner.register_plugin(ManipulatorEnvironmentPlugin(), 'environment')
     
     # Metrics plugins
@@ -156,12 +166,16 @@ def register_all_plugins(runner: ExperimentRunner):
     
     # Visualization plugins
     runner.register_plugin(TrajectoryVisualizationPlugin(), 'visualization')
+    runner.register_plugin(Trajectory3DVisualizationPlugin(), 'visualization')
     runner.register_plugin(DiffusionVisualizationPlugin(), 'visualization')
+    runner.register_plugin(Diffusion3DVisualizationPlugin(), 'visualization')
     runner.register_plugin(EnergyRewardVisualizationPlugin(), 'visualization')
     runner.register_plugin(StatesVisualizationPlugin(), 'visualization')
+    runner.register_plugin(SchedulerParamsVisualizationPlugin(), 'visualization')
     
     # Obstacle generator plugins
     runner.register_plugin(Box2DObstacleGeneratorPlugin(), 'obstacle_generator')
+    runner.register_plugin(Box3DObstacleGeneratorPlugin(), 'obstacle_generator')
 
 
 if __name__ == "__main__":

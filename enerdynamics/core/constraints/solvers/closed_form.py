@@ -105,7 +105,7 @@ class ClosedFormSolver(QPSolver):
         # Fallback: cannot solve in closed form
         raise ValueError(
             "ClosedFormSolver cannot solve this QP. "
-            "Use QPAXSolver or OSQPSolver for general QP problems."
+            "Use JAXOPTOsqpSolver or OSQPSolver for general QP problems."
         )
     
     def solve_single_halfspace(

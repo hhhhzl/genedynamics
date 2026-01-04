@@ -16,7 +16,7 @@ from enerdynamics.core.backends.runtime import RuntimeBackendManager
 
 from .config import ExperimentConfig
 from .registry import PluginRegistry
-from ..common.constraints import create_constraint_manager
+from ..common.constraints import create_constraint_manager, create_constraint_pipeline
 
 
 def convert_to_json_serializable(obj: Any) -> Any:
@@ -96,18 +96,22 @@ class ExperimentRunner:
         """
         experiment_start_time = time.time()
         
+        # Reset global random state for reproducibility
+        # This ensures that each experiment run starts from the same random state
+        np.random.seed(seed)
+        
         # 1. Setup backend
         RuntimeBackendManager.set_backend(self.config.backend, device=self.config.device)
         backend = RuntimeBackendManager.get_backend()
         
         # 2. Setup environment
         env_plugin = self.registry.get_plugin('environment', self.config.env_name)
-        env = env_plugin.create_env(self.config.env_params)
-        energy = env_plugin.create_energy()
         
-        # 3. Generate start/target positions
-        target_pos = np.asarray(env.target, dtype=np.float32)
-        start_pos = self._generate_start_position(level, seed, env, env_plugin)
+        # 3. Generate start/target positions (before obstacles, for obstacle generation)
+        # We need a temporary env to get target position
+        temp_env = env_plugin.create_env(self.config.env_params)
+        target_pos = np.asarray(temp_env.target, dtype=np.float32)
+        start_pos = self._generate_start_position(level, seed, temp_env, env_plugin)
         
         # 4. Generate obstacles
         obstacle_gen_name = self.config.obstacle_config.get('generator', 'box2d')
@@ -119,48 +123,114 @@ class ExperimentRunner:
         }
         obstacles = obstacle_gen.generate(level, seed, start_pos, target_pos, obstacle_config_with_env)
         
-        # Build SDF texture if needed
-        if level > 0 and len(obstacles) > 0:
-            map_bounds = self.config.obstacle_config.get('map_bounds', {})
-            obstacles.build_sdf_texture_2d(
-                x_min=float(map_bounds.get('x_min', -2.0)),
-                x_max=float(map_bounds.get('x_max', 2.0)),
-                y_min=float(map_bounds.get('y_min', -2.0)),
-                y_max=float(map_bounds.get('y_max', 2.0)),
-                res=0.01,
-                force_rebuild=True,
-            )
+        # 5. Create environment with obstacles (for physics backends that need obstacles in model)
+        env_params_with_obstacles = {**self.config.env_params}
+        # Add obstacles to env_params if using physics backend that needs them
+        physics_backend = env_params_with_obstacles.get('physics_backend', None)
+        if physics_backend in ['mujoco', 'isaac'] and len(obstacles) > 0:
+            env_params_with_obstacles['obstacles'] = obstacles
         
-        # 5. Setup constraints
+        env = env_plugin.create_env(env_params_with_obstacles)
+        energy = env_plugin.create_energy()
+        
+        # Build SDF texture if needed (only for 2D environments)
+        # For 3D environments, skip 2D SDF texture building
+        if level > 0 and len(obstacles) > 0:
+            # Check if this is a 3D environment by checking env_name or obstacle generator
+            physics_backend = self.config.env_params.get('physics_backend', None)
+            is_3d_env = (
+                self.config.env_name in ['drone_box_3d', 'drone', 'drone_full_3d', 'drone_full_3d_physics', 
+                                         'drone_full_3d_mujoco', 'drone_full_3d_isaac'] or
+                self.config.obstacle_config.get('generator', '') == 'box3d' or
+                physics_backend in ['mujoco', 'isaac']
+            )
+            
+            if not is_3d_env:
+                # Only build 2D SDF texture for 2D environments
+                map_bounds = self.config.obstacle_config.get('map_bounds', {})
+                obstacles.build_sdf_texture_2d(
+                    x_min=float(map_bounds.get('x_min', -2.0)),
+                    x_max=float(map_bounds.get('x_max', 2.0)),
+                    y_min=float(map_bounds.get('y_min', -2.0)),
+                    y_max=float(map_bounds.get('y_max', 2.0)),
+                    res=0.01,
+                    force_rebuild=True,
+                )
+        
+        # 6. Setup constraints
         constraint_config = self.config.constraint_config or {}
-        constraint_manager = create_constraint_manager(
-            obstacles, level, env, constraint_config, self.config.backend
+        
+        # Use new pipeline architecture (preferred)
+        constraint_pipeline = create_constraint_pipeline(
+            obstacles, level, env, constraint_config, self.config.backend,
+            obstacle_config=self.config.obstacle_config,
+            method_params=self.config.method_params,
         )
         
-        # 6. Create planner
+        # Also create legacy constraint_manager for backward compatibility
+        # (only if explicitly requested or if pipeline is None)
+        constraint_manager = None
+        if constraint_config.get('use_legacy', False) or constraint_pipeline is None:
+            constraint_manager = create_constraint_manager(
+                obstacles, level, env, constraint_config, self.config.backend,
+                obstacle_config=self.config.obstacle_config,
+            )
+        
+        # 7. Create scheduler (if configured)
+        scheduler = None
+        scheduler_config = getattr(self.config, 'scheduler_config', None)
+        if scheduler_config:
+            from ..common.constraints import create_scheduler_from_config
+            scheduler = create_scheduler_from_config(
+                scheduler_config, 
+                self.config.backend,
+                method_params=self.config.method_params,
+                obstacle_config=self.config.obstacle_config,  # Fix B3: Pass obstacle_config for robot_radius
+            )
+        
+        # 8. Create planner
         method_plugin = self.registry.get_plugin('method', self.config.method)
         method_config = {
             **self.config.method_params,
-            'constraint_manager': constraint_manager,
+            'constraint_manager': constraint_manager,  # Legacy (for backward compatibility)
+            'constraint_pipeline': constraint_pipeline,  # New architecture (preferred)
+            'scheduler': scheduler,  # New scheduler system
+            'np_random_seed': seed,  # Pass seed for reproducibility
         }
         planner = method_plugin.create_planner(env, energy, method_config)
         
-        # 7. Run planning
+        # 8. Run planning
         rng = backend.create_rng(seed)
         
         # Warmup call to exclude JIT compilation time from planning time measurement
-        # This ensures any JIT compilation or first-call overhead is excluded
-        try:
-            warmup_result = method_plugin.plan(planner, start_pos, rng)
-            # For JAX, ensure computation is complete before timing
+        # Only needed for JAX backend with JIT enabled (NumPy backend doesn't need warmup)
+        needs_warmup = False
+        if self.config.backend == "jax":
+            # Check if planner uses JIT
             if hasattr(planner, '_backend_impl') and hasattr(planner._backend_impl, 'use_jit'):
+                if planner._backend_impl.use_jit:
+                    needs_warmup = True
+            
+            # Also check if constraint manager uses JIT
+            if not needs_warmup and constraint_manager is not None:
+                if hasattr(constraint_manager, 'feasibility_operator'):
+                    feas_op = constraint_manager.feasibility_operator
+                    if feas_op is not None:
+                        if hasattr(feas_op, '_backend_impl') and hasattr(feas_op._backend_impl, 'use_jit'):
+                            if feas_op._backend_impl.use_jit:
+                                needs_warmup = True
+        
+        if needs_warmup:
+            try:
+                warmup_result = method_plugin.plan(planner, start_pos, rng)
+                # For JAX, ensure computation is complete before timing
                 import jax
                 jax.block_until_ready(warmup_result)
-        except Exception:
-            pass  # If warmup fails, continue anyway
-        
-        # Recreate rng to ensure same random seed for actual planning
-        rng = backend.create_rng(seed)
+            except Exception:
+                pass  # If warmup fails, continue anyway
+            
+            # Recreate rng to ensure same random seed for actual planning
+            rng = backend.create_rng(seed)
         
         planning_start = time.time()
         result = method_plugin.plan(planner, start_pos, rng)
@@ -170,13 +240,13 @@ class ExperimentRunner:
         if result is None:
             raise ValueError("Planning returned None. Planning may have failed.")
         
-        # 8. Extract trajectory
+        # 9. Extract trajectory
         trajectory = self._extract_trajectory(result, env)
         
-        # 9. Compute metrics
+        # 10. Compute metrics
         metrics = self._compute_metrics(trajectory, env, obstacles, constraint_manager, level)
         
-        # 10. Prepare results
+        # 11. Prepare results
         # Add obstacle statistics for backward compatibility
         num_obstacles = len(obstacles) if obstacles else 0
         num_union_obstacles = 0
@@ -210,7 +280,7 @@ class ExperimentRunner:
             'cfs_enabled': cfs_enabled,
         }
         
-        # 11. Generate visualizations
+        # 12. Generate visualizations
         if self.config.visualizations:
             self._generate_visualizations(experiment_result, env, obstacles, env_plugin)
         
@@ -254,31 +324,61 @@ class ExperimentRunner:
             env_plugin: Environment plugin
             
         Returns:
-            Start position array
+            Start position array (may be full state vector with velocities)
         """
         np.random.seed(seed)
         target_pos = np.asarray(env.target, dtype=np.float32)
         p_max = getattr(env, 'p_max', 2.0)
         
+        # Extract target position (first 2 or 3 elements depending on environment)
+        target_pos_flat = target_pos.flatten()
+        pos_dim = min(len(target_pos_flat), 3)  # Support up to 3D positions
+        target_pos_only = target_pos_flat[:pos_dim]
+        
         # Distance from target increases with level
-        max_distance = 2.0 * np.sqrt(2.0)
+        if pos_dim == 2:
+            max_distance = 2.0 * np.sqrt(2.0)
+        elif pos_dim == 3:
+            max_distance = 2.0 * np.sqrt(3.0)
+        else:
+            max_distance = 2.0
         min_dist = 0.5 + (level / 10.0) * 1.0
         max_dist = 1.0 + (level / 10.0) * (max_distance - 1.0)
         distance = np.random.uniform(min_dist, max_dist)
         
-        # Random angle
-        angle = np.random.uniform(0, 2 * np.pi)
-        direction = np.array([np.cos(angle), np.sin(angle)], dtype=np.float32)
-        
-        start = target_pos[:2] + distance * direction
+        # Generate start position
+        if pos_dim == 2:
+            # 2D: random angle in xy plane
+            angle = np.random.uniform(0, 2 * np.pi)
+            direction = np.array([np.cos(angle), np.sin(angle)], dtype=np.float32)
+            start = target_pos_only + distance * direction
+        elif pos_dim == 3:
+            # 3D: random direction on sphere
+            # Use spherical coordinates
+            theta = np.random.uniform(0, 2 * np.pi)  # azimuth angle
+            phi = np.random.uniform(0, np.pi)  # polar angle
+            direction = np.array([
+                np.sin(phi) * np.cos(theta),
+                np.sin(phi) * np.sin(theta),
+                np.cos(phi)
+            ], dtype=np.float32)
+            start = target_pos_only + distance * direction
+        else:
+            # 1D: just add/subtract distance
+            sign = np.random.choice([-1, 1])
+            start = target_pos_only + sign * distance * np.array([1.0], dtype=np.float32)
         
         # Clip to bounds
         margin = 0.2
-        start = np.clip(start, -p_max + margin, p_max - margin)
+        if pos_dim == 1:
+            start = np.clip(start, -p_max + margin, p_max - margin)
+        else:
+            start = np.clip(start, -p_max + margin, p_max - margin)
         
-        # For double integrator, add zero velocity
-        if env_plugin.get_state_dim() > 2:
-            start_full = np.concatenate([start, np.zeros(env_plugin.get_state_dim() - 2, dtype=np.float32)])
+        # For environments with state_dim > pos_dim, add zero velocity
+        state_dim = env_plugin.get_state_dim()
+        if state_dim > pos_dim:
+            start_full = np.concatenate([start, np.zeros(state_dim - pos_dim, dtype=np.float32)])
         else:
             start_full = start
         
@@ -388,9 +488,51 @@ class ExperimentRunner:
                     viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
                     plt.close(fig)
                 
+                elif viz_name == 'trajectory_3d':
+                    from mpl_toolkits.mplot3d import Axes3D
+                    fig = plt.figure(figsize=(10, 8))
+                    ax = fig.add_subplot(111, projection='3d')
+                    viz_plugin.visualize(
+                        fig, ax,
+                        {
+                            'trajectory': result['trajectory'],
+                            'env': env,
+                            'obstacles': obstacles,
+                            'env_plugin': env_plugin,
+                        },
+                        {**viz_config.get(viz_name, {}), 'config': self.config}
+                    )
+                    output_path = self._get_output_path(result['level'], result['seed']) / f"{viz_name}.png"
+                    viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
+                    plt.close(fig)
+                
                 elif viz_name == 'diffusion':
                     # Multiple subplots for diffusion steps
                     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+                    viz_plugin.visualize(
+                        fig, axes,
+                        {
+                            'result': result['result'],
+                            'env': env,
+                            'obstacles': obstacles,
+                            'initial_state': result['result'].get('initial_state'),
+                            'env_plugin': env_plugin,
+                        },
+                        {**viz_config.get(viz_name, {}), 'config': self.config}
+                    )
+                    output_path = self._get_output_path(result['level'], result['seed']) / f"{viz_name}_steps.png"
+                    plt.tight_layout()
+                    viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
+                    plt.close(fig)
+                
+                elif viz_name == 'diffusion_3d':
+                    # Multiple 3D subplots for diffusion steps
+                    from mpl_toolkits.mplot3d import Axes3D
+                    fig = plt.figure(figsize=(24, 8))
+                    axes = []
+                    for i in range(3):
+                        ax = fig.add_subplot(1, 3, i + 1, projection='3d')
+                        axes.append(ax)
                     viz_plugin.visualize(
                         fig, axes,
                         {
@@ -434,6 +576,23 @@ class ExperimentRunner:
                         fig, axes[:state_dim],
                         {
                             'trajectory': result['trajectory'],
+                            'env': env,
+                        },
+                        {**viz_config.get(viz_name, {}), 'config': self.config}
+                    )
+                    output_path = self._get_output_path(result['level'], result['seed']) / f"{viz_name}.png"
+                    plt.tight_layout()
+                    viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
+                    plt.close(fig)
+                
+                elif viz_name == 'scheduler_params':
+                    # Create 2x3 grid for scheduler parameters
+                    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+                    axes = axes.ravel()
+                    viz_plugin.visualize(
+                        fig, axes,
+                        {
+                            'result': result['result'],
                             'env': env,
                         },
                         {**viz_config.get(viz_name, {}), 'config': self.config}

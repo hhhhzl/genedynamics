@@ -6,8 +6,9 @@ Backend implementations for CFS convexifier:
 - cfs_jax: JAX backend (with JIT and vmap)
 """
 
-# Backend implementations will be registered here
-# For now, the base CFSConvexifier handles numpy fallback
+# Import backend implementations to trigger registration
+from . import cfs_numpy  # noqa: F401
+from . import cfs_jax  # noqa: F401
 
 __all__ = []
 

@@ -12,10 +12,11 @@ env_params:
 method: edoc
 method_params:
   action_diffuse_steps: 100
-  action_nsample: 64
+  action_nsample: 128
   use_antithetic: true
   action_score_mode: energy
-  terminal_energy_weight: 50.0
+  terminal_energy_weight: 100.0
+  cfs_use_trajectory_qp: true   # true = full trajectory QP, false = per-step
 
 obstacle_levels: [6]
 obstacle_config:
@@ -32,7 +33,7 @@ obstacle_config:
   enable_nonconvexity_check: true
 
 seeds: [0]
-backend: jax
+backend: numpy
 device: cpu
 
 metrics:
@@ -45,33 +46,46 @@ visualizations:
   - diffusion
   - energy_reward
   - states
+  - scheduler_params
 
-constraint_config:
-  soft_constraint:
-    enabled: true
-    alpha: 1.0
-    beta: 10.0
-  hard_constraint:
-    enabled: true
-    clearance: 0.1
-  schedule:
-    enabled: true
-    type: soft_to_hard
-    soft_alpha_start: 1.0
-    soft_alpha_end: 0.0
-    hard_clearance_start: 0.5
-    hard_clearance_end: 0.1
-    schedule_type: linear
-    reverse_mode: true
-  cfs:
-    enabled: true
-    use_trajectory_qp: false
-    max_iterations: 5
-    use_late_stage_only: true
-    late_stage_ratio: 0.2
-    reconstruct_velocity: false
-    smoothness_weight: 0.0
-  action_constraint_type: speed
+# New scheduler system configuration
+scheduler_config:
+  type: composite
+  constraint_schedulers:
+    - type: dual_control
+      # Dual variable parameters
+      lambda_con_min: -2.0
+      lambda_con_max: 2.0
+      lambda_con_init: 0.0
+      eta_con_base: 0.1
+      eta_con_decay: 0.99
+      # Target feasibility schedule
+      q_star_min: 0.3
+      q_star_max: 1.0
+      p_q: 1.0
+      # Constraint mapping parameters (rho scheduling)
+      rho_min: 0.1
+      rho_max: 100.0
+      a_rho: 1.0
+      b_rho: 0.0
+      a_g: 1.0
+      b_g: 0.0
+      # Constraint scheduling parameters
+      K_min: 5
+      K_max: 50
+      eps_min: 1e-4
+      eps_max: 1e-2
+      p_eps: 1.0
+      I_min: 1
+      I_max: 30
+      # Terminal hard region
+      t_hard: 0.8
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 64
+      T_k: 0.3
+  constraint_merge_strategy: merge
+  diffusion_merge_strategy: merge
 
 metadata:
   description: "Default EDOC configuration for single integrator 2D environment"

@@ -58,6 +58,7 @@ class ExperimentConfig:
     
     # Advanced configurations
     constraint_config: Optional[Dict[str, Any]] = None
+    scheduler_config: Optional[Dict[str, Any]] = None  # New scheduler system
     visualization_config: Optional[Dict[str, Any]] = None
     
     # Additional metadata
