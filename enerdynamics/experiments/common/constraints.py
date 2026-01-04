@@ -284,6 +284,7 @@ def create_constraint_pipeline(
     config: Dict[str, Any],
     backend_name: str = "jax",
     obstacle_config: Optional[Dict[str, Any]] = None,
+    method_params: Optional[Dict[str, Any]] = None,
 ) -> Optional[HighPerformanceConstraintPipeline]:
     """
     Create constraint pipeline with new architecture.
@@ -302,6 +303,10 @@ def create_constraint_pipeline(
             - action_constraint_type: 'acceleration' or 'speed'
         backend_name: Computational backend name ("numpy" or "jax")
         obstacle_config: Optional obstacle configuration dictionary (for getting robot_radius)
+        method_params: Optional method parameters dictionary. Can contain:
+            - cfs_use_trajectory_qp: bool, whether to use full trajectory QP (True) or per-step (False)
+            - cfs_max_constraints_per_point: int, max constraints per point
+            - cfs_constraint_margin: float, constraint margin
         
     Returns:
         HighPerformanceConstraintPipeline instance or None if level==0 and no constraints
@@ -373,7 +378,12 @@ def create_constraint_pipeline(
     # Determine operator based on CFS config
     # CFS constraints are on states (positions), not actions, so we need to use
     # a state projection operator instead of per-step QP filter
-    use_trajectory_qp = cfs_config.get('use_trajectory_qp', False)
+    # Priority: method_params > constraint_config > default
+    if method_params is not None and 'cfs_use_trajectory_qp' in method_params:
+        use_trajectory_qp = bool(method_params.get('cfs_use_trajectory_qp', False))
+    else:
+        use_trajectory_qp = cfs_config.get('use_trajectory_qp', False)
+    
     if use_trajectory_qp:
         operator_name = "traj_qp"
     else:
@@ -390,8 +400,14 @@ def create_constraint_pipeline(
         config=pipeline_config,
         obstacles=obstacles,
         position_extractor=None,  # Use default
-        max_constraints_per_point=int(cfs_config.get('max_constraints_per_point', 8)),
-        constraint_margin=float(cfs_config.get('constraint_margin', 0.25)),
+        max_constraints_per_point=int(
+            method_params.get('cfs_max_constraints_per_point') if (method_params is not None and 'cfs_max_constraints_per_point' in method_params)
+            else cfs_config.get('max_constraints_per_point', 8)
+        ),
+        constraint_margin=float(
+            method_params.get('cfs_constraint_margin') if (method_params is not None and 'cfs_constraint_margin' in method_params)
+            else cfs_config.get('constraint_margin', 0.25)
+        ),
         robot_radius=robot_radius,
         # Operator parameters
         project_states=True,  # CFS projects states (positions)

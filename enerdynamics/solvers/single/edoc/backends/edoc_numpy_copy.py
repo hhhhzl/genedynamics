@@ -5,7 +5,7 @@ This module contains the pure NumPy implementation of the reverse diffusion
 algorithm, with no JAX dependencies. All operations use NumPy for maximum compatibility.
 """
 
-from typing import Optional, Tuple, Any, List
+from typing import Optional, Tuple, Any, List, Dict
 import numpy as np
 
 try:
@@ -46,6 +46,30 @@ class EDOCBackendNumpy(EDOCBackendBase):
         )
         if self._np_rng is None:
             self._np_rng = np.random.default_rng()
+        
+        # Get robot_radius from config or planner (for violation computation)
+        self.robot_radius = 0.0
+        if 'robot_radius' in config:
+            self.robot_radius = float(config['robot_radius'])
+        elif hasattr(planner, 'config') and planner.config is not None:
+            # Try to get from planner.config.obstacle_config
+            if hasattr(planner.config, 'obstacle_config'):
+                obstacle_config = planner.config.obstacle_config
+                if obstacle_config and 'robot_radius' in obstacle_config:
+                    self.robot_radius = float(obstacle_config['robot_radius'])
+            elif isinstance(planner.config, dict) and 'obstacle_config' in planner.config:
+                obstacle_config = planner.config['obstacle_config']
+                if obstacle_config and 'robot_radius' in obstacle_config:
+                    self.robot_radius = float(obstacle_config['robot_radius'])
+        
+        # Initialize EMA state for q_tilde (Fix 1.3: Batch aggregation + EMA)
+        self.q_tilde_prev = None  # Previous q_tilde for EMA
+        self.ema_beta = 0.3  # EMA smoothing factor (beta in [0,1], can be tuned)
+        
+        # Fix B1: Initialize sliding window for tau calibration
+        self.V_history = []  # Sliding window of V values for median calculation
+        self.V_window_size = 50  # Window size for median calculation (can be tuned)
+        self.tau = 0.1  # Initial tau (will be calibrated online)
     
     def rollout_states_and_energy(
         self,
@@ -387,6 +411,191 @@ class EDOCBackendNumpy(EDOCBackendBase):
         
         return act
     
+    def _get_diffusion_params(self, k: int, K: int) -> Dict[str, Any]:
+        """
+        Get diffusion parameters from scheduler.
+        
+        Args:
+            k: Current diffusion step (0-indexed, k=0 is final step)
+            K: Total diffusion steps (0-indexed, K is max step index)
+            
+        Returns:
+            Dictionary with M_k, T_k, s_k (if available)
+        """
+        if self.scheduler is None:
+            # Fallback to fixed parameters
+            return {
+                "M_k": self.action_nsample,
+                "T_k": self.action_temp,
+                "s_k": None,
+            }
+        
+        try:
+            from enerdynamics.core.constraints.core.types import ScheduleState
+            state = ScheduleState(k=k, K=K)
+            params = self.scheduler.params(state)
+            
+            # Extract diffusion parameters from _extra
+            return {
+                "M_k": params._extra.get("M_k", self.action_nsample),
+                "T_k": params._extra.get("T_k", self.action_temp),
+                "s_k": params._extra.get("s_k"),
+            }
+        except Exception:
+            # Fallback to fixed parameters if scheduler fails
+            return {
+                "M_k": self.action_nsample,
+                "T_k": self.action_temp,
+                "s_k": None,
+            }
+    
+    def _update_scheduler(
+        self,
+        k: int,
+        K: int,
+        feedback: Dict[str, Any]
+    ) -> None:
+        """
+        Update scheduler with feedback.
+        
+        Args:
+            k: Current diffusion step (0-indexed)
+            K: Total diffusion steps (0-indexed)
+            feedback: Feedback dictionary (feasible_rate, ess, weights, trajectories, etc.)
+        """
+        if self.scheduler is None or not hasattr(self.scheduler, 'update'):
+            return
+        
+        try:
+            from enerdynamics.core.constraints.core.types import ScheduleState
+            state = ScheduleState(k=k, K=K)
+            self.scheduler.update(state, feedback)
+        except Exception:
+            # Silently fail if update fails (scheduler might not support update)
+            pass
+    
+    def _compute_feasibility_rate(self, trajectory: Trajectory, margin: Optional[float] = None) -> tuple[float, float]:
+        """
+        Compute continuous feasibility score q̂ and violation V from violation metric.
+        
+        Implementation of Solution 1: Replace binary 0/1 feasibility with continuous
+        violation-based metric.
+        
+        Steps:
+        1. Compute violations v^h = max(0, margin - sdf) for each time step
+        2. Normalize: v_bar = clip(v / (margin + epsilon), 0, v_max)
+        3. Aggregate: V(τ) = mean(v_bar) - smooth violation
+        4. Map to [0,1]: q̂ = exp(-V/τ) with online-calibrated tau
+        
+        Fix B1: tau is calibrated online using sliding window median V50.
+        Fix B3: margin is passed as parameter (from scheduler) instead of using static robot_radius.
+        
+        Args:
+            trajectory: Trajectory to evaluate
+            margin: Safety margin (from scheduler, defaults to robot_radius if None)
+            
+        Returns:
+            Tuple of (q_hat, V_k): Continuous feasibility score q̂ ∈ [0, 1] and violation V_k
+        """
+        # Parameters for violation-to-feasibility mapping
+        alpha = 10.0  # Scaling factor for exponential mapping
+        b_safe = 0.0  # Safety threshold (0 for constraints: c ≤ 0)
+        use_max = False  # Use mean (smooth violation), not max
+        violations = None
+
+        # Try to get violations from constraint_pipeline
+        if violations is None and self.constraint_pipeline is not None:
+            try:
+                # Method 1: Try to get violations from convexifier (obstacles SDF)
+                if hasattr(self.constraint_pipeline, 'convexifier'):
+                    convexifier = self.constraint_pipeline.convexifier
+                    if hasattr(convexifier, 'obstacles') and convexifier.obstacles is not None:
+                        # Compute violations from obstacle SDF
+                        violations_list = []
+                        # Fix B3: Use margin from parameter (from scheduler), fallback to robot_radius
+                        if margin is None:
+                            margin = self.robot_radius
+                        
+                        # Fix B3: Assert margin is valid (prevent division by near-zero)
+                        if margin < 1e-4:
+                            print(f"WARNING: margin={margin} is too small (< 1e-4)! This will cause V to explode. "
+                                  f"Using robot_radius={self.robot_radius} as fallback.")
+                            margin = max(self.robot_radius, 1e-4)  # Use at least 1e-4
+                        
+                        # Compute SDF violations for all states in trajectory
+                        for state in trajectory.states:
+                            pos = np.asarray(state[:2], dtype=np.float32)  # Extract position (first 2 dims)
+                            sdf = convexifier.obstacles.sdf(pos)
+                            sdf_val = float(sdf) if np.isscalar(sdf) else float(sdf[0])
+                            # Violation = max(0, margin - sdf)  (if sdf < margin, trajectory is inside obstacle)
+                            violation = max(0.0, margin - sdf_val)
+                            violations_list.append(violation)
+                        
+                        if violations_list:
+                            violations = np.asarray(violations_list, dtype=np.float32)
+            except Exception as e:
+                # Silently continue to next method
+                pass
+        
+        # If we have violations, compute continuous feasibility score
+        if violations is not None and len(violations) > 0:
+            # Fix B3: Use margin from parameter (from scheduler), fallback to robot_radius
+            if margin is None:
+                margin = self.robot_radius
+            
+            # Fix B3: Assert margin is valid (prevent division by near-zero)
+            if margin < 1e-4:
+                print(f"WARNING: margin={margin} is too small (< 1e-4)! This will cause V to explode. "
+                      f"Using robot_radius={self.robot_radius} as fallback.")
+                margin = max(self.robot_radius, 1e-4)  # Use at least 1e-4
+            
+            # Normalize violations to prevent scale explosion (Fix 1.2)
+            # v_bar = clip(v / (margin + epsilon), 0, v_max)
+            epsilon_0 = 1e-6  # Prevent division by zero
+            v_max = 10.0  # Upper bound for normalized violation
+            v_h = np.maximum(violations, 0.0)  # Ensure non-negative
+            # Normalize: divide by (margin + epsilon) to make scale comparable
+            v_bar = np.clip(v_h / (margin + epsilon_0), 0.0, v_max)
+            
+            # Aggregate: V(τ) = mean(v_bar) or max(v_bar)
+            if use_max:
+                V_tau = float(np.max(v_bar))
+            else:
+                V_tau = float(np.mean(v_bar))
+            
+            # Fix B1: Online calibration of tau using sliding window median
+            # Maintain sliding window of V values
+            self.V_history.append(V_tau)
+            if len(self.V_history) > self.V_window_size:
+                self.V_history.pop(0)  # Remove oldest value
+            
+            # Compute median V50 for calibration
+            if len(self.V_history) >= 5:  # Need at least 5 samples for meaningful median
+                V50 = float(np.median(self.V_history))
+                # Set q(V50) = 0.5, so tau = V50 / ln(2)
+                self.tau = V50 / np.log(2.0)
+                self.tau = max(0.01, min(self.tau, 1.0))  # Clip tau to reasonable range [0.01, 1.0]
+            # else: use current tau (initialized to 0.1)
+            
+            # Map to feasibility score: q̂ = exp(-V/τ) with online-calibrated tau
+            q_hat = float(np.exp(-V_tau / self.tau))
+            q_hat = np.clip(q_hat, 0.0, 1.0)
+            
+            return q_hat, V_tau  # Return both q_hat and V_k
+        
+        # Fallback: try binary feasibility check
+        if self.constraint_manager is not None:
+            try:
+                if hasattr(self.constraint_manager, 'check_feasibility'):
+                    is_feasible = self.constraint_manager.check_feasibility(trajectory)
+                    V_tau = 0.0 if is_feasible else 1.0  # Default violation
+                    return (1.0 if is_feasible else 0.0), V_tau
+            except Exception:
+                pass
+        
+        # Default: assume feasible if no constraint system available
+        return 1.0, 0.0  # q_hat=1.0, V_k=0.0
+    
     def reverse_diffuse(
         self,
         rng_key: Any,
@@ -413,10 +622,40 @@ class EDOCBackendNumpy(EDOCBackendBase):
         
         # Diffusion schedule
         betas = np.linspace(beta0, betaT, Ndiffuse, dtype=np.float32)
+        
+        # Get diffusion schedule from scheduler if available (for beta scaling)
+        diffusion_schedule = None
+        if self.scheduler is not None:
+            try:
+                from enerdynamics.core.constraints.schedulers.utils import DiffusionNoiseSchedule
+                # Try to get diffusion schedule from scheduler
+                if hasattr(self.scheduler, 'diffusion_schedulers') and self.scheduler.diffusion_schedulers:
+                    # Get from first diffusion scheduler
+                    diff_sched = self.scheduler.diffusion_schedulers[0]
+                    if hasattr(diff_sched, 'diffusion_schedule'):
+                        diffusion_schedule = diff_sched.diffusion_schedule
+                    elif hasattr(diff_sched, 'get_scaled_betas'):
+                        # Scheduler can provide scaled betas
+                        scaled_betas = diff_sched.get_scaled_betas()
+                        if scaled_betas is not None:
+                            betas = np.asarray(scaled_betas, dtype=np.float32)
+                # Create diffusion schedule object for progress calculation
+                if diffusion_schedule is None:
+                    diffusion_schedule = DiffusionNoiseSchedule.from_betas(betas)
+            except Exception:
+                # Fallback: create from betas
+                from enerdynamics.core.constraints.schedulers.utils import DiffusionNoiseSchedule
+                diffusion_schedule = DiffusionNoiseSchedule.from_betas(betas)
+        else:
+            from enerdynamics.core.constraints.schedulers.utils import DiffusionNoiseSchedule
+            diffusion_schedule = DiffusionNoiseSchedule.from_betas(betas)
+        
         alphas = 1.0 - betas
         alphas_bar = np.cumprod(alphas, axis=0)
         sigmas = np.sqrt(1.0 - alphas_bar)
         extra_sigmas = np.linspace(self.action_extra_sigma, 0.0, Ndiffuse, dtype=np.float32)
+        
+        K = Ndiffuse - 1  # Total steps (0-indexed, K is max step index)
         
         # Initialize Ybar using NumPy random
         if isinstance(rng_key, (int, np.integer)):
@@ -457,20 +696,33 @@ class EDOCBackendNumpy(EDOCBackendBase):
                 if has_hard:
                     hard_enabled_by_idx[:] = True
         
-        # Reverse diffusion loop
-        diffusion_iter = range(Ndiffuse - 1, 0, -1)
+        # Reverse diffusion loop (100 steps: i=99 to i=0)
+        diffusion_iter = range(Ndiffuse - 1, -1, -1)
         if HAS_TQDM and self.show_tqdm:
             diffusion_iter = tqdm(diffusion_iter, desc="EDOC Diffusion", unit="step", 
-                                 total=Ndiffuse-1, leave=False)
+                                 total=Ndiffuse, leave=False)
         
         for i in diffusion_iter:
+            # Convert diffusion index to step index (k=0 is final step, k=K is initial step)
+            k = (Ndiffuse - 1) - i  # Current step (0-indexed)
+            
+            # Get diffusion parameters from scheduler
+            diffusion_params = self._get_diffusion_params(k, K)
+            M_k = int(diffusion_params.get("M_k", num_particles))
+            T_k = float(diffusion_params.get("T_k", temp))
+            s_k = diffusion_params.get("s_k")
+            
+            # Use M_k for current step
+            num_particles_current = max(1, M_k)
+            temp_eps_current = T_k if T_k > 1e-6 else 1e-6
+            
             Yi = Ybar * np.sqrt(alphas_bar[i])
             sigma_i = float(sigmas[i])
             
             # Generate random samples with antithetic sampling if enabled
-            if self.use_antithetic and num_particles > 1:
-                half = num_particles // 2
-                has_extra = num_particles % 2
+            if self.use_antithetic and num_particles_current > 1:
+                half = num_particles_current // 2
+                has_extra = num_particles_current % 2
                 sample_count = half + has_extra
                 
                 eps_core = self._np_rng.standard_normal(
@@ -494,7 +746,7 @@ class EDOCBackendNumpy(EDOCBackendBase):
                     Y0s = np.concatenate(Y_candidates, axis=0)
             else:
                 eps = self._np_rng.standard_normal(
-                    size=(num_particles, horizon, act_dim)
+                    size=(num_particles_current, horizon, act_dim)
                 ).astype(np.float32)
                 Y0s = Ybar[None, :] + sigma_i * eps
             
@@ -505,27 +757,82 @@ class EDOCBackendNumpy(EDOCBackendBase):
             
             # Convert diffusion index to constraint step
             constraint_step = (Ndiffuse - 1) - i
-            constraint_total_steps = Ndiffuse - 2
+            constraint_total_steps = Ndiffuse - 1  # Total steps should match Ndiffuse (0-indexed, so Ndiffuse-1)
             
             # Score particles in batch
             scores = self.score_particles(
                 state_init, Y0s, constraint_step, constraint_total_steps
                         )
             
-            # Compute weights from scores
+            # Compute weights from scores using T_k (needed for Fix B2: weighted aggregation)
             score_std = float(np.std(scores))
             if score_std < 1e-4:
-                weights = np.full((num_particles,), 1.0 / num_particles, dtype=np.float32)
+                weights = np.full((num_particles_current,), 1.0 / num_particles_current, dtype=np.float32)
             else:
                 score_mean = float(np.mean(scores))
-                denom = score_std * temp_eps
+                denom = score_std * temp_eps_current  # Use T_k instead of temp_eps
                 logw = (scores - score_mean) / denom
                 logw = logw - np.max(logw)
                 weights = np.exp(logw)
                 weights = weights / np.sum(weights)
+            weights = np.asarray(weights, dtype=np.float32)
+            
+            # Get margin from scheduler (Fix B3: margin as scheduler parameter)
+            margin_k = None
+            if self.scheduler is not None:
+                try:
+                    from enerdynamics.core.constraints.core.types import ScheduleState
+                    debug_state = ScheduleState(k=constraint_step, K=constraint_total_steps)
+                    if hasattr(self.scheduler, 'constraint_params'):
+                        params = self.scheduler.constraint_params(debug_state)
+                        if isinstance(params, dict):
+                            margin_k = params.get('margin', None)
+                        elif hasattr(params, 'margin'):
+                            margin_k = params.margin
+                    elif hasattr(self.scheduler, 'params'):
+                        params_obj = self.scheduler.params(debug_state)
+                        margin_k = getattr(params_obj, 'margin', None)
+                except Exception:
+                    pass
+            
+            # Fix 1.3: Batch aggregation + EMA for feasibility tracking
+            # Fix B2: Use importance weights for weighted aggregation
+            # Compute q_k^(m) and V_k^(m) for each particle in batch
+            q_k_list = []
+            V_k_list = []
+            for m in range(num_particles_current):
+                particle_actions = Y0s[m]  # Actions for particle m
+                particle_trajectory = self.actions_to_trajectory(state_init, particle_actions)
+                # Fix B3: Pass margin_k to _compute_feasibility_rate
+                q_k_m, V_k_m = self._compute_feasibility_rate(particle_trajectory, margin=margin_k)
+                q_k_list.append(q_k_m)
+                V_k_list.append(V_k_m)
+            
+            # Fix B2: Weighted aggregation: q_bar_k = sum_m (w_m * q_k^(m))
+            if q_k_list and len(weights) == len(q_k_list):
+                q_k_array = np.asarray(q_k_list, dtype=np.float32)
+                q_bar_k = float(np.sum(weights * q_k_array))
+                V_k_array = np.asarray(V_k_list, dtype=np.float32)
+                V_bar_k = float(np.sum(weights * V_k_array))
+            else:
+                # Fallback to unweighted mean if weights don't match
+                q_bar_k = float(np.mean(q_k_list)) if q_k_list else 0.0
+                V_bar_k = float(np.mean(V_k_list)) if V_k_list else 0.0
+            
+            # EMA smoothing: q_tilde_k = (1-beta) * q_tilde_{k-1} + beta * q_bar_k
+            if self.q_tilde_prev is None:
+                # First step: initialize with q_bar_k
+                q_tilde_k = q_bar_k
+            else:
+                beta = self.ema_beta
+                q_tilde_k = (1.0 - beta) * self.q_tilde_prev + beta * q_bar_k
+            q_tilde_k = float(np.clip(q_tilde_k, 0.0, 1.0))
+            self.q_tilde_prev = q_tilde_k  # Store for next iteration
             
             reward_history.append(float(np.mean(scores)))
-            weights = np.asarray(weights, dtype=np.float32)
+            
+            # Compute ESS for feedback
+            ess = 1.0 / (np.sum(weights ** 2) + 1e-10) / num_particles_current
             
             # Update Ybar using weighted average
             Ybar_weighted = np.tensordot(weights, Y0s, axes=([0], [0]))
@@ -533,15 +840,22 @@ class EDOCBackendNumpy(EDOCBackendBase):
             # Reverse diffusion step
             score = (-Yi + np.sqrt(alphas_bar[i]) * Ybar_weighted) / (1.0 - alphas_bar[i])
             Yim1 = (Yi + (1.0 - alphas_bar[i]) * score) / np.sqrt(alphas[i])
-            Ybar = Yim1 / np.sqrt(alphas_bar[i - 1])
+            # Handle final step (i=0): Ybar = Yim1 (no division by sqrt(alphas_bar[0]))
+            # For i > 0: Ybar = Yim1 / sqrt(alphas_bar[i-1])
+            if i > 0:
+                Ybar = Yim1 / np.sqrt(alphas_bar[i - 1])
+            else:
+                # Final step: i=0, Ybar is already Yim1 (alphas_bar[0] = 1.0 typically)
+                Ybar = Yim1
             
             # Add extra noise
             Ybar = self.add_extra_noise(Ybar, extra_sigmas[i])
             
+            # Create trajectory for constraint projection and feedback
+            trajectory = self.actions_to_trajectory(state_init, Ybar)
+            
             # Apply hard constraint projection if enabled
             if hard_enabled_by_idx[i]:
-                trajectory = self.actions_to_trajectory(state_init, Ybar)
-                
                 # Use new pipeline if available, otherwise fallback to legacy constraint_manager
                 if self.constraint_pipeline is not None:
                     from enerdynamics.core.constraints.core.types import ScheduleState
@@ -579,6 +893,23 @@ class EDOCBackendNumpy(EDOCBackendBase):
                     )
                 else:
                     Ybar = self.extract_actions_from_trajectory(projected_trajectory)
+                
+                # Update trajectory after projection for feedback
+                trajectory = projected_trajectory
+            
+            # Update scheduler with feedback (Fix A1: clarify field semantics)
+            # q_hat: Current step observation (batch aggregation)
+            # q_tilde: Smoothed observation (EMA from backend)
+            feedback = {
+                "feasible_rate": q_bar_k,  # Fix A1: Use q_bar_k (batch aggregation) as feasible_rate
+                "q_hat": q_bar_k,  # Batch-aggregated q_bar_k (current observation)
+                "q_tilde": q_tilde_k,  # Fix A1: Explicitly pass q_tilde (EMA) for modulation/plotting
+                "V_k": V_bar_k,  # Batch-aggregated V_bar_k
+                "ess": ess,
+                "weights": weights,
+                "trajectories": [trajectory],  # Keep single trajectory for backward compatibility
+            }
+            self._update_scheduler(k, K, feedback)
             
             # Clip and store history
             if control_limit is not None:

@@ -64,6 +64,7 @@ class EDOCMethodPlugin(MethodPlugin):
             use_constraint_in_scoring=config.get('use_constraint_in_scoring', True),
             lambda_energy=config.get('lambda_energy', 1.0),
             terminal_energy_weight=config.get('terminal_energy_weight', 0.0),
+            np_random_seed=config.get('np_random_seed', None),  # Pass seed for reproducibility
         )
         
         return planner

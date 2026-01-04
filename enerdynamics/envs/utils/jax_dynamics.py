@@ -141,94 +141,94 @@ if JAX_AVAILABLE:
         km: float,
         gravity: float
     ) -> jnp.ndarray:
-    """
-    Single step of quadrotor dynamics using pure JAX.
-    
-    JIT-compiled for high performance. Supports automatic differentiation.
-    
-    Args:
-        state: Current state [x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz], shape (12,)
-        motor_thrusts: Motor thrusts [T1, T2, T3, T4] (normalized 0-1), shape (4,)
-        dt: Time step
-        mass: Quadrotor mass
-        I: Moments of inertia [Ixx, Iyy, Izz], shape (3,)
-        arm_length: Distance from center to motor
-        kf: Thrust coefficient
-        km: Moment coefficient
-        gravity: Gravity acceleration
+        """
+        Single step of quadrotor dynamics using pure JAX.
         
-    Returns:
-        Next state, shape (12,)
-    """
-    if not JAX_AVAILABLE:
-        raise RuntimeError("JAX is required for jax_quadrotor_step")
-    
-    # Extract state components
-    pos = state[0:3]
-    vel = state[3:6]
-    euler = state[6:9]
-    ang_vel = state[9:12]
-    
-    # Compute forces and moments from motor thrusts
-    T_total = jnp.sum(motor_thrusts) * kf
-    
-    # Motor configuration: front-left, front-right, back-right, back-left
-    T1, T2, T3, T4 = motor_thrusts[0], motor_thrusts[1], motor_thrusts[2], motor_thrusts[3]
-    
-    # Moments
-    Mx = arm_length * kf * (T2 - T4)  # Roll moment
-    My = arm_length * kf * (T1 - T3)  # Pitch moment
-    Mz = km * (T1 - T2 + T3 - T4)     # Yaw moment
-    
-    # Compute rotation matrix from Euler angles
-    roll, pitch, yaw = euler[0], euler[1], euler[2]
-    cr = jnp.cos(roll)
-    sr = jnp.sin(roll)
-    cp = jnp.cos(pitch)
-    sp = jnp.sin(pitch)
-    cy = jnp.cos(yaw)
-    sy = jnp.sin(yaw)
-    
-    # Rotation matrix (ZYX convention) - computed element-wise for performance
-    R = jnp.array([
-        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
-        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
-        [-sp, cp * sr, cp * cr]
-    ])
-    
-    # Thrust in body frame (upward)
-    thrust_body = jnp.array([0.0, 0.0, T_total])
-    thrust_world = R @ thrust_body
-    
-    # Gravity
-    gravity_vec = jnp.array([0.0, 0.0, -gravity])
-    
-    # Linear acceleration
-    accel = (thrust_world / mass) + gravity_vec
-    
-    # Angular acceleration
-    moments = jnp.array([Mx, My, Mz])
-    I_inv = 1.0 / I
-    ang_accel = I_inv * moments
-    
-    # Integrate using Euler method
-    new_vel = vel + accel * dt
-    new_pos = pos + vel * dt + 0.5 * accel * dt ** 2
-    
-    new_ang_vel = ang_vel + ang_accel * dt
-    
-    # Integrate angular velocity to get new orientation
-    # Simplified: use small angle approximation
-    new_euler = euler + ang_vel * dt
-    
-    # Combine new state
-    new_state = jnp.concatenate([
-        new_pos,
-        new_vel,
-        new_euler,
-        new_ang_vel
-    ])
-    
+        JIT-compiled for high performance. Supports automatic differentiation.
+        
+        Args:
+            state: Current state [x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz], shape (12,)
+            motor_thrusts: Motor thrusts [T1, T2, T3, T4] (normalized 0-1), shape (4,)
+            dt: Time step
+            mass: Quadrotor mass
+            I: Moments of inertia [Ixx, Iyy, Izz], shape (3,)
+            arm_length: Distance from center to motor
+            kf: Thrust coefficient
+            km: Moment coefficient
+            gravity: Gravity acceleration
+            
+        Returns:
+            Next state, shape (12,)
+        """
+        if not JAX_AVAILABLE:
+            raise RuntimeError("JAX is required for jax_quadrotor_step")
+        
+        # Extract state components
+        pos = state[0:3]
+        vel = state[3:6]
+        euler = state[6:9]
+        ang_vel = state[9:12]
+        
+        # Compute forces and moments from motor thrusts
+        T_total = jnp.sum(motor_thrusts) * kf
+        
+        # Motor configuration: front-left, front-right, back-right, back-left
+        T1, T2, T3, T4 = motor_thrusts[0], motor_thrusts[1], motor_thrusts[2], motor_thrusts[3]
+        
+        # Moments
+        Mx = arm_length * kf * (T2 - T4)  # Roll moment
+        My = arm_length * kf * (T1 - T3)  # Pitch moment
+        Mz = km * (T1 - T2 + T3 - T4)     # Yaw moment
+        
+        # Compute rotation matrix from Euler angles
+        roll, pitch, yaw = euler[0], euler[1], euler[2]
+        cr = jnp.cos(roll)
+        sr = jnp.sin(roll)
+        cp = jnp.cos(pitch)
+        sp = jnp.sin(pitch)
+        cy = jnp.cos(yaw)
+        sy = jnp.sin(yaw)
+        
+        # Rotation matrix (ZYX convention) - computed element-wise for performance
+        R = jnp.array([
+            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+            [-sp, cp * sr, cp * cr]
+        ])
+        
+        # Thrust in body frame (upward)
+        thrust_body = jnp.array([0.0, 0.0, T_total])
+        thrust_world = R @ thrust_body
+        
+        # Gravity
+        gravity_vec = jnp.array([0.0, 0.0, -gravity])
+        
+        # Linear acceleration
+        accel = (thrust_world / mass) + gravity_vec
+        
+        # Angular acceleration
+        moments = jnp.array([Mx, My, Mz])
+        I_inv = 1.0 / I
+        ang_accel = I_inv * moments
+        
+        # Integrate using Euler method
+        new_vel = vel + accel * dt
+        new_pos = pos + vel * dt + 0.5 * accel * dt ** 2
+        
+        new_ang_vel = ang_vel + ang_accel * dt
+        
+        # Integrate angular velocity to get new orientation
+        # Simplified: use small angle approximation
+        new_euler = euler + ang_vel * dt
+        
+        # Combine new state
+        new_state = jnp.concatenate([
+            new_pos,
+            new_vel,
+            new_euler,
+            new_ang_vel
+        ])
+        
         return new_state
     
     # JIT-compile state projection
