@@ -109,8 +109,17 @@ class BackendArray:
         if self._backend == "numpy":
             self._numpy_data = np.asarray(self._data, dtype=np.float32)
         elif self._backend == "jax" and JAX_AVAILABLE:
-            # JAX to NumPy: zero-copy if possible (on CPU)
-            self._numpy_data = np.asarray(self._data, dtype=np.float32)
+            # JAX to NumPy: use device_get to properly convert
+            import jax
+            try:
+                # Block until ready if needed
+                if hasattr(self._data, 'block_until_ready'):
+                    self._data = self._data.block_until_ready()
+                # Use device_get to convert JAX array to NumPy
+                self._numpy_data = np.asarray(jax.device_get(self._data), dtype=np.float32)
+            except (TypeError, AttributeError, ValueError):
+                # Fallback: try direct conversion
+                self._numpy_data = np.asarray(self._data, dtype=np.float32)
         elif self._backend == "torch" and TORCH_AVAILABLE:
             # PyTorch to NumPy: requires detach and CPU transfer
             if self._data.requires_grad:

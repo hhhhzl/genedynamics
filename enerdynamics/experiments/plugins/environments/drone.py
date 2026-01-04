@@ -108,3 +108,213 @@ class DroneEnvironmentPlugin(EnvironmentPlugin):
         """
         return np.asarray(state, dtype=np.float32)[:3]
 
+
+class DroneBox3DPlugin(EnvironmentPlugin):
+    """
+    Plugin for drone_box_3d environment.
+    
+    This environment represents a simplified 3D drone with double integrator dynamics.
+    State: [x, y, z, vx, vy, vz] (6D)
+    """
+    
+    @property
+    def name(self) -> str:
+        """Environment name identifier."""
+        return "drone_box_3d"
+    
+    def create_env(self, config: Dict[str, Any]) -> Any:
+        """
+        Create drone_box_3d environment instance.
+        
+        Args:
+            config: Environment configuration dictionary with keys:
+                - dt: Time step (default: 0.1)
+                - horizon: Planning horizon (default: 80)
+                - p_max: Position bounds (default: 2.0)
+                - v_max: Velocity bounds (default: 2.0)
+                - control_limit: Control limit (default: 1.0)
+                - target: Target position [x, y, z] (default: [0.0, 0.0, 1.0])
+                - Any other DroneBox3DEnv parameters
+                
+        Returns:
+            DroneBox3DEnv instance
+        """
+        from enerdynamics.envs.factories import make_env
+        return make_env(self.name, **config)
+    
+    def create_energy(self) -> Any:
+        """
+        Create energy functional for drone_box_3d environment.
+        
+        Returns:
+            LegacyEnergyFunctional instance
+        """
+        from enerdynamics.envs.factories import make_energy
+        return make_energy(self.name)
+    
+    def get_state_dim(self) -> int:
+        """
+        Get state dimension.
+        
+        Returns:
+            State dimension (6 for position and velocity: x, y, z, vx, vy, vz)
+        """
+        return 6
+    
+    def extract_position(self, state: np.ndarray) -> np.ndarray:
+        """
+        Extract position coordinates from state.
+        
+        Args:
+            state: Full state vector (x, y, z, vx, vy, vz)
+            
+        Returns:
+            Position vector (x, y, z)
+        """
+        return np.asarray(state, dtype=np.float32)[:3]
+
+
+class DroneFull3DPlugin(EnvironmentPlugin):
+    """
+    Plugin for drone_full_3d environment.
+    
+    This environment represents a full 3D quadrotor with complete dynamics.
+    State: [x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz] (12D)
+    Action: [T1, T2, T3, T4] (4 motor thrusts)
+    """
+    
+    @property
+    def name(self) -> str:
+        """Environment name identifier."""
+        return "drone_full_3d"
+    
+    def create_env(self, config: Dict[str, Any]) -> Any:
+        """
+        Create drone_full_3d environment instance.
+        
+        Args:
+            config: Environment configuration dictionary with keys:
+                - dt: Time step (default: 0.1)
+                - horizon: Planning horizon (default: 80)
+                - p_max: Position bounds (default: 2.0)
+                - v_max: Velocity bounds (default: 2.0)
+                - control_limit: Control limit (default: 1.0)
+                - target: Target position [x, y, z] (default: [0.0, 0.0, 1.0])
+                - mass, Ixx, Iyy, Izz, arm_length, kf, km, gravity: DroneModel parameters
+                - Any other DroneFull3DEnv parameters
+                
+        Returns:
+            DroneFull3DEnv instance
+        """
+        from enerdynamics.envs.factories import make_env
+        return make_env(self.name, **config)
+    
+    def create_energy(self) -> Any:
+        """
+        Create energy functional for drone_full_3d environment.
+        
+        Returns:
+            LegacyEnergyFunctional instance
+        """
+        from enerdynamics.envs.factories import make_energy
+        return make_energy(self.name)
+    
+    def get_state_dim(self) -> int:
+        """
+        Get state dimension.
+        
+        Returns:
+            State dimension (12 for position, velocity, orientation, angular velocity)
+        """
+        return 12
+    
+    def extract_position(self, state: np.ndarray) -> np.ndarray:
+        """
+        Extract position coordinates from state.
+        
+        Args:
+            state: Full state vector (x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz)
+            
+        Returns:
+            Position vector (x, y, z)
+        """
+        return np.asarray(state, dtype=np.float32)[:3]
+
+
+class DroneFull3DPhysicsPlugin(EnvironmentPlugin):
+    """
+    Plugin for drone_full_3d_physics environment (unified interface).
+    
+    This plugin supports multiple physics backends (drone_model, mujoco, isaac)
+    and computational backends (numpy, jax) through a unified configuration.
+    State: [x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz] (12D)
+    Action: [T1, T2, T3, T4] (4 motor thrusts)
+    """
+    
+    @property
+    def name(self) -> str:
+        """Environment name identifier."""
+        return "drone_full_3d_physics"
+    
+    def create_env(self, config: Dict[str, Any]) -> Any:
+        """
+        Create drone_full_3d_physics environment instance.
+        
+        Args:
+            config: Environment configuration dictionary with keys:
+                - physics_backend: 'drone_model', 'mujoco', 'isaac', or None
+                - renderer: 'matplotlib', 'mujoco', 'isaac', or None
+                - use_jax_dynamics: Use JAX dynamics for planning (default: True)
+                - model_path_mujoco: Path to MuJoCo XML file (optional)
+                - model_path_isaac: Path to Isaac Sim USD file (optional)
+                - obstacles: ObstacleManager instance (optional)
+                - All other DroneFull3DPhysicsEnv parameters
+                
+        Returns:
+            Environment instance (DroneFull3DPhysicsEnv, DroneFull3DMujocoEnv, or DroneFull3DIsaacEnv)
+        """
+        from enerdynamics.envs.factories import make_env
+        
+        # Determine which environment to create based on physics_backend
+        physics_backend = config.get('physics_backend', 'drone_model')
+        
+        if physics_backend == 'mujoco':
+            env_name = 'drone_full_3d_mujoco'
+        elif physics_backend == 'isaac':
+            env_name = 'drone_full_3d_isaac'
+        else:
+            env_name = 'drone_full_3d_physics'
+        
+        return make_env(env_name, **config)
+    
+    def create_energy(self) -> Any:
+        """
+        Create energy functional for drone_full_3d_physics environment.
+        
+        Returns:
+            LegacyEnergyFunctional instance
+        """
+        from enerdynamics.envs.factories import make_energy
+        return make_energy('drone_full_3d_physics')
+    
+    def get_state_dim(self) -> int:
+        """
+        Get state dimension.
+        
+        Returns:
+            State dimension (12 for position, velocity, orientation, angular velocity)
+        """
+        return 12
+    
+    def extract_position(self, state: np.ndarray) -> np.ndarray:
+        """
+        Extract position coordinates from state.
+        
+        Args:
+            state: Full state vector (x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz)
+            
+        Returns:
+            Position vector (x, y, z)
+        """
+        return np.asarray(state, dtype=np.float32)[:3]
+

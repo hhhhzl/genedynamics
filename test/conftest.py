@@ -136,5 +136,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "requires_isaac: Test requires Isaac Sim")
     config.addinivalue_line("markers", "requires_gymnasium: Test requires Gymnasium")
     config.addinivalue_line("markers", "requires_brax: Test requires Brax")
+    config.addinivalue_line("markers", "requires_mujoco: Test requires MuJoCo")
+    config.addinivalue_line("markers", "requires_isaac: Test requires Isaac Sim")
     config.addinivalue_line("markers", "requires_trimesh: Test requires trimesh")
     config.addinivalue_line("markers", "requires_scipy: Test requires SciPy")

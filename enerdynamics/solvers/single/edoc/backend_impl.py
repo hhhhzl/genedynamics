@@ -87,6 +87,7 @@ class EDOCBackendBase(ABC):
         self.action_nsample = planner.action_nsample
         self.use_antithetic = planner.use_antithetic
         self.constraint_manager = planner.constraint_manager
+        self.constraint_pipeline = getattr(planner, 'constraint_pipeline', None)
         self.lambda_energy = planner.lambda_energy
         self.use_constraint_in_scoring = planner.use_constraint_in_scoring
         self.terminal_energy_weight = planner.terminal_energy_weight
@@ -94,6 +95,7 @@ class EDOCBackendBase(ABC):
         self.dyn_loss_mode = planner.dyn_loss_mode
         self.show_tqdm = planner.show_tqdm
         self._reverse_diffuse_chunk_len = planner._reverse_diffuse_chunk_len
+        self.scheduler = getattr(planner, 'scheduler', None)
     
     @abstractmethod
     def reverse_diffuse(

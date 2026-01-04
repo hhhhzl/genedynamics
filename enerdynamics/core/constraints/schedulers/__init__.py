@@ -9,10 +9,39 @@ how constraints are enforced throughout the optimization process.
 from . import cosine_anneal  # noqa: F401
 from . import dual_anneal  # noqa: F401
 from . import adaptive_gate  # noqa: F401
+
+# Base classes
 from .base import Scheduler
+
+# Legacy schedulers
 from .cosine_anneal import CosineAnnealScheduler
 from .dual_anneal import DualAnnealScheduler
 from .adaptive_gate import AdaptiveGateScheduler
+
+# New constraint schedulers (import to trigger registration)
+from . import ConstraintScheduler  # noqa: F401
+from .ConstraintScheduler import (
+    ConstraintScheduler as ConstraintSchedulerBase,
+    FixedConstraintScheduler,
+    DualControlConstraintScheduler,
+)
+
+# New diffusion schedulers (import to trigger registration)
+from . import DiffusionScheduler  # noqa: F401
+from .DiffusionScheduler import (
+    DiffusionScheduler as DiffusionSchedulerBase,
+    FixedDiffusionScheduler,
+    DualControlDiffusionScheduler,
+)
+
+# Composite scheduler (import to trigger registration)
+from . import CompositeScheduler  # noqa: F401
+from .CompositeScheduler import CompositeScheduler, MergeStrategy
+
+# Utilities
+from .utils import DiffusionNoiseSchedule
+
+# Presets
 from .presets import (
     create_preset_scheduler,
     soft_to_hard_scheduler,
@@ -23,10 +52,32 @@ from .presets import (
 )
 
 __all__ = [
+    # Base
     "Scheduler",
+    
+    # Legacy schedulers
     "CosineAnnealScheduler",
     "DualAnnealScheduler",
     "AdaptiveGateScheduler",
+    
+    # New constraint schedulers
+    "ConstraintSchedulerBase",
+    "FixedConstraintScheduler",
+    "DualControlConstraintScheduler",
+    
+    # New diffusion schedulers
+    "DiffusionSchedulerBase",
+    "FixedDiffusionScheduler",
+    "DualControlDiffusionScheduler",
+    
+    # Composite scheduler
+    "CompositeScheduler",
+    "MergeStrategy",
+    
+    # Utilities
+    "DiffusionNoiseSchedule",
+    
+    # Presets
     "create_preset_scheduler",
     "soft_to_hard_scheduler",
     "aggressive_scheduler",

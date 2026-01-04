@@ -59,9 +59,12 @@ class EDOCMethodPlugin(MethodPlugin):
             use_antithetic=config.get('use_antithetic', True),
             action_score_mode=config.get('action_score_mode', 'energy'),
             constraint_manager=config.get('constraint_manager'),
+            constraint_pipeline=config.get('constraint_pipeline'),
+            scheduler=config.get('scheduler'),  # New scheduler system
             use_constraint_in_scoring=config.get('use_constraint_in_scoring', True),
             lambda_energy=config.get('lambda_energy', 1.0),
             terminal_energy_weight=config.get('terminal_energy_weight', 0.0),
+            np_random_seed=config.get('np_random_seed', None),  # Pass seed for reproducibility
         )
         
         return planner
