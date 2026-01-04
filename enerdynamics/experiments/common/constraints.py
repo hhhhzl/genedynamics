@@ -20,7 +20,14 @@ from enerdynamics.core.constraints.core import (
     HighPerformanceConstraintPipeline,
     PipelineConfig,
 )
-from enerdynamics.core.constraints.schedulers import CosineAnnealScheduler
+from enerdynamics.core.constraints.schedulers import (
+    CosineAnnealScheduler,
+    CompositeScheduler,
+    MergeStrategy,
+    FixedConstraintScheduler,
+    FixedDiffusionScheduler,
+    DualControlConstraintScheduler,
+)
 
 # Import to trigger registration of all components
 from enerdynamics.core.constraints.convexify import cfs  # noqa: F401
@@ -404,4 +411,132 @@ def create_constraint_pipeline(
     pipeline.scheduler = scheduler
     
     return pipeline
+
+
+def create_scheduler_from_config(
+    config: Dict[str, Any],
+    backend_name: str = "numpy",
+    method_params: Optional[Dict[str, Any]] = None,
+) -> Optional[Any]:
+    """
+    Create scheduler from configuration dictionary.
+    
+    Supports creating CompositeScheduler with constraint and diffusion schedulers.
+    
+    Args:
+        config: Scheduler configuration dictionary with keys:
+            - type: "composite" (required for CompositeScheduler)
+            - constraint_schedulers: List of constraint scheduler configs
+            - diffusion_schedulers: List of diffusion scheduler configs
+            - constraint_merge_strategy: Merge strategy for constraint schedulers
+            - diffusion_merge_strategy: Merge strategy for diffusion schedulers
+            - constraint_weights: Optional weights for weighted merge
+            - diffusion_weights: Optional weights for weighted merge
+        backend_name: Computational backend name
+        
+    Returns:
+        Scheduler instance (CompositeScheduler or single scheduler)
+    """
+    scheduler_type = config.get('type', 'composite')
+    
+    if scheduler_type == 'composite':
+        # Create constraint schedulers
+        constraint_schedulers = []
+        constraint_configs = config.get('constraint_schedulers', [])
+        for cs_config in constraint_configs:
+            cs_type = cs_config.get('type', 'fixed')
+            if cs_type == 'fixed':
+                scheduler = FixedConstraintScheduler(
+                    rho=float(cs_config.get('rho', 10.0)),
+                    topK=cs_config.get('topK'),
+                    eps=float(cs_config.get('eps', 1e-4)),
+                    I_QP=int(cs_config.get('I_QP', 10)),
+                    qp_gate=cs_config.get('qp_gate', True),
+                    qp_prob=float(cs_config.get('qp_prob', 1.0)),
+                    margin=float(cs_config.get('margin', 0.0)),
+                    backend=backend_name,
+                )
+                constraint_schedulers.append(scheduler)
+            elif cs_type == 'dual_control':
+                # Generate betas for dual_control scheduler if needed
+                betas = None
+                if 'betas' in cs_config:
+                    betas = np.asarray(cs_config['betas'], dtype=np.float32)
+                elif method_params is not None:
+                    # Generate betas from method_params
+                    action_diffuse_steps = method_params.get('action_diffuse_steps', 100)
+                    action_beta0 = method_params.get('action_beta0', 1e-4)
+                    action_betaT = method_params.get('action_betaT', 1e-2)
+                    betas = np.linspace(action_beta0, action_betaT, action_diffuse_steps, dtype=np.float32)
+                
+                scheduler = DualControlConstraintScheduler(
+                    betas=betas,
+                    # Dual variable parameters
+                    lambda_con_min=float(cs_config.get('lambda_con_min', -2.0)),
+                    lambda_con_max=float(cs_config.get('lambda_con_max', 2.0)),
+                    lambda_con_init=float(cs_config.get('lambda_con_init', 0.0)),
+                    eta_con_base=float(cs_config.get('eta_con_base', 0.1)),
+                    eta_con_decay=float(cs_config.get('eta_con_decay', 0.99)),
+                    # Target feasibility schedule
+                    q_star_min=float(cs_config.get('q_star_min', 0.3)),
+                    q_star_max=float(cs_config.get('q_star_max', 0.95)),
+                    p_q=float(cs_config.get('p_q', 1.0)),
+                    # Constraint mapping parameters
+                    rho_min=float(cs_config.get('rho_min', 0.1)),
+                    rho_max=float(cs_config.get('rho_max', 100.0)),
+                    a_rho=float(cs_config.get('a_rho', 1.0)),
+                    b_rho=float(cs_config.get('b_rho', 0.0)),
+                    a_g=float(cs_config.get('a_g', 1.0)),
+                    b_g=float(cs_config.get('b_g', 0.0)),
+                    # Constraint scheduling parameters
+                    K_min=int(cs_config.get('K_min', 5)),
+                    K_max=int(cs_config.get('K_max', 50)),
+                    eps_min=float(cs_config.get('eps_min', 1e-4)),
+                    eps_max=float(cs_config.get('eps_max', 1e-2)),
+                    p_eps=float(cs_config.get('p_eps', 1.0)),
+                    I_min=int(cs_config.get('I_min', 1)),
+                    I_max=int(cs_config.get('I_max', 10)),
+                    # Terminal hard region
+                    t_hard=float(cs_config.get('t_hard', 0.8)),
+                    backend=backend_name,
+                )
+                constraint_schedulers.append(scheduler)
+            else:
+                raise ValueError(f"Unknown constraint scheduler type: {cs_type}")
+        
+        # Create diffusion schedulers
+        diffusion_schedulers = []
+        diffusion_configs = config.get('diffusion_schedulers', [])
+        for ds_config in diffusion_configs:
+            ds_type = ds_config.get('type', 'fixed')
+            if ds_type == 'fixed':
+                scheduler = FixedDiffusionScheduler(
+                    M_k=int(ds_config.get('M_k', 64)),
+                    T_k=float(ds_config.get('T_k', 0.5)),
+                    s_k=ds_config.get('s_k'),
+                    backend=backend_name,
+                )
+                diffusion_schedulers.append(scheduler)
+            else:
+                raise ValueError(f"Unknown diffusion scheduler type: {ds_type}")
+        
+        # Create composite scheduler
+        constraint_strategy_name = config.get('constraint_merge_strategy', 'merge')
+        diffusion_strategy_name = config.get('diffusion_merge_strategy', 'merge')
+        
+        constraint_strategy = MergeStrategy[constraint_strategy_name.upper()] if hasattr(MergeStrategy, constraint_strategy_name.upper()) else MergeStrategy.MERGE
+        diffusion_strategy = MergeStrategy[diffusion_strategy_name.upper()] if hasattr(MergeStrategy, diffusion_strategy_name.upper()) else MergeStrategy.MERGE
+        
+        composite = CompositeScheduler(
+            constraint_schedulers=constraint_schedulers if constraint_schedulers else None,
+            diffusion_schedulers=diffusion_schedulers if diffusion_schedulers else None,
+            constraint_merge_strategy=constraint_strategy,
+            diffusion_merge_strategy=diffusion_strategy,
+            constraint_weights=config.get('constraint_weights'),
+            diffusion_weights=config.get('diffusion_weights'),
+        )
+        
+        return composite
+    else:
+        raise ValueError(f"Unknown scheduler type: {scheduler_type}")
 

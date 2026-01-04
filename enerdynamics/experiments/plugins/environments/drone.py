@@ -108,3 +108,68 @@ class DroneEnvironmentPlugin(EnvironmentPlugin):
         """
         return np.asarray(state, dtype=np.float32)[:3]
 
+
+class DroneBox3DPlugin(EnvironmentPlugin):
+    """
+    Plugin for drone_box_3d environment.
+    
+    This environment represents a simplified 3D drone with double integrator dynamics.
+    State: [x, y, z, vx, vy, vz] (6D)
+    """
+    
+    @property
+    def name(self) -> str:
+        """Environment name identifier."""
+        return "drone_box_3d"
+    
+    def create_env(self, config: Dict[str, Any]) -> Any:
+        """
+        Create drone_box_3d environment instance.
+        
+        Args:
+            config: Environment configuration dictionary with keys:
+                - dt: Time step (default: 0.1)
+                - horizon: Planning horizon (default: 80)
+                - p_max: Position bounds (default: 2.0)
+                - v_max: Velocity bounds (default: 2.0)
+                - control_limit: Control limit (default: 1.0)
+                - target: Target position [x, y, z] (default: [0.0, 0.0, 1.0])
+                - Any other DroneBox3DEnv parameters
+                
+        Returns:
+            DroneBox3DEnv instance
+        """
+        from enerdynamics.envs.factories import make_env
+        return make_env(self.name, **config)
+    
+    def create_energy(self) -> Any:
+        """
+        Create energy functional for drone_box_3d environment.
+        
+        Returns:
+            LegacyEnergyFunctional instance
+        """
+        from enerdynamics.envs.factories import make_energy
+        return make_energy(self.name)
+    
+    def get_state_dim(self) -> int:
+        """
+        Get state dimension.
+        
+        Returns:
+            State dimension (6 for position and velocity: x, y, z, vx, vy, vz)
+        """
+        return 6
+    
+    def extract_position(self, state: np.ndarray) -> np.ndarray:
+        """
+        Extract position coordinates from state.
+        
+        Args:
+            state: Full state vector (x, y, z, vx, vy, vz)
+            
+        Returns:
+            Position vector (x, y, z)
+        """
+        return np.asarray(state, dtype=np.float32)[:3]
+

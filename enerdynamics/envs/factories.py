@@ -47,6 +47,9 @@ def make_env(name: str, **kwargs):
     elif name == "single_integrator_box_2d":
         from enerdynamics.envs.single_integrator_box_2d import SingleIntegratorBox2DEnv
         return SingleIntegratorBox2DEnv(**kwargs)
+    elif name == "drone_box_3d":
+        from enerdynamics.envs.drone_box_3d import DroneBox3DEnv
+        return DroneBox3DEnv(**kwargs)
     else:
         available = []
         try:
@@ -164,6 +167,23 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
 
         return LegacyEnergyFunctional({
             "task": EnergyTerm(task_energy, 1.0),
+            "box": EnergyTerm(box_energy, 1.0),
+        })
+    elif env_name == "drone_box_3d":
+        def task_energy(x, u, ctx):
+            pos = x[:3]
+            vel = x[3:6]
+            return jnp.sum((pos - jnp.array([0.0, 0.0, 1.0], dtype=jnp.float32)) ** 2) + jnp.sum(vel ** 2)
+
+        def box_energy(x, u, ctx):
+            p_max, v_max = 2.0, 2.0
+            pos_violate = jnp.maximum(0.0, jnp.abs(x[:3]) - p_max)
+            vel_violate = jnp.maximum(0.0, jnp.abs(x[3:6]) - v_max)
+            pen = jnp.sum(pos_violate ** 2 + vel_violate ** 2)
+            return pen
+
+        return LegacyEnergyFunctional({
+            "task": EnergyTerm(task_energy, 2.0),
             "box": EnergyTerm(box_energy, 1.0),
         })
     else:

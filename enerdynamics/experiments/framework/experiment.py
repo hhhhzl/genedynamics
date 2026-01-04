@@ -96,6 +96,10 @@ class ExperimentRunner:
         """
         experiment_start_time = time.time()
         
+        # Reset global random state for reproducibility
+        # This ensures that each experiment run starts from the same random state
+        np.random.seed(seed)
+        
         # 1. Setup backend
         RuntimeBackendManager.set_backend(self.config.backend, device=self.config.device)
         backend = RuntimeBackendManager.get_backend()
@@ -149,16 +153,28 @@ class ExperimentRunner:
                 obstacle_config=self.config.obstacle_config,
             )
         
-        # 6. Create planner
+        # 6. Create scheduler (if configured)
+        scheduler = None
+        scheduler_config = getattr(self.config, 'scheduler_config', None)
+        if scheduler_config:
+            from ..common.constraints import create_scheduler_from_config
+            scheduler = create_scheduler_from_config(
+                scheduler_config, 
+                self.config.backend,
+                method_params=self.config.method_params
+            )
+        
+        # 7. Create planner
         method_plugin = self.registry.get_plugin('method', self.config.method)
         method_config = {
             **self.config.method_params,
             'constraint_manager': constraint_manager,  # Legacy (for backward compatibility)
             'constraint_pipeline': constraint_pipeline,  # New architecture (preferred)
+            'scheduler': scheduler,  # New scheduler system
         }
         planner = method_plugin.create_planner(env, energy, method_config)
         
-        # 7. Run planning
+        # 8. Run planning
         rng = backend.create_rng(seed)
         
         # Warmup call to exclude JIT compilation time from planning time measurement
@@ -463,6 +479,23 @@ class ExperimentRunner:
                         fig, axes[:state_dim],
                         {
                             'trajectory': result['trajectory'],
+                            'env': env,
+                        },
+                        {**viz_config.get(viz_name, {}), 'config': self.config}
+                    )
+                    output_path = self._get_output_path(result['level'], result['seed']) / f"{viz_name}.png"
+                    plt.tight_layout()
+                    viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
+                    plt.close(fig)
+                
+                elif viz_name == 'scheduler_params':
+                    # Create 2x3 grid for scheduler parameters
+                    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+                    axes = axes.ravel()
+                    viz_plugin.visualize(
+                        fig, axes,
+                        {
+                            'result': result['result'],
                             'env': env,
                         },
                         {**viz_config.get(viz_name, {}), 'config': self.config}
