@@ -102,7 +102,8 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         rho_k = self._compute_rho(s_k, q_star, q_tilde)
         eps_base = self._compute_solver_tolerance(s_k)
         # Fix 2.1: Apply exp modulation to eps_k: ε_k = ε_base * exp(-c_ε * e_k)
-        c_eps = 1.0  # Modulation strength
+        # Fix A3: Reduce gain (similar to c_rho)
+        c_eps = 0.3  # Fix A3: Reduced modulation strength (from 1.0 to 0.3)
         eps_k = eps_base * np.exp(-c_eps * e_k)
         eps_k = float(np.clip(eps_k, self.eps_min, self.eps_max))
         I_QP_k = self._compute_qp_iterations(s_k, q_star, q_tilde)
@@ -122,6 +123,22 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         # Draw gate (stochastic) - use pre-computed probability
         gate_k = np.random.random() < p_k
         
+        # Fix B3: Compute margin_k that tightens with s_k
+        # margin_k = margin_min + (margin_max - margin_min) * CosAnneal(s_k)
+        # Use robot_radius as margin_max, and margin_min = 0.5 * robot_radius
+        robot_radius = getattr(self, 'robot_radius', 0.05)  # Get from parent class
+        margin_max = robot_radius  # Maximum margin is robot_radius
+        margin_min = 0.5 * margin_max  # Minimum margin is half of max
+        s_powered = np.power(s_k, self.p_q)  # Reuse p_q for margin schedule
+        cos_anneal = 0.5 * (1.0 - np.cos(np.pi * s_powered))
+        margin_k = margin_min + (margin_max - margin_min) * cos_anneal
+        margin_k = float(np.clip(margin_k, margin_min, margin_max))
+        
+        # Fix B3: Assert margin is valid
+        if margin_k < 1e-4:
+            print(f"WARNING: margin_k={margin_k} is too small (< 1e-4)! Using minimum 1e-4.")
+            margin_k = 1e-4
+        
         return {
             "rho": float(rho_k),
             "topK": int(K_c_k),
@@ -129,7 +146,7 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
             "I_QP": int(I_QP_k),
             "qp_gate": bool(gate_k),
             "qp_prob": float(p_k),
-            "margin": 0.0,
+            "margin": float(margin_k),  # Fix B3: Return computed margin_k
             "_extra": {
                 "t_k": float(t_k),
                 "s_k": float(s_k),  # Add s_k to extra for visualization
@@ -191,8 +208,9 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         rho_base = self.rho_min + self._rho_range * cos_anneal
         
         # Fix 2.1: Close the loop - modulate by tracking error e_k = q* - q_tilde (log-domain)
+        # Fix A3: Reduce gain from 1.0 to 0.2-0.5 to prevent rapid saturation
         # Use exp form: ρ_k = ρ_base * exp(c_ρ * e_k)
-        c_rho = 1.0  # Modulation strength
+        c_rho = 0.3  # Fix A3: Reduced modulation strength (from 1.0 to 0.3)
         e_k = q_star - q_tilde  # Tracking error (positive when q_tilde < q_star)
         
         # Apply modulation: ρ_k = ρ_base * exp(c_ρ * e_k)
@@ -201,21 +219,21 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         # Clip to bounds
         return float(np.clip(rho_k, self.rho_min, self.rho_max))
     
-    def _compute_gate_probability(self, s_k: float, q_star: float, q_hat: float) -> float:
+    def _compute_gate_probability(self, s_k: float, q_star: float, q_tilde: float) -> float:
         """
         Compute QP gate probability p_k with environmental adaptation (Solution 2).
         
         Baseline schedule: p_base(s_k) = p_min + (p_max - p_min) * CosAnneal(s_k)
-        Feedback modulation: p_k = clip(p_base(s_k) + c_p * (q* - q̂), 0, 1)
+        Feedback modulation: p_k = clip(p_base(s_k) + c_p * (q* - q̃), 0, 1)
         
-        The less the target feasibility is met (q_hat < q*), the more inclined to enable QP.
+        The less the target feasibility is met (q_tilde < q*), the more inclined to enable QP.
         
         Performance: O(1) with fast cosine annealing.
         
         Args:
             s_k: Tightening progress in [0, 1] (0 = initial, 1 = final)
             q_star: Target feasibility q*(s_k)
-            q_hat: Current feasibility rate q̂
+            q_tilde: Current smoothed feasibility q̃ (from backend EMA)
         
         Returns:
             Gate probability in [0, 1]
@@ -227,31 +245,31 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         p_max = 0.95
         p_base = p_min + (p_max - p_min) * cos_anneal
         
-        # Feedback modulation coefficient (increased for stronger environmental adaptation)
-        c_p = 1.0  # Modulation strength (increased from 0.5 to 1.0)
+        # Fix A3: Reduce gain to prevent rapid saturation
+        c_p = 0.5  # Fix A3: Reduced modulation strength (from 1.0 to 0.5)
         
-        # Apply modulation: p_k = p_base + c_p * (q* - q̂)
-        feasibility_gap = q_star - q_hat
+        # Apply modulation: p_k = p_base + c_p * (q* - q̃)
+        feasibility_gap = q_star - q_tilde
         p_k = p_base + c_p * feasibility_gap
         
         # Clip to [0, 1]
         return float(np.clip(p_k, 0.0, 1.0))
     
-    def _compute_active_set_size(self, s_k: float, q_star: float, q_hat: float) -> int:
+    def _compute_active_set_size(self, s_k: float, q_star: float, q_tilde: float) -> int:
         """
         Compute active-set size K_c(k) with environmental adaptation (Solution 2).
         
         Baseline schedule: K_base(s_k) = K_min + (K_max - K_min) * CosAnneal(s_k)
-        Feedback modulation: K_c(k) = K_base(s_k) + c_K * 1[q̂ < q*]
+        Feedback modulation: K_c(k) = K_base(s_k) + g_k * K_boost (continuous modulation)
         
-        If q_hat < q*, add extra constraints.
+        Fix A3: Uses continuous modulation g_k instead of hard switch.
         
         Performance: O(1) with pre-computed range.
         
         Args:
             s_k: Tightening progress in [0, 1]
             q_star: Target feasibility q*(s_k)
-            q_hat: Current feasibility rate q̂
+            q_tilde: Current smoothed feasibility q̃ (from backend EMA)
             
         Returns:
             Active constraint count
@@ -261,12 +279,13 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         cos_anneal = 0.5 * (1.0 - np.cos(np.pi * s_powered))
         K_base = self.K_min + int(np.floor(self._K_range * cos_anneal))
         
-        # Feedback modulation: add extra constraints if q_hat < q*
-        c_K = max(1, int(0.1 * self.K_max))  # Modulation amount (10% of max, at least 1)
-        # Increased modulation for stronger environmental adaptation
-        cK = 10  # Additional coefficient for modulation (increased for stronger adaptation)
-        indicator = 1 if q_hat < q_star else 0
-        K_c = K_base + (c_K + cK) * indicator  # Apply combined modulation
+        # Fix A3: Replace hard switch with continuous modulation
+        # Change indicator = 1 if q_tilde < q_star else 0 to continuous g_k
+        delta = 0.2  # Threshold for continuous transition
+        g_k = np.clip((q_star - q_tilde) / delta, 0.0, 1.0)  # Continuous modulation signal
+        K_boost = max(1, int(0.1 * self.K_max))  # Modulation amount (10% of max, at least 1)
+        # Fix A3: Remove hard switch (cK=10), use continuous modulation
+        K_c = K_base + int(np.floor(g_k * K_boost))  # Apply continuous modulation
         
         # Clip to bounds
         return int(np.clip(K_c, self.K_min, self.K_max))
@@ -299,7 +318,7 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         # The modulation will be applied in _compute_constraint_params where we have q_tilde
         return eps_base
     
-    def _compute_qp_iterations(self, s_k: float, q_star: float, q_hat: float) -> int:
+    def _compute_qp_iterations(self, s_k: float, q_star: float, q_tilde: float) -> int:
         """
         Compute QP iterations I_QP(k) with environmental adaptation (Solution 2).
         
@@ -323,12 +342,13 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         cos_anneal = 0.5 * (1.0 - np.cos(np.pi * s_powered))
         I_base = self.I_min + int(np.floor(self._I_range * cos_anneal))
         
-        # Feedback modulation: add extra iterations if q_hat < q*
-        c_I = max(1, int(0.1 * self.I_max))  # Modulation amount (10% of max, at least 1)
-        # Increased modulation for stronger environmental adaptation
-        cI = 10  # Additional coefficient for modulation (increased for stronger adaptation)
-        indicator = 1 if q_hat < q_star else 0
-        I_QP = I_base + (c_I + cI) * indicator  # Apply combined modulation
+        # Fix A3: Replace hard switch with continuous modulation
+        # Change indicator = 1 if q_tilde < q_star else 0 to continuous g_k
+        delta = 0.2  # Threshold for continuous transition
+        g_k = np.clip((q_star - q_tilde) / delta, 0.0, 1.0)  # Continuous modulation signal
+        I_boost = max(1, int(0.1 * self.I_max))  # Modulation amount (10% of max, at least 1)
+        # Fix A3: Remove hard switch (cI=10), use continuous modulation
+        I_QP = I_base + int(np.floor(g_k * I_boost))  # Apply continuous modulation
         
         # Clip to bounds
         return int(np.clip(I_QP, self.I_min, self.I_max))
@@ -363,8 +383,11 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         # Compute target feasibility using s_k
         q_star = self._compute_target_feasibility(s_k)
         
-        # Get estimated feasibility rate and violation
-        q_hat = feedback.get("feasible_rate", feedback.get("q_hat", None))
+        # Fix A1: Get q_hat and q_tilde from feedback (clarified semantics)
+        # q_hat: Current step observation (batch aggregation)
+        # q_tilde: Smoothed observation (EMA from backend)
+        q_hat = feedback.get("q_hat", feedback.get("feasible_rate", None))  # Prefer q_hat over feasible_rate
+        q_tilde = feedback.get("q_tilde", None)  # Get q_tilde from backend (EMA)
         V_k = feedback.get("V_k", None)
         
         if q_hat is None:
@@ -380,55 +403,25 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
                 # No feedback available - skip update
                 return
         
+        # Fix A2: q_tilde is provided by backend (EMA), scheduler should not re-synthesize it
+        # If q_tilde is not provided, fallback to q_hat (for backward compatibility)
+        if q_tilde is None:
+            q_tilde = q_hat  # Fallback: use q_hat if q_tilde not available
+        
         # Ensure V_k is available
         if V_k is None:
             # Estimate V_k from q_hat: V_k = -log(q_hat) / alpha
             alpha = 10.0
             V_k = -np.log(max(q_hat, 1e-10)) / alpha
         
-        # Step 3: Compute improvement term q̂_k^imp = σ(α(V_{k-1} - V_k))
-        # Get previous values (stored in parent class)
-        V_k_prev = getattr(self, 'V_k_prev', None)
-        if V_k_prev is None:
-            # First step: no previous value, set q_hat_imp based on current q_hat
-            # If q_hat is already low, assume no improvement yet
-            if q_hat < 0.5:
-                q_hat_imp = 0.0  # No improvement if already difficult
-            else:
-                q_hat_imp = 0.5  # Neutral improvement for first step
-        else:
-            alpha_imp = 5.0  # Scaling factor for improvement term
-            delta_V = V_k_prev - V_k  # Positive if improving (V decreasing)
-            # Sigmoid: σ(x) = 1 / (1 + exp(-x))
-            q_hat_imp = 1.0 / (1.0 + np.exp(-alpha_imp * delta_V))
-            # If V_k is not improving (delta_V <= 0), reduce q_hat_imp significantly
-            if delta_V <= 0:
-                q_hat_imp = q_hat_imp * 0.2  # Strongly penalize non-improvement
-        
-        # Step 4: Synthesize q̃_k = w q̂_k + (1 - w) q̂_k^imp
-        w = 0.99
-        q_tilde = w * q_hat + (1.0 - w) * q_hat_imp
-        q_tilde = float(np.clip(q_tilde, 0.0, 1.0))
-        
-        # Add tracking term: encourage q_tilde to follow q_star in simple environments
-        # This helps q_tilde track q_star when environment is easy (q_hat is high)
-        # Use adaptive tracking: more tracking when q_hat is close to q_star
-        tracking_strength = 0.2  # Base tracking strength
-        # Increase tracking when q_hat is high (simple environment)
-        if q_hat > 0.5:
-            tracking_strength = 0.3  # Stronger tracking in simple environments
-        # Adaptive tracking: track more when q_hat is close to q_star
-        gap = abs(q_star - q_hat)
-        if gap < 0.3:  # Close to target
-            tracking_strength = 0.4  # Even stronger tracking when close
-        
-        q_tilde = (1.0 - tracking_strength) * q_tilde + tracking_strength * q_star
-        q_tilde = float(np.clip(q_tilde, 0.0, 1.0))
+        # Store V_k for next iteration (for diagnostics, not for re-synthesis)
+        self.V_k_prev = getattr(self, 'V_k', V_k)
+        self.V_k = float(V_k)
         
         # Compute step size with decay (cached computation)
         eta_k = self.eta_con_base * np.power(self.eta_con_decay, self.step_count)
         
-        # Update dual variable using q_tilde instead of q_hat
+        # Update dual variable using q_tilde from backend (Fix A2: use backend-provided q_tilde)
         error = q_star - q_tilde
         lambda_new = self.lambda_con + eta_k * error
         

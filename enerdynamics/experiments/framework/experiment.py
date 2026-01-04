@@ -123,17 +123,26 @@ class ExperimentRunner:
         }
         obstacles = obstacle_gen.generate(level, seed, start_pos, target_pos, obstacle_config_with_env)
         
-        # Build SDF texture if needed
+        # Build SDF texture if needed (only for 2D environments)
+        # For 3D environments, skip 2D SDF texture building
         if level > 0 and len(obstacles) > 0:
-            map_bounds = self.config.obstacle_config.get('map_bounds', {})
-            obstacles.build_sdf_texture_2d(
-                x_min=float(map_bounds.get('x_min', -2.0)),
-                x_max=float(map_bounds.get('x_max', 2.0)),
-                y_min=float(map_bounds.get('y_min', -2.0)),
-                y_max=float(map_bounds.get('y_max', 2.0)),
-                res=0.01,
-                force_rebuild=True,
+            # Check if this is a 3D environment by checking env_name or obstacle generator
+            is_3d_env = (
+                self.config.env_name in ['drone_box_3d', 'drone'] or
+                self.config.obstacle_config.get('generator', '') == 'box3d'
             )
+            
+            if not is_3d_env:
+                # Only build 2D SDF texture for 2D environments
+                map_bounds = self.config.obstacle_config.get('map_bounds', {})
+                obstacles.build_sdf_texture_2d(
+                    x_min=float(map_bounds.get('x_min', -2.0)),
+                    x_max=float(map_bounds.get('x_max', 2.0)),
+                    y_min=float(map_bounds.get('y_min', -2.0)),
+                    y_max=float(map_bounds.get('y_max', 2.0)),
+                    res=0.01,
+                    force_rebuild=True,
+                )
         
         # 5. Setup constraints
         constraint_config = self.config.constraint_config or {}
@@ -161,7 +170,8 @@ class ExperimentRunner:
             scheduler = create_scheduler_from_config(
                 scheduler_config, 
                 self.config.backend,
-                method_params=self.config.method_params
+                method_params=self.config.method_params,
+                obstacle_config=self.config.obstacle_config,  # Fix B3: Pass obstacle_config for robot_radius
             )
         
         # 7. Create planner
@@ -299,31 +309,61 @@ class ExperimentRunner:
             env_plugin: Environment plugin
             
         Returns:
-            Start position array
+            Start position array (may be full state vector with velocities)
         """
         np.random.seed(seed)
         target_pos = np.asarray(env.target, dtype=np.float32)
         p_max = getattr(env, 'p_max', 2.0)
         
+        # Extract target position (first 2 or 3 elements depending on environment)
+        target_pos_flat = target_pos.flatten()
+        pos_dim = min(len(target_pos_flat), 3)  # Support up to 3D positions
+        target_pos_only = target_pos_flat[:pos_dim]
+        
         # Distance from target increases with level
-        max_distance = 2.0 * np.sqrt(2.0)
+        if pos_dim == 2:
+            max_distance = 2.0 * np.sqrt(2.0)
+        elif pos_dim == 3:
+            max_distance = 2.0 * np.sqrt(3.0)
+        else:
+            max_distance = 2.0
         min_dist = 0.5 + (level / 10.0) * 1.0
         max_dist = 1.0 + (level / 10.0) * (max_distance - 1.0)
         distance = np.random.uniform(min_dist, max_dist)
         
-        # Random angle
-        angle = np.random.uniform(0, 2 * np.pi)
-        direction = np.array([np.cos(angle), np.sin(angle)], dtype=np.float32)
-        
-        start = target_pos[:2] + distance * direction
+        # Generate start position
+        if pos_dim == 2:
+            # 2D: random angle in xy plane
+            angle = np.random.uniform(0, 2 * np.pi)
+            direction = np.array([np.cos(angle), np.sin(angle)], dtype=np.float32)
+            start = target_pos_only + distance * direction
+        elif pos_dim == 3:
+            # 3D: random direction on sphere
+            # Use spherical coordinates
+            theta = np.random.uniform(0, 2 * np.pi)  # azimuth angle
+            phi = np.random.uniform(0, np.pi)  # polar angle
+            direction = np.array([
+                np.sin(phi) * np.cos(theta),
+                np.sin(phi) * np.sin(theta),
+                np.cos(phi)
+            ], dtype=np.float32)
+            start = target_pos_only + distance * direction
+        else:
+            # 1D: just add/subtract distance
+            sign = np.random.choice([-1, 1])
+            start = target_pos_only + sign * distance * np.array([1.0], dtype=np.float32)
         
         # Clip to bounds
         margin = 0.2
-        start = np.clip(start, -p_max + margin, p_max - margin)
+        if pos_dim == 1:
+            start = np.clip(start, -p_max + margin, p_max - margin)
+        else:
+            start = np.clip(start, -p_max + margin, p_max - margin)
         
-        # For double integrator, add zero velocity
-        if env_plugin.get_state_dim() > 2:
-            start_full = np.concatenate([start, np.zeros(env_plugin.get_state_dim() - 2, dtype=np.float32)])
+        # For environments with state_dim > pos_dim, add zero velocity
+        state_dim = env_plugin.get_state_dim()
+        if state_dim > pos_dim:
+            start_full = np.concatenate([start, np.zeros(state_dim - pos_dim, dtype=np.float32)])
         else:
             start_full = start
         
@@ -433,9 +473,51 @@ class ExperimentRunner:
                     viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
                     plt.close(fig)
                 
+                elif viz_name == 'trajectory_3d':
+                    from mpl_toolkits.mplot3d import Axes3D
+                    fig = plt.figure(figsize=(10, 8))
+                    ax = fig.add_subplot(111, projection='3d')
+                    viz_plugin.visualize(
+                        fig, ax,
+                        {
+                            'trajectory': result['trajectory'],
+                            'env': env,
+                            'obstacles': obstacles,
+                            'env_plugin': env_plugin,
+                        },
+                        {**viz_config.get(viz_name, {}), 'config': self.config}
+                    )
+                    output_path = self._get_output_path(result['level'], result['seed']) / f"{viz_name}.png"
+                    viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
+                    plt.close(fig)
+                
                 elif viz_name == 'diffusion':
                     # Multiple subplots for diffusion steps
                     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+                    viz_plugin.visualize(
+                        fig, axes,
+                        {
+                            'result': result['result'],
+                            'env': env,
+                            'obstacles': obstacles,
+                            'initial_state': result['result'].get('initial_state'),
+                            'env_plugin': env_plugin,
+                        },
+                        {**viz_config.get(viz_name, {}), 'config': self.config}
+                    )
+                    output_path = self._get_output_path(result['level'], result['seed']) / f"{viz_name}_steps.png"
+                    plt.tight_layout()
+                    viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
+                    plt.close(fig)
+                
+                elif viz_name == 'diffusion_3d':
+                    # Multiple 3D subplots for diffusion steps
+                    from mpl_toolkits.mplot3d import Axes3D
+                    fig = plt.figure(figsize=(24, 8))
+                    axes = []
+                    for i in range(3):
+                        ax = fig.add_subplot(1, 3, i + 1, projection='3d')
+                        axes.append(ax)
                     viz_plugin.visualize(
                         fig, axes,
                         {

@@ -417,6 +417,7 @@ def create_scheduler_from_config(
     config: Dict[str, Any],
     backend_name: str = "numpy",
     method_params: Optional[Dict[str, Any]] = None,
+    obstacle_config: Optional[Dict[str, Any]] = None,
 ) -> Optional[Any]:
     """
     Create scheduler from configuration dictionary.
@@ -469,8 +470,21 @@ def create_scheduler_from_config(
                     action_betaT = method_params.get('action_betaT', 1e-2)
                     betas = np.linspace(action_beta0, action_betaT, action_diffuse_steps, dtype=np.float32)
                 
+                # Fix B3: Get robot_radius from obstacle_config or config
+                robot_radius_sched = 0.0
+                if obstacle_config is not None:
+                    robot_radius_sched = float(obstacle_config.get('robot_radius', 0.0))
+                elif 'obstacle_config' in config:
+                    robot_radius_sched = float(config['obstacle_config'].get('robot_radius', 0.0))
+                
+                if robot_radius_sched <= 0:
+                    # Fallback: try to get from cs_config or use default
+                    robot_radius_sched = float(cs_config.get('robot_radius', 0.05))
+                
                 scheduler = DualControlConstraintScheduler(
                     betas=betas,
+                    # Fix B3: Pass robot_radius to scheduler
+                    robot_radius=robot_radius_sched,
                     # Dual variable parameters
                     lambda_con_min=float(cs_config.get('lambda_con_min', -2.0)),
                     lambda_con_max=float(cs_config.get('lambda_con_max', 2.0)),

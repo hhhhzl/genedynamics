@@ -65,6 +65,11 @@ class EDOCBackendNumpy(EDOCBackendBase):
         # Initialize EMA state for q_tilde (Fix 1.3: Batch aggregation + EMA)
         self.q_tilde_prev = None  # Previous q_tilde for EMA
         self.ema_beta = 0.3  # EMA smoothing factor (beta in [0,1], can be tuned)
+        
+        # Fix B1: Initialize sliding window for tau calibration
+        self.V_history = []  # Sliding window of V values for median calculation
+        self.V_window_size = 50  # Window size for median calculation (can be tuned)
+        self.tau = 0.1  # Initial tau (will be calibrated online)
     
     def rollout_states_and_energy(
         self,
@@ -469,7 +474,7 @@ class EDOCBackendNumpy(EDOCBackendBase):
             # Silently fail if update fails (scheduler might not support update)
             pass
     
-    def _compute_feasibility_rate(self, trajectory: Trajectory) -> tuple[float, float]:
+    def _compute_feasibility_rate(self, trajectory: Trajectory, margin: Optional[float] = None) -> tuple[float, float]:
         """
         Compute continuous feasibility score q̂ and violation V from violation metric.
         
@@ -477,16 +482,17 @@ class EDOCBackendNumpy(EDOCBackendBase):
         violation-based metric.
         
         Steps:
-        1. Compute violations v^h = max(0, b_safe - b^h) for each time step
-        2. Aggregate: V(τ) = (1/H) * Σ v^h (mean, not max) - smooth violation
-        3. Map to [0,1]: q̂ = exp(-α * V(τ))
+        1. Compute violations v^h = max(0, margin - sdf) for each time step
+        2. Normalize: v_bar = clip(v / (margin + epsilon), 0, v_max)
+        3. Aggregate: V(τ) = mean(v_bar) - smooth violation
+        4. Map to [0,1]: q̂ = exp(-V/τ) with online-calibrated tau
         
-        This provides continuous, informative feedback:
-        - Simple environment: V ≈ 0 ⇒ q̂ ≈ 1
-        - Narrow environment: V > 0 ⇒ q̂ decreases
+        Fix B1: tau is calibrated online using sliding window median V50.
+        Fix B3: margin is passed as parameter (from scheduler) instead of using static robot_radius.
         
         Args:
             trajectory: Trajectory to evaluate
+            margin: Safety margin (from scheduler, defaults to robot_radius if None)
             
         Returns:
             Tuple of (q_hat, V_k): Continuous feasibility score q̂ ∈ [0, 1] and violation V_k
@@ -506,8 +512,15 @@ class EDOCBackendNumpy(EDOCBackendBase):
                     if hasattr(convexifier, 'obstacles') and convexifier.obstacles is not None:
                         # Compute violations from obstacle SDF
                         violations_list = []
-                        # Use robot_radius as fixed margin (from config)
-                        margin = self.robot_radius
+                        # Fix B3: Use margin from parameter (from scheduler), fallback to robot_radius
+                        if margin is None:
+                            margin = self.robot_radius
+                        
+                        # Fix B3: Assert margin is valid (prevent division by near-zero)
+                        if margin < 1e-4:
+                            print(f"WARNING: margin={margin} is too small (< 1e-4)! This will cause V to explode. "
+                                  f"Using robot_radius={self.robot_radius} as fallback.")
+                            margin = max(self.robot_radius, 1e-4)  # Use at least 1e-4
                         
                         # Compute SDF violations for all states in trajectory
                         for state in trajectory.states:
@@ -526,9 +539,18 @@ class EDOCBackendNumpy(EDOCBackendBase):
         
         # If we have violations, compute continuous feasibility score
         if violations is not None and len(violations) > 0:
+            # Fix B3: Use margin from parameter (from scheduler), fallback to robot_radius
+            if margin is None:
+                margin = self.robot_radius
+            
+            # Fix B3: Assert margin is valid (prevent division by near-zero)
+            if margin < 1e-4:
+                print(f"WARNING: margin={margin} is too small (< 1e-4)! This will cause V to explode. "
+                      f"Using robot_radius={self.robot_radius} as fallback.")
+                margin = max(self.robot_radius, 1e-4)  # Use at least 1e-4
+            
             # Normalize violations to prevent scale explosion (Fix 1.2)
             # v_bar = clip(v / (margin + epsilon), 0, v_max)
-            margin = self.robot_radius
             epsilon_0 = 1e-6  # Prevent division by zero
             v_max = 10.0  # Upper bound for normalized violation
             v_h = np.maximum(violations, 0.0)  # Ensure non-negative
@@ -541,10 +563,22 @@ class EDOCBackendNumpy(EDOCBackendBase):
             else:
                 V_tau = float(np.mean(v_bar))
             
-            # Map to feasibility score: q̂ = exp(-V/τ) with calibrated tau (Fix 1.4)
-            # Use fixed tau for now (can be made adaptive later)
-            tau = 0.1  # Calibration parameter (can be tuned or made adaptive)
-            q_hat = float(np.exp(-V_tau / tau))
+            # Fix B1: Online calibration of tau using sliding window median
+            # Maintain sliding window of V values
+            self.V_history.append(V_tau)
+            if len(self.V_history) > self.V_window_size:
+                self.V_history.pop(0)  # Remove oldest value
+            
+            # Compute median V50 for calibration
+            if len(self.V_history) >= 5:  # Need at least 5 samples for meaningful median
+                V50 = float(np.median(self.V_history))
+                # Set q(V50) = 0.5, so tau = V50 / ln(2)
+                self.tau = V50 / np.log(2.0)
+                self.tau = max(0.01, min(self.tau, 1.0))  # Clip tau to reasonable range [0.01, 1.0]
+            # else: use current tau (initialized to 0.1)
+            
+            # Map to feasibility score: q̂ = exp(-V/τ) with online-calibrated tau
+            q_hat = float(np.exp(-V_tau / self.tau))
             q_hat = np.clip(q_hat, 0.0, 1.0)
             
             return q_hat, V_tau  # Return both q_hat and V_k
@@ -823,20 +857,60 @@ class EDOCBackendNumpy(EDOCBackendBase):
                 state_init, Y0s, constraint_step, constraint_total_steps
                         )
             
+            # Compute weights from scores using T_k (needed for Fix B2: weighted aggregation)
+            score_std = float(np.std(scores))
+            if score_std < 1e-4:
+                weights = np.full((num_particles_current,), 1.0 / num_particles_current, dtype=np.float32)
+            else:
+                score_mean = float(np.mean(scores))
+                denom = score_std * temp_eps_current  # Use T_k instead of temp_eps
+                logw = (scores - score_mean) / denom
+                logw = logw - np.max(logw)
+                weights = np.exp(logw)
+                weights = weights / np.sum(weights)
+            weights = np.asarray(weights, dtype=np.float32)
+            
+            # Get margin from scheduler (Fix B3: margin as scheduler parameter)
+            margin_k = None
+            if self.scheduler is not None:
+                try:
+                    from enerdynamics.core.constraints.core.types import ScheduleState
+                    debug_state = ScheduleState(k=constraint_step, K=constraint_total_steps)
+                    if hasattr(self.scheduler, 'constraint_params'):
+                        params = self.scheduler.constraint_params(debug_state)
+                        if isinstance(params, dict):
+                            margin_k = params.get('margin', None)
+                        elif hasattr(params, 'margin'):
+                            margin_k = params.margin
+                    elif hasattr(self.scheduler, 'params'):
+                        params_obj = self.scheduler.params(debug_state)
+                        margin_k = getattr(params_obj, 'margin', None)
+                except Exception:
+                    pass
+            
             # Fix 1.3: Batch aggregation + EMA for feasibility tracking
+            # Fix B2: Use importance weights for weighted aggregation
             # Compute q_k^(m) and V_k^(m) for each particle in batch
             q_k_list = []
             V_k_list = []
             for m in range(num_particles_current):
                 particle_actions = Y0s[m]  # Actions for particle m
                 particle_trajectory = self.actions_to_trajectory(state_init, particle_actions)
-                q_k_m, V_k_m = self._compute_feasibility_rate(particle_trajectory)
+                # Fix B3: Pass margin_k to _compute_feasibility_rate
+                q_k_m, V_k_m = self._compute_feasibility_rate(particle_trajectory, margin=margin_k)
                 q_k_list.append(q_k_m)
                 V_k_list.append(V_k_m)
             
-            # Batch aggregation: q_bar_k = mean(q_k^(m))
-            q_bar_k = float(np.mean(q_k_list)) if q_k_list else 0.0
-            V_bar_k = float(np.mean(V_k_list)) if V_k_list else 0.0
+            # Fix B2: Weighted aggregation: q_bar_k = sum_m (w_m * q_k^(m))
+            if q_k_list and len(weights) == len(q_k_list):
+                q_k_array = np.asarray(q_k_list, dtype=np.float32)
+                q_bar_k = float(np.sum(weights * q_k_array))
+                V_k_array = np.asarray(V_k_list, dtype=np.float32)
+                V_bar_k = float(np.sum(weights * V_k_array))
+            else:
+                # Fallback to unweighted mean if weights don't match
+                q_bar_k = float(np.mean(q_k_list)) if q_k_list else 0.0
+                V_bar_k = float(np.mean(V_k_list)) if V_k_list else 0.0
             
             # EMA smoothing: q_tilde_k = (1-beta) * q_tilde_{k-1} + beta * q_bar_k
             if self.q_tilde_prev is None:
@@ -848,20 +922,7 @@ class EDOCBackendNumpy(EDOCBackendBase):
             q_tilde_k = float(np.clip(q_tilde_k, 0.0, 1.0))
             self.q_tilde_prev = q_tilde_k  # Store for next iteration
             
-            # Compute weights from scores using T_k
-            score_std = float(np.std(scores))
-            if score_std < 1e-4:
-                weights = np.full((num_particles_current,), 1.0 / num_particles_current, dtype=np.float32)
-            else:
-                score_mean = float(np.mean(scores))
-                denom = score_std * temp_eps_current  # Use T_k instead of temp_eps
-                logw = (scores - score_mean) / denom
-                logw = logw - np.max(logw)
-                weights = np.exp(logw)
-                weights = weights / np.sum(weights)
-            
             reward_history.append(float(np.mean(scores)))
-            weights = np.asarray(weights, dtype=np.float32)
             
             # Compute ESS for feedback
             ess = 1.0 / (np.sum(weights ** 2) + 1e-10) / num_particles_current
@@ -929,11 +990,14 @@ class EDOCBackendNumpy(EDOCBackendBase):
                 # Update trajectory after projection for feedback
                 trajectory = projected_trajectory
             
-            # Update scheduler with feedback (Fix 1.3: use q_tilde_k from batch aggregation + EMA)
+            # Update scheduler with feedback (Fix A1: clarify field semantics)
+            # q_hat: Current step observation (batch aggregation)
+            # q_tilde: Smoothed observation (EMA from backend)
             feedback = {
-                "feasible_rate": q_tilde_k,  # Use q_tilde_k from batch aggregation + EMA
-                "q_hat": q_bar_k,  # Also provide batch-aggregated q_bar_k
-                "V_k": V_bar_k,  # Use batch-aggregated V_bar_k
+                "feasible_rate": q_bar_k,  # Fix A1: Use q_bar_k (batch aggregation) as feasible_rate
+                "q_hat": q_bar_k,  # Batch-aggregated q_bar_k (current observation)
+                "q_tilde": q_tilde_k,  # Fix A1: Explicitly pass q_tilde (EMA) for modulation/plotting
+                "V_k": V_bar_k,  # Batch-aggregated V_bar_k
                 "ess": ess,
                 "weights": weights,
                 "trajectories": [trajectory],  # Keep single trajectory for backward compatibility
