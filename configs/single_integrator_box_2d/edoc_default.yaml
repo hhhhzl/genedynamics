@@ -16,8 +16,9 @@ method_params:
   use_antithetic: true
   action_score_mode: energy
   terminal_energy_weight: 100.0
+  cfs_use_trajectory_qp: true   # true = full trajectory QP, false = per-step
 
-obstacle_levels: [0]
+obstacle_levels: [6]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -46,33 +47,6 @@ visualizations:
   - energy_reward
   - states
   - scheduler_params
-
-constraint_config:
-  soft_constraint:
-    enabled: true
-    alpha: 1.0
-    beta: 10.0
-  hard_constraint:
-    enabled: true
-    clearance: 0.2
-  schedule:
-    enabled: true
-    type: soft_to_hard
-    soft_alpha_start: 1.0
-    soft_alpha_end: 0.0
-    hard_clearance_start: 0.5
-    hard_clearance_end: 0.1
-    schedule_type: linear
-    reverse_mode: true
-  cfs:
-    enabled: true
-    use_trajectory_qp: true
-    max_iterations: 5
-    use_late_stage_only: true
-    late_stage_ratio: 0.2
-    reconstruct_velocity: false
-    smoothness_weight: 1.0
-  action_constraint_type: speed
 
 # New scheduler system configuration
 scheduler_config:

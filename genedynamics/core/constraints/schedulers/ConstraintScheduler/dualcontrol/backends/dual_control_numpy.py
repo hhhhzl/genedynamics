@@ -6,6 +6,7 @@ Uses pre-computed constants and vectorized operations where possible.
 """
 
 from typing import Dict, Any, Optional
+from collections import deque
 import numpy as np
 
 from enerdynamics.core.constraints.schedulers.ConstraintScheduler.dualcontrol.dual_control import (
@@ -113,8 +114,14 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
             eps_k = self.eps_min  # Force minimum tolerance
             # rho_k and K_c_k can remain continuous or be forced to max (keeping continuous for now)
         
-        # Draw gate (stochastic) - use pre-computed probability
-        gate_k = np.random.random() < p_k
+        # Draw gate (stochastic) - use deterministic approach for reproducibility
+        # Use a hash-based seed combining step k and a fixed offset to ensure
+        # same gate decision for same step across runs, while maintaining randomness
+        # This ensures reproducibility when same seed is used for the overall experiment
+        # Use a simple hash of k to create a deterministic but pseudo-random value
+        gate_seed = (int(state.k) * 7919 + 12345) % (2**31)  # Prime number for better distribution
+        rng_gate = np.random.default_rng(seed=gate_seed)
+        gate_k = rng_gate.random() < p_k
         
         # Fix B3: Compute margin_k that tightens with s_k
         # margin_k = margin_min + (margin_max - margin_min) * CosAnneal(s_k)
@@ -429,12 +436,11 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         self.V_k = float(V_k)
         
         # Fix B: Two time scales + uncertainty-based step size + true anti-windup
-        # 1. Track q variance for uncertainty-based step size
+        # 1. Track q variance for uncertainty-based step size (Optimization 3: use deque)
         if not hasattr(self, 'q_history'):
-            self.q_history = []
+            q_window_size = getattr(self, 'q_window_size', 10)
+            self.q_history = deque(maxlen=q_window_size)
         self.q_history.append(float(q_tilde))
-        if len(self.q_history) > getattr(self, 'q_window_size', 10):
-            self.q_history.pop(0)
         
         # Compute q variance (uncertainty measure)
         q_var = 0.0
@@ -471,12 +477,11 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
             # Not saturated or error pushes away from saturation - update normally
             self.lambda_con = lambda_clipped
         
-        # Fix C: Track q_max for environment-aware reference governor
+        # Fix C: Track q_max for environment-aware reference governor (Optimization 3: use deque)
         if not hasattr(self, 'q_max_history'):
-            self.q_max_history = []
+            q_max_window_size = getattr(self, 'q_max_window_size', 20)
+            self.q_max_history = deque(maxlen=q_max_window_size)
         self.q_max_history.append(float(q_tilde))
-        if len(self.q_max_history) > getattr(self, 'q_max_window_size', 20):
-            self.q_max_history.pop(0)
         
         self.step_count += 1
         
