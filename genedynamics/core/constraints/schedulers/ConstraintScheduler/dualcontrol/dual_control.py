@@ -79,6 +79,9 @@ class DualControlConstraintScheduler(ConstraintScheduler):
         # Terminal hard region
         t_hard: float = 0.8,
         
+        # Fix B3: robot_radius for margin computation
+        robot_radius: float = 0.05,
+        
         backend: str = "numpy",
         _skip_backend_lookup: bool = False,
         **kwargs
@@ -175,6 +178,9 @@ class DualControlConstraintScheduler(ConstraintScheduler):
         self.I_min = int(I_min)
         self.I_max = int(I_max)
         self.t_hard = float(t_hard)
+        
+        # Fix B3: Store robot_radius for margin computation
+        self.robot_radius = float(robot_radius)
         
         self.backend = backend
         self.kwargs = kwargs
