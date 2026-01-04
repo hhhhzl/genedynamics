@@ -164,6 +164,7 @@ class ExperimentRunner:
         constraint_pipeline = create_constraint_pipeline(
             obstacles, level, env, constraint_config, self.config.backend,
             obstacle_config=self.config.obstacle_config,
+            method_params=self.config.method_params,
         )
         
         # Also create legacy constraint_manager for backward compatibility
@@ -194,6 +195,7 @@ class ExperimentRunner:
             'constraint_manager': constraint_manager,  # Legacy (for backward compatibility)
             'constraint_pipeline': constraint_pipeline,  # New architecture (preferred)
             'scheduler': scheduler,  # New scheduler system
+            'np_random_seed': seed,  # Pass seed for reproducibility
         }
         planner = method_plugin.create_planner(env, energy, method_config)
         

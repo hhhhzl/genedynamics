@@ -100,6 +100,7 @@ class DroneFull3DPhysicsEnv:
     use_physics_backend: bool = True
     use_jax_dynamics: bool = True  # Use JAX dynamics for planning
     jax_jit: bool = True  # Enable JIT compilation for JAX functions
+    jax_batch_size: int = 256  # Batch size for parallel JAX computation (for future use)
     
     # Renderer configuration
     renderer: Optional[str] = None  # 'matplotlib', 'mujoco', 'isaac'

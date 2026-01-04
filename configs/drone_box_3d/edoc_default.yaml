@@ -35,7 +35,7 @@ obstacle_config:
     z_max: 2.0
 
 seeds: [0, 1, 2, 3, 4]
-backend: numpy
+backend: jax
 device: cpu
 
 metrics:

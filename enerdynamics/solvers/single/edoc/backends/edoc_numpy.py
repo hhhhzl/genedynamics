@@ -6,6 +6,7 @@ algorithm, with no JAX dependencies. All operations use NumPy for maximum compat
 """
 
 from typing import Optional, Tuple, Any, List, Dict
+from collections import deque
 import numpy as np
 
 try:
@@ -40,11 +41,14 @@ class EDOCBackendNumpy(EDOCBackendBase):
     def __init__(self, planner: Any, **config: Any):
         """Initialize NumPy backend implementation."""
         super().__init__(planner, **config)
-        # Use NumPy random number generator
-        self._np_rng = np.random.default_rng(
-            getattr(planner, '_np_rng', None) or None
-        )
-        if self._np_rng is None:
+        # Use NumPy random number generator from planner for reproducibility
+        # Directly use planner's _np_rng if available, otherwise create a new one
+        planner_rng = getattr(planner, '_np_rng', None)
+        if planner_rng is not None:
+            # Use planner's random number generator directly to ensure same seed
+            self._np_rng = planner_rng
+        else:
+            # Fallback: create new RNG (should not happen if planner is properly initialized)
             self._np_rng = np.random.default_rng()
         
         # Get robot_radius from config or planner (for violation computation)
@@ -66,9 +70,9 @@ class EDOCBackendNumpy(EDOCBackendBase):
         self.q_tilde_prev = None  # Previous q_tilde for EMA
         self.ema_beta = 0.3  # EMA smoothing factor (beta in [0,1], can be tuned)
         
-        # Fix B1: Initialize sliding window for tau calibration
-        self.V_history = []  # Sliding window of V values for median calculation
+        # Fix B1: Initialize sliding window for tau calibration (Optimization 3: use deque)
         self.V_window_size = 50  # Window size for median calculation (can be tuned)
+        self.V_history = deque(maxlen=self.V_window_size)  # Sliding window with automatic size limit
         self.tau = 0.1  # Initial tau (will be calibrated online)
     
     def rollout_states_and_energy(
@@ -131,6 +135,59 @@ class EDOCBackendNumpy(EDOCBackendBase):
             states[t + 1] = x  # Direct assignment instead of append
         
         return states
+    
+    def rollout_env_states_batch(
+        self,
+        state_init: np.ndarray,
+        batch_actions: np.ndarray,
+        hard_clearance: float,
+        hard_enabled: bool,
+    ) -> np.ndarray:
+        """
+        Batch rollout environment states (Optimization 2).
+        
+        Args:
+            state_init: Initial state, shape (state_dim,)
+            batch_actions: Batch of actions, shape (M, H, act_dim)
+            hard_clearance: Hard constraint clearance
+            hard_enabled: Whether hard constraints are enabled
+            
+        Returns:
+            Batch of state trajectories, shape (M, H+1, state_dim)
+        """
+        state_init = np.asarray(state_init, dtype=np.float32)
+        batch_actions = np.asarray(batch_actions, dtype=np.float32)
+        M, H, act_dim = batch_actions.shape
+        state_dim = state_init.shape[0]
+        
+        # Pre-allocate arrays
+        batch_states = np.zeros((M, H + 1, state_dim), dtype=np.float32)
+        batch_states[:, 0] = state_init
+        
+        # Batch rollout (vectorized where possible)
+        for t in range(H):
+            x_batch = batch_states[:, t]  # (M, state_dim)
+            u_batch = batch_actions[:, t]  # (M, act_dim)
+            
+            # Apply action filter if needed (batch version if available)
+            if hard_enabled and self.constraint_manager:
+                # Try batch filter, fallback to loop
+                if hasattr(self.constraint_manager, 'action_filter_operator'):
+                    action_filter = self.constraint_manager.action_filter_operator
+                    # Most filters don't support batch, so we loop
+                    for m in range(M):
+                        try:
+                            filtered_act = action_filter.filter(x_batch[m], u_batch[m], hard_clearance)
+                            if filtered_act is not None:
+                                u_batch[m] = np.asarray(filtered_act, dtype=np.float32)
+                        except Exception:
+                            pass
+            
+            # State transition (env.transition doesn't support batch, so we loop)
+            for m in range(M):
+                batch_states[m, t+1] = self.env.transition(x_batch[m], u_batch[m])
+        
+        return batch_states
     
     def compute_total_energy(
         self,
@@ -239,11 +296,8 @@ class EDOCBackendNumpy(EDOCBackendBase):
         # Add soft constraint penalties if enabled
         if self.use_constraint_in_scoring and self.constraint_manager and self.constraint_manager.has_soft():
             scores = scores / self.lambda_energy
-            # Batch compute trajectories
-            trajectories = [
-                self.actions_to_trajectory(state_init, batch_actions[idx]) 
-                for idx in range(num)
-            ]
+            # Batch compute trajectories (Optimization 4: use batch function)
+            trajectories = self.actions_to_trajectory_batch(state_init, batch_actions)
             soft_penalties = self.constraint_manager.compute_soft_energy_batch(
                 trajectories, step=step, total_steps=total_steps
             )
@@ -279,6 +333,43 @@ class EDOCBackendNumpy(EDOCBackendBase):
         # Convert to list format for Trajectory (required by interface)
         states_list = [states[i] for i in range(horizon + 1)]
         return Trajectory(states=states_list, actions=actions_list)
+    
+    def actions_to_trajectory_batch(
+        self,
+        x0: np.ndarray,
+        batch_actions: np.ndarray,
+    ) -> List[Trajectory]:
+        """
+        Batch convert actions to trajectories (Optimization 4).
+        
+        Args:
+            x0: Initial state, shape (state_dim,)
+            batch_actions: Batch of actions, shape (M, H, act_dim)
+            
+        Returns:
+            List of M Trajectory objects
+        """
+        batch_actions = np.asarray(batch_actions, dtype=np.float32)
+        if batch_actions.ndim == 2:
+            batch_actions = batch_actions[None, :, :]  # Add batch dimension
+        
+        M, H, act_dim = batch_actions.shape
+        x0_arr = np.asarray(x0, dtype=np.float32)
+        state_dim = x0_arr.shape[0]
+        
+        # Use batch rollout for efficiency
+        batch_states = self.rollout_env_states_batch(
+            x0_arr, batch_actions, hard_clearance=0.0, hard_enabled=False
+        )
+        
+        # Convert to Trajectory list
+        trajectories = []
+        for m in range(M):
+            states_list = [batch_states[m, t] for t in range(H + 1)]
+            actions_list = [batch_actions[m, t].copy() for t in range(H)]
+            trajectories.append(Trajectory(states=states_list, actions=actions_list))
+        
+        return trajectories
     
     def extract_actions_from_trajectory(
         self,
@@ -563,11 +654,9 @@ class EDOCBackendNumpy(EDOCBackendBase):
             else:
                 V_tau = float(np.mean(v_bar))
             
-            # Fix B1: Online calibration of tau using sliding window median
-            # Maintain sliding window of V values
+            # Fix B1: Online calibration of tau using sliding window median (Optimization 3: use deque)
+            # Maintain sliding window of V values (deque automatically handles maxlen)
             self.V_history.append(V_tau)
-            if len(self.V_history) > self.V_window_size:
-                self.V_history.pop(0)  # Remove oldest value
             
             # Compute median V50 for calibration
             if len(self.V_history) >= 5:  # Need at least 5 samples for meaningful median
@@ -595,6 +684,125 @@ class EDOCBackendNumpy(EDOCBackendBase):
         
         # Default: assume feasible if no constraint system available
         return 1.0, 0.0  # q_hat=1.0, V_k=0.0
+    
+    def _compute_feasibility_rate_batch(
+        self,
+        trajectories: List[Trajectory],
+        margin: Optional[float] = None
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Batch compute feasibility rates for multiple trajectories (Optimization 1).
+        
+        This function processes all trajectories in batch, using vectorized SDF queries
+        where possible to significantly improve performance.
+        
+        Args:
+            trajectories: List of trajectories to evaluate
+            margin: Safety margin (from scheduler, defaults to robot_radius if None)
+            
+        Returns:
+            Tuple of (q_hat_array, V_k_array): Arrays of shape (M,) where M is number of trajectories
+        """
+        num_trajs = len(trajectories)
+        if num_trajs == 0:
+            return np.array([], dtype=np.float32), np.array([], dtype=np.float32)
+        
+        # Fix B3: Use margin from parameter (from scheduler), fallback to robot_radius
+        if margin is None:
+            margin = self.robot_radius
+        
+        # Fix B3: Assert margin is valid (prevent division by near-zero)
+        if margin < 1e-4:
+            margin = max(self.robot_radius, 1e-4)
+        
+        # Try to get violations from constraint_pipeline
+        if self.constraint_pipeline is not None:
+            try:
+                # Method 1: Try to get violations from convexifier (obstacles SDF)
+                if hasattr(self.constraint_pipeline, 'convexifier'):
+                    convexifier = self.constraint_pipeline.convexifier
+                    if hasattr(convexifier, 'obstacles') and convexifier.obstacles is not None:
+                        # Collect all positions from all trajectories
+                        all_positions = []
+                        traj_lengths = []
+                        traj_start_indices = [0]  # Track where each trajectory starts in all_positions
+                        
+                        for traj in trajectories:
+                            positions = np.array([state[:2] for state in traj.states], dtype=np.float32)
+                            all_positions.append(positions)
+                            traj_lengths.append(len(traj.states))
+                            traj_start_indices.append(traj_start_indices[-1] + len(traj.states))
+                        
+                        if all_positions:
+                            # Stack all positions into single array for batch SDF query
+                            total_positions = np.vstack(all_positions)  # (total_states, 2)
+                            
+                            # Batch SDF query (obstacles.sdf supports batch input)
+                            try:
+                                sdf_vals = convexifier.obstacles.sdf(total_positions)
+                                sdf_vals = np.asarray(sdf_vals, dtype=np.float32)
+                                if sdf_vals.ndim == 0:
+                                    sdf_vals = sdf_vals[None]
+                                elif sdf_vals.ndim == 1 and len(sdf_vals) == 1 and total_positions.shape[0] > 1:
+                                    # Handle case where sdf returns scalar for each point but shape is wrong
+                                    sdf_vals = np.array([convexifier.obstacles.sdf(pos) for pos in total_positions], dtype=np.float32)
+                            except (TypeError, ValueError, AttributeError):
+                                # Fallback: SDF doesn't support batch, use loop
+                                sdf_vals = np.array([
+                                    float(convexifier.obstacles.sdf(pos)) if np.isscalar(convexifier.obstacles.sdf(pos)) 
+                                    else float(convexifier.obstacles.sdf(pos)[0])
+                                    for pos in total_positions
+                                ], dtype=np.float32)
+                            
+                            # Batch compute violations
+                            violations_batch = np.maximum(0.0, margin - sdf_vals)
+                            
+                            # Normalize violations
+                            epsilon_0 = 1e-6
+                            v_max = 10.0
+                            v_bar_batch = np.clip(violations_batch / (margin + epsilon_0), 0.0, v_max)
+                            
+                            # Process each trajectory
+                            q_hat_list = []
+                            V_k_list = []
+                            for traj_idx in range(num_trajs):
+                                start_idx = traj_start_indices[traj_idx]
+                                end_idx = traj_start_indices[traj_idx + 1]
+                                traj_v_bar = v_bar_batch[start_idx:end_idx]
+                                
+                                # Aggregate: V(τ) = mean(v_bar)
+                                V_tau = float(np.mean(traj_v_bar))
+                                
+                                # Update tau calibration (shared across all trajectories in this batch)
+                                self.V_history.append(V_tau)
+                                
+                                # Compute median V50 for calibration
+                                if len(self.V_history) >= 5:
+                                    V50 = float(np.median(self.V_history))
+                                    # Set q(V50) = 0.5, so tau = V50 / ln(2)
+                                    self.tau = V50 / np.log(2.0)
+                                    self.tau = max(0.01, min(self.tau, 1.0))  # Clip tau to reasonable range
+                                
+                                # Map to feasibility score: q̂ = exp(-V/τ) with online-calibrated tau
+                                q_hat = float(np.exp(-V_tau / self.tau))
+                                q_hat = np.clip(q_hat, 0.0, 1.0)
+                                
+                                q_hat_list.append(q_hat)
+                                V_k_list.append(V_tau)
+                            
+                            return np.array(q_hat_list, dtype=np.float32), np.array(V_k_list, dtype=np.float32)
+            except Exception:
+                # Silently continue to fallback
+                pass
+        
+        # Fallback: use individual trajectory computation
+        q_hat_list = []
+        V_k_list = []
+        for traj in trajectories:
+            q, v = self._compute_feasibility_rate(traj, margin)
+            q_hat_list.append(q)
+            V_k_list.append(v)
+        return np.array(q_hat_list, dtype=np.float32), np.array(V_k_list, dtype=np.float32)
     
     def reverse_diffuse(
         self,
@@ -657,10 +865,17 @@ class EDOCBackendNumpy(EDOCBackendBase):
         
         K = Ndiffuse - 1  # Total steps (0-indexed, K is max step index)
         
-        # Initialize Ybar using NumPy random
+        # Initialize Ybar using NumPy random with deterministic seed for reproducibility
+        # If rng_key is an int, use it to create a new RNG for this run
+        # Otherwise, use the existing _np_rng from planner (which was initialized with seed)
         if isinstance(rng_key, (int, np.integer)):
-            self._np_rng = np.random.default_rng(int(rng_key))
-        Ybar = self._np_rng.standard_normal(size=(horizon, act_dim)).astype(np.float32)
+            # Create a new RNG with the provided seed for this specific run
+            # This ensures reproducibility when same seed is used
+            run_rng = np.random.default_rng(int(rng_key))
+        else:
+            # Use the planner's RNG (which should already be initialized with seed)
+            run_rng = self._np_rng
+        Ybar = run_rng.standard_normal(size=(horizon, act_dim)).astype(np.float32)
         
         reward_history = []
         Ybar_history = []
@@ -725,7 +940,7 @@ class EDOCBackendNumpy(EDOCBackendBase):
                 has_extra = num_particles_current % 2
                 sample_count = half + has_extra
                 
-                eps_core = self._np_rng.standard_normal(
+                eps_core = run_rng.standard_normal(
                     size=(sample_count, horizon, act_dim)
                 ).astype(np.float32)
                 
@@ -745,7 +960,7 @@ class EDOCBackendNumpy(EDOCBackendBase):
                 else:
                     Y0s = np.concatenate(Y_candidates, axis=0)
             else:
-                eps = self._np_rng.standard_normal(
+                eps = run_rng.standard_normal(
                     size=(num_particles_current, horizon, act_dim)
                 ).astype(np.float32)
                 Y0s = Ybar[None, :] + sigma_i * eps
@@ -758,99 +973,6 @@ class EDOCBackendNumpy(EDOCBackendBase):
             # Convert diffusion index to constraint step
             constraint_step = (Ndiffuse - 1) - i
             constraint_total_steps = Ndiffuse - 1  # Total steps should match Ndiffuse (0-indexed, so Ndiffuse-1)
-            
-            # Debug: Print constraint scheduler parameters
-            if self.scheduler is not None:
-                try:
-                    from enerdynamics.core.constraints.core.types import ScheduleState
-                    debug_state = ScheduleState(k=constraint_step, K=constraint_total_steps)
-                    
-                    # Get constraint parameters from scheduler
-                    params_dict = None
-                    if hasattr(self.scheduler, 'constraint_params'):
-                        # Direct constraint scheduler
-                        params = self.scheduler.constraint_params(debug_state)
-                        if isinstance(params, dict):
-                            params_dict = params
-                        else:
-                            # Convert to dict using get method if available
-                            params_dict = {
-                                'rho': params.get('rho', 0.0) if hasattr(params, 'get') else getattr(params, 'rho', 0.0),
-                                'topK': params.get('topK', None) if hasattr(params, 'get') else getattr(params, 'topK', None),
-                                'eps': params.get('eps', 0.0) if hasattr(params, 'get') else (params._extra.get('eps', 0.0) if hasattr(params, '_extra') else 0.0),
-                                'I_QP': params.get('I_QP', 0) if hasattr(params, 'get') else (params._extra.get('I_QP', 0) if hasattr(params, '_extra') else 0),
-                                'qp_gate': params.get('qp_gate', False) if hasattr(params, 'get') else getattr(params, 'qp_gate', False),
-                                'qp_prob': params.get('qp_prob', 0.0) if hasattr(params, 'get') else getattr(params, 'qp_prob', 0.0),
-                                '_extra': params.get('_extra', {}) if hasattr(params, 'get') else getattr(params, '_extra', {}),
-                            }
-                    elif hasattr(self.scheduler, 'params'):
-                        # Composite scheduler - get params (returns ScheduleParams)
-                        params_obj = self.scheduler.params(debug_state)
-                        # ScheduleParams has get method, but also direct attributes
-                        params_dict = {
-                            'rho': params_obj.rho if hasattr(params_obj, 'rho') else params_obj.get('rho', 0.0),
-                            'topK': params_obj.topK if hasattr(params_obj, 'topK') else params_obj.get('topK', None),
-                            'eps': params_obj._extra.get('eps', 0.0) if hasattr(params_obj, '_extra') else params_obj.get('eps', 0.0),
-                            'I_QP': params_obj._extra.get('I_QP', 0) if hasattr(params_obj, '_extra') else params_obj.get('I_QP', 0),
-                            'qp_gate': params_obj.qp_gate if hasattr(params_obj, 'qp_gate') else params_obj.get('qp_gate', False),
-                            'qp_prob': params_obj.qp_prob if hasattr(params_obj, 'qp_prob') else params_obj.get('qp_prob', 0.0),
-                            '_extra': params_obj._extra if hasattr(params_obj, '_extra') else params_obj.get('_extra', {}),
-                        }
-                    
-                    if params_dict is not None:
-                        # Extract key parameters for printing
-                        rho = params_dict.get('rho', 0.0)
-                        topK = params_dict.get('topK', None)
-                        eps = params_dict.get('eps', 0.0)
-                        I_QP = params_dict.get('I_QP', 0)
-                        qp_gate = params_dict.get('qp_gate', False)
-                        qp_prob = params_dict.get('qp_prob', 0.0)
-                        extra = params_dict.get('_extra', {})
-                        t_k = extra.get('t_k', 0.0) if isinstance(extra, dict) else 0.0
-                        q_star = extra.get('q_star', 0.0) if isinstance(extra, dict) else 0.0
-                        # lambda_con is stored in _extra dict
-                        lambda_con = extra.get('lambda_con', None) if isinstance(extra, dict) else None
-                        
-                        # Fallback: Get lambda_con directly from scheduler if not in extra (for dual_control)
-                        if lambda_con is None:
-                            if hasattr(self.scheduler, 'constraint_schedulers') and len(self.scheduler.constraint_schedulers) > 0:
-                                # Composite scheduler - get from first constraint scheduler
-                                cs = self.scheduler.constraint_schedulers[0]
-                                if hasattr(cs, 'lambda_con'):
-                                    lambda_con = cs.lambda_con
-                            elif hasattr(self.scheduler, 'lambda_con'):
-                                lambda_con = self.scheduler.lambda_con
-                        
-                        # Print formatted output
-                        # reverse_step: 100->1 (when Ndiffuse=100, i goes from 99 to 0)
-                        # i=99 (first step) -> reverse_step=100, i=0 (last step) -> reverse_step=1
-                        # So reverse_step = i + 1
-                        reverse_step = i + 1
-                        print(f"[Diff Step {i:3d}] k={constraint_step:3d}/{constraint_total_steps} "
-                              f"(rev:{reverse_step:3d}->1): "
-                              f"ρ={rho:6.2f}, K={topK if topK is not None else 'N/A':>3}, "
-                              f"ε={eps:.4f}, I_QP={I_QP:2d}, "
-                              f"gate={'ON' if qp_gate else 'OFF':3s}(p={qp_prob:.3f})", end='')
-                        if lambda_con is not None:
-                            print(f", λ={lambda_con:6.3f}", end='')
-                        if t_k > 0 or q_star > 0:
-                            print(f", t={t_k:.3f}, q*={q_star:.3f}", end='')
-                        # Add q_hat to debug output
-                        q_hat = extra.get('q_hat', None) if isinstance(extra, dict) else None
-                        if q_hat is None:
-                            # Try to get q_hat from scheduler if available
-                            if hasattr(self.scheduler, 'constraint_schedulers') and len(self.scheduler.constraint_schedulers) > 0:
-                                cs = self.scheduler.constraint_schedulers[0]
-                                if hasattr(cs, 'q_hat'):
-                                    q_hat = cs.q_hat
-                            elif hasattr(self.scheduler, 'q_hat'):
-                                q_hat = self.scheduler.q_hat
-                        if q_hat is not None:
-                            print(f", q̂={q_hat:.3f}", end='')
-                        print()
-                except Exception:
-                    # Silently ignore errors in debug printing
-                    pass
             
             # Score particles in batch
             scores = self.score_particles(
@@ -888,29 +1010,21 @@ class EDOCBackendNumpy(EDOCBackendBase):
                 except Exception:
                     pass
             
-            # Fix 1.3: Batch aggregation + EMA for feasibility tracking
+            # Fix 1.3: Batch aggregation + EMA for feasibility tracking (Optimization 1, 4)
             # Fix B2: Use importance weights for weighted aggregation
-            # Compute q_k^(m) and V_k^(m) for each particle in batch
-            q_k_list = []
-            V_k_list = []
-            for m in range(num_particles_current):
-                particle_actions = Y0s[m]  # Actions for particle m
-                particle_trajectory = self.actions_to_trajectory(state_init, particle_actions)
-                # Fix B3: Pass margin_k to _compute_feasibility_rate
-                q_k_m, V_k_m = self._compute_feasibility_rate(particle_trajectory, margin=margin_k)
-                q_k_list.append(q_k_m)
-                V_k_list.append(V_k_m)
+            # Compute q_k^(m) and V_k^(m) for all particles in batch
+            # Optimization: Use batch functions for better performance
+            trajectories_batch = self.actions_to_trajectory_batch(state_init, Y0s)
+            q_k_array, V_k_array = self._compute_feasibility_rate_batch(trajectories_batch, margin=margin_k)
             
             # Fix B2: Weighted aggregation: q_bar_k = sum_m (w_m * q_k^(m))
-            if q_k_list and len(weights) == len(q_k_list):
-                q_k_array = np.asarray(q_k_list, dtype=np.float32)
+            if len(q_k_array) > 0 and len(weights) == len(q_k_array):
                 q_bar_k = float(np.sum(weights * q_k_array))
-                V_k_array = np.asarray(V_k_list, dtype=np.float32)
                 V_bar_k = float(np.sum(weights * V_k_array))
             else:
                 # Fallback to unweighted mean if weights don't match
-                q_bar_k = float(np.mean(q_k_list)) if q_k_list else 0.0
-                V_bar_k = float(np.mean(V_k_list)) if V_k_list else 0.0
+                q_bar_k = float(np.mean(q_k_array)) if len(q_k_array) > 0 else 0.0
+                V_bar_k = float(np.mean(V_k_array)) if len(V_k_array) > 0 else 0.0
             
             # EMA smoothing: q_tilde_k = (1-beta) * q_tilde_{k-1} + beta * q_bar_k
             if self.q_tilde_prev is None:
