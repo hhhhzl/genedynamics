@@ -72,14 +72,30 @@ class Box3DObstacleGeneratorPlugin(ObstacleGeneratorPlugin):
         z_min = map_bounds.get('z_min', 0.0)
         z_max = map_bounds.get('z_max', 2.0)
         
-        # Convert start_pos and target_pos to 3D if needed
-        start_pos = np.asarray(start_pos, dtype=np.float32)
-        target_pos = np.asarray(target_pos, dtype=np.float32)
+        # Extract 3D position from start_pos and target_pos
+        # start_pos and target_pos might be full state vectors (e.g., 6D for drone: x,y,z,vx,vy,vz)
+        # or just positions (3D: x,y,z)
+        start_pos = np.asarray(start_pos, dtype=np.float32).flatten()
+        target_pos = np.asarray(target_pos, dtype=np.float32).flatten()
         
-        if start_pos.size < 3:
-            start_pos = np.concatenate([start_pos, [0.0]])[:3]
-        if target_pos.size < 3:
-            target_pos = np.concatenate([target_pos, [0.0]])[:3]
+        # Extract first 3 elements as position (x, y, z)
+        if start_pos.size >= 3:
+            start_pos = start_pos[:3]
+        elif start_pos.size == 2:
+            # 2D position, pad with z=0
+            start_pos = np.concatenate([start_pos, [0.0]])
+        elif start_pos.size == 1:
+            # 1D position, pad with y=0, z=0
+            start_pos = np.concatenate([start_pos, [0.0, 0.0]])
+        
+        if target_pos.size >= 3:
+            target_pos = target_pos[:3]
+        elif target_pos.size == 2:
+            # 2D position, pad with z=0
+            target_pos = np.concatenate([target_pos, [0.0]])
+        elif target_pos.size == 1:
+            # 1D position, pad with y=0, z=0
+            target_pos = np.concatenate([target_pos, [0.0, 0.0]])
         
         obstacles = ObstacleManager()
         

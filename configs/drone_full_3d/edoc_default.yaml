@@ -1,8 +1,9 @@
-# EDOC experiment configuration for drone_box_3d environment
-name: drone3d_edoc_default
-output_dir: results/drone3d/edoc
+# EDOC experiment configuration for drone_full_3d environment
+# Full quadrotor model with 12D state and 4D motor thrust control
+name: drone_full_3d_edoc_default
+output_dir: results/drone_full_3d/edoc
 
-env_name: drone_box_3d
+env_name: drone_full_3d
 env_params:
   dt: 0.05
   horizon: 80
@@ -10,16 +11,27 @@ env_params:
   v_max: 2.0
   control_limit: 1.0
   target: [0.0, 0.0, 1.0]
+  vel_weight: 0.1
+  orientation_weight: 0.1
+  # DroneModel parameters
+  mass: 0.5
+  Ixx: 0.0023
+  Iyy: 0.0023
+  Izz: 0.0046
+  arm_length: 0.17
+  kf: 3.16e-10
+  km: 7.94e-12
+  gravity: 9.81
 
 method: edoc
 method_params:
   action_diffuse_steps: 100
-  action_nsample: 256
+  action_nsample: 512  # Increased for more complex dynamics
   use_antithetic: true
   action_score_mode: energy
   terminal_energy_weight: 50.0
 
-obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+obstacle_levels: [0, 1, 2, 3, 4, 5]  # Start with fewer levels for testing
 obstacle_config:
   generator: box3d
   robot_radius: 0.1
@@ -34,8 +46,8 @@ obstacle_config:
     z_min: 0.0
     z_max: 2.0
 
-seeds: [0, 1, 2, 3, 4]
-backend: numpy
+seeds: [0, 1, 2]
+backend: numpy  # Use numpy for now (DroneModel.step is not JAX-compatible)
 device: cpu
 
 metrics:
@@ -73,9 +85,9 @@ constraint_config:
     late_stage_ratio: 0.2
     reconstruct_velocity: true
     smoothness_weight: 0.0
-  action_constraint_type: acceleration
+  action_constraint_type: motor_thrust  # Motor thrusts instead of acceleration
 
 metadata:
-  description: "Default EDOC configuration for drone 3D environment"
+  description: "Default EDOC configuration for full 3D quadrotor environment with complete dynamics"
   author: "enerdynamics"
 

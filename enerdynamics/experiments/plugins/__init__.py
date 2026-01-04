@@ -19,6 +19,7 @@ from .environments import (
     DoubleIntegrator2DPlugin,
     DroneEnvironmentPlugin,
     DroneBox3DPlugin,
+    DroneFull3DPlugin,
     ManipulatorEnvironmentPlugin,
 )
 
@@ -32,6 +33,7 @@ from .visualizations import (
     TrajectoryVisualizationPlugin,
     Trajectory3DVisualizationPlugin,
     DiffusionVisualizationPlugin,
+    Diffusion3DVisualizationPlugin,
     EnergyRewardVisualizationPlugin,
     StatesVisualizationPlugin,
     SchedulerParamsVisualizationPlugin,
@@ -50,6 +52,7 @@ __all__ = [
     'DoubleIntegrator2DPlugin',
     'DroneEnvironmentPlugin',
     'DroneBox3DPlugin',
+    'DroneFull3DPlugin',
     'ManipulatorEnvironmentPlugin',
     # Metrics
     'SSRMetricsPlugin',
@@ -59,6 +62,7 @@ __all__ = [
     'TrajectoryVisualizationPlugin',
     'Trajectory3DVisualizationPlugin',
     'DiffusionVisualizationPlugin',
+    'Diffusion3DVisualizationPlugin',
     'EnergyRewardVisualizationPlugin',
     'StatesVisualizationPlugin',
     'SchedulerParamsVisualizationPlugin',
