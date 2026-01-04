@@ -5,7 +5,7 @@ Adaptively adjusts constraint parameters based on feasibility feedback
 using a dual variable λ^con that tracks target feasibility.
 """
 
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, List
 import numpy as np
 
 from enerdynamics.core.constraints.schedulers.ConstraintScheduler.base import ConstraintScheduler
@@ -17,16 +17,24 @@ class DualControlConstraintScheduler(ConstraintScheduler):
     """
     Dual-control constraint scheduler.
     
-    Uses dual variable λ^con to adaptively control constraint hardness
-    based on target feasibility tracking. The dual variable is updated
-    using Robbins-Monro style stochastic approximation to track a target
-    feasibility schedule q*(t).
+    Uses dual variable λ^con (feasibility tracking variable) to adaptively control 
+    constraint hardness based on target feasibility tracking. The dual variable is 
+    updated using Robbins-Monro style stochastic approximation to track a target
+    feasibility schedule q*(s).
+    
+    Note: λ^con is a signed dual variable (can be negative) that tracks feasibility
+    gap (q* - q_hat). It is NOT a standard Lagrange multiplier (which would be ≥ 0).
+    When q_hat > q*, λ^con decreases (can go negative); when q_hat < q*, λ^con increases.
+    This allows the scheduler to adapt both when constraints are too loose (negative λ)
+    and when they are too tight (positive λ).
     
     Key features:
-    - Adaptive slack penalty ρ_k based on λ^con
-    - Adaptive QP gate probability p_k based on λ^con
-    - Progress-based scheduling for topK, eps, I_QP
-    - Terminal hard region override
+    - Unified tightening progress s_k = 1 - t_k drives all scheduling
+    - Continuous cosine annealing interpolation for all parameters
+    - Adaptive slack penalty ρ(s_k) based on s_k
+    - Adaptive QP gate probability p(s_k) based on s_k (approaches 1.0 at later steps)
+    - Progress-based scheduling for topK, eps, I_QP using s_k
+    - Terminal hard region: last 1-3 steps force gate=ON
     
     Performance: O(1) per parameter computation, O(1) dual update.
     """
@@ -137,6 +145,14 @@ class DualControlConstraintScheduler(ConstraintScheduler):
         self.eta_con_decay = float(eta_con_decay)
         self.step_count = 0
         
+        # Store current feasibility rate for modulation (Solution 2)
+        # Initialize to q_star_min to match q_star's starting point
+        self.q_hat = float(q_star_min)  # Initialize to q_star_min (e.g., 0.3) to match q_star
+        self.q_tilde = float(q_star_min)  # Synthesized feasibility (q̃_k), start at q_star_min
+        self.V_k = 0.0  # Current violation V_k
+        self.V_k_prev = 0.0  # Previous violation V_{k-1}
+        self.q_hat_prev = float(q_star_min)  # Previous q_hat, start at q_star_min
+        
         # Target schedule parameters
         self.q_star_min = float(q_star_min)
         self.q_star_max = float(q_star_max)
@@ -162,6 +178,10 @@ class DualControlConstraintScheduler(ConstraintScheduler):
         
         self.backend = backend
         self.kwargs = kwargs
+        
+        # History tracking for visualization
+        self.param_history = []
+        self.lambda_con_history = []
         
         # Pre-compute constants for performance
         self._rho_range = self.rho_max - self.rho_min
@@ -210,10 +230,44 @@ class DualControlConstraintScheduler(ConstraintScheduler):
             Dictionary with adaptive constraint parameters
         """
         if self._backend_impl is not None:
-            return self._backend_impl.constraint_params(state)
-        
+            params = self._backend_impl.constraint_params(state)
+        else:
         # Fallback implementation (should use backend)
-        return self._compute_constraint_params(state)
+            params = self._compute_constraint_params(state)
+        
+        # Record history
+        self._record_param_history(state, params)
+        
+        return params
+    
+    def _record_param_history(self, state: ScheduleState, params: Dict[str, Any]) -> None:
+        """
+        Record parameter history for visualization.
+        
+        Args:
+            state: Current schedule state
+            params: Parameter dictionary
+        """
+        extra = params.get("_extra", {})
+        self.param_history.append({
+            "step": state.k,
+            "total_steps": state.K,
+            "rho": params.get("rho", 0.0),
+            "topK": params.get("topK"),
+            "eps": params.get("eps", 0.0),
+            "I_QP": params.get("I_QP", 0),
+            "qp_gate": params.get("qp_gate", False),
+            "qp_prob": params.get("qp_prob", 0.0),
+            "lambda_con": extra.get("lambda_con", self.lambda_con),
+            "t_k": extra.get("t_k", 0.0),
+            "q_star": extra.get("q_star", 0.0),
+            "q_hat": extra.get("q_hat", self.q_hat),  # Add q_hat to history
+            "q_tilde": extra.get("q_tilde", self.q_tilde),  # Add q_tilde to history
+            "V_k": extra.get("V_k", self.V_k),  # Add V_k to history
+            "is_terminal_hard": extra.get("is_terminal_hard", False),
+            "_extra": extra,  # Also store full _extra dict for backward compatibility
+        })
+        self.lambda_con_history.append(self.lambda_con)
     
     def _compute_constraint_params(self, state: ScheduleState) -> Dict[str, Any]:
         """
@@ -249,8 +303,34 @@ class DualControlConstraintScheduler(ConstraintScheduler):
     
     def reset(self) -> None:
         """Reset scheduler state (for new optimization run)."""
-        self.lambda_con = 0.0
+        self.lambda_con = float(self.lambda_con_init)
         self.step_count = 0
+        # Reset to q_star_min to match q_star's starting point
+        self.q_hat = float(self.q_star_min)  # Reset to q_star_min (e.g., 0.3) to match q_star
+        self.q_tilde = float(self.q_star_min)  # Reset synthesized feasibility to q_star_min
+        self.V_k = 0.0  # Reset violation
+        self.V_k_prev = 0.0  # Reset previous violation
+        self.q_hat_prev = float(self.q_star_min)  # Reset previous q_hat to q_star_min
+        self.param_history = []
+        self.lambda_con_history = []
         if self._backend_impl is not None and hasattr(self._backend_impl, 'reset'):
             self._backend_impl.reset()
+    
+    def get_param_history(self) -> List[Dict[str, Any]]:
+        """
+        Get parameter history for visualization.
+        
+        Returns:
+            List of parameter dictionaries, one per diffusion step
+        """
+        return self.param_history.copy()
+    
+    def get_lambda_con_history(self) -> List[float]:
+        """
+        Get lambda_con history for visualization.
+        
+        Returns:
+            List of lambda_con values, one per diffusion step
+        """
+        return self.lambda_con_history.copy()
 

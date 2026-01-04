@@ -95,6 +95,7 @@ class EDOCBackendBase(ABC):
         self.dyn_loss_mode = planner.dyn_loss_mode
         self.show_tqdm = planner.show_tqdm
         self._reverse_diffuse_chunk_len = planner._reverse_diffuse_chunk_len
+        self.scheduler = getattr(planner, 'scheduler', None)
     
     @abstractmethod
     def reverse_diffuse(
