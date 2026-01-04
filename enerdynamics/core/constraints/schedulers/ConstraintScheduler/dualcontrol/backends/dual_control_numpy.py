@@ -78,21 +78,14 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         else:
             q_tilde = float(q_tilde)
         
+        # Fix A: Remove duplicate blend - only blend once
         # Ensure q_tilde reflects environment difficulty: if q_hat is low, q_tilde should also be low
         # This helps differentiate between different environments
         q_hat_current = getattr(self, 'q_hat', self.q_star_min)
         # Blend q_tilde with current q_hat to ensure it reflects current environment state
         # Use a moderate weight to ensure environment adaptation while avoiding sudden jumps
+        # Make env_weight adjustable (can be related to variance/sample size in future)
         env_weight = 0.25  # Weight for current q_hat to reflect environment
-        q_tilde = (1.0 - env_weight) * q_tilde + env_weight * q_hat_current
-        q_tilde = float(np.clip(q_tilde, 0.0, 1.0))
-        
-        # Ensure q_tilde reflects environment difficulty: if q_hat is low, q_tilde should also be low
-        # This helps differentiate between different environments
-        q_hat_current = getattr(self, 'q_hat', 1.0)
-        # Blend q_tilde with current q_hat to ensure it reflects current environment state
-        # Use a moderate weight to ensure environment adaptation while avoiding sudden jumps
-        env_weight = 0.25  # Weight for current q_hat to reflect environment (increased from 0.2)
         q_tilde = (1.0 - env_weight) * q_tilde + env_weight * q_hat_current
         q_tilde = float(np.clip(q_tilde, 0.0, 1.0))
         
@@ -163,24 +156,35 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         """
         Compute target feasibility q*(s_k) using cosine annealing.
         
-        q*(s) = q_min + (q_max - q_min) * CosAnneal(s; p_q)
-        CosAnneal(s; p_q) = 0.5 * (1 - cos(π * s^p_q))
+        Fix C: Make q* reachable by using environment-aware reference governor.
+        q*(s) = min(q*_sched(s_k), q_max + delta)
+        where q_max is the 90th percentile of observed q values.
         
-        This makes q* increase as s_k increases (harder constraints at later steps).
-        When s_k=0 (initial): q* = q_min (softer)
-        When s_k=1 (final): q* = q_max (harder)
-        
-        Performance: O(1) with pre-computed range.
+        This prevents q* from being set too high for the current environment,
+        avoiding meaningless saturation of lambda, rho, p.
         
         Args:
             s_k: Tightening progress in [0, 1] (0 = initial, 1 = final)
             
         Returns:
-            Target feasibility rate
+            Target feasibility rate (reachable for current environment)
         """
         s_powered = np.power(s_k, self.p_q)
         cos_anneal = 0.5 * (1.0 - np.cos(np.pi * s_powered))
-        return self.q_star_min + self._q_range * cos_anneal
+        q_star_sched = self.q_star_min + self._q_range * cos_anneal
+        
+        # Fix C: Environment-aware reference governor
+        # Get q_max from sliding window (90th percentile)
+        q_max = None
+        if hasattr(self, 'q_max_history') and len(self.q_max_history) >= 5:
+            q_max = float(np.percentile(self.q_max_history, 90))
+        
+        if q_max is not None:
+            # Set q*_k = min(q*_sched(s_k), q_max + delta)
+            q_max_upper = q_max + getattr(self, 'q_max_delta', 0.1)
+            q_star_sched = min(q_star_sched, q_max_upper)
+        
+        return float(q_star_sched)
     
     def _compute_rho(self, s_k: float, q_star: float, q_tilde: float) -> float:
         """
@@ -207,16 +211,18 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         cos_anneal = 0.5 * (1.0 - np.cos(np.pi * s_powered))
         rho_base = self.rho_min + self._rho_range * cos_anneal
         
-        # Fix 2.1: Close the loop - modulate by tracking error e_k = q* - q_tilde (log-domain)
-        # Fix A3: Reduce gain from 1.0 to 0.2-0.5 to prevent rapid saturation
-        # Use exp form: ρ_k = ρ_base * exp(c_ρ * e_k)
-        c_rho = 0.3  # Fix A3: Reduced modulation strength (from 1.0 to 0.3)
+        # Fix E: Change from exponential modulation to log-domain linear + soft saturation
+        # Original: rho_k = rho_base * exp(c_rho * e_k) - saturates too early
+        # New: log rho_k = log rho_base + softsat(c_rho * e_k)
+        # Or: rho_k = rho_base * (1 + kappa * tanh(c_rho * e_k))
+        c_rho = 0.3  # Modulation strength
         e_k = q_star - q_tilde  # Tracking error (positive when q_tilde < q_star)
         
-        # Apply modulation: ρ_k = ρ_base * exp(c_ρ * e_k)
-        rho_k = rho_base * np.exp(c_rho * e_k)
+        # Fix E: Use tanh for soft saturation (preserves monotonicity without early saturation)
+        kappa = 0.5  # Saturation scale (can be tuned)
+        rho_k = rho_base * (1.0 + kappa * np.tanh(c_rho * e_k))
         
-        # Clip to bounds
+        # Clip to bounds (soft saturation should prevent this, but keep for safety)
         return float(np.clip(rho_k, self.rho_min, self.rho_max))
     
     def _compute_gate_probability(self, s_k: float, q_star: float, q_tilde: float) -> float:
@@ -245,10 +251,14 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         p_max = 0.95
         p_base = p_min + (p_max - p_min) * cos_anneal
         
-        # Fix A3: Reduce gain to prevent rapid saturation
-        c_p = 0.5  # Fix A3: Reduced modulation strength (from 1.0 to 0.5)
+        # Fix D: Late-stage determinism - for last 30% of diffusion steps, set gate=ON
+        # Check if we're in late stage (s_k >= 0.7 means last 30% of steps)
+        if s_k >= 0.7:
+            # Late stage: deterministic gate ON
+            return 1.0
         
-        # Apply modulation: p_k = p_base + c_p * (q* - q̃)
+        # Early stage: use adaptive modulation
+        c_p = 0.5  # Modulation strength
         feasibility_gap = q_star - q_tilde
         p_k = p_base + c_p * feasibility_gap
         
@@ -418,31 +428,61 @@ class DualControlConstraintSchedulerNumpy(DualControlConstraintScheduler):
         self.V_k_prev = getattr(self, 'V_k', V_k)
         self.V_k = float(V_k)
         
-        # Compute step size with decay (cached computation)
-        eta_k = self.eta_con_base * np.power(self.eta_con_decay, self.step_count)
+        # Fix B: Two time scales + uncertainty-based step size + true anti-windup
+        # 1. Track q variance for uncertainty-based step size
+        if not hasattr(self, 'q_history'):
+            self.q_history = []
+        self.q_history.append(float(q_tilde))
+        if len(self.q_history) > getattr(self, 'q_window_size', 10):
+            self.q_history.pop(0)
+        
+        # Compute q variance (uncertainty measure)
+        q_var = 0.0
+        if len(self.q_history) >= 3:
+            q_var = float(np.var(self.q_history))
+        
+        # Fix B: Uncertainty-based step size - reduce eta_k when variance is large
+        # Base step size with decay
+        eta_k_base = self.eta_con_base * np.power(self.eta_con_decay, self.step_count)
+        
+        # Reduce step size when uncertainty is high (large variance, small batch, difficult environment)
+        # Use sigmoid to smoothly reduce eta_k: eta_k = eta_k_base * (1 - sigmoid(alpha * q_var))
+        alpha_var = 10.0  # Scaling factor for variance (can be tuned)
+        uncertainty_factor = 1.0 / (1.0 + np.exp(alpha_var * q_var - 5.0))  # Sigmoid: 1 when var=0, ~0 when var large
+        eta_k = eta_k_base * (0.3 + 0.7 * uncertainty_factor)  # Scale between 0.3 and 1.0 of base
+        
+        # Fix B: Two time scales - make lambda update slower (already done via eta_k reduction)
+        # Actuators (rho, p) respond faster via direct modulation in _compute_rho/_compute_gate_probability
         
         # Update dual variable using q_tilde from backend (Fix A2: use backend-provided q_tilde)
         error = q_star - q_tilde
         lambda_new = self.lambda_con + eta_k * error
         
-        # Fix 2.2: Dual update with anti-windup
-        # Prevent integrator windup when clipping is active
+        # Fix B: True anti-windup - back-calculation (feed saturated error back into integrator)
         lambda_clipped = float(np.clip(lambda_new, self.lambda_con_min, self.lambda_con_max))
         
-        # Anti-windup logic: if saturated and error direction suggests further increase, freeze/reduce eta
-        if lambda_clipped == self.lambda_con_max and error > 0:
-            # Saturated at max and error is positive - freeze eta (the decay already reduces eta over time)
-            pass
-        elif lambda_clipped == self.lambda_con_min and error < 0:
-            # Saturated at min and error is negative - freeze eta (the decay already reduces eta over time)
-            pass
+        # True anti-windup: if saturated and error pushes in same direction, freeze integral term
+        if (lambda_clipped == self.lambda_con_max and error > 0) or \
+           (lambda_clipped == self.lambda_con_min and error < 0):
+            # Saturated and error pushes further - freeze lambda (don't update)
+            # This is true anti-windup: prevent integrator from accumulating error when saturated
+            pass  # Keep lambda_con unchanged
+        else:
+            # Not saturated or error pushes away from saturation - update normally
+            self.lambda_con = lambda_clipped
         
-        self.lambda_con = lambda_clipped
+        # Fix C: Track q_max for environment-aware reference governor
+        if not hasattr(self, 'q_max_history'):
+            self.q_max_history = []
+        self.q_max_history.append(float(q_tilde))
+        if len(self.q_max_history) > getattr(self, 'q_max_window_size', 20):
+            self.q_max_history.pop(0)
+        
         self.step_count += 1
         
         # Store values for next iteration
         self.q_hat = float(q_hat)
-        self.q_tilde = q_tilde
+        self.q_tilde = float(q_tilde)
         self.V_k_prev = float(V_k)  # Store current V_k as previous for next step
         self.V_k = float(V_k)
         self.q_hat_prev = float(q_hat)

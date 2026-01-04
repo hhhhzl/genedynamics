@@ -156,6 +156,15 @@ class DualControlConstraintScheduler(ConstraintScheduler):
         self.V_k_prev = 0.0  # Previous violation V_{k-1}
         self.q_hat_prev = float(q_star_min)  # Previous q_hat, start at q_star_min
         
+        # Fix B: Two time scales - track q variance for uncertainty-based step size
+        self.q_history = []  # Sliding window for q variance estimation
+        self.q_window_size = 10  # Window size for variance estimation
+        
+        # Fix C: Environment-aware reference governor - track q_max
+        self.q_max_history = []  # Sliding window for q_max (90th percentile)
+        self.q_max_window_size = 20  # Window size for q_max tracking
+        self.q_max_delta = 0.1  # Delta for q* adjustment
+        
         # Target schedule parameters
         self.q_star_min = float(q_star_min)
         self.q_star_max = float(q_star_max)
@@ -319,6 +328,15 @@ class DualControlConstraintScheduler(ConstraintScheduler):
         self.q_hat_prev = float(self.q_star_min)  # Reset previous q_hat to q_star_min
         self.param_history = []
         self.lambda_con_history = []
+        
+        # Fix B: Reset q history for variance estimation
+        if hasattr(self, 'q_history'):
+            self.q_history = []
+        
+        # Fix C: Reset q_max history for environment-aware reference governor
+        if hasattr(self, 'q_max_history'):
+            self.q_max_history = []
+        
         if self._backend_impl is not None and hasattr(self._backend_impl, 'reset'):
             self._backend_impl.reset()
     

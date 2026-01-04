@@ -17,7 +17,7 @@ method_params:
   action_score_mode: energy
   terminal_energy_weight: 100.0
 
-obstacle_levels: [6]
+obstacle_levels: [0]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -108,7 +108,7 @@ scheduler_config:
       t_hard: 0.8
   diffusion_schedulers:
     - type: fixed
-      M_k: 128
+      M_k: 64
       T_k: 0.3
   constraint_merge_strategy: merge
   diffusion_merge_strategy: merge

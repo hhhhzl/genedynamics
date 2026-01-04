@@ -4,7 +4,12 @@ Environment plugin implementations.
 
 from .single_integrator_2d import SingleIntegrator2DPlugin
 from .double_integrator_2d import DoubleIntegrator2DPlugin
-from .drone import DroneEnvironmentPlugin, DroneBox3DPlugin, DroneFull3DPlugin
+from .drone import (
+    DroneEnvironmentPlugin,
+    DroneBox3DPlugin,
+    DroneFull3DPlugin,
+    DroneFull3DPhysicsPlugin,
+)
 from .manipulator import ManipulatorEnvironmentPlugin
 
 __all__ = [
@@ -13,6 +18,7 @@ __all__ = [
     'DroneEnvironmentPlugin',
     'DroneBox3DPlugin',
     'DroneFull3DPlugin',
+    'DroneFull3DPhysicsPlugin',
     'ManipulatorEnvironmentPlugin',
 ]
 
