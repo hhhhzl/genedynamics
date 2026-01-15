@@ -7,9 +7,9 @@ import matplotlib.colors as mcolors
 import numpy as np
 import time
 from enerdynamics.solvers.single.edoc import run_edoc
-from enerdynamics.solvers.mbd import run_mbd
-from enerdynamics.solvers.mppi import run_mppi
-from enerdynamics.solvers.cem import run_cem
+from enerdynamics.solvers.single.mbd import run_mbd
+from enerdynamics.solvers.single.mppi import run_mppi
+from enerdynamics.solvers.single.cem import run_cem
 from enerdynamics.envs.factories import make_energy, make_env
 from configs.double_integrator_box.edoc import EDOCArgs
 from configs.double_integrator_box.mbd import DiffusionArgs

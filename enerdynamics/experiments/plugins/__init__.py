@@ -12,6 +12,8 @@ This package contains implementations of various plugins:
 # Import and export all plugins for convenient access
 from .methods import (
     EDOCMethodPlugin,
+    EBMBDMethodPlugin,
+    MBDMethodPlugin,
 )
 
 from .environments import (
@@ -48,6 +50,8 @@ from .obstacles import (
 __all__ = [
     # Methods
     'EDOCMethodPlugin',
+    'EBMBDMethodPlugin',
+    'MBDMethodPlugin',
     # Environments
     'SingleIntegrator2DPlugin',
     'DoubleIntegrator2DPlugin',

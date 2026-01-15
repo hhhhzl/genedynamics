@@ -23,10 +23,9 @@ from enerdynamics.solvers.single.edoc import (
     EDOCPlanner,
     run_edoc,
 )
-from enerdynamics.solvers.mbd import MBDSolver, run_mbd
-from enerdynamics.solvers.mppi import MPPISolver, run_mppi
-from enerdynamics.solvers.cem import CEMSolver, run_cem
-from enerdynamics.solvers.ilqr import iLQRSolver
+from enerdynamics.solvers.single.mbd.mbd import MBDSolver, run_mbd
+from enerdynamics.solvers.single.mppi.mppi import MPPISolver, run_mppi
+from enerdynamics.solvers.single.cem.cem import CEMSolver, run_cem
 
 __all__ = [
     # Base classes
@@ -46,8 +45,6 @@ __all__ = [
     # CEM
     "CEMSolver",
     "run_cem",
-    # Other implementations
-    "iLQRSolver",
 ]
 
 # Note: Configuration Args classes have been moved to configs/<env_name>/<solver>.py

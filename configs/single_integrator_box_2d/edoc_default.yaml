@@ -18,7 +18,7 @@ method_params:
   terminal_energy_weight: 100.0
   cfs_use_trajectory_qp: true   # true = full trajectory QP, false = per-step
 
-obstacle_levels: [6]
+obstacle_levels: [3]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
