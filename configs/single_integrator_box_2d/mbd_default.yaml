@@ -1,0 +1,53 @@
+# MBD experiment configuration for single_integrator_box_2d environment
+name: single2d_mbd_default
+output_dir: results/single2d/mbd
+
+env_name: single_integrator_box_2d
+env_params:
+  dt: 0.05
+  horizon: 64
+  p_max: 2.0
+  control_limit: 1.0
+
+method: mbd
+method_params:
+  Ndiffuse: 100
+  Nsample: 128
+  temp_sample: 0.3
+  beta0: 1.0e-4
+  betaT: 5.0e-2
+  action_limit: 1.0
+
+obstacle_levels: [3]
+obstacle_config:
+  generator: box2d
+  robot_radius: 0.05
+  obstacle_radius_scale: 1.3
+  p_max: 2.0
+  map_bounds:
+    x_min: -1.5
+    x_max: 1.0
+    y_min: -2.0
+    y_max: 0.5
+  enable_connectivity_check: true
+  enable_nonconvexity_check: true
+
+seeds: [0]
+backend: jax
+device: cpu
+
+metrics:
+  - ssr
+  - obstacle_density
+  - nonconvexity
+
+visualizations:
+  - trajectory
+  - diffusion
+  - energy_reward
+  - states
+
+metadata:
+  description: "MBD default configuration for single integrator 2D environment"
+  author: "enerdynamics"
+
