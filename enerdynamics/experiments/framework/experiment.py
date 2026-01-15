@@ -195,6 +195,8 @@ class ExperimentRunner:
             'constraint_manager': constraint_manager,  # Legacy (for backward compatibility)
             'constraint_pipeline': constraint_pipeline,  # New architecture (preferred)
             'scheduler': scheduler,  # New scheduler system
+            'obstacles': obstacles,  # Provide obstacles to methods that can use fast SDF (e.g., EB-MBD)
+            'obstacle_config': self.config.obstacle_config,  # Provide robot_radius/map bounds, etc.
             'np_random_seed': seed,  # Pass seed for reproducibility
         }
         planner = method_plugin.create_planner(env, energy, method_config)
