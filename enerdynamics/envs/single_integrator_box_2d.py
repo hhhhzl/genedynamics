@@ -116,6 +116,24 @@ class SingleIntegratorBox2DEnv:
     def jax_env_transition(self, state, action):
         return self.jax_transition(state, action)
 
+    def jax_sdf(self, pos):
+        """
+        Simple JAX SDF to the box boundary: min distance to walls.
+
+        Args:
+            pos: (..., 2) positions
+        Returns:
+            (...,) signed distance (positive inside box, zero on wall, negative outside)
+        """
+        if jnp is None:
+            raise RuntimeError("jax_sdf requires JAX to be installed.")
+        pos = jnp.asarray(pos, dtype=jnp.float32)
+        # Distance to each wall (positive inside)
+        dist_pos = self.p_max - pos
+        dist_neg = self.p_max + pos
+        dist_all = jnp.stack([dist_pos[..., 0], dist_pos[..., 1], dist_neg[..., 0], dist_neg[..., 1]], axis=-1)
+        return jnp.min(dist_all, axis=-1)
+
 
 # Register environment to registry
 if REGISTRY_AVAILABLE and register_env is not None:
