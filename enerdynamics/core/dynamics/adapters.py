@@ -33,6 +33,12 @@ class EnvDynamicsAdapter(DynamicsModel):
             env: Environment object with transition() and jax_transition() methods
         """
         self.env = env
+        if hasattr(env, "act_dim"):
+            self.act_dim = env.act_dim
+        elif hasattr(env, "action_size"):
+            self.act_dim = env.action_size
+        else:
+            self.act_dim = 1
     
     def step(self, x: State, u: Action) -> State:
         """
@@ -57,6 +63,15 @@ class EnvDynamicsAdapter(DynamicsModel):
         
         # Fall back to numpy transition
         return self.env.transition(x_data, u_data)
+
+    def jax_sdf(self, pos):
+        """
+        Pass-through JAX SDF if the wrapped environment provides it.
+        """
+        target = getattr(self.env, "jax_sdf", None)
+        if target is None:
+            raise AttributeError("Underlying environment does not provide jax_sdf")
+        return target(pos)
 
 
 class DynamicsToEnvAdapter:
@@ -155,6 +170,15 @@ class DynamicsToEnvAdapter:
     def jax_env_transition(self, state, action):
         """JAX environment transition (same as jax_transition for now)."""
         return self.jax_transition(state, action)
+
+    def jax_sdf(self, pos):
+        """
+        Pass-through JAX SDF if underlying env/dynamics provides it.
+        """
+        target = getattr(self.dynamics, "jax_sdf", None)
+        if target is None:
+            raise AttributeError("Underlying environment does not provide jax_sdf")
+        return target(pos)
     
     def reset(self, rng=None):
         """Reset environment (returns dummy state)."""

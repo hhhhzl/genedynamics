@@ -1104,9 +1104,6 @@ class EDOCBackendNumpy(EDOCBackendBase):
                 # Update trajectory after projection for feedback
                 trajectory = projected_trajectory
             
-            # Update scheduler with feedback (Fix A1: clarify field semantics)
-            # q_hat: Current step observation (batch aggregation)
-            # q_tilde: Smoothed observation (EMA from backend)
             feedback = {
                 "feasible_rate": q_bar_k,  # Fix A1: Use q_bar_k (batch aggregation) as feasible_rate
                 "q_hat": q_bar_k,  # Batch-aggregated q_bar_k (current observation)

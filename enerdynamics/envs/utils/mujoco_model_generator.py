@@ -228,3 +228,6 @@ def create_base_quadrotor_xml(
     return xml_template
 
 
+
+
+
