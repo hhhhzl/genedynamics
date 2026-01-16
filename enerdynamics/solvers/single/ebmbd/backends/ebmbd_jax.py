@@ -120,6 +120,12 @@ class EBMBDBackendJax:
                         self.beta0 = float(params["beta0"])
                     if "betaT" in params:
                         self.betaT = float(params["betaT"])
+                    # If diffusion scheduler is adaptive but non-JAX, block on JAX backend
+                    if hasattr(ds, "update") and getattr(ds, "backend", None) != "jax":
+                        raise NotImplementedError(
+                            "Adaptive diffusion scheduler update with non-JAX backend is not supported in JAX ebmbd. "
+                            "Provide a JAX-compatible adaptive diffusion scheduler or use fixed parameters."
+                        )
             except Exception:
                 pass
 

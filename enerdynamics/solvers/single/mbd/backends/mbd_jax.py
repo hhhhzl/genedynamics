@@ -112,6 +112,12 @@ class MBDBackendJax:
                     for k in range(self.Ndiffuse):
                         params = ds.diffusion_params(ScheduleState(k=k, K=total_steps)) or {}
                         T_k_list.append(float(params.get("T_k", self.temp_sample)))
+                    # block adaptive diffusion scheduler if backend not jax
+                    if hasattr(ds, "update") and getattr(ds, "backend", None) != "jax":
+                        raise NotImplementedError(
+                            "Adaptive diffusion scheduler update with non-JAX backend is not supported in JAX mbd. "
+                            "Provide a JAX-compatible adaptive diffusion scheduler or use fixed parameters."
+                        )
             except Exception:
                 T_k_list = []
         if not T_k_list:
