@@ -3,5 +3,5 @@ Backends for fixed diffusion scheduler.
 """
 
 # Import to trigger registration
-from . import fixed_numpy  # noqa: F401
+from . import fixed_numpy  
 

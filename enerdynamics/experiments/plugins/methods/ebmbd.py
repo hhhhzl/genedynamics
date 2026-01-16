@@ -52,6 +52,8 @@ class EBMBDMethodPlugin(MethodPlugin):
             obstacles=obstacles,
             obstacle_config=obstacle_config,
             seed=config.get("np_random_seed", None) or 0,
+            scheduler=config.get("scheduler"),
+            show_tqdm=config.get("show_tqdm", False),
         )
         return solver
 

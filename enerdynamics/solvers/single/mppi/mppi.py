@@ -30,7 +30,7 @@ except Exception:
 # Backend registry helpers
 # ============================================================================
 try:
-    from enerdynamics.solvers.single.mppi.backends import mppi_jax  # noqa: F401
+    from enerdynamics.solvers.single.mppi.backends import mppi_jax, mppi_numpy  # noqa: F401
 except ImportError:
     pass
 
@@ -40,6 +40,10 @@ def _get_mppi_backend(backend_name: str):
         from enerdynamics.solvers.single.mppi.backends.mppi_jax import MPPIBackendJax
 
         return MPPIBackendJax
+    if backend_name == "numpy":
+        from enerdynamics.solvers.single.mppi.backends.mppi_numpy import MPPIBackendNumpy
+
+        return MPPIBackendNumpy
     return None
 
 
@@ -68,10 +72,9 @@ class MPPISolver(SamplingSolver):
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
 
-        if backend.name != "jax":
+        if backend.name not in {"jax", "numpy"}:
             raise ValueError(
-                f"MPPI solver requires JAX backend, got {backend.name}. "
-                "Use backend=get_backend('jax') when creating the solver."
+                f"MPPI solver supports backends {{'jax','numpy'}}, got {backend.name}."
             )
 
         self.horizon = horizon

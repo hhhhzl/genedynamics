@@ -18,7 +18,7 @@ from enerdynamics.solvers.single.edoc import EnergyToLegacyAdapter
 
 # Register backend implementations
 try:
-    from .backends import ebmbd_jax  # noqa: F401
+    from .backends import ebmbd_jax  
 except ImportError:
     pass
 
@@ -61,6 +61,8 @@ class EBMBDSolver(SamplingSolver):
         obstacles: Optional[Any] = None,
         obstacle_config: Optional[dict] = None,
         seed: int = 0,
+        scheduler: Any = None,
+        show_tqdm: bool = False,
         **kwargs,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -85,6 +87,8 @@ class EBMBDSolver(SamplingSolver):
         self.use_min_over_time = use_min_over_time
         self.terminal_energy_weight = float(terminal_energy_weight)
         self.seed = seed
+        self.scheduler = scheduler
+        self.show_tqdm = bool(show_tqdm)
         # Optional obstacle manager + config (for fast JAX SDF via texture)
         self._obstacles = obstacles
         self._obstacle_config = obstacle_config or {}
