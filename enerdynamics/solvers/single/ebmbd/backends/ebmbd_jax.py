@@ -71,6 +71,57 @@ class EBMBDBackendJax:
         self.obstacles = getattr(solver, "_obstacles", None)
         self.obstacle_config = getattr(solver, "_obstacle_config", {}) or {}
         self.robot_radius = float(self.obstacle_config.get("robot_radius", 0.05))
+        self.scheduler = getattr(solver, "scheduler", None)
+        self.show_tqdm = bool(getattr(solver, "show_tqdm", False))
+
+        # Allow constraint scheduler to override barrier params (emerging_barrier)
+        if self.scheduler is not None and hasattr(self.scheduler, "constraint_schedulers"):
+            try:
+                cs_list = getattr(self.scheduler, "constraint_schedulers", [])
+                if cs_list:
+                    cs = cs_list[0]
+                    try:
+                        from enerdynamics.core.constraints.core.types import ScheduleState
+                        params_cs = cs.constraint_params(ScheduleState(k=0, K=max(self.Ndiffuse - 1, 1))) or {}
+                    except Exception:
+                        params_cs = cs.constraint_params(None) if hasattr(cs, "constraint_params") else {}
+                    self.mu = float(params_cs.get("mu", self.mu))
+                    self.alpha = float(params_cs.get("alpha", self.alpha))
+                    self.bound = float(params_cs.get("bound", self.bound))
+                    self.use_min_over_time = bool(params_cs.get("use_min_over_time", self.use_min_over_time))
+                    self.terminal_energy_weight = float(
+                        params_cs.get("terminal_energy_weight", self.terminal_energy_weight)
+                    )
+                    # If constraint scheduler is non-JAX and claims adaptive update, block
+                    if hasattr(cs, "update") and getattr(cs, "backend", None) != "jax":
+                        raise NotImplementedError(
+                            "Adaptive emerging barrier update with non-JAX backend is not supported in JAX ebmbd. "
+                            "Provide a JAX-compatible adaptive scheduler or use fixed parameters."
+                        )
+            except Exception:
+                pass
+
+        # Allow diffusion scheduler to override M_k / T_k / betas / Ndiffuse
+        if self.scheduler is not None and hasattr(self.scheduler, "diffusion_schedulers"):
+            try:
+                ds_list = getattr(self.scheduler, "diffusion_schedulers", [])
+                if ds_list:
+                    ds = ds_list[0]
+                    from enerdynamics.core.constraints.core.types import ScheduleState
+
+                    params = ds.diffusion_params(ScheduleState(k=0, K=max(self.Ndiffuse - 1, 1))) or {}
+                    if "M_k" in params:
+                        self.Nsample = int(params["M_k"])
+                    if "T_k" in params:
+                        self.temp = float(params["T_k"])
+                    if "Ndiffuse" in params:
+                        self.Ndiffuse = int(params["Ndiffuse"])
+                    if "beta0" in params:
+                        self.beta0 = float(params["beta0"])
+                    if "betaT" in params:
+                        self.betaT = float(params["betaT"])
+            except Exception:
+                pass
 
         # JAX primitives
         if not hasattr(self.env, "jax_transition"):
@@ -195,8 +246,34 @@ class EBMBDBackendJax:
         act_dim = self.env.act_dim
         Ndiffuse = self.Ndiffuse
 
-        # Diffusion schedule
-        betas = jnp.linspace(self.beta0, self.betaT, Ndiffuse, dtype=jnp.float32)
+        # Diffusion schedule (allow scheduler override)
+        try:
+            from enerdynamics.core.constraints.schedulers.utils import DiffusionNoiseSchedule
+            ds = None
+            if self.scheduler is not None and hasattr(self.scheduler, "diffusion_schedulers"):
+                ds_list = getattr(self.scheduler, "diffusion_schedulers", [])
+                if ds_list:
+                    ds = ds_list[0]
+            beta0 = self.beta0
+            betaT = self.betaT
+            Ndiffuse_override = Ndiffuse
+            if ds is not None:
+                from enerdynamics.core.constraints.core.types import ScheduleState
+
+                try:
+                    params = ds.diffusion_params(ScheduleState(k=0, K=max(Ndiffuse - 1, 1))) or {}
+                    beta0 = float(params.get("beta0", beta0))
+                    betaT = float(params.get("betaT", betaT))
+                    Ndiffuse_override = int(params.get("Ndiffuse", Ndiffuse_override))
+                except Exception:
+                    pass
+            betas_np = np.linspace(beta0, betaT, Ndiffuse_override, dtype=np.float32)
+            betas = jnp.asarray(DiffusionNoiseSchedule.from_betas(betas_np).betas, dtype=jnp.float32)
+            Ndiffuse = int(betas.shape[0])
+        except Exception:
+            betas = jnp.linspace(self.beta0, self.betaT, Ndiffuse, dtype=jnp.float32)
+
+        # Compute schedule arrays (shared for both branches)
         alphas = 1.0 - betas
         alphas_bar = jnp.cumprod(alphas)
         sigmas = jnp.sqrt(1.0 - alphas_bar)

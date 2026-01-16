@@ -11,11 +11,7 @@ env_params:
 
 method: ebmbd
 method_params:
-  Ndiffuse: 100
-  Nsample: 128
-  temp_sample: 0.3
-  beta0: 1.0e-4
-  betaT: 5.0e-2
+  show_tqdm: true
   action_limit: 1.0
   action_extra_sigma: 0.3
   # Align with EDOC: strong terminal objective helps actually reach the target
@@ -26,7 +22,7 @@ method_params:
   bound: 0.8
   use_min_over_time: true
 
-obstacle_levels: [9]
+obstacle_levels: [3]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -43,6 +39,26 @@ obstacle_config:
 seeds: [0]
 backend: jax
 device: cpu
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 64
+      T_k: 0.3
+      Ndiffuse: 100
+      beta0: 1.0e-4
+      betaT: 5.0e-2
+  diffusion_merge_strategy: merge
+  constraint_schedulers:
+    - type: emerging_barrier
+      mu: 10.0
+      alpha: 1.0
+      bound: 0.8
+      use_min_over_time: true
+      terminal_energy_weight: 100.0
+      margin: 0.0
+  constraint_merge_strategy: merge
 
 metrics:
   - ssr

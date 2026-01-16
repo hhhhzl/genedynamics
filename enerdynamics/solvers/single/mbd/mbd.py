@@ -30,7 +30,7 @@ except Exception:
 # Backend registry helpers
 # ============================================================================
 try:
-    from enerdynamics.solvers.single.mbd.backends import mbd_jax  # noqa: F401
+    from enerdynamics.solvers.single.mbd.backends import mbd_jax  
 except ImportError:
     pass
 
@@ -40,6 +40,10 @@ def _get_mbd_backend(backend_name: str):
         from enerdynamics.solvers.single.mbd.backends.mbd_jax import MBDBackendJax
 
         return MBDBackendJax
+    if backend_name == "numpy":
+        from enerdynamics.solvers.single.mbd.backends.mbd_numpy import MBDBackendNumpy
+
+        return MBDBackendNumpy
     return None
 
 
@@ -65,14 +69,15 @@ class MBDSolver(SamplingSolver):
         betaT: float = 1e-2,
         action_limit: float = 1.0,
         seed: int = 0,
+        scheduler: Any = None,
+        show_tqdm: bool = False,
         **kwargs,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
 
-        if backend.name != "jax":
+        if backend.name not in {"jax", "numpy"}:
             raise ValueError(
-                f"MBD solver requires JAX backend, got {backend.name}. "
-                "Use backend=get_backend('jax') when creating the solver."
+                f"MBD solver supports backends {{'jax','numpy'}}, got {backend.name}."
             )
 
         self.horizon = horizon
@@ -86,6 +91,8 @@ class MBDSolver(SamplingSolver):
                 beta0=beta0,
                 betaT=betaT,
                 action_limit=action_limit,
+                scheduler=scheduler,
+                show_tqdm=bool(show_tqdm),
             )
         )
 
@@ -115,6 +122,8 @@ class MBDSolver(SamplingSolver):
                 betaT=self.config["betaT"],
                 action_limit=self.config["action_limit"],
                 seed=self.seed,
+                scheduler=self.config.get("scheduler"),
+                show_tqdm=self.config.get("show_tqdm", False),
             )
         return self._backend_impl
 

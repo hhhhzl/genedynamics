@@ -1,7 +1,7 @@
 """Backend implementations for MPPI."""
 
 try:
-    from . import mppi_jax  # noqa: F401
+    from . import mppi_jax  
 except ImportError:
     pass
 

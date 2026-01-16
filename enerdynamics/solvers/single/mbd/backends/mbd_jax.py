@@ -28,6 +28,8 @@ class MBDBackendJax:
         betaT: float,
         action_limit: float,
         seed: int = 0,
+        scheduler: Any = None,
+        show_tqdm: bool = False,
     ):
         self.env = env_adapter
         self.energy = legacy_energy
@@ -41,6 +43,8 @@ class MBDBackendJax:
         self.action_limit = action_limit
         self.seed = seed
         self.act_dim = self.env.act_dim
+        self.scheduler = scheduler
+        self.show_tqdm = bool(show_tqdm)
 
         self._build_jax_functions()
 
@@ -83,11 +87,36 @@ class MBDBackendJax:
         x0_jnp = jnp.asarray(x0, dtype=jnp.float32)
 
         rng, diffuse_rng = jax.random.split(rng_key)
-        betas = jnp.linspace(self.beta0, self.betaT, self.Ndiffuse, dtype=jnp.float32)
+        try:
+            from enerdynamics.core.constraints.schedulers.utils import DiffusionNoiseSchedule
+
+            betas_np = np.linspace(self.beta0, self.betaT, self.Ndiffuse, dtype=np.float32)
+            betas = jnp.asarray(DiffusionNoiseSchedule.from_betas(betas_np).betas, dtype=jnp.float32)
+        except Exception:
+            betas = jnp.linspace(self.beta0, self.betaT, self.Ndiffuse, dtype=jnp.float32)
         alphas = 1.0 - betas
         alphas_bar = jnp.cumprod(alphas)
         sigmas = jnp.sqrt(1.0 - alphas_bar)
         diffusion_indices = jnp.arange(self.Ndiffuse - 1, 0, -1, dtype=jnp.int32)
+
+        # Diffusion scheduler params (T_k schedule only; M_k kept static for JAX shape stability)
+        T_k_list = []
+        if self.scheduler is not None and hasattr(self.scheduler, "diffusion_schedulers"):
+            try:
+                ds_list = getattr(self.scheduler, "diffusion_schedulers", [])
+                if ds_list:
+                    ds = ds_list[0]
+                    from enerdynamics.core.constraints.core.types import ScheduleState
+
+                    total_steps = self.Ndiffuse - 1
+                    for k in range(self.Ndiffuse):
+                        params = ds.diffusion_params(ScheduleState(k=k, K=total_steps)) or {}
+                        T_k_list.append(float(params.get("T_k", self.temp_sample)))
+            except Exception:
+                T_k_list = []
+        if not T_k_list:
+            T_k_list = [self.temp_sample for _ in range(self.Ndiffuse)]
+        T_k_arr = jnp.asarray(T_k_list, dtype=jnp.float32)
 
         def reverse_diffuse(rng_in, Ybar_init):
             def body(carry, idx):
@@ -106,7 +135,7 @@ class MBDBackendJax:
                 rew_std = jnp.std(rews_mean)
                 rew_std = jnp.where(rew_std < 1e-4, 1.0, rew_std)
 
-                logp0 = (rews_mean - rew_mean) / (rew_std * self.temp_sample)
+                logp0 = (rews_mean - rew_mean) / (rew_std * T_k_arr[idx])
                 weights = jax.nn.softmax(logp0)
                 Ybar_weighted = jnp.einsum("n,nij->ij", weights, Y0s)
 

@@ -10,7 +10,7 @@ from enerdynamics.envs.factories import make_env, make_energy
 
 # Import energy registrations to register energy functionals
 try:
-    import enerdynamics.envs.energy_registrations  # noqa: F401
+    import enerdynamics.envs.energy_registrations  
 except ImportError:
     pass  # Energy registry not available
 

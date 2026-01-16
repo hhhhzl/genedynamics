@@ -7,8 +7,8 @@ Operators that solve QP problems to enforce constraints:
 """
 
 # Import to trigger registration
-from . import per_step_filter  # noqa: F401
-from . import traj_filter  # noqa: F401
+from . import per_step_filter  
+from . import traj_filter  
 from .per_step_filter import PerStepQPFilter
 from .traj_filter import TrajQPFilter
 
