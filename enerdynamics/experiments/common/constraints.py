@@ -30,9 +30,9 @@ from enerdynamics.core.constraints.schedulers import (
 )
 
 # Import to trigger registration of all components
-from enerdynamics.core.constraints.convexify import cfs  # noqa: F401
-from enerdynamics.core.constraints.operators import qp  # noqa: F401
-from enerdynamics.core.constraints.solvers import jaxopt_osqp_solver  # noqa: F401
+from enerdynamics.core.constraints.convexify import cfs  
+from enerdynamics.core.constraints.operators import qp  
+from enerdynamics.core.constraints.solvers import jaxopt_osqp_solver  
 from enerdynamics.core.types import Trajectory
 from enerdynamics.envs.obstacles.base import ObstacleManager
 
@@ -531,6 +531,21 @@ def create_scheduler_from_config(
                     backend=backend_name,
                 )
                 constraint_schedulers.append(scheduler)
+            elif cs_type == 'emerging_barrier':
+                from enerdynamics.core.constraints.schedulers.ConstraintScheduler.emergingbarrier import (
+                    EmergingBarrierConstraintScheduler,
+                )
+
+                scheduler = EmergingBarrierConstraintScheduler(
+                    mu=float(cs_config.get("mu", 10.0)),
+                    alpha=float(cs_config.get("alpha", 1.0)),
+                    bound=float(cs_config.get("bound", 0.8)),
+                    use_min_over_time=bool(cs_config.get("use_min_over_time", True)),
+                    terminal_energy_weight=float(cs_config.get("terminal_energy_weight", 0.0)),
+                    margin=float(cs_config.get("margin", 0.0)),
+                    backend=backend_name,
+                )
+                constraint_schedulers.append(scheduler)
             else:
                 raise ValueError(f"Unknown constraint scheduler type: {cs_type}")
         
@@ -544,6 +559,9 @@ def create_scheduler_from_config(
                     M_k=int(ds_config.get('M_k', 64)),
                     T_k=float(ds_config.get('T_k', 0.5)),
                     s_k=ds_config.get('s_k'),
+                    beta0=ds_config.get('beta0'),
+                    betaT=ds_config.get('betaT'),
+                    Ndiffuse=ds_config.get('Ndiffuse'),
                     backend=backend_name,
                 )
                 diffusion_schedulers.append(scheduler)

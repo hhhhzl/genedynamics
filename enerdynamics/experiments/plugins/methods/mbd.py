@@ -42,6 +42,8 @@ class MBDMethodPlugin(MethodPlugin):
             betaT=config.get("betaT", 1e-2),
             action_limit=config.get("action_limit", getattr(env, "control_limit", 1.0)),
             seed=config.get("np_random_seed", None) or 0,
+            scheduler=config.get("scheduler"),  # pass composite scheduler (diffusion_schedulers)
+            show_tqdm=config.get("show_tqdm", False),
         )
         return solver
 

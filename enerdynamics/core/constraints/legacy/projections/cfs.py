@@ -37,7 +37,7 @@ except ImportError:
 
 # Import backend implementations to trigger registration
 try:
-    from enerdynamics.core.constraints.legacy.projections import backends  # noqa: F401
+    from enerdynamics.core.constraints.legacy.projections import backends  
 except ImportError:
     pass  # Backends may not be available
 

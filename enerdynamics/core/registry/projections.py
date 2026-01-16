@@ -235,7 +235,7 @@ def get_projection_registry() -> ProjectionTypeRegistry:
 
 # Import backend implementations to trigger registration when registry is imported
 try:
-    from enerdynamics.core.constraints.projections import backends  # noqa: F401
+    from enerdynamics.core.constraints.projections import backends  
 except ImportError:
     pass  # Backends may not be available
 

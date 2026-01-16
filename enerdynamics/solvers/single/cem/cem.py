@@ -33,7 +33,7 @@ except Exception:
 # Backend registry helpers
 # ============================================================================
 try:
-    from enerdynamics.solvers.single.cem.backends import cem_jax  # noqa: F401
+    from enerdynamics.solvers.single.cem.backends import cem_jax, cem_numpy  # noqa: F401
 except ImportError:
     pass
 
@@ -44,6 +44,10 @@ def _get_cem_backend(backend_name: str):
         from enerdynamics.solvers.single.cem.backends.cem_jax import CEMBackendJax
 
         return CEMBackendJax
+    if backend_name == "numpy":
+        from enerdynamics.solvers.single.cem.backends.cem_numpy import CEMBackendNumpy
+
+        return CEMBackendNumpy
     return None
 
 
@@ -73,10 +77,9 @@ class CEMSolver(SamplingSolver):
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
 
-        if backend.name != "jax":
+        if backend.name not in {"jax", "numpy"}:
             raise ValueError(
-                f"CEM solver requires JAX backend, got {backend.name}. "
-                "Use backend=get_backend('jax') when creating the solver."
+                f"CEM solver supports backends {{'jax','numpy'}}, got {backend.name}."
             )
 
         self.horizon = horizon

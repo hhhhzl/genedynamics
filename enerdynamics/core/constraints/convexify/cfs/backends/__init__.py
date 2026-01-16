@@ -7,8 +7,8 @@ Backend implementations for CFS convexifier:
 """
 
 # Import backend implementations to trigger registration
-from . import cfs_numpy  # noqa: F401
-from . import cfs_jax  # noqa: F401
+from . import cfs_numpy  
+from . import cfs_jax  
 
 __all__ = []
 

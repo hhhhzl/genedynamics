@@ -6,7 +6,7 @@ Energy-Driven Optimal Control using diffusion + A-MCSA + ADM.
 
 # Import backend implementations to trigger registration
 try:
-    from . import backends  # noqa: F401
+    from . import backends  
 except ImportError:
     pass  # Backend implementations may not be available
 
