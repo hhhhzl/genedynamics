@@ -32,6 +32,9 @@ class FixedDiffusionScheduler(DiffusionScheduler):
         M_k: int = 64,
         T_k: float = 0.5,
         s_k: Optional[float] = None,  # Optional beta scaling factor
+        beta0: Optional[float] = None,
+        betaT: Optional[float] = None,
+        Ndiffuse: Optional[int] = None,
         backend: str = "numpy",
         _skip_backend_lookup: bool = False,
         **kwargs
@@ -51,6 +54,9 @@ class FixedDiffusionScheduler(DiffusionScheduler):
         self.M_k = int(M_k)
         self.T_k = float(T_k)
         self.s_k = float(s_k) if s_k is not None else None
+        self.beta0 = float(beta0) if beta0 is not None else None
+        self.betaT = float(betaT) if betaT is not None else None
+        self.Ndiffuse = int(Ndiffuse) if Ndiffuse is not None else None
         self.extra = kwargs
         self.backend = backend
         
@@ -62,6 +68,12 @@ class FixedDiffusionScheduler(DiffusionScheduler):
         }
         if self.s_k is not None:
             self._cached_params["s_k"] = self.s_k
+        if self.beta0 is not None:
+            self._cached_params["beta0"] = self.beta0
+        if self.betaT is not None:
+            self._cached_params["betaT"] = self.betaT
+        if self.Ndiffuse is not None:
+            self._cached_params["Ndiffuse"] = self.Ndiffuse
         
         # Get backend implementation from registry (for future JAX support)
         if not _skip_backend_lookup:
@@ -70,6 +82,7 @@ class FixedDiffusionScheduler(DiffusionScheduler):
             if impl_class is not None and impl_class != FixedDiffusionScheduler:
                 self._backend_impl = impl_class(
                     M_k=M_k, T_k=T_k, s_k=s_k,
+                    beta0=beta0, betaT=betaT, Ndiffuse=Ndiffuse,
                     backend=backend, _skip_backend_lookup=True, **kwargs
                 )
             else:

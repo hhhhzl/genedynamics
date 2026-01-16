@@ -52,6 +52,29 @@ class EBMBDBackendNumpy:
 
         # RNG (deterministic given solver.seed)
         self._np_rng = np.random.default_rng(int(getattr(solver, "seed", 0)))
+        self.scheduler = getattr(solver, "scheduler", None)
+        self.show_tqdm = bool(getattr(solver, "show_tqdm", False))
+
+        # Allow constraint scheduler override (emerging_barrier)
+        if self.scheduler is not None and hasattr(self.scheduler, "constraint_schedulers"):
+            try:
+                cs_list = getattr(self.scheduler, "constraint_schedulers", [])
+                if cs_list:
+                    cs = cs_list[0]
+                    try:
+                        from enerdynamics.core.constraints.core.types import ScheduleState
+                        params_cs = cs.constraint_params(ScheduleState(k=0, K=max(self.Ndiffuse - 1, 1))) or {}
+                    except Exception:
+                        params_cs = cs.constraint_params(None) if hasattr(cs, "constraint_params") else {}
+                    self.mu = float(params_cs.get("mu", self.mu))
+                    self.alpha = float(params_cs.get("alpha", self.alpha))
+                    self.bound = float(params_cs.get("bound", self.bound))
+                    self.use_min_over_time = bool(params_cs.get("use_min_over_time", self.use_min_over_time))
+                    self.terminal_energy_weight = float(
+                        params_cs.get("terminal_energy_weight", self.terminal_energy_weight)
+                    )
+            except Exception:
+                pass
 
         # Validate env adapter
         if not hasattr(self.env, "transition"):
@@ -166,7 +189,39 @@ class EBMBDBackendNumpy:
         act_dim = int(self.env.act_dim)
         Ndiffuse = self.Ndiffuse
 
-        betas = np.linspace(self.beta0, self.betaT, Ndiffuse, dtype=np.float32)
+        # Allow diffusion scheduler override M_k / T_k / betas / Ndiffuse if present
+        local_Nsample = self.Nsample
+        local_temp = self.temp
+        try:
+            from enerdynamics.core.constraints.schedulers.utils import DiffusionNoiseSchedule
+
+            beta0 = self.beta0
+            betaT = self.betaT
+            Ndiffuse_override = Ndiffuse
+            ds = None
+            if self.scheduler is not None and hasattr(self.scheduler, "diffusion_schedulers"):
+                ds_list = getattr(self.scheduler, "diffusion_schedulers", [])
+                if ds_list:
+                    ds = ds_list[0]
+            if ds is not None:
+                try:
+                    params = ds.diffusion_params(None) or {}
+                    if "M_k" in params:
+                        local_Nsample = int(params["M_k"])
+                    if "T_k" in params:
+                        local_temp = float(params["T_k"])
+                    beta0 = float(params.get("beta0", beta0))
+                    betaT = float(params.get("betaT", betaT))
+                    Ndiffuse_override = int(params.get("Ndiffuse", Ndiffuse_override))
+                except Exception:
+                    pass
+
+            betas = DiffusionNoiseSchedule.from_betas(
+                np.linspace(beta0, betaT, Ndiffuse_override, dtype=np.float32)
+            ).betas.astype(np.float32)
+            Ndiffuse = int(len(betas))
+        except Exception:
+            betas = np.linspace(self.beta0, self.betaT, Ndiffuse, dtype=np.float32)
         alphas = 1.0 - betas
         alphas_bar = np.cumprod(alphas)
         sigmas = np.sqrt(1.0 - alphas_bar)
@@ -178,7 +233,7 @@ class EBMBDBackendNumpy:
         extra_sigmas_by_idx = self.action_extra_sigma * (1.0 - progress_inc_by_idx)  # idx high->extra, idx low->0
 
         Ybar = np.zeros((horizon, act_dim), dtype=np.float32)
-        temp_eps = max(self.temp, 1e-6)
+        temp_eps = max(local_temp, 1e-6)
 
         reward_hist = []
         Ybar_hist = []
@@ -189,15 +244,15 @@ class EBMBDBackendNumpy:
             sqrt_alpha_bar = float(np.sqrt(alphas_bar[idx]))
             Yi = Ybar * sqrt_alpha_bar
             sigma_i = float(sigmas[idx])
-            eps = self._np_rng.standard_normal(size=(self.Nsample, horizon, act_dim)).astype(np.float32)
+            eps = self._np_rng.standard_normal(size=(local_Nsample, horizon, act_dim)).astype(np.float32)
             Y0s = Ybar[None, :, :] + sigma_i * eps
             Y0s = np.clip(Y0s, -self.action_limit, self.action_limit)
 
             # Score samples
-            total_costs = np.zeros((self.Nsample,), dtype=np.float32)
-            rews_mean = np.zeros((self.Nsample,), dtype=np.float32)
+            total_costs = np.zeros((local_Nsample,), dtype=np.float32)
+            rews_mean = np.zeros((local_Nsample,), dtype=np.float32)
 
-            for m in range(self.Nsample):
+            for m in range(local_Nsample):
                 acts = Y0s[m]
                 # rollout once (states for SDF; cost for task objective)
                 states = self._rollout_states(state_init, acts)
@@ -228,7 +283,7 @@ class EBMBDBackendNumpy:
             w = np.exp(logw).astype(np.float32)
             w_sum = float(np.sum(w))
             if not np.isfinite(w_sum) or w_sum <= 1e-12:
-                w = np.full((self.Nsample,), 1.0 / float(self.Nsample), dtype=np.float32)
+                w = np.full((local_Nsample,), 1.0 / float(local_Nsample), dtype=np.float32)
             else:
                 w = w / w_sum
 

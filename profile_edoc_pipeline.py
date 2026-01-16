@@ -17,10 +17,10 @@ from enerdynamics.envs.obstacles import ObstacleManager
 from enerdynamics.experiments.common.obstacle_generation import generate_box2d_obstacles
 
 # Import to trigger registration of all constraint components
-from enerdynamics.core.constraints.convexify import cfs  # noqa: F401
-from enerdynamics.core.constraints.operators import qp  # noqa: F401
-from enerdynamics.core.constraints.schedulers import cosine_anneal  # noqa: F401
-from enerdynamics.core.constraints.solvers import jaxopt_osqp_solver  # noqa: F401
+from enerdynamics.core.constraints.convexify import cfs  
+from enerdynamics.core.constraints.operators import qp  
+from enerdynamics.core.constraints.schedulers import cosine_anneal  
+from enerdynamics.core.constraints.solvers import jaxopt_osqp_solver  
 
 def profile_edoc_pipeline():
     """Profile EDOC with new constraint pipeline."""

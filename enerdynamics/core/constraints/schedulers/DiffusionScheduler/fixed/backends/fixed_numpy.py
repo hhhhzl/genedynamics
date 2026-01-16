@@ -40,5 +40,11 @@ class FixedDiffusionSchedulerNumpy(FixedDiffusionScheduler):
         }
         if self.s_k is not None:
             params["s_k"] = self.s_k
+        if getattr(self, "beta0", None) is not None:
+            params["beta0"] = self.beta0
+        if getattr(self, "betaT", None) is not None:
+            params["betaT"] = self.betaT
+        if getattr(self, "Ndiffuse", None) is not None:
+            params["Ndiffuse"] = self.Ndiffuse
         return params
 

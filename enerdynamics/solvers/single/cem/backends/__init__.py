@@ -2,7 +2,7 @@
 
 # Ensure JAX backend is discoverable on import
 try:
-    from . import cem_jax  # noqa: F401
+    from . import cem_jax  
 except ImportError:
     pass
 
