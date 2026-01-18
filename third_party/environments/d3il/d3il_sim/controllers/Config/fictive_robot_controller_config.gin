@@ -1,0 +1,19 @@
+# Joint PD Controller
+environments.d3il.d3il_sim.controllers.GainsInterface.JointPDGains.pgain = [1200.0, 1200.0, 1200.0, 1200.0, 1200.0, 300.0, 100.0]
+environments.d3il.d3il_sim.controllers.GainsInterface.JointPDGains.dgain = [25.0, 25.0, 25.0, 25.0, 15.0, 12.5, 7.5]
+
+# Damping Controller
+environments.d3il.d3il_sim.controllers.GainsInterface.DampingGains.dgain = [5. , 5. , 5. , 5. , 3. , 2.5, 1.5]
+
+# Cartesian Position Impedance Controller
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosPDGains.pgain = [1000.0, 1000.0, 1000.0]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosPDGains.dgain = [31.622776601683793, 31.622776601683793, 31.622776601683793]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosPDGains.pgain_null = [1.2, 1.2, 1.2, 1.2, 0.5, 0.3, 0.1]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosPDGains.dgain_null = [0.1 , 0.1 , 0.1 , 0.1 , 0.06, 0.05, 0.03]
+
+# Cartesian Position and Orientation Impedance Controller
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatPDGains.pgain = [33.13189603604459, 187.9403713446798, 31.0064033017648, 27.69370238555632, 33.98706171459314, 180.9185531893281]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatPDGains.dgain = [16.329377526884908,  7.672464154315535,  19.307738014214987,  19.369027815549774,  14.709666893271407,  13.529185054450448]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatPDGains.pgain_null = [7.675519770796831, 2.676935478437176, 8.539040163444975, 1.270446361314313, 8.87752182480855, 2.186782233762969, 4.414432577659688]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatPDGains.dgain_null = [0.35158682223052035,0.03532768494155088,0.9812676349486628,0.791470915462905,0.00066062504055376,0.9520533614689963,0.04623941774486632]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatPDGains.dgain_velcontroller = [25.0, 25.0, 25.0, 25.0, 15.0, 12.5, 7.5]

@@ -9,7 +9,11 @@ here = path.abspath(path.dirname(__file__))
 requires_list = []
 with open(path.join(here, 'requirements.txt'), encoding='utf-8') as f:
     for line in f:
-        requires_list.append(str(line))
+        raw = str(line).strip()
+        # Skip comments / blanks
+        if not raw or raw.startswith("#"):
+            continue
+        requires_list.append(raw)
 
 
 setup(
@@ -19,5 +23,5 @@ setup(
     author='hector',
     author_email='hectorh@cmu.edu',
     packages=find_packages(),
-    install_requires=[],
+    install_requires=requires_list,
 )
