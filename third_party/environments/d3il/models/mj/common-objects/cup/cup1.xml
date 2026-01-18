@@ -1,0 +1,20 @@
+<mujoco model="cup1">
+    <asset>
+      <mesh name="cup1_mesh" file="assets/cup.stl" scale="1.3 2 1.3" />
+    </asset>
+  
+      <worldbody>
+        <body name="cup1">
+          <geom type="mesh" mesh="cup1_mesh" pos="0 0 0" euler='1.57 -2.35619 0' rgba="1.0 1.0 0.0 1.0"/>
+          <geom type="mesh" mesh="cup1_mesh" pos="0 0 0" euler='1.57 -1.57079 0' rgba="1.0 1.0 0.0 1.0"/>
+          <geom type="mesh" mesh="cup1_mesh" pos="0 0 0" euler='1.57 -0.78539 0' rgba="1.0 1.0 0.0 1.0"/>
+          <geom type="mesh" mesh="cup1_mesh" pos="0 0 0" euler='1.57 0 0' rgba="1.0 1.0 0.0 1.0"/>
+          <geom type="mesh" mesh="cup1_mesh" pos="0 0 0" euler='1.57 0.78539 0' rgba="1.0 1.0 0.0 1.0"/>
+          <geom type="mesh" mesh="cup1_mesh" pos="0 0 0" euler='1.57 1.57079 0' rgba="1.0 1.0 0.0 1.0"/>
+          <geom type="mesh" mesh="cup1_mesh" pos="0 0 0" euler='1.57 2.35619 0' rgba="1.0 1.0 0.0 1.0"/>
+          <geom type="mesh" mesh="cup1_mesh" pos="0 0 0" euler='1.57 3.14159 0' rgba="1.0 1.0 0.0 1.0"/>
+          <joint name="cup1_joint" type="free"/>
+        </body>
+      </worldbody>
+  
+  </mujoco>

@@ -1,0 +1,13 @@
+<mujoco model="PandaFrame">
+   <worldbody>
+    <body name="workspace" pos="0.5 0 0.2" >
+        <site name="workspace_box" type="box" size="0.001 0.001 0.2" rgba="0 0 0 0.5"/>
+        <site name="x_constrain_low" type="sphere" size="0.01 0.01 0.01" rgba="1 0 0 0" pos="-0.001 0 0"/>
+        <site name="x_constrain_high" type="sphere" size="0.01 0.01 0.01" rgba="1 0 0 0" pos="0.001 0 0"/>
+        <site name="y_constrain_low" type="sphere" size="0.01 0.01 0.01" rgba="1 0 0 0" pos="0 -0.001 0"/>
+        <site name="y_constrain_high" type="sphere" size="0.01 0.01 0.01" rgba="1 0 0 0" pos="0 0.001 0"/>
+        <site name="z_constrain_low" type="sphere" size="0.01 0.01 0.01" rgba="1 0 0 0" pos="0 0 -0.22"/>
+        <site name="z_constrain_high" type="sphere" size="0.01 0.01 0.01" rgba="1 0 0 0" pos="0 0 0.2"/>
+    </body>
+    </worldbody>
+</mujoco>

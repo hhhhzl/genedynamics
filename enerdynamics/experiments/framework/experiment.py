@@ -246,7 +246,7 @@ class ExperimentRunner:
         trajectory = self._extract_trajectory(result, env)
         
         # 10. Compute metrics
-        metrics = self._compute_metrics(trajectory, env, obstacles, constraint_manager, level)
+        metrics = self._compute_metrics(trajectory, env, obstacles, constraint_manager, level, env_plugin=env_plugin)
         
         # 11. Prepare results
         # Add obstacle statistics for backward compatibility
@@ -411,10 +411,28 @@ class ExperimentRunner:
         states_list = [np.asarray(s, dtype=np.float32) for s in states]
         actions_list = [np.asarray(a, dtype=np.float32) for a in actions]
         
-        return Trajectory(states=states_list, actions=actions_list)
+        # Attach optional per-step execution info if present (useful for rollout-based methods)
+        info = {}
+        if "infos" in result:
+            info["infos"] = result.get("infos")
+        if "costs" in result:
+            info["costs"] = result.get("costs")
+        if "success" in result:
+            info["success"] = result.get("success")
+        if "collision" in result:
+            info["collision"] = result.get("collision")
+
+        return Trajectory(states=states_list, actions=actions_list, info=info or None)
     
-    def _compute_metrics(self, trajectory: Trajectory, env: Any, obstacles: Any,
-                        constraints: Any, level: int) -> Dict[str, Any]:
+    def _compute_metrics(
+        self,
+        trajectory: Trajectory,
+        env: Any,
+        obstacles: Any,
+        constraints: Any,
+        level: int,
+        env_plugin: Any = None,
+    ) -> Dict[str, Any]:
         """
         Compute all requested metrics.
         
@@ -441,6 +459,7 @@ class ExperimentRunner:
                     robot_radius=robot_radius,
                     level=level,
                     obstacle_config=self.config.obstacle_config,
+                    env_plugin=env_plugin,
                 )
                 metrics_result[metric_name] = convert_to_json_serializable(metric_value)
             except Exception as e:
@@ -700,6 +719,24 @@ class ExperimentRunner:
         
         # Add planning result data if available
         planning_result = result.get('result', {})
+        # Standardized rollout fields (for MPC / execution-based methods)
+        if isinstance(planning_result, dict):
+            if "exec_states" in planning_result:
+                serializable_result["exec_states"] = convert_to_json_serializable(planning_result["exec_states"])
+            if "exec_actions" in planning_result:
+                serializable_result["exec_actions"] = convert_to_json_serializable(planning_result["exec_actions"])
+            if "success" in planning_result:
+                serializable_result["success"] = convert_to_json_serializable(planning_result["success"])
+            if "collision" in planning_result:
+                serializable_result["collision"] = convert_to_json_serializable(planning_result["collision"])
+            if "planning_time_per_step" in planning_result:
+                serializable_result["planning_time_per_step"] = convert_to_json_serializable(planning_result["planning_time_per_step"])
+                try:
+                    pts = [float(x) for x in planning_result["planning_time_per_step"] if x is not None]
+                    serializable_result["avg_planning_time_per_step"] = float(np.mean(pts)) if pts else 0.0
+                except Exception:
+                    pass
+
         if 'energies' in planning_result:
             energies = planning_result['energies']
             if hasattr(energies, 'tolist'):

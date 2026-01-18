@@ -14,6 +14,8 @@ from .methods import (
     EDOCMethodPlugin,
     EBMBDMethodPlugin,
     MBDMethodPlugin,
+    EDOCMPCMethodPlugin,
+    MBDMPCMethodPlugin,
 )
 
 from .environments import (
@@ -24,12 +26,15 @@ from .environments import (
     DroneFull3DPlugin,
     DroneFull3DPhysicsPlugin,
     ManipulatorEnvironmentPlugin,
+    D3ILAvoidingPlugin,
+    AvoidingPlanEnvironmentPlugin,
 )
 
 from .metrics import (
     SSRMetricsPlugin,
     ObstacleDensityMetricsPlugin,
     NonconvexityMetricsPlugin,
+    EpisodeOutcomeMetricsPlugin,
 )
 
 from .visualizations import (
@@ -52,6 +57,8 @@ __all__ = [
     'EDOCMethodPlugin',
     'EBMBDMethodPlugin',
     'MBDMethodPlugin',
+    'EDOCMPCMethodPlugin',
+    'MBDMPCMethodPlugin',
     # Environments
     'SingleIntegrator2DPlugin',
     'DoubleIntegrator2DPlugin',
@@ -60,10 +67,13 @@ __all__ = [
     'DroneFull3DPlugin',
     'DroneFull3DPhysicsPlugin',
     'ManipulatorEnvironmentPlugin',
+    'D3ILAvoidingPlugin',
+    'AvoidingPlanEnvironmentPlugin',
     # Metrics
     'SSRMetricsPlugin',
     'ObstacleDensityMetricsPlugin',
     'NonconvexityMetricsPlugin',
+    'EpisodeOutcomeMetricsPlugin',
     # Visualizations
     'TrajectoryVisualizationPlugin',
     'Trajectory3DVisualizationPlugin',

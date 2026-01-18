@@ -17,6 +17,8 @@ from enerdynamics.experiments.plugins import (
     EDOCMethodPlugin,
     EBMBDMethodPlugin,
     MBDMethodPlugin,
+    EDOCMPCMethodPlugin,
+    MBDMPCMethodPlugin,
     SingleIntegrator2DPlugin,
     DoubleIntegrator2DPlugin,
     DroneEnvironmentPlugin,
@@ -24,9 +26,12 @@ from enerdynamics.experiments.plugins import (
     DroneFull3DPlugin,
     DroneFull3DPhysicsPlugin,
     ManipulatorEnvironmentPlugin,
+    D3ILAvoidingPlugin,
+    AvoidingPlanEnvironmentPlugin,
     SSRMetricsPlugin,
     ObstacleDensityMetricsPlugin,
     NonconvexityMetricsPlugin,
+    EpisodeOutcomeMetricsPlugin,
     TrajectoryVisualizationPlugin,
     Trajectory3DVisualizationPlugin,
     DiffusionVisualizationPlugin,
@@ -153,6 +158,8 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(EDOCMethodPlugin(), 'method')
     runner.register_plugin(EBMBDMethodPlugin(), 'method')
     runner.register_plugin(MBDMethodPlugin(), 'method')
+    runner.register_plugin(EDOCMPCMethodPlugin(), 'method')
+    runner.register_plugin(MBDMPCMethodPlugin(), 'method')
     
     # Environment plugins
     runner.register_plugin(SingleIntegrator2DPlugin(), 'environment')
@@ -162,11 +169,14 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(DroneFull3DPlugin(), 'environment')
     runner.register_plugin(DroneFull3DPhysicsPlugin(), 'environment')
     runner.register_plugin(ManipulatorEnvironmentPlugin(), 'environment')
+    runner.register_plugin(D3ILAvoidingPlugin(), 'environment')
+    runner.register_plugin(AvoidingPlanEnvironmentPlugin(), 'environment')
     
     # Metrics plugins
     runner.register_plugin(SSRMetricsPlugin(), 'metric')
     runner.register_plugin(ObstacleDensityMetricsPlugin(), 'metric')
     runner.register_plugin(NonconvexityMetricsPlugin(), 'metric')
+    runner.register_plugin(EpisodeOutcomeMetricsPlugin(), 'metric')
     
     # Visualization plugins
     runner.register_plugin(TrajectoryVisualizationPlugin(), 'visualization')

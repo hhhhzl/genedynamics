@@ -1,0 +1,50 @@
+<mujocoinclude>
+ <actuator>
+  <position class="panda" ctrlrange="-2.9671 2.9671" forcerange="-87 87" joint="panda_joint1" kp="8700.0"
+            name="panda_joint1"/>
+  <position class="panda" ctrlrange="-1.8326 1.8326" forcerange="-87 87" joint="panda_joint2" kp="8700.0"
+            name="panda_joint2"/>
+  <position class="panda" ctrlrange="-2.9671 2.9671" forcerange="-87 87" joint="panda_joint3" kp="8700.0"
+            name="panda_joint3"/>
+  <position class="panda" ctrlrange="-3.1416 0.0" forcerange="-87 87" joint="panda_joint4" kp="8700.0"
+            name="panda_joint4"/>
+  <position class="panda" ctrlrange="-2.9671 2.9671" forcerange="-12 12" joint="panda_joint5" kp="1200.0"
+            name="panda_joint5"/>
+  <position class="panda" ctrlrange="-3.7525 2.1817" forcerange="-12 12" joint="panda_joint6" kp="1200.0"
+            name="panda_joint6"/>
+  <position class="panda" ctrlrange="-2.9671 2.9671" forcerange="-12 12" joint="panda_joint7" kp="1200.0"
+            name="panda_joint7"/>
+ </actuator>
+
+ <default>
+  <default class="panda">
+   <joint axis="0 0 1" limited="true" pos="0 0 0"/>
+   <position ctrllimited="true" forcelimited="true" user="1002 40 2001 -0.005 0.005"/>
+   <default class="panda_viz">
+    <geom conaffinity="0" contype="0" group="0" mass="0" rgba=".95 .99 .92 1" type="mesh"/>
+   </default>
+
+   <default class="panda_col">
+    <geom conaffinity="1" contype="1" group="3" rgba=".5 .6 .7 1" type="mesh"/>
+   </default>
+   <default class="panda_arm">
+    <joint damping="100"/>
+   </default>
+   <default class="panda_forearm">
+    <joint damping="10"/>
+   </default>
+   <default class="panda_finger">
+    <joint armature="5" damping="100"/>
+    <geom conaffinity="0" condim="6" contype="1" friction="1 0.5 0.0001" group="3" margin="0.001" rgba="0.5 0.6 0.7 .4"
+          solimp="0.8 0.9 0.001" solref="0.01 1" user="0"/>
+    <position user="1002 40 2001 -0.0001 0.0001"/>
+   </default>
+  </default>
+
+  <default class="panda_overlay">
+   <joint armature="1" damping="1000" frictionloss="10" limited="false"/>
+   <geom conaffinity="0" contype="0" group="2" rgba=".42 0.42 0.42 .5" type="mesh"/>
+  </default>
+ </default>
+
+</mujocoinclude>

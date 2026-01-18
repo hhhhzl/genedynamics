@@ -1,0 +1,9 @@
+<mujocoinclude>
+ <worldbody>
+  <body name="box" pos="0.5 0 0">
+   <freejoint name="box:joint"/>
+   <geom condim="4" name="box:geom1" pos="0 0 0" rgba="0.32 0.32 0.32 1" size="0.02 0.02 0.02" solimp="0.99 0.99 0.001"
+         solref="0.002 0.1" type="box" density="500"/>
+  </body>
+ </worldbody>
+</mujocoinclude>

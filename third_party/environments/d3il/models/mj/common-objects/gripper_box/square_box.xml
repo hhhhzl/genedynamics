@@ -1,0 +1,18 @@
+<mujoco model="square_box">
+  <worldbody>
+      <body name="square_box">
+        <geom pos="-0.03325 0 0" size="0.0105 0.04375 0.01" rgba="0 0 1 1.0" type="box" mass="0.2"/>
+        <geom pos="0.0 0.03325 0" size="0.03125 0.0105 0.01" rgba="0 0 1 1.0" type="box" mass="0.2"/>
+        <geom pos="0.0 -0.03325 0" size="0.03125 0.0105 0.01" rgba="0 0 1 1.0" type="box"  mass="0.2"/>
+        <geom pos="0.03325 0 0" size="0.0105 0.04375 0.01" rgba="0 0 1 1.0" type="box" mass="0.2"/>
+
+        <geom pos="0.054 0 0" size="0.02525 0.015875 0.01" rgba="0 0 1 1.0" mass="0.2" friction="0.3 0.001 0.0001" type="box" />
+
+<!--        <site rgba="1 0 0 1" size="0.005" pos="0.054 0 0" name="handle_site"/>-->
+<!--        <site rgba="1 0 0 1" size="0.003" pos="0 0 0" name="center_site"/>-->
+
+        <joint name="square_box_joint" type="free"/>
+
+      </body>
+  </worldbody>
+</mujoco>

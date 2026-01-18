@@ -1,0 +1,12 @@
+<mujoco>
+    <worldbody>
+        <body name="flipping_box" pos="0.6 0.15 0.0" quat="1 0 0 0">
+            <geom pos="0 0 0" size="0.05 0.05 0.01" rgba="1 0 0 1.0" type="box" friction="0.3 0.001 0.0001" priority="1"/>
+            <geom pos="0.05 0 0.0485" size="0.005 0.05 0.045" rgba="0 0 1 1.0" type="box" mass="0.001"/>
+            <geom pos="0 0.05 0.0485" size="0.05 0.005 0.045" rgba="0 1 0 1.0" type="box" mass="0.001"/>
+            <geom pos="-0.05 0 0.0485" size="0.005 0.05 0.045" rgba="1 0 0 1.0" type="box" mass="0.001"/>
+            <geom pos="0 -0.05 0.0485" size="0.05 0.005 0.045" rgba="0 1 1 1.0" type="box" mass="0.001"/>
+            <joint name="box_joint" type="free"/>
+        </body>
+    </worldbody>
+</mujoco>

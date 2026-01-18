@@ -1,0 +1,13 @@
+<mujocoinclude>
+ <actuator>
+  <velocity ctrlrange="-2.1750 2.1750" forcerange="-87 87" joint="panda_joint1" kv="0.8" name="panda_joint1"/>
+  <velocity ctrlrange="-2.1750 2.1750" forcerange="-87 87" joint="panda_joint2" kv="0.8" name="panda_joint2"/>
+  <velocity ctrlrange="-2.1750 2.1750" forcerange="-87 87" joint="panda_joint3" kv="0.8" name="panda_joint3"/>
+  <velocity ctrlrange="-2.1750 2.1750" forcerange="-87 87" joint="panda_joint4" kv="0.8" name="panda_joint4"/>
+  <velocity ctrlrange="-2.6100 2.6100" forcerange="-12 12" joint="panda_joint5" kv="0.8" name="panda_joint5"/>
+  <velocity ctrlrange="-2.6100 2.6100" forcerange="-12 12" joint="panda_joint6" kv="0.8" name="panda_joint6"/>
+  <velocity ctrlrange="-2.9671 2.9671" forcerange="-12 12" joint="panda_joint7" kv="0.8" name="panda_joint7"/>
+ </actuator>
+
+
+</mujocoinclude>
