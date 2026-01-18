@@ -1,0 +1,137 @@
+V-HACD V2.2
+Syntax: testVHACD [options] --input infile.obj --output outfile.obj --log logfile.txt
+
+Options:
+       --input                     Wavefront .obj input file name
+       --output                    VRML 2.0 output file name
+       --log                       Log file name
+       --resolution                Maximum number of voxels generated during the voxelization stage (default=100,000, range=10,000-16,000,000)
+       --depth                     Maximum number of clipping stages. During each split stage, parts with a concavity higher than the user defined threshold are clipped according the "best" clipping plane (default=20, range=1-32)
+       --concavity                 Maximum allowed concavity (default=0.0025, range=0.0-1.0)
+       --planeDownsampling         Controls the granularity of the search for the "best" clipping plane (default=4, range=1-16)
+       --convexhullDownsampling    Controls the precision of the convex-hull generation process during the clipping plane selection stage (default=4, range=1-16)
+       --alpha                     Controls the bias toward clipping along symmetry planes (default=0.05, range=0.0-1.0)
+       --beta                      Controls the bias toward clipping along revolution axes (default=0.05, range=0.0-1.0)
+       --gamma                     Controls the maximum allowed concavity during the merge stage (default=0.00125, range=0.0-1.0)
+       --delta                     Controls the bias toward maximaxing local concavity (default=0.05, range=0.0-1.0)
+       --pca                       Enable/disable normalizing the mesh before applying the convex decomposition (default=0, range={0,1})
+       --mode                      0: voxel-based approximate convex decomposition, 1: tetrahedron-based approximate convex decomposition (default=0, range={0,1})
+       --maxNumVerticesPerCH       Controls the maximum number of triangles per convex-hull (default=64, range=4-1024)
+       --minVolumePerCH            Controls the adaptive sampling of the generated convex-hulls (default=0.0001, range=0.0-0.01)
+       --convexhullApproximation   Enable/disable approximation when computing convex-hulls (default=1, range={0,1})
+       --oclAcceleration           Enable/disable OpenCL acceleration (default=0, range={0,1})
+       --oclPlatformID             OpenCL platform id (default=0, range=0-# OCL platforms)
+       --oclDeviceID               OpenCL device id (default=0, range=0-# OCL devices)
+       --help                      Print usage
+
+Examples:
+       testVHACD.exe --input bunny.obj --output bunny_acd.obj --log log.txt
+
++ OpenCL (OFF)
++ Parameters
+	 input                                       /media/nic/0C340EEC0C340EEC/YCBObjects/dev/ycb_models/011_banana/textured.obj
+	 resolution                                  1000000
+	 max. depth                                  20
+	 max. concavity                              0.001
+	 plane down-sampling                         4
+	 convex-hull down-sampling                   4
+	 alpha                                       0.05
+	 beta                                        0.05
+	 gamma                                       0.0005
+	 pca                                         0
+	 mode                                        0
+	 max. vertices per convex-hull               64
+	 min. volume to add vertices to convex-hulls 0.0001
+	 convex-hull approximation                   1
+	 OpenCL acceleration                         1
+	 OpenCL platform ID                          0
+	 OpenCL device ID                            0
+	 output                                      /media/nic/0C340EEC0C340EEC/YCBObjects/dev/ycb_models_sf/011_banana/textured_vhacd_composite.obj
+	 log                                         /media/nic/0C340EEC0C340EEC/YCBObjects/dev/ycb_models_sf/011_banana/vhacd_log.txt
++ Load mesh
++ Voxelization
+	 dim = 64	-> 9681 voxels
+	 dim = 296	-> 817904 voxels
+	 dim = 316	-> 992405 voxels
+	 dim = 317	-> 1001674 voxels
+	 time 0.270894s
++ Compute primitive set
+	 # primitives               1001674
+	 # inside surface           904591
+	 # on surface               97083
+	 time 0.00969484s
++ Approximate Convex Decomposition
+	 Subdivision level 1
+	 -> Part[0] C  = 0.367288, E  = 0.0619361, VS = 97083, VI = 904591
+		 [Regular sampling] Number of clipping planes 146
+
+			 Best  0020 T=0.127970 C=0.121767 B=0.006203 S=0.000000 (1.0, 0.0, 0.0, -0.002)
+
+		 [Refining] Number of clipping planes 9
+
+			 Best  0005 T=0.128882 C=0.122547 B=0.006335 S=0.000000 (1.0, 0.0, 0.0, -0.003)
+
+	 Subdivision level 2
+	 -> Part[0] C  = 0.0600005, E  = 0.0476864, VS = 74747, VI = 699152
+		 [Regular sampling] Number of clipping planes 114
+
+			 Best  0056 T=0.029933 C=0.026812 B=0.000150 S=0.002971 (0.0, 1.0, 0.0, 0.017)
+
+		 [Refining] Number of clipping planes 9
+
+			 Best  0006 T=0.030170 C=0.027074 B=0.000124 S=0.002971 (0.0, 1.0, 0.0, 0.016)
+
+	 -> Part[1] C  = 0.0647207, E  = 0.0207379, VS = 32506, VI = 195269
+		 [Regular sampling] Number of clipping planes 77
+
+			 Best  0018 T=0.021127 C=0.020717 B=0.000410 S=0.000000 (1.0, 0.0, 0.0, -0.044)
+
+		 [Refining] Number of clipping planes 9
+
+			 Best  0002 T=0.021592 C=0.021187 B=0.000405 S=0.000000 (1.0, 0.0, 0.0, -0.043)
+
+	 Subdivision level 3
+	 -> Part[0] C  = 0.0135315, E  = 0.0237453, VS = 37220, VI = 316953
+	 -> Part[1] C  = 0.0144755, E  = 0.0279406, VS = 43796, VI = 375930
+	 -> Part[2] C  = 0.0188764, E  = 0.0184412, VS = 28906, VI = 184127
+		 [Regular sampling] Number of clipping planes 67
+
+			 Best  0006 T=0.009151 C=0.009141 B=0.000010 S=0.000000 (1.0, 0.0, 0.0, -0.017)
+
+		 [Refining] Number of clipping planes 9
+
+			 Best  0005 T=0.009109 C=0.009094 B=0.000015 S=0.000000 (1.0, 0.0, 0.0, -0.018)
+
+	 -> Part[3] C  = 0.00327414, E  = 0.00285556, VS = 4476, VI = 10266
+		 [Regular sampling] Number of clipping planes 28
+
+			 Best  0003 T=0.001614 C=0.001454 B=0.000000 S=0.000160 (1.0, 0.0, 0.0, -0.050)
+
+		 [Refining] Number of clipping planes 9
+
+			 Best  0004 T=0.001622 C=0.001461 B=0.000000 S=0.000160 (1.0, 0.0, 0.0, -0.050)
+
+	 Subdivision level 4
+	 -> Part[0] C  = 0.00489368, E  = 0.0125604, VS = 19688, VI = 99078
+	 -> Part[1] C  = 0.00437915, E  = 0.0100646, VS = 15776, VI = 78491
+	 -> Part[2] C  = 0.000566804, E  = 0.00135633, VS = 2126, VI = 3470
+	 -> Part[3] C  = 0.000935011, E  = 0.00183289, VS = 2873, VI = 6273
++ Generate 6 convex-hulls 
+	 time 3.88303s
++ Merge Convex Hulls
+	 time 0.0145211s
++ Simplify 6 convex-hulls 
+		 Simplify CH[00000] 1038 V, 2072 T
+		 Simplify CH[00001] 914 V, 1824 T
+		 Simplify CH[00002] 355 V, 706 T
+		 Simplify CH[00003] 428 V, 852 T
+		 Simplify CH[00004] 78 V, 152 T
+		 Simplify CH[00005] 149 V, 294 T
+	 time 0.0315377s
++ Generate output: 6 convex-hulls 
+	 CH[00000] 64 V, 124 T
+	 CH[00001] 64 V, 124 T
+	 CH[00002] 64 V, 124 T
+	 CH[00003] 64 V, 124 T
+	 CH[00004] 22 V, 40 T
+	 CH[00005] 31 V, 58 T

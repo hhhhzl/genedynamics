@@ -1,0 +1,30 @@
+cartAndOr_ctrl_dgain:
+- 24
+- 24
+- 24
+- 3
+- 3
+- 3
+cartAndOr_ctrl_dgain_null:
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.00
+- 0.00
+- 0.00
+cartAndOr_ctrl_pgain:
+- 150.0
+- 150.0
+- 150.0
+- 10.0
+- 10.0
+- 10.0
+cartAndOr_ctrl_pgain_null:
+- 1.2
+- 1.2
+- 1.2
+- 1.2
+- 0.5
+- 0.3
+- 0.1

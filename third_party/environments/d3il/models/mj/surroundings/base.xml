@@ -1,0 +1,20 @@
+<mujoco model="base_surrounding">
+ <compiler angle="radian" discardvisual="false"/>
+    <option collision="all" cone="elliptic" gravity="0 0 -9.81" impratio="3" solver="Newton" timestep="0.001"
+            tolerance="1e-10"/>
+ <size nconmax="2000" njmax="2000"/>
+    <asset>
+        <texture builtin="gradient" height="32" rgb1="0.26 0.58 0.51" rgb2="0.26 0.58 0.51" type="skybox" width="32"/>
+    </asset>
+    <visual>
+         <map zfar="1000" znear="0.001"/>
+         <quality offsamples="16" shadowsize="8192"/>
+    </visual>
+    <worldbody>
+        <light castshadow="false" cutoff="100" diffuse="1 1 1" dir="-0 0 -1.3" directional="true" exponent="1" pos="0 0 1.3"
+             specular=".1 .1 .1"/>
+          <body name="ground" pos="0 0 -0.94">
+            <geom name="ground:geom1" rgba="0.26 0.58 0.51 1" size="0 0 1" type="plane"/>
+          </body>
+    </worldbody>
+</mujoco>

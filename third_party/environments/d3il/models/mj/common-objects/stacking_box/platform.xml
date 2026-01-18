@@ -1,0 +1,9 @@
+<mujoco>
+    <worldbody>
+        <body name="platform" pos="0.5 0.2 0.0" quat="1 0 0 0">
+            <geom pos="0 0 0" size="0.15 0.15 0.01" rgba="0.5 0.5 0.5 0.5" type="box" mass="10" friction="0.3 0.001 0.0001" priority="1"/>
+            <geom pos="0.1 0.1 0.1" size="0.015 0.1" rgba="0 0.5 0 1.0" type="cylinder" mass="0.001"/>
+            <geom pos="-0.1 0.1 0.1" size="0.015 0.015 0.1" rgba="0.5 0 0 1.0" type="box" mass="0.001"/>
+        </body>
+    </worldbody>
+</mujoco>

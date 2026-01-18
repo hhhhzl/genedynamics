@@ -1,0 +1,11 @@
+<mujoco model="torque">
+ <actuator>
+  <motor forcelimited="true" forcerange="-87 87" joint="panda_joint1" name="panda_joint1_act"/>
+  <motor forcelimited="true" forcerange="-87 87" joint="panda_joint2" name="panda_joint2_act"/>
+  <motor forcelimited="true" forcerange="-87 87" joint="panda_joint3" name="panda_joint3_act"/>
+  <motor forcelimited="true" forcerange="-87 87" joint="panda_joint4" name="panda_joint4_act"/>
+  <motor forcelimited="true" forcerange="-12 12" joint="panda_joint5" name="panda_joint5_act"/>
+  <motor forcelimited="true" forcerange="-12 12" joint="panda_joint6" name="panda_joint6_act"/>
+  <motor forcelimited="true" forcerange="-12 12" joint="panda_joint7" name="panda_joint7_act"/>
+ </actuator>
+</mujoco>

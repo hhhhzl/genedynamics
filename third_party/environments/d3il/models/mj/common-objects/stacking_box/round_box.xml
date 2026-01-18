@@ -1,0 +1,62 @@
+<mujoco>
+  <asset>
+    <mesh name="cup_mesh" file="assets/cup.stl" scale="1 5 1" />
+  </asset>
+    <worldbody>
+      <body name="round_box">
+        <geom type="mesh" mesh="cup_mesh" pos="0 0 0" euler='1.57 -2.35619 0' rgba="1.0 1.0 0.0 1.0"/>
+        <geom type="mesh" mesh="cup_mesh" pos="0 0 0" euler='1.57 -1.57079 0' rgba="1.0 1.0 0.0 1.0"/>
+        <geom type="mesh" mesh="cup_mesh" pos="0 0 0" euler='1.57 -0.78539 0' rgba="1.0 1.0 0.0 1.0"/>
+        <geom type="mesh" mesh="cup_mesh" pos="0 0 0" euler='1.57 0 0' rgba="1.0 1.0 0.0 1.0"/>
+        <geom type="mesh" mesh="cup_mesh" pos="0 0 0" euler='1.57 0.78539 0' rgba="1.0 1.0 0.0 1.0"/>
+        <geom type="mesh" mesh="cup_mesh" pos="0 0 0" euler='1.57 1.57079 0' rgba="1.0 1.0 0.0 1.0"/>
+        <geom type="mesh" mesh="cup_mesh" pos="0 0 0" euler='1.57 2.35619 0' rgba="1.0 1.0 0.0 1.0"/>
+        <geom type="mesh" mesh="cup_mesh" pos="0 0 0" euler='1.57 3.14159 0' rgba="1.0 1.0 0.0 1.0"/>
+        <joint name="cup_joint" type="free"/>
+      </body>
+    </worldbody>
+</mujoco>
+
+
+
+<!--<mujocoinclude>-->
+<!--  <worldbody>-->
+<!--      <body name="round_box" pos="0.6 0.15 0.0" quat="1 0 0 0">-->
+<!--&lt;!&ndash;        <geom pos="0 0 0" size="0.05 0.05 0.01" rgba="1 0 0 1.0" type="box" mass="1.0" friction="0.3 0.001 0.0001" priority="1"/>&ndash;&gt;-->
+
+<!--        <geom pos="-0.04245 0 0.07" size="0.015 0.025 0.07" rgba="0 0.5 0 1.0" type="box" />-->
+<!--        <geom pos="0.04245 0 0.07" size="0.015 0.025 0.07" rgba="0 0.5 0 1.0" type="box" />-->
+<!--        <geom pos="0 -0.04245 0.07" size="0.025 0.015 0.07" rgba="0 0.5 0 1.0" type="box" />-->
+<!--        <geom pos="0 0.04245 0.07" size="0.025 0.015 0.07" rgba="0 0.5 0 1.0" type="box" />-->
+
+<!--&lt;!&ndash;        <geom pos="-0.03 -0.03 0.07" size="0.015 0.025 0.07" rgba="0 0.5 0 1.0" euler='0 0 0.785398' type="box" />&ndash;&gt;-->
+<!--&lt;!&ndash;        <geom pos="0.03 0.03 0.07" size="0.015 0.025 0.07" rgba="0 0.5 0 1.0" euler='0 0 0.785398' type="box" />&ndash;&gt;-->
+<!--&lt;!&ndash;        <geom pos="0.03 -0.03 0.07" size="0.025 0.015 0.07" rgba="0 0.5 0 1.0" euler='0 0 0.785398' type="box" />&ndash;&gt;-->
+<!--&lt;!&ndash;        <geom pos="-0.03 0.03 0.07" size="0.025 0.015 0.07" rgba="0 0.5 0 1.0" euler='0 0 0.785398' type="box" />&ndash;&gt;-->
+
+
+
+<!--        <joint name="round_box_joint" type="free"/>-->
+
+<!--    </body>-->
+<!--  </worldbody>-->
+<!--</mujocoinclude>-->
+
+
+<!--<mujoco model="round_box">-->
+<!--  <worldbody>-->
+<!--      <body name="round_box" pos="0.6 0.15 0.0" quat="1 0 0 0">-->
+<!--        <geom pos="-0.04245 0 0.07" size="0.015 0.025 0.07" rgba="0 0.5 0 1.0" type="box"/>-->
+<!--        <geom pos="0.04245 0 0.07" size="0.015 0.025 0.07" rgba="0 0.5 0 1.0" type="box" />-->
+<!--        <geom pos="0 -0.04245 0.07" size="0.025 0.015 0.07" rgba="0 0.5 0 1.0" type="box" />-->
+<!--        <geom pos="0 0.04245 0.07" size="0.025 0.015 0.07" rgba="0 0.5 0 1.0" type="box" />-->
+<!--        <geom pos="-0.03 -0.03 0.07" size="0.015 0.025 0.07" rgba="0 0.5 0 1.0" axisangle='0 0 1 0.785398' type="box" />-->
+<!--        <geom pos="0.03 0.03 0.07" size="0.015 0.025 0.07" rgba="0 0.5 0 1.0" axisangle='0 0 1 0.785398' type="box" />-->
+<!--        <geom pos="0.03 -0.03 0.07" size="0.025 0.015 0.07" rgba="0 0.5 0 1.0" axisangle='0 0 1 0.785398' type="box" />-->
+<!--        <geom pos="-0.03 0.03 0.07" size="0.025 0.015 0.07" rgba="0 0.5 0 1.0" axisangle='0 0 1 0.785398' type="box" />-->
+
+<!--        <joint name="round_box_joint" type="free"/>-->
+
+<!--    </body>-->
+<!--  </worldbody>-->
+<!--</mujoco>-->
