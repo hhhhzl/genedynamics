@@ -42,6 +42,7 @@ class CBFConvexifier(Convexifier):
         tau: float = 0.05,
         position_extractor: Optional[Callable[[State], np.ndarray]] = None,
         backend: str = "numpy",
+        build_traj_qp: bool = False,
         **kwargs
     ):
         """
@@ -68,6 +69,7 @@ class CBFConvexifier(Convexifier):
         self.tau = tau
         self.position_extractor = position_extractor or self._default_extract_position
         self.backend = backend
+        self.build_traj_qp = bool(build_traj_qp)
         
         # Get backend implementation from registry
         registry = get_registry()
@@ -118,8 +120,7 @@ class CBFConvexifier(Convexifier):
             actions = [ref[1]] if isinstance(ref, tuple) else [None]
         
         # Build constraints for each time step
-        As = []
-        bs = []
+        per_step_constraints = []  # list of (t, A_row, b_val)
         
         for i, (x, u) in enumerate(zip(states, actions)):
             # Extract position and velocity
@@ -156,22 +157,46 @@ class CBFConvexifier(Convexifier):
             A_row = n[None, :]  # (1, action_dim)
             b_val = -(self.k1 * hdot + self.k0 * h)
             
-            As.append(A_row)
-            bs.append(b_val)
+            per_step_constraints.append((i, A_row, b_val))
         
-        # Stack constraints
-        if As:
-            A = np.vstack(As)  # (m, action_dim)
-            b = np.array(bs, dtype=np.float32)  # (m,)
-        else:
-            # No active constraints
-            A = np.zeros((0, 2), dtype=np.float32)  # action_dim = 2 for 2D
-            b = np.zeros((0,), dtype=np.float32)
-        
+        # No constraints at all
+        if len(per_step_constraints) == 0:
+            A_empty = np.zeros((0, len(actions[0]) if actions and actions[0] is not None else 2), dtype=np.float32)
+            b_empty = np.zeros((0,), dtype=np.float32)
+            return ConvexConstraint(
+                A=A_empty,
+                b=b_empty,
+                meta={"per_step": True, "type": "cbf"}
+            )
+
+        # If not building trajectory-level QP: per-step stacked (existing behavior)
+        if not self.build_traj_qp:
+            As = [row for _, row, _ in per_step_constraints]
+            bs = [val for _, _, val in per_step_constraints]
+            A = np.vstack(As)
+            b = np.asarray(bs, dtype=np.float32)
+            return ConvexConstraint(
+                A=A,
+                b=b,
+                meta={"per_step": True, "type": "cbf"}
+            )
+
+        # Trajectory-level: block-insert each timestep's control constraint into a single matrix
+        H = len(actions)
+        action_dim = per_step_constraints[0][1].shape[1]
+        total_m = len(per_step_constraints)
+        A_traj = np.zeros((total_m, H * action_dim), dtype=np.float32)
+        b_traj = np.zeros((total_m,), dtype=np.float32)
+
+        for idx, (t, A_row, b_val) in enumerate(per_step_constraints):
+            start = t * action_dim
+            A_traj[idx, start:start + action_dim] = A_row.flatten()
+            b_traj[idx] = b_val
+
         return ConvexConstraint(
-            A=A,
-            b=b,
-            meta={"per_step": True, "type": "cbf"}
+            A=A_traj,
+            b=b_traj,
+            meta={"per_step": False, "type": "cbf", "constrains": "actions"}
         )
     
     def _finite_difference_gradient(self, point: np.ndarray, eps: float = 1e-4) -> np.ndarray:

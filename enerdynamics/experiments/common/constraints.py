@@ -30,6 +30,7 @@ from enerdynamics.core.constraints.schedulers import (
 )
 
 # Import to trigger registration of all components
+# Note: importing cfs module also registers cfs_action convexifier via cfs/__init__.py
 from enerdynamics.core.constraints.convexify import cfs  
 from enerdynamics.core.constraints.operators import qp  
 from enerdynamics.core.constraints.solvers import jaxopt_osqp_solver  
@@ -375,31 +376,57 @@ def create_constraint_pipeline(
         verbose=False,
     )
     
-    # Determine operator based on CFS config
-    # CFS constraints are on states (positions), not actions, so we need to use
-    # a state projection operator instead of per-step QP filter
-    # Priority: method_params > constraint_config > default
-    if method_params is not None and 'cfs_use_trajectory_qp' in method_params:
-        use_trajectory_qp = bool(method_params.get('cfs_use_trajectory_qp', False))
+    # Ablation / mode selection for EDOC + CFS
+    # - state_traj: classic CFS state-space constraints + traj_qp or projection
+    # - u_traj: convert CFS state constraints into trajectory-level action constraints + traj_qp_actions
+    # - u_perstep: convert CFS state constraints into per-step action constraints + per_step_qp
+    cfs_qp_mode = "state_traj"
+    if method_params is not None and "cfs_qp_mode" in method_params:
+        cfs_qp_mode = str(method_params.get("cfs_qp_mode") or "state_traj")
+    cfs_qp_mode = cfs_qp_mode.lower()
+
+    convexifier_name = "cfs"
+    operator_name = "projection"
+    project_states = True
+    project_actions = False
+
+    if cfs_qp_mode == "state_traj":
+        # Priority: method_params > constraint_config > default
+        if method_params is not None and 'cfs_use_trajectory_qp' in method_params:
+            use_trajectory_qp = bool(method_params.get('cfs_use_trajectory_qp', False))
+        else:
+            use_trajectory_qp = cfs_config.get('use_trajectory_qp', False)
+        operator_name = "traj_qp" if use_trajectory_qp else "projection"
+        convexifier_name = "cfs"
+        project_states = True
+        project_actions = False
+    elif cfs_qp_mode == "u_traj":
+        convexifier_name = "cfs_action"
+        operator_name = "traj_qp_actions"
+        project_states = False
+        project_actions = True
+    elif cfs_qp_mode == "u_perstep":
+        convexifier_name = "cfs_action"
+        operator_name = "per_step_qp"
+        project_states = False
+        project_actions = True
     else:
-        use_trajectory_qp = cfs_config.get('use_trajectory_qp', False)
-    
-    if use_trajectory_qp:
-        operator_name = "traj_qp"
-    else:
-        # Use projection operator for state constraints (CFS projects states, not actions)
-        operator_name = "projection"
+        raise ValueError(
+            f"Unknown cfs_qp_mode='{cfs_qp_mode}'. Expected 'state_traj', 'u_traj', or 'u_perstep'."
+        )
     
     # Create pipeline
     # Note: Action constraints (SpeedConstraint, AccelerationConstraint) are handled
     # separately in the solver, not in the pipeline
     pipeline = HighPerformanceConstraintPipeline(
-        convexifier_name="cfs",
+        convexifier_name=convexifier_name,
         operator_name=operator_name,
         scheduler_name="cosine_anneal",
         config=pipeline_config,
         obstacles=obstacles,
+        env=env,  # Needed for cfs_action mapping
         position_extractor=None,  # Use default
+        action_mode=cfs_qp_mode if cfs_qp_mode in ("u_traj", "u_perstep") else None,
         max_constraints_per_point=int(
             method_params.get('cfs_max_constraints_per_point') if (method_params is not None and 'cfs_max_constraints_per_point' in method_params)
             else cfs_config.get('max_constraints_per_point', 8)
@@ -410,8 +437,8 @@ def create_constraint_pipeline(
         ),
         robot_radius=robot_radius,
         # Operator parameters
-        project_states=True,  # CFS projects states (positions)
-        project_actions=False,  # CFS doesn't project actions
+        project_states=project_states,
+        project_actions=project_actions,
         use_slack=True,  # Use slack-QP by default (if using traj_qp)
         solver_backend=backend_name,
         # JAX convexifier parameters
