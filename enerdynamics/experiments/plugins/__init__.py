@@ -16,6 +16,7 @@ from .methods import (
     MBDMethodPlugin,
     EDOCMPCMethodPlugin,
     MBDMPCMethodPlugin,
+    MDOCMethodPlugin,
 )
 
 from .environments import (
@@ -59,6 +60,7 @@ __all__ = [
     'MBDMethodPlugin',
     'EDOCMPCMethodPlugin',
     'MBDMPCMethodPlugin',
+    'MDOCMethodPlugin',
     # Environments
     'SingleIntegrator2DPlugin',
     'DoubleIntegrator2DPlugin',

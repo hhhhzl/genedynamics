@@ -196,3 +196,8 @@ class DynamicsToEnvAdapter:
     def cost(self, state):
         """Cost function (placeholder, energy handles this)."""
         return 0.0
+
+    @property
+    def target(self):
+        """Pass-through target if underlying env/dynamics provides it."""
+        return getattr(self.dynamics, "target", None)

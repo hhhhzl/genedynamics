@@ -50,8 +50,7 @@ class CFSNumpyConvexifier(CFSConvexifier):
         positions = np.stack(positions, axis=0)  # (H, dim)
         
         # Compute SDF and gradients for all positions
-        # Legacy uses: clearance = params.margin, threshold = clearance + constraint_margin
-        clearance = params.margin  # This is the clearance (minimum distance)
+        clearance = params.margin  # clearance (minimum distance)
         threshold = clearance + self.constraint_margin  # Threshold for selecting active obstacles
         
         constraints_list = []  # List of (position_idx, A_row, b_val)
@@ -59,9 +58,7 @@ class CFSNumpyConvexifier(CFSConvexifier):
         # Get all obstacles
         obstacles_list = self.obstacles.obstacles if hasattr(self.obstacles, 'obstacles') else [self.obstacles]
         
-        # Process all points (aligned with JAX version for consistency)
-        # Note: Legacy NumPy only processes active points, but JAX version processes all points
-        # We align with JAX version to ensure consistent behavior across backends
+        # Process all points
         
         # Debug: Track constraint generation per point
         debug_info = {
@@ -79,13 +76,11 @@ class CFSNumpyConvexifier(CFSConvexifier):
                 sdf_values.append(sdf_val)
             sdf_values = np.asarray(sdf_values, dtype=np.float32)
             
-            # Find obstacles that are close enough (like legacy: d0 < threshold)
-            # Legacy uses: threshold = clearance + constraint_margin
+            # Find obstacles that are close enough
             cand_mask = sdf_values < threshold
             cand_indices = np.where(cand_mask)[0]
             
             # Select candidate obstacles
-            # Align with JAX version: sort all obstacles and select top k
             # This ensures we get the closest obstacles even if they're not in candidate list
             if cand_indices.size == 0:
                 # No obstacles close enough, but still add constraint for closest obstacle
@@ -93,17 +88,13 @@ class CFSNumpyConvexifier(CFSConvexifier):
                 k = min(self.max_constraints_per_point, len(sdf_values))
                 cand_indices = np.argsort(sdf_values)[:k]
             else:
-                # Select from candidates - align with JAX version behavior
-                # JAX version sorts all obstacles and takes top k, not just from candidates
+                # Select from candidates
                 k = min(self.max_constraints_per_point, cand_indices.size)
                 # Sort all obstacles by SDF (ascending = most violating first)
-                # This matches JAX version: jnp.argsort(sdf_array)[:k]
                 sorted_all = np.argsort(sdf_values)
                 cand_indices = sorted_all[:k]
             
             # Build constraints for each selected obstacle
-            # Align with JAX version: loop k times, not through cand_indices
-            # IMPORTANT: Try to get k valid constraints, but if some have invalid gradients, continue
             valid_constraints = 0
             constraints_before = len(constraints_list)
             for j_idx in range(k):
@@ -115,7 +106,6 @@ class CFSNumpyConvexifier(CFSConvexifier):
                 d0 = float(sdf_values[int(j)])
                 
                 # Get gradient
-                # IMPORTANT: Must compute gradient for THIS specific obstacle, not union SDF
                 grad = None
                 if hasattr(obstacle, "gradient"):
                     try:
@@ -135,15 +125,12 @@ class CFSNumpyConvexifier(CFSConvexifier):
                 # Normalize gradient
                 g = grad / gnorm
                 
-                # Build constraint exactly like legacy: b = (clearance - d0) / gnorm + g^T x_ref
+                # Build constraint: b = (clearance - d0) / gnorm + g^T x_ref
                 # Constraint: g^T x >= (clearance - d0) / gnorm + g^T pos
                 A_row = g[None, :]  # (1, dim)
                 b_val = float((clearance - d0) / gnorm + float(np.dot(g, pos)))
                 constraints_list.append((t, A_row, b_val))
                 valid_constraints += 1
-            
-            # Note: JAX version doesn't have second pass, so we remove it to align
-            # The first pass should be sufficient if we select from all obstacles
             
             # Debug: Track constraints generated for this point
             constraints_for_this_point = len(constraints_list) - constraints_before
@@ -222,10 +209,7 @@ class CFSNumpyConvexifier(CFSConvexifier):
     def _finite_difference_gradient(self, obstacle, point: np.ndarray, eps: float = 1e-4) -> np.ndarray:
         """
         Compute gradient using finite differences for a specific obstacle.
-        
-        IMPORTANT: This method computes the gradient of the obstacle's SDF function,
-        NOT the union SDF. This is critical for correct constraint generation.
-        
+    
         Args:
             obstacle: The specific obstacle to compute gradient for
             point: Point at which to compute gradient
@@ -244,7 +228,7 @@ class CFSNumpyConvexifier(CFSConvexifier):
             xp[i] += eps
             xm[i] -= eps
             
-            # Use THIS obstacle's SDF, not union SDF (critical fix!)
+            # Use THIS obstacle's SDF
             if hasattr(obstacle, 'sdf'):
                 sdf_p = obstacle.sdf(xp)
                 sdf_m = obstacle.sdf(xm)
