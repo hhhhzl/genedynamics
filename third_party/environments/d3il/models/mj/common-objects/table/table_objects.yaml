@@ -1,0 +1,91 @@
+task_type: practical_manipulation
+discription: practical_manipulation
+
+robots:
+  {
+    grasp_robot: {
+      base_position: [0.0, 0.0, 0.0],
+      base_rotation: [0.0, 0.0, 0.0],
+      init_end_eff_pos: [0.525, 0.0, 0.6],
+      init_end_eff_quat: [0.0, 1.0, 0.0, 0.0],
+    },
+  }
+
+objects:
+  {
+    # peach: {
+    #   type: 015_peach,
+    #   init_pos: [0.6, 0.0, 0.0],
+    #   init_quat: [1.0, 0.0, 0.0, 0.0],
+    #   source: ycb,
+    # },
+    # orange: {
+    #   type: 017_orange,
+    #   init_pos: [0.6, 0.1, 0.0],
+    #   init_quat: [1.0, 0.0, 0.0, 0.0],
+    #   source: ycb,
+    # },
+    banana: {
+      type: 011_banana,
+      init_pos: [0.4, 0.0, 0.3],
+      init_quat: [1.0, 0.0, 0.0, 0.0],
+      source: ycb,
+    },
+#    strawberry: {
+#      type: 012_strawberry,
+#      init_pos: [0.4, 0.1, 0.3],
+#      init_quat: [1.0, 0.0, 0.0, 0.0],
+#      source: ycb,
+#    },
+#    apple: {
+#      type: 013_apple,
+#      init_pos: [0.6, -0.1, 0.3],
+#      init_quat: [1.0, 0.0, 0.0, 0.0],
+#      source: ycb,
+#    },
+    plate: {
+      type: 029_plate,
+      init_pos: [0.55, -0.3, 0.3],
+      init_quat: [1.0, 0.0, 0.0, 0.0],
+      source: ycb,
+    },
+    target_plate: {
+      type: Box,
+      name: target_plate,
+      init_pos: [0.5, 0.0, 0.2],
+      init_quat: [0.0, 1.0, 0.0, 0.0],
+      rgba: [0.5, 0.0, 0.5, 0.8],
+      size: [0.15, 0.15, 0.01],
+      visual_only: True,
+      static: True,
+      source: primitive_object,
+    },
+    mug: {
+      type: 025_mug,
+      init_pos: [0.5, 0.3, 0.4],
+      init_quat: [0.0, 1.0, 0.0, 0.0],
+      source: ycb,
+    },
+    target_mug: {
+      type: Box,
+      name: target_mug,
+      init_pos: [0.5, 0.2, 0.2],
+      init_quat: [0.0, 1.0, 0.0, 0.0],
+      rgba: [1.0, 0.5, 0.0, 0.8],
+      size: [0.05, 0.05, 0.01],
+      visual_only: True,
+      static: True,
+      source: primitive_object,
+    },
+    table: {
+      type: Box,
+      name: table,
+      init_pos: [0.4, 0.0, 0.1],
+      init_quat: [0.0, 1.0, 0.0, 0.0],
+      rgba: [0.5, 0.5, 0.5, 1.0],
+      size: [0.3, 0.5, 0.1],
+      # visual_only: True,
+      static: True,
+      source: primitive_object,
+    },
+  }

@@ -1,0 +1,21 @@
+composite_file: textured_vhacd_composite.obj
+material_file: textured.mtl
+material_map: texture_map.png
+obj_disp_name: banana
+obj_name: textured
+original_file: textured.obj
+submesh_files:
+- textured_vhacd_collision_0.obj
+- textured_vhacd_collision_1.obj
+- textured_vhacd_collision_2.obj
+- textured_vhacd_collision_3.obj
+- textured_vhacd_collision_4.obj
+- textured_vhacd_collision_5.obj
+submesh_props:
+- 0.34929402547133914
+- 0.4175215408161425
+- 0.12115424131447701
+- 0.09619872037894428
+- 0.006040287245434549
+- 0.009791184773662582
+weight: 0.066

@@ -1,0 +1,14 @@
+<mujoco model="box_with_lid">
+  <worldbody>
+     <body name="chest" pos="0.6 0.45 0.5" quat="1 0 0 1">
+         <geom pos="0 0 0.1" size="0.01 0.22 0.1" type="box" />
+         <geom pos="-0.22 0 0.1" size="0.01 0.22 0.1" type="box" />
+         <geom pos="-0.11 0.21 0.1" size="0.1 0.01 0.1" type="box" />
+         <geom pos="-0.11 -0.21 0.1" size="0.1 0.01 0.1" type="box" />
+         <body name="lid" pos="0 0 0.205">
+              <geom pos="-0.13 0 0.01" rgba="1 1 1 0.1" size="0.14 0.22 0.01" type="box" />
+              <joint axis="0 1 0" pos="0 0 0.01" type="hinge" />
+         </body>
+     </body>
+  </worldbody>
+</mujoco>

@@ -1,0 +1,7 @@
+<mujocoinclude>
+ <worldbody>
+  <body name="goal" pos="0.5 0 0.1">
+   <site name="goal:site1" pos="0 0 0" rgba="1 0 0 1" size="0.01 0.01 0.01" type="sphere"/>
+  </body>
+ </worldbody>
+</mujocoinclude>

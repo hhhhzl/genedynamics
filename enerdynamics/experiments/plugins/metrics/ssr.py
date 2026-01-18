@@ -44,13 +44,21 @@ class SSRMetricsPlugin(MetricsPlugin):
         if success_margin is None:
             success_margin = 2 * robot_radius  # Robot diameter
         
+        env_plugin = kwargs.get("env_plugin", None)
+
+        # Helper: extract 2D position
+        def extract_pos_2d(x: np.ndarray) -> np.ndarray:
+            if env_plugin is not None and hasattr(env_plugin, "extract_position"):
+                p = np.asarray(env_plugin.extract_position(x), dtype=np.float32).reshape(-1)
+                return p[:2]
+            x_arr = np.asarray(x, dtype=np.float32).reshape(-1)
+            return x_arr[:2] if x_arr.size >= 2 else x_arr
+
         # Check safety: no collisions (considering robot radius)
         safe = True
         if len(obstacles) > 0:
             for state in trajectory.states:
-                pos = np.asarray(state, dtype=np.float32)
-                # Extract position (first 2 elements for 2D, first 3 for 3D)
-                pos_2d = pos[:2] if len(pos) >= 2 else pos
+                pos_2d = extract_pos_2d(np.asarray(state, dtype=np.float32))
                 
                 # Check if robot (with radius) collides with obstacles
                 sdf = obstacles.sdf(pos_2d)
@@ -80,9 +88,9 @@ class SSRMetricsPlugin(MetricsPlugin):
         distance_to_target = float('inf')
         if len(trajectory.states) > 0:
             final_state = np.asarray(trajectory.states[-1], dtype=np.float32)
-            final_pos = final_state[:2] if len(final_state) >= 2 else final_state
+            final_pos = extract_pos_2d(final_state)
             target = np.asarray(env.target, dtype=np.float32)
-            target_pos = target[:2] if len(target) >= 2 else target
+            target_pos = extract_pos_2d(target)
             distance_to_target = float(np.linalg.norm(final_pos - target_pos))
             task_success = bool(distance_to_target < success_margin)
         

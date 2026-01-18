@@ -1,0 +1,34 @@
+# Joint PD Controller
+
+environments.d3il.d3il_sim.controllers.GainsInterface.JointPDGains.pgain = [1200.0, 1200.0, 1200.0, 1200.0, 1200.0, 300.0, 100.0]
+environments.d3il.d3il_sim.controllers.GainsInterface.JointPDGains.dgain = [25.0, 25.0, 25.0, 25.0, 25.0, 15.0, 10.0]
+
+# Damping Controller
+environments.d3il.d3il_sim.controllers.GainsInterface.DampingGains.dgain = [5. , 5. , 5. , 5. , 3. , 2.5, 1.5]
+
+# Cartesian Position Impedance Controller
+#environments.d3il.d3il_sim.controllers.GainsInterface.CartPosPDGains.pgain = [80.0, 80.0, 80.0]
+#environments.d3il.d3il_sim.controllers.GainsInterface.CartPosPDGains.dgain = [18.973665961010276, 18.973665961010276, 18.973665961010276]
+#environments.d3il.d3il_sim.controllers.GainsInterface.CartPosPDGains.pgain_null = [1.2, 1.2, 1.2, 1.2, 0.5, 0.3, 0.1]
+#environments.d3il.d3il_sim.controllers.GainsInterface.CartPosPDGains.dgain_null = [0.1 , 0.1 , 0.1 , 0.1 , 0.06, 0.05, 0.03]
+
+# Cartesian Position Impedance Controller
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosControllerConfig.pgain_pos = [160.0, 160.0, 160.0]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosControllerConfig.pgain_null = [1.2, 1.2, 1.2, 1.2, 0.5, 0.3, 0.1]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosControllerConfig.J_reg = 1e-6
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosControllerConfig.W = [1, 1, 1, 1, 1, 1, 1]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosControllerConfig.rest_posture = [0, 0.174, 0, -0.872, 0, 1.222, 0.785]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.ddgain = [0.4, 0.4, 0.4, 0.4 ,0.4, 0.4, 0.4]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.joint_filter_coefficient = 0.99
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.min_svd_values = 1e-2
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.max_svd_values = 1e2
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.num_iter = 3
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.learningRate = 0.001
+
+# Cartesian Position Impedance Controller And Orientation
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.pgain_pos = [160.0, 160.0, 160.0]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.pgain_null = [1.2, 1.2, 1.2, 1.2, 0.5, 0.3, 0.1]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.J_reg = 1e-6
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.W = [1, 1, 1, 1, 1, 1, 1]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.rest_posture = [0, 0.174, 0, -0.872, 0, 1.222, 0.785]
+environments.d3il.d3il_sim.controllers.GainsInterface.CartPosQuatControllerConfig.pgain_quat = [800.0, 800.0, 800.0]

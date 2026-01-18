@@ -1,0 +1,15 @@
+<mujocoinclude>
+<worldbody>
+    <body mocap="true" name="panda:mocap" pos="0 0 0">
+      <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0 0.5 0 0.7" size="0.005 0.005 0.005" type="box" />
+<!--      <geom conaffinity="0" contype="0" pos="0 0 0" rgba="1 0 0 0.3" size="1 0.005 0.005" type="box" />-->
+<!--      <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0 1 0 0.3" size="0.005 1 0.005" type="box" />-->
+<!--      <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0 0 1 0.3" size="0.005 0.005 1" type="box" />-->
+    </body>
+  </worldbody>
+    <equality>
+		<weld body1="panda:mocap" body2="tcp" solref="0.001 1"/>
+    </equality>
+</mujocoinclude>
+
+

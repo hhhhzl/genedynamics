@@ -1,0 +1,118 @@
+<mujoco model="PandaFrame">
+    <worldbody>
+        <body name="table_plane" pos="0.2 0 -0.02">
+            <geom type="box" size="0.49 0.98 0.001" rgba="0.8 0.655 0.45 1" solimp="0.999 0.999 0.001"
+                  solref="0.002 1"/>
+
+            <body name="panda_ground" pos="-0.24 0 0.01">
+            <geom type="box" size="0.18 0.18 0.01" rgba=".9 .9 .9 1"/>
+            </body>
+
+            <body name="front_upper" pos="0.49 0 -0.02">
+            <geom type="box" size="0.02 0.96 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="front_mid" pos="0.49 0 -0.445">
+            <geom type="box" size="0.02 0.96 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="front_lower" pos="0.49 0 -0.87">
+            <geom type="box" size="0.02 0.96 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+
+            <body name="back_upper" pos="-0.49 0 -0.02">
+            <geom type="box" size="0.02 0.96 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="back_mid" pos="-0.49 0 -0.445">
+            <geom type="box" size="0.02 0.96 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="back_lower" pos="-0.49 0 -0.87">
+            <geom type="box" size="0.02 0.96 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+
+            <body name="vert_front_left" pos="0.49 0.98 -0.445">
+            <geom type="box" size="0.02 0.02 0.445" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="vert_front_right" pos="0.49 -0.98 -0.445">
+            <geom type="box" size="0.02 0.02 0.445" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="vert_back_left" pos="-0.49 0.98 -0.445">
+            <geom type="box" size="0.02 0.02 0.445" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="vert_back_right" pos="-0.49 -0.98 -0.445">
+            <geom type="box" size="0.02 0.02 0.445" rgba=".9 .9 .9 1"/>
+            </body>
+
+            <body name="side_upper_right" pos="0 -0.98 -0.02">
+            <geom type="box" size="0.47 0.02 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="side_lower_right" pos="0 -0.98 -0.87">
+            <geom type="box" size="0.47 0.02 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+
+            <body name="side_upper_left" pos="0 0.98 -0.02">
+            <geom type="box" size="0.47 0.02 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="side_lower_left" pos="0 0.98 -0.87">
+            <geom type="box" size="0.47 0.02 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+
+            <body name="foot_front_left" pos="0.49 0.98 -0.9">
+            <geom type="cylinder" size="0.02 0.02 0.04" rgba="0 0 0 1"/>
+            </body>
+            <body name="foot_front_mid" pos="0.49 0 -0.9">
+            <geom type="cylinder" size="0.02 0.02 0.04" rgba="0 0 0 1"/>
+            </body>
+            <body name="foot_front_right" pos="0.49 -0.98 -0.9">
+            <geom type="cylinder" size="0.02 0.02 0.04" rgba="0 0 0 1"/>
+            </body>
+
+            <body name="foot_back_left" pos="-0.49 0.98 -0.9">
+            <geom type="cylinder" size="0.02 0.02 0.04" rgba="0 0 0 1"/>
+            </body>
+            <body name="foot_back_mid" pos="-0.49 0 -0.9">
+            <geom type="cylinder" size="0.02 0.02 0.04" rgba="0 0 0 1"/>
+            </body>
+            <body name="foot_back_right" pos="-0.49 -0.98 -0.9">
+            <geom type="cylinder" size="0.02 0.02 0.04" rgba="0 0 0 1"/>
+            </body>
+
+            <body name="top_back_left" pos="-0.49 0.98 0.65">
+            <geom type="box" size="0.02 0.02 0.65" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="top_back_right" pos="-0.49 -0.98 0.65">
+            <geom type="box" size="0.02 0.02 0.65" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="top_front" pos="0.49 0 1.28">
+            <geom type="box" size="0.02 0.96 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="top_back" pos="-0.49 0 1.28">
+            <geom type="box" size="0.02 0.96 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="top_side_right" pos="0 -0.98 1.28">
+            <geom type="box" size="0.51 0.02 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="top_side_mid" pos="0 0 1.28">
+            <geom type="box" size="0.51 0.02 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="top_side_left" pos="0 0.98 1.28">
+            <geom type="box" size="0.51 0.02 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+
+            <body name="rot_lower_right" pos="-0.31 0.98 0.22" quat="0.2 0 0.1 0">
+            <geom type="box" size="0.3 0.02 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="rot_lower_left" pos="-0.31 -0.98 0.22" quat="0.2 0 0.1 0">
+            <geom type="box" size="0.3 0.02 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="rot_upper_right" pos="-0.31 0.98 1.04" quat="0.1 0 0.2 0">
+            <geom type="box" size="0.3 0.02 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+            <body name="rot_upper_left" pos="-0.31 -0.98 1.04" quat="0.1 0 0.2 0">
+            <geom type="box" size="0.3 0.02 0.02" rgba=".9 .9 .9 1"/>
+            </body>
+
+            <body name="support_body" pos="0 0 -0.4" >
+            <geom type="box" size="0.49 0.98 0.4" rgba="0 0 0 0" solimp="0.999  0.999 0.001" solref="0.002 1"/>
+            </body>
+        </body>
+    </worldbody>
+</mujoco>
