@@ -22,7 +22,7 @@ method_params:
   bound: 0.8
   use_min_over_time: true
 
-obstacle_levels: [3]
+obstacle_levels: [6]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05

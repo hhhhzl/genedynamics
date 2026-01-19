@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Wedge
 
 from enerdynamics.core.constraints.convexify import CFSConvexifier
 from enerdynamics.core.constraints.core.array_interface import BackendArray
@@ -106,12 +108,13 @@ def _group_cfs_halfspaces_by_t(
 @dataclass
 class CFSOverlayConfig:
     color: str = "#2ca02c"  # green-ish
-    alpha: float = 0.22
-    linewidth: float = 0.9
-    fill: bool = True              # whether to fill feasible region
+    alpha: float = 0.5      # increased default alpha for short lines
+    linewidth: float = 1.2
+    line_length: float = 0.15      # length of the tangent segment
+    fill: bool = False             # disable fill by default for less clutter with short lines
     fill_alpha: float = 0.15
     grid_n: int = 220             # grid resolution for fill mask
-    max_timesteps: int = 12        # cap number of timesteps we draw to avoid clutter
+    max_timesteps: int = 15        # show more timesteps since lines are shorter
     max_constraints_per_t: int = 4  # cap constraints per timestep
     show_ref_points: bool = True
 
@@ -198,47 +201,106 @@ def draw_cfs_convexify_overlay(
 
     groups = _group_cfs_halfspaces_by_t(A, b, H=H, state_dim=state_dim, pos_dim=2)
 
-    # Select timesteps to draw (evenly spaced, capped)
-    timesteps = np.linspace(0, H - 1, num=min(cfg.max_timesteps, H), dtype=int) if H > 1 else np.array([0], dtype=int)
+    # Select timesteps to draw (Regular interval to cover the whole trajectory)
+    try:
+        # Draw every 8 steps to cover the whole trajectory
+        step = max(1, H // 12)
+        timesteps = np.arange(0, H, step, dtype=int)
+        # Always include near-end
+        if timesteps[-1] < H - 1:
+            timesteps = np.append(timesteps, H - 1)
+    except Exception:
+        timesteps = np.linspace(0, H - 1, num=min(cfg.max_timesteps, H), dtype=int) if H > 1 else np.array([0], dtype=int)
 
-    # Axis bounds for drawing infinite lines
-    x_min, x_max = ax.get_xlim()
-    y_min, y_max = ax.get_ylim()
-    xs = np.linspace(x_min, x_max, 200, dtype=np.float32)
-    ys = np.linspace(y_min, y_max, 200, dtype=np.float32)
+    # Get action limit for disk visualization (default 1.0)
+    action_limit = float(getattr(exp_cfg, "env_params", {}).get("control_limit", 1.0))
+    # Visualization radius scale (consistent with MDOC)
+    r_viz = 0.22
 
     for t in timesteps:
         hs = groups.get(int(t), [])
         if not hs:
             continue
-        # Cap constraints per timestep (closest to ref point tends to be first in generation, but not guaranteed)
         hs = hs[: cfg.max_constraints_per_t]
 
         # Optionally mark reference point at this timestep
         if cfg.show_ref_points:
             pt = np.asarray(env_plugin.extract_position(np.asarray(ref_traj.states[int(t)])), dtype=np.float32)
-            ax.scatter([pt[0]], [pt[1]], s=8, color=cfg.color, alpha=min(1.0, cfg.alpha + 0.15), zorder=3)
-
-        # Fill feasible region for this timestep only (intersection of its halfspaces)
-        if cfg.fill and len(hs) > 0:
-            gx = np.linspace(x_min, x_max, cfg.grid_n, dtype=np.float32)
-            gy = np.linspace(y_min, y_max, cfg.grid_n, dtype=np.float32)
-            GX, GY = np.meshgrid(gx, gy)
-            P = np.stack([GX.ravel(), GY.ravel()], axis=-1)
-            feas = np.ones((P.shape[0],), dtype=bool)
-            for g, bb in hs:
-                feas &= (P @ g >= bb - 1e-9)
-            feas = feas.reshape(cfg.grid_n, cfg.grid_n)
-            if feas.any():
-                ax.contourf(GX, GY, feas.astype(float), levels=[0.5, 1.5], colors=[cfg.color], alpha=cfg.fill_alpha, zorder=1.5)
+            ax.scatter([pt[0]], [pt[1]], s=12, color=cfg.color, alpha=0.8, zorder=4)
 
         for g, bb in hs:
             a0, a1 = float(g[0]), float(g[1])
-            if abs(a1) > 1e-9:
-                yy = (bb - a0 * xs) / a1
-                ax.plot(xs, yy, color=cfg.color, alpha=cfg.alpha, linewidth=cfg.linewidth, zorder=2)
-            elif abs(a0) > 1e-9:
-                xx = np.full_like(ys, bb / a0)
-                ax.plot(xx, ys, color=cfg.color, alpha=cfg.alpha, linewidth=cfg.linewidth, zorder=2)
+            norm_g = np.sqrt(a0**2 + a1**2) + 1e-9
+            gx, gy = a0 / norm_g, a1 / norm_g # Unit normal
+            
+            # Reference point
+            pt = np.asarray(env_plugin.extract_position(np.asarray(ref_traj.states[int(t)])), dtype=np.float32)
+            
+            # 1. Calculate the 'Disk cut by Half-plane' geometry (aligned with MDOC)
+            # CFS constraint: g^T x_{t+1} >= bb
+            # Single integrator: x_{t+1} = x_t + u * dt
+            # => g^T (pt + u*dt) >= bb  => g^T u >= (bb - g^T pt) / dt
+            b_rel_state = bb - (a0 * pt[0] + a1 * pt[1])
+            dt = float(getattr(exp_cfg, "env_params", {}).get("dt", 0.05))
+            b_rel_action = b_rel_state / (dt + 1e-9)
+            
+            # Ratio for visualization: 
+            # To emphasize the "Half-space" nature, we ensure the cut is always visible.
+            # We map the physical ratio to a range that always looks like a half-disk or slightly more.
+            phys_ratio = b_rel_action / (norm_g * action_limit + 1e-9)
+            ratio = np.clip(phys_ratio, -0.1, 0.6) # -0.1 to 0.6 ensures a clear cut boundary
+            
+            phi = np.arctan2(gy, gx)
+            alpha = np.arccos(ratio)
+            
+            theta_center = np.degrees(phi)
+            theta_half_span = np.degrees(alpha)
+            theta_start = theta_center - theta_half_span
+            theta_end = theta_center + theta_half_span
+            
+            color_cfs = "#2ca02c"
+            
+            # 2. Draw the Wedge (The Admissible Fan)
+            wedge = Wedge(
+                center=tuple(pt),
+                r=r_viz,
+                theta1=theta_start,
+                theta2=theta_end,
+                facecolor=color_cfs,
+                alpha=0.2, # Slightly lighter for EDOC
+                edgecolor='#666666',
+                linewidth=0.7,
+                zorder=3.0
+            )
+            ax.add_patch(wedge)
+            
+            # 3. Draw the Chord (The Linearized Boundary Line)
+            p1 = pt + r_viz * np.array([np.cos(np.radians(theta_start)), np.sin(np.radians(theta_start))])
+            p2 = pt + r_viz * np.array([np.cos(np.radians(theta_end)), np.sin(np.radians(theta_end))])
+            ax.plot(
+                [p1[0], p2[0]], [p1[1], p2[1]],
+                color='#444444', 
+                linewidth=1.2,
+                alpha=0.8,
+                zorder=3.1
+            )
+            
+            # 4. Draw Normal Arrow
+            arrow_len = 0.12
+            ax.arrow(
+                pt[0], pt[1],
+                gx * arrow_len, gy * arrow_len,
+                head_width=0.03, head_length=0.04,
+                fc='#444444', ec='#444444',
+                alpha=0.8, zorder=4.0
+            )
+            
+            # 5. Draw the background disk (Action Bound)
+            circle = plt.Circle(
+                tuple(pt), r_viz, 
+                color='#777777', fill=False, linestyle=':', 
+                linewidth=0.6, alpha=0.3, zorder=2.5
+            )
+            ax.add_patch(circle)
 
 

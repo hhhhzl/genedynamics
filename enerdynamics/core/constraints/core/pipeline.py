@@ -589,7 +589,16 @@ class HighPerformanceConstraintPipeline:
             if cached is not None:
                 return cached
         
-        params = self.scheduler.params(state)
+        # Avoid duplicate history logging in scheduler
+        import inspect
+        try:
+            sig = inspect.signature(self.scheduler.params)
+            if 'record' in sig.parameters:
+                params = self.scheduler.params(state, record=False)
+            else:
+                params = self.scheduler.params(state)
+        except Exception:
+            params = self.scheduler.params(state)
         
         if self._param_cache is not None:
             self._param_cache.set(state.k, state.K, params)

@@ -96,6 +96,8 @@ class EDOCPlanner:
         scheduler: Optional[Any] = None,  # CompositeScheduler or legacy scheduler
         # ===== Terminal cost (for energy-mode) =====
         terminal_energy_weight: float = 0.0,
+        # ===== Guidance (for complex maps) =====
+        guide_weight: float = 0.0,
     ):
         if action_score_mode not in {"reward", "energy", "learned"}:
             raise ValueError(f"Unknown action_score_mode {action_score_mode}")
@@ -155,6 +157,7 @@ class EDOCPlanner:
         self.lambda_energy = float(lambda_energy) if lambda_energy > 0 else 1.0
         self.use_constraint_in_scoring = bool(use_constraint_in_scoring)
         self.terminal_energy_weight = float(max(0.0, terminal_energy_weight))
+        self.guide_weight = float(max(0.0, guide_weight))
         self._reverse_diffuse_chunk_len = int(max(1, tqdm_chunk_len))
         
         # ===== New scheduler system =====
