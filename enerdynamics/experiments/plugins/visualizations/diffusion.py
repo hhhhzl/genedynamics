@@ -6,6 +6,8 @@ from typing import Dict, Any, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.patches import Wedge, PathPatch
+from matplotlib.path import Path
 
 from ...framework.base import VisualizationPlugin
 from ...common.visualization import draw_obstacles, EDOC_COLOR, MAX_SAMPLE_TRAJ_PLOT
@@ -47,6 +49,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         overlay_cfg = config.get('cfs_overlay', None)
         method_name = getattr(exp_cfg, 'method', None) if exp_cfg is not None else None
         is_ebmbd = (method_name == "ebmbd" or method_name == "mbd")
+        is_mdoc = (method_name == "mdoc")
         if is_ebmbd:
             overlay_cfg = None  # fully disable half-space overlays
         
@@ -90,6 +93,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     diffusion_total_steps=diffusion_total_steps,
                     cfs_overlay_cfg=overlay_cfg,
                     is_ebmbd=is_ebmbd,
+                    is_mdoc=is_mdoc,
                 )
         else:
             # Fallback: show final trajectory
@@ -104,6 +108,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     diffusion_total_steps=0,
                     cfs_overlay_cfg=overlay_cfg,
                     is_ebmbd=is_ebmbd,
+                    is_mdoc=is_mdoc,
                 )
     
     def _visualize_single_step(
@@ -116,6 +121,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         diffusion_total_steps: int = 0,
         cfs_overlay_cfg: Any = None,
         is_ebmbd: bool = False,
+        is_mdoc: bool = False,
     ) -> None:
         """Visualize a single diffusion step."""
         ax.set_aspect('equal')
@@ -124,6 +130,10 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         
         # Draw obstacles
         draw_obstacles(ax, obstacles)
+        
+        # Draw barrier field for EB-MBD (Heatmap and Equipotential lines)
+        if is_ebmbd:
+            self._draw_barrier_field(ax, obstacles, x_min, x_max, y_min, y_max)
         
         # Draw sample rollouts
         if sample_actions is not None and len(sample_actions) > 0:
@@ -148,7 +158,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
             states = env.rollout_actions(initial_state, action_sequence)
             if len(states) > 1:
                 positions = np.array([env_plugin.extract_position(s) for s in states])
-                ax.plot(positions[:, 0], positions[:, 1], color=EDOC_COLOR, linewidth=2.5)
+                # Increase zorder to 5 to stay on top of fans/half-spaces
+                ax.plot(positions[:, 0], positions[:, 1], color=EDOC_COLOR, linewidth=2.5, zorder=5)
                 
                 # Draw start
                 ax.scatter(
@@ -159,6 +170,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     facecolors='white',
                     edgecolors=EDOC_COLOR,
                     linewidths=1.0,
+                    zorder=6
                 )
                 # Draw end
                 ax.scatter(
@@ -169,10 +181,16 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     facecolors=EDOC_COLOR,
                     edgecolors='black',
                     linewidths=0.5,
+                    zorder=6
                 )
 
+                # Draw MDOC conservative fan visualization
+                if is_mdoc:
+                    self._draw_mdoc_fans(ax, env, obstacles, positions, exp_cfg)
+
                 # Overlay CFS convexified halfspaces for this diffusion step (if enabled)
-                if exp_cfg is not None and not is_ebmbd:
+                # For MDOC, we show the specialized Fans instead of full halfspaces.
+                if exp_cfg is not None and not is_ebmbd and not is_mdoc:
                     try:
                         draw_cfs_convexify_overlay(
                             ax,
@@ -198,6 +216,172 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         if title:
             ax.set_title(title, fontsize=12)
         ax.grid(True, alpha=0.2)
+    
+    def _draw_barrier_field(
+        self, ax: Any, obstacles: Any, 
+        x_min: float, x_max: float, y_min: float, y_max: float,
+        res: int = 60
+    ) -> None:
+        """Draw background heatmap and equipotential lines for obstacles."""
+        if obstacles is None or len(obstacles) == 0:
+            return
+            
+        # Create grid for SDF sampling
+        xs = np.linspace(x_min, x_max, res)
+        ys = np.linspace(y_min, y_max, res)
+        X, Y = np.meshgrid(xs, ys)
+        points = np.stack([X.ravel(), Y.ravel()], axis=-1)
+        
+        # Batch SDF computation
+        try:
+            sdf_vals = obstacles.sdf(points).reshape(res, res)
+        except Exception:
+            return
+            
+        # 1. Draw Equipotential Lines (3-5 levels of distance)
+        # We draw them for positive SDF (outside obstacles)
+        levels = [0.05, 0.1, 0.2, 0.4]
+        ax.contour(
+            X, Y, sdf_vals, 
+            levels=levels, 
+            colors='orange', 
+            alpha=0.15, 
+            linewidths=0.8,
+            linestyles='--'
+        )
+        
+        # 2. Draw light heatmap (more 'hot' near obstacles)
+        # Using a exponential decay for the heatmap intensity
+        heatmap_intensity = np.exp(-4.0 * np.maximum(0, sdf_vals))
+        ax.imshow(
+            heatmap_intensity, 
+            extent=[x_min, x_max, y_min, y_max], 
+            origin='lower', 
+            cmap='YlOrRd', 
+            alpha=0.06, 
+            zorder=0.5,
+            interpolation='bilinear'
+        )
+
+    def _draw_mdoc_fans(
+        self, ax: Any, env: Any, obstacles: Any, 
+        positions: np.ndarray, exp_cfg: Any
+    ) -> None:
+        """Draw conservative feasible direction fans (Disk cut by Half-plane) for MDOC."""
+        if obstacles is None or len(positions) < 2:
+            return
+            
+        # Extract CBF/MDOC params
+        method_params = getattr(exp_cfg, "method_params", {})
+        eta = float(method_params.get("cbf_eta", 1.5))
+        margin = float(method_params.get("cbf_margin", 0.1))
+        base_beta = float(method_params.get("base_beta", 0.05))
+        robot_radius = float(getattr(exp_cfg, "obstacle_config", {}).get("robot_radius", 0.05))
+        dt = float(getattr(exp_cfg, "env_params", {}).get("dt", 0.05))
+        action_limit = float(getattr(exp_cfg, "env_params", {}).get("control_limit", 1.0))
+        
+        # 1. Key point selection
+        # 1. Representative point selection: regular interval along the whole trajectory
+        try:
+            H = len(positions)
+            # Draw every 8 steps to cover the whole trajectory without too much overlap
+            step = max(1, H // 12) 
+            indices = np.arange(0, H - 1, step, dtype=int)
+            # Always include the last point before the target
+            if indices[-1] < H - 2:
+                indices = np.append(indices, H - 2)
+        except Exception:
+            indices = np.linspace(0, len(positions) - 2, num=8, dtype=int)
+        
+        for idx in indices:
+            p = positions[idx]
+            try:
+                eps = 1e-4
+                sdf_p = float(obstacles.sdf(p))
+                grad_x = (float(obstacles.sdf(p + np.array([eps, 0]))) - sdf_p) / eps
+                grad_y = (float(obstacles.sdf(p + np.array([0, eps]))) - sdf_p) / eps
+                grad = np.array([grad_x, grad_y])
+                norm_grad = np.linalg.norm(grad) + 1e-9
+                grad = grad / norm_grad
+            except Exception:
+                continue
+                
+            h = sdf_p - (robot_radius + margin)
+            b = -(eta / dt) * h + base_beta
+            r = action_limit
+            
+            # Visualization radius (local scale)
+            r_viz = 0.22 
+            
+            # Ratio of offset. 
+            # To emphasize the "Conservative Fan", we ensure it's always narrower than a half-disk.
+            phys_ratio = b / (r + 1e-9)
+            # Map to [0.2, 0.85] range to show a clear conservative cut compared to EDOC.
+            ratio = np.clip(phys_ratio, 0.2, 0.85)
+            
+            phi = np.arctan2(grad[1], grad[0])
+            alpha = np.arccos(ratio)
+            
+            # Convert to degrees for matplotlib Wedge
+            theta_center = np.degrees(phi)
+            theta_half_span = np.degrees(alpha)
+            
+            theta_start = theta_center - theta_half_span
+            theta_end = theta_center + theta_half_span
+            
+            color_mdoc = "#2ca02c" # Classic green
+            
+            # 1. Draw the Wedge (The Fan) - Originates from p
+            wedge = Wedge(
+                center=tuple(p),
+                r=r_viz,
+                theta1=theta_start,
+                theta2=theta_end,
+                facecolor=color_mdoc,
+                alpha=0.3, # Consistent alpha with EDOC
+                edgecolor='#666666',
+                linewidth=0.7,
+                zorder=4.0
+            )
+            ax.add_patch(wedge)
+            
+            # 2. Draw the Chord (The 'Line Boundary')
+            # This shows the linear constraint g^Tu >= b
+            p1 = p + r_viz * np.array([np.cos(np.radians(theta_start)), np.sin(np.radians(theta_start))])
+            p2 = p + r_viz * np.array([np.cos(np.radians(theta_end)), np.sin(np.radians(theta_end))])
+            ax.plot(
+                [p1[0], p2[0]], [p1[1], p2[1]],
+                color='#444444', 
+                linewidth=1.2, # Thicker chord
+                alpha=0.8,
+                zorder=4.1
+            )
+            
+            # 3. Draw Normal Arrow (Pointing to safe side)
+            # Use the same style as EDOC for perfect alignment
+            arrow_len = 0.12
+            ax.arrow(
+                p[0], p[1],
+                grad[0] * arrow_len, grad[1] * arrow_len,
+                head_width=0.03,
+                head_length=0.04,
+                fc='#444444', 
+                ec='#444444',
+                alpha=0.8, # More opaque arrow
+                zorder=4.5
+            )
+            
+            # 4. Draw a very light full circle to show the original action bound (velocity disk)
+            circle = plt.Circle(
+                tuple(p), r_viz, 
+                color='#777777', 
+                fill=False, 
+                linestyle=':', 
+                linewidth=0.6, 
+                alpha=0.3, # Slightly more visible
+                zorder=3.5
+            )
+            ax.add_patch(circle)
     
     def save(self, output_path: Any, fig: Any, **kwargs: Any) -> None:
         """Save visualization to file."""

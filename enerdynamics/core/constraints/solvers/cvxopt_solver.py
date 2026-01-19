@@ -50,7 +50,7 @@ class CVXOPTSolver(QPSolver):
         if not CVXOPT_AVAILABLE:
             raise RuntimeError("CVXOPT not available. Install cvxopt to use CVXOPTSolver.")
         
-        # CVXOPT solver options (aligned with JAXOPT: tol=1e-6, maxiter=30)
+        # CVXOPT solver options
         # Note: CVXOPT uses abstol/reltol instead of tol, and maxiters instead of maxiter
         self.kwargs = {
             'abstol': 1e-6,  # Aligned with JAXOPT tol=1e-6

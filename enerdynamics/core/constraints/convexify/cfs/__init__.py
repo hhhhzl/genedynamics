@@ -9,6 +9,7 @@ using linearization around reference points.
 from . import cfs  
 from . import backends
 from .cfs import CFSConvexifier
+from .action import CFSActionConvexifier
 
-__all__ = ["CFSConvexifier"]
+__all__ = ["CFSConvexifier", "CFSActionConvexifier"]
 

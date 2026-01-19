@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Dict, Any
 import numpy as np
 
-from ..framework.base import EnvironmentPlugin
+from ...framework.base import EnvironmentPlugin
 from enerdynamics.envs.external.d3il import D3ILAvoidingEnv, D3ILAvoidingConfig
 
 

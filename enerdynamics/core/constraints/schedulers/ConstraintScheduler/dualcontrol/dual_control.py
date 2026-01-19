@@ -229,7 +229,7 @@ class DualControlConstraintScheduler(ConstraintScheduler):
         else:
             self._backend_impl = None
     
-    def constraint_params(self, state: ScheduleState) -> Dict[str, Any]:
+    def constraint_params(self, state: ScheduleState, record: bool = True) -> Dict[str, Any]:
         """
         Generate adaptive constraint parameters.
         
@@ -240,18 +240,26 @@ class DualControlConstraintScheduler(ConstraintScheduler):
         
         Args:
             state: Current schedule state
+            record: Whether to record history (default: True)
             
         Returns:
             Dictionary with adaptive constraint parameters
         """
         if self._backend_impl is not None:
-            params = self._backend_impl.constraint_params(state)
+            # Check if backend supports record parameter
+            import inspect
+            sig = inspect.signature(self._backend_impl.constraint_params)
+            if 'record' in sig.parameters:
+                params = self._backend_impl.constraint_params(state, record=record)
+            else:
+                params = self._backend_impl.constraint_params(state)
         else:
-        # Fallback implementation (should use backend)
+            # Fallback implementation (should use backend)
             params = self._compute_constraint_params(state)
         
-        # Record history
-        self._record_param_history(state, params)
+        # Record history if requested
+        if record:
+            self._record_param_history(state, params)
         
         return params
     

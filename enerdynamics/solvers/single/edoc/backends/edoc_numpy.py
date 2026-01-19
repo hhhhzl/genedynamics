@@ -93,6 +93,16 @@ class EDOCBackendNumpy(EDOCBackendBase):
         energies = np.zeros((horizon,), dtype=np.float32)
         states[0] = state
         
+        # Guidance parameters
+        target = None
+        d0 = 0.0
+        t_star = float(horizon - 1)
+        if self.guide_weight > 0.0:
+            target_obj = getattr(self.env, "target", None)
+            if target_obj is not None:
+                target = np.asarray(target_obj, dtype=np.float32)
+                d0 = float(np.linalg.norm(state[0:2] - target[0:2]))
+        
         # Use states[0] directly to avoid unnecessary copy
         x = states[0]
         for t in range(horizon):
@@ -103,6 +113,14 @@ class EDOCBackendNumpy(EDOCBackendBase):
             # Compute energy
             ctx = {"t": t}
             e_val = float(self.energy.compute(x, act_safe, ctx))
+            
+            # Add guidance penalty if weight > 0 and target exists
+            if target is not None:
+                d_hat = d0 * max(0.0, 1.0 - t / (t_star + 1e-6))
+                dist_to_goal = float(np.linalg.norm(x[0:2] - target[0:2]))
+                guide_penalty = self.guide_weight * np.square(dist_to_goal - d_hat)
+                e_val += guide_penalty
+                
             energies[t] = e_val
             
             # State transition
@@ -885,13 +903,35 @@ class EDOCBackendNumpy(EDOCBackendBase):
         if hard_clearance_by_idx is None or hard_enabled_by_idx is None:
             hard_clearance_by_idx = np.zeros((Ndiffuse,), dtype=np.float32)
             hard_enabled_by_idx = np.zeros((Ndiffuse,), dtype=bool)
-            if self.constraint_manager and self.constraint_manager.schedule_manager is not None:
+            
+            # Priority 1: New unified scheduler system (preferred)
+            if self.scheduler is not None:
+                try:
+                    from enerdynamics.core.constraints.core.types import ScheduleState
+                    total_steps = Ndiffuse - 1
+                    for idx in range(Ndiffuse):
+                        step_k = int((Ndiffuse - 1) - idx)
+                        # Ensure step_k is within bounds [0, total_steps]
+                        step_k = max(0, min(step_k, total_steps))
+                        
+                        state = ScheduleState(k=step_k, K=total_steps)
+                        params = self.scheduler.params(state)
+                        
+                        # Use qp_gate for hard_enabled and margin for hard_clearance
+                        hard_enabled_by_idx[idx] = bool(params.get("qp_gate", True))
+                        hard_clearance_by_idx[idx] = float(params.get("margin", 0.0))
+                except Exception as e:
+                    # Fallback if scheduler fails
+                    if self.show_tqdm:
+                        print(f"[EDOC] Warning: Failed to get constraint params from scheduler: {e}")
+            
+            # Priority 2: Legacy constraint manager with schedule
+            elif self.constraint_manager and self.constraint_manager.schedule_manager is not None:
                 sched = self.constraint_manager.schedule_manager
                 total_steps = max(1, Ndiffuse - 2)
-                has_hard = (
-                    (self.constraint_manager.action_filter_operator is not None) or
-                    (self.constraint_manager.feasibility_operator is not None)
-                )
+                # Use has_hard() which is more robust than manual operator check
+                has_hard = self.constraint_manager.has_hard()
+                
                 for idx in range(Ndiffuse):
                     step_k = int((Ndiffuse - 1) - idx)
                     if step_k < 0:
@@ -903,13 +943,17 @@ class EDOCBackendNumpy(EDOCBackendBase):
                         hard_clearance_by_idx[idx] = float(
                             sched.get_hard_clearance(default=0.0, step=step_k, total_steps=total_steps)
                         )
+            
+            # Priority 3: Legacy constraint manager without schedule
             elif self.constraint_manager:
-                has_hard = (
-                    (self.constraint_manager.action_filter_operator is not None) or
-                    (self.constraint_manager.feasibility_operator is not None)
-                )
-                if has_hard:
+                # Use has_hard() for consistency
+                if self.constraint_manager.has_hard():
                     hard_enabled_by_idx[:] = True
+            
+            # Priority 4: New constraint pipeline (if no scheduler/manager)
+            elif self.constraint_pipeline is not None:
+                # If we have a pipeline but no explicit scheduler, enable by default
+                hard_enabled_by_idx[:] = True
         
         # Reverse diffusion loop (100 steps: i=99 to i=0)
         diffusion_iter = range(Ndiffuse - 1, -1, -1)

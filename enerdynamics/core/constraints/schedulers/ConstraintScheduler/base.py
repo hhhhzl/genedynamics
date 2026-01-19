@@ -32,7 +32,7 @@ class ConstraintScheduler(Scheduler):
     """
     
     @abstractmethod
-    def constraint_params(self, state: ScheduleState) -> Dict[str, Any]:
+    def constraint_params(self, state: ScheduleState, record: bool = True) -> Dict[str, Any]:
         """
         Generate constraint parameters only.
         
@@ -41,6 +41,7 @@ class ConstraintScheduler(Scheduler):
         
         Args:
             state: Current schedule state
+            record: Whether to record history
             
         Returns:
             Dictionary with constraint parameters:
@@ -55,7 +56,7 @@ class ConstraintScheduler(Scheduler):
         """
         pass
     
-    def params(self, state: ScheduleState) -> ScheduleParams:
+    def params(self, state: ScheduleState, record: bool = True) -> ScheduleParams:
         """
         Generate full ScheduleParams (for compatibility with base Scheduler).
         
@@ -64,11 +65,19 @@ class ConstraintScheduler(Scheduler):
         
         Args:
             state: Current schedule state
+            record: Whether to record history (passed to constraint_params)
             
         Returns:
             ScheduleParams with constraint parameters
         """
-        constraint_dict = self.constraint_params(state)
+        # Pass record parameter if supported by constraint_params
+        import inspect
+        sig = inspect.signature(self.constraint_params)
+        if 'record' in sig.parameters:
+            constraint_dict = self.constraint_params(state, record=record)
+        else:
+            constraint_dict = self.constraint_params(state)
+            
         return ScheduleParams(
             margin=constraint_dict.get("margin", 0.0),
             rho=constraint_dict.get("rho", 1.0),
