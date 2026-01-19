@@ -33,6 +33,10 @@ def _get_mdoc_backend(backend_name: str):
         from enerdynamics.solvers.single.mdoc.backends.mdoc_jax import MDOCBackendJax
 
         return MDOCBackendJax
+    if backend_name == "numpy":
+        from enerdynamics.solvers.single.mdoc.backends.mdoc_numpy import MDOCBackendNumpy
+
+        return MDOCBackendNumpy
     return None
 
 
@@ -64,8 +68,10 @@ class MDOCSolver(SamplingSolver):
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
 
-        if backend.name not in {"jax"}:
-            raise ValueError(f"MDOC solver currently supports backend {{'jax'}}, got {backend.name}.")
+        if backend.name not in {"jax", "numpy"}:
+            raise ValueError(
+                f"MDOC solver currently supports backends {{'jax','numpy'}}, got {backend.name}."
+            )
 
         self.horizon = int(horizon)
         self.dt = float(dt)
@@ -173,7 +179,7 @@ def run_mdoc(args):
         env.control_limit = args.action_limit
 
     dynamics = DynamicsToEnvAdapter(env, dt=args.dt)
-    backend = get_backend("jax")
+    backend = get_backend(getattr(args, "backend", "jax"))
 
     solver = MDOCSolver(
         dynamics=dynamics,

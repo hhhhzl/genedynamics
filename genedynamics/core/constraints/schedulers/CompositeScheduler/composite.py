@@ -215,7 +215,7 @@ class CompositeScheduler(Scheduler):
                if k not in ["M_k", "T_k", "s_k", "eps", "I_QP"]},
         }
     
-    def params(self, state: ScheduleState) -> ScheduleParams:
+    def params(self, state: ScheduleState, record: bool = True) -> ScheduleParams:
         """
         Generate combined schedule parameters.
         
@@ -224,12 +224,13 @@ class CompositeScheduler(Scheduler):
         
         Args:
             state: Current schedule state
+            record: Whether to record history (passed to child schedulers)
             
         Returns:
             Combined ScheduleParams
         """
         # Get constraint parameters
-        constraint_params = self._merge_constraint_params(state)
+        constraint_params = self._merge_constraint_params(state, record=record)
         
         # Get diffusion parameters
         diffusion_params = self._merge_diffusion_params(state)
@@ -254,12 +255,13 @@ class CompositeScheduler(Scheduler):
             }
         )
     
-    def _merge_constraint_params(self, state: ScheduleState) -> Dict[str, Any]:
+    def _merge_constraint_params(self, state: ScheduleState, record: bool = True) -> Dict[str, Any]:
         """
         Merge constraint parameters from all constraint schedulers.
         
         Args:
             state: Current schedule state
+            record: Whether to record history
             
         Returns:
             Merged constraint parameters dictionary
@@ -280,7 +282,7 @@ class CompositeScheduler(Scheduler):
         
         # Get parameters from all schedulers
         all_params = [
-            self._get_constraint_params(sched, state)
+            self._get_constraint_params(sched, state, record=record)
             for sched in self.constraint_schedulers
         ]
         
@@ -299,6 +301,49 @@ class CompositeScheduler(Scheduler):
             return self._min_merge(all_params)
         else:
             raise ValueError(f"Unknown merge strategy: {self.constraint_merge_strategy}")
+    
+    def _get_constraint_params(self, scheduler: Any, state: ScheduleState, record: bool = True) -> Dict[str, Any]:
+        """
+        Get constraint parameters from a scheduler.
+        
+        Args:
+            scheduler: Scheduler instance
+            state: Current schedule state
+            record: Whether to record history
+            
+        Returns:
+            Constraint parameters dictionary
+        """
+        if hasattr(scheduler, 'constraint_params'):
+            # Check if record parameter is supported
+            import inspect
+            sig = inspect.signature(scheduler.constraint_params)
+            if 'record' in sig.parameters:
+                return scheduler.constraint_params(state, record=record)
+            return scheduler.constraint_params(state)
+        
+        # Fallback to params()
+        if hasattr(scheduler, 'params'):
+            import inspect
+            sig = inspect.signature(scheduler.params)
+            if 'record' in sig.parameters:
+                p = scheduler.params(state, record=record)
+            else:
+                p = scheduler.params(state)
+            
+            return {
+                "margin": p.margin,
+                "rho": p.rho,
+                "topK": p.topK,
+                "topL": p.topL,
+                "qp_gate": p.qp_gate,
+                "qp_prob": p.qp_prob,
+                "eps": p.get("eps", 1e-4),
+                "I_QP": p.get("I_QP", 10),
+                "_extra": p._extra,
+            }
+        
+        return {}
     
     def _merge_diffusion_params(self, state: ScheduleState) -> Dict[str, Any]:
         """

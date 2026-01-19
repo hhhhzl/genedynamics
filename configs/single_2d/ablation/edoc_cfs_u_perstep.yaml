@@ -11,8 +11,7 @@ env_params:
 
 method: edoc
 method_params:
-  action_diffuse_steps: 100
-  action_nsample: 128
+  guide_weight: 20.0
   use_antithetic: true
   action_score_mode: energy
   terminal_energy_weight: 100.0
@@ -62,11 +61,11 @@ scheduler_config:
       eta_con_decay: 0.99
       # Target feasibility schedule
       q_star_min: 0.3
-      q_star_max: 1.0
+      q_star_max: 1
       p_q: 1.0
       # Constraint mapping parameters (rho scheduling)
       rho_min: 0.1
-      rho_max: 100.0
+      rho_max: 20.0
       a_rho: 1.0
       b_rho: 0.0
       a_g: 1.0
@@ -84,7 +83,10 @@ scheduler_config:
   diffusion_schedulers:
     - type: fixed
       M_k: 64
-      T_k: 0.3
+      T_k: 1e-1
+      Ndiffuse: 100
+      beta0: 1.0e-5
+      betaT: 1e-2
   constraint_merge_strategy: merge
   diffusion_merge_strategy: merge
 
