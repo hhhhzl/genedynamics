@@ -11,7 +11,7 @@ env_params:
 
 method: mdoc
 method_params:
-  show_tqdm: false
+  show_tqdm: True
 
   # MDOC ablation switch (used by MDOCMethodPlugin to pick ConstraintFilter)
   mdoc_constraint_mode: cbf_qp_perstep

@@ -91,6 +91,7 @@ class EDOCBackendBase(ABC):
         self.lambda_energy = planner.lambda_energy
         self.use_constraint_in_scoring = planner.use_constraint_in_scoring
         self.terminal_energy_weight = planner.terminal_energy_weight
+        self.guide_weight = getattr(planner, 'guide_weight', 0.0)
         self.dyn_loss_coeff = planner.dyn_loss_coeff
         self.dyn_loss_mode = planner.dyn_loss_mode
         self.show_tqdm = planner.show_tqdm
