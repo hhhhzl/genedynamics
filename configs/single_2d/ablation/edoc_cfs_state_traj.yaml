@@ -1,0 +1,94 @@
+# EDOC ablation: CFS state-space trajectory-level QP (classic)
+name: single2d_edoc_cfs_state_traj
+output_dir: results/single2d/ablation/cfs_state_traj
+
+env_name: single_integrator_box_2d
+env_params:
+  dt: 0.05
+  horizon: 64
+  p_max: 2.0
+  control_limit: 1.0
+
+method: edoc
+method_params:
+  use_antithetic: true
+  action_score_mode: energy
+  terminal_energy_weight: 100.0
+  # Ablation selector
+  cfs_qp_mode: state_traj
+  # For state_traj mode only: whether to use full-trajectory QP or projection
+  cfs_use_trajectory_qp: true
+
+obstacle_levels: [6]
+obstacle_config:
+  generator: box2d
+  robot_radius: 0.05
+  obstacle_radius_scale: 1.3
+  p_max: 2.0
+  map_bounds:
+    x_min: -1.5
+    x_max: 1.0
+    y_min: -2.0
+    y_max: 0.5
+  enable_connectivity_check: true
+  enable_nonconvexity_check: true
+
+seeds: [0]
+backend: numpy
+device: cpu
+
+metrics:
+  - ssr
+  - obstacle_density
+  - nonconvexity
+
+visualizations:
+  - trajectory
+  - diffusion
+  - energy_reward
+  - states
+  - scheduler_params
+
+# New scheduler system configuration (same as configs/single_2d/edoc.yaml)
+scheduler_config:
+  type: composite
+  constraint_schedulers:
+    - type: dual_control
+      # Dual variable parameters
+      lambda_con_min: -2.0
+      lambda_con_max: 2.0
+      lambda_con_init: 0.0
+      eta_con_base: 0.1
+      eta_con_decay: 0.99
+      # Target feasibility schedule
+      q_star_min: 0.3
+      q_star_max: 1.0
+      p_q: 1.0
+      # Constraint mapping parameters (rho scheduling)
+      rho_min: 0.1
+      rho_max: 100.0
+      a_rho: 1.0
+      b_rho: 0.0
+      a_g: 1.0
+      b_g: 0.0
+      # Constraint scheduling parameters
+      K_min: 5
+      K_max: 50
+      eps_min: 1e-4
+      eps_max: 1e-2
+      p_eps: 1.0
+      I_min: 1
+      I_max: 30
+      # Terminal hard region
+      t_hard: 0.8
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 64
+      T_k: 1e-1
+      Ndiffuse: 100
+      beta0: 1.0e-5
+      betaT: 1e-2
+  constraint_merge_strategy: merge
+  diffusion_merge_strategy: merge
+
+

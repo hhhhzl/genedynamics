@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from enerdynamics.experiments.framework import ExperimentRunner, ExperimentConfig
 from enerdynamics.experiments.plugins import (
     EDOCMethodPlugin,
+    MDOCMethodPlugin,
     EBMBDMethodPlugin,
     MBDMethodPlugin,
     EDOCMPCMethodPlugin,
@@ -156,6 +157,7 @@ def register_all_plugins(runner: ExperimentRunner):
     """
     # Method plugins
     runner.register_plugin(EDOCMethodPlugin(), 'method')
+    runner.register_plugin(MDOCMethodPlugin(), 'method')
     runner.register_plugin(EBMBDMethodPlugin(), 'method')
     runner.register_plugin(MBDMethodPlugin(), 'method')
     runner.register_plugin(EDOCMPCMethodPlugin(), 'method')

@@ -45,6 +45,7 @@ class CBFJAXConvexifier(CBFConvexifier):
         dt: float = 0.1,
         backend: str = "jax",
         use_jit: bool = True,
+        build_traj_qp: bool = False,
         **kwargs
     ):
         """
@@ -64,7 +65,8 @@ class CBFJAXConvexifier(CBFConvexifier):
             raise RuntimeError("JAX not available. Install JAX to use CBFJAXConvexifier.")
         
         super().__init__(
-            obstacles, dynamics, robot_radius, alpha, dt, backend, **kwargs
+            obstacles, dynamics, robot_radius, alpha, dt, backend,
+            build_traj_qp=build_traj_qp, **kwargs
         )
         
         self.use_jit = use_jit
@@ -88,6 +90,8 @@ class CBFJAXConvexifier(CBFConvexifier):
         Returns:
             ConvexConstraint
         """
+        if getattr(self, "build_traj_qp", False):
+            raise NotImplementedError("CBF JAX trajectory-level QP not implemented; use numpy backend or per-step mode.")
         if self.use_jit:
             state_jax = jnp.asarray(ref[0])
             action_jax = jnp.asarray(ref[1])

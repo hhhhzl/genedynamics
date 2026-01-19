@@ -179,10 +179,28 @@ class EDOCBackendJax(EDOCBackendBase):
             states_full_np = np.asarray(states_full)
             actions_filtered_np = np.asarray(actions_filtered_seq)
             
+            # Guidance parameters
+            target = None
+            d0 = 0.0
+            t_star = float(horizon - 1)
+            if self.guide_weight > 0.0:
+                target_obj = getattr(self.env, "target", None)
+                if target_obj is not None:
+                    target = np.asarray(target_obj, dtype=np.float32)
+                    d0 = float(np.linalg.norm(states_full_np[0, 0:2] - target[0:2]))
+
             energies = np.zeros((horizon,), dtype=np.float32)
             for t in range(horizon):
                 ctx = {"t": t}
                 e_val = float(self.energy.compute(states_full_np[t], actions_filtered_np[t], ctx))
+                
+                # Add guidance penalty
+                if target is not None:
+                    d_hat = d0 * max(0.0, 1.0 - t / (t_star + 1e-6))
+                    dist_to_goal = float(np.linalg.norm(states_full_np[t, 0:2] - target[0:2]))
+                    guide_penalty = self.guide_weight * np.square(dist_to_goal - d_hat)
+                    e_val += guide_penalty
+                
                 energies[t] = e_val
             energy_seq = jnp.asarray(energies, dtype=jnp.float32)
         except (jax.errors.TracerArrayConversionError, jax.errors.ConcretizationTypeError, AttributeError, TypeError):
@@ -612,13 +630,40 @@ class EDOCBackendJax(EDOCBackendBase):
             except Exception:
                 pass
         
+        # Priority 1: New unified scheduler system
+        if self.scheduler is not None:
+            try:
+                from enerdynamics.core.constraints.core.types import ScheduleState
+                total_steps = Ndiffuse - 1
+                hc = []
+                he = []
+                sa = []
+                sb = []
+                for idx in range(Ndiffuse):
+                    step_k = int((Ndiffuse - 1) - idx)
+                    step_k = max(0, min(step_k, total_steps))
+                    
+                    state = ScheduleState(k=step_k, K=total_steps)
+                    params = self.scheduler.params(state)
+                    
+                    he.append(bool(params.get("qp_gate", True)))
+                    hc.append(float(params.get("margin", 0.0)))
+                    sa.append(float(params.get("soft_alpha", soft_alpha_default)))
+                    sb.append(float(params.get("soft_beta", soft_beta_default)))
+                
+                hard_clearance_by_idx = jnp.asarray(np.asarray(hc, dtype=np.float32), dtype=jnp.float32)
+                hard_enabled_by_idx = jnp.asarray(np.asarray(he, dtype=bool))
+                soft_alpha_by_idx = jnp.asarray(np.asarray(sa, dtype=np.float32), dtype=jnp.float32)
+                soft_beta_by_idx = jnp.asarray(np.asarray(sb, dtype=np.float32), dtype=jnp.float32)
+                return hard_clearance_by_idx, hard_enabled_by_idx, soft_alpha_by_idx, soft_beta_by_idx
+            except Exception as e:
+                print(f"[EDOC JAX] Warning: Failed to get constraint params from scheduler: {e}")
+        
+        # Priority 2: Legacy constraint manager with schedule
         if self.constraint_manager is not None and self.constraint_manager.schedule_manager is not None:
             sched = self.constraint_manager.schedule_manager
             total_steps = max(1, Ndiffuse - 2)
-            hard_filter_exists = (
-                (self.constraint_manager.action_filter_operator is not None) or
-                (self.constraint_manager.feasibility_operator is not None)
-            )
+            has_hard = self.constraint_manager.has_hard()
             hc = []
             he = []
             sa = []
@@ -629,7 +674,7 @@ class EDOCBackendJax(EDOCBackendBase):
                     step_k = 0
                 if step_k > total_steps:
                     step_k = total_steps
-                if hard_filter_exists:
+                if has_hard:
                     he.append(bool(sched.is_hard_active(step_k, total_steps)))
                     hc.append(float(sched.get_hard_clearance(default=0.0, step=step_k, total_steps=total_steps)))
                 else:
@@ -645,12 +690,11 @@ class EDOCBackendJax(EDOCBackendBase):
         else:
             # No schedule: enable hard filter if present
             if self.constraint_manager is not None:
-                has_hard = (
-                    (self.constraint_manager.action_filter_operator is not None) or
-                    (self.constraint_manager.feasibility_operator is not None)
-                )
-                if has_hard:
+                if self.constraint_manager.has_hard():
                     hard_enabled_by_idx = jnp.ones((Ndiffuse,), dtype=jnp.bool_)
+            elif self.constraint_pipeline is not None:
+                hard_enabled_by_idx = jnp.ones((Ndiffuse,), dtype=jnp.bool_)
+                
             soft_alpha_by_idx = jnp.full((Ndiffuse,), jnp.float32(soft_alpha_default), dtype=jnp.float32)
             soft_beta_by_idx = jnp.full((Ndiffuse,), jnp.float32(soft_beta_default), dtype=jnp.float32)
         
