@@ -21,7 +21,7 @@ method_params:
   cbf_eta: 1.5
   cbf_margin: 0.1
   base_beta: 5.0e-2
-  terminal_energy_weight: 50.0
+  terminal_energy_weight: 100.0
 
 obstacle_levels: [6]
 obstacle_config:
