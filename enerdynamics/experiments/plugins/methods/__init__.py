@@ -8,6 +8,7 @@ from .mbd import MBDMethodPlugin
 from .edoc_mpc import EDOCMPCMethodPlugin
 from .mbd_mpc import MBDMPCMethodPlugin
 from .mdoc import MDOCMethodPlugin
+from .dpcc import DPCCMethodPlugin
 
 __all__ = [
     'EDOCMethodPlugin',
@@ -16,5 +17,6 @@ __all__ = [
     'EDOCMPCMethodPlugin',
     'MBDMPCMethodPlugin',
     'MDOCMethodPlugin',
+    'DPCCMethodPlugin',
 ]
 
