@@ -19,7 +19,7 @@ method_params:
   cbf_eta: 1.5
   cbf_margin: 0.1
   base_beta: 5.0e-2
-  terminal_energy_weight: 50.0
+  terminal_energy_weight: 100.0
 
 obstacle_levels: [6]
 obstacle_config:
@@ -65,7 +65,7 @@ scheduler_config:
   diffusion_schedulers:
     - type: fixed
       M_k: 64
-      T_k: 1e-1
+      T_k: 5e-1
       Ndiffuse: 100
       beta0: 1.0e-5
       betaT: 1e-2
