@@ -75,14 +75,15 @@ class QPBasedCBFFilter(ConstraintFilter):
                 # min 0.5||u_s - u||^2 + 0.5 * rho * xi^2
                 # s.t. A^T u_s >= b - xi, xi >= 0
                 # Solution (analytical for 1 constraint):
-                # xi = max(0, (b - A^T u) / (1 + ||A||^2 / rho))
-                # u_s = u + (xi / rho) * A
+                # lambda = violation / (||A||^2 + 1/rho)
+                # u_s = u + lambda * A
+                # Note: rho larger -> harder constraint, rho smaller -> allows slack
                 
                 violation = jnp.maximum(0.0, b - lhs)
-                xi = violation / (1.0 + den / rho)
-                alpha = (xi / rho)
+                # Corrected slack-QP formula: lambda = violation / (den + 1/rho)
+                lam = violation / (den + 1.0 / rho)
                 
-                u_safe = u + alpha * A
+                u_safe = u + lam * A
                 
                 x_next = env.jax_transition(x, u_safe)
                 return x_next, u_safe
@@ -150,9 +151,9 @@ class QPBasedCBFFilter(ConstraintFilter):
                 den = float(np.dot(A, A) + 1e-9)
 
                 violation = max(0.0, b - lhs)
-                xi = violation / (1.0 + den / rho)
-                alpha = xi / rho
-                u_safe = u + alpha * A
+                # Corrected slack-QP formula: lambda = violation / (den + 1/rho)
+                lam = violation / (den + 1.0 / rho)
+                u_safe = u + lam * A
 
                 safe_actions.append(u_safe.astype(np.float32))
                 x = _step_env_np(x, u_safe)
