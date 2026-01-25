@@ -19,11 +19,10 @@ except ImportError:
     jnp = None
 
 from enerdynamics.core.constraints.action_filters.base import ConstraintFilter
-from enerdynamics.core.constraints.core.types import ScheduleState, ScheduleParams
 from enerdynamics.core.types import Trajectory
 
 
-class CFSQPPerStepFilter(ConstraintFilter):
+class CFSQPFilter(ConstraintFilter):
     """
     CFS-based per-step QP filter.
     
@@ -131,9 +130,10 @@ class CFSQPPerStepFilter(ConstraintFilter):
             lhs = np.dot(A_row, u_nom)
             den = np.dot(A_row, A_row) + 1e-9
             violation = max(0.0, b_val - lhs)
-            xi = violation / (1.0 + den / rho)
-            alpha = xi / rho
-            return u_nom + alpha * A_row
+            # Corrected slack-QP formula: lambda = violation / (den + 1/rho)
+            # This makes rho larger -> harder constraint, rho smaller -> softer (allows slack)
+            lam = violation / (den + 1.0 / rho)
+            return u_nom + lam * A_row
         else:
             # Multiple constraints: iterative projection
             u_safe = u_nom.copy()
@@ -148,9 +148,9 @@ class CFSQPPerStepFilter(ConstraintFilter):
                 lhs = np.dot(A_row, u_safe)
                 den = np.dot(A_row, A_row) + 1e-9
                 violation = violations[worst_idx]
-                xi = violation / (1.0 + den / rho)
-                alpha = xi / rho
-                u_safe = u_safe + alpha * A_row
+                # Corrected slack-QP formula: lambda = violation / (den + 1/rho)
+                lam = violation / (den + 1.0 / rho)
+                u_safe = u_safe + lam * A_row
             return u_safe
     
     def _solve_multi_constraint_qp_jax(
@@ -161,73 +161,119 @@ class CFSQPPerStepFilter(ConstraintFilter):
         rho: jnp.ndarray,
     ) -> jnp.ndarray:
         """
-        Solve multi-constraint slack-QP in JAX.
+        Solve multi-constraint slack-QP in JAX (JIT-safe version).
         
         min ||u - u_nom||^2 + rho * ||xi||^2
         s.t. A @ u >= b - xi, xi >= 0
         
         Note: Constraints with b = inf are treated as inactive (filtered out).
+        Uses lax.cond and lax.fori_loop for JIT compatibility.
         """
-        if A.size == 0:
-            return u_nom
-        
-        m = A.shape[0]
-        if m == 0:
-            return u_nom
-        
         # Filter out invalid constraints (b = inf)
         valid_mask = jnp.isfinite(b)
         num_valid = jnp.sum(valid_mask.astype(jnp.int32))
         
-        if num_valid == 0:
-            # No valid constraints
+        # Use lax.cond for empty/invalid cases (JIT-safe)
+        def return_original(_):
             return u_nom
         
-        # Extract valid constraints
-        A_valid = A[valid_mask]  # (num_valid, act_dim)
-        b_valid = b[valid_mask]  # (num_valid,)
-        
-        # Check violations
-        violations = jnp.maximum(0.0, b_valid - A_valid @ u_nom)  # (num_valid,)
-        max_violation = jnp.max(violations)
-        
-        # If no violation, return original
-        if max_violation < 1e-7:
-            return u_nom
-        
-        # For single constraint, use analytical solution
-        if num_valid == 1:
-            A_row = A_valid[0]
-            b_val = b_valid[0]
-            lhs = jnp.dot(A_row, u_nom)
-            den = jnp.dot(A_row, A_row) + 1e-9
-            violation = jnp.maximum(0.0, b_val - lhs)
-            xi = violation / (1.0 + den / rho)
-            alpha = xi / rho
-            return u_nom + alpha * A_row
-        
-        # For multiple constraints, use iterative projection
-        u_iter = u_nom
-        for _ in range(10):
-            violations = jnp.maximum(0.0, b_valid - A_valid @ u_iter)
-            max_viol = jnp.max(violations)
-            if max_viol < 1e-7:
-                break
+        def solve_qp(_):
+            # JIT-safe: Don't use boolean indexing (requires concrete values)
+            # Instead, mark invalid constraints with inf in b, and filter them in computation
+            # Keep fixed-size arrays for JIT compatibility
             
-            # Project onto most violated constraint
-            worst_idx = jnp.argmax(violations)
-            A_row = A_valid[worst_idx]
-            b_val = b_valid[worst_idx]
-            lhs = jnp.dot(A_row, u_iter)
-            den = jnp.dot(A_row, A_row) + 1e-9
-            violation = violations[worst_idx]
+            # Mark invalid constraints: set b to inf for invalid ones
+            b_masked = jnp.where(valid_mask, b, jnp.inf)
             
-            # Slack-QP solution
-            xi = violation / (1.0 + den / rho)
-            alpha = xi / rho
-            u_iter = u_iter + alpha * A_row
+            # Check violations (inf constraints will have inf violations, which we ignore)
+            violations = jnp.maximum(0.0, b_masked - A @ u_nom)  # (m,)
+            # Filter out inf violations (from invalid constraints)
+            violations_clean = jnp.where(jnp.isfinite(violations), violations, -jnp.inf)
+            max_violation = jnp.max(violations_clean)
+            
+            # Use lax.cond for no violation case
+            def return_original_no_viol(_):
+                return u_nom
+            
+            def solve_with_violations(_):
+                # Use lax.cond for single vs multiple constraints
+                def solve_single(_):
+                    # Find first valid constraint (where b is finite)
+                    # Since we can't use boolean indexing, we'll use argmax on violations_clean
+                    # The first valid constraint will have the highest finite violation
+                    # But for single constraint, we just need to find any valid one
+                    # Use a simpler approach: find the constraint with the highest finite violation
+                    # (which should be the only valid one if num_valid == 1)
+                    worst_idx = jnp.argmax(violations_clean)
+                    A_row = A[worst_idx]
+                    b_val = b_masked[worst_idx]
+                    
+                    # Only apply if constraint is valid
+                    is_valid = jnp.isfinite(b_val)
+                    lhs = jnp.dot(A_row, u_nom)
+                    den = jnp.dot(A_row, A_row) + 1e-9
+                    violation = jnp.maximum(0.0, b_val - lhs)
+                    violation = jnp.where(is_valid, violation, 0.0)
+                    # Corrected slack-QP formula: lambda = violation / (den + 1/rho)
+                    lam = violation / (den + 1.0 / rho)
+                    return u_nom + jnp.where(is_valid, lam * A_row, 0.0)
+                
+                def solve_multiple(_):
+                    # Use lax.fori_loop for iterative projection (JIT-safe)
+                    # Fixed 30 iterations (increased from 10 for better convergence)
+                    max_iter = 30
+                    
+                    def body_fn(i, u_iter):
+                        violations = jnp.maximum(0.0, b_masked - A @ u_iter)
+                        # Filter out inf violations
+                        violations_clean = jnp.where(jnp.isfinite(violations), violations, -jnp.inf)
+                        max_viol = jnp.max(violations_clean)
+                        
+                        # Project onto most violated constraint
+                        worst_idx = jnp.argmax(violations_clean)
+                        A_row = A[worst_idx]
+                        b_val = b_masked[worst_idx]
+                        
+                        # Only project if constraint is valid
+                        is_valid = jnp.isfinite(b_val)
+                        lhs = jnp.dot(A_row, u_iter)
+                        den = jnp.dot(A_row, A_row) + 1e-9
+                        violation = violations_clean[worst_idx]
+                        
+                        # Corrected slack-QP formula: lambda = violation / (den + 1/rho)
+                        violation = jnp.where(is_valid, violation, 0.0)
+                        lam = violation / (den + 1.0 / rho)
+                        u_next = u_iter + jnp.where(is_valid, lam * A_row, 0.0)
+                        
+                        return u_next
+                    
+                    u_result = jax.lax.fori_loop(0, max_iter, body_fn, u_nom)
+                    return u_result
+                
+                # Branch on num_valid == 1
+                return jax.lax.cond(
+                    num_valid == 1,
+                    solve_single,
+                    solve_multiple,
+                    operand=None
+                )
+            
+            # Branch on max_violation < 1e-7
+            return jax.lax.cond(
+                max_violation < 1e-7,
+                return_original_no_viol,
+                solve_with_violations,
+                operand=None
+            )
         
-        return u_iter
+        # Branch on num_valid == 0 or A.size == 0
+        has_constraints = jnp.logical_and(A.size > 0, num_valid > 0)
+        return jax.lax.cond(
+            has_constraints,
+            solve_qp,
+            return_original,
+            operand=None
+        )
     
     def apply_actions(
         self,
@@ -244,28 +290,38 @@ class CFSQPPerStepFilter(ConstraintFilter):
         if obstacles is None:
             return actions
         
-        # Check if input is JAX array (in traced context)
-        # We need to detect this BEFORE calling np.asarray, which will fail in traced context
-        # Use safe detection that doesn't trigger array conversion
+        # Check if input is JAX array/tracer (in traced context)
+        # Use most reliable detection: check for jax.core.Tracer and jax.Array
+        # This is critical: wrong detection leads to no-op in JIT/scan/vmap
         is_jax = False
         if JAX_AVAILABLE:
             try:
-                # Method 1: Check for JAX-specific attributes (safest)
-                if hasattr(actions, 'block_until_ready'):
-                    is_jax = True
-                # Method 2: Check type name (doesn't trigger conversion)
-                elif hasattr(actions, '__class__'):
-                    class_name = type(actions).__name__
-                    if 'Array' in class_name or 'DeviceArray' in class_name:
-                        is_jax = True
-                # Method 3: Check module name
-                elif hasattr(actions, '__class__') and hasattr(actions.__class__, '__module__'):
-                    module_name = actions.__class__.__module__
-                    if 'jax' in module_name.lower():
-                        is_jax = True
+                from jax.core import Tracer
+                # Check if actions is a JAX Array or Tracer (most reliable)
+                is_jax = isinstance(actions, (jax.Array, Tracer))
             except Exception:
-                # If detection fails, assume it's not JAX (will try NumPy path)
-                pass
+                # Fallback: check module name (less reliable but better than nothing)
+                try:
+                    module_name = type(actions).__module__.lower()
+                    is_jax = 'jax' in module_name
+                except Exception:
+                    pass
+        
+        # Also check x0 (it might also be a JAX array/tracer)
+        is_jax_x0 = False
+        if JAX_AVAILABLE and not is_jax:
+            try:
+                from jax.core import Tracer
+                is_jax_x0 = isinstance(x0, (jax.Array, Tracer))
+            except Exception:
+                try:
+                    module_name = type(x0).__module__.lower()
+                    is_jax_x0 = 'jax' in module_name
+                except Exception:
+                    pass
+        
+        # If either is JAX, use JAX path
+        is_jax = is_jax or is_jax_x0
         
         # For JAX arrays, implement JAX-compatible CFS filter
         # Similar to CBF filter: use jax.lax.scan to rollout and apply constraints per-step
@@ -387,34 +443,60 @@ class CFSQPPerStepFilter(ConstraintFilter):
             raise RuntimeError("JAX not available for JAX filter implementation")
         
         params_dict = schedule_params or {}
-        margin = float(params_dict.get("margin", 0.0)) if isinstance(params_dict.get("margin"), (float, int)) else params_dict.get("margin", jnp.asarray(0.0))
-        rho = float(params_dict.get("rho", 10.0)) if isinstance(params_dict.get("rho"), (float, int)) else params_dict.get("rho", jnp.asarray(10.0))
+        # Get margin and rho - handle both concrete values and JAX arrays
+        # In JIT context, these might be traced arrays, so we need to be careful
+        margin_raw = params_dict.get("margin", 0.0)
+        rho_raw = params_dict.get("rho", 10.0)
         qp_gate = params_dict.get("qp_gate", True)
         qp_prob = params_dict.get("qp_prob", 1.0)
         
-        # Convert to JAX arrays if needed
-        if isinstance(margin, (float, int)):
-            margin = jnp.asarray(float(margin), dtype=jnp.float32)
-        if isinstance(rho, (float, int)):
-            rho = jnp.asarray(float(rho), dtype=jnp.float32)
+        # Convert to JAX arrays (JIT-safe: use jnp.asarray which handles both concrete and traced values)
+        # Check if already JAX array/tracer, otherwise convert
+        try:
+            # Try to check if it's already a JAX array/tracer
+            if isinstance(margin_raw, (jax.Array, jnp.ndarray)):
+                margin = margin_raw
+            else:
+                # It's a concrete value, convert to JAX array
+                margin = jnp.asarray(float(margin_raw), dtype=jnp.float32)
+        except (TypeError, ValueError):
+            # Fallback: assume it's already a JAX array
+            margin = margin_raw if isinstance(margin_raw, (jax.Array, jnp.ndarray)) else jnp.asarray(0.0, dtype=jnp.float32)
+        
+        try:
+            if isinstance(rho_raw, (jax.Array, jnp.ndarray)):
+                rho = rho_raw
+            else:
+                rho = jnp.asarray(float(rho_raw), dtype=jnp.float32)
+        except (TypeError, ValueError):
+            rho = rho_raw if isinstance(rho_raw, (jax.Array, jnp.ndarray)) else jnp.asarray(10.0, dtype=jnp.float32)
         
         # Check qp_gate (JAX-friendly)
         if isinstance(qp_gate, (bool, np.bool_)) and not qp_gate:
             return actions
         # Note: qp_prob random check can't be done in traced context, so we skip it
         
+        # Get environment parameters (must be concrete values, computed outside traced context)
+        # These are used to build closures, so they must be concrete
         dt = float(getattr(env, "dt", 0.05))
         robot_radius = float(getattr(env, "robot_radius", 0.05))
-        clearance = margin + robot_radius if isinstance(margin, (float, int)) else margin + robot_radius
+        constraint_margin_val = float(self.constraint_margin)
+        
+        # Convert margin to JAX array if needed (for JAX operations)
+        margin_jax = margin if isinstance(margin, (jnp.ndarray, jax.Array)) else jnp.asarray(float(margin), dtype=jnp.float32)
+        
+        # Compute clearance using JAX operations (JIT-safe)
+        robot_radius_jax = jnp.asarray(robot_radius, dtype=jnp.float32)
+        clearance = margin_jax + robot_radius_jax
         
         # Get obstacles list (outside JAX traced context) - cache it
         obstacles_list = self._get_obstacles_list(obstacles)
         num_obstacles = len(obstacles_list) if obstacles_list else 0
         max_k = min(self.max_constraints_per_point, num_obstacles) if num_obstacles > 0 else 0
         
-        # Compute threshold for obstacle selection
-        threshold_val = float(clearance) + self.constraint_margin if isinstance(clearance, (float, int)) else float(clearance) + self.constraint_margin
-        threshold = jnp.asarray(threshold_val, dtype=jnp.float32)
+        # Compute threshold for obstacle selection (JIT-safe: use JAX operations)
+        constraint_margin_jax = jnp.asarray(constraint_margin_val, dtype=jnp.float32)
+        threshold = clearance + constraint_margin_jax
         
         # Build JAX-compatible obstacle SDF functions for multi-constraint
         # Strategy: Create a single function that computes SDF for all obstacles
@@ -498,15 +580,19 @@ class CFSQPPerStepFilter(ConstraintFilter):
                     grad_array = sdf_grad_results[1]  # (max_k, 2)
                     
                     # Select obstacles within threshold
+                    # CRITICAL FIX: Use cand_mask to filter BEFORE sorting
+                    # Set out-of-threshold SDFs to +inf so they won't be selected
                     cand_mask = sdf_array < threshold
-                    num_candidates = jnp.sum(cand_mask.astype(jnp.int32))
-                    
-                    # Select up to max_k closest obstacles
-                    k = jnp.minimum(max_k, jnp.where(num_candidates == 0, num_obs_to_check, num_candidates))
+                    sdf_for_sort = jnp.where(cand_mask, sdf_array, jnp.inf)
                     
                     # Sort by SDF (ascending = closest first)
-                    sorted_indices = jnp.argsort(sdf_array)
+                    # Now only thresholded obstacles will be at the front
+                    sorted_indices = jnp.argsort(sdf_for_sort)
                     selected_indices = sorted_indices[:max_k]  # Fixed size for JAX
+                    
+                    # Count valid candidates (for constraint building)
+                    num_candidates = jnp.sum(cand_mask.astype(jnp.int32))
+                    k = jnp.minimum(max_k, jnp.where(num_candidates == 0, num_obs_to_check, num_candidates))
                     
                     # Build constraints for selected obstacles
                     def build_constraint_for_obstacle(idx):
@@ -552,75 +638,39 @@ class CFSQPPerStepFilter(ConstraintFilter):
                     A_constraints = A_all  # (max_k, 2) - keep all for fixed size
                     b_constraints = jnp.where(valid_mask, b_all, jnp.inf)  # (max_k,) - mark invalid with inf
                 else:
-                    # Fallback to union SDF with enhanced safety factor
-                    try:
-                        if hasattr(obstacles, "sample_sdf_and_grad_2d"):
-                            sdf_result, grad_result = obstacles.sample_sdf_and_grad_2d(
-                                pos_t[None, :], backend="jax"
-                            )
-                            if isinstance(sdf_result, (list, tuple)):
-                                sdf = jnp.asarray(sdf_result[0], dtype=jnp.float32)
-                                grad = jnp.asarray(grad_result[0], dtype=jnp.float32)
-                            else:
-                                sdf = jnp.asarray(sdf_result, dtype=jnp.float32).flatten()
-                                if sdf.shape[0] == 1:
-                                    sdf = sdf[0]
-                                grad = jnp.asarray(grad_result, dtype=jnp.float32)
-                                if grad.ndim > 1:
-                                    grad = grad[0]
-                        elif hasattr(obstacles, "jax_sdf"):
-                            sdf = obstacles.jax_sdf(pos_t)
-                            def sdf_fn(pos):
-                                return obstacles.jax_sdf(pos)
-                            grad = jax.grad(sdf_fn)(pos_t)
-                        else:
-                            x_next = env.jax_transition(x, u)
-                            return x_next, u
-                        
-                        grad = jnp.asarray(grad, dtype=jnp.float32).flatten()
-                        if grad.shape[0] != 2:
-                            if grad.shape[0] < 2:
-                                grad = jnp.pad(grad, (0, 2 - grad.shape[0]))
-                            else:
-                                grad = grad[:2]
-                        
-                        grad_norm = jnp.linalg.norm(grad)
-                        if grad_norm < 1e-8:
-                            x_next = env.jax_transition(x, u)
-                            return x_next, u
-                        
-                        g = grad / (grad_norm + 1e-9)
-                        
-                        # Enhanced safety factor for sharp corners (more aggressive)
-                        # When very close, increase clearance significantly
-                        safety_factor = jnp.where(
-                            sdf < clearance * 1.2,  # Very close
-                            1.5,  # Increase by 50%
-                            jnp.where(
-                                sdf < clearance * 2.0,  # Close
-                                1.2,  # Increase by 20%
-                                1.0   # Normal
-                            )
-                        )
-                        effective_clearance = clearance * safety_factor
-                        
-                        b_state = (effective_clearance - sdf) / (grad_norm + 1e-9) + jnp.dot(g, pos_t)
-                        A_row = dt * g
-                        b_val = b_state - jnp.dot(g, pos_t)
-                        
-                        # Single constraint (union SDF)
-                        A_constraints = A_row[None, :]  # (1, 2)
-                        b_constraints = b_val[None]  # (1,)
-                    except Exception:
-                        # If SDF computation fails, return original action
-                        x_next = env.jax_transition(x, u)
-                        return x_next, u
+                    # Fallback: No multi-constraint support (no individual obstacle jax_sdf)
+                    # In JIT context, we cannot call Python object methods safely
+                    # Return original action (no constraint applied)
+                    # NOTE: This is a limitation - for proper JIT support, obstacles must expose jax_sdf
+                    x_next = env.jax_transition(x, u)
+                    return x_next, u
                 
-                # Solve multi-constraint QP
-                if A_constraints.shape[0] > 0:
-                    u_safe = self._solve_multi_constraint_qp_jax(u, A_constraints, b_constraints, rho)
-                else:
-                    u_safe = u
+                # Solve multi-constraint QP (JIT-safe: use lax.cond)
+                # Step 1: Add safety gate - only call QP if max_violation > tol
+                # This avoids running QP when there's no violation, improving performance
+                tol = 1e-7
+                max_viol_before = jnp.max(jnp.maximum(0.0, b_constraints - A_constraints @ u))
+                # Filter out inf violations
+                max_viol_before_clean = jnp.where(jnp.isfinite(max_viol_before), max_viol_before, -jnp.inf)
+                max_viol_before_clean = jnp.max(max_viol_before_clean)
+                
+                def solve_qp_wrapper(_):
+                    return self._solve_multi_constraint_qp_jax(u, A_constraints, b_constraints, rho)
+                
+                def return_original(_):
+                    return u
+                
+                # Gate: only solve QP if there are constraints AND violation > tol
+                has_constraints = A_constraints.shape[0] > 0
+                has_violation = max_viol_before_clean > tol
+                should_solve = jnp.logical_and(has_constraints, has_violation)
+                
+                u_safe = jax.lax.cond(
+                    should_solve,
+                    solve_qp_wrapper,
+                    return_original,
+                    operand=None
+                )
                 
                 x_next = env.jax_transition(x, u_safe)
                 return x_next, u_safe
