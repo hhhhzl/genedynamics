@@ -1,11 +1,11 @@
 """
-JAX backend implementation for MDOC.
+JAX backend implementation for CFS-MBD.
 
-MDOC is defined as:
-  MBD diffusion driver + ConstraintFilter
+CFS-MBD is defined as:
+  MBD diffusion driver + Augmented Lagrangian objective + CFS-based per-step QP projection
 
-This file intentionally mirrors the structure of `solvers/single/mbd/backends/mbd_jax.py`,
-but inserts a `constraint_filter.apply_actions_batch(...)` hook every diffusion step.
+This file mirrors the structure of `mdoc/backends/mdoc_jax.py`,
+but adds augmented Lagrangian penalty in the reward computation.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from enerdynamics.core.constraints.core.types import ScheduleState
 from enerdynamics.core.constraints.action_filters import ConstraintFilter, NoOpConstraintFilter
 
 
-class MDOCBackendJax:
+class CFSMBDBackendJax:
     def __init__(
         self,
         *,
@@ -40,6 +40,8 @@ class MDOCBackendJax:
         show_tqdm: bool = False,
         constraint_filter: Optional[ConstraintFilter] = None,
         obstacles: Any = None,
+        aug_lambda: float = 0.0,
+        aug_rho: float = 1.0,
         **kwargs: Any,
     ):
         self.env = env_adapter
@@ -58,16 +60,8 @@ class MDOCBackendJax:
         self.show_tqdm = bool(show_tqdm)
         self.obstacles = obstacles
         self.constraint_filter = constraint_filter or NoOpConstraintFilter()
-
-        # Extract fixed CBF params from kwargs
-        self.cbf_tau = float(kwargs.get("cbf_tau", 0.005))
-        self.cbf_eta = float(kwargs.get("cbf_eta", 1.5))
-        self.cbf_margin_fixed = float(kwargs.get("cbf_margin", 0.1))
-        self.base_beta = float(kwargs.get("base_beta", 0.05))
-        
-        # New: Support for terminal cost and guidance (aligned with mdoc.py)
-        self.terminal_weight = float(kwargs.get("terminal_energy_weight", 100.0))
-        self.guide_weight = float(kwargs.get("guide_weight", 20.0)) 
+        self.aug_lambda = float(aug_lambda)
+        self.aug_rho = float(aug_rho)
 
         self._build_jax_functions()
 
@@ -135,7 +129,47 @@ class MDOCBackendJax:
         self._transition_fn = jax.jit(transition_fn)
         self._cost_fn = jax.jit(cost_fn)
 
-        def rollout_rewards(state_init, actions):
+        # Build SDF function for constraint evaluation (JAX-compatible)
+        def sdf_fn(pos, clearance):
+            """Compute SDF and constraint violation [g]_+."""
+            if self.obstacles is None:
+                return jnp.asarray(0.0, dtype=jnp.float32)
+            
+            # Try to use JAX-compatible SDF
+            try:
+                if hasattr(self.obstacles, "jax_sdf"):
+                    sdf_val = self.obstacles.jax_sdf(pos)
+                elif hasattr(self.obstacles, "sample_sdf_and_grad_2d"):
+                    # Use texture-based SDF (faster)
+                    sdf_result, _ = self.obstacles.sample_sdf_and_grad_2d(
+                        pos[None, :], backend="jax"
+                    )
+                    sdf_val = sdf_result[0] if isinstance(sdf_result, (list, tuple)) else sdf_result
+                    if isinstance(sdf_val, np.ndarray):
+                        sdf_val = jnp.asarray(sdf_val)
+                else:
+                    # Fallback: return 0 (no constraint)
+                    return jnp.asarray(0.0, dtype=jnp.float32)
+                
+                # Convert to scalar if needed
+                if isinstance(sdf_val, jnp.ndarray) and sdf_val.size > 0:
+                    sdf_val = sdf_val[0] if sdf_val.ndim > 0 else sdf_val
+                sdf_val = jnp.asarray(sdf_val, dtype=jnp.float32)
+                
+                # g_t = clearance - sdf, [g_t]_+ = max(0, g_t)
+                g_t = clearance - sdf_val
+                g_plus = jnp.maximum(0.0, g_t)
+                return g_plus
+            except Exception:
+                # If SDF computation fails, return 0 (no violation)
+                return jnp.asarray(0.0, dtype=jnp.float32)
+
+        def rollout_rewards_with_augmented(state_init, actions, clearance, aug_lambda, aug_rho):
+            """
+            Rollout rewards with augmented Lagrangian penalty.
+            
+            Returns total augmented reward (scalar).
+            """
             target_obj = getattr(self.env, "target", None)
             target = jnp.asarray(target_obj, dtype=jnp.float32) if target_obj is not None else jnp.zeros(2)
             
@@ -143,7 +177,7 @@ class MDOCBackendJax:
             t_star = float(self.horizon - 1)
             
             def step_fn(carry, action_and_t):
-                next_state, cum_reward = carry
+                next_state, cum_reward, cum_g_plus = carry
                 action, t = action_and_t
                 
                 next_state = self._transition_fn(next_state, action)
@@ -152,13 +186,46 @@ class MDOCBackendJax:
                 # Standard running cost
                 reward = -self._cost_fn(next_state, action, ctx)
                 
-                # Guidance cost (Time smoothness)
-                d_hat = d0 * jnp.maximum(0.0, 1.0 - t / (t_star + 1e-6))
-                dist_to_goal = jnp.linalg.norm(next_state[0:2] - target[0:2])
-                guide_reward = -self.guide_weight * jnp.square(dist_to_goal - d_hat)
+                # Constraint violation [g]_+
+                pos = next_state[0:2]  # single_2d: state is position
+                g_plus = sdf_fn(pos, clearance)
                 
-                step_total = reward + guide_reward
-                return (next_state, cum_reward + step_total), step_total
+                step_total = reward
+                return (next_state, cum_reward + step_total, cum_g_plus + g_plus), (step_total, g_plus)
+
+            t_indices = jnp.arange(self.horizon, dtype=jnp.float32)
+            (final_state, total_reward, total_g_plus), (step_rewards, step_g_plus) = jax.lax.scan(
+                step_fn, (state_init, 0.0, 0.0), (actions, t_indices)
+            )
+            
+            # Terminal reward
+            terminal_dist = jnp.linalg.norm(final_state[0:2] - target[0:2])
+            terminal_reward = -100.0 * terminal_dist  # Fixed terminal weight for now
+            
+            # Augmented Lagrangian penalty
+            # J(τ) + λ^T [g]_+ + (ρ/2) ||[g]_+||^2
+            dual_term = aug_lambda * total_g_plus
+            penalty_term = (aug_rho / 2.0) * jnp.sum(step_g_plus ** 2)
+            augmented_penalty = dual_term + penalty_term
+            
+            # Total reward = sum of step rewards + terminal - augmented penalty
+            total_augmented_reward = total_reward + terminal_reward - augmented_penalty
+            
+            return total_augmented_reward
+
+        def rollout_rewards(state_init, actions):
+            """Rollout rewards per step (for visualization)."""
+            target_obj = getattr(self.env, "target", None)
+            target = jnp.asarray(target_obj, dtype=jnp.float32) if target_obj is not None else jnp.zeros(2)
+            
+            def step_fn(carry, action_and_t):
+                next_state, cum_reward = carry
+                action, t = action_and_t
+                
+                next_state = self._transition_fn(next_state, action)
+                ctx = {"t": t}
+                reward = -self._cost_fn(next_state, action, ctx)
+                return (next_state, cum_reward + reward), reward
 
             t_indices = jnp.arange(self.horizon, dtype=jnp.float32)
             (final_state, _), step_rewards = jax.lax.scan(
@@ -167,14 +234,17 @@ class MDOCBackendJax:
             
             # Terminal reward
             terminal_dist = jnp.linalg.norm(final_state[0:2] - target[0:2])
-            terminal_reward = -self.terminal_weight * terminal_dist
-            
-            # Add terminal reward to the last step for visualization consistency
+            terminal_reward = -100.0 * terminal_dist
             step_rewards = step_rewards.at[-1].add(terminal_reward)
+            
             return step_rewards
 
+        # JIT compile functions
         self._rollout_rewards_fn = jax.jit(rollout_rewards)
-        self._rollout_rewards_batch_fn = jax.jit(jax.vmap(self._rollout_rewards_fn, in_axes=(None, 0)))
+        
+        # Batch version with augmented Lagrangian (takes clearance, aug_lambda, aug_rho as static)
+        # Note: We need to make clearance, aug_lambda, aug_rho static args since they vary per diffusion step
+        self._rollout_rewards_with_augmented_fn = rollout_rewards_with_augmented
 
         def rollout_states(state_init, actions):
             def step_fn(carry, action):
@@ -231,21 +301,25 @@ class MDOCBackendJax:
                     "qp_gate": qp_gate, 
                     "qp_prob": qp_prob, 
                     "topK": jnp.asarray(self._topK, dtype=jnp.int32),
-                    "cbf_tau": jnp.asarray(self.cbf_tau, dtype=jnp.float32),
-                    "cbf_eta": jnp.asarray(self.cbf_eta, dtype=jnp.float32),
-                    "cbf_margin": jnp.asarray(self.cbf_margin_fixed, dtype=jnp.float32),
-                    "base_beta": jnp.asarray(self.base_beta, dtype=jnp.float32),
                 }
 
-                # Apply Filter per diffusion step (MDOC core)
+                # Apply Filter per diffusion step (CFS-MBD core)
                 Y0s_f = self.constraint_filter.apply_actions_batch(
                     x0_jnp, Y0s, env=self.env, obstacles=self.obstacles,
                     schedule_state=sched_state, schedule_params=sched_params,
                 )
 
-                # Importance weighting
-                rews_per_step = self._rollout_rewards_batch_fn(x0_jnp, Y0s_f)
-                rews = jnp.sum(rews_per_step, axis=-1)
+                # Compute rewards with augmented Lagrangian
+                # We need to compute augmented reward for each sample
+                def compute_augmented_reward(actions_seq):
+                    return self._rollout_rewards_with_augmented_fn(
+                        x0_jnp, actions_seq, margin, 
+                        jnp.asarray(self.aug_lambda, dtype=jnp.float32),
+                        jnp.asarray(self.aug_rho, dtype=jnp.float32)
+                    )
+                
+                # Vectorize over batch
+                rews = jax.vmap(compute_augmented_reward)(Y0s_f)
                 
                 rew_mean = jnp.mean(rews)
                 rew_std = jnp.std(rews)

@@ -13,5 +13,6 @@ from .base import ConstraintFilter
 from .noop import NoOpConstraintFilter
 from .cbf_closed_form import ClosedFormCBFFilter
 from .cbf_qp import QPBasedCBFFilter
+from .cfs_qp_perstep import CFSQPPerStepFilter
 
-__all__ = ["ConstraintFilter", "NoOpConstraintFilter", "ClosedFormCBFFilter", "QPBasedCBFFilter"]
+__all__ = ["ConstraintFilter", "NoOpConstraintFilter", "ClosedFormCBFFilter", "QPBasedCBFFilter", "CFSQPPerStepFilter"]
