@@ -1,25 +1,25 @@
-# MDOC ablation: per-step CBF filter (QP projection), fixed schedulers
-name: single2d_mdoc_cbf_qp_perstep
-output_dir: results/single2d/ablation_mdoc/cbf_qp_perstep
+# CFS-MBD: MBD with Augmented Lagrangian objective and CFS-based per-step QP projection
+name: double2d_cfsmbd
+output_dir: results/double2d/cfsmbd
 
-env_name: single_integrator_box_2d
+env_name: double_integrator_box_2d
 env_params:
   dt: 0.05
   horizon: 64
   p_max: 2.0
   control_limit: 1.0
 
-method: mdoc
+method: cfsmbd
 method_params:
   show_tqdm: True
 
-  # MDOC ablation switch (used by MDOCMethodPlugin to pick ConstraintFilter)
-  mdoc_constraint_mode: cbf_qp_perstep
-  cbf_tau: 0.005
-  cbf_eta: 1.5
-  cbf_margin: 0.1
-  base_beta: 5.0e-2
-  terminal_energy_weight: 100.0
+  # CFS parameters
+  max_constraints_per_point: 30
+  constraint_margin: 0.05  # Reduced from 0.25: tighter obstacle selection threshold
+
+  # Augmented Lagrangian parameters (fixed for now)
+  aug_lambda: 10.0  # Dual variable (can be tuned)
+  aug_rho: 20.0     # Penalty parameter (can be tuned)
 
 obstacle_levels: [9]
 obstacle_config:
@@ -54,7 +54,7 @@ scheduler_config:
   type: composite
   constraint_schedulers:
     - type: fixed
-      margin: 0.1
+      margin: 0.18
       rho: 10.0
       # QP filter: always solve per-step
       qp_gate: true
@@ -64,12 +64,10 @@ scheduler_config:
       I_QP: 10
   diffusion_schedulers:
     - type: fixed
-      M_k: 64
+      M_k: 512
       T_k: 5e-1
       Ndiffuse: 100
       beta0: 1.0e-5
       betaT: 1e-2
   constraint_merge_strategy: merge
   diffusion_merge_strategy: merge
-
-
