@@ -10,7 +10,7 @@ import numpy as np
 from enerdynamics.solvers.single.cfsmbd import CFSMBDSolver
 from enerdynamics.core.dynamics import DynamicsToEnvAdapter
 from enerdynamics.core.backends.runtime import RuntimeBackendManager
-from enerdynamics.core.constraints.action_filters.cfs_qp import CFSQPFilter
+from enerdynamics.core.constraints.action_filters.cfs_qp_perstep import CFSQPPerStepFilter
 from ...framework.base import MethodPlugin
 
 
@@ -27,7 +27,7 @@ class CFSMBDMethodPlugin(MethodPlugin):
         dynamics = DynamicsToEnvAdapter(env, dt=dt)
 
         # Create CFS-based filter
-        constraint_filter = CFSQPFilter(
+        constraint_filter = CFSQPPerStepFilter(
             max_constraints_per_point=int(config.get("max_constraints_per_point", 8)),
             constraint_margin=float(config.get("constraint_margin", 0.25)),
             use_slack=True,
