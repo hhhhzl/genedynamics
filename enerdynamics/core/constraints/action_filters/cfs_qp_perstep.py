@@ -22,7 +22,7 @@ from enerdynamics.core.constraints.action_filters.base import ConstraintFilter
 from enerdynamics.core.types import Trajectory
 
 
-class CFSQPFilter(ConstraintFilter):
+class CFSQPPerStepFilter(ConstraintFilter):
     """
     CFS-based per-step QP filter.
     
