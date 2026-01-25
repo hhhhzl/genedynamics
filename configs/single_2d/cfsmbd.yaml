@@ -14,14 +14,14 @@ method_params:
   show_tqdm: True
 
   # CFS parameters
-  max_constraints_per_point: 30
+  max_constraints_per_point: 5
   constraint_margin: 0.05  # Reduced from 0.25: tighter obstacle selection threshold
 
   # Augmented Lagrangian parameters (fixed for now)
-  aug_lambda: 10.0  # Dual variable (can be tuned)
-  aug_rho: 20.0     # Penalty parameter (can be tuned)
+  aug_lambda: 10.0  # Dual variable
+  aug_rho: 20.0     # Penalty parameter
 
-obstacle_levels: [9]
+obstacle_levels: [6]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
