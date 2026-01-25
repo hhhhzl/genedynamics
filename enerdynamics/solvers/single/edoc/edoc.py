@@ -81,7 +81,7 @@ class EDOCPlanner:
         action_score_mode: str = "reward",
         action_nsample: int = 256,
         use_antithetic: bool = False,
-        dyn_loss_coeff: float = 1.0,
+        dyn_loss_coeff: float = 0.0,
         dyn_loss_mode: str = "terminal",
         np_random_seed: Optional[int] = None,
         # ===== UX / profiling =====
