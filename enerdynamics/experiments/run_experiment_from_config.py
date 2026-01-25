@@ -20,6 +20,7 @@ from enerdynamics.experiments.plugins import (
     MBDMethodPlugin,
     EDOCMPCMethodPlugin,
     MBDMPCMethodPlugin,
+    CFSMBDMethodPlugin,
     DPCCMethodPlugin,
     SingleIntegrator2DPlugin,
     DoubleIntegrator2DPlugin,
@@ -163,7 +164,9 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(MBDMethodPlugin(), 'method')
     runner.register_plugin(EDOCMPCMethodPlugin(), 'method')
     runner.register_plugin(MBDMPCMethodPlugin(), 'method')
-    runner.register_plugin(DPCCMethodPlugin(), 'method')
+    runner.register_plugin(CFSMBDMethodPlugin(), 'method')
+    if DPCCMethodPlugin is not None:
+        runner.register_plugin(DPCCMethodPlugin(), 'method')
     
     # Environment plugins
     runner.register_plugin(SingleIntegrator2DPlugin(), 'environment')
