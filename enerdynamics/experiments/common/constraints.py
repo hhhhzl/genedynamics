@@ -573,6 +573,39 @@ def create_scheduler_from_config(
                     backend=backend_name,
                 )
                 constraint_schedulers.append(scheduler)
+            elif cs_type == 'alm_adaptive':
+                from enerdynamics.core.constraints.schedulers.ConstraintScheduler.almadaptive import (
+                    ALMAdaptiveConstraintScheduler,
+                )
+
+                robot_radius_alm = 0.05
+                if obstacle_config is not None:
+                    robot_radius_alm = float(obstacle_config.get('robot_radius', 0.05))
+
+                scheduler = ALMAdaptiveConstraintScheduler(
+                    lam0=float(cs_config.get('lam0', 0.0)),
+                    rho0=float(cs_config.get('rho0', 1.0)),
+                    gamma=float(cs_config.get('gamma', 2.0)),
+                    rho_max=float(cs_config.get('rho_max', 100.0)),
+                    kappa=float(cs_config.get('kappa', 0.9)),
+                    r_tol=float(cs_config.get('r_tol', 5e-4)),
+                    margin=float(cs_config.get('margin', 0.18)),
+                    robot_radius=robot_radius_alm,
+                    p_min=float(cs_config.get('p_min', 0.2)),
+                    p_max=float(cs_config.get('p_max', 1.0)),
+                    eps_min=float(cs_config.get('eps_min', 1e-5)),
+                    eps_max=float(cs_config.get('eps_max', 1e-2)),
+                    I_min=int(cs_config.get('I_min', 1)),
+                    I_max=int(cs_config.get('I_max', 20)),
+                    topK_min=int(cs_config.get('topK_min', 1)),
+                    topK_max=int(cs_config.get('topK_max', 8)),
+                    r_scale=float(cs_config.get('r_scale', 0.1)),
+                    proj_min=float(cs_config.get('proj_min', 1e-6)),
+                    alpha_smooth=float(cs_config.get('alpha_smooth', 0.2)),
+                    use_stochastic_gate=bool(cs_config.get('use_stochastic_gate', False)),
+                    backend='jax',
+                )
+                constraint_schedulers.append(scheduler)
             else:
                 raise ValueError(f"Unknown constraint scheduler type: {cs_type}")
         

@@ -1,6 +1,7 @@
-# CFS-MBD: MBD with Augmented Lagrangian objective and CFS-based full trajectory QP projection
-name: single2d_cfsmbd_full
-output_dir: results/single2d/cfsmbd_full
+# CFS-MBD full trajectory QP with ALM adaptive constraint scheduling
+# Same as cfsmbd_full but uses alm_adaptive scheduler (residual-driven lambda/rho + QP effort).
+name: single2d_cfsmbd_full_adaptive
+output_dir: results/single2d/cfsmbd_full_adaptive
 
 env_name: single_integrator_box_2d
 env_params:
@@ -15,13 +16,13 @@ method_params:
 
   # CFS parameters
   max_constraints_per_point: 5
-  constraint_margin: 0.25 
+  constraint_margin: 0.05
 
-  # Augmented Lagrangian parameters (fixed for now)
-  aug_lambda: 500.0  # Dual variable
-  aug_rho: 1000.0     # Penalty parameter
+  # Augmented Lagrangian: initial values only; alm_adaptive updates them
+  aug_lambda: 0.0
+  aug_rho: 1.0
 
-obstacle_levels: [6]
+obstacle_levels: [3]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -53,15 +54,23 @@ visualizations:
 scheduler_config:
   type: composite
   constraint_schedulers:
-    - type: fixed
+    - type: alm_adaptive
+      lam0: 0.0
+      rho0: 1.0
+      gamma: 2.0
+      rho_max: 1000.0
+      kappa: 0.9
+      r_tol: 5e-4
       margin: 0.18
-      rho: 10.0
-      # QP filter: always solve full trajectory QP
-      qp_gate: true
-      qp_prob: 1.0
-      topK: null
-      eps: 1e-4
-      I_QP: 10
+      p_min: 0.2
+      p_max: 1.0
+      eps_min: 1e-5
+      eps_max: 1e-2
+      I_min: 1
+      I_max: 20
+      topK_min: 1
+      topK_max: 30
+      use_stochastic_gate: false
   diffusion_schedulers:
     - type: fixed
       M_k: 512
