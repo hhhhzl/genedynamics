@@ -14,16 +14,19 @@ from . import base
 from . import fixed
 from . import dualcontrol
 from . import emergingbarrier
+from . import almadaptive
 
 from .base import ConstraintScheduler
 from .fixed import FixedConstraintScheduler
 from .dualcontrol import DualControlConstraintScheduler
 from .emergingbarrier import EmergingBarrierConstraintScheduler
+from .almadaptive import ALMAdaptiveConstraintScheduler
 
 __all__ = [
     "ConstraintScheduler",
     "FixedConstraintScheduler",
     "DualControlConstraintScheduler",
     "EmergingBarrierConstraintScheduler",
+    "ALMAdaptiveConstraintScheduler",
 ]
 
