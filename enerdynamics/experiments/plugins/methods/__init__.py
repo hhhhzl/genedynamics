@@ -9,6 +9,7 @@ from .edoc_mpc import EDOCMPCMethodPlugin
 from .mbd_mpc import MBDMPCMethodPlugin
 from .mdoc import MDOCMethodPlugin
 from .cfsmbd import CFSMBDMethodPlugin
+from .cfsmbd_full import CFSMBDFullMethodPlugin
 
 try:
     from .dpcc import DPCCMethodPlugin
@@ -23,6 +24,7 @@ __all__ = [
     'MBDMPCMethodPlugin',
     'MDOCMethodPlugin',
     'CFSMBDMethodPlugin',
+    'CFSMBDFullMethodPlugin',
     'DPCCMethodPlugin',
 ]
 
