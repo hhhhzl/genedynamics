@@ -1,5 +1,5 @@
 """
-CFS-MBD method plugin implementation.
+CFS-MBD method plugin implementation with full trajectory QP.
 """
 
 from __future__ import annotations
@@ -10,14 +10,14 @@ import numpy as np
 from enerdynamics.solvers.single.cfsmbd import CFSMBDSolver
 from enerdynamics.core.dynamics import DynamicsToEnvAdapter
 from enerdynamics.core.backends.runtime import RuntimeBackendManager
-from enerdynamics.core.constraints.action_filters.cfs_qp_perstep import CFSQPPerStepFilter
+from enerdynamics.core.constraints.action_filters.cfs_qp_full import CFSQPFullFilter
 from ...framework.base import MethodPlugin
 
 
-class CFSMBDMethodPlugin(MethodPlugin):
+class CFSMBDFullMethodPlugin(MethodPlugin):
     @property
     def name(self) -> str:
-        return "cfsmbd"
+        return "cfsmbd_full"
 
     def create_planner(self, env: Any, energy: Any, config: Dict[str, Any]) -> Any:
         horizon = int(config.get("horizon", getattr(env, "horizon", 64)))
@@ -26,8 +26,8 @@ class CFSMBDMethodPlugin(MethodPlugin):
         backend = RuntimeBackendManager.get_backend()
         dynamics = DynamicsToEnvAdapter(env, dt=dt)
 
-        # Create CFS-based filter
-        constraint_filter = CFSQPPerStepFilter(
+        # Create CFS-based full trajectory QP filter
+        constraint_filter = CFSQPFullFilter(
             max_constraints_per_point=int(config.get("max_constraints_per_point", 8)),
             constraint_margin=float(config.get("constraint_margin", 0.25)),
             use_slack=True,
