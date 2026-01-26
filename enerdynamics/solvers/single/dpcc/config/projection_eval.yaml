@@ -1,0 +1,95 @@
+# General
+write_to_file: False
+exps: [
+  'avoiding-d3il',
+  ]
+seeds: [5, 1, 2, 3, 4]
+avoiding_halfspace_variants: [
+  'top-right-hard',    # /
+  'top-left-hard',    # \
+  'both-hard',    # / and \
+  ]   # 'top-right: /', 'top-left: \'
+n_trials: 2
+
+dt: {
+  'avoiding': 1,    # Since a = [delta_x, delta_y] and not [vx, vy]
+}
+observation_indices: {
+  'avoiding': {'x_des': 0, 'y_des': 1, 'x': 2, 'y': 3},
+}
+
+action_indices: {
+  'avoiding': {'vx': 0, 'vy': 1},
+}
+
+# Policy
+diffusion_timestep_threshold: 0.5
+
+# Projection 
+projection_variants: [
+  # Figure 2, Table 1 and Figure 3:
+  'dpcc-r',
+  'dpcc-r-tightened',
+  'dpcc-c',
+  'dpcc-c-tightened',
+  'dpcc-t',
+  'dpcc-t-tightened',
+  # Table 1:
+  'diffuser',
+  'gradient',
+  'gradient-tightened',
+  'post_processing',
+  'post_processing-tightened',
+  'model_free',
+  'model_free-tightened',
+  # Table 2:
+  'dpcc-c-tightened-dt0p25',
+  'dpcc-c-tightened-dt0p5',
+  'dpcc-c-tightened-dt2p0',
+  'dpcc-c-tightened-dt4p0',
+]
+projection_cost: 'pos_vel'
+constraint_types: [
+  'halfspace', 
+  'obstacles', 
+  'dynamics',
+  'bounds',
+  ]
+enlarge_constraints: {
+  'avoiding': 0.025,
+}
+halfspace_constraints: {
+  'avoiding-d3il': [
+    # [[0.8, -0.3], [0.3, 0.5], 'below'],   # hard (\ shape)
+    # [[0.2, -0.3], [0.7, 0.5], 'below'],     # hard (/ shape)
+    [[0.8, -0.5], [0.4, 0.5], 'below'],   # hard (\ shape)
+    [[0.2, -0.5], [0.6, 0.5], 'below'],     # hard (/ shape)
+    [[0.8, -0.3], [0.575, 0.5], 'below'],   # easier (\ shape)
+    [[0.2, -0.3], [0.425, 0.5], 'below'],   # easier (/ shape)
+    ],
+}
+obstacle_constraints: {
+  'avoiding-d3il': [
+    # {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.575, 0.08], 'radius': 0.1},  # second row, right obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.4, 0.08], 'radius': 0.06},  # second row, left obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.6, 0.08], 'radius': 0.06},  # second row, right obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.1], 'radius': 0.06},  # first row obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.4, 0.08], 'radius': 0.08},  # second row, left obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.6, 0.08], 'radius': 0.08},  # second row, right obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.09], 'radius': 0.08},  # first row obstacle larger
+  ]
+}
+bounds: {   # need to be within the limits of the dataset due to the normalization
+  'avoiding-d3il': [
+    {'type': 'lower', 'dimensions': ['vx', 'vy'], 'values': [-0.01, 0]},
+    {'type': 'upper', 'dimensions': ['vx', 'vy'], 'values': [0.01, 0.01]},
+    {'type': 'lower', 'dimensions': ['vx', 'vy'], 'values': [-0.012, 0]},
+    {'type': 'upper', 'dimensions': ['vx', 'vy'], 'values': [0.012, 0.012]},
+  ],
+}
+
+# Plotting
+plot_how_many: 10
+ax_limits: {
+  'avoiding-d3il': [[0.2, 0.8], [-0.3, 0.4]]
+}
