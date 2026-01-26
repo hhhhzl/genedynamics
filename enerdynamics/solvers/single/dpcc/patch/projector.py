@@ -382,10 +382,10 @@ class DynamicConstraints(Constraints):
                 vec_append = torch.zeros(self.horizon - 1, device=self.device)
 
                 if self.normalizer is not None:
-                    x_min = self.normalizer.mins[x_idx]
-                    x_max = self.normalizer.maxs[x_idx]
-                    dx_min = self.normalizer.mins[dx_idx]
-                    dx_max = self.normalizer.maxs[dx_idx]
+                    x_min = float(self.normalizer.mins[x_idx])
+                    x_max = float(self.normalizer.maxs[x_idx])
+                    dx_min = float(self.normalizer.mins[dx_idx])
+                    dx_max = float(self.normalizer.maxs[dx_idx])
                     x_diff = x_max - x_min
                     dx_diff = dx_max - dx_min
                     dx_sum = dx_max + dx_min
@@ -512,4 +512,3 @@ class ProjectionNormalizer:
 
     def unnormalize(self, x_normalized):
         return (x_normalized + 1) * (self.maxs - self.mins) / 2 + self.mins
-

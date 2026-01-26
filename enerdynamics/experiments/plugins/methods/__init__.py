@@ -10,11 +10,7 @@ from .mbd_mpc import MBDMPCMethodPlugin
 from .mdoc import MDOCMethodPlugin
 from .cfsmbd import CFSMBDMethodPlugin
 from .cfsmbd_full import CFSMBDFullMethodPlugin
-
-try:
-    from .dpcc import DPCCMethodPlugin
-except (ImportError, ModuleNotFoundError):
-    DPCCMethodPlugin = None  # diffuser optional; skip DPCC registration when missing
+from .dpcc import DPCCMethodPlugin
 
 __all__ = [
     'EDOCMethodPlugin',

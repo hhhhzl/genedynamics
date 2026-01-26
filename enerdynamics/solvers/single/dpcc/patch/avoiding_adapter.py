@@ -23,20 +23,28 @@ class AvoidingDPCCAdapter:
         self.indices = indices
 
     def reset(self, seed: int | None = None):
-        obs = self.env.reset() if seed is None else self.env.reset(seed=seed)
-        action = self.env.robot_state()[:2]
-        fixed_z = self.env.robot_state()[2:]
-        obs = np.concatenate((action[:2], obs))
+        reset_out = self.env.reset(rng=None if seed is None else seed)
+        if isinstance(reset_out, tuple):
+            obs, _info = reset_out
+        else:
+            obs = reset_out
+        obs = np.asarray(obs, dtype=np.float32).reshape(-1)
+
+        robot_state = np.asarray(self.env.robot_state(), dtype=np.float32).reshape(-1)
+        action = robot_state[:2]
+        fixed_z = robot_state[2:]
         return obs, action, fixed_z
 
     def step(self, action, obs, fixed_z):
-        next_pos_des = action + obs[:2]
-        obs, rew, terminated, info = self.env.step(
-            np.concatenate((next_pos_des, fixed_z, [0, 1, 0, 0]), axis=0)
-        )
-        success = info[1] if isinstance(info, (tuple, list)) and len(info) > 1 else info
-        obs = np.concatenate((next_pos_des[:2], obs))
-        return obs, success, terminated, info
+        # D3ILAvoidingEnv expects delta action (dx, dy); state arg unused.
+        next_state, rew, terminated, info = self.env.step(None, np.asarray(action, dtype=np.float32))
+        success = False
+        if isinstance(info, dict) and "success" in info:
+            success = bool(info["success"])
+        elif isinstance(info, (tuple, list)) and len(info) > 1:
+            success = bool(info[1])
+        obs_next = np.asarray(next_state, dtype=np.float32).reshape(-1)
+        return obs_next, success, terminated, info
 
     def get_indices(self):
         return self.indices.get("observations", {}), self.indices.get("actions", {})
@@ -200,4 +208,3 @@ class AvoidingDPCCAdapter:
 
         # Default: no special slicing
         return polytopic_all, obstacles_all
-

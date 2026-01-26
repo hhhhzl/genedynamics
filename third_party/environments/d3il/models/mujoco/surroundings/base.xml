@@ -1,6 +1,7 @@
 <mujoco model="base_surrounding">
  <compiler angle="radian" discardvisual="false"/>
-    <option collision="all" cone="elliptic" gravity="0 0 -9.81" impratio="3" solver="Newton" timestep="0.001"
+    <!-- Mujoco >=3 no longer supports option.collision; drop attribute -->
+    <option cone="elliptic" gravity="0 0 -9.81" impratio="3" solver="Newton" timestep="0.001"
             tolerance="1e-10"/>
  <size nconmax="2000" njmax="2000"/>
     <asset>

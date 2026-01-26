@@ -61,8 +61,8 @@ This structure avoids creating a new standalone package per algorithm while stil
 DPCC is wired into the experiment framework via a method plugin:
 
 - `enerdynamics/experiments/plugins/methods/dpcc.py`: `DPCCMethodPlugin`
-  - Adds `dpcc/` to `sys.path` so DPCC’s `diffuser` code is importable.
-  - Loads the trained diffusion model via `diffuser.utils.load_diffusion(...)`.
+  - Resolves DPCC root from the vendored module (`enerdynamics/solvers/single/dpcc/config`) or nearby `../dpcc`.
+  - Loads the trained diffusion model via the local `diffuser_utils.load_diffusion(...)`.
   - Creates a `DPCCSolver` for evaluation inside the standard experiment runner.
 
 The environment plugin used is:
@@ -159,5 +159,4 @@ It defines a stable on-disk schema with:
 - `external_uris.json` (hooks for W&B / MLflow / S3 URIs)
 
 Today, the DPCC training script is not yet wired to write into this store automatically; it exists so you can migrate toward a unified artifact/MLOps workflow without changing solver code.
-
 
