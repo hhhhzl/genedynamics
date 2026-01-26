@@ -20,8 +20,14 @@ method_params:
   cbf_margin: 0.1
   base_beta: 5.0e-2
   terminal_energy_weight: 100.0
+  # Multi-mode: number of candidate trajectories to return (C paths)
+  num_modes: 50
+  # How to generate C paths:
+  # - multirun: run solver C times with different RNG keys, keep best trajectory from each run
+  # - diverse_topk: pick C diverse candidates from samples inside a single diffusion run
+  mode_strategy: multirun
 
-obstacle_levels: [9]
+obstacle_levels: [6]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -45,7 +51,8 @@ metrics:
   - nonconvexity
 
 visualizations:
-  - trajectory
+  - trajectory_modes  # Shows C candidate paths with best highlighted
+  - trajectory        # Shows only the best (lowest cost) path
   - diffusion
   - energy_reward
   - states

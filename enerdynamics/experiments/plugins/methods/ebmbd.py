@@ -54,6 +54,11 @@ class EBMBDMethodPlugin(MethodPlugin):
             seed=config.get("np_random_seed", None) or 0,
             scheduler=config.get("scheduler"),
             show_tqdm=config.get("show_tqdm", False),
+            num_modes=config.get("num_modes", 1),  # Number of candidate trajectories to return
+            mode_strategy=config.get("mode_strategy", "multirun"),
+            diversity_eta=config.get("diversity_eta", 1.0),  # Diversity weight
+            diversity_topK_cand=config.get("diversity_topK_cand", None),  # Pre-filter candidates
+            diversity_use_state=config.get("diversity_use_state", True),  # Use state or action features
         )
         return solver
 
