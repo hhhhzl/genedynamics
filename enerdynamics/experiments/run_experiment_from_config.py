@@ -38,6 +38,7 @@ from enerdynamics.experiments.plugins import (
     EpisodeOutcomeMetricsPlugin,
     TrajectoryVisualizationPlugin,
     Trajectory3DVisualizationPlugin,
+    TrajectoryModesVisualizationPlugin,
     DiffusionVisualizationPlugin,
     Diffusion3DVisualizationPlugin,
     EnergyRewardVisualizationPlugin,
@@ -190,6 +191,7 @@ def register_all_plugins(runner: ExperimentRunner):
     # Visualization plugins
     runner.register_plugin(TrajectoryVisualizationPlugin(), 'visualization')
     runner.register_plugin(Trajectory3DVisualizationPlugin(), 'visualization')
+    runner.register_plugin(TrajectoryModesVisualizationPlugin(), 'visualization')
     runner.register_plugin(DiffusionVisualizationPlugin(), 'visualization')
     runner.register_plugin(Diffusion3DVisualizationPlugin(), 'visualization')
     runner.register_plugin(EnergyRewardVisualizationPlugin(), 'visualization')
