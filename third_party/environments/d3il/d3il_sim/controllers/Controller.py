@@ -13,7 +13,8 @@ class ControllerBase:
 
     def __init__(self):
         self.paramsLock = threading.Lock()
-        self.last_control_timestamp = np.NAN
+        # Use canonical nan constant; np.NAN was removed in newer NumPy
+        self.last_control_timestamp = np.nan
         self._max_duration = None
         self._max_timesteps = None
         self._controller_timer = None

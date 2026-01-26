@@ -35,9 +35,16 @@ class D3ILAvoidingSpec(D3ILTaskSpec):
 
     def make_env(self) -> Any:
         ensure_d3il_on_path()
-        from environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.avoiding import (
-            ObstacleAvoidanceEnv,
-        )
+        try:
+            # Prefer fully-qualified d3il import when available (e.g., pip-installed d3il)
+            from d3il.environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.avoiding import (  # type: ignore
+                ObstacleAvoidanceEnv,
+            )
+        except ModuleNotFoundError:
+            # Fallback to vendored layout (third_party/environments/d3il/...)
+            from environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.avoiding import (
+                ObstacleAvoidanceEnv,
+            )
 
         return ObstacleAvoidanceEnv(render=bool(self.config.render))
 
@@ -115,5 +122,4 @@ class D3ILAvoidingSpec(D3ILTaskSpec):
         next_des = s[:2] + u
         next_xy = next_des
         return np.concatenate([next_des, next_xy], axis=0).astype(np.float32)
-
 

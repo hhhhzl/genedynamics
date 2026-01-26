@@ -17,13 +17,62 @@ from ...framework.base import MethodPlugin
 
 
 def _ensure_dpcc_on_path(dpcc_root: str | Path | None) -> Path:
-    if dpcc_root is None:
-        project_root = Path(__file__).resolve().parents[4]
-        dpcc_root = project_root / "dpcc"
-    dpcc_root = Path(dpcc_root).resolve()
-    if str(dpcc_root) not in sys.path:
-        sys.path.insert(0, str(dpcc_root))
-    return dpcc_root
+    """
+    Resolve a usable DPCC root and add it to sys.path.
+
+    Priority:
+    1) Explicit `dpcc_root` from config.
+    2) Local vendored DPCC module: enerdynamics/solvers/single/dpcc
+    3) Repo-root sibling: ../dpcc
+    4) Repo-root child: ./dpcc
+    When a candidate is found, also add its `diffuser/` subdir if present so pickled
+    objects referencing `diffuser.*` can be imported.
+    """
+    candidates = []
+    if dpcc_root is not None:
+        candidates.append(Path(dpcc_root))
+
+    project_root = Path(__file__).resolve().parents[4]
+    candidates.append(project_root.parent / "dpcc")  # sibling repo
+    candidates.append(project_root / "dpcc")         # child in repo
+
+    # Local vendored module (this file -> enerdynamics/experiments/plugins/methods -> .../dpcc)
+    local_dpcc = Path(__file__).resolve().parents[3] / "solvers" / "single" / "dpcc"
+    candidates.append(local_dpcc)
+
+    config_dir = None
+    for cand in candidates:
+        cand = cand.resolve()
+        if not cand.exists():
+            continue
+        if str(cand) not in sys.path:
+            sys.path.insert(0, str(cand))
+        diffuser_subdir = cand / "diffuser"
+        if diffuser_subdir.exists() and str(diffuser_subdir) not in sys.path:
+            sys.path.insert(0, str(diffuser_subdir))
+        # Add d3il packages if present (for dpcc datasets)
+        d3il_pkg = cand / "d3il"
+        if d3il_pkg.exists() and str(d3il_pkg) not in sys.path:
+            sys.path.insert(0, str(d3il_pkg))
+        d3il_pkg_inner = d3il_pkg / "d3il"
+        if d3il_pkg_inner.exists() and str(d3il_pkg_inner) not in sys.path:
+            sys.path.insert(0, str(d3il_pkg_inner))
+        src_d3il_pkg = cand / "src" / "d3il"
+        if src_d3il_pkg.exists() and str(src_d3il_pkg) not in sys.path:
+            sys.path.insert(0, str(src_d3il_pkg))
+        # Prefer config directory if available
+        if (cand / "config" / "projection_eval.yaml").exists():
+            config_dir = cand / "config"
+            break
+        if (cand / "projection_eval.yaml").exists():
+            config_dir = cand.parent if cand.is_file() else cand
+            break
+        config_dir = cand
+        break
+
+    if config_dir is None:
+        raise FileNotFoundError("No DPCC root found; checked config path, local vendored dpcc, ../dpcc, ./dpcc")
+    return config_dir
 
 
 class DPCCMethodPlugin(MethodPlugin):
@@ -39,9 +88,30 @@ class DPCCMethodPlugin(MethodPlugin):
         except Exception as exc:
             raise ImportError("PyYAML is required for DPCC config loading.") from exc
 
-        import diffuser.utils as dpcc_utils
+        from enerdynamics.solvers.single.dpcc import diffuser_utils as dpcc_utils
 
-        dpcc_config_path = Path(config.get("dpcc_config_path", dpcc_root / "config" / "projection_eval.yaml"))
+        project_root = Path(__file__).resolve().parents[4]
+        local_default_cfg = project_root / "enerdynamics" / "solvers" / "single" / "dpcc" / "config" / "projection_eval.yaml"
+
+        # Resolve config path with fallbacks: explicit -> relative to repo root -> vendored default.
+        dpcc_config_raw = config.get("dpcc_config_path")
+        candidate_paths = []
+        if dpcc_config_raw:
+            candidate_paths.append(Path(dpcc_config_raw))
+            candidate_paths.append(project_root / dpcc_config_raw)
+        # if dpcc_root points to a config dir, respect it
+        if (dpcc_root / "projection_eval.yaml").exists():
+            candidate_paths.append(dpcc_root / "projection_eval.yaml")
+        candidate_paths.append(local_default_cfg)
+
+        dpcc_config_path = None
+        for cand in candidate_paths:
+            if cand.exists():
+                dpcc_config_path = cand
+                break
+        if dpcc_config_path is None:
+            raise FileNotFoundError(f"DPCC config not found. Tried: {[str(c) for c in candidate_paths]}")
+
         with open(dpcc_config_path, "r", encoding="utf-8") as f:
             dpcc_config = yaml.safe_load(f) or {}
 
@@ -54,6 +124,8 @@ class DPCCMethodPlugin(MethodPlugin):
         dataset = config.get("dataset", exp)
         diffusion_loadpath = config.get("diffusion_loadpath", "diffusion")
         diffusion_epoch = config.get("diffusion_epoch", None)
+        if diffusion_epoch is None:
+            diffusion_epoch = "latest"
 
         diffusion_experiment = dpcc_utils.load_diffusion(
             loadbase,
@@ -115,4 +187,3 @@ class DPCCMethodPlugin(MethodPlugin):
             "initial_state": initial_state,
             "info": traj.info,
         }
-

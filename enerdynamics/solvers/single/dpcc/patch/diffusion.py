@@ -3,8 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-import diffuser.utils as utils
-from diffuser.models.helpers import Losses, apply_conditioning, cosine_beta_schedule, extract
+from .helpers import Losses, apply_conditioning, cosine_beta_schedule, extract
 
 
 class GaussianDiffusion(nn.Module):
@@ -291,4 +290,3 @@ class GaussianDiffusion(nn.Module):
 
     def forward(self, cond, *args, **kwargs):
         return self.conditional_sample(cond=cond, *args, **kwargs)
-
