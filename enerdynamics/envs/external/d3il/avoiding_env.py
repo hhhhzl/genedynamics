@@ -101,4 +101,17 @@ class D3ILAvoidingEnv:
         _ = state
         return 0.0
 
+    # ---------------------------------------------------------------------
+    # D3IL-specific passthroughs
+    # ---------------------------------------------------------------------
+    def robot_state(self) -> np.ndarray:
+        """
+        Expose underlying D3IL env.robot_state() for downstream adapters (e.g., DPCC).
+        """
+        # Ensure the inner env is initialized
+        self._task_env._lazy_init()
+        inner_env = getattr(self._task_env, "_env", None)
+        if inner_env is None or not hasattr(inner_env, "robot_state"):
+            raise AttributeError("Underlying D3IL env has no robot_state")
+        return inner_env.robot_state()
 

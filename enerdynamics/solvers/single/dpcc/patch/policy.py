@@ -4,9 +4,9 @@ import einops
 import numpy as np
 import torch
 
-import diffuser.utils as utils
-from diffuser.datasets.preprocessing import get_policy_preprocess_fn
-from diffuser.utils.arrays import to_device
+from enerdynamics.solvers.single.dpcc import diffuser_utils as utils
+from .preprocessing import get_policy_preprocess_fn
+from enerdynamics.solvers.single.dpcc.diffuser_utils.arrays import to_device
 
 Trajectories = namedtuple("Trajectories", "actions observations")
 
@@ -112,4 +112,3 @@ class Policy:
             einops.repeat, conditions, "d -> repeat d", repeat=batch_size
         )
         return conditions
-
