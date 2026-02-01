@@ -803,6 +803,23 @@ class ExperimentRunner:
                 else:
                     serializable_result['candidate_costs'] = list(candidate_costs)
             serializable_result['best_idx'] = int(best_idx)
+
+        # Multirun diagnostics (architecture performance visibility)
+        # These keys are produced by the solver when using the minimal-batch multirun path.
+        if isinstance(planning_result, dict):
+            for k in [
+                "multirun_impl",
+                "multirun_C",
+                "multirun_t_batch_minimal_s",
+                "multirun_t_best_plan_s",
+            ]:
+                if k in planning_result:
+                    serializable_result[k] = convert_to_json_serializable(planning_result[k])
+
+            # Generic timing diagnostics (saved if present)
+            for k, v in planning_result.items():
+                if isinstance(k, str) and k.startswith("timing_"):
+                    serializable_result[k] = convert_to_json_serializable(v)
         
         # Save JSON
         with open(output_path / "results.json", 'w') as f:

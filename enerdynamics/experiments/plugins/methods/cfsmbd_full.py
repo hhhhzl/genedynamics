@@ -30,7 +30,7 @@ class CFSMBDFullMethodPlugin(MethodPlugin):
         constraint_filter = CFSQPFullFilter(
             max_constraints_per_point=int(config.get("max_constraints_per_point", 8)),
             constraint_margin=float(config.get("constraint_margin", 0.25)),
-            use_slack=True,
+            use_slack=False,
         )
 
         solver = CFSMBDSolver(

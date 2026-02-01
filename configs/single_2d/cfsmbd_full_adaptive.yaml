@@ -24,10 +24,10 @@ method_params:
   aug_rho: 1.0
 
   # Multi-mode: number of candidate trajectories to return (C paths)
-  num_modes: 50
+  num_modes: 1
   mode_strategy: multirun
 
-obstacle_levels: [3]
+obstacle_levels: [9]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -67,15 +67,15 @@ scheduler_config:
       rho_max: 500.0
       kappa: 0.9
       r_tol: 5e-4
-      margin: 0.18
+      margin: 0.01
       p_min: 0.2
       p_max: 1.0
       eps_min: 1e-5
       eps_max: 1e-2
       I_min: 1
-      I_max: 20
+      I_max: 10
       topK_min: 1
-      topK_max: 30
+      topK_max: 10
       use_stochastic_gate: false
   diffusion_schedulers:
     - type: fixed

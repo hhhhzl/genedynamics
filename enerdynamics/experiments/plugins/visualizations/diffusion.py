@@ -17,6 +17,39 @@ def _safe_unit(v: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(v) + 1e-9
     return v / n
 
+def _add_cap_rectangle(
+        self, ax: Any, p: np.ndarray, grad: np.ndarray,
+        r: float, b: float, dt: float, scale: float,
+        facecolor: str, edgecolor: str, alpha: float, zorder: float = 4.0
+    ) -> None:
+        """Draw CAP as a rectangle in workspace: depth = dt*(r-b), width = 2*dt*sqrt(r^2-b^2).
+        Center between cutting plane and farthest point: p + g * (scale*dt*(r+b)/2).
+        """
+        if b >= r:
+            return
+        if b <= -r:
+            return
+        g = grad / (np.linalg.norm(grad) + 1e-9)
+        n = np.array([-g[1], g[0]])
+        R = scale * dt * r
+        length = scale * dt * (r - b)
+        width = scale * dt * (2.0 * np.sqrt(max(r * r - b * b, 0)))
+        center = p + g * (scale * dt * (r + b) / 2.0)
+        c1 = center + 0.5 * length * g + 0.5 * width * n
+        c2 = center + 0.5 * length * g - 0.5 * width * n
+        c3 = center - 0.5 * length * g - 0.5 * width * n
+        c4 = center - 0.5 * length * g + 0.5 * width * n
+        poly = Polygon(
+            [c1, c2, c3, c4],
+            closed=True,
+            facecolor=facecolor,
+            edgecolor=edgecolor,
+            linewidth=0.8,
+            alpha=alpha,
+            zorder=zorder,
+        )
+        ax.add_patch(poly)
+
 def _draw_cutting_line(
     ax,
     p: np.ndarray,
@@ -420,141 +453,6 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
             zorder=0.5,
             interpolation='bilinear'
         )
-
-    def _add_cap_rectangle(
-        self, ax: Any, p: np.ndarray, grad: np.ndarray,
-        r: float, b: float, dt: float, scale: float,
-        facecolor: str, edgecolor: str, alpha: float, zorder: float = 4.0
-    ) -> None:
-        """Draw CAP as a rectangle in workspace: depth = dt*(r-b), width = 2*dt*sqrt(r^2-b^2).
-        Center between cutting plane and farthest point: p + g * (scale*dt*(r+b)/2).
-        """
-        if b >= r:
-            return
-        if b <= -r:
-            return
-        g = grad / (np.linalg.norm(grad) + 1e-9)
-        n = np.array([-g[1], g[0]])
-        R = scale * dt * r
-        length = scale * dt * (r - b)
-        width = scale * dt * (2.0 * np.sqrt(max(r * r - b * b, 0)))
-        center = p + g * (scale * dt * (r + b) / 2.0)
-        c1 = center + 0.5 * length * g + 0.5 * width * n
-        c2 = center + 0.5 * length * g - 0.5 * width * n
-        c3 = center - 0.5 * length * g - 0.5 * width * n
-        c4 = center - 0.5 * length * g + 0.5 * width * n
-        poly = Polygon(
-            [c1, c2, c3, c4],
-            closed=True,
-            facecolor=facecolor,
-            edgecolor=edgecolor,
-            linewidth=0.8,
-            alpha=alpha,
-            zorder=zorder,
-        )
-        ax.add_patch(poly)
-
-    def _draw_mdoc_fans_fan(
-        self, ax: Any, env: Any, obstacles: Any,
-        positions: np.ndarray, exp_cfg: Any
-    ) -> None:
-        """Draw feasible set as circular caps (disk ∩ half-plane ∇h'u≥b).
-        Filled region = cap only (arc + chord), no radii from center.
-        Workspace radius R = dt * r * scale so 'next-step reachable set' is visible.
-        Optional: draw CAP rectangle approximation (method_params mdoc_viz_style == 'rectangle').
-        """
-        if obstacles is None or len(positions) < 2:
-            return
-
-        method_params = getattr(exp_cfg, "method_params", {})
-        eta = float(method_params.get("cbf_eta", 1.5))
-        margin = float(method_params.get("cbf_margin", 0.1))
-        base_beta = float(method_params.get("base_beta", 0.05))
-        viz_style = method_params.get("mdoc_viz_style", "cap")
-        obstacle_config = getattr(exp_cfg, "obstacle_config", None) or {}
-        robot_radius = float(obstacle_config.get("robot_radius", 0.05))
-        env_params = getattr(exp_cfg, "env_params", None) or {}
-        dt = float(env_params.get("dt", 0.05))
-        action_limit = float(env_params.get("control_limit", 1.0))
-
-        try:
-            H = len(positions)
-            step = max(1, H // 12)
-            indices = np.arange(0, H - 1, step, dtype=int)
-            if indices[-1] < H - 2:
-                indices = np.append(indices, H - 2)
-        except Exception:
-            indices = np.linspace(0, len(positions) - 2, num=8, dtype=int)
-
-        color_mdoc = "#FFDCC2"
-        edgecolor_mdoc = "#C46A2D"
-        n_arc = 40
-        r = action_limit
-        # Workspace reachable disk radius R = dt*r; scale for visibility (no change of meaning)
-        scale = 4.0
-        R_viz = scale * dt * r
-
-        for idx in indices:
-            p = positions[idx]
-            try:
-                eps = 1e-4
-                sdf_p = float(obstacles.sdf(p))
-                grad_x = (float(obstacles.sdf(p + np.array([eps, 0]))) - sdf_p) / eps
-                grad_y = (float(obstacles.sdf(p + np.array([0, eps]))) - sdf_p) / eps
-                grad = np.array([grad_x, grad_y])
-                norm_grad = np.linalg.norm(grad) + 1e-9
-                grad = grad / norm_grad
-                sdf_forward = float(obstacles.sdf(p + 0.02 * grad))
-                if sdf_forward < sdf_p:
-                    grad = -grad
-            except Exception:
-                continue
-
-            for margin_vis, alpha_vis in [(0.0, 0.12), (margin, 0.30)]:
-                h = sdf_p - (robot_radius + margin_vis)
-                b_val = -(eta / dt) * h + base_beta
-                phys_ratio = b_val / (r + 1e-9)
-                ratio = np.clip(phys_ratio, -1.0, 1.0)
-
-                if ratio <= -1.0:
-                    continue
-                if ratio >= 1.0:
-                    continue
-
-                if viz_style == "rectangle":
-                    self._add_cap_rectangle(
-                        ax, p, grad, r=r, b=b_val, dt=dt, scale=scale,
-                        facecolor=color_mdoc, edgecolor=edgecolor_mdoc,
-                        alpha=alpha_vis, zorder=4.0,
-                    )
-                    continue
-
-                # Strict CAP: arc (feasible side of circle) + chord only, no radii
-                phi = np.arctan2(grad[1], grad[0])
-                alpha_angle = np.arccos(ratio)
-                theta_start = phi - alpha_angle
-                theta_end = phi + alpha_angle
-                thetas = np.linspace(theta_start, theta_end, n_arc)
-                arc_pts = np.stack([np.cos(thetas), np.sin(thetas)], axis=1) * R_viz
-                arc_pts = arc_pts + p[None, :]
-                p1 = arc_pts[0]
-                p2 = arc_pts[-1]
-                cap_pts = np.vstack([arc_pts, p1[None, :]])
-
-                cap = Polygon(
-                    cap_pts,
-                    closed=True,
-                    facecolor=color_mdoc,
-                    edgecolor=edgecolor_mdoc,
-                    linewidth=0.7,
-                    alpha=alpha_vis,
-                    zorder=4.0,
-                )
-                ax.add_patch(cap)
-                ax.plot(
-                    [p1[0], p2[0]], [p1[1], p2[1]],
-                    color=edgecolor_mdoc, linewidth=1.2, alpha=0.8, zorder=4.1,
-                )
     
     def _draw_mdoc_fans(
         self,

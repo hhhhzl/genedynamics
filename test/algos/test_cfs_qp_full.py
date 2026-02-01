@@ -186,6 +186,9 @@ def run_cfs_qp_full_test(
         "rho": rho,
         "qp_gate": True,
         "qp_prob": 1.0,
+        # Unify: I_QP is the paper-style CFS outer iterations (linearize + solve QP).
+        # Keep cfs_outer_iters for backward compatibility.
+        "I_QP": cfs_outer_iters,
         "cfs_outer_iters": cfs_outer_iters,
     }
 
@@ -275,6 +278,9 @@ def run_cfs_qp_perstep_test(
         "rho": rho,
         "qp_gate": True,
         "qp_prob": 1.0,
+        # Unify: I_QP is the paper-style CFS outer iterations (linearize + solve QP).
+        # Keep cfs_outer_iters for backward compatibility.
+        "I_QP": cfs_outer_iters,
         "cfs_outer_iters": cfs_outer_iters,
     }
 
@@ -336,7 +342,10 @@ def test_cfs_qp_full_inverse_dynamics_setup():
     goal = np.array([1.0, 1.0], dtype=np.float32)
     positions = x_reference_straight_line(start, goal, num_points)
     u = inverse_dynamics_single_integrator(positions, dt)
-    base = SingleIntegratorBox2DEnv(dt=dt, p_max=2.0, control_limit=1.0)
+    # IMPORTANT: For this round-trip sanity check we need an *unclipped* model transition.
+    # The reference straight-line has per-step delta 2/(num_points-1), so u can exceed 1.0.
+    # Use a large control_limit so env.model_transition does not clip u and the identity holds.
+    base = SingleIntegratorBox2DEnv(dt=dt, p_max=2.0, control_limit=10.0)
     env = _EnvForCFSFull(base, robot_radius=0.05)
     states = rollout_states(positions[0], u, env)
     recovered = states[:, :2]
