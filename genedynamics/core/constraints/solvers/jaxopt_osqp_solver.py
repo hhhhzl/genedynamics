@@ -349,6 +349,242 @@ except ImportError:
     pass  # keep the implementation above
 
 
+def solve_slack_qp_jax(
+    u_nom: "jnp.ndarray",
+    A: "jnp.ndarray",
+    b: "jnp.ndarray",
+    rho: "jnp.ndarray | float",
+    *,
+    control_limit: Optional[float] = None,
+    tol: float = 1e-6,
+    maxiter: int = 10,
+) -> Tuple["jnp.ndarray", "jnp.ndarray"]:
+    """
+    JAX-native slack-QP solve (JIT-safe; no NumPy conversions).
+
+    Solve slack-QP:
+        min ||u - u_nom||^2 + ρ||ξ||^2
+        s.t. A u >= b - ξ, ξ >= 0
+             -L <= u <= L   (optional; applied via clipping)
+
+    Notes:
+    - Constraints with non-finite b (e.g. -inf) are treated as inactive.
+    - Returns (u_star, max_violation) where max_violation ignores inactive constraints.
+    """
+    if not JAX_AVAILABLE:
+        raise RuntimeError("JAX not available for solve_slack_qp_jax")
+
+    u_nom = jnp.asarray(u_nom, dtype=jnp.float32)
+    A = jnp.asarray(A, dtype=jnp.float32)
+    b = jnp.asarray(b, dtype=jnp.float32)
+
+    # Treat non-finite b as inactive constraints.
+    valid = jnp.isfinite(b)
+
+    if control_limit is None:
+        u0 = u_nom
+        L_lo = -jnp.inf
+        L_hi = jnp.inf
+    else:
+        L = jnp.asarray(float(control_limit), dtype=jnp.float32)
+        L_lo = -L
+        L_hi = L
+        u0 = jnp.clip(u_nom, L_lo, L_hi)
+
+    rho_eff = jnp.asarray(rho, dtype=jnp.float32)
+    rho_eff = jnp.maximum(rho_eff, 1e-9)
+    tol_j = jnp.asarray(float(tol), dtype=jnp.float32)
+    maxiter_j = jnp.asarray(int(maxiter), dtype=jnp.int32)
+    maxiter_j = jnp.clip(maxiter_j, 0, 10_000)
+
+    def max_violation(u: jnp.ndarray) -> jnp.ndarray:
+        # Single matvec per evaluation; treat inactive constraints as -inf.
+        viol = jnp.maximum(0.0, jnp.where(valid, b - A @ u, -jnp.inf))
+        return jnp.max(viol)
+
+    # Precompute once so cond() doesn't re-do a matvec every loop.
+    v0 = max_violation(u0)
+
+    def cond_fn(carry):
+        i, _u, v = carry
+        return jnp.logical_and(i < maxiter_j, v > tol_j)
+
+    def body_fn(carry):
+        i, u, _v = carry
+        viol = jnp.maximum(0.0, jnp.where(valid, b - A @ u, -jnp.inf))
+        idx = jnp.argmax(viol)
+        A_row = A[idx]
+        den = jnp.dot(A_row, A_row) + 1e-9
+        lam = viol[idx] / (den + 1.0 / rho_eff)
+        u_next = jnp.clip(u + lam * A_row, L_lo, L_hi)
+        v_next = max_violation(u_next)
+        return (i + 1, u_next, v_next)
+
+    _, u_star, v_star = jax.lax.while_loop(
+        cond_fn, body_fn, (jnp.asarray(0, dtype=jnp.int32), u0, v0)
+    )
+    return u_star, v_star
+
+
+def solve_hard_qp_jax(
+    u_nom: "jnp.ndarray",
+    A: "jnp.ndarray",
+    b: "jnp.ndarray",
+    *,
+    control_limit: Optional[float] = None,
+    tol: float = 1e-6,
+    maxiter: int = 10,
+) -> Tuple["jnp.ndarray", "jnp.ndarray"]:
+    """
+    JAX-native hard-QP solve (JIT-safe; no NumPy conversions).
+
+        min ||u - u_nom||^2
+        s.t. A u >= b
+             -L <= u <= L   (optional; applied via clipping)
+    """
+    if not JAX_AVAILABLE:
+        raise RuntimeError("JAX not available for solve_hard_qp_jax")
+
+    u_nom = jnp.asarray(u_nom, dtype=jnp.float32)
+    A = jnp.asarray(A, dtype=jnp.float32)
+    b = jnp.asarray(b, dtype=jnp.float32)
+
+    valid = jnp.isfinite(b)
+
+    if control_limit is None:
+        u0 = u_nom
+        L_lo = -jnp.inf
+        L_hi = jnp.inf
+    else:
+        L = jnp.asarray(float(control_limit), dtype=jnp.float32)
+        L_lo = -L
+        L_hi = L
+        u0 = jnp.clip(u_nom, L_lo, L_hi)
+
+    tol_j = jnp.asarray(float(tol), dtype=jnp.float32)
+    maxiter_j = jnp.asarray(int(maxiter), dtype=jnp.int32)
+    maxiter_j = jnp.clip(maxiter_j, 0, 10_000)
+
+    def max_violation(u: jnp.ndarray) -> jnp.ndarray:
+        viol = jnp.maximum(0.0, jnp.where(valid, b - A @ u, -jnp.inf))
+        return jnp.max(viol)
+
+    v0 = max_violation(u0)
+
+    def cond_fn(carry):
+        i, _u, v = carry
+        return jnp.logical_and(i < maxiter_j, v > tol_j)
+
+    def body_fn(carry):
+        i, u, _v = carry
+        viol = jnp.maximum(0.0, jnp.where(valid, b - A @ u, -jnp.inf))
+        idx = jnp.argmax(viol)
+        A_row = A[idx]
+        den = jnp.dot(A_row, A_row) + 1e-9
+        lam = viol[idx] / den
+        u_next = jnp.clip(u + lam * A_row, L_lo, L_hi)
+        v_next = max_violation(u_next)
+        return (i + 1, u_next, v_next)
+
+    _, u_star, v_star = jax.lax.while_loop(
+        cond_fn, body_fn, (jnp.asarray(0, dtype=jnp.int32), u0, v0)
+    )
+    return u_star, v_star
+
+
+def solve_slack_qp_prefixsum_jax(
+    u_nom: "jnp.ndarray",  # (H, act_dim)
+    A_per_step: "jnp.ndarray",  # (H, K, act_dim) constraint normal in action-space
+    b_per_step: "jnp.ndarray",  # (H, K) rhs
+    rho: "jnp.ndarray | float",
+    *,
+    control_limit: Optional[float] = None,
+    tol: float = 1e-6,
+    maxiter: int = 40,
+) -> Tuple["jnp.ndarray", "jnp.ndarray"]:
+    """
+    Structured slack-QP solver for *prefix-sum coupled* constraints (single-integrator style).
+
+    We assume constraints are:
+        sum_{i=0}^t <a_{t,k}, u_i> >= b_{t,k} - xi_{t,k},  xi_{t,k} >= 0
+    which is equivalent to:
+        <a_{t,k}, cumsum(u)[t]> >= b_{t,k} - xi_{t,k}
+
+    This avoids materializing the dense A_full matrix and expensive A_full @ u matvecs.
+    It uses the same greedy most-violated projection updates as the generic solver.
+    """
+    if not JAX_AVAILABLE:
+        raise RuntimeError("JAX not available for solve_slack_qp_prefixsum_jax")
+
+    u_nom = jnp.asarray(u_nom, dtype=jnp.float32)
+    A_per_step = jnp.asarray(A_per_step, dtype=jnp.float32)
+    b_per_step = jnp.asarray(b_per_step, dtype=jnp.float32)
+
+    H, K, act_dim = A_per_step.shape
+    assert u_nom.shape == (H, act_dim)
+    assert b_per_step.shape == (H, K)
+
+    valid = jnp.isfinite(b_per_step)  # (H, K)
+
+    if control_limit is None:
+        u0 = u_nom
+        L_lo = -jnp.inf
+        L_hi = jnp.inf
+    else:
+        L = jnp.asarray(float(control_limit), dtype=jnp.float32)
+        L_lo = -L
+        L_hi = L
+        u0 = jnp.clip(u_nom, L_lo, L_hi)
+
+    rho_eff = jnp.asarray(rho, dtype=jnp.float32)
+    rho_eff = jnp.maximum(rho_eff, 1e-9)
+    tol_j = jnp.asarray(float(tol), dtype=jnp.float32)
+    maxiter_j = jnp.asarray(int(maxiter), dtype=jnp.int32)
+    maxiter_j = jnp.clip(maxiter_j, 0, 10_000)
+
+    def max_violation(u: jnp.ndarray) -> jnp.ndarray:
+        # prefix sum over time: (H, act_dim)
+        u_prefix = jnp.cumsum(u, axis=0)
+        # lhs: (H, K)
+        lhs = jnp.einsum("hkd,hd->hk", A_per_step, u_prefix)
+        viol = jnp.maximum(0.0, jnp.where(valid, b_per_step - lhs, -jnp.inf))
+        return jnp.max(viol)
+
+    v0 = max_violation(u0)
+
+    def cond_fn(carry):
+        i, _u, v = carry
+        return jnp.logical_and(i < maxiter_j, v > tol_j)
+
+    def body_fn(carry):
+        i, u, _v = carry
+        u_prefix = jnp.cumsum(u, axis=0)  # (H, act_dim)
+        lhs = jnp.einsum("hkd,hd->hk", A_per_step, u_prefix)  # (H, K)
+        viol_hk = jnp.maximum(0.0, jnp.where(valid, b_per_step - lhs, -jnp.inf))  # (H, K)
+
+        flat_idx = jnp.argmax(viol_hk.reshape(-1))
+        t_idx = flat_idx // jnp.asarray(K, dtype=jnp.int32)
+        k_idx = flat_idx - t_idx * jnp.asarray(K, dtype=jnp.int32)
+
+        a = A_per_step[t_idx, k_idx]  # (act_dim,)
+        v = viol_hk[t_idx, k_idx]
+
+        # Denominator in flattened space: repeated a across (t_idx+1) action blocks
+        den = (jnp.asarray(t_idx + 1, dtype=jnp.float32) * jnp.dot(a, a)) + 1e-9
+        lam = v / (den + 1.0 / rho_eff)
+
+        prefix_mask = (jnp.arange(H, dtype=jnp.int32) <= t_idx).astype(jnp.float32)  # (H,)
+        u_next = u + (prefix_mask[:, None] * (lam * a[None, :]))
+        u_next = jnp.clip(u_next, L_lo, L_hi)
+        v_next = max_violation(u_next)
+        return (i + 1, u_next, v_next)
+
+    _, u_star, v_star = jax.lax.while_loop(
+        cond_fn, body_fn, (jnp.asarray(0, dtype=jnp.int32), u0, v0)
+    )
+    return u_star, v_star
+
+
 @register("solver", "jaxopt_osqp", "jax")
 class JAXOPTOsqpSolver(QPSolver):
     """

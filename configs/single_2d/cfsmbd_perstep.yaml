@@ -1,6 +1,6 @@
-# CFS-MBD: MBD with Augmented Lagrangian objective and CFS-based full trajectory QP projection
-name: single2d_cfsmbd_full
-output_dir: results/single2d/cfsmbd_full
+# CFS-MBD: MBD with Augmented Lagrangian objective and CFS-based per-step QP projection
+name: single2d_cfsmbd_perstep
+output_dir: results/single2d/cfsmbd_perstep
 
 env_name: single_integrator_box_2d
 env_params:
@@ -9,7 +9,7 @@ env_params:
   p_max: 2.0
   control_limit: 1.0
 
-method: cfsmbd_full
+method: cfsmbd
 method_params:
   show_tqdm: True
   action_extra_sigma: 0.3
@@ -17,7 +17,7 @@ method_params:
   # CFS parameters
   # Increase to reduce missed near-corner constraints.
   max_constraints_per_point: 10
-  constraint_margin: 0.25 
+  constraint_margin: 0.25
 
   # Augmented Lagrangian parameters
   aug_lambda: 0.0  # Dual variable
@@ -63,7 +63,7 @@ scheduler_config:
     - type: fixed
       margin: 0.01
       rho: 10.0
-      # QP filter: always solve full trajectory QP
+      # QP filter: always solve per-step QP
       qp_gate: true
       qp_prob: 1.0
       topK: null
