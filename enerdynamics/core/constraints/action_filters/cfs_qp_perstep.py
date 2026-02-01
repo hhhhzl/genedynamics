@@ -47,6 +47,9 @@ class CFSQPPerStepFilter(ConstraintFilter):
         # Step C: Cache obstacle branches to avoid repeated compilation
         self._obstacle_branches_cache = None
         self._obstacles_cache_key = None
+        # Step D: Cache a JAX-safe spatial grid of obstacle candidates
+        self._spatial_grid_cache = None
+        self._spatial_grid_cache_key = None
     
     def _get_cfs_convexifier(self, obstacles, env):
         """Lazy initialization of CFS action convexifier."""
@@ -126,22 +129,34 @@ class CFSQPPerStepFilter(ConstraintFilter):
         if A.size == 0:
             return np.clip(u_nom, -L, L)
 
-        # Check violations
-        violations = np.maximum(0, b - A @ u_nom)  # (m,)
-        if violations.max() < 1e-7:
-            return np.clip(u_nom, -L, L)
+        # Prefer jaxopt.OSQP backend implementation for consistency with JAX path.
+        try:
+            from enerdynamics.core.constraints.solvers.jaxopt_osqp_solver import JAXOPTOsqpSolver
+            if not hasattr(self, "_jaxopt_solver") or self._jaxopt_solver is None:
+                self._jaxopt_solver = JAXOPTOsqpSolver(use_jit=False)
 
-        # For single constraint or small number, use analytical solution
-        if A.shape[0] == 1:
-            A_row = A[0]
-            b_val = b[0]
-            lhs = np.dot(A_row, u_nom)
-            den = np.dot(A_row, A_row) + 1e-9
-            violation = max(0.0, b_val - lhs)
-            lam = violation / (den + 1.0 / rho)
-            return np.clip(u_nom + lam * A_row, -L, L)
-        else:
-            # Multiple constraints: iterative projection
+            # Always use solve_slack_qp(...) as requested; emulate hard constraints with huge rho.
+            rho_eff = float(rho) if (self.use_slack and rho > 0) else 1e9
+            u_star, _viol = self._jaxopt_solver.solve_slack_qp(u_nom, A, b, rho_eff)
+
+            u_star = np.clip(np.asarray(u_star, dtype=np.float32), -L, L)
+
+            # Safety post-pass: a few hard projections to eliminate residual violation.
+            for _ in range(5):
+                v = np.maximum(0.0, b - A @ u_star)
+                if v.max(initial=0.0) < 1e-7:
+                    break
+                i = int(np.argmax(v))
+                A_row = A[i]
+                den = float(np.dot(A_row, A_row) + 1e-9)
+                lam = float(v[i]) / den
+                u_star = np.clip(u_star + lam * A_row, -L, L)
+            return u_star
+        except Exception:
+            # Fallback: original lightweight iterative projection
+            violations = np.maximum(0, b - A @ u_nom)  # (m,)
+            if violations.max() < 1e-7:
+                return np.clip(u_nom, -L, L)
             u_safe = np.clip(u_nom.copy(), -L, L)
             for _ in range(10):
                 violations = np.maximum(0, b - A @ u_safe)
@@ -149,11 +164,8 @@ class CFSQPPerStepFilter(ConstraintFilter):
                     break
                 worst_idx = np.argmax(violations)
                 A_row = A[worst_idx]
-                b_val = b[worst_idx]
-                lhs = np.dot(A_row, u_safe)
                 den = np.dot(A_row, A_row) + 1e-9
-                violation = violations[worst_idx]
-                lam = violation / (den + 1.0 / rho)
+                lam = violations[worst_idx] / (den + 1.0 / max(1e-9, rho))
                 u_safe = np.clip(u_safe + lam * A_row, -L, L)
             return u_safe
     
@@ -166,143 +178,64 @@ class CFSQPPerStepFilter(ConstraintFilter):
         control_limit: float = 1.0,
     ) -> jnp.ndarray:
         """
-        Solve multi-constraint slack-QP in JAX (JIT-safe version).
+        Solve multi-constraint QP in JAX via jaxopt.OSQP wrappers.
 
-        min ||u - u_nom||^2 + rho * ||xi||^2
-        s.t. A @ u >= b - xi, xi >= 0
-             -control_limit <= u <= control_limit  (box via clip)
-
-        Note: Constraints with b = -inf are treated as inactive (filtered out).
-        Uses lax.cond and lax.fori_loop for JIT compatibility.
+        Uses slack-QP when self.use_slack and rho > 0, otherwise hard-QP.
+        Includes box bounds in the QP and does a small hard-feasibility post-pass
+        to guarantee safety (eliminate residual solver tolerance violations).
         """
+        from enerdynamics.core.constraints.solvers.jaxopt_osqp_solver import solve_slack_qp_jax
+
         L = float(control_limit)
-        valid_mask = jnp.isfinite(b)
-        num_valid = jnp.sum(valid_mask.astype(jnp.int32))
 
-        def return_original(_):
-            return jnp.clip(u_nom, -L, L)
-        
         def solve_qp(_):
-            # JIT-safe: Don't use boolean indexing (requires concrete values)
-            # Fix 1: b already uses -inf for invalid constraints, so we can use it directly
-            # Keep fixed-size arrays for JIT compatibility
-            b_masked = b  # Already has -inf for invalid constraints
-            
-            # Check violations (inf constraints will have inf violations, which we ignore)
-            violations = jnp.maximum(0.0, b_masked - A @ u_nom)  # (m,)
-            # Filter out inf violations (from invalid constraints)
-            violations_clean = jnp.where(jnp.isfinite(violations), violations, -jnp.inf)
-            max_violation = jnp.max(violations_clean)
-            
-            def return_original_no_viol(_):
-                return jnp.clip(u_nom, -L, L)
-
-            def solve_with_violations(_):
-                # Use lax.cond for single vs multiple constraints
-                def solve_single(_):
-                    # Find first valid constraint (where b is finite)
-                    # Since we can't use boolean indexing, we'll use argmax on violations_clean
-                    # The first valid constraint will have the highest finite violation
-                    # But for single constraint, we just need to find any valid one
-                    # Use a simpler approach: find the constraint with the highest finite violation
-                    # (which should be the only valid one if num_valid == 1)
-                    worst_idx = jnp.argmax(violations_clean)
-                    A_row = A[worst_idx]
-                    b_val = b_masked[worst_idx]
-                    
-                    # Only apply if constraint is valid
-                    is_valid = jnp.isfinite(b_val)
-                    lhs = jnp.dot(A_row, u_nom)
-                    den = jnp.dot(A_row, A_row) + 1e-9
-                    violation = jnp.maximum(0.0, b_val - lhs)
-                    violation = jnp.where(is_valid, violation, 0.0)
-                    # Fix 2: Support hard projection when use_slack=False or rho <= 0
-                    use_slack_flag = jnp.logical_and(rho > 0, jnp.asarray(self.use_slack, dtype=jnp.bool_))
-                    # Hard projection: lambda = violation / den
-                    # Slack-QP: lambda = violation / (den + 1/rho)
-                    lam = jax.lax.cond(
-                        use_slack_flag,
-                        lambda _: violation / (den + 1.0 / rho),  # Slack-QP
-                        lambda _: violation / den,  # Hard projection
-                        operand=None
-                    )
-                    u_out = u_nom + jnp.where(is_valid, lam * A_row, 0.0)
-                    return jnp.clip(u_out, -L, L)
-
-                def solve_multiple(_):
-                    # Fix 3: Use early stopping with reduced max_iter (5-10 is usually enough)
-                    max_iter = 10  # Reduced from 30
-                    tol = 1e-7
-                    
-                    def body_fn(i, carry):
-                        u_iter, converged = carry
-                        def continue_iter(_):
-                            violations = jnp.maximum(0.0, b_masked - A @ u_iter)
-                            # Filter out inf violations (invalid constraints have -inf, so violation = 0)
-                            violations_clean = jnp.where(jnp.isfinite(violations), violations, -jnp.inf)
-                            max_viol = jnp.max(violations_clean)
-                            
-                            # Early stop: if max_viol < tol, mark as converged
-                            converged_now = max_viol < tol
-                            
-                            # Project onto most violated constraint
-                            worst_idx = jnp.argmax(violations_clean)
-                            A_row = A[worst_idx]
-                            b_val = b_masked[worst_idx]
-                            
-                            # Only project if constraint is valid
-                            is_valid = jnp.isfinite(b_val)
-                            lhs = jnp.dot(A_row, u_iter)
-                            den = jnp.dot(A_row, A_row) + 1e-9
-                            violation = violations_clean[worst_idx]
-                            violation = jnp.where(is_valid, violation, 0.0)
-                            
-                            # Fix 2: Support hard projection when use_slack=False or rho <= 0
-                            use_slack_flag = jnp.logical_and(rho > 0, jnp.asarray(self.use_slack, dtype=jnp.bool_))
-                            lam = jax.lax.cond(
-                                use_slack_flag,
-                                lambda _: violation / (den + 1.0 / rho),  # Slack-QP
-                                lambda _: violation / den,  # Hard projection
-                                operand=None
-                            )
-                            u_next = u_iter + jnp.where(is_valid, lam * A_row, 0.0)
-                            u_next = jnp.clip(u_next, -L, L)
-                            return u_next, converged_now
-
-                        def skip_iter(_):
-                            return u_iter, converged
-
-                        u_next, converged_new = jax.lax.cond(converged, skip_iter, continue_iter, operand=None)
-                        return u_next, converged_new
-
-                    u_init = jnp.clip(u_nom, -L, L)
-                    u_result, _ = jax.lax.fori_loop(0, max_iter, body_fn, (u_init, jnp.array(False)))
-                    return u_result
-                
-                # Branch on num_valid == 1
-                return jax.lax.cond(
-                    num_valid == 1,
-                    solve_single,
-                    solve_multiple,
-                    operand=None
-                )
-            
-            # Branch on max_violation < 1e-7
-            return jax.lax.cond(
-                max_violation < 1e-7,
-                return_original_no_viol,
-                solve_with_violations,
-                operand=None
+            # Always use solve_slack_qp_jax(...); emulate hard constraints with huge rho.
+            rho_eff = jax.lax.cond(
+                jnp.logical_and(jnp.asarray(self.use_slack, dtype=jnp.bool_), rho > 0),
+                lambda __: jnp.asarray(rho, dtype=jnp.float32),
+                lambda __: jnp.asarray(1e9, dtype=jnp.float32),
+                operand=None,
             )
-        
-        # Branch on num_valid == 0 or A.size == 0
-        has_constraints = jnp.logical_and(A.size > 0, num_valid > 0)
-        return jax.lax.cond(
-            has_constraints,
-            solve_qp,
-            return_original,
-            operand=None
-        )
+            u_star, v_star = solve_slack_qp_jax(u_nom, A, b, rho_eff, control_limit=L)
+            return u_star, v_star
+
+        u0, v0 = solve_qp(None)
+
+        # Safety post-pass: eliminate any residual violation after bounds/solver tolerances.
+        b_masked = b
+        valid = jnp.isfinite(b_masked)
+
+        tol = 1e-7
+
+        def max_violation(u):
+            viol = jnp.maximum(0.0, jnp.where(valid, b_masked - A @ u, -jnp.inf))
+            return jnp.max(viol)
+
+        def cond_fn(carry):
+            i, _u, v = carry
+            return jnp.logical_and(i < 5, v > tol)
+
+        def body_fn(carry):
+            i, u, _v = carry
+            viol = jnp.maximum(0.0, jnp.where(valid, b_masked - A @ u, -jnp.inf))
+            idx = jnp.argmax(viol)
+            A_row = A[idx]
+            den = jnp.dot(A_row, A_row) + 1e-9
+            lam = viol[idx] / den
+            u_next = jnp.clip(u + lam * A_row, -L, L)
+            v_next = max_violation(u_next)
+            return (i + 1, u_next, v_next)
+
+        # Gate: if already feasible, skip post-pass entirely.
+        def do_post(_):
+            _, u_out, _ = jax.lax.while_loop(
+                cond_fn,
+                body_fn,
+                (jnp.asarray(0, dtype=jnp.int32), u0, v0),
+            )
+            return u_out
+
+        return jax.lax.cond(v0 <= tol, lambda _: u0, do_post, operand=None)
     
     def apply_actions(
         self,
@@ -382,7 +315,10 @@ class CFSQPPerStepFilter(ConstraintFilter):
         rho = float(params_dict.get("rho", 10.0))
         qp_gate = params_dict.get("qp_gate", True)
         qp_prob = float(params_dict.get("qp_prob", 1.0))
-        cfs_outer_iters = max(1, int(params_dict.get("cfs_outer_iters", 1)))
+        # Unify: treat I_QP as CFS outer iterations (paper-style "iteration").
+        # Backward compatible: still accept cfs_outer_iters if provided.
+        cfs_outer_iters = int(params_dict.get("I_QP", params_dict.get("cfs_outer_iters", 1)))
+        cfs_outer_iters = max(1, cfs_outer_iters)
 
         # Check qp_gate and qp_prob (only for NumPy path)
         if isinstance(qp_gate, (bool, np.bool_)) and not qp_gate:
@@ -489,6 +425,17 @@ class CFSQPPerStepFilter(ConstraintFilter):
         rho_raw = params_dict.get("rho", 10.0)
         qp_gate = params_dict.get("qp_gate", True)
         qp_prob = params_dict.get("qp_prob", 1.0)
+        # Unify: treat I_QP as CFS outer iterations (paper-style "iteration").
+        # Backward compatible: still accept cfs_outer_iters if provided.
+        I_QP_raw = params_dict.get("I_QP", params_dict.get("cfs_outer_iters", 1))
+        # JAX-safe int conversion (supports Python int or traced scalar).
+        try:
+            I_QP = jnp.asarray(I_QP_raw, dtype=jnp.int32)
+        except Exception:
+            I_QP = jnp.asarray(1, dtype=jnp.int32)
+        # Use a constant outer-iteration count at every diffusion step (paper-style CFS iteration).
+        MAX_OUTER_ITERS = 64
+        I_QP = jnp.clip(I_QP, 1, MAX_OUTER_ITERS)
         
         # Convert to JAX arrays (JIT-safe: use jnp.asarray which handles both concrete and traced values)
         # Check if already JAX array/tracer, otherwise convert
@@ -532,7 +479,10 @@ class CFSQPPerStepFilter(ConstraintFilter):
         # Get obstacles list (outside JAX traced context) - cache it
         obstacles_list = self._get_obstacles_list(obstacles)
         num_obstacles = len(obstacles_list) if obstacles_list else 0
-        max_k = min(self.max_constraints_per_point, num_obstacles) if num_obstacles > 0 else 0
+        # IMPORTANT: evaluate SDF against *all* obstacles, then select top-K closest per step.
+        # If we only build branches for the first K obstacles, we can miss collisions.
+        max_k = int(num_obstacles) if num_obstacles > 0 else 0  # number of obstacle branches
+        k_select = int(min(self.max_constraints_per_point, max_k)) if max_k > 0 else 0  # top-K per step
         
         # Compute threshold for obstacle selection (JIT-safe: use JAX operations)
         constraint_margin_jax = jnp.asarray(constraint_margin_val, dtype=jnp.float32)
@@ -543,6 +493,7 @@ class CFSQPPerStepFilter(ConstraintFilter):
         obstacles_cache_key = (
             id(obstacles) if obstacles is not None else None,
             max_k,
+            k_select,
             dt,
             constraint_margin_val
         )
@@ -564,6 +515,7 @@ class CFSQPPerStepFilter(ConstraintFilter):
             obstacle_branches_grad = []  # Compute SDF + grad (slower, only for candidates)
             
             if obstacles_list and len(obstacles_list) > 0:
+                # Build branches for ALL obstacles (max_k = num_obstacles).
                 for obs in obstacles_list[:max_k]:
                     if hasattr(obs, 'jax_sdf'):
                         # Create closure that captures this specific obstacle
@@ -577,10 +529,9 @@ class CFSQPPerStepFilter(ConstraintFilter):
                                 def sdf_only_fn(pos):
                                     return obstacle.jax_sdf(pos)
                                 
-                                def sdf_grad_fn(pos):
-                                    sdf_val = obstacle.jax_sdf(pos)
-                                    grad_val = obstacle.jax_gradient(pos)
-                                    return sdf_val, grad_val
+                                # Grad-only: stage-2 already has sdf from stage-1.
+                                def grad_only_fn(pos):
+                                    return obstacle.jax_gradient(pos)
                             else:
                                 # Fallback: Use jax.grad (slower, but more general)
                                 # Pre-compute grad function (outside traced context)
@@ -589,12 +540,11 @@ class CFSQPPerStepFilter(ConstraintFilter):
                                 def sdf_only_fn(pos):
                                     return obstacle.jax_sdf(pos)
                                 
-                                def sdf_grad_fn(pos):
-                                    sdf_val = sdf_fn(pos)
-                                    grad_val = grad_fn(pos)  # Use pre-computed grad_fn
-                                    return sdf_val, grad_val
+                                # Grad-only: avoid extra sdf_fn(pos) primal evaluation.
+                                def grad_only_fn(pos):
+                                    return grad_fn(pos)  # Use pre-computed grad_fn
                             
-                            return sdf_only_fn, sdf_grad_fn
+                            return sdf_only_fn, grad_only_fn
                         
                         sdf_fn, grad_fn = make_branch_fns()
                         obstacle_branches_sdf.append(sdf_fn)
@@ -608,7 +558,7 @@ class CFSQPPerStepFilter(ConstraintFilter):
                 def dummy_sdf_fn(pos):
                     return jnp.inf
                 def dummy_grad_fn(pos):
-                    return jnp.inf, jnp.zeros(2)
+                    return jnp.zeros(2)
                 obstacle_branches_sdf.append(dummy_sdf_fn)
                 obstacle_branches_grad.append(dummy_grad_fn)
             
@@ -617,15 +567,168 @@ class CFSQPPerStepFilter(ConstraintFilter):
             obstacle_branches_grad_tuple = tuple(obstacle_branches_grad[:max_k])
             self._obstacle_branches_cache = (obstacle_branches_sdf_tuple, obstacle_branches_grad_tuple)
             self._obstacles_cache_key = obstacles_cache_key
+
+        # ------------------------------------------------------------------
+        # Step D: Spatial grid candidate cache (B) for per-step filter.
+        # Same idea as full-QP: avoid scanning all obstacles for stage-1 SDF.
+        # ------------------------------------------------------------------
+        use_spatial_grid = False
+        cell_obs_idx_np = None
+        grid_x_min = grid_y_min = cell_size = None
+        grid_W = grid_H = cell_max = 0
+        try:
+            # Heuristic: for small obstacle counts, a spatial grid often costs more than it saves.
+            # Enable only when obstacle count is large enough to benefit.
+            if max_k < 64:
+                raise RuntimeError("Spatial grid disabled for small obstacle count")
+
+            p_max = float(getattr(env, "p_max", 2.0))
+            grid_x_min = -p_max
+            grid_y_min = -p_max
+            grid_x_max = p_max
+            grid_y_max = p_max
+
+            # Conservative but not overly loose: most configs use small margins (<= 0.05).
+            threshold_upper = float(robot_radius + constraint_margin_val + 0.1)
+            threshold_upper = max(0.0, threshold_upper)
+            cell_size = float(max(0.25, min(0.75, threshold_upper)))
+
+            spatial_key = (
+                id(obstacles) if obstacles is not None else None,
+                max_k,
+                float(grid_x_min),
+                float(grid_y_min),
+                float(grid_x_max),
+                float(grid_y_max),
+                float(cell_size),
+                float(threshold_upper),
+            )
+
+            if self._spatial_grid_cache is not None and self._spatial_grid_cache_key == spatial_key:
+                cell_obs_idx_np, grid_x_min, grid_y_min, cell_size, grid_W, grid_H, cell_max = self._spatial_grid_cache
+                use_spatial_grid = True
+            else:
+                centers = []
+                radii = []
+                for obs in (obstacles_list or [])[:max_k]:
+                    c = None
+                    r = None
+                    if hasattr(obs, "center"):
+                        try:
+                            c = np.asarray(getattr(obs, "center"), dtype=np.float32).reshape(-1)[:2]
+                        except Exception:
+                            c = None
+                    if c is None and hasattr(obs, "bounds"):
+                        try:
+                            b = getattr(obs, "bounds")
+                            if b is not None and len(b) == 2:
+                                b0 = np.asarray(b[0], dtype=np.float32).reshape(-1)[:2]
+                                b1 = np.asarray(b[1], dtype=np.float32).reshape(-1)[:2]
+                                c = 0.5 * (b0 + b1)
+                        except Exception:
+                            c = None
+                    if hasattr(obs, "radius"):
+                        try:
+                            r = float(getattr(obs, "radius"))
+                        except Exception:
+                            r = None
+                    if r is None and hasattr(obs, "half_extents"):
+                        try:
+                            he = np.asarray(getattr(obs, "half_extents"), dtype=np.float32).reshape(-1)[:2]
+                            r = float(np.linalg.norm(he))
+                        except Exception:
+                            r = None
+                    if r is None and hasattr(obs, "bounds"):
+                        try:
+                            b = getattr(obs, "bounds")
+                            if b is not None and len(b) == 2:
+                                b0 = np.asarray(b[0], dtype=np.float32).reshape(-1)[:2]
+                                b1 = np.asarray(b[1], dtype=np.float32).reshape(-1)[:2]
+                                r = float(0.5 * np.linalg.norm(b1 - b0))
+                        except Exception:
+                            r = None
+                    if c is None or r is None:
+                        centers = []
+                        radii = []
+                        break
+                    centers.append(c)
+                    radii.append(r)
+
+                if len(centers) == max_k and max_k > 0:
+                    centers = np.asarray(centers, dtype=np.float32)
+                    radii = np.asarray(radii, dtype=np.float32)
+
+                    grid_W = int(np.ceil((grid_x_max - grid_x_min) / cell_size))
+                    grid_H = int(np.ceil((grid_y_max - grid_y_min) / cell_size))
+                    grid_W = max(1, grid_W)
+                    grid_H = max(1, grid_H)
+
+                    xs0 = grid_x_min + np.arange(grid_W, dtype=np.float32) * cell_size
+                    ys0 = grid_y_min + np.arange(grid_H, dtype=np.float32) * cell_size
+                    xs1 = xs0 + cell_size
+                    ys1 = ys0 + cell_size
+
+                    cell_lists = [[[] for _ in range(grid_W)] for _ in range(grid_H)]
+                    max_count = 0
+                    for iy in range(grid_H):
+                        y0 = ys0[iy]
+                        y1 = ys1[iy]
+                        for ix in range(grid_W):
+                            x0 = xs0[ix]
+                            x1 = xs1[ix]
+                            dx0 = np.maximum(x0 - centers[:, 0], 0.0)
+                            dx1 = np.maximum(centers[:, 0] - x1, 0.0)
+                            dy0 = np.maximum(y0 - centers[:, 1], 0.0)
+                            dy1 = np.maximum(centers[:, 1] - y1, 0.0)
+                            dx = np.maximum(dx0, dx1)
+                            dy = np.maximum(dy0, dy1)
+                            dist = np.sqrt(dx * dx + dy * dy)
+                            include = dist <= (radii + threshold_upper)
+                            idxs = np.nonzero(include)[0].tolist()
+                            cell_lists[iy][ix] = idxs
+                            if len(idxs) > max_count:
+                                max_count = len(idxs)
+
+                    # Ensure candidate list length >= k_select so top_k is always valid.
+                    cell_max = int(max(k_select, min(max_k, max_count)))
+                    if cell_max >= max_k:
+                        raise RuntimeError("Spatial grid provides no pruning (cell_max >= max_k)")
+                    cell_obs_idx_np = -np.ones((grid_H, grid_W, cell_max), dtype=np.int32)
+                    for iy in range(grid_H):
+                        for ix in range(grid_W):
+                            lst = cell_lists[iy][ix]
+                            if not lst:
+                                continue
+                            lst = lst[:cell_max]
+                            cell_obs_idx_np[iy, ix, : len(lst)] = np.asarray(lst, dtype=np.int32)
+
+                    self._spatial_grid_cache = (
+                        cell_obs_idx_np,
+                        float(grid_x_min),
+                        float(grid_y_min),
+                        float(cell_size),
+                        int(grid_W),
+                        int(grid_H),
+                        int(cell_max),
+                    )
+                    self._spatial_grid_cache_key = spatial_key
+                    use_spatial_grid = True
+        except Exception:
+            use_spatial_grid = False
+
+        if use_spatial_grid and cell_obs_idx_np is not None:
+            cell_obs_idx = jnp.asarray(cell_obs_idx_np, dtype=jnp.int32)
+        else:
+            cell_obs_idx = None
         
-        def filter_single(u_seq):
-            """Filter single action sequence using CFS + per-step QP with multiple constraints."""
+        def filter_single_once(u_seq):
+            """One CFS pass: rollout + linearize + per-step QP."""
             def body_fn(carry, u):
                 x = carry  # Current state (position for single_2d)
                 pos_t = x[0:2]  # Current position
                 
                 # Multi-constraint CFS: compute SDF and gradient for each obstacle
-                if num_obstacles == 0 or max_k == 0:
+                if num_obstacles == 0 or max_k == 0 or k_select == 0:
                     # No obstacles - no constraint
                     x_next = env.jax_transition(x, u)
                     return x_next, u
@@ -639,14 +742,21 @@ class CFSQPPerStepFilter(ConstraintFilter):
                     # Stage 1: Compute SDF for all obstacles (fast, no gradient)
                     def compute_obstacle_sdf_only(obs_idx, pos):
                         """Compute SDF only for obstacle at index obs_idx (fast, no gradient)."""
+                        valid = jnp.logical_and(obs_idx >= 0, obs_idx < num_obs_fns)
                         obs_idx_clipped = jnp.clip(obs_idx, 0, max_k - 1)
                         sdf_val = jax.lax.switch(obs_idx_clipped, obstacle_branches_sdf_tuple, pos)
-                        valid = obs_idx < num_obs_fns
                         return jnp.where(valid, sdf_val, jnp.inf)
                     
                     # Stage 1: Compute SDF for all obstacles
-                    obs_indices = jnp.arange(max_k)  # Fixed size for JAX
-                    sdf_array = jax.vmap(lambda idx: compute_obstacle_sdf_only(idx, pos_t))(obs_indices)  # (max_k,)
+                    if cell_obs_idx is not None:
+                        ix = jnp.floor((pos_t[0] - jnp.asarray(grid_x_min, dtype=jnp.float32)) / jnp.asarray(cell_size, dtype=jnp.float32)).astype(jnp.int32)
+                        iy = jnp.floor((pos_t[1] - jnp.asarray(grid_y_min, dtype=jnp.float32)) / jnp.asarray(cell_size, dtype=jnp.float32)).astype(jnp.int32)
+                        ix = jnp.clip(ix, 0, jnp.asarray(grid_W - 1, dtype=jnp.int32))
+                        iy = jnp.clip(iy, 0, jnp.asarray(grid_H - 1, dtype=jnp.int32))
+                        cand_idx = cell_obs_idx[iy, ix]  # (M,)
+                    else:
+                        cand_idx = jnp.arange(max_k, dtype=jnp.int32)
+                    sdf_array = jax.vmap(lambda idx: compute_obstacle_sdf_only(idx, pos_t))(cand_idx)  # (M,)
                     
                     # Fix 4: Gate前移 - 如果min_sdf > threshold，直接跳过约束计算
                     min_sdf = jnp.min(sdf_array)
@@ -659,13 +769,20 @@ class CFSQPPerStepFilter(ConstraintFilter):
                         sdf_for_sort = jnp.where(cand_mask, sdf_array, jnp.inf)
                         
                         # Stage 3: Use top_k to select closest obstacles (optimization: avoid full argsort)
+                        # Select closest obstacles (smallest sdf). Using neg_sdf makes larger = closer.
+                        # jax.lax.top_k returns indices sorted by descending score, so this is already
+                        # closest-first. Do NOT flip, otherwise we'd pick farthest-first.
                         neg_sdf = -sdf_for_sort
-                        topk_neg_values, topk_indices = jax.lax.top_k(neg_sdf, max_k)
-                        selected_indices = jnp.flip(topk_indices, axis=0)  # (max_k,) - reverse for ascending order
+                        _, selected_rank = jax.lax.top_k(neg_sdf, k_select)
                         
                         # Count valid candidates
                         num_candidates = jnp.sum(cand_mask.astype(jnp.int32))
-                        k = jnp.minimum(max_k, jnp.where(num_candidates == 0, max_k, num_candidates))
+                        k = jnp.minimum(
+                            jnp.asarray(k_select, dtype=jnp.int32),
+                            jnp.where(num_candidates == 0, k_select, num_candidates),
+                        )
+                        selected_indices = jnp.take(cand_idx, selected_rank, axis=0)
+                        sdf_sel = jnp.take(sdf_array, selected_rank, axis=0)
                         
                         # Stage 4: Compute gradient ONLY for selected candidates (much faster!)
                         def compute_obstacle_grad_for_candidate(rank_idx, pos):
@@ -673,19 +790,17 @@ class CFSQPPerStepFilter(ConstraintFilter):
                             # Get the original obstacle index from selected_indices
                             obs_idx = selected_indices[rank_idx]
                             obs_idx_clipped = jnp.clip(obs_idx, 0, max_k - 1)
-                            sdf_val, grad_val = jax.lax.switch(obs_idx_clipped, obstacle_branches_grad_tuple, pos)
+                            grad_val = jax.lax.switch(obs_idx_clipped, obstacle_branches_grad_tuple, pos)
                             # Check if this rank is valid (within k closest)
                             valid_rank = rank_idx < k
-                            valid_obs = obs_idx < num_obs_fns
+                            valid_obs = jnp.logical_and(obs_idx >= 0, obs_idx < num_obs_fns)
                             valid = jnp.logical_and(valid_rank, valid_obs)
-                            sdf_val = jnp.where(valid, sdf_val, jnp.inf)
                             grad_val = jnp.where(valid, grad_val, jnp.zeros(2))
-                            return sdf_val, grad_val
+                            return grad_val
                         
                         # Compute gradients only for selected obstacles (k closest, not all max_k)
                         # This is the key optimization: we only compute grad for candidates, not all obstacles
-                        grad_results = jax.vmap(lambda rank_idx: compute_obstacle_grad_for_candidate(rank_idx, pos_t))(jnp.arange(max_k))
-                        grad_array = grad_results[1]  # (max_k, 2) - gradients for selected obstacles
+                        grad_array = jax.vmap(lambda rank_idx: compute_obstacle_grad_for_candidate(rank_idx, pos_t))(jnp.arange(k_select))
                         # Use sdf_array from stage 1 (already computed), but re-index using selected_indices
                         # For constraint building, we'll use sdf_array[selected_indices[idx]] when needed
                         
@@ -695,8 +810,7 @@ class CFSQPPerStepFilter(ConstraintFilter):
                             valid_idx = idx < k
                             # grad_array[idx] already contains the gradient for the obstacle at rank idx
                             # sdf_array needs to be re-indexed using selected_indices
-                            obs_idx = selected_indices[idx]
-                            sdf_obs = jnp.where(valid_idx, sdf_array[obs_idx], jnp.inf)
+                            sdf_obs = jnp.where(valid_idx, sdf_sel[idx], jnp.inf)
                             grad_obs = jnp.where(valid_idx, grad_array[idx], jnp.zeros(2))  # Use idx, not obs_idx, for grad_array
                             
                             grad_norm = jnp.linalg.norm(grad_obs)
@@ -719,7 +833,7 @@ class CFSQPPerStepFilter(ConstraintFilter):
                             return A_row, b_val, valid_grad
                         
                         # Build constraints for all selected obstacles
-                        constraint_results = jax.vmap(build_constraint_for_obstacle)(jnp.arange(max_k))
+                        constraint_results = jax.vmap(build_constraint_for_obstacle)(jnp.arange(k_select))
                         A_all = constraint_results[0]  # (max_k, 2)
                         b_all = constraint_results[1]  # (max_k,)
                         valid_mask = constraint_results[2]  # (max_k,)
@@ -732,15 +846,15 @@ class CFSQPPerStepFilter(ConstraintFilter):
                         # For JAX, we need to use a fixed-size approach
                         # Fix 1: Use -inf for invalid constraints (not +inf) so that A@u >= b is always satisfied for invalid
                         # This prevents gate logic from being corrupted by inf values
-                        A_constraints = A_all  # (max_k, 2) - keep all for fixed size
-                        b_constraints = jnp.where(valid_mask, b_all, -jnp.inf)  # (max_k,) - mark invalid with -inf
+                        A_constraints = A_all  # (k_select, 2) - keep all for fixed size
+                        b_constraints = jnp.where(valid_mask, b_all, -jnp.inf)  # (k_select,) - mark invalid with -inf
                         
                         return A_constraints, b_constraints
                     
                     def skip_constraints(_):
                         # Return empty constraints (all -inf)
-                        A_empty = jnp.zeros((max_k, 2))
-                        b_empty = jnp.full((max_k,), -jnp.inf)
+                        A_empty = jnp.zeros((k_select, 2))
+                        b_empty = jnp.full((k_select,), -jnp.inf)
                         return A_empty, b_empty
                     
                     # Conditionally compute constraints based on min_sdf
@@ -793,6 +907,20 @@ class CFSQPPerStepFilter(ConstraintFilter):
             
             _, u_seq_safe = jax.lax.scan(body_fn, x0, u_seq)
             return u_seq_safe
+
+        def filter_single(u_seq):
+            """
+            Paper-style CFS iteration: repeat (linearize + solve QP) I_QP times.
+            We use a fixed upper bound and mask extra iterations for JIT safety.
+            """
+            def outer_body(i, u_curr):
+                return jax.lax.cond(
+                    i < I_QP,
+                    lambda uu: filter_single_once(uu),
+                    lambda uu: uu,
+                    u_curr,
+                )
+            return jax.lax.fori_loop(0, MAX_OUTER_ITERS, outer_body, u_seq)
         
         # Handle batching
         if actions.ndim == 3:
