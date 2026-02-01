@@ -12,6 +12,7 @@ env_params:
 method: mbd
 method_params:
   action_limit: 1.0
+  action_extra_sigma: 0.3  # Extra noise for diversity (decays over diffusion steps)
   show_tqdm: true
   # Multi-mode: number of candidate trajectories to return (C paths)
   num_modes: 50
@@ -52,8 +53,8 @@ metrics:
   - nonconvexity
 
 visualizations:
-  - trajectory_modes  # Shows C candidate paths with best highlighted
-  - trajectory        # Shows only the best (lowest cost) path
+  - trajectory_modes
+  - trajectory       
   - diffusion
   - energy_reward
   - states

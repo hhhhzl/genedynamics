@@ -62,12 +62,13 @@ class MBDSolver(SamplingSolver):
         *,
         horizon: int = 80,
         dt: float = 0.1,
-        Nsample: int = 2048,
+        Nsample: int = 64,
         Ndiffuse: int = 100,
-        temp_sample: float = 0.1,
+        temp_sample: float = 0.5,
         beta0: float = 1e-4,
         betaT: float = 1e-2,
         action_limit: float = 1.0,
+        action_extra_sigma: float = 0.0,
         seed: int = 0,
         scheduler: Any = None,
         show_tqdm: bool = False,
@@ -88,6 +89,7 @@ class MBDSolver(SamplingSolver):
         self.horizon = horizon
         self.dt = dt
         self.seed = seed
+        self.action_extra_sigma = action_extra_sigma
         self.config.update(
             dict(
                 Nsample=Nsample,
@@ -96,6 +98,7 @@ class MBDSolver(SamplingSolver):
                 beta0=beta0,
                 betaT=betaT,
                 action_limit=action_limit,
+                action_extra_sigma=action_extra_sigma,
                 scheduler=scheduler,
                 show_tqdm=bool(show_tqdm),
                 num_modes=int(num_modes),

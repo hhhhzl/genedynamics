@@ -1,6 +1,6 @@
 # MDOC ablation: per-step CBF filter (QP projection), fixed schedulers
-name: single2d_mdoc_cbf_qp_perstep
-output_dir: results/single2d/ablation_mdoc/cbf_qp_perstep
+name: single2d_mdoc
+output_dir: results/single2d/mdoc
 
 env_name: single_integrator_box_2d
 env_params:
@@ -17,17 +17,22 @@ method_params:
   mdoc_constraint_mode: cbf_qp_perstep
   cbf_tau: 0.005
   cbf_eta: 1.5
-  cbf_margin: 0.1
+  cbf_margin: 0.01
   base_beta: 5.0e-2
   terminal_energy_weight: 100.0
   # Multi-mode: number of candidate trajectories to return (C paths)
   num_modes: 50
-  # How to generate C paths:
-  # - multirun: run solver C times with different RNG keys, keep best trajectory from each run
-  # - diverse_topk: pick C diverse candidates from samples inside a single diffusion run
   mode_strategy: multirun
 
-obstacle_levels: [6]
+  # Visualization style
+  mdoc_viz_style: "cap" # cap | rectangle    
+  mdoc_viz_scale: 4.0
+  mdoc_viz_band: 1          
+  mdoc_viz_use_beta: False
+  mdoc_viz_draw_disk: False
+  mdoc_viz_draw_grad: False
+
+obstacle_levels: [9]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05

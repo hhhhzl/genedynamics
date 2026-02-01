@@ -69,6 +69,7 @@ class CFSMBDSolver(SamplingSolver):
         show_tqdm: bool = False,
         aug_lambda: float = 0.0,
         aug_rho: float = 1.0,
+        action_extra_sigma: float = 0.0,
         num_modes: int = 1,
         mode_strategy: str = "multirun",
         diversity_eta: float = 1.0,
@@ -98,6 +99,7 @@ class CFSMBDSolver(SamplingSolver):
                 show_tqdm=bool(show_tqdm),
                 aug_lambda=float(aug_lambda),
                 aug_rho=float(aug_rho),
+                action_extra_sigma=float(action_extra_sigma),
                 num_modes=int(num_modes),
                 mode_strategy=str(mode_strategy),
                 diversity_eta=float(diversity_eta),
@@ -143,6 +145,7 @@ class CFSMBDSolver(SamplingSolver):
                     obstacles=self.obstacles,
                     aug_lambda=self.config.get("aug_lambda", 0.0),
                     aug_rho=self.config.get("aug_rho", 1.0),
+                    action_extra_sigma=self.config.get("action_extra_sigma", 0.0),
                 )
             else:
                 self._backend_impl = backend_cls(
@@ -163,6 +166,7 @@ class CFSMBDSolver(SamplingSolver):
                     obstacles=self.obstacles,
                     aug_lambda=self.config.get("aug_lambda", 0.0),
                     aug_rho=self.config.get("aug_rho", 1.0),
+                    action_extra_sigma=self.config.get("action_extra_sigma", 0.0),
                 )
         return self._backend_impl
 

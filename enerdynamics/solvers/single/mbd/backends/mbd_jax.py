@@ -24,9 +24,9 @@ class MBDBackendJax:
         legacy_energy=None,
         horizon: int = 80,
         dt: float = 0.1,
-        Nsample: int = 2048,
+        Nsample: int = 64,
         Ndiffuse: int = 100,
-        temp_sample: float = 0.1,
+        temp_sample: float = 0.5,
         beta0: float = 1e-4,
         betaT: float = 1e-2,
         action_limit: float = 1.0,
@@ -50,6 +50,9 @@ class MBDBackendJax:
             seed = solver.seed
             scheduler = solver.config.get("scheduler")
             show_tqdm = solver.config.get("show_tqdm", False)
+            action_extra_sigma = getattr(solver, "action_extra_sigma", solver.config.get("action_extra_sigma", 0.0))
+        else:
+            action_extra_sigma = kwargs.get("action_extra_sigma", 0.0)
         
         self.env = env_adapter
         self.energy = legacy_energy
@@ -61,6 +64,7 @@ class MBDBackendJax:
         self.beta0 = beta0
         self.betaT = betaT
         self.action_limit = action_limit
+        self.action_extra_sigma = float(action_extra_sigma)
         self.seed = seed
         self.act_dim = self.env.act_dim
         self.scheduler = scheduler
@@ -130,6 +134,11 @@ class MBDBackendJax:
         sigmas = jnp.sqrt(1.0 - alphas_bar)
         diffusion_indices = jnp.arange(self.Ndiffuse - 1, 0, -1, dtype=jnp.int32)
 
+        # Compute extra_sigmas_by_idx for additional randomness (decays over diffusion steps)
+        denom = jnp.maximum(float(self.Ndiffuse - 1), 1.0)
+        progress_inc_by_idx = 1.0 - (jnp.arange(self.Ndiffuse, dtype=jnp.float32) / denom)
+        extra_sigmas_by_idx = self.action_extra_sigma * (1.0 - progress_inc_by_idx)
+
         # Diffusion scheduler params (T_k schedule only; M_k kept static for JAX shape stability)
         T_k_list = []
         if self.scheduler is not None and hasattr(self.scheduler, "diffusion_schedulers"):
@@ -158,7 +167,7 @@ class MBDBackendJax:
         def reverse_diffuse(rng_in, Ybar_init):
             def body(carry, idx):
                 rng_curr, Ybar_curr = carry
-                rng_curr, noise_key = jax.random.split(rng_curr)
+                rng_curr, noise_key, extra_key = jax.random.split(rng_curr, 3)
 
                 Yi = Ybar_curr * jnp.sqrt(alphas_bar[idx])
                 eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
@@ -179,6 +188,12 @@ class MBDBackendJax:
                 score = (-Yi + jnp.sqrt(alphas_bar[idx]) * Ybar_weighted) / (1.0 - alphas_bar[idx])
                 Yim1 = (Yi + (1.0 - alphas_bar[idx]) * score) / jnp.sqrt(alphas[idx])
                 Ybar_next = Yim1 / jnp.sqrt(alphas_bar[idx - 1])
+
+                # Add extra noise for diversity (decays over diffusion steps, aligned with ebmbd)
+                extra_sigma = extra_sigmas_by_idx[idx]
+                noise_extra = jax.random.normal(extra_key, (self.horizon, self.act_dim), dtype=jnp.float32)
+                Ybar_next = Ybar_next + extra_sigma * noise_extra
+                Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
 
                 return (rng_curr, Ybar_next), (jnp.mean(rews_mean), Ybar_next, Y0s)
 
@@ -219,6 +234,12 @@ class MBDBackendJax:
         sigmas = jnp.sqrt(1.0 - alphas_bar)
         diffusion_indices = jnp.arange(self.Ndiffuse - 1, 0, -1, dtype=jnp.int32)
         
+        # Compute extra_sigmas_by_idx for additional randomness (decays over diffusion steps)
+        # Similar to ebmbd: early steps have more noise, later steps have less
+        denom = jnp.maximum(float(self.Ndiffuse - 1), 1.0)
+        progress_inc_by_idx = 1.0 - (jnp.arange(self.Ndiffuse, dtype=jnp.float32) / denom)
+        extra_sigmas_by_idx = self.action_extra_sigma * (1.0 - progress_inc_by_idx)
+        
         T_k_list = []
         if self.scheduler is not None and hasattr(self.scheduler, "diffusion_schedulers"):
             try:
@@ -236,10 +257,12 @@ class MBDBackendJax:
             T_k_list = [self.temp_sample for _ in range(self.Ndiffuse)]
         T_k_arr = jnp.asarray(T_k_list, dtype=jnp.float32)
         
-        def reverse_diffuse_core(diffuse_rng):
+        def reverse_diffuse_core(rng_key):
+            # Split rng inside core function (aligned with ebmbd)
+            rng, _ = jax.random.split(rng_key)
             def body(carry, idx):
                 rng_curr, Ybar_curr = carry
-                rng_curr, noise_key = jax.random.split(rng_curr)
+                rng_curr, noise_key, extra_key = jax.random.split(rng_curr, 3)
                 
                 Yi = Ybar_curr * jnp.sqrt(alphas_bar[idx])
                 eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
@@ -261,21 +284,26 @@ class MBDBackendJax:
                 Yim1 = (Yi + (1.0 - alphas_bar[idx]) * score) / jnp.sqrt(alphas[idx])
                 Ybar_next = Yim1 / jnp.sqrt(alphas_bar[idx - 1])
                 
+                # Add extra noise for diversity (decays over diffusion steps, aligned with ebmbd)
+                extra_sigma = extra_sigmas_by_idx[idx]
+                noise_extra = jax.random.normal(extra_key, (self.horizon, self.act_dim), dtype=jnp.float32)
+                Ybar_next = Ybar_next + extra_sigma * noise_extra
+                Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
+                
                 return (rng_curr, Ybar_next), (jnp.mean(rews_mean), Ybar_next, Y0s)
             
             Ybar_init = jnp.zeros((self.horizon, self.act_dim), dtype=jnp.float32)
             (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist) = jax.lax.scan(
-                body, (diffuse_rng, Ybar_init), diffusion_indices
+                body, (rng, Ybar_init), diffusion_indices
             )
             reward_hist = reward_hist[::-1]
             Ybar_hist = Ybar_hist[::-1]
             Ysamples_hist = Ysamples_hist[::-1]
             return Ybar_final, reward_hist, Ybar_hist, Ysamples_hist
         
-        # Vmap over rng_keys
+        # Vmap over rng_keys (aligned with ebmbd: pass rng_keys directly, split inside core)
         reverse_diffuse_batch_jit = jax.jit(jax.vmap(reverse_diffuse_core, in_axes=0))
-        rngs_split = jax.vmap(lambda k: jax.random.split(k)[1])(rng_keys)
-        Ybar_finals, reward_hists, actions_trajs, sampled_trajs = reverse_diffuse_batch_jit(rngs_split)
+        Ybar_finals, reward_hists, actions_trajs, sampled_trajs = reverse_diffuse_batch_jit(rng_keys)
         
         # Batch post-processing: clip, rollout states and rewards
         final_actions_batch = jnp.clip(Ybar_finals, -self.action_limit, self.action_limit)  # (C, H, act_dim)
@@ -326,6 +354,7 @@ class MBDBackendJax:
                 "candidate_actions": [actions_batch_np[i]],
                 "candidate_costs": np.asarray([float(total_costs[i])], dtype=np.float32),
                 "best_idx": 0,
+                "rng": rng_keys[i],  # Aligned with ebmbd: include rng in result
             })
         
         return results
