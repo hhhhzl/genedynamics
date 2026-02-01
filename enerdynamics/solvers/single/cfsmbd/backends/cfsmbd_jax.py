@@ -67,6 +67,9 @@ class CFSMBDBackendJax:
             obstacles = solver.obstacles
             aug_lambda = solver.config.get("aug_lambda", 0.0)
             aug_rho = solver.config.get("aug_rho", 1.0)
+            action_extra_sigma = solver.config.get("action_extra_sigma", 0.0)
+        else:
+            action_extra_sigma = kwargs.get("action_extra_sigma", 0.0)
         self.env = env_adapter
         self.energy = legacy_energy
         self.horizon = int(horizon)
@@ -85,6 +88,7 @@ class CFSMBDBackendJax:
         self.constraint_filter = constraint_filter or NoOpConstraintFilter()
         self.aug_lambda = float(aug_lambda)
         self.aug_rho = float(aug_rho)
+        self.action_extra_sigma = float(action_extra_sigma)
         # Multi-mode support: number of candidate trajectories to return
         if solver is not None:
             self.num_modes = int(solver.config.get("num_modes", 1))
@@ -349,6 +353,11 @@ class CFSMBDBackendJax:
         total_steps = int(self.Ndiffuse)
         total_steps_jnp = jnp.asarray(total_steps, dtype=jnp.int32)
         k_top = max(1, min(self.Nsample, int(math.ceil(0.1 * self.Nsample))))
+        
+        # Extra noise schedule (decays over diffusion steps, aligned with ebmbd)
+        denom = jnp.maximum(float(self.Ndiffuse - 1), 1.0)
+        progress_inc_by_idx = 1.0 - (jnp.arange(self.Ndiffuse, dtype=jnp.float32) / denom)
+        extra_sigmas_by_idx = self.action_extra_sigma * (1.0 - progress_inc_by_idx)
 
         print("[CFS-MBD JAX] _use_jax_adaptive =", self._use_jax_adaptive)
 
@@ -413,6 +422,12 @@ class CFSMBDBackendJax:
                     x0_jnp, Ybar_next, env=self.env, obstacles=self.obstacles,
                     schedule_state=sched_state, schedule_params=sched_params,
                 )
+                
+                # Add extra noise for diversity (decays over diffusion steps, aligned with ebmbd)
+                extra_sigma = extra_sigmas_by_idx[idx]
+                noise_extra = jax.random.normal(extra_key, (self.horizon, self.act_dim), dtype=jnp.float32)
+                Ybar_next = Ybar_next + extra_sigma * noise_extra
+                Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
 
                 return (rng_curr, Ybar_next), (jnp.mean(rews), Ybar_next, Y0s_f)
 
@@ -426,10 +441,15 @@ class CFSMBDBackendJax:
 
             cs = self._cs
             filter_fn = self.constraint_filter
+            
+            # Extra noise schedule (decays over diffusion steps, aligned with ebmbd)
+            denom_adaptive = jnp.maximum(float(self.Ndiffuse - 1), 1.0)
+            progress_inc_by_idx_adaptive = 1.0 - (jnp.arange(self.Ndiffuse, dtype=jnp.float32) / denom_adaptive)
+            extra_sigmas_by_idx_adaptive = self.action_extra_sigma * (1.0 - progress_inc_by_idx_adaptive)
 
             def body(carry, idx):
                 rng_curr, Ybar_curr, carry_sched = carry
-                rng_curr, noise_key = jax.random.split(rng_curr)
+                rng_curr, noise_key, extra_key = jax.random.split(rng_curr, 3)
 
                 eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
                 Y0s = eps * sigmas[idx] + Ybar_curr
@@ -491,6 +511,12 @@ class CFSMBDBackendJax:
                     )
 
                 Ybar_next = jax.lax.cond(do_qp, filter_mean, lambda _: Ybar_weighted, operand=None)
+                
+                # Add extra noise for diversity (decays over diffusion steps, aligned with ebmbd)
+                extra_sigma = extra_sigmas_by_idx_adaptive[idx]
+                noise_extra = jax.random.normal(extra_key, (self.horizon, self.act_dim), dtype=jnp.float32)
+                Ybar_next = Ybar_next + extra_sigma * noise_extra
+                Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
 
                 return (rng_curr, Ybar_next, carry_sched_new), (
                     jnp.mean(rews), Ybar_next, Y0s_f,
@@ -671,10 +697,17 @@ class CFSMBDBackendJax:
         total_steps = int(self.Ndiffuse)
         total_steps_jnp = jnp.asarray(total_steps, dtype=jnp.int32)
         
-        def reverse_diffuse_core(diffuse_rng):
+        # Extra noise schedule (decays over diffusion steps, aligned with ebmbd)
+        denom_batch = jnp.maximum(float(self.Ndiffuse - 1), 1.0)
+        progress_inc_by_idx_batch = 1.0 - (jnp.arange(self.Ndiffuse, dtype=jnp.float32) / denom_batch)
+        extra_sigmas_by_idx_batch = self.action_extra_sigma * (1.0 - progress_inc_by_idx_batch)
+        
+        def reverse_diffuse_core(rng_key):
+            # Split rng inside core function (aligned with ebmbd)
+            rng, _ = jax.random.split(rng_key)
             def body(carry, idx):
                 rng_curr, Ybar_curr = carry
-                rng_curr, noise_key = jax.random.split(rng_curr)
+                rng_curr, noise_key, extra_key = jax.random.split(rng_curr, 3)
                 
                 eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
                 Y0s = eps * sigmas[idx] + Ybar_curr
@@ -733,53 +766,55 @@ class CFSMBDBackendJax:
                     schedule_state=sched_state, schedule_params=sched_params,
                 )
                 
+                # Add extra noise for diversity (decays over diffusion steps, aligned with ebmbd)
+                extra_sigma = extra_sigmas_by_idx_batch[idx]
+                noise_extra = jax.random.normal(extra_key, (self.horizon, self.act_dim), dtype=jnp.float32)
+                Ybar_next = Ybar_next + extra_sigma * noise_extra
+                Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
+                
                 return (rng_curr, Ybar_next), (jnp.mean(rews), Ybar_next, Y0s_f)
             
             Ybar_init = jnp.zeros((self.horizon, self.act_dim), dtype=jnp.float32)
             (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist) = jax.lax.scan(
-                body, (diffuse_rng, Ybar_init), diffusion_indices
+                body, (rng, Ybar_init), diffusion_indices
             )
             return Ybar_final, reward_hist[::-1], Ybar_hist[::-1], Ysamples_hist[::-1]
         
-        # Vmap over rng_keys
+        # Vmap over rng_keys (aligned with ebmbd: pass rng_keys directly, split inside core)
         reverse_diffuse_batch_jit = jax.jit(jax.vmap(reverse_diffuse_core, in_axes=0))
-        rngs_split = jax.vmap(lambda k: jax.random.split(k)[1])(rng_keys)
-        Ybar_finals, reward_hists, actions_trajs, sampled_trajs = reverse_diffuse_batch_jit(rngs_split)
+        Ybar_finals, reward_hists, actions_trajs, sampled_trajs = reverse_diffuse_batch_jit(rng_keys)
         
-        # Post-process each result
+        # Batch post-processing: clip, rollout states and rewards (aligned with mbd batch processing)
+        final_actions_batch = jnp.clip(Ybar_finals, -self.action_limit, self.action_limit)  # (C, H, act_dim)
+        states_batch = jax.vmap(self._rollout_states_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H+1, state_dim)
+        rewards_batch = jax.vmap(self._rollout_rewards_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H)
+        
+        # Convert to numpy
+        states_batch_np = np.asarray(states_batch)  # (C, H+1, state_dim)
+        actions_batch_np = np.asarray(final_actions_batch)  # (C, H, act_dim)
+        rewards_batch_np = np.asarray(rewards_batch)  # (C, H)
+        
+        # Batch compute costs and rewards
+        total_costs = -np.sum(rewards_batch_np, axis=-1)  # (C,)
+        total_rewards = np.sum(rewards_batch_np, axis=-1)  # (C,)
+        
+        # Build results list (aligned with ebmbd format)
         C = rng_keys.shape[0]
         results = []
         for i in range(C):
-            Ybar_final = np.asarray(Ybar_finals[i])
-            reward_hist = np.asarray(reward_hists[i])
-            actions_traj = np.asarray(actions_trajs[i])
-            sampled_traj = np.asarray(sampled_trajs[i])
-            
-            final_actions = jnp.clip(Ybar_final, -self.action_limit, self.action_limit)
-            states = self._rollout_states_fn(x0_jnp, final_actions)
-            rewards = self._rollout_rewards_fn(x0_jnp, final_actions)
-            
-            states_np = np.asarray(states)
-            actions_np = np.asarray(final_actions)
-            total_cost_final = -float(np.sum(rewards))
-            
-            candidate_states_list = [np.asarray(states_np, dtype=np.float32)]
-            candidate_actions_list = [np.asarray(actions_np, dtype=np.float32)]
-            candidate_costs_list = [total_cost_final]
-            best_idx = 0
-            
             results.append({
-                "actions": actions_np,
-                "states": states_np,
-                "rewards": np.asarray(rewards, dtype=np.float32),
-                "initial_state": states_np[0],
-                "diffusion_rewards": reward_hist,
-                "diffusion_actions_traj": actions_traj,
-                "diffusion_sampled_actions": sampled_traj,
-                "candidate_states": candidate_states_list,
-                "candidate_actions": candidate_actions_list,
-                "candidate_costs": np.asarray(candidate_costs_list, dtype=np.float32),
-                "best_idx": best_idx,
+                "actions": actions_batch_np[i],
+                "states": states_batch_np[i],
+                "rewards": rewards_batch_np[i],
+                "initial_state": states_batch_np[i, 0],
+                "reward_history": np.asarray(reward_hists[i]),  # Aligned with ebmbd: use "reward_history" instead of "diffusion_rewards"
+                "diffusion_actions_traj": np.asarray(actions_trajs[i]),
+                "diffusion_sampled_actions": np.asarray(sampled_trajs[i]),
+                "candidate_states": [states_batch_np[i]],
+                "candidate_actions": [actions_batch_np[i]],
+                "candidate_costs": np.asarray([float(total_costs[i])], dtype=np.float32),
+                "best_idx": 0,
+                "rng": rng_keys[i],  # Aligned with ebmbd: include rng in result
             })
         
         return results

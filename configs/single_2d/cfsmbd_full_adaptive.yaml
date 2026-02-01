@@ -13,6 +13,7 @@ env_params:
 method: cfsmbd_full
 method_params:
   show_tqdm: True
+  action_extra_sigma: 0.3
 
   # CFS parameters
   max_constraints_per_point: 5
@@ -50,8 +51,8 @@ metrics:
   - nonconvexity
 
 visualizations:
-  - trajectory_modes  # Shows C candidate paths with best highlighted
-  - trajectory        # Shows only the best (lowest cost) path
+  - trajectory_modes 
+  - trajectory
   - diffusion
   - energy_reward
   - states
@@ -63,7 +64,7 @@ scheduler_config:
       lam0: 0.0
       rho0: 1.0
       gamma: 2.0
-      rho_max: 1000.0
+      rho_max: 500.0
       kappa: 0.9
       r_tol: 5e-4
       margin: 0.18

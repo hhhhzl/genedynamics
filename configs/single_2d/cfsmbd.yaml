@@ -22,13 +22,8 @@ method_params:
   aug_rho: 20.0     # Penalty parameter
 
   # Multi-mode: number of candidate trajectories to return (C paths)
-  num_modes: 4
-  # How to generate C paths:
-  # - multirun: run solver C times with different RNG keys, keep best trajectory from each run
-  # - diverse_topk: pick C diverse candidates from samples inside a single diffusion run
+  num_modes: 50
   mode_strategy: multirun
-  # Note: diversity_* parameters are only used when mode_strategy: diverse_topk
-  # They are ignored in multirun mode (each run returns its best trajectory)
 
 obstacle_levels: [6]
 obstacle_config:
@@ -74,7 +69,7 @@ scheduler_config:
       I_QP: 10
   diffusion_schedulers:
     - type: fixed
-      M_k: 512
+      M_k: 64
       T_k: 5e-1
       Ndiffuse: 100
       beta0: 1.0e-5

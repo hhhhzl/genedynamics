@@ -12,6 +12,7 @@ env_params:
 method: cfsmbd_full
 method_params:
   show_tqdm: True
+  action_extra_sigma: 0.3
 
   # CFS parameters
   max_constraints_per_point: 5
