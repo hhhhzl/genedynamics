@@ -380,40 +380,38 @@ class EBMBDBackendJax:
         reverse_diffuse_batch_jit = jax.jit(jax.vmap(reverse_diffuse_core, in_axes=0))
         Ybar_finals, reward_hists, Ybar_hists, Ysamples_hists = reverse_diffuse_batch_jit(rng_keys)
         
-        # Post-process each result (final rollout, etc.)
+        # Batch post-processing: clip, rollout states and rewards (aligned with mbd batch processing)
+        final_actions_batch = jnp.clip(Ybar_finals, -self.action_limit, self.action_limit)  # (C, H, act_dim)
+        states_batch = jax.vmap(self._rollout_states_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H+1, state_dim)
+        rewards_batch = jax.vmap(self._rollout_rewards_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H)
+        
+        # Convert to numpy
+        states_batch_np = np.asarray(states_batch)  # (C, H+1, state_dim)
+        actions_batch_np = np.asarray(final_actions_batch)  # (C, H, act_dim)
+        rewards_batch_np = np.asarray(rewards_batch)  # (C, H)
+        energies_batch_np = -rewards_batch_np  # (C, H)
+        
+        # Batch compute costs
+        total_costs = np.sum(energies_batch_np, axis=-1)  # (C,)
+        
+        # Build results list (only this loop remains, all computation is batched)
         C = rng_keys.shape[0]
         results = []
         for i in range(C):
-            Ybar_final = np.asarray(Ybar_finals[i])
-            reward_hist = np.asarray(reward_hists[i])
-            Ybar_hist = np.asarray(Ybar_hists[i])
-            Ysamples_hist = np.asarray(Ysamples_hists[i])
-            
-            final_states = self._rollout_states_fn(x0_jnp, Ybar_final)
-            rewards_final = self._rollout_rewards_fn(x0_jnp, Ybar_final)
-            energies_final = -rewards_final
-            total_cost_final = float(np.sum(energies_final))
-            
-            # Single mode: just use final trajectory
-            candidate_states_list = [np.asarray(final_states, dtype=np.float32)]
-            candidate_actions_list = [np.asarray(Ybar_final, dtype=np.float32)]
-            candidate_costs_list = [total_cost_final]
-            best_idx = 0
-            
             results.append({
-                "states": np.asarray(final_states, dtype=np.float32),
-                "actions": np.asarray(Ybar_final, dtype=np.float32),
-                "rewards": np.asarray(rewards_final, dtype=np.float32),
-                "energies": np.asarray(energies_final, dtype=np.float32),
-                "reward_history": reward_hist,
-                "diffusion_actions_traj": Ybar_hist,
-                "diffusion_sampled_actions": Ysamples_hist,
+                "states": states_batch_np[i],
+                "actions": actions_batch_np[i],
+                "rewards": rewards_batch_np[i],
+                "energies": energies_batch_np[i],
+                "reward_history": np.asarray(reward_hists[i]),
+                "diffusion_actions_traj": np.asarray(Ybar_hists[i]),
+                "diffusion_sampled_actions": np.asarray(Ysamples_hists[i]),
                 "scheduler_params_history": [],
                 "rng": rng_keys[i],
-                "candidate_states": candidate_states_list,
-                "candidate_actions": candidate_actions_list,
-                "candidate_costs": np.asarray(candidate_costs_list, dtype=np.float32),
-                "best_idx": best_idx,
+                "candidate_states": [states_batch_np[i]],
+                "candidate_actions": [actions_batch_np[i]],
+                "candidate_costs": np.asarray([float(total_costs[i])], dtype=np.float32),
+                "best_idx": 0,
             })
         
         return results

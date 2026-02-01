@@ -52,6 +52,7 @@ class CFSMBDMethodPlugin(MethodPlugin):
             show_tqdm=bool(config.get("show_tqdm", False)),
             aug_lambda=float(config.get("aug_lambda", 0.0)),  # Fixed lambda
             aug_rho=float(config.get("aug_rho", 1.0)),  # Fixed rho
+            action_extra_sigma=float(config.get("action_extra_sigma", 0.0)),  # Extra noise for diversity
             num_modes=int(config.get("num_modes", 1)),  # Number of candidate trajectories to return
             mode_strategy=config.get("mode_strategy", "multirun"),
             diversity_eta=config.get("diversity_eta", 1.0),  # Diversity weight

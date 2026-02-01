@@ -14,23 +14,16 @@ method_params:
   show_tqdm: true
   action_limit: 1.0
   action_extra_sigma: 0.3
-  # Align with EDOC: strong terminal objective helps actually reach the target
   terminal_energy_weight: 100.0
   # Emerging barrier parameters
   # mu: 500.0
   # alpha: 1.0
   # bound: 0.8
   use_min_over_time: true
-  # Multi-mode: number of candidate trajectories to return (C paths)
-  num_modes: 512
-  # How to generate C paths:
-  # - multirun: run solver C times with different RNG keys, keep best trajectory from each run
-  # - diverse_topk: pick C diverse candidates from samples inside a single diffusion run
+  num_modes: 50
   mode_strategy: multirun
-  # Note: diversity_* parameters are only used when mode_strategy: diverse_topk
-  # They are ignored in multirun mode (each run returns its best trajectory)
 
-obstacle_levels: [3]
+obstacle_levels: [9]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05

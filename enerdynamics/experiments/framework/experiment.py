@@ -199,6 +199,26 @@ class ExperimentRunner:
             'obstacle_config': self.config.obstacle_config,  # Provide robot_radius/map bounds, etc.
             'np_random_seed': seed,  # Pass seed for reproducibility
         }
+        # Merge first diffusion_scheduler's M_k / Ndiffuse / T_k / beta into method_config
+        # so method plugins (MDOC, MBD, etc.) use YAML diffusion_schedulers values instead of defaults
+        if scheduler is not None and getattr(scheduler, 'diffusion_schedulers', None):
+            ds_list = scheduler.diffusion_schedulers
+            if ds_list:
+                from enerdynamics.core.constraints.core.types import ScheduleState
+                params = ds_list[0].diffusion_params(ScheduleState(k=0, K=1))
+                if params:
+                    if 'M_k' in params:
+                        method_config['Nsample'] = int(params['M_k'])
+                        method_config['action_nsample'] = int(params['M_k'])
+                    if 'Ndiffuse' in params and params.get('Ndiffuse') is not None:
+                        method_config['Ndiffuse'] = int(params['Ndiffuse'])
+                        method_config['action_diffuse_steps'] = int(params['Ndiffuse'])
+                    if 'T_k' in params:
+                        method_config['temp_sample'] = float(params['T_k'])
+                    if params.get('beta0') is not None:
+                        method_config['beta0'] = float(params['beta0'])
+                    if params.get('betaT') is not None:
+                        method_config['betaT'] = float(params['betaT'])
         planner = method_plugin.create_planner(env, energy, method_config)
         
         # 8. Run planning
