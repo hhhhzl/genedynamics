@@ -14,7 +14,6 @@ from enerdynamics.solvers.single.dpcc import diffuser_utils as utils
 #---------------------------------- modules ----------------------------------#
 #-----------------------------------------------------------------------------#
 
-
 class SinusoidalPosEmb(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -29,7 +28,6 @@ class SinusoidalPosEmb(nn.Module):
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
         return emb
 
-
 class Downsample1d(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -37,7 +35,6 @@ class Downsample1d(nn.Module):
 
     def forward(self, x):
         return self.conv(x)
-
 
 class Upsample1d(nn.Module):
     def __init__(self, dim):
@@ -47,31 +44,28 @@ class Upsample1d(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
-
 class Conv1dBlock(nn.Module):
-    """
-    Conv1d --> GroupNorm --> Mish
-    """
+    '''
+        Conv1d --> GroupNorm --> Mish
+    '''
 
     def __init__(self, inp_channels, out_channels, kernel_size, n_groups=8):
         super().__init__()
 
         self.block = nn.Sequential(
             nn.Conv1d(inp_channels, out_channels, kernel_size, padding=kernel_size // 2),
-            Rearrange("batch channels horizon -> batch channels 1 horizon"),
+            Rearrange('batch channels horizon -> batch channels 1 horizon'),
             nn.GroupNorm(n_groups, out_channels),
-            Rearrange("batch channels 1 horizon -> batch channels horizon"),
+            Rearrange('batch channels 1 horizon -> batch channels horizon'),
             nn.Mish(),
         )
 
     def forward(self, x):
         return self.block(x)
 
-
 #-----------------------------------------------------------------------------#
 #--------------------------------- attention ---------------------------------#
 #-----------------------------------------------------------------------------#
-
 
 class Residual(nn.Module):
     def __init__(self, fn):
@@ -81,19 +75,17 @@ class Residual(nn.Module):
     def forward(self, x, *args, **kwargs):
         return self.fn(x, *args, **kwargs) + x
 
-
 class LayerNorm(nn.Module):
-    def __init__(self, dim, eps=1e-5):
+    def __init__(self, dim, eps = 1e-5):
         super().__init__()
         self.eps = eps
-        self.g = nn.Parameter(torch.ones(dim))
-        self.b = nn.Parameter(torch.zeros(dim))
+        self.g = nn.Parameter(torch.ones(1, dim, 1))
+        self.b = nn.Parameter(torch.zeros(1, dim, 1))
 
     def forward(self, x):
-        var = x.var(dim=-1, unbiased=False, keepdim=True)
-        mean = x.mean(dim=-1, keepdim=True)
+        var = torch.var(x, dim=1, unbiased=False, keepdim=True)
+        mean = torch.mean(x, dim=1, keepdim=True)
         return (x - mean) / (var + self.eps).sqrt() * self.g + self.b
-
 
 class PreNorm(nn.Module):
     def __init__(self, dim, fn):
@@ -101,263 +93,230 @@ class PreNorm(nn.Module):
         self.fn = fn
         self.norm = LayerNorm(dim)
 
-    def forward(self, x, **kwargs):
-        return self.fn(self.norm(x), **kwargs)
-
-
-class GEGLU(nn.Module):
     def forward(self, x):
-        x, gates = x.chunk(2, dim=-1)
-        return x * F.gelu(gates)
+        x = self.norm(x)
+        return self.fn(x)
 
-
-class FeedForward(nn.Module):
-    def __init__(self, dim, mult=4, dropout=0.0):
+class LinearAttention(nn.Module):
+    def __init__(self, dim, heads=4, dim_head=32):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(dim, dim * mult * 2),
-            GEGLU(),
-            nn.Dropout(dropout),
-            nn.Linear(dim * mult, dim),
-        )
+        self.scale = dim_head ** -0.5
+        self.heads = heads
+        hidden_dim = dim_head * heads
+        self.to_qkv = nn.Conv1d(dim, hidden_dim * 3, 1, bias=False)
+        self.to_out = nn.Conv1d(hidden_dim, dim, 1)
 
     def forward(self, x):
-        return self.net(x)
+        qkv = self.to_qkv(x).chunk(3, dim = 1)
+        q, k, v = map(lambda t: einops.rearrange(t, 'b (h c) d -> b h c d', h=self.heads), qkv)
+        q = q * self.scale
 
+        k = k.softmax(dim = -1)
+        context = torch.einsum('b h d n, b h e n -> b h d e', k, v)
 
-class Attention(nn.Module):
-    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0.0):
-        super().__init__()
-        inner_dim = dim_head * heads
-        context_dim = context_dim if context_dim is not None else query_dim
-        self.heads = heads
-        self.scale = dim_head ** -0.5
-
-        self.to_q = nn.Linear(query_dim, inner_dim, bias=False)
-        self.to_k = nn.Linear(context_dim, inner_dim, bias=False)
-        self.to_v = nn.Linear(context_dim, inner_dim, bias=False)
-
-        self.to_out = nn.Sequential(nn.Linear(inner_dim, query_dim), nn.Dropout(dropout))
-
-    def forward(self, x, context=None, mask=None):
-        h = self.heads
-        q = self.to_q(x)
-        context = default(context, x)
-        k = self.to_k(context)
-        v = self.to_v(context)
-
-        q, k, v = map(lambda t: einops.rearrange(t, "b n (h d) -> b h n d", h=h), (q, k, v))
-
-        dots = torch.matmul(q, k.transpose(-1, -2)) * self.scale
-
-        if mask is not None:
-            mask = einops.rearrange(mask, "b ... -> b (...)")
-            max_neg_value = -torch.finfo(dots.dtype).max
-            mask = einops.repeat(mask, "b j -> b h i j", h=h, i=dots.shape[-2])
-            dots.masked_fill_(~mask, max_neg_value)
-
-        attn = torch.softmax(dots, dim=-1)
-
-        out = torch.matmul(attn, v)
-        out = einops.rearrange(out, "b h n d -> b n (h d)")
+        out = torch.einsum('b h d e, b h d n -> b h e n', context, q)
+        out = einops.rearrange(out, 'b h c d -> b (h c) d')
         return self.to_out(out)
 
-
-class CrossAttention(nn.Module):
-    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0.0):
-        super().__init__()
-        inner_dim = dim_head * heads
-        context_dim = context_dim if context_dim is not None else query_dim
-        self.heads = heads
-        self.scale = dim_head ** -0.5
-
-        self.to_q = nn.Linear(query_dim, inner_dim, bias=False)
-        self.to_k = nn.Linear(context_dim, inner_dim, bias=False)
-        self.to_v = nn.Linear(context_dim, inner_dim, bias=False)
-
-        self.to_out = nn.Sequential(nn.Linear(inner_dim, query_dim), nn.Dropout(dropout))
-
-    def forward(self, x, context=None, mask=None):
-        h = self.heads
-        q = self.to_q(x)
-        context = default(context, x)
-        k = self.to_k(context)
-        v = self.to_v(context)
-
-        q, k, v = map(lambda t: einops.rearrange(t, "b n (h d) -> b h n d", h=h), (q, k, v))
-
-        dots = torch.matmul(q, k.transpose(-1, -2)) * self.scale
-
-        if mask is not None:
-            mask = einops.rearrange(mask, "b ... -> b (...)")
-            max_neg_value = -torch.finfo(dots.dtype).max
-            mask = einops.repeat(mask, "b j -> b h i j", h=h, i=dots.shape[-2])
-            dots.masked_fill_(~mask, max_neg_value)
-
-        attn = torch.softmax(dots, dim=-1)
-
-        out = torch.matmul(attn, v)
-        out = einops.rearrange(out, "b h n d -> b n (h d)")
-        return self.to_out(out)
-
-
-class TransformerBlock(nn.Module):
-    def __init__(
-        self,
-        dim,
-        dim_head=64,
-        heads=8,
-        ff_mult=4,
-        context_dim=None,
-        dropout=0.0,
-        use_checkpoint=False,
-        ff_bias=True,
-    ):
-        super().__init__()
-        self.attn1 = Attention(dim, heads=heads, dim_head=dim_head, dropout=dropout)
-        self.attn2 = CrossAttention(
-            dim, context_dim=context_dim, heads=heads, dim_head=dim_head, dropout=dropout
-        )
-        self.ff = FeedForward(dim, mult=ff_mult, dropout=dropout)
-        self.use_checkpoint = use_checkpoint
-
-    def forward(self, x, cond=None):
-        if self.use_checkpoint:
-            return torch.utils.checkpoint.checkpoint(self._forward, x, cond)
-        return self._forward(x, cond)
-
-    def _forward(self, x, cond=None):
-        x = self.attn1(self.norm1(x)) + x
-        x = self.attn2(self.norm2(x), cond) + x
-        x = self.ff(self.norm3(x)) + x
-        return x
-
-    def norm1(self, x):
-        return F.layer_norm(x, x.shape[-1:])
-
-    def norm2(self, x):
-        return F.layer_norm(x, x.shape[-1:])
-
-    def norm3(self, x):
-        return F.layer_norm(x, x.shape[-1:])
-
-
 #-----------------------------------------------------------------------------#
-#--------------------------- diffusion helpers ------------------------------#
+#---------------------------------- sampling ---------------------------------#
 #-----------------------------------------------------------------------------#
-
-
-class Losses:
-    def __getitem__(self, key):
-        return getattr(self, key)
-
-    def l1(self, weights, action_dim):
-        def _loss(pred, targ):
-            loss = (pred - targ).abs()
-            loss = loss * weights[None, :, :].to(pred)
-            return loss.mean(dim=(1, 2))
-
-        return _loss
-
-    def l2(self, weights, action_dim):
-        def _loss(pred, targ):
-            loss = (pred - targ) ** 2
-            loss = loss * weights[None, :, :].to(pred)
-            return loss.mean(dim=(1, 2))
-
-        return _loss
-
-    def huber(self, weights, action_dim):
-        def _loss(pred, targ):
-            loss = F.smooth_l1_loss(pred, targ, reduction="none")
-            loss = loss * weights[None, :, :].to(pred)
-            return loss.mean(dim=(1, 2))
-
-        return _loss
-
-    def elbo(self, weights, action_dim):
-        def _loss(x_start, pred_noise, noise, t):
-            loss = (pred_noise - noise) ** 2
-            loss = utils.apply_dict(lambda w: w[None, :, :], weights)
-            loss = utils.apply_dict(lambda w: w.to(loss), loss)
-            loss = loss["observations"] * loss["actions"]
-            loss = utils.apply_dict(lambda w: w.to(loss.device), loss)
-            loss = utils.apply_dict(lambda w: w * loss, loss)
-            loss = utils.apply_dict(lambda w: w.sum(dim=-1), loss)
-            return loss.mean(dim=1)
-
-        return _loss
-
-    def noise_pred(self, weights, action_dim):
-        def _loss(x_start, pred_noise, noise, t):
-            loss = (pred_noise - noise) ** 2
-            return loss.mean(dim=(1, 2))
-
-        return _loss
-
-
-Losses = Losses()
-
-
-def cosine_beta_schedule(timesteps, s=0.008):
-    """
-    cosine schedule as proposed in https://openreview.net/forum?id=-NEXDKk8gZ
-    """
-    steps = timesteps + 1
-    x = torch.linspace(0, timesteps, steps)
-    alphas_cumprod = torch.cos(((x / timesteps) + s) / (1 + s) * np.pi * 0.5) ** 2
-    alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-    betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
-    return torch.clip(betas, 0.0001, 0.9999)
-
 
 def extract(a, t, x_shape):
-    """
-    extract values from a for batch of indices t.
-    a: (T)
-    t: (B)
-    output: (B, 1, 1, 1)
-    """
-    bs = t.shape[0]
+    b, *_ = t.shape
     out = a.gather(-1, t)
-    return out.reshape(bs, *((1,) * (len(x_shape) - 1)))
+    return out.reshape(b, *((1,) * (len(x_shape) - 1)))
 
+def cosine_beta_schedule(timesteps, s=0.008, dtype=torch.float32):
+    """
+    cosine schedule
+    as proposed in https://openreview.net/forum?id=-NEXDKk8gZ
+    Explanation: https://www.kirschstein.io/files/oxford-tdl.pdf
+    Without s, the noise in the initial time steps is imperceptible, which slows down training.
+    """
+    steps = timesteps + 1
+    x = np.linspace(0, steps, steps)
+    alphas_cumprod = np.cos(((x / steps) + s) / (1 + s) * np.pi * 0.5) ** 2
+    alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
+    betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
+    betas_clipped = np.clip(betas, a_min=0, a_max=0.999)
+    return torch.tensor(betas_clipped, dtype=dtype)
 
-def apply_conditioning(x, cond, action_dim, transition_dim):
-    x = x.clone()
-    for t, val in cond.items():
-        x[:, t, action_dim:transition_dim] = val
+def apply_conditioning(x, conditions, action_dim, goal_dim=0, noise=False):
+    '''
+        x : tensor
+            [ batch_size x horizon x (action_dim + obs_dim + goal_dim) ]
+        conditions : dict
+            { t: values }, where values is a batch_size x obs_dim tensor
+        action_dim : int
+            dimension of the action space
+        goal_dim : int
+            dimension of the goal space
+        noise : bool
+            Indicates if conditioning has to be applied to the added noise (i.e., set entries to zero)
+    '''
+    
+    for t, val in conditions.items():
+        if isinstance(t, str):     # unsafe sets
+            continue
+        else:
+            x[:, t, action_dim:] = val.clone() if not noise else 0
+    
+    if goal_dim > 0:
+        x[:, :, -goal_dim:] = conditions[0][:, -goal_dim:].unsqueeze(1).clone() if not noise else 0
+
     return x
 
-
 #-----------------------------------------------------------------------------#
-#--------------------------------- utilities ---------------------------------#
+#---------------------------------- losses -----------------------------------#
 #-----------------------------------------------------------------------------#
 
+class WeightedLoss(nn.Module):
 
-def timestep_embedding(timesteps, dim, max_period=10000):
-    """
-    Create sinusoidal timestep embeddings.
-    :param timesteps: a 1-D Tensor of N indices, one per batch element.
-                      These may be fractional.
-    :param dim: the dimension of the output.
-    :param max_period: controls the minimum frequency of the embeddings.
-    :return: an [N x dim] Tensor of positional embeddings.
-    """
-    half = dim // 2
-    freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half)
-    args = timesteps[:, None].float() * freqs[None]
-    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
-    if dim % 2:
-        embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
-    return embedding
+    def __init__(self, weights, action_dim):
+        super().__init__()
+        self.register_buffer('weights', weights)
+        self.action_dim = action_dim
+
+    def forward(self, pred, targ):
+        '''
+            pred, targ : tensor
+                [ batch_size x horizon x transition_dim ]
+        '''
+        loss = self._loss(pred, targ)
+        weighted_loss = (loss * self.weights).mean()
+        a0_loss = (loss[:, 0, :self.action_dim] / self.weights[0, :self.action_dim]).mean()
+        return weighted_loss, {'diffusion_loss': weighted_loss, 'a0_loss': a0_loss}
+    
+class WeightedStateLoss(nn.Module):
+
+    def __init__(self, weights):
+        super().__init__()
+        self.register_buffer('weights', weights)
+
+    def forward(self, pred, targ):
+        '''
+            pred, targ : tensor
+                [ batch_size x horizon x transition_dim ]
+        '''
+        loss = self._loss(pred, targ)
+        weighted_loss = (loss * self.weights).mean()
+        return weighted_loss, {'diffusion_loss': weighted_loss}
+    
+class DynamicsLoss(nn.Module):
+    def __init__(self, weights, A_dyn, b_dyn):
+        super().__init__()
+        self.register_buffer('weights', weights)
+        self.A_dynT = A_dyn.t()
+        self.b_dynT = b_dyn.t()
+
+    def forward(self, pred, targ):
+        '''
+            pred, targ : tensor
+                [ batch_size x horizon x transition_dim ]
+        '''
+        pred = einops.rearrange(pred, 'b h d -> b (h d)') @ self.A_dynT 
+        # pred = pred.contiguous().view(pred.shape[0], -1) @ self.A_dynT 
+        targ = self.b_dynT
+        loss = self._loss(pred, targ).mean()
+        return loss, {'dyn_loss': loss}
 
 
-def swish(x):
-    return x * torch.sigmoid(x)
+class ValueLoss(nn.Module):
+    def __init__(self, *args):
+        super().__init__()
 
+    def forward(self, pred, targ):
+        loss = self._loss(pred, targ).mean()
 
-def default(val, d):
-    if val is not None:
-        return val
-    return d() if callable(d) else d
+        if len(pred) > 1:
+            corr = np.corrcoef(
+                utils.to_np(pred).squeeze(),
+                utils.to_np(targ).squeeze()
+            )[0,1]
+        else:
+            corr = np.NaN
+        
+        info = {
+            'mean_pred': pred.mean(), 'mean_targ': targ.mean(),
+            'min_pred': pred.min(), 'min_targ': targ.min(),
+            'max_pred': pred.max(), 'max_targ': targ.max(),
+            'corr': corr,
+        }
+        info = {}
+
+        return loss, info
+
+class WeightedL1(WeightedLoss):
+
+    def _loss(self, pred, targ):
+        return torch.abs(pred - targ)
+
+class WeightedL2(WeightedLoss):
+
+    def _loss(self, pred, targ):
+        return F.mse_loss(pred, targ, reduction='none')
+    
+class WeightedStateL2(WeightedStateLoss):
+
+    def _loss(self, pred, targ):
+        return F.mse_loss(pred, targ, reduction='none')
+    
+class WeightedDynamicsL2(DynamicsLoss):
+    
+        def _loss(self, pred, targ):
+            return F.mse_loss(pred, targ, reduction='none')
+            
+class ValueL1(ValueLoss):
+
+    def _loss(self, pred, targ):
+        return torch.abs(pred - targ)
+
+class ValueL2(ValueLoss):
+
+    def _loss(self, pred, targ):
+        return F.mse_loss(pred, targ, reduction='none')
+
+class CrossEntropy(ValueLoss):
+
+    def _loss(self, pred, target):
+        pred = pred.reshape(pred.shape[0] * int(pred.shape[1]/2), 2)
+        target = target.reshape(target.shape[0] * target.shape[1], ).type(torch.long)
+        return F.cross_entropy(pred, target)
+
+Losses = {
+    'l1': WeightedL1,
+    'l2': WeightedL2,
+    'state_l2': WeightedStateL2,
+    'dynamics_l2': WeightedDynamicsL2,
+    'value_l1': ValueL1,
+    'value_l2': ValueL2,
+    'cross_entropy': CrossEntropy
+}
+
+def get_loss_weights(action_weight, transition_dim, action_dim, horizon, discount=1.0):
+    '''
+        sets loss coefficients for trajectory
+
+        action_weight   : float
+            coefficient on first action loss
+        discount   : float
+            multiplies t^th timestep of trajectory loss by discount**t
+        transition_dim : int
+            dimension of the transition space
+        action_dim : int
+            dimension of the action space
+        horizon : int
+            length of trajectory
+    '''
+
+    dim_weights = torch.ones(transition_dim, dtype=torch.float32)
+
+    ## decay loss with trajectory timestep: discount**t
+    discounts = discount ** torch.arange(horizon, dtype=torch.float)
+    discounts = discounts / discounts.mean()
+    loss_weights = torch.einsum('h,t->ht', discounts, dim_weights)
+
+    ## manually set a0 weight
+    loss_weights[0, :action_dim] = action_weight
+    return loss_weights
