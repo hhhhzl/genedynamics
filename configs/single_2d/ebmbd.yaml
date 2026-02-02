@@ -19,7 +19,7 @@ method_params:
   num_modes: 50
   mode_strategy: multirun
 
-obstacle_levels: [9]
+obstacle_levels: [6]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -49,12 +49,12 @@ scheduler_config:
   diffusion_merge_strategy: merge
   constraint_schedulers:
     - type: emerging_barrier
-      mu: 100.0
+      mu: 50.0
       alpha: 1.0
       bound: 0.8
       use_min_over_time: true
       terminal_energy_weight: 100.0
-      margin: 0.01
+      margin: 0.05
   constraint_merge_strategy: merge
 
 metrics:

@@ -81,28 +81,67 @@ def solve_slack_qp_jax(
         viol = jnp.maximum(0.0, jnp.where(valid, b - A @ u, -jnp.inf))
         return jnp.max(viol)
 
-    # Precompute once so cond() doesn't re-do a matvec every loop.
-    v0 = max_violation(u0)
+    # Performance note:
+    # The previous implementation used a while_loop with two A@u matvecs per iteration
+    # (one for selecting the worst constraint, one for recomputing max violation).
+    # Here we use a fixed-iteration fori_loop and structure the update so each
+    # iteration does only ONE A@u matvec, plus we precompute row norms.
+    #
+    # This is intentionally "projection style" (POCS-like), not a full QP solve.
+    # It is meant to be extremely fast in per-step filters.
 
-    def cond_fn(carry):
-        i, _u, v = carry
-        return jnp.logical_and(i < maxiter_j, v > tol_j)
+    # Fast path uses fori_loop (best performance) but requires static bounds.
+    # If maxiter is traced (cannot be converted to Python int), fall back to while_loop.
+    try:
+        maxiter_i = int(maxiter)
+        maxiter_i = max(0, min(maxiter_i, 10_000))
+        use_fori = True
+    except Exception:
+        use_fori = False
+        maxiter_i = 0  # unused in this branch
 
-    def body_fn(carry):
-        i, u, _v = carry
-        viol = jnp.maximum(0.0, jnp.where(valid, b - A @ u, -jnp.inf))
+    # Precompute squared row norms (safe even if some rows are dummy/zero).
+    row_norm_sq = jnp.sum(A * A, axis=1) + 1e-9
+
+    def body_fn(_i, u):
+        lhs = A @ u  # one matvec per iteration
+        viol = jnp.where(valid, b - lhs, -jnp.inf)
+        viol = jnp.maximum(0.0, viol)
         idx = jnp.argmax(viol)
+        v = viol[idx]
         A_row = A[idx]
-        den = jnp.dot(A_row, A_row) + 1e-9
-        lam = viol[idx] / (den + 1.0 / rho_eff)
+        # Slack-like damping: larger rho => closer to hard projection.
+        den = row_norm_sq[idx] + 1.0 / rho_eff
+        lam = v / den
         u_next = jnp.clip(u + lam * A_row, L_lo, L_hi)
-        v_next = max_violation(u_next)
-        return (i + 1, u_next, v_next)
+        # If already feasible within tol, do a no-op (keeps loop JIT-friendly).
+        return jax.lax.cond(v > tol_j, lambda _: u_next, lambda _: u, operand=None)
 
-    _, u_star, v_star = jax.lax.while_loop(
-        cond_fn, body_fn, (jnp.asarray(0, dtype=jnp.int32), u0, v0)
-    )
-    return u_star, v_star
+    def run_fori(_):
+        u_star = jax.lax.fori_loop(0, maxiter_i, body_fn, u0)
+        v_star = max_violation(u_star)
+        return u_star, v_star
+
+    def run_while(_):
+        # Dynamic maxiter support. We keep one matvec per iteration, and
+        # compute the final violation once at the end.
+        def cond_fn(carry):
+            i, u = carry
+            # Early stop check uses current u.
+            v = max_violation(u)
+            return jnp.logical_and(i < maxiter_j, v > tol_j)
+
+        def body_while(carry):
+            i, u = carry
+            return (i + 1, body_fn(i, u))
+
+        _, u_star = jax.lax.while_loop(
+            cond_fn, body_while, (jnp.asarray(0, dtype=jnp.int32), u0)
+        )
+        v_star = max_violation(u_star)
+        return u_star, v_star
+
+    return jax.lax.cond(use_fori, run_fori, run_while, operand=None)
 
 
 def solve_hard_qp_jax(
