@@ -76,7 +76,7 @@ class D3ILTaskEnv:
         self._ctx = ctx
 
         merged_info = {**info, **step_info}
-        return np.asarray(next_state, dtype=np.float32), float(cost), bool(done), merged_info
+        return np.asarray(next_state, dtype=np.float32), cost, bool(done), merged_info
 
     # Optional planner-style helpers
     def transition(self, state: np.ndarray, action: np.ndarray) -> np.ndarray:
