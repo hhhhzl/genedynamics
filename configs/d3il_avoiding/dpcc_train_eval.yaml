@@ -4,24 +4,22 @@ output_dir: results/d3il_avoiding/dpcc
 env_name: d3il_avoiding
 env_params:
   render: false
-  horizon: 64
-  dt: 0.035
+  horizon: 8
+  dt: 1
 
 method: dpcc
 method_params:
   exp: avoiding-d3il
   dpcc_config_path: enerdynamics/solvers/single/dpcc/config/projection_eval.yaml
-  # 模型路径: /home/lbw/mbd-project/dpcc/logs/avoiding-d3il/diffusion/H8_K20_Dmodels.GaussianDiffusion/
-  # 对应 loadbase/dataset/diffusion_loadpath/seed
-  loadbase: /home/lbw/mbd-project/dpcc/logs
+  loadbase: logs
   dataset: avoiding-d3il
   diffusion_loadpath: diffusion/H8_K20_Dmodels.GaussianDiffusion
-  diffusion_epoch: null
+  diffusion_epoch: 'best'
   device: cuda
   seed: 5
-  horizon: 64
-  dt: 0.035
-  batch_size: 8
+  horizon: 8
+  dt: 1
+  batch_size: 4
   max_episode_length: 200
   variant: dpcc
   solver: scipy
