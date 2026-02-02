@@ -34,7 +34,7 @@ class CFSMBDBackendJax:
         legacy_energy=None,
         horizon: int = 64,
         dt: float = 0.05,
-        Nsample: int = 4096,
+        Nsample: int = 256,
         Ndiffuse: int = 100,
         temp_sample: float = 0.3,
         beta0: float = 1e-4,
@@ -381,6 +381,16 @@ class CFSMBDBackendJax:
             return jnp.concatenate([state_init[None, :], states], axis=0)
 
         self._rollout_states_fn = jax.jit(rollout_states)
+
+        # Batch rollouts (used by multi-mode candidate extraction in `plan()`).
+        def rollout_states_batch(state_init, actions_batch):
+            return jax.vmap(lambda a: rollout_states(state_init, a), in_axes=0)(actions_batch)
+
+        def rollout_rewards_batch(state_init, actions_batch):
+            return jax.vmap(lambda a: rollout_rewards(state_init, a), in_axes=0)(actions_batch)
+
+        self._rollout_states_batch_fn = jax.jit(rollout_states_batch)
+        self._rollout_rewards_batch_fn = jax.jit(rollout_rewards_batch)
 
     def plan(self, x0: State, rng_key: Optional[Any] = None) -> Dict[str, Any]:
         if rng_key is None:
@@ -993,10 +1003,19 @@ class CFSMBDBackendJax:
                     "topK": jnp.asarray(self._topK if self._topK >= 0 else 8, dtype=jnp.int32),
                 }
 
-                # Filter all samples across all modes in one call (flatten C*N)
+                # ---------------- Architecture optimization (multirun batch hot path) ----------------
+                # The dominant cost for C=50 on CPU is filtering *all* samples (C*N) at every diffusion step.
+                # That turns into an enormous number of per-step CFS halfspace builds + projections.
+                #
+                # Instead, we:
+                # - keep samples unfiltered (only clip to action limits; we already do that above)
+                # - compute weights using augmented reward, which already includes a penalty based on
+                #   constraint violation g_plus from SDF (so infeasible samples get downweighted)
+                # - apply the expensive CFS filter only to the per-mode mean trajectory (C trajectories),
+                #   which preserves safety of the returned plans while cutting the batch hot cost.
                 Y0s_flat = Y0s.reshape((C * self.Nsample, self.horizon, self.act_dim))
-                Y0s_f_flat = self._filter_actions_batch_jit(x0_jnp, Y0s_flat, sched_state, sched_params)
-                Y0s_f = Y0s_f_flat.reshape((C, self.Nsample, self.horizon, self.act_dim))
+                Y0s_f_flat = Y0s_flat
+                Y0s_f = Y0s
 
                 rews_flat = self._augmented_rewards_batch_jit(
                     x0_jnp,
@@ -1169,16 +1188,13 @@ class CFSMBDBackendJax:
                     "I_QP": params_batch["I_QP"],
                 }
 
-                # Apply filter to samples (flatten C*N). Respect per-mode qp_gate via masking.
+                # Architecture optimization (adaptive multirun): do NOT filter all samples (C*N).
+                # Filtering full trajectories for every sample is extremely expensive on CPU and
+                # dominates runtime/compile size. We keep samples unfiltered (only clipped above),
+                # and filter only the per-mode mean trajectory below (still safe for the returned plan).
                 Y0s_flat = Y0s.reshape((C * self.Nsample, self.horizon, self.act_dim))
-
-                def do_filter_all(y_flat):
-                    return self._filter_actions_batch_jit(x0_jnp, y_flat, sched_state, sched_params)
-
-                any_qp = jnp.any(do_qp)
-                Y0s_f_flat = jax.lax.cond(any_qp, do_filter_all, lambda y: y, Y0s_flat)
-                Y0s_f = Y0s_f_flat.reshape((C, self.Nsample, self.horizon, self.act_dim))
-                Y0s_f = jnp.where(do_qp[:, None, None, None], Y0s_f, Y0s)
+                Y0s_f_flat = Y0s_flat
+                Y0s_f = Y0s
 
                 # Rollout reward+v for all samples (flatten C*N), with per-mode (margin, lam, rho)
                 def rollout_one(actions_seq, m, lam, rho):
@@ -1186,19 +1202,13 @@ class CFSMBDBackendJax:
 
                 margin_rep = jnp.repeat(margin, self.Nsample)
                 lam_rep = jnp.repeat(aug_lam, self.Nsample)
-                rho_rep = jnp.repeat(aug_rho, self.Nsample)
-                rews_flat, v_flat = jax.vmap(rollout_one, in_axes=(0, 0, 0, 0))(Y0s_f_flat, margin_rep, lam_rep, rho_rep)
+                rho_rep_pen = jnp.repeat(aug_rho, self.Nsample)
+                rews_flat, v_flat = jax.vmap(rollout_one, in_axes=(0, 0, 0, 0))(Y0s_f_flat, margin_rep, lam_rep, rho_rep_pen)
                 rews = rews_flat.reshape((C, self.Nsample))
                 v_batch = v_flat.reshape((C, self.Nsample))
 
                 from enerdynamics.core.constraints.schedulers.ConstraintScheduler.almadaptive.backends.alm_adaptive_jax import quantile_90
                 r_p = jax.vmap(lambda v: quantile_90(v, k_top), in_axes=0)(v_batch)  # (C,)
-                proj = jnp.mean(jnp.linalg.norm(Y0s_f - Y0s, axis=(2, 3)), axis=1)  # (C,)
-
-                carry_sched_new = jax.vmap(
-                    lambda carry_s, rp, pj, rng_s: cs.jax_update(carry_s, {"r_p": rp, "proj": pj}, rng_s),
-                    in_axes=(0, 0, 0, 0),
-                )(carry_sched_curr, r_p, proj, rng_sched_next)
 
                 # Weighting per mode
                 rew_mean = jnp.mean(rews, axis=1, keepdims=True)
@@ -1218,6 +1228,13 @@ class CFSMBDBackendJax:
 
                 Ybar_filt = jax.lax.cond(jnp.any(do_qp), filter_mean_all, lambda y: y, Ybar_weighted)
                 Ybar_next = jnp.where(do_qp[:, None, None], Ybar_filt, Ybar_weighted)
+
+                # Scheduler update uses r_p (from sample violations) and proj (from mean projection).
+                proj = jnp.linalg.norm(Ybar_next - Ybar_weighted, axis=(1, 2))  # (C,)
+                carry_sched_new = jax.vmap(
+                    lambda carry_s, rp, pj, rng_s: cs.jax_update(carry_s, {"r_p": rp, "proj": pj}, rng_s),
+                    in_axes=(0, 0, 0, 0),
+                )(carry_sched_curr, r_p, proj, rng_sched_next)
 
                 extra_sigma = extra_sigmas_by_idx[idx]
                 noise_extra = jax.vmap(

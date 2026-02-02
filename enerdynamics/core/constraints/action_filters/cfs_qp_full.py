@@ -8,6 +8,7 @@ then solves a single QP over the entire action sequence to project actions into 
 from __future__ import annotations
 from typing import Any, Optional
 import numpy as np
+import os
 
 try:
     import jax
@@ -294,6 +295,14 @@ class CFSQPFullFilter(ConstraintFilter):
                 if 'tracer' in str(e).lower() or 'jax' in str(e).lower():
                     return actions
                 raise
+
+        # Optional runtime assertion to confirm we're not silently taking NumPy fallback.
+        # Enable via: ENERDYNAMICS_ASSERT_JAX_FILTER=1
+        if os.getenv("ENERDYNAMICS_ASSERT_JAX_FILTER", "").strip() in ("1", "true", "True"):
+            raise RuntimeError(
+                "CFSQPFullFilter.apply_actions took NumPy fallback, but JAX was expected. "
+                "Check caller is passing jax.Array/Tracer actions."
+            )
         
         # NumPy path: full CFS + QP filtering
         actions_np = np.asarray(actions, dtype=np.float32)
@@ -495,11 +504,13 @@ class CFSQPFullFilter(ConstraintFilter):
         control_limit = float(getattr(env, "control_limit", 1.0))
         constraint_margin_val = float(self.constraint_margin)
         
+        # NOTE: `margin` / `rho` / `I_QP` may be per-sample vectors when called from
+        # batched multirun paths (e.g. adaptive scheduler). We therefore compute
+        # (clearance, threshold) per-trajectory inside the vmapped filter, instead
+        # of closing over them as a single array here.
         margin_jax = margin if isinstance(margin, (jnp.ndarray, jax.Array)) else jnp.asarray(float(margin), dtype=jnp.float32)
         robot_radius_jax = jnp.asarray(robot_radius, dtype=jnp.float32)
-        clearance = margin_jax + robot_radius_jax
         constraint_margin_jax = jnp.asarray(constraint_margin_val, dtype=jnp.float32)
-        threshold = clearance + constraint_margin_jax
         
         # Get obstacles list
         obstacles_list = self._get_obstacles_list(obstacles)
@@ -786,7 +797,7 @@ class CFSQPFullFilter(ConstraintFilter):
         else:
             cell_obs_idx = None
         
-        def filter_single_once(u_seq):
+        def filter_single_once(u_seq, *, clearance_s, threshold_s, rho_s, I_QP_s):
             """One CFS pass: rollout + linearize + full-trajectory QP."""
             H, act_dim = u_seq.shape
             
@@ -870,7 +881,7 @@ class CFSQPFullFilter(ConstraintFilter):
                 # Select top-K closest obstacles per timestep (within threshold).
                 sdf_t = sdf_all.T  # (H, Nobs)
                 grad_t = jnp.transpose(grad_all, (1, 0, 2))  # (H, Nobs, 2)
-                cand_mask = sdf_t < threshold
+                cand_mask = sdf_t < threshold_s
                 sdf_for_sort = jnp.where(cand_mask, sdf_t, jnp.inf)
                 neg = -sdf_for_sort
                 def topk_idx(v):
@@ -878,10 +889,10 @@ class CFSQPFullFilter(ConstraintFilter):
                 idx_sel = jax.vmap(topk_idx)(neg)  # (H, k_select)
                 sdf_sel = jnp.take_along_axis(sdf_t, idx_sel, axis=1)  # (H,k)
                 grad_sel = jnp.take_along_axis(grad_t, idx_sel[:, :, None], axis=1)  # (H,k,2)
-                valid = jnp.isfinite(sdf_sel) & (sdf_sel < threshold)
+                valid = jnp.isfinite(sdf_sel) & (sdf_sel < threshold_s)
 
                 # b_{t,k} for prefix inequality: dt * sum_{i<=t} g^T u_i >= b
-                rhs = clearance - sdf_sel + jnp.einsum("hkd,hd->hk", grad_sel, pos)
+                rhs = clearance_s - sdf_sel + jnp.einsum("hkd,hd->hk", grad_sel, pos)
                 b = rhs - jnp.einsum("hkd,d->hk", grad_sel, p0)
                 b = jnp.where(valid, b, -jnp.inf)
                 grad_sel = jnp.where(valid[:, :, None], grad_sel, 0.0)
@@ -890,7 +901,7 @@ class CFSQPFullFilter(ConstraintFilter):
                 tol = jnp.asarray(1e-7, dtype=jnp.float32)
                 # This is the main inner loop cost; keep it large enough to actually converge
                 # on multi-constraint scenes (still cheap vs building A_full).
-                max_iter = jnp.maximum(jnp.asarray(200, dtype=jnp.int32), I_QP * 20)
+                max_iter = jnp.maximum(jnp.asarray(200, dtype=jnp.int32), jnp.asarray(I_QP_s, dtype=jnp.int32) * 20)
                 time_idx = jnp.arange(H, dtype=jnp.int32)  # static shape (H,)
 
                 def compute_max_violation(u_curr):
@@ -916,10 +927,10 @@ class CFSQPFullFilter(ConstraintFilter):
                     g2 = jnp.dot(g, g) + 1e-9
                     denom = (jnp.asarray(t_idx, dtype=jnp.float32) + 1.0) * (jnp.asarray(dt, dtype=jnp.float32) ** 2) * g2
                     # Slack support if enabled
-                    use_slack_flag = jnp.logical_and(rho > 0, jnp.asarray(self.use_slack, dtype=jnp.bool_))
+                    use_slack_flag = jnp.logical_and(rho_s > 0, jnp.asarray(self.use_slack, dtype=jnp.bool_))
                     denom = jax.lax.cond(
                         use_slack_flag,
-                        lambda d: d + (jnp.asarray(dt, dtype=jnp.float32) ** 2) * (1.0 / (rho + 1e-9)),
+                        lambda d: d + (jnp.asarray(dt, dtype=jnp.float32) ** 2) * (1.0 / (rho_s + 1e-9)),
                         lambda d: d,
                         denom,
                     )
@@ -1057,7 +1068,7 @@ class CFSQPFullFilter(ConstraintFilter):
                 b_eff = b_per_step.astype(jnp.float32)  # (H, K)
 
                 # Inner solver effort: same knob as before (kept for compatibility).
-                solver_iters = jnp.maximum(jnp.asarray(40, dtype=jnp.int32), I_QP * 4)
+                solver_iters = jnp.maximum(jnp.asarray(10, dtype=jnp.int32), I_QP * 2)
 
                 from enerdynamics.core.constraints.solvers.jaxopt_osqp_solver import solve_slack_qp_prefixsum_jax
 
@@ -1082,9 +1093,13 @@ class CFSQPFullFilter(ConstraintFilter):
             else:
                 return u_seq
 
-        def filter_single(u_seq):
-            """Paper-style CFS iteration with while_loop (faster compile than large fori_loop)."""
-            I_QP_i32 = jnp.asarray(I_QP, dtype=jnp.int32)
+        def filter_single(u_seq, margin_s, rho_s, I_QP_s):
+            """Paper-style CFS iteration with while_loop (supports per-sample params)."""
+            margin_s = jnp.asarray(margin_s, dtype=jnp.float32)
+            rho_s = jnp.asarray(rho_s, dtype=jnp.float32)
+            I_QP_i32 = jnp.asarray(I_QP_s, dtype=jnp.int32)
+            clearance_s = margin_s + robot_radius_jax
+            threshold_s = clearance_s + constraint_margin_jax
 
             def cond_fn(carry):
                 i, _u = carry
@@ -1092,15 +1107,21 @@ class CFSQPFullFilter(ConstraintFilter):
 
             def body_loop(carry):
                 i, u_curr = carry
-                return (i + 1, filter_single_once(u_curr))
+                return (i + 1, filter_single_once(u_curr, clearance_s=clearance_s, threshold_s=threshold_s, rho_s=rho_s, I_QP_s=I_QP_i32))
 
             _, u_out = jax.lax.while_loop(cond_fn, body_loop, (jnp.asarray(0, dtype=jnp.int32), u_seq))
             return u_out
         
         # Handle batching
         if actions.ndim == 3:
-            return jax.vmap(filter_single)(actions)
-        return filter_single(actions)
+            # Support per-sample schedule parameters (vectors) as well as scalars.
+            margin_b = margin_jax
+            rho_b = rho
+            I_b = I_QP
+            if hasattr(margin_b, "ndim") and getattr(margin_b, "ndim", 0) > 0:
+                return jax.vmap(filter_single, in_axes=(0, 0, 0, 0))(actions, margin_b, rho_b, I_b)
+            return jax.vmap(lambda u: filter_single(u, margin_b, rho_b, I_b))(actions)
+        return filter_single(actions, margin_jax, rho, I_QP)
     
     def apply_actions_batch(
         self,
