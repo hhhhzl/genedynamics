@@ -2,16 +2,202 @@
 Diffusion steps visualization plugin.
 """
 
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
-from matplotlib.patches import Wedge, PathPatch
+from matplotlib.patches import PathPatch, Polygon
 from matplotlib.path import Path
 
 from ...framework.base import VisualizationPlugin
 from ...common.visualization import draw_obstacles, EDOC_COLOR, MAX_SAMPLE_TRAJ_PLOT
 from .cfs_convexify_overlay import draw_cfs_convexify_overlay
+
+def _safe_unit(v: np.ndarray) -> np.ndarray:
+    n = np.linalg.norm(v) + 1e-9
+    return v / n
+
+def _add_cap_rectangle(
+        self, ax: Any, p: np.ndarray, grad: np.ndarray,
+        r: float, b: float, dt: float, scale: float,
+        facecolor: str, edgecolor: str, alpha: float, zorder: float = 4.0
+    ) -> None:
+        """Draw CAP as a rectangle in workspace: depth = dt*(r-b), width = 2*dt*sqrt(r^2-b^2).
+        Center between cutting plane and farthest point: p + g * (scale*dt*(r+b)/2).
+        """
+        if b >= r:
+            return
+        if b <= -r:
+            return
+        g = grad / (np.linalg.norm(grad) + 1e-9)
+        n = np.array([-g[1], g[0]])
+        R = scale * dt * r
+        length = scale * dt * (r - b)
+        width = scale * dt * (2.0 * np.sqrt(max(r * r - b * b, 0)))
+        center = p + g * (scale * dt * (r + b) / 2.0)
+        c1 = center + 0.5 * length * g + 0.5 * width * n
+        c2 = center + 0.5 * length * g - 0.5 * width * n
+        c3 = center - 0.5 * length * g - 0.5 * width * n
+        c4 = center - 0.5 * length * g + 0.5 * width * n
+        poly = Polygon(
+            [c1, c2, c3, c4],
+            closed=True,
+            facecolor=facecolor,
+            edgecolor=edgecolor,
+            linewidth=0.8,
+            alpha=alpha,
+            zorder=zorder,
+        )
+        ax.add_patch(poly)
+
+def _draw_cutting_line(
+    ax,
+    p: np.ndarray,
+    g: np.ndarray,
+    n: np.ndarray,
+    b_val: float,
+    dt: float,
+    scale: float,
+    R_viz: float,
+    color: str,
+    linestyle: str,
+    linewidth: float,
+    alpha: float,
+    zorder: float,
+):
+    """
+    Draw the cutting line in workspace corresponding to: g^T u = b
+    with workspace mapping: Δx = dt * u, so g^T Δx = dt*b.
+    Line passes through p_cut = p + g*(scale*dt*b).
+    """
+    p_cut = p + g * (scale * dt * b_val)
+    L = 1.15 * R_viz
+    q1 = p_cut - n * L
+    q2 = p_cut + n * L
+    ax.plot(
+        [q1[0], q2[0]], [q1[1], q2[1]],
+        color=color,
+        linestyle=linestyle,
+        linewidth=linewidth,
+        alpha=alpha,
+        zorder=zorder
+    )
+
+def _add_cap_polygon(
+    ax,
+    p: np.ndarray,
+    g: np.ndarray,
+    n: np.ndarray,
+    r: float,
+    b_val: float,
+    dt: float,
+    scale: float,
+    R_viz: float,
+    facecolor: str,
+    edgecolor: str,
+    alpha: float,
+    hatch: str | None,
+    zorder: float,
+    n_arc: int = 48,
+):
+    """
+    Strict CAP in workspace: disk(Δx; R_viz) ∩ {g^T Δx >= scale*dt*b}.
+    Here R_viz = scale*dt*r.
+    """
+    # Feasibility of half-plane within disk in control-space:
+    # ratio = b/r in [-1,1] gives non-empty non-full cap
+    ratio = np.clip(b_val / (r + 1e-9), -1.0, 1.0)
+    if ratio <= -1.0:
+        # constraint too loose -> full disk feasible; skip filling to avoid clutter
+        return
+    if ratio >= 1.0:
+        # infeasible -> empty; skip
+        return
+
+    # In disk coordinates around p, boundary is circle, cut is line normal g.
+    # Arc endpoints correspond to angles centered at phi = atan2(g_y, g_x)
+    phi = np.arctan2(g[1], g[0])
+    alpha_angle = np.arccos(ratio)
+    theta_start = phi - alpha_angle
+    theta_end   = phi + alpha_angle
+
+    thetas = np.linspace(theta_start, theta_end, n_arc)
+    arc_pts = np.stack([np.cos(thetas), np.sin(thetas)], axis=1) * R_viz + p[None, :]
+
+    # Close with chord explicitly (p2 -> p1)
+    p1 = arc_pts[0]
+    p2 = arc_pts[-1]
+    cap_pts = np.vstack([arc_pts, p2[None, :], p1[None, :]])
+
+    cap = Polygon(
+        cap_pts,
+        closed=True,
+        facecolor=facecolor,
+        edgecolor=edgecolor,
+        linewidth=0.9,
+        alpha=alpha,
+        hatch=hatch,
+        zorder=zorder,
+    )
+    ax.add_patch(cap)
+
+    # chord highlight
+    ax.plot(
+        [p1[0], p2[0]], [p1[1], p2[1]],
+        color=edgecolor,
+        linewidth=1.4,
+        alpha=min(1.0, alpha + 0.35),
+        zorder=zorder + 0.05
+    )
+
+def _add_cap_rectangle(
+    ax,
+    p: np.ndarray,
+    g: np.ndarray,
+    n: np.ndarray,
+    r: float,
+    b_val: float,
+    dt: float,
+    scale: float,
+    facecolor: str,
+    edgecolor: str,
+    alpha: float,
+    hatch: str | None,
+    zorder: float,
+):
+    """
+    Rectangle approximation of CAP in workspace (Δx-space).
+    depth  = scale*dt*(r - b)
+    width  = scale*dt*2*sqrt(r^2 - b^2)
+    center between cutting plane and farthest point:
+        p + g * (scale*dt*(r+b)/2)
+    """
+    if b_val >= r:
+        return
+    if b_val <= -r:
+        return
+
+    length = scale * dt * (r - b_val)
+    width  = scale * dt * (2.0 * np.sqrt(max(r * r - b_val * b_val, 0.0)))
+
+    center = p + g * (scale * dt * (r + b_val) / 2.0)
+
+    c1 = center + 0.5 * length * g + 0.5 * width * n
+    c2 = center + 0.5 * length * g - 0.5 * width * n
+    c3 = center - 0.5 * length * g - 0.5 * width * n
+    c4 = center - 0.5 * length * g + 0.5 * width * n
+
+    poly = Polygon(
+        [c1, c2, c3, c4],
+        closed=True,
+        facecolor=facecolor,
+        edgecolor=edgecolor,
+        linewidth=1.0,
+        alpha=alpha,
+        hatch=hatch,
+        zorder=zorder,
+    )
+    ax.add_patch(poly)
 
 
 class DiffusionVisualizationPlugin(VisualizationPlugin):
@@ -44,12 +230,17 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         obstacles = data['obstacles']
         initial_state = data['initial_state']
         env_plugin = data['env_plugin']
-        exp_cfg = config.get('config', None)  # ExperimentConfig
-        # Determine method to handle EB-MBD special-casing
+        exp_cfg = config.get('config', None)
         overlay_cfg = config.get('cfs_overlay', None)
         method_name = getattr(exp_cfg, 'method', None) if exp_cfg is not None else None
+        method_params = getattr(exp_cfg, 'method_params', {}) or {}
         is_ebmbd = (method_name == "ebmbd" or method_name == "mbd")
-        is_mdoc = (method_name == "mdoc")
+        # MDOC: exact method name or ablation config (mdoc_constraint_mode / cbf_eta in method_params)
+        is_mdoc = (
+            method_name == "mdoc"
+            or "mdoc_constraint_mode" in method_params
+            or "cbf_eta" in method_params
+        )
         if is_ebmbd:
             overlay_cfg = None  # fully disable half-space overlays
         
@@ -65,7 +256,6 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         diffusion_actions = result.get('diffusion_actions_traj', None)
         diffusion_samples = result.get('diffusion_sampled_actions', None)
         diffusion_fractions = config.get('fractions', (0.1, 0.5, 0.9))  # 90%, 50%, 10%
-        
         if diffusion_actions is not None and len(diffusion_actions) > 0:
             diffusion_actions = np.asarray(diffusion_actions, dtype=np.float32)
             Ndiffuse = diffusion_actions.shape[0]
@@ -83,11 +273,12 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     diffusion_samples_arr = np.asarray(diffusion_samples, dtype=np.float32)
                     if diffusion_samples_arr.ndim == 4 and diffusion_samples_arr.shape[0] > step_idx:
                         sample_acts = diffusion_samples_arr[step_idx]
-                
+
+                pct = round((1 - frac) * 100)
                 self._visualize_single_step(
                     ax, env, obstacles, initial_state, action_seq, sample_acts,
                     env_plugin, x_min, x_max, y_min, y_max,
-                    title=f"Diffusion {int((1-frac) * 100)}%",
+                    title=f"Diffusion {pct}%",
                     exp_cfg=exp_cfg,
                     diffusion_step=step_idx,
                     diffusion_total_steps=diffusion_total_steps,
@@ -137,7 +328,6 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         
         # Draw sample rollouts
         if sample_actions is not None and len(sample_actions) > 0:
-            # For EB-MBD, show all samples (Nsample typically moderate).
             if is_ebmbd:
                 num_samples = len(sample_actions)
             else:
@@ -158,8 +348,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
             states = env.rollout_actions(initial_state, action_sequence)
             if len(states) > 1:
                 positions = np.array([env_plugin.extract_position(s) for s in states])
-                # Increase zorder to 5 to stay on top of fans/half-spaces
-                ax.plot(positions[:, 0], positions[:, 1], color=EDOC_COLOR, linewidth=2.5, zorder=5)
+                # Trajectory below fans so MDOC fans are visible (fans use zorder 5.5+)
+                ax.plot(positions[:, 0], positions[:, 1], color=EDOC_COLOR, linewidth=2.5, zorder=4.5)
                 
                 # Draw start
                 ax.scatter(
@@ -262,127 +452,155 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
             zorder=0.5,
             interpolation='bilinear'
         )
-
+    
     def _draw_mdoc_fans(
-        self, ax: Any, env: Any, obstacles: Any, 
-        positions: np.ndarray, exp_cfg: Any
+        self,
+        ax,
+        env,
+        obstacles,
+        positions: np.ndarray,
+        exp_cfg
     ) -> None:
-        """Draw conservative feasible direction fans (Disk cut by Half-plane) for MDOC."""
+        """
+        Paper-friendly visualization of MDOC local feasible sets:
+        - Two layers: margin=0 (reference) vs margin=cbf_margin (barrier margin)
+        - Draw cutting line g^T Δx = dt*b as a long line segment (most important cue)
+        - Draw either strict CAP polygon or rectangle approximation
+        - Only draw at informative points to reduce clutter (|b| not too extreme)
+        """
         if obstacles is None or len(positions) < 2:
             return
-            
-        # Extract CBF/MDOC params
-        method_params = getattr(exp_cfg, "method_params", {})
+
+        method_params = getattr(exp_cfg, "method_params", {}) or {}
         eta = float(method_params.get("cbf_eta", 1.5))
         margin = float(method_params.get("cbf_margin", 0.1))
         base_beta = float(method_params.get("base_beta", 0.05))
-        robot_radius = float(getattr(exp_cfg, "obstacle_config", {}).get("robot_radius", 0.05))
-        dt = float(getattr(exp_cfg, "env_params", {}).get("dt", 0.05))
-        action_limit = float(getattr(exp_cfg, "env_params", {}).get("control_limit", 1.0))
-        
-        # 1. Key point selection
-        # 1. Representative point selection: regular interval along the whole trajectory
-        try:
-            H = len(positions)
-            # Draw every 8 steps to cover the whole trajectory without too much overlap
-            step = max(1, H // 12) 
-            indices = np.arange(0, H - 1, step, dtype=int)
-            # Always include the last point before the target
-            if indices[-1] < H - 2:
-                indices = np.append(indices, H - 2)
-        except Exception:
-            indices = np.linspace(0, len(positions) - 2, num=8, dtype=int)
-        
+
+        # viz controls
+        viz_style = str(method_params.get("mdoc_viz_style", "cap"))      # "cap" or "rectangle"
+        scale = float(method_params.get("mdoc_viz_scale", 4.0))          # workspace scaling for visibility
+        informative_band = float(method_params.get("mdoc_viz_band", 0.85))  # draw only if |b/r| < band
+        use_beta_in_viz = bool(method_params.get("mdoc_viz_use_beta", False))  # often False makes margin effect clearer
+        step_override = method_params.get("mdoc_viz_step", None)
+
+        obstacle_config = getattr(exp_cfg, "obstacle_config", None) or {}
+        robot_radius = float(obstacle_config.get("robot_radius", 0.05))
+        env_params = getattr(exp_cfg, "env_params", None) or {}
+        dt = float(env_params.get("dt", 0.05))
+        r = float(env_params.get("control_limit", 1.0))
+
+        # colors (keep one hue, but distinguish layers via hatch + line style)
+        face = "#FFDCC2"
+        edge = "#C46A2D"
+
+        # workspace reachable disk radius
+        R_viz = scale * dt * r
+
+        # index selection
+        H = len(positions)
+        if step_override is not None:
+            step = max(1, int(step_override))
+        else:
+            step = max(1, H // 32)
+        indices = np.arange(0, H - 1, step, dtype=int)
+        if len(indices) == 0:
+            return
+        if indices[-1] < H - 2:
+            indices = np.append(indices, H - 2)
+
         for idx in indices:
             p = positions[idx]
+
+            # gradient of sdf
             try:
                 eps = 1e-4
                 sdf_p = float(obstacles.sdf(p))
-                grad_x = (float(obstacles.sdf(p + np.array([eps, 0]))) - sdf_p) / eps
-                grad_y = (float(obstacles.sdf(p + np.array([0, eps]))) - sdf_p) / eps
-                grad = np.array([grad_x, grad_y])
-                norm_grad = np.linalg.norm(grad) + 1e-9
-                grad = grad / norm_grad
+                grad_x = (float(obstacles.sdf(p + np.array([eps, 0.0]))) - sdf_p) / eps
+                grad_y = (float(obstacles.sdf(p + np.array([0.0, eps]))) - sdf_p) / eps
+                grad = np.array([grad_x, grad_y], dtype=float)
+                g = _safe_unit(grad)
+
+                # sanity check: g should point to safer direction (sdf increases)
+                sdf_forward = float(obstacles.sdf(p + 0.02 * g))
+                if sdf_forward < sdf_p:
+                    g = -g
             except Exception:
                 continue
-                
-            h = sdf_p - (robot_radius + margin)
-            b = -(eta / dt) * h + base_beta
-            r = action_limit
-            
-            # Visualization radius (local scale)
-            r_viz = 0.22 
-            
-            # Ratio of offset. 
-            # To emphasize the "Conservative Fan", we ensure it's always narrower than a half-disk.
-            phys_ratio = b / (r + 1e-9)
-            # Map to [0.2, 0.85] range to show a clear conservative cut compared to EDOC.
-            ratio = np.clip(phys_ratio, 0.2, 0.85)
-            
-            phi = np.arctan2(grad[1], grad[0])
-            alpha = np.arccos(ratio)
-            
-            # Convert to degrees for matplotlib Wedge
-            theta_center = np.degrees(phi)
-            theta_half_span = np.degrees(alpha)
-            
-            theta_start = theta_center - theta_half_span
-            theta_end = theta_center + theta_half_span
-            
-            color_mdoc = "#2ca02c" # Classic green
-            
-            # 1. Draw the Wedge (The Fan) - Originates from p
-            wedge = Wedge(
-                center=tuple(p),
-                r=r_viz,
-                theta1=theta_start,
-                theta2=theta_end,
-                facecolor=color_mdoc,
-                alpha=0.3, # Consistent alpha with EDOC
-                edgecolor='#666666',
-                linewidth=0.7,
-                zorder=4.0
-            )
-            ax.add_patch(wedge)
-            
-            # 2. Draw the Chord (The 'Line Boundary')
-            # This shows the linear constraint g^Tu >= b
-            p1 = p + r_viz * np.array([np.cos(np.radians(theta_start)), np.sin(np.radians(theta_start))])
-            p2 = p + r_viz * np.array([np.cos(np.radians(theta_end)), np.sin(np.radians(theta_end))])
-            ax.plot(
-                [p1[0], p2[0]], [p1[1], p2[1]],
-                color='#444444', 
-                linewidth=1.2, # Thicker chord
-                alpha=0.8,
-                zorder=4.1
-            )
-            
-            # 3. Draw Normal Arrow (Pointing to safe side)
-            # Use the same style as EDOC for perfect alignment
-            arrow_len = 0.12
-            ax.arrow(
-                p[0], p[1],
-                grad[0] * arrow_len, grad[1] * arrow_len,
-                head_width=0.03,
-                head_length=0.04,
-                fc='#444444', 
-                ec='#444444',
-                alpha=0.8, # More opaque arrow
-                zorder=4.5
-            )
-            
-            # 4. Draw a very light full circle to show the original action bound (velocity disk)
-            circle = plt.Circle(
-                tuple(p), r_viz, 
-                color='#777777', 
-                fill=False, 
-                linestyle=':', 
-                linewidth=0.6, 
-                alpha=0.3, # Slightly more visible
-                zorder=3.5
-            )
-            ax.add_patch(circle)
-    
+
+            n = np.array([-g[1], g[0]], dtype=float)
+
+            # two layers: reference vs margin
+            # reference is hatched + dashed line; margin is solid + thicker line.
+            layers = [
+                dict(margin_vis=0.0,  alpha=0.5, hatch="////", line_ls="--", line_lw=1.1, z=4.0),
+                dict(margin_vis=margin, alpha=0.5, hatch=None,  line_ls="-",  line_lw=1.7, z=4.2),
+            ]
+
+            for layer in layers:
+                margin_vis = layer["margin_vis"]
+
+                # CBF value (using sdf): h = sdf - (robot_radius + margin)
+                h = sdf_p - (robot_radius + margin_vis)
+
+                # your current b form: b = -(eta/dt)*h + base_beta
+                beta_use = base_beta if use_beta_in_viz else 0.0
+                b_val = -(eta / dt) * h + beta_use
+
+                # Informative-only filter: avoid drawing full/empty cases and super extreme cuts
+                # cap only changes visibly when |b/r| is not near 0 or 1.
+                br = abs(b_val / (r + 1e-9))
+                if br >= informative_band:
+                    continue
+
+                # 1) cutting line (best cue for "margin pushes the cut")
+                _draw_cutting_line(
+                    ax=ax, p=p, g=g, n=n,
+                    b_val=b_val, dt=dt, scale=scale, R_viz=R_viz,
+                    color=edge, linestyle=layer["line_ls"], linewidth=layer["line_lw"],
+                    alpha=0.95, zorder=layer["z"] + 0.15
+                )
+
+                # 2) feasible region: cap or rectangle
+                if viz_style == "rectangle":
+                    _add_cap_rectangle(
+                        ax=ax, p=p, g=g, n=n,
+                        r=r, b_val=b_val, dt=dt, scale=scale,
+                        facecolor=face, edgecolor=edge,
+                        alpha=layer["alpha"], hatch=layer["hatch"],
+                        zorder=layer["z"]
+                    )
+                else:
+                    _add_cap_polygon(
+                        ax=ax, p=p, g=g, n=n,
+                        r=r, b_val=b_val, dt=dt, scale=scale, R_viz=R_viz,
+                        facecolor=face, edgecolor=edge,
+                        alpha=layer["alpha"], hatch=layer["hatch"],
+                        zorder=layer["z"],
+                        n_arc=48
+                    )
+
+            # optional: draw g arrow once per point (to avoid clutter)
+            if bool(method_params.get("mdoc_viz_draw_grad", True)):
+                arrow_len = 0.22 * R_viz
+                ax.arrow(
+                    p[0], p[1],
+                    g[0] * arrow_len, g[1] * arrow_len,
+                    head_width=0.06 * R_viz,
+                    head_length=0.09 * R_viz,
+                    fc=edge, ec=edge,
+                    alpha=0.75, zorder=4.9,
+                    length_includes_head=True
+                )
+
+            # optional: show reachable disk lightly (helps interpret "cap is cut from disk")
+            if bool(method_params.get("mdoc_viz_draw_disk", True)):
+                circ = plt.Circle(
+                    tuple(p), R_viz,
+                    fill=False, linestyle=":", linewidth=0.8,
+                    color=edge, alpha=0.22, zorder=3.6
+                )
+                ax.add_patch(circ)
+
     def save(self, output_path: Any, fig: Any, **kwargs: Any) -> None:
         """Save visualization to file."""
         dpi = kwargs.get('dpi', 150)

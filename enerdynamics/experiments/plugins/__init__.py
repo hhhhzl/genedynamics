@@ -44,6 +44,7 @@ from .metrics import (
 from .visualizations import (
     TrajectoryVisualizationPlugin,
     Trajectory3DVisualizationPlugin,
+    TrajectoryModesVisualizationPlugin,
     DiffusionVisualizationPlugin,
     Diffusion3DVisualizationPlugin,
     EnergyRewardVisualizationPlugin,
@@ -85,6 +86,7 @@ __all__ = [
     # Visualizations
     'TrajectoryVisualizationPlugin',
     'Trajectory3DVisualizationPlugin',
+    'TrajectoryModesVisualizationPlugin',
     'DiffusionVisualizationPlugin',
     'Diffusion3DVisualizationPlugin',
     'EnergyRewardVisualizationPlugin',

@@ -199,6 +199,26 @@ class ExperimentRunner:
             'obstacle_config': self.config.obstacle_config,  # Provide robot_radius/map bounds, etc.
             'np_random_seed': seed,  # Pass seed for reproducibility
         }
+        # Merge first diffusion_scheduler's M_k / Ndiffuse / T_k / beta into method_config
+        # so method plugins (MDOC, MBD, etc.) use YAML diffusion_schedulers values instead of defaults
+        if scheduler is not None and getattr(scheduler, 'diffusion_schedulers', None):
+            ds_list = scheduler.diffusion_schedulers
+            if ds_list:
+                from enerdynamics.core.constraints.core.types import ScheduleState
+                params = ds_list[0].diffusion_params(ScheduleState(k=0, K=1))
+                if params:
+                    if 'M_k' in params:
+                        method_config['Nsample'] = int(params['M_k'])
+                        method_config['action_nsample'] = int(params['M_k'])
+                    if 'Ndiffuse' in params and params.get('Ndiffuse') is not None:
+                        method_config['Ndiffuse'] = int(params['Ndiffuse'])
+                        method_config['action_diffuse_steps'] = int(params['Ndiffuse'])
+                    if 'T_k' in params:
+                        method_config['temp_sample'] = float(params['T_k'])
+                    if params.get('beta0') is not None:
+                        method_config['beta0'] = float(params['beta0'])
+                    if params.get('betaT') is not None:
+                        method_config['betaT'] = float(params['betaT'])
         planner = method_plugin.create_planner(env, energy, method_config)
         
         # 8. Run planning
@@ -527,6 +547,22 @@ class ExperimentRunner:
                     viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
                     plt.close(fig)
                 
+                elif viz_name == 'trajectory_modes':
+                    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+                    viz_plugin.visualize(
+                        fig, ax,
+                        {
+                            'result': result['result'],
+                            'env': env,
+                            'obstacles': obstacles,
+                            'env_plugin': env_plugin,
+                        },
+                        {**viz_config.get(viz_name, {}), 'config': self.config}
+                    )
+                    output_path = self._get_output_path(result['level'], result['seed']) / f"{viz_name}.png"
+                    viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
+                    plt.close(fig)
+                
                 elif viz_name == 'diffusion':
                     # Multiple subplots for diffusion steps
                     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
@@ -750,6 +786,40 @@ class ExperimentRunner:
                 serializable_result['rewards'] = rewards.tolist()
             else:
                 serializable_result['rewards'] = list(rewards)
+        
+        # Save multi-mode candidate trajectories if available
+        if 'candidate_states' in planning_result:
+            candidate_states = planning_result['candidate_states']
+            candidate_actions = planning_result.get('candidate_actions', [])
+            candidate_costs = planning_result.get('candidate_costs', [])
+            best_idx = planning_result.get('best_idx', 0)
+            
+            serializable_result['candidate_states'] = convert_to_json_serializable(candidate_states)
+            if candidate_actions:
+                serializable_result['candidate_actions'] = convert_to_json_serializable(candidate_actions)
+            if len(candidate_costs) > 0:
+                if hasattr(candidate_costs, 'tolist'):
+                    serializable_result['candidate_costs'] = candidate_costs.tolist()
+                else:
+                    serializable_result['candidate_costs'] = list(candidate_costs)
+            serializable_result['best_idx'] = int(best_idx)
+
+        # Multirun diagnostics (architecture performance visibility)
+        # These keys are produced by the solver when using the minimal-batch multirun path.
+        if isinstance(planning_result, dict):
+            for k in [
+                "multirun_impl",
+                "multirun_C",
+                "multirun_t_batch_minimal_s",
+                "multirun_t_best_plan_s",
+            ]:
+                if k in planning_result:
+                    serializable_result[k] = convert_to_json_serializable(planning_result[k])
+
+            # Generic timing diagnostics (saved if present)
+            for k, v in planning_result.items():
+                if isinstance(k, str) and k.startswith("timing_"):
+                    serializable_result[k] = convert_to_json_serializable(v)
         
         # Save JSON
         with open(output_path / "results.json", 'w') as f:

@@ -39,7 +39,8 @@ class ClosedFormCBFFilter(ConstraintFilter):
         # robot_radius from env or obstacles if available
         robot_radius = getattr(env, "robot_radius", 0.05)
         dt = getattr(env, "dt", 0.05)
-        
+        control_limit = float(getattr(env, "control_limit", 1.0))
+
         def filter_single(u_seq):
             # Rollout states to get h and A at each step
             # For single integrator: x_{t+1} = x_t + dt * u_t
@@ -75,7 +76,10 @@ class ClosedFormCBFFilter(ConstraintFilter):
                 lhs2 = jnp.dot(A, u_safe)
                 alpha2 = jnp.maximum(0.0, (b - lhs2) / den) * (lhs2 < b) * need
                 u_safe = u_safe + alpha2 * A
-                
+
+                # Clip to control limit
+                u_safe = jnp.clip(u_safe, -control_limit, control_limit)
+
                 # Next state
                 x_next = env.jax_transition(x, u_safe)
                 return x_next, u_safe

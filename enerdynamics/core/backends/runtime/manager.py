@@ -6,6 +6,8 @@ between different backends (JAX, NumPy, PyTorch, etc.) and devices (CPU, GPU, We
 """
 
 from typing import Optional, Dict, Any
+import os
+from pathlib import Path
 from enerdynamics.core.backends.runtime.jax_backend import JaxBackend
 from enerdynamics.core.backends.runtime.numpy_backend import NumpyBackend
 from enerdynamics.core.backends.runtime.torch_backend import TorchBackend
@@ -65,6 +67,29 @@ class RuntimeBackendManager:
             )
         
         backend_class = backend_map[name]
+
+        # Architecture/performance: enable JAX persistent compilation cache by default.
+        # This does NOT change any algorithmic behavior, but can drastically reduce
+        # end-to-end runtime for scripts that start a fresh Python process each run
+        # (e.g., experiments/runner.py), by reusing compiled executables on disk.
+        if name == "jax":
+            enable_cache = bool(kwargs.pop("enable_compilation_cache", True))
+            if enable_cache:
+                try:
+                    import jax  # noqa: F401
+                    from jax.experimental import compilation_cache as _cc
+
+                    cache_dir = kwargs.pop("compilation_cache_dir", None)
+                    if cache_dir is None:
+                        cache_dir = Path(os.path.expanduser("~/.cache/enerdynamics/jax_compilation"))
+                    else:
+                        cache_dir = Path(str(cache_dir))
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+                    _cc.compilation_cache.set_cache_dir(str(cache_dir))
+                except Exception:
+                    # Cache is best-effort; proceed without it.
+                    pass
+
         cls._backend = backend_class(device=device, **kwargs)
     
     @classmethod

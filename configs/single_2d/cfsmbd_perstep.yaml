@@ -1,6 +1,6 @@
-# MDOC ablation: per-step CBF filter (QP projection), fixed schedulers
-name: single2d_mdoc_cbf_qp_perstep
-output_dir: results/single2d/ablation_mdoc/cbf_qp_perstep
+# CFS-MBD: MBD with Augmented Lagrangian objective and CFS-based per-step QP projection
+name: single2d_cfsmbd_perstep
+output_dir: results/single2d/cfsmbd_perstep
 
 env_name: single_integrator_box_2d
 env_params:
@@ -9,17 +9,23 @@ env_params:
   p_max: 2.0
   control_limit: 1.0
 
-method: mdoc
+method: cfsmbd
 method_params:
   show_tqdm: True
+  action_extra_sigma: 0.3
 
-  # MDOC ablation switch (used by MDOCMethodPlugin to pick ConstraintFilter)
-  mdoc_constraint_mode: cbf_qp_perstep
-  cbf_tau: 0.005
-  cbf_eta: 1.5
-  cbf_margin: 0.1
-  base_beta: 5.0e-2
-  terminal_energy_weight: 100.0
+  # CFS parameters
+  # Increase to reduce missed near-corner constraints.
+  max_constraints_per_point: 10
+  constraint_margin: 0.25
+
+  # Augmented Lagrangian parameters
+  aug_lambda: 0.0  # Dual variable
+  aug_rho: 0.0     # Penalty parameter
+
+  # Multi-mode: number of candidate trajectories to return
+  num_modes: 50
+  mode_strategy: multirun
 
 obstacle_levels: [9]
 obstacle_config:
@@ -45,7 +51,8 @@ metrics:
   - nonconvexity
 
 visualizations:
-  - trajectory
+  - trajectory_modes  # Shows C candidate paths with best highlighted
+  - trajectory        # Shows only the best (lowest cost) path
   - diffusion
   - energy_reward
   - states
@@ -54,9 +61,9 @@ scheduler_config:
   type: composite
   constraint_schedulers:
     - type: fixed
-      margin: 0.1
+      margin: 0.01
       rho: 10.0
-      # QP filter: always solve per-step
+      # QP filter: always solve per-step QP
       qp_gate: true
       qp_prob: 1.0
       topK: null
@@ -71,5 +78,3 @@ scheduler_config:
       betaT: 1e-2
   constraint_merge_strategy: merge
   diffusion_merge_strategy: merge
-
-
