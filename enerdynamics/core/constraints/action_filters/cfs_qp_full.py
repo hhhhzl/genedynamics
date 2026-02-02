@@ -494,634 +494,648 @@ class CFSQPFullFilter(ConstraintFilter):
         except (TypeError, ValueError):
             rho = rho_raw if isinstance(rho_raw, (jax.Array, jnp.ndarray)) else jnp.asarray(10.0, dtype=jnp.float32)
         
-        # Check qp_gate
-        if isinstance(qp_gate, (bool, np.bool_)) and not qp_gate:
-            return actions
+        # JAX-friendly qp_gate + qp_prob: use jax.random.uniform for probabilistic QP skip.
+        # Get rng_key from schedule_params or kwargs; fallback to deterministic key if not provided.
+        rng_key = params_dict.get("rng_key", kwargs.get("rng_key", None))
+        if rng_key is None:
+            rng_key = jax.random.PRNGKey(42)  # deterministic fallback (qp_prob should be 1.0 if not using random)
         
-        # Get environment parameters
-        dt = float(getattr(env, "dt", 0.05))
-        robot_radius = float(getattr(env, "robot_radius", 0.05))
-        control_limit = float(getattr(env, "control_limit", 1.0))
-        constraint_margin_val = float(self.constraint_margin)
+        qp_gate_pred = jnp.asarray(qp_gate, dtype=jnp.bool_)
+        qp_prob_jax = jnp.asarray(qp_prob, dtype=jnp.float32)
+        rand_val = jax.random.uniform(rng_key)
+        prob_pass = rand_val < qp_prob_jax
+        should_do_qp = jnp.logical_and(qp_gate_pred, prob_pass)
         
-        # NOTE: `margin` / `rho` / `I_QP` may be per-sample vectors when called from
-        # batched multirun paths (e.g. adaptive scheduler). We therefore compute
-        # (clearance, threshold) per-trajectory inside the vmapped filter, instead
-        # of closing over them as a single array here.
-        margin_jax = margin if isinstance(margin, (jnp.ndarray, jax.Array)) else jnp.asarray(float(margin), dtype=jnp.float32)
-        robot_radius_jax = jnp.asarray(robot_radius, dtype=jnp.float32)
-        constraint_margin_jax = jnp.asarray(constraint_margin_val, dtype=jnp.float32)
+        operand = (x0, actions)
+        def skip_qp(operand):
+            return operand[1]  # actions
+        def do_qp(operand):
+            x0, actions = operand
+            # Get environment parameters
+            dt = float(getattr(env, "dt", 0.05))
+            robot_radius = float(getattr(env, "robot_radius", 0.05))
+            control_limit = float(getattr(env, "control_limit", 1.0))
+            constraint_margin_val = float(self.constraint_margin)
+            
+            # NOTE: `margin` / `rho` / `I_QP` may be per-sample vectors when called from
+            # batched multirun paths (e.g. adaptive scheduler). We therefore compute
+            # (clearance, threshold) per-trajectory inside the vmapped filter, instead
+            # of closing over them as a single array here.
+            margin_jax = margin if isinstance(margin, (jnp.ndarray, jax.Array)) else jnp.asarray(float(margin), dtype=jnp.float32)
+            robot_radius_jax = jnp.asarray(robot_radius, dtype=jnp.float32)
+            constraint_margin_jax = jnp.asarray(constraint_margin_val, dtype=jnp.float32)
+            
+            # Get obstacles list
+            obstacles_list = self._get_obstacles_list(obstacles)
+            num_obstacles = len(obstacles_list) if obstacles_list else 0
+            # IMPORTANT: evaluate SDF against *all* obstacles, then select top-K closest per timestep.
+            # If we only build branches for the first K obstacles, we can miss collisions.
+            max_k = int(num_obstacles) if num_obstacles > 0 else 0  # number of obstacle branches
+            k_select = int(min(self.max_constraints_per_point, max_k)) if max_k > 0 else 0  # top-K per timestep
         
-        # Get obstacles list
-        obstacles_list = self._get_obstacles_list(obstacles)
-        num_obstacles = len(obstacles_list) if obstacles_list else 0
-        # IMPORTANT: evaluate SDF against *all* obstacles, then select top-K closest per timestep.
-        # If we only build branches for the first K obstacles, we can miss collisions.
-        max_k = int(num_obstacles) if num_obstacles > 0 else 0  # number of obstacle branches
-        k_select = int(min(self.max_constraints_per_point, max_k)) if max_k > 0 else 0  # top-K per timestep
-        
-        # Fast path (extreme performance): vectorized analytic SDF+grad for convex primitives.
-        # This avoids large lax.switch branch trees over Python objects.
-        use_fast_analytic = False
-        circle_centers_np = circle_radii_np = box_centers_np = box_half_np = None
-        try:
-            from enerdynamics.envs.obstacles.convex import SphereObstacle, BoxObstacle
-            if obstacles_list is not None and len(obstacles_list) > 0:
-                circles = [o for o in obstacles_list if isinstance(o, SphereObstacle)]
-                boxes = [o for o in obstacles_list if isinstance(o, BoxObstacle)]
-                others = [o for o in obstacles_list if not isinstance(o, (SphereObstacle, BoxObstacle))]
-                if len(others) == 0:
-                    use_fast_analytic = True
-                    circle_centers_np = np.asarray([np.asarray(o.center, dtype=np.float32)[:2] for o in circles], dtype=np.float32) if circles else np.zeros((0, 2), dtype=np.float32)
-                    circle_radii_np = np.asarray([float(o.radius) for o in circles], dtype=np.float32) if circles else np.zeros((0,), dtype=np.float32)
-                    box_centers_np = np.asarray([np.asarray(o.center, dtype=np.float32)[:2] for o in boxes], dtype=np.float32) if boxes else np.zeros((0, 2), dtype=np.float32)
-                    box_half_np = np.asarray([np.asarray(o.half_extents, dtype=np.float32)[:2] for o in boxes], dtype=np.float32) if boxes else np.zeros((0, 2), dtype=np.float32)
-        except Exception:
+            # Fast path (extreme performance): vectorized analytic SDF+grad for convex primitives.
+            # This avoids large lax.switch branch trees over Python objects.
             use_fast_analytic = False
+            circle_centers_np = circle_radii_np = box_centers_np = box_half_np = None
+            try:
+                from enerdynamics.envs.obstacles.convex import SphereObstacle, BoxObstacle
+                if obstacles_list is not None and len(obstacles_list) > 0:
+                    circles = [o for o in obstacles_list if isinstance(o, SphereObstacle)]
+                    boxes = [o for o in obstacles_list if isinstance(o, BoxObstacle)]
+                    others = [o for o in obstacles_list if not isinstance(o, (SphereObstacle, BoxObstacle))]
+                    if len(others) == 0:
+                        use_fast_analytic = True
+                        circle_centers_np = np.asarray([np.asarray(o.center, dtype=np.float32)[:2] for o in circles], dtype=np.float32) if circles else np.zeros((0, 2), dtype=np.float32)
+                        circle_radii_np = np.asarray([float(o.radius) for o in circles], dtype=np.float32) if circles else np.zeros((0,), dtype=np.float32)
+                        box_centers_np = np.asarray([np.asarray(o.center, dtype=np.float32)[:2] for o in boxes], dtype=np.float32) if boxes else np.zeros((0, 2), dtype=np.float32)
+                        box_half_np = np.asarray([np.asarray(o.half_extents, dtype=np.float32)[:2] for o in boxes], dtype=np.float32) if boxes else np.zeros((0, 2), dtype=np.float32)
+            except Exception:
+                use_fast_analytic = False
 
-        if use_fast_analytic:
-            circle_centers = jnp.asarray(circle_centers_np, dtype=jnp.float32)
-            circle_radii = jnp.asarray(circle_radii_np, dtype=jnp.float32)
-            box_centers = jnp.asarray(box_centers_np, dtype=jnp.float32)
-            box_half = jnp.asarray(box_half_np, dtype=jnp.float32)
+            if use_fast_analytic:
+                circle_centers = jnp.asarray(circle_centers_np, dtype=jnp.float32)
+                circle_radii = jnp.asarray(circle_radii_np, dtype=jnp.float32)
+                box_centers = jnp.asarray(box_centers_np, dtype=jnp.float32)
+                box_half = jnp.asarray(box_half_np, dtype=jnp.float32)
 
-        # Cache obstacle branches (fallback, slower)
-        obstacles_cache_key = (
-            id(obstacles) if obstacles is not None else None,
-            max_k,
-            k_select,
-            dt,
-            constraint_margin_val
-        )
-        
-        if (self._obstacle_branches_cache is not None and 
-            self._obstacles_cache_key == obstacles_cache_key and
-            len(self._obstacle_branches_cache[0]) >= max_k):
-            obstacle_branches_sdf_tuple = self._obstacle_branches_cache[0][:max_k]
-            obstacle_branches_grad_tuple = self._obstacle_branches_cache[1][:max_k]
-            num_obs_fns = min(len(self._obstacle_branches_cache[0]), max_k)
-            can_use_multi = num_obs_fns > 0
-        else:
-            obstacle_branches_sdf = []
-            obstacle_branches_grad = []
-            
-            if obstacles_list and len(obstacles_list) > 0:
-                # Build branches for ALL obstacles (max_k = num_obstacles).
-                for obs in obstacles_list[:max_k]:
-                    if hasattr(obs, 'jax_sdf'):
-                        def make_branch_fns(obstacle=obs):
-                            def sdf_fn(pos):
-                                return obstacle.jax_sdf(pos)
-                            
-                            if hasattr(obstacle, 'jax_gradient'):
-                                def sdf_only_fn(pos):
-                                    return obstacle.jax_sdf(pos)
-                                
-                                # Grad-only: stage-2 already has sdf from stage-1.
-                                # Avoid recomputing sdf here.
-                                def grad_only_fn(pos):
-                                    return obstacle.jax_gradient(pos)
-                            else:
-                                grad_fn = jax.grad(sdf_fn)
-                                
-                                def sdf_only_fn(pos):
-                                    return obstacle.jax_sdf(pos)
-                                
-                                # Grad-only: avoid an extra primal sdf_fn(pos).
-                                # Note: grad_fn(pos) still evaluates the primal once internally (needed for AD),
-                                # but we avoid the *additional* sdf_fn(pos) call.
-                                def grad_only_fn(pos):
-                                    return grad_fn(pos)
-                            
-                            return sdf_only_fn, grad_only_fn
-                        
-                        sdf_fn, grad_fn = make_branch_fns()
-                        obstacle_branches_sdf.append(sdf_fn)
-                        obstacle_branches_grad.append(grad_fn)
-            
-            num_obs_fns = len(obstacle_branches_sdf)
-            can_use_multi = num_obs_fns > 0
-            
-            while len(obstacle_branches_sdf) < max_k:
-                def dummy_sdf_fn(pos):
-                    return jnp.inf
-                def dummy_grad_fn(pos):
-                    return jnp.zeros(2)
-                obstacle_branches_sdf.append(dummy_sdf_fn)
-                obstacle_branches_grad.append(dummy_grad_fn)
-            
-            obstacle_branches_sdf_tuple = tuple(obstacle_branches_sdf[:max_k])
-            obstacle_branches_grad_tuple = tuple(obstacle_branches_grad[:max_k])
-            self._obstacle_branches_cache = (obstacle_branches_sdf_tuple, obstacle_branches_grad_tuple)
-            self._obstacles_cache_key = obstacles_cache_key
-
-        # ------------------------------------------------------------------
-        # Step D: Spatial grid candidate cache (B).
-        #
-        # Goal: for each queried position p (per timestep), instead of scanning
-        # all obstacles to compute sdf_array, only scan a fixed-size candidate
-        # list retrieved from the cell that contains p.
-        #
-        # Correctness: we build each cell's candidate list using a conservative
-        # bounding circle radius R_i per obstacle and a conservative threshold_upper
-        # so that any obstacle that can satisfy sdf(p) < threshold is included.
-        #
-        # Note: schedule_params["margin"] is a tracer under JIT; so we cannot
-        # build a per-step threshold-dependent structure inside JIT. We instead
-        # use a conservative upper bound that safely covers typical configs.
-        # ------------------------------------------------------------------
-        use_spatial_grid = False
-        cell_obs_idx_np = None
-        grid_x_min = grid_y_min = cell_size = None
-        grid_W = grid_H = cell_max = 0
-        try:
-            # Heuristic: for small obstacle counts, a spatial grid often costs more than it saves.
-            if max_k < 64:
-                raise RuntimeError("Spatial grid disabled for small obstacle count")
-
-            # Only attempt if obstacles have centers and sizes.
-            # This covers the common single2d case (Box/Sphere).
-            p_max = float(getattr(env, "p_max", 2.0))
-            grid_x_min = -p_max
-            grid_y_min = -p_max
-            grid_x_max = p_max
-            grid_y_max = p_max
-
-            # Conservative upper bound for threshold = robot_radius + margin + constraint_margin.
-            # We do NOT have access to margin as a python float under JIT (it's a tracer),
-            # so we pick a safe bound that still enables pruning in practice.
-            # Conservative but not overly loose: most configs use small margins (<= 0.05).
-            # If you increase margin above this, raise this buffer accordingly.
-            threshold_upper = float(robot_radius + constraint_margin_val + 0.1)
-            threshold_upper = max(0.0, threshold_upper)
-
-            # Pick a moderate cell size to bound per-cell candidate counts.
-            # Smaller => fewer candidates per cell, more cells. Keep it stable.
-            cell_size = float(max(0.25, min(0.75, threshold_upper)))
-
-            spatial_key = (
+            # Cache obstacle branches (fallback, slower)
+            obstacles_cache_key = (
                 id(obstacles) if obstacles is not None else None,
                 max_k,
-                float(grid_x_min),
-                float(grid_y_min),
-                float(grid_x_max),
-                float(grid_y_max),
-                float(cell_size),
-                float(threshold_upper),
+                k_select,
+                dt,
+                constraint_margin_val
             )
-
-            if self._spatial_grid_cache is not None and self._spatial_grid_cache_key == spatial_key:
-                cell_obs_idx_np, grid_x_min, grid_y_min, cell_size, grid_W, grid_H, cell_max = self._spatial_grid_cache
-                use_spatial_grid = True
-            else:
-                # Build (center, R) arrays for obstacles.
-                centers = []
-                radii = []
-                for obs in (obstacles_list or [])[:max_k]:
-                    c = None
-                    r = None
-                    if hasattr(obs, "center"):
-                        try:
-                            c = np.asarray(getattr(obs, "center"), dtype=np.float32).reshape(-1)[:2]
-                        except Exception:
-                            c = None
-                    if c is None and hasattr(obs, "bounds"):
-                        try:
-                            b = getattr(obs, "bounds")
-                            if b is not None and len(b) == 2:
-                                b0 = np.asarray(b[0], dtype=np.float32).reshape(-1)[:2]
-                                b1 = np.asarray(b[1], dtype=np.float32).reshape(-1)[:2]
-                                c = 0.5 * (b0 + b1)
-                        except Exception:
-                            c = None
-                    if hasattr(obs, "radius"):
-                        try:
-                            r = float(getattr(obs, "radius"))
-                        except Exception:
-                            r = None
-                    if r is None and hasattr(obs, "half_extents"):
-                        try:
-                            he = np.asarray(getattr(obs, "half_extents"), dtype=np.float32).reshape(-1)[:2]
-                            r = float(np.linalg.norm(he))
-                        except Exception:
-                            r = None
-                    if r is None and hasattr(obs, "bounds"):
-                        try:
-                            b = getattr(obs, "bounds")
-                            if b is not None and len(b) == 2:
-                                b0 = np.asarray(b[0], dtype=np.float32).reshape(-1)[:2]
-                                b1 = np.asarray(b[1], dtype=np.float32).reshape(-1)[:2]
-                                r = float(0.5 * np.linalg.norm(b1 - b0))
-                        except Exception:
-                            r = None
-
-                    if c is None or r is None:
-                        # Cannot safely index: fall back to no spatial grid.
-                        centers = []
-                        radii = []
-                        break
-                    centers.append(c)
-                    radii.append(r)
-
-                if len(centers) == max_k and max_k > 0:
-                    centers = np.asarray(centers, dtype=np.float32)  # (N,2)
-                    radii = np.asarray(radii, dtype=np.float32)      # (N,)
-
-                    grid_W = int(np.ceil((grid_x_max - grid_x_min) / cell_size))
-                    grid_H = int(np.ceil((grid_y_max - grid_y_min) / cell_size))
-                    grid_W = max(1, grid_W)
-                    grid_H = max(1, grid_H)
-
-                    # Precompute cell AABB bounds.
-                    xs0 = grid_x_min + np.arange(grid_W, dtype=np.float32) * cell_size
-                    ys0 = grid_y_min + np.arange(grid_H, dtype=np.float32) * cell_size
-                    xs1 = xs0 + cell_size
-                    ys1 = ys0 + cell_size
-
-                    # Build candidate lists.
-                    cell_lists = [[[] for _ in range(grid_W)] for _ in range(grid_H)]
-                    max_count = 0
-
-                    for iy in range(grid_H):
-                        y0 = ys0[iy]
-                        y1 = ys1[iy]
-                        for ix in range(grid_W):
-                            x0 = xs0[ix]
-                            x1 = xs1[ix]
-                            # Distance from obstacle center to cell AABB (0 if inside)
-                            dx0 = np.maximum(x0 - centers[:, 0], 0.0)
-                            dx1 = np.maximum(centers[:, 0] - x1, 0.0)
-                            dy0 = np.maximum(y0 - centers[:, 1], 0.0)
-                            dy1 = np.maximum(centers[:, 1] - y1, 0.0)
-                            dx = np.maximum(dx0, dx1)
-                            dy = np.maximum(dy0, dy1)
-                            dist = np.sqrt(dx * dx + dy * dy)
-                            # If a point in this cell could be within threshold of obstacle boundary,
-                            # include obstacle. (Bounding circle conservative)
-                            include = dist <= (radii + threshold_upper)
-                            idxs = np.nonzero(include)[0].tolist()
-                            cell_lists[iy][ix] = idxs
-                            if len(idxs) > max_count:
-                                max_count = len(idxs)
-
-                    # Ensure candidate list length >= k_select so top_k is always valid.
-                    cell_max = int(max(k_select, min(max_k, max_count)))
-                    # If we can't prune (cell contains almost all obstacles), disable to avoid overhead.
-                    if cell_max >= max_k:
-                        raise RuntimeError("Spatial grid provides no pruning (cell_max >= max_k)")
-                    cell_obs_idx_np = -np.ones((grid_H, grid_W, cell_max), dtype=np.int32)
-                    for iy in range(grid_H):
-                        for ix in range(grid_W):
-                            lst = cell_lists[iy][ix]
-                            if not lst:
-                                continue
-                            lst = lst[:cell_max]
-                            cell_obs_idx_np[iy, ix, : len(lst)] = np.asarray(lst, dtype=np.int32)
-
-                    self._spatial_grid_cache = (
-                        cell_obs_idx_np,
-                        float(grid_x_min),
-                        float(grid_y_min),
-                        float(cell_size),
-                        int(grid_W),
-                        int(grid_H),
-                        int(cell_max),
-                    )
-                    self._spatial_grid_cache_key = spatial_key
-                    use_spatial_grid = True
-        except Exception:
-            use_spatial_grid = False
-
-        if use_spatial_grid and cell_obs_idx_np is not None:
-            cell_obs_idx = jnp.asarray(cell_obs_idx_np, dtype=jnp.int32)  # (Hc,Wc,M)
-        else:
-            cell_obs_idx = None
         
-        def filter_single_once(u_seq, *, clearance_s, threshold_s, rho_s, I_QP_s):
-            """One CFS pass: rollout + linearize + full-trajectory QP."""
-            H, act_dim = u_seq.shape
+            if (self._obstacle_branches_cache is not None and 
+                self._obstacles_cache_key == obstacles_cache_key and
+                len(self._obstacle_branches_cache[0]) >= max_k):
+                obstacle_branches_sdf_tuple = self._obstacle_branches_cache[0][:max_k]
+                obstacle_branches_grad_tuple = self._obstacle_branches_cache[1][:max_k]
+                num_obs_fns = min(len(self._obstacle_branches_cache[0]), max_k)
+                can_use_multi = num_obs_fns > 0
+            else:
+                obstacle_branches_sdf = []
+                obstacle_branches_grad = []
             
-            def body_fn(carry, u):
-                x = carry
-                pos_t = x[0:2]
-                x_next = env.jax_transition(x, u)
-                return x_next, u
+                if obstacles_list and len(obstacles_list) > 0:
+                    # Build branches for ALL obstacles (max_k = num_obstacles).
+                    for obs in obstacles_list[:max_k]:
+                        if hasattr(obs, 'jax_sdf'):
+                            def make_branch_fns(obstacle=obs):
+                                def sdf_fn(pos):
+                                    return obstacle.jax_sdf(pos)
+                            
+                                if hasattr(obstacle, 'jax_gradient'):
+                                    def sdf_only_fn(pos):
+                                        return obstacle.jax_sdf(pos)
+                                
+                                    # Grad-only: stage-2 already has sdf from stage-1.
+                                    # Avoid recomputing sdf here.
+                                    def grad_only_fn(pos):
+                                        return obstacle.jax_gradient(pos)
+                                else:
+                                    grad_fn = jax.grad(sdf_fn)
+                                
+                                    def sdf_only_fn(pos):
+                                        return obstacle.jax_sdf(pos)
+                                
+                                    # Grad-only: avoid an extra primal sdf_fn(pos).
+                                    # Note: grad_fn(pos) still evaluates the primal once internally (needed for AD),
+                                    # but we avoid the *additional* sdf_fn(pos) call.
+                                    def grad_only_fn(pos):
+                                        return grad_fn(pos)
+                            
+                                return sdf_only_fn, grad_only_fn
+                        
+                            sdf_fn, grad_fn = make_branch_fns()
+                            obstacle_branches_sdf.append(sdf_fn)
+                            obstacle_branches_grad.append(grad_fn)
             
-            # Rollout states to get positions for constraint building
-            # Use scan to rollout states (JAX-compatible)
-            def rollout_step(carry, u):
-                x = carry
-                x_next = env.jax_transition(x, u)
-                return x_next, x_next
+                num_obs_fns = len(obstacle_branches_sdf)
+                can_use_multi = num_obs_fns > 0
             
-            _, states_rollout = jax.lax.scan(rollout_step, x0, u_seq)
-            # Prepend initial state
-            states_rollout = jnp.concatenate([x0[None, :], states_rollout], axis=0)  # (H+1, state_dim)
+                while len(obstacle_branches_sdf) < max_k:
+                    def dummy_sdf_fn(pos):
+                        return jnp.inf
+                    def dummy_grad_fn(pos):
+                        return jnp.zeros(2)
+                    obstacle_branches_sdf.append(dummy_sdf_fn)
+                    obstacle_branches_grad.append(dummy_grad_fn)
             
-            # Build constraints for all timesteps
-            if num_obstacles == 0 or max_k == 0 or k_select == 0:
-                # No obstacles - return original
-                return u_seq
+                obstacle_branches_sdf_tuple = tuple(obstacle_branches_sdf[:max_k])
+                obstacle_branches_grad_tuple = tuple(obstacle_branches_grad[:max_k])
+                self._obstacle_branches_cache = (obstacle_branches_sdf_tuple, obstacle_branches_grad_tuple)
+                self._obstacles_cache_key = obstacles_cache_key
 
-            # ------------------------ FAST ANALYTIC PATH ------------------------ #
-            if use_fast_analytic:
-                # Positions to constrain: p_{t+1}, t=0..H-1
-                p0 = x0[0:2]  # (2,)
-                pos = states_rollout[1:, 0:2]  # (H, 2)
-                eps = jnp.asarray(1e-8, dtype=jnp.float32)
+            # ------------------------------------------------------------------
+            # Step D: Spatial grid candidate cache (B).
+            #
+            # Goal: for each queried position p (per timestep), instead of scanning
+            # all obstacles to compute sdf_array, only scan a fixed-size candidate
+            # list retrieved from the cell that contains p.
+            #
+            # Correctness: we build each cell's candidate list using a conservative
+            # bounding circle radius R_i per obstacle and a conservative threshold_upper
+            # so that any obstacle that can satisfy sdf(p) < threshold is included.
+            #
+            # Note: schedule_params["margin"] is a tracer under JIT; so we cannot
+            # build a per-step threshold-dependent structure inside JIT. We instead
+            # use a conservative upper bound that safely covers typical configs.
+            # ------------------------------------------------------------------
+            use_spatial_grid = False
+            cell_obs_idx_np = None
+            grid_x_min = grid_y_min = cell_size = None
+            grid_W = grid_H = cell_max = 0
+            try:
+                # Heuristic: for small obstacle counts, a spatial grid often costs more than it saves.
+                if max_k < 64:
+                    raise RuntimeError("Spatial grid disabled for small obstacle count")
 
-                # Circles: sdf = ||p-c|| - r ; grad = (p-c)/||p-c||
-                def circle_sdf_grad(p):
-                    # p: (H,2)
-                    if circle_centers.shape[0] == 0:
-                        sdf = jnp.full((0, H), jnp.inf, dtype=jnp.float32)
-                        grad = jnp.zeros((0, H, 2), dtype=jnp.float32)
+                # Only attempt if obstacles have centers and sizes.
+                # This covers the common single2d case (Box/Sphere).
+                p_max = float(getattr(env, "p_max", 2.0))
+                grid_x_min = -p_max
+                grid_y_min = -p_max
+                grid_x_max = p_max
+                grid_y_max = p_max
+
+                # Conservative upper bound for threshold = robot_radius + margin + constraint_margin.
+                # We do NOT have access to margin as a python float under JIT (it's a tracer),
+                # so we pick a safe bound that still enables pruning in practice.
+                # Conservative but not overly loose: most configs use small margins (<= 0.05).
+                # If you increase margin above this, raise this buffer accordingly.
+                threshold_upper = float(robot_radius + constraint_margin_val + 0.1)
+                threshold_upper = max(0.0, threshold_upper)
+
+                # Pick a moderate cell size to bound per-cell candidate counts.
+                # Smaller => fewer candidates per cell, more cells. Keep it stable.
+                cell_size = float(max(0.25, min(0.75, threshold_upper)))
+
+                spatial_key = (
+                    id(obstacles) if obstacles is not None else None,
+                    max_k,
+                    float(grid_x_min),
+                    float(grid_y_min),
+                    float(grid_x_max),
+                    float(grid_y_max),
+                    float(cell_size),
+                    float(threshold_upper),
+                )
+
+                if self._spatial_grid_cache is not None and self._spatial_grid_cache_key == spatial_key:
+                    cell_obs_idx_np, grid_x_min, grid_y_min, cell_size, grid_W, grid_H, cell_max = self._spatial_grid_cache
+                    use_spatial_grid = True
+                else:
+                    # Build (center, R) arrays for obstacles.
+                    centers = []
+                    radii = []
+                    for obs in (obstacles_list or [])[:max_k]:
+                        c = None
+                        r = None
+                        if hasattr(obs, "center"):
+                            try:
+                                c = np.asarray(getattr(obs, "center"), dtype=np.float32).reshape(-1)[:2]
+                            except Exception:
+                                c = None
+                        if c is None and hasattr(obs, "bounds"):
+                            try:
+                                b = getattr(obs, "bounds")
+                                if b is not None and len(b) == 2:
+                                    b0 = np.asarray(b[0], dtype=np.float32).reshape(-1)[:2]
+                                    b1 = np.asarray(b[1], dtype=np.float32).reshape(-1)[:2]
+                                    c = 0.5 * (b0 + b1)
+                            except Exception:
+                                c = None
+                        if hasattr(obs, "radius"):
+                            try:
+                                r = float(getattr(obs, "radius"))
+                            except Exception:
+                                r = None
+                        if r is None and hasattr(obs, "half_extents"):
+                            try:
+                                he = np.asarray(getattr(obs, "half_extents"), dtype=np.float32).reshape(-1)[:2]
+                                r = float(np.linalg.norm(he))
+                            except Exception:
+                                r = None
+                        if r is None and hasattr(obs, "bounds"):
+                            try:
+                                b = getattr(obs, "bounds")
+                                if b is not None and len(b) == 2:
+                                    b0 = np.asarray(b[0], dtype=np.float32).reshape(-1)[:2]
+                                    b1 = np.asarray(b[1], dtype=np.float32).reshape(-1)[:2]
+                                    r = float(0.5 * np.linalg.norm(b1 - b0))
+                            except Exception:
+                                r = None
+
+                        if c is None or r is None:
+                            # Cannot safely index: fall back to no spatial grid.
+                            centers = []
+                            radii = []
+                            break
+                        centers.append(c)
+                        radii.append(r)
+
+                    if len(centers) == max_k and max_k > 0:
+                        centers = np.asarray(centers, dtype=np.float32)  # (N,2)
+                        radii = np.asarray(radii, dtype=np.float32)      # (N,)
+
+                        grid_W = int(np.ceil((grid_x_max - grid_x_min) / cell_size))
+                        grid_H = int(np.ceil((grid_y_max - grid_y_min) / cell_size))
+                        grid_W = max(1, grid_W)
+                        grid_H = max(1, grid_H)
+
+                        # Precompute cell AABB bounds.
+                        xs0 = grid_x_min + np.arange(grid_W, dtype=np.float32) * cell_size
+                        ys0 = grid_y_min + np.arange(grid_H, dtype=np.float32) * cell_size
+                        xs1 = xs0 + cell_size
+                        ys1 = ys0 + cell_size
+
+                        # Build candidate lists.
+                        cell_lists = [[[] for _ in range(grid_W)] for _ in range(grid_H)]
+                        max_count = 0
+
+                        for iy in range(grid_H):
+                            y0 = ys0[iy]
+                            y1 = ys1[iy]
+                            for ix in range(grid_W):
+                                x0 = xs0[ix]
+                                x1 = xs1[ix]
+                                # Distance from obstacle center to cell AABB (0 if inside)
+                                dx0 = np.maximum(x0 - centers[:, 0], 0.0)
+                                dx1 = np.maximum(centers[:, 0] - x1, 0.0)
+                                dy0 = np.maximum(y0 - centers[:, 1], 0.0)
+                                dy1 = np.maximum(centers[:, 1] - y1, 0.0)
+                                dx = np.maximum(dx0, dx1)
+                                dy = np.maximum(dy0, dy1)
+                                dist = np.sqrt(dx * dx + dy * dy)
+                                # If a point in this cell could be within threshold of obstacle boundary,
+                                # include obstacle. (Bounding circle conservative)
+                                include = dist <= (radii + threshold_upper)
+                                idxs = np.nonzero(include)[0].tolist()
+                                cell_lists[iy][ix] = idxs
+                                if len(idxs) > max_count:
+                                    max_count = len(idxs)
+
+                        # Ensure candidate list length >= k_select so top_k is always valid.
+                        cell_max = int(max(k_select, min(max_k, max_count)))
+                        # If we can't prune (cell contains almost all obstacles), disable to avoid overhead.
+                        if cell_max >= max_k:
+                            raise RuntimeError("Spatial grid provides no pruning (cell_max >= max_k)")
+                        cell_obs_idx_np = -np.ones((grid_H, grid_W, cell_max), dtype=np.int32)
+                        for iy in range(grid_H):
+                            for ix in range(grid_W):
+                                lst = cell_lists[iy][ix]
+                                if not lst:
+                                    continue
+                                lst = lst[:cell_max]
+                                cell_obs_idx_np[iy, ix, : len(lst)] = np.asarray(lst, dtype=np.int32)
+
+                        self._spatial_grid_cache = (
+                            cell_obs_idx_np,
+                            float(grid_x_min),
+                            float(grid_y_min),
+                            float(cell_size),
+                            int(grid_W),
+                            int(grid_H),
+                            int(cell_max),
+                        )
+                        self._spatial_grid_cache_key = spatial_key
+                        use_spatial_grid = True
+            except Exception:
+                use_spatial_grid = False
+
+            if use_spatial_grid and cell_obs_idx_np is not None:
+                cell_obs_idx = jnp.asarray(cell_obs_idx_np, dtype=jnp.int32)  # (Hc,Wc,M)
+            else:
+                cell_obs_idx = None
+        
+            def filter_single_once(u_seq, *, clearance_s, threshold_s, rho_s, I_QP_s):
+                """One CFS pass: rollout + linearize + full-trajectory QP."""
+                H, act_dim = u_seq.shape
+            
+                def body_fn(carry, u):
+                    x = carry
+                    pos_t = x[0:2]
+                    x_next = env.jax_transition(x, u)
+                    return x_next, u
+            
+                # Rollout states to get positions for constraint building
+                # Use scan to rollout states (JAX-compatible)
+                def rollout_step(carry, u):
+                    x = carry
+                    x_next = env.jax_transition(x, u)
+                    return x_next, x_next
+            
+                _, states_rollout = jax.lax.scan(rollout_step, x0, u_seq)
+                # Prepend initial state
+                states_rollout = jnp.concatenate([x0[None, :], states_rollout], axis=0)  # (H+1, state_dim)
+            
+                # Build constraints for all timesteps
+                if num_obstacles == 0 or max_k == 0 or k_select == 0:
+                    # No obstacles - return original
+                    return u_seq
+
+                # ------------------------ FAST ANALYTIC PATH ------------------------ #
+                if use_fast_analytic:
+                    # Positions to constrain: p_{t+1}, t=0..H-1
+                    p0 = x0[0:2]  # (2,)
+                    pos = states_rollout[1:, 0:2]  # (H, 2)
+                    eps = jnp.asarray(1e-8, dtype=jnp.float32)
+
+                    # Circles: sdf = ||p-c|| - r ; grad = (p-c)/||p-c||
+                    def circle_sdf_grad(p):
+                        # p: (H,2)
+                        if circle_centers.shape[0] == 0:
+                            sdf = jnp.full((0, H), jnp.inf, dtype=jnp.float32)
+                            grad = jnp.zeros((0, H, 2), dtype=jnp.float32)
+                            return sdf, grad
+                        diff = p[None, :, :] - circle_centers[:, None, :]  # (Nc,H,2)
+                        dist = jnp.linalg.norm(diff, axis=-1)  # (Nc,H)
+                        sdf = dist - circle_radii[:, None]
+                        grad = diff / (dist[:, :, None] + eps)
                         return sdf, grad
-                    diff = p[None, :, :] - circle_centers[:, None, :]  # (Nc,H,2)
-                    dist = jnp.linalg.norm(diff, axis=-1)  # (Nc,H)
-                    sdf = dist - circle_radii[:, None]
-                    grad = diff / (dist[:, :, None] + eps)
-                    return sdf, grad
 
-                # Boxes (axis-aligned): standard SDF + piecewise grad
-                def box_sdf_grad(p):
-                    if box_centers.shape[0] == 0:
-                        sdf = jnp.full((0, H), jnp.inf, dtype=jnp.float32)
-                        grad = jnp.zeros((0, H, 2), dtype=jnp.float32)
+                    # Boxes (axis-aligned): standard SDF + piecewise grad
+                    def box_sdf_grad(p):
+                        if box_centers.shape[0] == 0:
+                            sdf = jnp.full((0, H), jnp.inf, dtype=jnp.float32)
+                            grad = jnp.zeros((0, H, 2), dtype=jnp.float32)
+                            return sdf, grad
+                        rel = p[None, :, :] - box_centers[:, None, :]  # (Nb,H,2)
+                        q = jnp.abs(rel) - box_half[:, None, :]        # (Nb,H,2)
+                        outside = jnp.maximum(q, 0.0)
+                        outside_dist = jnp.linalg.norm(outside, axis=-1)  # (Nb,H)
+                        inside_dist = jnp.max(q, axis=-1)  # negative/zero inside
+                        outside_mask = outside_dist > eps
+                        sdf = jnp.where(outside_mask, outside_dist, inside_dist)
+
+                        # outside gradient via closest point
+                        closest = box_centers[:, None, :] + jnp.clip(rel, -box_half[:, None, :], box_half[:, None, :])
+                        d = p[None, :, :] - closest
+                        grad_out = d / (outside_dist[:, :, None] + eps)
+
+                        # inside gradient: axis of max(q), direction = sign(rel)
+                        axis = jnp.argmax(q, axis=-1)  # (Nb,H)
+                        onehot = jax.nn.one_hot(axis, 2, dtype=jnp.float32)  # (Nb,H,2)
+                        # IMPORTANT: inside-box SDF is nonsmooth; we need a nonzero subgradient.
+                        # jnp.sign(0)=0 would produce a zero gradient and stall projection.
+                        rel_sign = jnp.where(rel >= 0.0, 1.0, -1.0)
+                        grad_in = onehot * rel_sign
+                        grad = jnp.where(outside_mask[:, :, None], grad_out, grad_in)
                         return sdf, grad
-                    rel = p[None, :, :] - box_centers[:, None, :]  # (Nb,H,2)
-                    q = jnp.abs(rel) - box_half[:, None, :]        # (Nb,H,2)
-                    outside = jnp.maximum(q, 0.0)
-                    outside_dist = jnp.linalg.norm(outside, axis=-1)  # (Nb,H)
-                    inside_dist = jnp.max(q, axis=-1)  # negative/zero inside
-                    outside_mask = outside_dist > eps
-                    sdf = jnp.where(outside_mask, outside_dist, inside_dist)
 
-                    # outside gradient via closest point
-                    closest = box_centers[:, None, :] + jnp.clip(rel, -box_half[:, None, :], box_half[:, None, :])
-                    d = p[None, :, :] - closest
-                    grad_out = d / (outside_dist[:, :, None] + eps)
+                    sdf_c, grad_c = circle_sdf_grad(pos)
+                    sdf_b, grad_b = box_sdf_grad(pos)
+                    sdf_all = jnp.concatenate([sdf_c, sdf_b], axis=0)  # (Nobs,H)
+                    grad_all = jnp.concatenate([grad_c, grad_b], axis=0)  # (Nobs,H,2)
+                    n_obs = sdf_all.shape[0]
 
-                    # inside gradient: axis of max(q), direction = sign(rel)
-                    axis = jnp.argmax(q, axis=-1)  # (Nb,H)
-                    onehot = jax.nn.one_hot(axis, 2, dtype=jnp.float32)  # (Nb,H,2)
-                    # IMPORTANT: inside-box SDF is nonsmooth; we need a nonzero subgradient.
-                    # jnp.sign(0)=0 would produce a zero gradient and stall projection.
-                    rel_sign = jnp.where(rel >= 0.0, 1.0, -1.0)
-                    grad_in = onehot * rel_sign
-                    grad = jnp.where(outside_mask[:, :, None], grad_out, grad_in)
-                    return sdf, grad
+                    # Select top-K closest obstacles per timestep (within threshold).
+                    sdf_t = sdf_all.T  # (H, Nobs)
+                    grad_t = jnp.transpose(grad_all, (1, 0, 2))  # (H, Nobs, 2)
+                    cand_mask = sdf_t < threshold_s
+                    sdf_for_sort = jnp.where(cand_mask, sdf_t, jnp.inf)
+                    neg = -sdf_for_sort
+                    def topk_idx(v):
+                        return jax.lax.top_k(v, k_select)[1]
+                    idx_sel = jax.vmap(topk_idx)(neg)  # (H, k_select)
+                    sdf_sel = jnp.take_along_axis(sdf_t, idx_sel, axis=1)  # (H,k)
+                    grad_sel = jnp.take_along_axis(grad_t, idx_sel[:, :, None], axis=1)  # (H,k,2)
+                    valid = jnp.isfinite(sdf_sel) & (sdf_sel < threshold_s)
 
-                sdf_c, grad_c = circle_sdf_grad(pos)
-                sdf_b, grad_b = box_sdf_grad(pos)
-                sdf_all = jnp.concatenate([sdf_c, sdf_b], axis=0)  # (Nobs,H)
-                grad_all = jnp.concatenate([grad_c, grad_b], axis=0)  # (Nobs,H,2)
-                n_obs = sdf_all.shape[0]
+                    # b_{t,k} for prefix inequality: dt * sum_{i<=t} g^T u_i >= b
+                    rhs = clearance_s - sdf_sel + jnp.einsum("hkd,hd->hk", grad_sel, pos)
+                    b = rhs - jnp.einsum("hkd,d->hk", grad_sel, p0)
+                    b = jnp.where(valid, b, -jnp.inf)
+                    grad_sel = jnp.where(valid[:, :, None], grad_sel, 0.0)
 
-                # Select top-K closest obstacles per timestep (within threshold).
-                sdf_t = sdf_all.T  # (H, Nobs)
-                grad_t = jnp.transpose(grad_all, (1, 0, 2))  # (H, Nobs, 2)
-                cand_mask = sdf_t < threshold_s
-                sdf_for_sort = jnp.where(cand_mask, sdf_t, jnp.inf)
-                neg = -sdf_for_sort
-                def topk_idx(v):
-                    return jax.lax.top_k(v, k_select)[1]
-                idx_sel = jax.vmap(topk_idx)(neg)  # (H, k_select)
-                sdf_sel = jnp.take_along_axis(sdf_t, idx_sel, axis=1)  # (H,k)
-                grad_sel = jnp.take_along_axis(grad_t, idx_sel[:, :, None], axis=1)  # (H,k,2)
-                valid = jnp.isfinite(sdf_sel) & (sdf_sel < threshold_s)
+                    # Structured hard/slack projection in action space (prefix constraints).
+                    tol = jnp.asarray(1e-7, dtype=jnp.float32)
+                    # This is the main inner loop cost; keep it large enough to actually converge
+                    # on multi-constraint scenes (still cheap vs building A_full).
+                    max_iter = jnp.maximum(jnp.asarray(200, dtype=jnp.int32), jnp.asarray(I_QP_s, dtype=jnp.int32) * 20)
+                    time_idx = jnp.arange(H, dtype=jnp.int32)  # static shape (H,)
 
-                # b_{t,k} for prefix inequality: dt * sum_{i<=t} g^T u_i >= b
-                rhs = clearance_s - sdf_sel + jnp.einsum("hkd,hd->hk", grad_sel, pos)
-                b = rhs - jnp.einsum("hkd,d->hk", grad_sel, p0)
-                b = jnp.where(valid, b, -jnp.inf)
-                grad_sel = jnp.where(valid[:, :, None], grad_sel, 0.0)
+                    def compute_max_violation(u_curr):
+                        u_clip = jnp.clip(u_curr, -control_limit, control_limit)
+                        s = jnp.cumsum(u_clip, axis=0)  # (H,2)
+                        lhs = jnp.asarray(dt, dtype=jnp.float32) * jnp.einsum("hkd,hd->hk", grad_sel, s)  # (H,k)
+                        viol = b - lhs
+                        viol = jnp.where(jnp.isfinite(b), jnp.maximum(0.0, viol), -jnp.inf)
+                        maxv = jnp.max(viol)
+                        arg = jnp.argmax(viol.reshape(-1))
+                        t_idx = arg // jnp.asarray(k_select, dtype=jnp.int32)
+                        k_idx = arg - t_idx * jnp.asarray(k_select, dtype=jnp.int32)
+                        return maxv, t_idx, k_idx
 
-                # Structured hard/slack projection in action space (prefix constraints).
-                tol = jnp.asarray(1e-7, dtype=jnp.float32)
-                # This is the main inner loop cost; keep it large enough to actually converge
-                # on multi-constraint scenes (still cheap vs building A_full).
-                max_iter = jnp.maximum(jnp.asarray(200, dtype=jnp.int32), jnp.asarray(I_QP_s, dtype=jnp.int32) * 20)
-                time_idx = jnp.arange(H, dtype=jnp.int32)  # static shape (H,)
+                    def cond_fn(carry):
+                        i, u_curr, maxv, *_ = carry
+                        return jnp.logical_and(i < max_iter, maxv > tol)
 
-                def compute_max_violation(u_curr):
-                    u_clip = jnp.clip(u_curr, -control_limit, control_limit)
-                    s = jnp.cumsum(u_clip, axis=0)  # (H,2)
-                    lhs = jnp.asarray(dt, dtype=jnp.float32) * jnp.einsum("hkd,hd->hk", grad_sel, s)  # (H,k)
-                    viol = b - lhs
-                    viol = jnp.where(jnp.isfinite(b), jnp.maximum(0.0, viol), -jnp.inf)
-                    maxv = jnp.max(viol)
-                    arg = jnp.argmax(viol.reshape(-1))
-                    t_idx = arg // jnp.asarray(k_select, dtype=jnp.int32)
-                    k_idx = arg - t_idx * jnp.asarray(k_select, dtype=jnp.int32)
-                    return maxv, t_idx, k_idx
+                    def body_loop(carry):
+                        i, u_curr, _maxv, _t, _k = carry
+                        maxv, t_idx, k_idx = compute_max_violation(u_curr)
+                        g = grad_sel[t_idx, k_idx]  # (2,)
+                        g2 = jnp.dot(g, g) + 1e-9
+                        denom = (jnp.asarray(t_idx, dtype=jnp.float32) + 1.0) * (jnp.asarray(dt, dtype=jnp.float32) ** 2) * g2
+                        # Slack support if enabled
+                        use_slack_flag = jnp.logical_and(rho_s > 0, jnp.asarray(self.use_slack, dtype=jnp.bool_))
+                        denom = jax.lax.cond(
+                            use_slack_flag,
+                            lambda d: d + (jnp.asarray(dt, dtype=jnp.float32) ** 2) * (1.0 / (rho_s + 1e-9)),
+                            lambda d: d,
+                            denom,
+                        )
+                        lam = maxv / (denom + 1e-9)
+                        du = (jnp.asarray(dt, dtype=jnp.float32) * lam) * g  # (2,)
+                        # Update prefix actions 0..t_idx (JIT-safe: no dynamic slicing)
+                        prefix_mask = (time_idx <= t_idx).astype(jnp.float32)[:, None]  # (H,1)
+                        u_next = u_curr + prefix_mask * du[None, :]
+                        u_next = jnp.clip(u_next, -control_limit, control_limit)
+                        return (i + 1, u_next, maxv, t_idx, k_idx)
+
+                    maxv0, t0, k0 = compute_max_violation(u_seq)
+                    init = (jnp.asarray(0, dtype=jnp.int32), u_seq, maxv0, t0, k0)
+                    _, u_proj, *_ = jax.lax.while_loop(cond_fn, body_loop, init)
+                    return u_proj
+            
+                if can_use_multi and num_obs_fns > 0:
+                    # Build constraints for each timestep
+                    # For single-integrator dynamics, state x_{t+1} depends on prefix actions u_0..u_t.
+                    # We build constraints on positions p_{t+1} using the linearized obstacle SDF at the
+                    # nominal p_{t+1}. This yields action-space constraints with *dynamics coupling*
+                    # (non-block-diagonal A_full).
+                    p0 = x0[0:2]
+
+                    def build_constraints_for_timestep(t):
+                        # Constrain the *next* state position p_{t+1} (more consistent than constraining p_t).
+                        pos_t = states_rollout[t + 1][0:2]
+                    
+                        # Stage 1: Compute SDF for all obstacles
+                        def compute_obstacle_sdf_only(obs_idx, pos):
+                            valid = jnp.logical_and(obs_idx >= 0, obs_idx < num_obs_fns)
+                            obs_idx_clipped = jnp.clip(obs_idx, 0, max_k - 1)
+                            sdf_val = jax.lax.switch(obs_idx_clipped, obstacle_branches_sdf_tuple, pos)
+                            return jnp.where(valid, sdf_val, jnp.inf)
+
+                        # Candidate set (spatial grid): fixed-size list of obstacle indices for this cell.
+                        # IMPORTANT: `cell_obs_idx` is either a constant JAX array (available) or None (disabled).
+                        # Do NOT use jax.lax.cond on a python-level None, because both branches are traced.
+                        if cell_obs_idx is not None:
+                            ix = jnp.floor((pos_t[0] - jnp.asarray(grid_x_min, dtype=jnp.float32)) / jnp.asarray(cell_size, dtype=jnp.float32)).astype(jnp.int32)
+                            iy = jnp.floor((pos_t[1] - jnp.asarray(grid_y_min, dtype=jnp.float32)) / jnp.asarray(cell_size, dtype=jnp.float32)).astype(jnp.int32)
+                            ix = jnp.clip(ix, 0, jnp.asarray(grid_W - 1, dtype=jnp.int32))
+                            iy = jnp.clip(iy, 0, jnp.asarray(grid_H - 1, dtype=jnp.int32))
+                            cand_idx = cell_obs_idx[iy, ix]  # (M,)
+                        else:
+                            cand_idx = jnp.arange(max_k, dtype=jnp.int32)
+
+                        sdf_array = jax.vmap(lambda idx: compute_obstacle_sdf_only(idx, pos_t))(cand_idx)
+                    
+                        # Gate: check if constraints needed
+                        min_sdf = jnp.min(sdf_array)
+                        needs_constraints = min_sdf < threshold
+                    
+                        def compute_constraints(_):
+                            cand_mask = sdf_array < threshold
+                            sdf_for_sort = jnp.where(cand_mask, sdf_array, jnp.inf)
+                        
+                            # Select closest obstacles (smallest sdf). Using neg_sdf makes larger = closer.
+                            # jax.lax.top_k returns indices sorted by descending score, so this is already
+                            # closest-first. Do NOT flip, otherwise we'd pick farthest-first.
+                            neg_sdf = -sdf_for_sort
+                            # Pick top-K closest obstacles across ALL obstacles.
+                            _, selected_rank = jax.lax.top_k(neg_sdf, k_select)
+                        
+                            num_candidates = jnp.sum(cand_mask.astype(jnp.int32))
+                            k = jnp.minimum(
+                                jnp.asarray(k_select, dtype=jnp.int32),
+                                jnp.where(num_candidates == 0, k_select, num_candidates),
+                            )
+                            selected_indices = jnp.take(cand_idx, selected_rank, axis=0)  # original obstacle indices
+                            sdf_sel = jnp.take(sdf_array, selected_rank, axis=0)  # (k_select,)
+                        
+                            def compute_obstacle_grad_for_candidate(rank_idx, pos):
+                                obs_idx = selected_indices[rank_idx]
+                                obs_idx_clipped = jnp.clip(obs_idx, 0, max_k - 1)
+                                grad_val = jax.lax.switch(obs_idx_clipped, obstacle_branches_grad_tuple, pos)
+                                valid_rank = rank_idx < k
+                                valid_obs = jnp.logical_and(obs_idx >= 0, obs_idx < num_obs_fns)
+                                valid = jnp.logical_and(valid_rank, valid_obs)
+                                grad_val = jnp.where(valid, grad_val, jnp.zeros(2))
+                                return grad_val
+                        
+                            grad_array = jax.vmap(lambda rank_idx: compute_obstacle_grad_for_candidate(rank_idx, pos_t))(jnp.arange(k_select))
+                        
+                            def build_constraint_for_obstacle(idx):
+                                valid_idx = idx < k
+                                sdf_obs = jnp.where(valid_idx, sdf_sel[idx], jnp.inf)
+                                grad_obs = jnp.where(valid_idx, grad_array[idx], jnp.zeros(2))
+                            
+                                grad_norm = jnp.linalg.norm(grad_obs)
+                                valid_grad = jnp.logical_and(valid_idx, grad_norm > 1e-8)
+
+                                # Linearized position-space constraint (standard):
+                                #   d(p) >= clearance
+                                #   d(p_ref) + grad^T (p - p_ref) >= clearance
+                                # => grad^T p >= clearance - d(p_ref) + grad^T p_ref
+                                #
+                                # With single-integrator dynamics:
+                                #   p_{t+1} = p0 + dt * sum_{i=0}^t u_i
+                                # => dt * sum_{i=0}^t grad^T u_i >= (clearance - d_ref + grad^T p_ref) - grad^T p0
+                                #
+                                # We return (grad, b) for this timestep; A_full is assembled with prefix coupling.
+                                grad_use = jnp.where(valid_grad, grad_obs, jnp.zeros(2))
+                                rhs_state = clearance - sdf_obs + jnp.dot(grad_use, pos_t)
+                                b_val = rhs_state - jnp.dot(grad_use, p0)
+                                b_val = jnp.where(valid_grad, b_val, -jnp.inf)
+                                return grad_use, b_val, valid_grad
+                        
+                            constraint_results = jax.vmap(build_constraint_for_obstacle)(jnp.arange(k_select))
+                            A_all = constraint_results[0]
+                            b_all = constraint_results[1]
+                            valid_mask = constraint_results[2]
+                        
+                            A_constraints = A_all
+                            b_constraints = jnp.where(valid_mask, b_all, -jnp.inf)
+                        
+                            return A_constraints, b_constraints
+                    
+                        def skip_constraints(_):
+                            A_empty = jnp.zeros((k_select, 2))
+                            b_empty = jnp.full((k_select,), -jnp.inf)
+                            return A_empty, b_empty
+                    
+                        A_t, b_t = jax.lax.cond(needs_constraints, compute_constraints, skip_constraints, operand=None)
+                        return A_t, b_t
+                
+                    # Build constraints for all timesteps (t = 0..H-1 constrains p_{t+1})
+                    constraint_results = jax.vmap(build_constraints_for_timestep)(jnp.arange(H))
+                    A_per_step = constraint_results[0]  # (H, max_k, act_dim)
+                    b_per_step = constraint_results[1]  # (H, max_k)
+                
+                    # Avoid materializing dense A_full: solve in structured (prefix-sum) form.
+                    # Include dt scaling inside A (matches previous A_full assembly).
+                    A_eff = (jnp.asarray(dt, dtype=jnp.float32) * A_per_step).astype(jnp.float32)  # (H, K, act_dim)
+                    b_eff = b_per_step.astype(jnp.float32)  # (H, K)
+
+                    # Inner solver effort: same knob as before (kept for compatibility).
+                    solver_iters = jnp.maximum(jnp.asarray(10, dtype=jnp.int32), I_QP * 2)
+
+                    from enerdynamics.core.constraints.solvers.jaxopt_osqp_solver import solve_slack_qp_prefixsum_jax
+
+                    # Always use slack-QP; emulate hard constraints with huge rho.
+                    rho_eff = jax.lax.cond(
+                        jnp.logical_and(jnp.asarray(self.use_slack, dtype=jnp.bool_), rho > 0),
+                        lambda __: jnp.asarray(rho, dtype=jnp.float32),
+                        lambda __: jnp.asarray(1e9, dtype=jnp.float32),
+                        operand=None,
+                    )
+
+                    u_safe, _v = solve_slack_qp_prefixsum_jax(
+                        u_seq,
+                        A_eff,
+                        b_eff,
+                        rho_eff,
+                        control_limit=float(control_limit),
+                        tol=1e-7,
+                        maxiter=solver_iters,
+                    )
+                    return u_safe
+                else:
+                    return u_seq
+
+            def filter_single(u_seq, margin_s, rho_s, I_QP_s):
+                """Paper-style CFS iteration with while_loop (supports per-sample params)."""
+                margin_s = jnp.asarray(margin_s, dtype=jnp.float32)
+                rho_s = jnp.asarray(rho_s, dtype=jnp.float32)
+                I_QP_i32 = jnp.asarray(I_QP_s, dtype=jnp.int32)
+                clearance_s = margin_s + robot_radius_jax
+                threshold_s = clearance_s + constraint_margin_jax
 
                 def cond_fn(carry):
-                    i, u_curr, maxv, *_ = carry
-                    return jnp.logical_and(i < max_iter, maxv > tol)
+                    i, _u = carry
+                    return i < I_QP_i32
 
                 def body_loop(carry):
-                    i, u_curr, _maxv, _t, _k = carry
-                    maxv, t_idx, k_idx = compute_max_violation(u_curr)
-                    g = grad_sel[t_idx, k_idx]  # (2,)
-                    g2 = jnp.dot(g, g) + 1e-9
-                    denom = (jnp.asarray(t_idx, dtype=jnp.float32) + 1.0) * (jnp.asarray(dt, dtype=jnp.float32) ** 2) * g2
-                    # Slack support if enabled
-                    use_slack_flag = jnp.logical_and(rho_s > 0, jnp.asarray(self.use_slack, dtype=jnp.bool_))
-                    denom = jax.lax.cond(
-                        use_slack_flag,
-                        lambda d: d + (jnp.asarray(dt, dtype=jnp.float32) ** 2) * (1.0 / (rho_s + 1e-9)),
-                        lambda d: d,
-                        denom,
-                    )
-                    lam = maxv / (denom + 1e-9)
-                    du = (jnp.asarray(dt, dtype=jnp.float32) * lam) * g  # (2,)
-                    # Update prefix actions 0..t_idx (JIT-safe: no dynamic slicing)
-                    prefix_mask = (time_idx <= t_idx).astype(jnp.float32)[:, None]  # (H,1)
-                    u_next = u_curr + prefix_mask * du[None, :]
-                    u_next = jnp.clip(u_next, -control_limit, control_limit)
-                    return (i + 1, u_next, maxv, t_idx, k_idx)
+                    i, u_curr = carry
+                    return (i + 1, filter_single_once(u_curr, clearance_s=clearance_s, threshold_s=threshold_s, rho_s=rho_s, I_QP_s=I_QP_i32))
 
-                maxv0, t0, k0 = compute_max_violation(u_seq)
-                init = (jnp.asarray(0, dtype=jnp.int32), u_seq, maxv0, t0, k0)
-                _, u_proj, *_ = jax.lax.while_loop(cond_fn, body_loop, init)
-                return u_proj
-            
-            if can_use_multi and num_obs_fns > 0:
-                # Build constraints for each timestep
-                # For single-integrator dynamics, state x_{t+1} depends on prefix actions u_0..u_t.
-                # We build constraints on positions p_{t+1} using the linearized obstacle SDF at the
-                # nominal p_{t+1}. This yields action-space constraints with *dynamics coupling*
-                # (non-block-diagonal A_full).
-                p0 = x0[0:2]
-
-                def build_constraints_for_timestep(t):
-                    # Constrain the *next* state position p_{t+1} (more consistent than constraining p_t).
-                    pos_t = states_rollout[t + 1][0:2]
-                    
-                    # Stage 1: Compute SDF for all obstacles
-                    def compute_obstacle_sdf_only(obs_idx, pos):
-                        valid = jnp.logical_and(obs_idx >= 0, obs_idx < num_obs_fns)
-                        obs_idx_clipped = jnp.clip(obs_idx, 0, max_k - 1)
-                        sdf_val = jax.lax.switch(obs_idx_clipped, obstacle_branches_sdf_tuple, pos)
-                        return jnp.where(valid, sdf_val, jnp.inf)
-
-                    # Candidate set (spatial grid): fixed-size list of obstacle indices for this cell.
-                    # IMPORTANT: `cell_obs_idx` is either a constant JAX array (available) or None (disabled).
-                    # Do NOT use jax.lax.cond on a python-level None, because both branches are traced.
-                    if cell_obs_idx is not None:
-                        ix = jnp.floor((pos_t[0] - jnp.asarray(grid_x_min, dtype=jnp.float32)) / jnp.asarray(cell_size, dtype=jnp.float32)).astype(jnp.int32)
-                        iy = jnp.floor((pos_t[1] - jnp.asarray(grid_y_min, dtype=jnp.float32)) / jnp.asarray(cell_size, dtype=jnp.float32)).astype(jnp.int32)
-                        ix = jnp.clip(ix, 0, jnp.asarray(grid_W - 1, dtype=jnp.int32))
-                        iy = jnp.clip(iy, 0, jnp.asarray(grid_H - 1, dtype=jnp.int32))
-                        cand_idx = cell_obs_idx[iy, ix]  # (M,)
-                    else:
-                        cand_idx = jnp.arange(max_k, dtype=jnp.int32)
-
-                    sdf_array = jax.vmap(lambda idx: compute_obstacle_sdf_only(idx, pos_t))(cand_idx)
-                    
-                    # Gate: check if constraints needed
-                    min_sdf = jnp.min(sdf_array)
-                    needs_constraints = min_sdf < threshold
-                    
-                    def compute_constraints(_):
-                        cand_mask = sdf_array < threshold
-                        sdf_for_sort = jnp.where(cand_mask, sdf_array, jnp.inf)
-                        
-                        # Select closest obstacles (smallest sdf). Using neg_sdf makes larger = closer.
-                        # jax.lax.top_k returns indices sorted by descending score, so this is already
-                        # closest-first. Do NOT flip, otherwise we'd pick farthest-first.
-                        neg_sdf = -sdf_for_sort
-                        # Pick top-K closest obstacles across ALL obstacles.
-                        _, selected_rank = jax.lax.top_k(neg_sdf, k_select)
-                        
-                        num_candidates = jnp.sum(cand_mask.astype(jnp.int32))
-                        k = jnp.minimum(
-                            jnp.asarray(k_select, dtype=jnp.int32),
-                            jnp.where(num_candidates == 0, k_select, num_candidates),
-                        )
-                        selected_indices = jnp.take(cand_idx, selected_rank, axis=0)  # original obstacle indices
-                        sdf_sel = jnp.take(sdf_array, selected_rank, axis=0)  # (k_select,)
-                        
-                        def compute_obstacle_grad_for_candidate(rank_idx, pos):
-                            obs_idx = selected_indices[rank_idx]
-                            obs_idx_clipped = jnp.clip(obs_idx, 0, max_k - 1)
-                            grad_val = jax.lax.switch(obs_idx_clipped, obstacle_branches_grad_tuple, pos)
-                            valid_rank = rank_idx < k
-                            valid_obs = jnp.logical_and(obs_idx >= 0, obs_idx < num_obs_fns)
-                            valid = jnp.logical_and(valid_rank, valid_obs)
-                            grad_val = jnp.where(valid, grad_val, jnp.zeros(2))
-                            return grad_val
-                        
-                        grad_array = jax.vmap(lambda rank_idx: compute_obstacle_grad_for_candidate(rank_idx, pos_t))(jnp.arange(k_select))
-                        
-                        def build_constraint_for_obstacle(idx):
-                            valid_idx = idx < k
-                            sdf_obs = jnp.where(valid_idx, sdf_sel[idx], jnp.inf)
-                            grad_obs = jnp.where(valid_idx, grad_array[idx], jnp.zeros(2))
-                            
-                            grad_norm = jnp.linalg.norm(grad_obs)
-                            valid_grad = jnp.logical_and(valid_idx, grad_norm > 1e-8)
-
-                            # Linearized position-space constraint (standard):
-                            #   d(p) >= clearance
-                            #   d(p_ref) + grad^T (p - p_ref) >= clearance
-                            # => grad^T p >= clearance - d(p_ref) + grad^T p_ref
-                            #
-                            # With single-integrator dynamics:
-                            #   p_{t+1} = p0 + dt * sum_{i=0}^t u_i
-                            # => dt * sum_{i=0}^t grad^T u_i >= (clearance - d_ref + grad^T p_ref) - grad^T p0
-                            #
-                            # We return (grad, b) for this timestep; A_full is assembled with prefix coupling.
-                            grad_use = jnp.where(valid_grad, grad_obs, jnp.zeros(2))
-                            rhs_state = clearance - sdf_obs + jnp.dot(grad_use, pos_t)
-                            b_val = rhs_state - jnp.dot(grad_use, p0)
-                            b_val = jnp.where(valid_grad, b_val, -jnp.inf)
-                            return grad_use, b_val, valid_grad
-                        
-                        constraint_results = jax.vmap(build_constraint_for_obstacle)(jnp.arange(k_select))
-                        A_all = constraint_results[0]
-                        b_all = constraint_results[1]
-                        valid_mask = constraint_results[2]
-                        
-                        A_constraints = A_all
-                        b_constraints = jnp.where(valid_mask, b_all, -jnp.inf)
-                        
-                        return A_constraints, b_constraints
-                    
-                    def skip_constraints(_):
-                        A_empty = jnp.zeros((k_select, 2))
-                        b_empty = jnp.full((k_select,), -jnp.inf)
-                        return A_empty, b_empty
-                    
-                    A_t, b_t = jax.lax.cond(needs_constraints, compute_constraints, skip_constraints, operand=None)
-                    return A_t, b_t
-                
-                # Build constraints for all timesteps (t = 0..H-1 constrains p_{t+1})
-                constraint_results = jax.vmap(build_constraints_for_timestep)(jnp.arange(H))
-                A_per_step = constraint_results[0]  # (H, max_k, act_dim)
-                b_per_step = constraint_results[1]  # (H, max_k)
-                
-                # Avoid materializing dense A_full: solve in structured (prefix-sum) form.
-                # Include dt scaling inside A (matches previous A_full assembly).
-                A_eff = (jnp.asarray(dt, dtype=jnp.float32) * A_per_step).astype(jnp.float32)  # (H, K, act_dim)
-                b_eff = b_per_step.astype(jnp.float32)  # (H, K)
-
-                # Inner solver effort: same knob as before (kept for compatibility).
-                solver_iters = jnp.maximum(jnp.asarray(10, dtype=jnp.int32), I_QP * 2)
-
-                from enerdynamics.core.constraints.solvers.jaxopt_osqp_solver import solve_slack_qp_prefixsum_jax
-
-                # Always use slack-QP; emulate hard constraints with huge rho.
-                rho_eff = jax.lax.cond(
-                    jnp.logical_and(jnp.asarray(self.use_slack, dtype=jnp.bool_), rho > 0),
-                    lambda __: jnp.asarray(rho, dtype=jnp.float32),
-                    lambda __: jnp.asarray(1e9, dtype=jnp.float32),
-                    operand=None,
-                )
-
-                u_safe, _v = solve_slack_qp_prefixsum_jax(
-                    u_seq,
-                    A_eff,
-                    b_eff,
-                    rho_eff,
-                    control_limit=float(control_limit),
-                    tol=1e-7,
-                    maxiter=solver_iters,
-                )
-                return u_safe
-            else:
-                return u_seq
-
-        def filter_single(u_seq, margin_s, rho_s, I_QP_s):
-            """Paper-style CFS iteration with while_loop (supports per-sample params)."""
-            margin_s = jnp.asarray(margin_s, dtype=jnp.float32)
-            rho_s = jnp.asarray(rho_s, dtype=jnp.float32)
-            I_QP_i32 = jnp.asarray(I_QP_s, dtype=jnp.int32)
-            clearance_s = margin_s + robot_radius_jax
-            threshold_s = clearance_s + constraint_margin_jax
-
-            def cond_fn(carry):
-                i, _u = carry
-                return i < I_QP_i32
-
-            def body_loop(carry):
-                i, u_curr = carry
-                return (i + 1, filter_single_once(u_curr, clearance_s=clearance_s, threshold_s=threshold_s, rho_s=rho_s, I_QP_s=I_QP_i32))
-
-            _, u_out = jax.lax.while_loop(cond_fn, body_loop, (jnp.asarray(0, dtype=jnp.int32), u_seq))
-            return u_out
+                _, u_out = jax.lax.while_loop(cond_fn, body_loop, (jnp.asarray(0, dtype=jnp.int32), u_seq))
+                return u_out
         
-        # Handle batching
-        if actions.ndim == 3:
-            # Support per-sample schedule parameters (vectors) as well as scalars.
-            margin_b = margin_jax
-            rho_b = rho
-            I_b = I_QP
-            if hasattr(margin_b, "ndim") and getattr(margin_b, "ndim", 0) > 0:
-                return jax.vmap(filter_single, in_axes=(0, 0, 0, 0))(actions, margin_b, rho_b, I_b)
-            return jax.vmap(lambda u: filter_single(u, margin_b, rho_b, I_b))(actions)
-        return filter_single(actions, margin_jax, rho, I_QP)
+            # Handle batching
+            if actions.ndim == 3:
+                # Support per-sample schedule parameters (vectors) as well as scalars.
+                margin_b = margin_jax
+                rho_b = rho
+                I_b = I_QP
+                if hasattr(margin_b, "ndim") and getattr(margin_b, "ndim", 0) > 0:
+                    return jax.vmap(filter_single, in_axes=(0, 0, 0, 0))(actions, margin_b, rho_b, I_b)
+                return jax.vmap(lambda u: filter_single(u, margin_b, rho_b, I_b))(actions)
+            return filter_single(actions, margin_jax, rho, I_QP)
+        return jax.lax.cond(should_do_qp, do_qp, skip_qp, operand)
     
     def apply_actions_batch(
         self,
