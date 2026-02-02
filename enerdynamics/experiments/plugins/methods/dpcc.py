@@ -33,10 +33,11 @@ def _ensure_dpcc_on_path(dpcc_root: str | Path | None) -> Path:
         candidates.append(Path(dpcc_root))
 
     project_root = Path(__file__).resolve().parents[4]
+    # NOTE: we iterate in increasing priority but insert with sys.path.insert(0),
+    # so later entries end up ahead. Keep highest priority last in this list.
+    candidates.append(project_root / "dpcc")         # child in repo (lowest priority)
     candidates.append(project_root.parent / "dpcc")  # sibling repo
-    candidates.append(project_root / "dpcc")         # child in repo
-
-    # Local vendored module (this file -> enerdynamics/experiments/plugins/methods -> .../dpcc)
+    # Prefer the vendored copy inside this repo before any external checkouts.
     local_dpcc = Path(__file__).resolve().parents[3] / "solvers" / "single" / "dpcc"
     candidates.append(local_dpcc)
 
@@ -60,15 +61,16 @@ def _ensure_dpcc_on_path(dpcc_root: str | Path | None) -> Path:
         src_d3il_pkg = cand / "src" / "d3il"
         if src_d3il_pkg.exists() and str(src_d3il_pkg) not in sys.path:
             sys.path.insert(0, str(src_d3il_pkg))
-        # Prefer config directory if available
-        if (cand / "config" / "projection_eval.yaml").exists():
-            config_dir = cand / "config"
-            break
-        if (cand / "projection_eval.yaml").exists():
-            config_dir = cand.parent if cand.is_file() else cand
-            break
-        config_dir = cand
-        break
+
+        # Pick the first candidate with a config, but keep scanning to collect
+        # additional import roots (so external `diffuser/` can still be found).
+        if config_dir is None:
+            if (cand / "config" / "projection_eval.yaml").exists():
+                config_dir = cand / "config"
+            elif (cand / "projection_eval.yaml").exists():
+                config_dir = cand.parent if cand.is_file() else cand
+            else:
+                config_dir = cand
 
     if config_dir is None:
         raise FileNotFoundError("No DPCC root found; checked config path, local vendored dpcc, ../dpcc, ./dpcc")

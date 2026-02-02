@@ -66,7 +66,6 @@ class AvoidingDPCCAdapter:
         enlarge_constraints = self._resolve_config(
             "enlarge_constraints", exp=exp, robot_name=robot_name, default=0.0
         )
-
         constraint_list = []
         constraint_list_tightened = []
         constraint_list_polytopic_not_tightened = []

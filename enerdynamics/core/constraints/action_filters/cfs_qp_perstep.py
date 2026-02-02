@@ -648,7 +648,7 @@ class CFSQPPerStepFilter(ConstraintFilter):
                     obs_indices = jnp.arange(max_k)  # Fixed size for JAX
                     sdf_array = jax.vmap(lambda idx: compute_obstacle_sdf_only(idx, pos_t))(obs_indices)  # (max_k,)
                     
-                    # Fix 4: Gate前移 - 如果min_sdf > threshold，直接跳过约束计算
+                    # Fix 4: Move gate earlier—if min_sdf > threshold, skip constraint computation
                     min_sdf = jnp.min(sdf_array)
                     needs_constraints = min_sdf < threshold
                     

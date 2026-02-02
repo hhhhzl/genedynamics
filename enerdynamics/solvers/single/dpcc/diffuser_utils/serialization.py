@@ -1,11 +1,74 @@
 import os
 import pickle
 import glob
+import sys
+from pathlib import Path
 import torch
+import importlib
 from collections import namedtuple
 
 # DiffusionExperiment = namedtuple('Diffusion', 'dataset renderer model diffusion ema trainer epoch')
 DiffusionExperiment = namedtuple("Diffusion", "dataset model diffusion trainer epoch losses")
+
+
+def _ensure_diffuser_on_path():
+    """Guarantee that the upstream DPCC `diffuser` package is importable.
+
+    When using the vendored DPCC implementation, the trained checkpoints may
+    still reference modules from an external checkout (e.g., ../dpcc/diffuser).
+    This helper mirrors the search order used in the MethodPlugin so that
+    unpickling works even in subprocesses where sys.path was not yet patched.
+    """
+
+    project_root = Path(__file__).resolve().parents[6]  # repo root (/.../enerdynamics)
+    # NOTE: iterate low→high priority but insert with sys.path.insert(0),
+    # so later entries end up ahead in import resolution.
+    candidates = [
+        project_root / "dpcc",         # child in repo (lowest)
+        project_root.parent / "dpcc",  # sibling repo
+    ]
+
+    for cand in candidates:
+        cand = cand.resolve()
+        if not cand.exists():
+            continue
+        if str(cand) not in sys.path:
+            sys.path.insert(0, str(cand))
+        diffuser_subdir = cand / "diffuser"
+        if diffuser_subdir.exists() and str(diffuser_subdir) not in sys.path:
+            sys.path.insert(0, str(diffuser_subdir))
+
+
+def _alias_patch_diffusion():
+    """Route `diffuser.models.diffusion` imports to the patched local implementation.
+
+    Checkpoints may reference the upstream module path, but we want the patched
+    `GaussianDiffusion` in `enerdynamics/solvers/single/dpcc/patch/diffusion.py`.
+    """
+
+    from enerdynamics.solvers.single.dpcc.patch import diffusion as patch_diffusion
+
+    # Import the real diffuser package (from sys.path set above) so that utils/*
+    # and other helpers remain available for unpickling. Then override the diffusion
+    # module reference with the patched implementation.
+    try:
+        diffuser_pkg = importlib.import_module("diffuser")
+        models_pkg = importlib.import_module("diffuser.models")
+    except ModuleNotFoundError:
+        # If the package truly is absent, fall back to a lightweight shim.
+        import types
+        diffuser_pkg = sys.modules.setdefault("diffuser", types.ModuleType("diffuser"))
+        diffuser_pkg.__path__ = []
+        models_pkg = sys.modules.setdefault("diffuser.models", types.ModuleType("diffuser.models"))
+
+    sys.modules["diffuser.models.diffusion"] = patch_diffusion
+    models_pkg.diffusion = patch_diffusion
+    diffuser_pkg.models = models_pkg
+
+
+# Ensure availability at import time (covers fork/spawn workers).
+_ensure_diffuser_on_path()
+_alias_patch_diffusion()
 
 
 def mkdir(savepath):
@@ -48,7 +111,6 @@ def load_losses(*loadpath):
 
 def load_diffusion(*loadpath, epoch="latest", device="cuda:0", seed=None):
     print(f"\n[ utils/serialization ] Loading model from {os.path.join(*loadpath)}\n")
-
     dataset_config = load_config(*loadpath, "dataset_config.pkl")
     model_config = load_config(*loadpath, "model_config.pkl")
     diffusion_config = load_config(*loadpath, "diffusion_config.pkl")
@@ -64,8 +126,17 @@ def load_diffusion(*loadpath, epoch="latest", device="cuda:0", seed=None):
     if epoch == "latest":
         epoch = get_latest_epoch(loadpath)
 
-    trainer.load(epoch)
+    # The upstream trainer.load is strict on state_dict keys; patch to allow
+    # extra keys (e.g., loss_fn.weights) emitted by newer checkpoints.
+    def _relaxed_load(ep):
+        loadpath_ = os.path.join(trainer.logdir, f"state_{ep}.pt")
+        data = torch.load(loadpath_, map_location=device)
+        trainer.step = data["step"]
+        trainer.model.load_state_dict(data["model"], strict=False)
+        trainer.ema_model.load_state_dict(data["ema"], strict=False)
 
+    trainer.load = _relaxed_load
+    trainer.load(epoch)
     losses = load_losses(*loadpath, "losses.pkl")
 
     return DiffusionExperiment(dataset, trainer.model.model, trainer.model, trainer, epoch, losses)
