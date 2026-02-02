@@ -61,22 +61,22 @@ scheduler_config:
   type: composite
   constraint_schedulers:
     - type: alm_adaptive
-      margin: 0.04
+      margin: 0.05
       lam0: 0.0
       rho0: 1.0
       gamma: 2.0
       rho_max: 500.0
       kappa: 0.9
       r_tol: 5e-4
-      p_min: 0.0
+      p_min: 0.3
       p_max: 1.0
       eps_min: 1e-5
       eps_max: 1e-2
       I_min: 1
-      I_max: 10
+      I_max: 5
       topK_min: 1
-      topK_max: 10
-      use_stochastic_gate: false
+      topK_max: 8
+      use_stochastic_gate: true
   diffusion_schedulers:
     - type: fixed
       M_k: 64

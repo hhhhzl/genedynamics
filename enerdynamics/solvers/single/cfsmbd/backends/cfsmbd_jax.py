@@ -217,20 +217,24 @@ class CFSMBDBackendJax:
                 # If SDF computation fails, return 0 (no violation)
                 return jnp.asarray(0.0, dtype=jnp.float32)
 
-        def rollout_rewards_with_augmented(state_init, actions, clearance, aug_lambda, aug_rho):
+        def rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho):
             """
             Rollout rewards with augmented Lagrangian penalty.
-            
-            Returns total augmented reward (scalar).
+
+            Returns:
+              - total_augmented_reward: scalar
+              - v_n: scalar, mean_t [g]_+ (used for r_p feedback)
+
+            Performance note:
+            We intentionally avoid materializing per-step g_plus arrays. Instead we accumulate:
+              sum_g = Σ [g]_+    and   sum_sq_g = Σ [g]_+^2
+            so mean([g]_+^2) = sum_sq_g / H.
             """
             target_obj = getattr(self.env, "target", None)
             target = jnp.asarray(target_obj, dtype=jnp.float32) if target_obj is not None else jnp.zeros(2)
-            
-            d0 = jnp.linalg.norm(state_init[0:2] - target[0:2])
-            t_star = float(self.horizon - 1)
-            
+
             def step_fn(carry, action_and_t):
-                next_state, cum_reward, cum_g_plus = carry
+                next_state, cum_reward, cum_g_plus, cum_g_plus_sq = carry
                 action, t = action_and_t
                 
                 next_state = self._transition_fn(next_state, action)
@@ -242,13 +246,17 @@ class CFSMBDBackendJax:
                 # Constraint violation [g]_+
                 pos = next_state[0:2]  # single_2d: state is position
                 g_plus = sdf_fn(pos, clearance)
-                
-                step_total = reward
-                return (next_state, cum_reward + step_total, cum_g_plus + g_plus), (step_total, g_plus)
+
+                return (
+                    next_state,
+                    cum_reward + reward,
+                    cum_g_plus + g_plus,
+                    cum_g_plus_sq + (g_plus * g_plus),
+                ), None
 
             t_indices = jnp.arange(self.horizon, dtype=jnp.float32)
-            (final_state, total_reward, total_g_plus), (step_rewards, step_g_plus) = jax.lax.scan(
-                step_fn, (state_init, 0.0, 0.0), (actions, t_indices)
+            (final_state, total_reward, total_g_plus, total_g_plus_sq), _ = jax.lax.scan(
+                step_fn, (state_init, 0.0, 0.0, 0.0), (actions, t_indices)
             )
             
             # Terminal reward
@@ -259,41 +267,22 @@ class CFSMBDBackendJax:
             # J(τ) + λ mean_t [g]_+ + (ρ/2) mean_t [g]_+^2
             H = jnp.asarray(self.horizon, dtype=jnp.float32)
             dual_term = aug_lambda * (total_g_plus / H)
-            penalty_term = (aug_rho / 2.0) * jnp.mean(step_g_plus ** 2)
+            penalty_term = (aug_rho / 2.0) * (total_g_plus_sq / H)
             augmented_penalty = dual_term + penalty_term
             
             # Total reward = sum of step rewards + terminal - augmented penalty
             total_augmented_reward = total_reward + terminal_reward - augmented_penalty
-            
-            return total_augmented_reward
 
-        def rollout_rewards_with_augmented_and_v(state_init, actions, clearance, aug_lambda, aug_rho):
-            """Same as above but also returns v_n = sum_t [g]_+ for residual r_p."""
-            target_obj = getattr(self.env, "target", None)
-            target = jnp.asarray(target_obj, dtype=jnp.float32) if target_obj is not None else jnp.zeros(2)
-            
-            def step_fn(carry, action_and_t):
-                next_state, cum_reward, cum_g_plus = carry
-                action, t = action_and_t
-                next_state = self._transition_fn(next_state, action)
-                ctx = {"t": t}
-                reward = -self._cost_fn(next_state, action, ctx)
-                pos = next_state[0:2]
-                g_plus = sdf_fn(pos, clearance)
-                return (next_state, cum_reward + reward, cum_g_plus + g_plus), (reward, g_plus)
-
-            t_indices = jnp.arange(self.horizon, dtype=jnp.float32)
-            (final_state, total_reward, total_g_plus), (step_rewards, step_g_plus) = jax.lax.scan(
-                step_fn, (state_init, 0.0, 0.0), (actions, t_indices)
-            )
-            terminal_dist = jnp.linalg.norm(final_state[0:2] - target[0:2])
-            terminal_reward = -100.0 * terminal_dist
-            H = jnp.asarray(self.horizon, dtype=jnp.float32)
-            dual_term = aug_lambda * (total_g_plus / H)
-            penalty_term = (aug_rho / 2.0) * jnp.mean(step_g_plus ** 2)
-            total_augmented_reward = total_reward + terminal_reward - dual_term - penalty_term
             v_n = total_g_plus / H
             return total_augmented_reward, v_n
+
+        # Backward-compatible wrappers
+        def rollout_rewards_with_augmented(state_init, actions, clearance, aug_lambda, aug_rho):
+            total_aug, _ = rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho)
+            return total_aug
+
+        def rollout_rewards_with_augmented_and_v(state_init, actions, clearance, aug_lambda, aug_rho):
+            return rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho)
 
         def rollout_rewards(state_init, actions):
             """Rollout rewards per step (for visualization)."""
@@ -367,10 +356,23 @@ class CFSMBDBackendJax:
             )(actions_batch)
             return rews, v
 
+        # Fused helper: compute (rews, r_p) without exposing v_batch.
+        # This reduces intermediate materialization/dispatch overhead and helps XLA reuse.
+        from enerdynamics.core.constraints.schedulers.ConstraintScheduler.almadaptive.backends.alm_adaptive_jax import (
+            quantile_90,
+        )
+        _k_top_static = max(1, min(self.Nsample, int(math.ceil(0.1 * self.Nsample))))
+
+        def augmented_rewards_and_rp_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho):
+            rews, v = augmented_and_v_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho)
+            r_p = quantile_90(v, _k_top_static)
+            return rews, r_p
+
         self._filter_actions_batch_jit = jax.jit(filter_actions_batch)
         self._filter_actions_single_jit = jax.jit(filter_actions_single)
         self._augmented_rewards_batch_jit = jax.jit(augmented_rewards_batch)
         self._augmented_and_v_batch_jit = jax.jit(augmented_and_v_batch)
+        self._augmented_rewards_and_rp_batch_jit = jax.jit(augmented_rewards_and_rp_batch)
 
         def rollout_states(state_init, actions):
             def step_fn(carry, action):
@@ -419,7 +421,7 @@ class CFSMBDBackendJax:
             def body(carry, idx):
                 rng_curr, Ybar_curr = carry
                 # Need separate RNGs for diffusion noise and extra noise.
-                rng_curr, noise_key, extra_key = jax.random.split(rng_curr, 3)
+                rng_curr, noise_key, extra_key, filter_key = jax.random.split(rng_curr, 4)
 
                 eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
                 Y0s = eps * sigmas[idx] + Ybar_curr
@@ -445,6 +447,7 @@ class CFSMBDBackendJax:
                     "qp_gate": qp_gate,
                     "qp_prob": qp_prob,
                     "topK": jnp.asarray(self._topK if self._topK >= 0 else 8, dtype=jnp.int32),
+                    "rng_key": filter_key,
                 }
 
                 Y0s_f = self._filter_actions_batch_jit(x0_jnp, Y0s, sched_state, sched_params)
@@ -492,7 +495,6 @@ class CFSMBDBackendJax:
             return rng_out, Ybar_final, reward_hist[::-1], Ybar_hist[::-1], Ysamples_hist[::-1]
 
         def reverse_diffuse_adaptive(rng_in, Ybar_init, carry_sched_init):
-            from enerdynamics.core.constraints.schedulers.ConstraintScheduler.almadaptive.backends.alm_adaptive_jax import quantile_90
 
             cs = self._cs
             filter_fn = self.constraint_filter
@@ -504,7 +506,7 @@ class CFSMBDBackendJax:
 
             def body(carry, idx):
                 rng_curr, Ybar_curr, carry_sched = carry
-                rng_curr, noise_key, extra_key = jax.random.split(rng_curr, 3)
+                rng_curr, noise_key, extra_key, filter_key = jax.random.split(rng_curr, 4)
 
                 eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
                 Y0s = eps * sigmas[idx] + Ybar_curr
@@ -527,6 +529,7 @@ class CFSMBDBackendJax:
                     "topK": params["topK"],
                     "eps": params["eps"],
                     "I_QP": params["I_QP"],
+                    "rng_key": filter_key,
                 }
 
                 def apply_filter(ys):
@@ -534,13 +537,8 @@ class CFSMBDBackendJax:
 
                 Y0s_f = jax.lax.cond(do_qp, apply_filter, lambda ys: ys, Y0s)
 
-                def rollout_one(actions_seq):
-                    return self._rollout_augmented_and_v_fn(
-                        x0_jnp, actions_seq, margin, aug_lam, aug_rho,
-                    )
-
-                rews, v_batch = self._augmented_and_v_batch_jit(x0_jnp, Y0s_f, margin, aug_lam, aug_rho)
-                r_p = quantile_90(v_batch, k_top)
+                # Compute (rews, r_p) in one fused call (avoid exposing v_batch)
+                rews, r_p = self._augmented_rewards_and_rp_batch_jit(x0_jnp, Y0s_f, margin, aug_lam, aug_rho)
                 proj = jnp.mean(jnp.linalg.norm(Y0s_f - Y0s, axis=(1, 2)))
                 feedback = {"r_p": r_p, "proj": proj}
                 carry_sched_new = cs.jax_update(carry_sched, feedback, rng_sched_next)
@@ -807,7 +805,7 @@ class CFSMBDBackendJax:
             rng, _ = jax.random.split(rng_key)
             def body(carry, idx):
                 rng_curr, Ybar_curr = carry
-                rng_curr, noise_key, extra_key = jax.random.split(rng_curr, 3)
+                rng_curr, noise_key, extra_key, filter_key = jax.random.split(rng_curr, 4)
                 
                 eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
                 Y0s = eps * sigmas[idx] + Ybar_curr
@@ -833,9 +831,15 @@ class CFSMBDBackendJax:
                     "qp_gate": qp_gate,
                     "qp_prob": qp_prob,
                     "topK": jnp.asarray(self._topK if self._topK >= 0 else 8, dtype=jnp.int32),
+                    "rng_key": filter_key,
                 }
-                
-                Y0s_f = self._filter_actions_batch_jit(x0_jnp, Y0s, sched_state, sched_params)
+
+                # Respect qp_gate in non-adaptive mode (JAX scalar/tracer).
+                # If qp_gate is False, skip the (expensive) QP filter entirely.
+                def _apply_filter_batch(ys):
+                    return self._filter_actions_batch_jit(x0_jnp, ys, sched_state, sched_params)
+
+                Y0s_f = jax.lax.cond(qp_gate, _apply_filter_batch, lambda ys: ys, Y0s)
                 
                 def compute_augmented_reward(actions_seq):
                     return self._rollout_rewards_with_augmented_fn(
@@ -864,7 +868,11 @@ class CFSMBDBackendJax:
                 weights = jax.nn.softmax(logp0)
                 Ybar_weighted = jnp.einsum("n,nij->ij", weights, Y0s_f)
                 Ybar_next = Ybar_weighted
-                Ybar_next = self._filter_actions_single_jit(x0_jnp, Ybar_next, sched_state, sched_params)
+
+                def _apply_filter_single(_):
+                    return self._filter_actions_single_jit(x0_jnp, Ybar_next, sched_state, sched_params)
+
+                Ybar_next = jax.lax.cond(qp_gate, _apply_filter_single, lambda _: Ybar_next, operand=None)
                 
                 # Add extra noise for diversity (decays over diffusion steps, aligned with ebmbd)
                 extra_sigma = extra_sigmas_by_idx_batch[idx]
@@ -960,15 +968,16 @@ class CFSMBDBackendJax:
             rng0 = rng_keys_batch  # (C,2)
             Ybar0 = jnp.zeros((C, self.horizon, self.act_dim), dtype=jnp.float32)
 
-            split3 = lambda k: jax.random.split(k, 3)  # (3,2)
+            split4 = lambda k: jax.random.split(k, 4)  # (4,2)
 
             def body(carry, idx):
                 rng_curr, Ybar_curr = carry  # rng_curr: (C,2), Ybar_curr: (C,H,D)
 
-                keys3 = jax.vmap(split3, in_axes=0)(rng_curr)  # (C,3,2)
-                rng_next = keys3[:, 0, :]
-                noise_keys = keys3[:, 1, :]
-                extra_keys = keys3[:, 2, :]
+                keys4 = jax.vmap(split4, in_axes=0)(rng_curr)  # (C,4,2)
+                rng_next = keys4[:, 0, :]
+                noise_keys = keys4[:, 1, :]
+                extra_keys = keys4[:, 2, :]
+                filter_keys = keys4[:, 3, :]  # (C,2)
 
                 # Sample eps for each mode (C independent keys)
                 eps = jax.vmap(
@@ -1001,6 +1010,7 @@ class CFSMBDBackendJax:
                     "qp_gate": qp_gate,
                     "qp_prob": qp_prob,
                     "topK": jnp.asarray(self._topK if self._topK >= 0 else 8, dtype=jnp.int32),
+                    "rng_key": filter_keys[0],  # use first mode's key for shared filter call
                 }
 
                 # ---------------- Architecture optimization (multirun batch hot path) ----------------
@@ -1038,8 +1048,11 @@ class CFSMBDBackendJax:
                 weights = jax.nn.softmax(logp0, axis=1)  # (C,N)
                 Ybar_weighted = jnp.einsum("cn,cnhd->chd", weights, Y0s_f)  # (C,H,D)
 
-                # Project mean trajectories as a batch of size C
-                Ybar_next = self._filter_actions_batch_jit(x0_jnp, Ybar_weighted, sched_state, sched_params)  # (C,H,D)
+                # Project mean trajectories as a batch of size C (respect qp_gate).
+                def _filter_mean(y):
+                    return self._filter_actions_batch_jit(x0_jnp, y, sched_state, sched_params)  # (C,H,D)
+
+                Ybar_next = jax.lax.cond(qp_gate, _filter_mean, lambda y: y, Ybar_weighted)
 
                 # Extra noise per mode
                 extra_sigma = extra_sigmas_by_idx[idx]
@@ -1066,7 +1079,7 @@ class CFSMBDBackendJax:
 
             def body(carry, idx):
                 rng_curr, Ybar_curr, carry_sched_curr = carry
-                rng_curr, noise_key, extra_key = jax.random.split(rng_curr, 3)
+                rng_curr, noise_key, extra_key, filter_key = jax.random.split(rng_curr, 4)
 
                 eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
                 Y0s = eps * sigmas[idx] + Ybar_curr
@@ -1088,6 +1101,7 @@ class CFSMBDBackendJax:
                     "topK": params["topK"],
                     "eps": params["eps"],
                     "I_QP": params["I_QP"],
+                    "rng_key": filter_key,
                 }
 
                 def apply_filter(ys):
@@ -1095,14 +1109,8 @@ class CFSMBDBackendJax:
 
                 Y0s_f = jax.lax.cond(do_qp, apply_filter, lambda ys: ys, Y0s)
 
-                def rollout_one(actions_seq):
-                    return self._rollout_augmented_and_v_fn(x0_jnp, actions_seq, margin, aug_lam, aug_rho)
-
-                rews, v_batch = self._augmented_and_v_batch_jit(x0_jnp, Y0s_f, margin, aug_lam, aug_rho)
-                # feedback metrics (same as plan): r_p and proj
-                from enerdynamics.core.constraints.schedulers.ConstraintScheduler.almadaptive.backends.alm_adaptive_jax import quantile_90
-                k_top = max(1, min(self.Nsample, int(math.ceil(0.1 * self.Nsample))))
-                r_p = quantile_90(v_batch, k_top)
+                # feedback metrics (same as plan): r_p and proj (fused; avoids exposing v_batch)
+                rews, r_p = self._augmented_rewards_and_rp_batch_jit(x0_jnp, Y0s_f, margin, aug_lam, aug_rho)
                 proj = jnp.mean(jnp.linalg.norm(Y0s_f - Y0s, axis=(1, 2)))
                 carry_sched_new = cs.jax_update(carry_sched_curr, {"r_p": r_p, "proj": proj}, rng_sched_next)
 
@@ -1145,16 +1153,17 @@ class CFSMBDBackendJax:
             carry_sched0 = jax.vmap(cs.jax_init_carry, in_axes=0)(rng_sched0)
             Ybar0 = jnp.zeros((C, self.horizon, self.act_dim), dtype=jnp.float32)
 
-            split3 = lambda k: jax.random.split(k, 3)  # (3,2)
+            split4 = lambda k: jax.random.split(k, 4)  # (4,2)
             k_top = max(1, min(self.Nsample, int(math.ceil(0.1 * self.Nsample))))
 
             def body(carry, idx):
                 rng_curr, Ybar_curr, carry_sched_curr = carry
 
-                keys3 = jax.vmap(split3, in_axes=0)(rng_curr)  # (C,3,2)
-                rng_next = keys3[:, 0, :]
-                noise_keys = keys3[:, 1, :]
-                extra_keys = keys3[:, 2, :]
+                keys4 = jax.vmap(split4, in_axes=0)(rng_curr)  # (C,4,2)
+                rng_next = keys4[:, 0, :]
+                noise_keys = keys4[:, 1, :]
+                extra_keys = keys4[:, 2, :]
+                filter_keys = keys4[:, 3, :]  # (C,2)
 
                 eps = jax.vmap(
                     lambda k: jax.random.normal(
@@ -1186,6 +1195,7 @@ class CFSMBDBackendJax:
                     "topK": params_batch["topK"],
                     "eps": params_batch["eps"],
                     "I_QP": params_batch["I_QP"],
+                    "rng_key": filter_keys[0],  # use first mode's key for shared filter call
                 }
 
                 # Architecture optimization (adaptive multirun): do NOT filter all samples (C*N).
@@ -1207,8 +1217,9 @@ class CFSMBDBackendJax:
                 rews = rews_flat.reshape((C, self.Nsample))
                 v_batch = v_flat.reshape((C, self.Nsample))
 
-                from enerdynamics.core.constraints.schedulers.ConstraintScheduler.almadaptive.backends.alm_adaptive_jax import quantile_90
-                r_p = jax.vmap(lambda v: quantile_90(v, k_top), in_axes=0)(v_batch)  # (C,)
+                # Batched quantile_90 along last axis (avoid Python/vmap overhead; helps fusion)
+                top_vals = jax.lax.top_k(v_batch, k_top)[0]  # (C, k_top)
+                r_p = jnp.min(top_vals, axis=-1)  # (C,)
 
                 # Weighting per mode
                 rew_mean = jnp.mean(rews, axis=1, keepdims=True)
@@ -1331,12 +1342,15 @@ class CFSMBDBackendJax:
                 qp_gate_b = jnp.asarray(True, dtype=jnp.bool_)
                 qp_prob_b = jnp.asarray(1.0, dtype=jnp.float32)
 
+            # Dummy rng_key for benchmark filter calls
+            bench_filter_key = jax.random.PRNGKey(999)
             sched_params_bench = {
                 "margin": margin_b,
                 "rho": rho_b,
                 "qp_gate": qp_gate_b,
                 "qp_prob": qp_prob_b,
                 "topK": jnp.asarray(self._topK if self._topK >= 0 else 8, dtype=jnp.int32),
+                "rng_key": bench_filter_key,
             }
 
             # Dummy batches (same shapes as inside diffusion).
