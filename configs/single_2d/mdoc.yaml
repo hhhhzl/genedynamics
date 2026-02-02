@@ -1,6 +1,6 @@
-# MDOC ablation: per-step CBF filter (closed-form projection), fixed schedulers
-name: single2d_mdoc_cbf_closed_form_perstep
-output_dir: results/single2d/ablation_mdoc/cbf_closed_form_perstep
+# MDOC ablation: per-step CBF filter (QP projection), fixed schedulers
+name: single2d_mdoc
+output_dir: results/single2d/mdoc
 
 env_name: single_integrator_box_2d
 env_params:
@@ -11,17 +11,26 @@ env_params:
 
 method: mdoc
 method_params:
-  show_tqdm: false
+  show_tqdm: True
 
   # MDOC ablation switch (used by MDOCMethodPlugin to pick ConstraintFilter)
-  mdoc_constraint_mode: cbf_closed_form_perstep
-
-  # CBF params (aligned with `mdoc.py`)
+  mdoc_constraint_mode: cbf_qp_perstep
   cbf_tau: 0.005
   cbf_eta: 1.5
-  cbf_margin: 0.1
+  cbf_margin: 0.04
   base_beta: 5.0e-2
   terminal_energy_weight: 100.0
+  # Multi-mode: number of candidate trajectories to return (C paths)
+  num_modes: 50
+  mode_strategy: multirun
+
+  # Visualization style
+  mdoc_viz_style: "cap" # cap | rectangle    
+  mdoc_viz_scale: 1.0
+  mdoc_viz_band: 1          
+  mdoc_viz_use_beta: False
+  mdoc_viz_draw_disk: False
+  mdoc_viz_draw_grad: False
 
 obstacle_levels: [6]
 obstacle_config:
@@ -47,7 +56,8 @@ metrics:
   - nonconvexity
 
 visualizations:
-  - trajectory
+  - trajectory_modes  # Shows C candidate paths with best highlighted
+  - trajectory        # Shows only the best (lowest cost) path
   - diffusion
   - energy_reward
   - states
@@ -56,18 +66,18 @@ scheduler_config:
   type: composite
   constraint_schedulers:
     - type: fixed
-      margin: 0.1
+      margin: 0.04
       rho: 10.0
-      # Closed-form filter: no QP solve
-      qp_gate: false
-      qp_prob: 0.0
+      # QP filter: always solve per-step
+      qp_gate: true
+      qp_prob: 1.0
       topK: null
       eps: 1e-4
       I_QP: 10
   diffusion_schedulers:
     - type: fixed
-      M_k: 128
-      T_k: 1e-1
+      M_k: 64
+      T_k: 5e-1
       Ndiffuse: 100
       beta0: 1.0e-5
       betaT: 1e-2

@@ -62,15 +62,21 @@ class MBDSolver(SamplingSolver):
         *,
         horizon: int = 80,
         dt: float = 0.1,
-        Nsample: int = 2048,
+        Nsample: int = 64,
         Ndiffuse: int = 100,
-        temp_sample: float = 0.1,
+        temp_sample: float = 0.5,
         beta0: float = 1e-4,
         betaT: float = 1e-2,
         action_limit: float = 1.0,
+        action_extra_sigma: float = 0.0,
         seed: int = 0,
         scheduler: Any = None,
         show_tqdm: bool = False,
+        num_modes: int = 1,
+        mode_strategy: str = "multirun",
+        diversity_eta: float = 1.0,
+        diversity_topK_cand: int = None,
+        diversity_use_state: bool = True,
         **kwargs,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -83,6 +89,7 @@ class MBDSolver(SamplingSolver):
         self.horizon = horizon
         self.dt = dt
         self.seed = seed
+        self.action_extra_sigma = action_extra_sigma
         self.config.update(
             dict(
                 Nsample=Nsample,
@@ -91,8 +98,14 @@ class MBDSolver(SamplingSolver):
                 beta0=beta0,
                 betaT=betaT,
                 action_limit=action_limit,
+                action_extra_sigma=action_extra_sigma,
                 scheduler=scheduler,
                 show_tqdm=bool(show_tqdm),
+                num_modes=int(num_modes),
+                mode_strategy=str(mode_strategy),
+                diversity_eta=float(diversity_eta),
+                diversity_topK_cand=int(diversity_topK_cand) if diversity_topK_cand is not None else None,
+                diversity_use_state=bool(diversity_use_state),
             )
         )
 
@@ -110,21 +123,40 @@ class MBDSolver(SamplingSolver):
             backend_cls = _get_mbd_backend(backend.name)
             if backend_cls is None:
                 raise ValueError(f"MBD backend '{backend.name}' not found")
-            self._backend_impl = backend_cls(
-                env_adapter=self._env_adapter,
-                legacy_energy=self._legacy_energy,
-                horizon=self.horizon,
-                dt=self.dt,
-                Nsample=self.config["Nsample"],
-                Ndiffuse=self.config["Ndiffuse"],
-                temp_sample=self.config["temp_sample"],
-                beta0=self.config["beta0"],
-                betaT=self.config["betaT"],
-                action_limit=self.config["action_limit"],
-                seed=self.seed,
-                scheduler=self.config.get("scheduler"),
-                show_tqdm=self.config.get("show_tqdm", False),
-            )
+            # JAX backend accepts solver parameter, NumPy backend does not
+            if backend.name == "jax":
+                self._backend_impl = backend_cls(
+                    solver=self,  # Pass solver to access num_modes
+                    env_adapter=self._env_adapter,
+                    legacy_energy=self._legacy_energy,
+                    horizon=self.horizon,
+                    dt=self.dt,
+                    Nsample=self.config["Nsample"],
+                    Ndiffuse=self.config["Ndiffuse"],
+                    temp_sample=self.config["temp_sample"],
+                    beta0=self.config["beta0"],
+                    betaT=self.config["betaT"],
+                    action_limit=self.config["action_limit"],
+                    seed=self.seed,
+                    scheduler=self.config.get("scheduler"),
+                    show_tqdm=self.config.get("show_tqdm", False),
+                )
+            else:
+                self._backend_impl = backend_cls(
+                    env_adapter=self._env_adapter,
+                    legacy_energy=self._legacy_energy,
+                    horizon=self.horizon,
+                    dt=self.dt,
+                    Nsample=self.config["Nsample"],
+                    Ndiffuse=self.config["Ndiffuse"],
+                    temp_sample=self.config["temp_sample"],
+                    beta0=self.config["beta0"],
+                    betaT=self.config["betaT"],
+                    action_limit=self.config["action_limit"],
+                    seed=self.seed,
+                    scheduler=self.config.get("scheduler"),
+                    show_tqdm=self.config.get("show_tqdm", False),
+                )
         return self._backend_impl
 
     def sample_trajectories(
@@ -154,7 +186,61 @@ class MBDSolver(SamplingSolver):
         planner = self._get_backend_impl()
         x0_data = np.asarray(x0, dtype=np.float32) if not isinstance(x0, jnp.ndarray) else x0
         rng_key = kwargs.get("rng_key", jax.random.PRNGKey(self.seed))
-        result = planner.plan(x0_data, rng_key)
+        # Multi-mode strategy: run C independent solves and take best-of-each-run
+        C = int(self.config.get("num_modes", 1))
+        mode_strategy = str(self.config.get("mode_strategy", "multirun")).lower()
+        if C > 1 and mode_strategy == "multirun":
+            backend = RuntimeBackendManager.get_backend()
+            if backend.name == "jax":
+                # Ensure rng_key is a JAX PRNG key (convert if needed)
+                if not isinstance(rng_key, jnp.ndarray) or rng_key.shape != (2,):
+                    # If not a JAX key, create one from seed or convert
+                    if isinstance(rng_key, (int, np.integer)):
+                        rng_key = jax.random.PRNGKey(int(rng_key))
+                    else:
+                        # Try to extract seed or use default
+                        rng_key = jax.random.PRNGKey(self.seed)
+                keys = jax.random.split(rng_key, C)
+            else:
+                # NumPy backend: convert to integer seeds
+                if isinstance(rng_key, jnp.ndarray) and rng_key.shape == (2,):
+                    # Convert JAX key to integer seed (use hash of key values)
+                    base_seed = int(rng_key[0]) ^ int(rng_key[1])
+                elif isinstance(rng_key, (int, np.integer)):
+                    base_seed = int(rng_key)
+                else:
+                    base_seed = self.seed
+                # Generate C different seeds
+                keys = [base_seed + i for i in range(C)]
+            
+            planner_num_modes_orig = int(getattr(planner, "num_modes", 1))
+            planner.num_modes = 1
+            try:
+                # Use batch version for parallel execution
+                if hasattr(planner, "plan_batch"):
+                    results = planner.plan_batch(x0_data, keys)
+                else:
+                    # Fallback to sequential if batch not available
+                    results = [planner.plan(x0_data, k) for k in keys]
+            finally:
+                planner.num_modes = planner_num_modes_orig
+
+            candidate_states_list = [np.asarray(r["states"], dtype=np.float32) for r in results]
+            candidate_actions_list = [np.asarray(r["actions"], dtype=np.float32) for r in results]
+            candidate_costs = np.asarray(
+                [float(np.asarray(r.get("candidate_costs", [np.nan]))[int(r.get("best_idx", 0))]) for r in results],
+                dtype=np.float32,
+            )
+            best_idx = int(np.nanargmin(candidate_costs))
+            best_result = dict(results[best_idx])
+            best_result["candidate_states"] = candidate_states_list
+            best_result["candidate_actions"] = candidate_actions_list
+            best_result["candidate_costs"] = candidate_costs
+            best_result["best_idx"] = best_idx
+            best_result["mode_strategy"] = "multirun"
+            result = best_result
+        else:
+            result = planner.plan(x0_data, rng_key)
         states_list = [np.asarray(s, dtype=np.float32) for s in result["states"]]
         actions_list = [np.asarray(a, dtype=np.float32) for a in result["actions"]]
         return Trajectory(states=states_list, actions=actions_list, info=result)

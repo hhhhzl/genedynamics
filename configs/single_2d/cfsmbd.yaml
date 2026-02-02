@@ -21,6 +21,10 @@ method_params:
   aug_lambda: 10.0  # Dual variable
   aug_rho: 20.0     # Penalty parameter
 
+  # Multi-mode: number of candidate trajectories to return (C paths)
+  num_modes: 50
+  mode_strategy: multirun
+
 obstacle_levels: [6]
 obstacle_config:
   generator: box2d
@@ -45,7 +49,8 @@ metrics:
   - nonconvexity
 
 visualizations:
-  - trajectory
+  - trajectory_modes  # Shows C candidate paths with best highlighted
+  - trajectory        # Shows only the best (lowest cost) path
   - diffusion
   - energy_reward
   - states
@@ -64,7 +69,7 @@ scheduler_config:
       I_QP: 10
   diffusion_schedulers:
     - type: fixed
-      M_k: 512
+      M_k: 64
       T_k: 5e-1
       Ndiffuse: 100
       beta0: 1.0e-5

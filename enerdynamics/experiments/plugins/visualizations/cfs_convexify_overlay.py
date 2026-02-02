@@ -105,18 +105,79 @@ def _group_cfs_halfspaces_by_t(
     return groups
 
 
+def _draw_local_cutting_line(
+    ax: Any,
+    *,
+    p: np.ndarray,
+    g_unit: np.ndarray,
+    ratio: float,
+    R_viz: float,
+    color: str,
+    linestyle: str,
+    linewidth: float,
+    alpha: float,
+    zorder: float,
+) -> None:
+    """
+    Draw a long cutting line segment in the local disk at point p.
+
+    Disk is centered at p with radius R_viz. Half-plane boundary is:
+        g^T Δ >= ratio * R_viz
+    so the line passes through p_cut = p + g_unit * (ratio * R_viz),
+    and is oriented along the tangent direction n = [-g_y, g_x].
+    """
+    n = np.array([-g_unit[1], g_unit[0]], dtype=float)
+    p_cut = p + g_unit * (ratio * R_viz)
+    L = 1.15 * R_viz
+    q1 = p_cut - n * L
+    q2 = p_cut + n * L
+    ax.plot(
+        [q1[0], q2[0]], [q1[1], q2[1]],
+        color=color,
+        linestyle=linestyle,
+        linewidth=linewidth,
+        alpha=alpha,
+        zorder=zorder,
+    )
+
+
 @dataclass
 class CFSOverlayConfig:
-    color: str = "#2ca02c"  # green-ish
-    alpha: float = 0.5      # increased default alpha for short lines
-    linewidth: float = 1.2
-    line_length: float = 0.15      # length of the tangent segment
-    fill: bool = False             # disable fill by default for less clutter with short lines
-    fill_alpha: float = 0.15
-    grid_n: int = 220             # grid resolution for fill mask
-    max_timesteps: int = 15        # show more timesteps since lines are shorter
-    max_constraints_per_t: int = 4  # cap constraints per timestep
-    show_ref_points: bool = True
+    """
+    Visualization config for CFS convexified halfspaces.
+
+    Defaults are intentionally aligned with the MDOC CBF fan style in
+    `DiffusionVisualizationPlugin._draw_mdoc_fans()`:
+    - orange-ish edge strokes
+    - light orange fill
+    - dotted reachability disk
+    """
+
+    # MDOC fan palette (aligned with diffusion.py)
+    facecolor: str = "#FFDCC2"
+    edgecolor: str = "#C46A2D"
+    scale: float = 1.0
+
+    # Fan / boundary styling
+    wedge_alpha: float = 0.5
+    wedge_linewidth: float = 0.9
+    chord_linewidth: float = 1.4
+    chord_alpha: float = 0.85
+    cutline_linestyle: str = "-"
+    cutline_linewidth: float = 1.7
+    cutline_alpha: float = 0.95
+
+    # Reachability disk styling
+    disk_alpha: float = 0.5
+    disk_linestyle: str = "-"
+    disk_linewidth: float = 0.8
+
+    # Sampling of which constraints/timesteps to show
+    # Match MDOC: avoid clutter by drawing only informative constraints
+    informative_band: float = 1   # only draw if |ratio| < band (ratio = b/r in [-1,1])
+    max_constraints_per_t: int = 2   # default: one fan per timestep
+    show_ref_points: bool = False
+    draw_disk: bool = True
 
 
 def draw_cfs_convexify_overlay(
@@ -201,75 +262,103 @@ def draw_cfs_convexify_overlay(
 
     groups = _group_cfs_halfspaces_by_t(A, b, H=H, state_dim=state_dim, pos_dim=2)
 
-    # Select timesteps to draw (Regular interval to cover the whole trajectory)
-    try:
-        # Draw every 8 steps to cover the whole trajectory
-        step = max(1, H // 12)
-        timesteps = np.arange(0, H, step, dtype=int)
-        # Always include near-end
-        if timesteps[-1] < H - 1:
-            timesteps = np.append(timesteps, H - 1)
-    except Exception:
-        timesteps = np.linspace(0, H - 1, num=min(cfg.max_timesteps, H), dtype=int) if H > 1 else np.array([0], dtype=int)
+    # Select timesteps to draw: exactly aligned with request / MDOC style (H // 12)
+    step = max(1, H // 32)
+    timesteps = np.arange(0, H, step, dtype=int)
+    if timesteps.size == 0:
+        timesteps = np.array([0], dtype=int)
+    if timesteps[-1] < H - 1:
+        timesteps = np.append(timesteps, H - 1)
 
     # Get action limit for disk visualization (default 1.0)
     action_limit = float(getattr(exp_cfg, "env_params", {}).get("control_limit", 1.0))
-    # Visualization radius scale (consistent with MDOC)
-    r_viz = 0.22
+    dt = float(getattr(exp_cfg, "env_params", {}).get("dt", 0.05))
+    # Visualization radius (aligned with MDOC): R = scale * dt * u_max
+    r_viz = float(cfg.scale) * dt * action_limit
 
     for t in timesteps:
         hs = groups.get(int(t), [])
         if not hs:
             continue
-        hs = hs[: cfg.max_constraints_per_t]
+        pt = np.asarray(env_plugin.extract_position(np.asarray(ref_traj.states[int(t)])), dtype=np.float32)
 
         # Optionally mark reference point at this timestep
         if cfg.show_ref_points:
-            pt = np.asarray(env_plugin.extract_position(np.asarray(ref_traj.states[int(t)])), dtype=np.float32)
-            ax.scatter([pt[0]], [pt[1]], s=12, color=cfg.color, alpha=0.8, zorder=4)
+            ax.scatter([pt[0]], [pt[1]], s=12, color=cfg.edgecolor, alpha=0.8, zorder=4)
 
-        for g, bb in hs:
+        # Precompute ratios for this timestep and keep only the most informative ones
+        candidates: list[tuple[float, float, float]] = []
+        # candidates elements: (abs(ratio), ratio, idx)
+        for i_h, (g, bb) in enumerate(hs):
             a0, a1 = float(g[0]), float(g[1])
             norm_g = np.sqrt(a0**2 + a1**2) + 1e-9
-            gx, gy = a0 / norm_g, a1 / norm_g # Unit normal
-            
-            # Reference point
-            pt = np.asarray(env_plugin.extract_position(np.asarray(ref_traj.states[int(t)])), dtype=np.float32)
-            
-            # 1. Calculate the 'Disk cut by Half-plane' geometry (aligned with MDOC)
             # CFS constraint: g^T x_{t+1} >= bb
             # Single integrator: x_{t+1} = x_t + u * dt
-            # => g^T (pt + u*dt) >= bb  => g^T u >= (bb - g^T pt) / dt
-            b_rel_state = bb - (a0 * pt[0] + a1 * pt[1])
-            dt = float(getattr(exp_cfg, "env_params", {}).get("dt", 0.05))
+            b_rel_state = float(bb) - (a0 * float(pt[0]) + a1 * float(pt[1]))
             b_rel_action = b_rel_state / (dt + 1e-9)
-            
-            # Ratio for visualization: 
-            # To emphasize the "Half-space" nature, we ensure the cut is always visible.
-            # We map the physical ratio to a range that always looks like a half-disk or slightly more.
             phys_ratio = b_rel_action / (norm_g * action_limit + 1e-9)
-            ratio = np.clip(phys_ratio, -0.1, 0.6) # -0.1 to 0.6 ensures a clear cut boundary
-            
+            ratio = float(np.clip(phys_ratio, -1.0, 1.0))
+            if abs(ratio) >= float(cfg.informative_band):
+                continue
+            candidates.append((abs(ratio), ratio, float(i_h)))
+
+        if not candidates:
+            continue
+
+        candidates.sort(key=lambda x: x[0])  # most informative: closest to 0 (visible cut)
+        keep = candidates[: int(cfg.max_constraints_per_t)]
+
+        # Draw the background disk (action bound) ONCE per timestep (MDOC-style)
+        if bool(cfg.draw_disk):
+            circle = plt.Circle(
+                tuple(pt), r_viz,
+                color=cfg.edgecolor,
+                fill=False,
+                linestyle=str(cfg.disk_linestyle),
+                linewidth=float(cfg.disk_linewidth),
+                alpha=float(cfg.disk_alpha),
+                zorder=2.5,
+            )
+            ax.add_patch(circle)
+
+        for _, ratio, i_h in keep:
+            g, bb = hs[int(i_h)]
+            a0, a1 = float(g[0]), float(g[1])
+            norm_g = np.sqrt(a0**2 + a1**2) + 1e-9
+            gx, gy = a0 / norm_g, a1 / norm_g  # Unit normal
+
             phi = np.arctan2(gy, gx)
             alpha = np.arccos(ratio)
-            
+
             theta_center = np.degrees(phi)
             theta_half_span = np.degrees(alpha)
             theta_start = theta_center - theta_half_span
             theta_end = theta_center + theta_half_span
-            
-            color_cfs = "#2ca02c"
-            
-            # 2. Draw the Wedge (The Admissible Fan)
+
+            # Draw margin cutting line (same visual cue as MDOC fans)
+            _draw_local_cutting_line(
+                ax=ax,
+                p=pt,
+                g_unit=np.array([gx, gy], dtype=float),
+                ratio=ratio,
+                R_viz=r_viz,
+                color=cfg.edgecolor,
+                linestyle=str(cfg.cutline_linestyle),
+                linewidth=float(cfg.cutline_linewidth),
+                alpha=float(cfg.cutline_alpha),
+                zorder=3.15,
+            )
+
+            # 2. Draw the Wedge (The Admissible Fan) - aligned with MDOC fan style
             wedge = Wedge(
                 center=tuple(pt),
                 r=r_viz,
                 theta1=theta_start,
                 theta2=theta_end,
-                facecolor=color_cfs,
-                alpha=0.2, # Slightly lighter for EDOC
-                edgecolor='#666666',
-                linewidth=0.7,
+                facecolor=cfg.facecolor,
+                alpha=float(cfg.wedge_alpha),
+                edgecolor=cfg.edgecolor,
+                linewidth=float(cfg.wedge_linewidth),
                 zorder=3.0
             )
             ax.add_patch(wedge)
@@ -279,28 +368,12 @@ def draw_cfs_convexify_overlay(
             p2 = pt + r_viz * np.array([np.cos(np.radians(theta_end)), np.sin(np.radians(theta_end))])
             ax.plot(
                 [p1[0], p2[0]], [p1[1], p2[1]],
-                color='#444444', 
-                linewidth=1.2,
-                alpha=0.8,
+                color=cfg.edgecolor,
+                linewidth=float(cfg.chord_linewidth),
+                alpha=float(cfg.chord_alpha),
                 zorder=3.1
             )
             
-            # 4. Draw Normal Arrow
-            arrow_len = 0.12
-            ax.arrow(
-                pt[0], pt[1],
-                gx * arrow_len, gy * arrow_len,
-                head_width=0.03, head_length=0.04,
-                fc='#444444', ec='#444444',
-                alpha=0.8, zorder=4.0
-            )
-            
-            # 5. Draw the background disk (Action Bound)
-            circle = plt.Circle(
-                tuple(pt), r_viz, 
-                color='#777777', fill=False, linestyle=':', 
-                linewidth=0.6, alpha=0.3, zorder=2.5
-            )
-            ax.add_patch(circle)
+            # disk is drawn once per timestep above
 
 
