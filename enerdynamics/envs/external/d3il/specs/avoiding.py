@@ -96,7 +96,7 @@ class D3ILAvoidingSpec(D3ILTaskSpec):
 
         next_des = np.asarray(ctx["desired_xy"], dtype=np.float32).reshape(2)
         next_state = np.concatenate([next_des, obs_xy], axis=0).astype(np.float32)
-        cost = -float(reward)
+        cost = reward
 
         extra: Dict[str, Any] = {}
         try:
