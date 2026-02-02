@@ -17,7 +17,7 @@ method_params:
   mdoc_constraint_mode: cbf_qp_perstep
   cbf_tau: 0.005
   cbf_eta: 1.5
-  cbf_margin: 0.05
+  cbf_margin: 0.04
   base_beta: 5.0e-2
   terminal_energy_weight: 100.0
   # Multi-mode: number of candidate trajectories to return (C paths)
@@ -26,7 +26,7 @@ method_params:
 
   # Visualization style
   mdoc_viz_style: "cap" # cap | rectangle    
-  mdoc_viz_scale: 4.0
+  mdoc_viz_scale: 1.0
   mdoc_viz_band: 1          
   mdoc_viz_use_beta: False
   mdoc_viz_draw_disk: False
@@ -66,7 +66,7 @@ scheduler_config:
   type: composite
   constraint_schedulers:
     - type: fixed
-      margin: 0.1
+      margin: 0.04
       rho: 10.0
       # QP filter: always solve per-step
       qp_gate: true

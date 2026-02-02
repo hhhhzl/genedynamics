@@ -256,7 +256,6 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         diffusion_actions = result.get('diffusion_actions_traj', None)
         diffusion_samples = result.get('diffusion_sampled_actions', None)
         diffusion_fractions = config.get('fractions', (0.1, 0.5, 0.9))  # 90%, 50%, 10%
-        
         if diffusion_actions is not None and len(diffusion_actions) > 0:
             diffusion_actions = np.asarray(diffusion_actions, dtype=np.float32)
             Ndiffuse = diffusion_actions.shape[0]
@@ -533,8 +532,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
             # two layers: reference vs margin
             # reference is hatched + dashed line; margin is solid + thicker line.
             layers = [
-                dict(margin_vis=0.0,  alpha=0.09, hatch="////", line_ls="--", line_lw=1.1, z=4.0),
-                dict(margin_vis=margin, alpha=0.26, hatch=None,  line_ls="-",  line_lw=1.7, z=4.2),
+                dict(margin_vis=0.0,  alpha=0.5, hatch="////", line_ls="--", line_lw=1.1, z=4.0),
+                dict(margin_vis=margin, alpha=0.5, hatch=None,  line_ls="-",  line_lw=1.7, z=4.2),
             ]
 
             for layer in layers:

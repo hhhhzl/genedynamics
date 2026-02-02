@@ -8,6 +8,7 @@ then solves per-step QP to project actions into feasible set.
 from __future__ import annotations
 from typing import Any, Optional
 import numpy as np
+import os
 
 try:
     import jax
@@ -175,67 +176,94 @@ class CFSQPPerStepFilter(ConstraintFilter):
         A: jnp.ndarray,  # (m, act_dim)
         b: jnp.ndarray,  # (m,)
         rho: jnp.ndarray,
+        proj_iters: jnp.ndarray,
         control_limit: float = 1.0,
     ) -> jnp.ndarray:
         """
-        Solve multi-constraint QP in JAX via jaxopt.OSQP wrappers.
+        Fast JAX per-step "solver": fixed-iteration halfspace projection (POCS).
 
-        Uses slack-QP when self.use_slack and rho > 0, otherwise hard-QP.
-        Includes box bounds in the QP and does a small hard-feasibility post-pass
-        to guarantee safety (eliminate residual solver tolerance violations).
+        This keeps CFS exactly the same (still produces linear halfspaces A u >= b),
+        but replaces per-step OSQP with a small, fixed number of closed-form
+        halfspace projections + box clipping. This is intentionally similar in
+        spirit to the single-constraint closed-form projection used by CBF-QP,
+        but extended to multiple constraints by iterating on the most violated
+        halfspace.
+
+        Notes:
+        - `rho` is kept for API compatibility with previous slack-QP signature,
+          but is not used here (hard projection).
+        - `proj_iters` is masked against a static MAX_PROJ_ITERS for JIT stability.
         """
-        from enerdynamics.core.constraints.solvers.jaxopt_osqp_solver import solve_slack_qp_jax
-
         L = float(control_limit)
+        MAX_PROJ_ITERS = 16  # keep static for JIT (mask with `proj_iters`)
+        tol = jnp.asarray(1e-7, dtype=jnp.float32)
+        eps = jnp.asarray(1e-9, dtype=jnp.float32)
 
-        def solve_qp(_):
-            # Always use solve_slack_qp_jax(...); emulate hard constraints with huge rho.
-            rho_eff = jax.lax.cond(
-                jnp.logical_and(jnp.asarray(self.use_slack, dtype=jnp.bool_), rho > 0),
-                lambda __: jnp.asarray(rho, dtype=jnp.float32),
-                lambda __: jnp.asarray(1e9, dtype=jnp.float32),
-                operand=None,
-            )
-            u_star, v_star = solve_slack_qp_jax(u_nom, A, b, rho_eff, control_limit=L)
-            return u_star, v_star
+        # Clip first (box constraints).
+        u0 = jnp.clip(jnp.asarray(u_nom, dtype=jnp.float32), -L, L)
+        A = jnp.asarray(A, dtype=jnp.float32)
+        b = jnp.asarray(b, dtype=jnp.float32)
 
-        u0, v0 = solve_qp(None)
+        # Treat non-finite b as inactive constraints (common representation: -inf).
+        valid = jnp.isfinite(b)
 
-        # Safety post-pass: eliminate any residual violation after bounds/solver tolerances.
-        b_masked = b
-        valid = jnp.isfinite(b_masked)
+        # Precompute row squared norms once (saves a dot inside each iteration).
+        row_den = jnp.sum(A * A, axis=1) + eps  # (m,)
 
-        tol = 1e-7
+        # JIT-stable iteration count: fixed upper bound with mask.
+        try:
+            proj_iters_i32 = jnp.asarray(proj_iters, dtype=jnp.int32)
+        except Exception:
+            proj_iters_i32 = jnp.asarray(0, dtype=jnp.int32)
+        proj_iters_i32 = jnp.clip(proj_iters_i32, 0, MAX_PROJ_ITERS)
 
-        def max_violation(u):
-            viol = jnp.maximum(0.0, jnp.where(valid, b_masked - A @ u, -jnp.inf))
+        def body_fn(i, u):
+            def project_once(u_in):
+                Au = A @ u_in  # (m,)
+                # Keep invalid constraints at -inf so argmax won't select them unless all are inactive.
+                viol_raw = jnp.where(valid, b - Au, -jnp.inf)
+                viol_pos = jnp.maximum(0.0, viol_raw)
+                viol = jnp.where(valid, viol_pos, -jnp.inf)
+
+                v_max = jnp.max(viol)
+                idx = jnp.argmax(viol)
+                a = A[idx]  # (act_dim,)
+                den = row_den[idx]
+                lam = jnp.where(v_max > tol, viol[idx] / den, 0.0)
+                return jnp.clip(u_in + lam * a, -L, L)
+
+            return jax.lax.cond(i < proj_iters_i32, project_once, lambda uu: uu, u)
+
+        u_fast = jax.lax.fori_loop(0, MAX_PROJ_ITERS, body_fn, u0)
+
+        # Safety fallback: if still violating after the requested fast iterations,
+        # run a few extra hard projections. This is only triggered on hard corner cases
+        # and keeps the common case fast.
+        def max_violation(u_in):
+            Au = A @ u_in
+            viol = jnp.maximum(0.0, jnp.where(valid, b - Au, 0.0))
             return jnp.max(viol)
 
-        def cond_fn(carry):
-            i, _u, v = carry
-            return jnp.logical_and(i < 5, v > tol)
+        v_fast = max_violation(u_fast)
 
-        def body_fn(carry):
-            i, u, _v = carry
-            viol = jnp.maximum(0.0, jnp.where(valid, b_masked - A @ u, -jnp.inf))
-            idx = jnp.argmax(viol)
-            A_row = A[idx]
-            den = jnp.dot(A_row, A_row) + 1e-9
-            lam = viol[idx] / den
-            u_next = jnp.clip(u + lam * A_row, -L, L)
-            v_next = max_violation(u_next)
-            return (i + 1, u_next, v_next)
+        EXTRA_ITERS = 16
 
-        # Gate: if already feasible, skip post-pass entirely.
-        def do_post(_):
-            _, u_out, _ = jax.lax.while_loop(
-                cond_fn,
-                body_fn,
-                (jnp.asarray(0, dtype=jnp.int32), u0, v0),
-            )
-            return u_out
+        def extra_project(u_in):
+            def extra_body(_i, uu):
+                Au = A @ uu
+                viol_raw = jnp.where(valid, b - Au, -jnp.inf)
+                viol_pos = jnp.maximum(0.0, viol_raw)
+                viol = jnp.where(valid, viol_pos, -jnp.inf)
 
-        return jax.lax.cond(v0 <= tol, lambda _: u0, do_post, operand=None)
+                idx = jnp.argmax(viol)
+                a = A[idx]
+                den = row_den[idx]
+                lam = jnp.where(jnp.max(viol) > tol, viol[idx] / den, 0.0)
+                return jnp.clip(uu + lam * a, -L, L)
+
+            return jax.lax.fori_loop(0, EXTRA_ITERS, extra_body, u_in)
+
+        return jax.lax.cond(v_fast <= tol, lambda _: u_fast, lambda _: extra_project(u_fast), operand=None)
     
     def apply_actions(
         self,
@@ -284,6 +312,15 @@ class CFSQPPerStepFilter(ConstraintFilter):
         
         # If either is JAX, use JAX path
         is_jax = is_jax or is_jax_x0
+
+        # Optional runtime assertion to confirm we're not silently taking NumPy fallback.
+        # Enable via: ENERDYNAMICS_ASSERT_JAX_FILTER=1
+        if os.getenv("ENERDYNAMICS_ASSERT_JAX_FILTER", "").strip() in ("1", "true", "True"):
+            if not is_jax:
+                raise RuntimeError(
+                    "CFSQPPerStepFilter.apply_actions took NumPy fallback, but JAX was expected. "
+                    "Check caller is passing jax.Array/Tracer actions and x0."
+                )
         
         # For JAX arrays, implement JAX-compatible CFS filter
         # Similar to CBF filter: use jax.lax.scan to rollout and apply constraints per-step
@@ -436,6 +473,15 @@ class CFSQPPerStepFilter(ConstraintFilter):
         # Use a constant outer-iteration count at every diffusion step (paper-style CFS iteration).
         MAX_OUTER_ITERS = 64
         I_QP = jnp.clip(I_QP, 1, MAX_OUTER_ITERS)
+
+        # Fast projection solver iterations (POCS). Keep a static upper bound for JIT.
+        proj_iters_raw = params_dict.get("projection_iters", params_dict.get("proj_iters", 5))
+        MAX_PROJ_ITERS = 16
+        try:
+            proj_iters = jnp.asarray(proj_iters_raw, dtype=jnp.int32)
+        except Exception:
+            proj_iters = jnp.asarray(5, dtype=jnp.int32)
+        proj_iters = jnp.clip(proj_iters, 0, MAX_PROJ_ITERS)
         
         # Convert to JAX arrays (JIT-safe: use jnp.asarray which handles both concrete and traced values)
         # Check if already JAX array/tracer, otherwise convert
@@ -884,7 +930,7 @@ class CFSQPPerStepFilter(ConstraintFilter):
                 
                 def solve_qp_wrapper(_):
                     return self._solve_multi_constraint_qp_jax(
-                        u, A_constraints, b_constraints, rho, control_limit=control_limit
+                        u, A_constraints, b_constraints, rho, proj_iters, control_limit=control_limit
                     )
                 
                 def return_original(_):

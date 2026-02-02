@@ -27,7 +27,7 @@ method_params:
   num_modes: 50
   mode_strategy: multirun
 
-obstacle_levels: [6]
+obstacle_levels: [9]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -61,7 +61,7 @@ scheduler_config:
   type: composite
   constraint_schedulers:
     - type: fixed
-      margin: 0.01
+      margin: 0.04
       rho: 10.0
       # QP filter: always solve full trajectory QP
       qp_gate: true

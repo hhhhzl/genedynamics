@@ -24,7 +24,7 @@ method_params:
   aug_rho: 1.0
 
   # Multi-mode: number of candidate trajectories to return (C paths)
-  num_modes: 1
+  num_modes: 50
   mode_strategy: multirun
 
 obstacle_levels: [9]
@@ -61,14 +61,14 @@ scheduler_config:
   type: composite
   constraint_schedulers:
     - type: alm_adaptive
+      margin: 0.04
       lam0: 0.0
       rho0: 1.0
       gamma: 2.0
       rho_max: 500.0
       kappa: 0.9
       r_tol: 5e-4
-      margin: 0.01
-      p_min: 0.2
+      p_min: 0.0
       p_max: 1.0
       eps_min: 1e-5
       eps_max: 1e-2

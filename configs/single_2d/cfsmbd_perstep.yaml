@@ -27,7 +27,7 @@ method_params:
   num_modes: 50
   mode_strategy: multirun
 
-obstacle_levels: [6]
+obstacle_levels: [9]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
