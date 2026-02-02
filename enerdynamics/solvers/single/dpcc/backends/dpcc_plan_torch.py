@@ -80,7 +80,6 @@ class DPCCBackendTorch:
             action_dim=action_dim,
             act_obs_indices=act_obs_indices,
         )
-
         if "model_free" in variant and "tightened" in variant:
             constraints = constraints_info["constraint_list_without_prior_tightened"]
         elif "model_free" in variant and "tightened" not in variant:
@@ -115,7 +114,7 @@ class DPCCBackendTorch:
             device=self.device,
             solver=self.plan_config.get("solver", "scipy"),
         )
-
+        
         # Match DPCC eval.py: disable projector only for "diffuser" baseline.
         if variant == "diffuser":
             projector = None
@@ -125,7 +124,6 @@ class DPCCBackendTorch:
             trajectory_selection = "temporal_consistency"
         elif "dpcc-c" in variant:
             trajectory_selection = "minimum_projection_cost"
-
         policy = Policy(
             model=self.diffusion,
             normalizer=self.normalizer,
@@ -195,7 +193,6 @@ class DPCCBackendTorch:
             for t in range(max_episode_length):
                 # --- Safety violation checks (match dpcc/scripts/eval.py) ---
                 violated_this_timestep = 0
-
                 if "halfspace" in constraint_types:
                     for constraint in polytopic_not_tight:
                         if constraint[0] == "ineq":
@@ -236,6 +233,7 @@ class DPCCBackendTorch:
 
                 # Calculate action
                 start = time.time()
+
                 action, samples = self._policy(
                     conditions={0: obs},
                     batch_size=batch_size,
@@ -246,7 +244,6 @@ class DPCCBackendTorch:
 
                 # Step environment
                 obs, success, terminated, info = self.adapter.step(action, obs, fixed_z)
-
                 # Tracking error (match eval.py)
                 if t >= 1 and desired_next_pos is not None:
                     pos_tracking_errors[i, t - 1] = float(

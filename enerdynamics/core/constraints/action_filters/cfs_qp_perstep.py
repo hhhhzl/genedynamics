@@ -790,10 +790,7 @@ class CFSQPPerStepFilter(ConstraintFilter):
                         # No obstacles - no constraint
                         x_next = env.jax_transition(x, u)
                         return x_next, u
-                
-                    # Multi-constraint CFS: compute SDF and gradient for each obstacle
-                    # Use pre-computed obstacle functions (captured in closure)
-                
+                        
                     # Multi-constraint CFS: try to use individual obstacles if available
                     if can_use_multi and num_obs_fns > 0:
                         # Optimization 1: Two-stage computation - first compute SDF only (fast), then grad for candidates
@@ -816,7 +813,6 @@ class CFSQPPerStepFilter(ConstraintFilter):
                             cand_idx = jnp.arange(max_k, dtype=jnp.int32)
                         sdf_array = jax.vmap(lambda idx: compute_obstacle_sdf_only(idx, pos_t))(cand_idx)  # (M,)
                     
-                        # Fix 4: Gate前移 - 如果min_sdf > threshold，直接跳过约束计算
                         min_sdf = jnp.min(sdf_array)
                         needs_constraints = min_sdf < threshold
                     

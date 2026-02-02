@@ -61,7 +61,6 @@ class Policy:
             horizon=horizon,
             **self.sample_kwargs,
         )
-
         trajectories = utils.to_np(samples)
         if "diffusion" not in infos:
             normed_observations = trajectories[:, :, self.action_dim :]
