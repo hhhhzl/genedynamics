@@ -292,6 +292,7 @@ class CFSQPFullFilter(ConstraintFilter):
                 )
             except Exception as e:
                 # Return unchanged (no-op)
+                print("CFSQPFullFilter JAX path failed, returning unfiltered actions:", str(e)[:200])
                 if 'tracer' in str(e).lower() or 'jax' in str(e).lower():
                     return actions
                 raise

@@ -14,6 +14,7 @@ method: cfsmbd_full
 method_params:
   show_tqdm: True
   action_extra_sigma: 0.3
+  use_batched_alm_adaptive: False
 
   # CFS parameters
   max_constraints_per_point: 5
@@ -24,7 +25,7 @@ method_params:
   aug_rho: 1.0
 
   # Multi-mode: number of candidate trajectories to return (C paths)
-  num_modes: 50
+  num_modes: 20
   mode_strategy: multirun
 
 obstacle_levels: [9]

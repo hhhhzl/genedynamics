@@ -20,11 +20,11 @@ method_params:
   constraint_margin: 0.25 
 
   # Augmented Lagrangian parameters
-  aug_lambda: 200.0  # Dual variable
-  aug_rho: 1000.0     # Penalty parameter
+  aug_lambda: 300.0  # Dual variable
+  aug_rho: 500.0     # Penalty parameter
 
-  # Multi-mode: number of candidate trajectories to return
-  num_modes: 50
+  # Multi-mode: number of modes to return
+  num_modes: 20
   mode_strategy: multirun
 
 obstacle_levels: [9]
@@ -64,11 +64,11 @@ scheduler_config:
       margin: 0.04
       rho: 10.0
       # QP filter: always solve full trajectory QP
-      qp_gate: false
-      qp_prob: 1
+      qp_gate: true
+      qp_prob: 0.8
       topK: null
       eps: 1e-4
-      I_QP: 3
+      I_QP: 10
   diffusion_schedulers:
     - type: fixed
       M_k: 64
