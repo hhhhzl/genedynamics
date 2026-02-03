@@ -223,7 +223,7 @@ class CFSMBDBackendJax:
 
             Returns:
               - total_augmented_reward: scalar
-              - v_n: scalar, mean_t [g]_+ (used for r_p feedback)
+              - v_n: scalar, max_t [g]_+ (used for risk residual r_k and violation stats v_k)
 
             Performance note:
             We intentionally avoid materializing per-step g_plus arrays. Instead we accumulate:
@@ -234,7 +234,7 @@ class CFSMBDBackendJax:
             target = jnp.asarray(target_obj, dtype=jnp.float32) if target_obj is not None else jnp.zeros(2)
 
             def step_fn(carry, action_and_t):
-                next_state, cum_reward, cum_g_plus, cum_g_plus_sq = carry
+                next_state, cum_reward, cum_g_plus, cum_g_plus_sq, max_g_plus = carry
                 action, t = action_and_t
                 
                 next_state = self._transition_fn(next_state, action)
@@ -252,11 +252,12 @@ class CFSMBDBackendJax:
                     cum_reward + reward,
                     cum_g_plus + g_plus,
                     cum_g_plus_sq + (g_plus * g_plus),
+                    jnp.maximum(max_g_plus, g_plus),
                 ), None
 
             t_indices = jnp.arange(self.horizon, dtype=jnp.float32)
-            (final_state, total_reward, total_g_plus, total_g_plus_sq), _ = jax.lax.scan(
-                step_fn, (state_init, 0.0, 0.0, 0.0), (actions, t_indices)
+            (final_state, total_reward, total_g_plus, total_g_plus_sq, max_g_plus), _ = jax.lax.scan(
+                step_fn, (state_init, 0.0, 0.0, 0.0, 0.0), (actions, t_indices)
             )
             
             # Terminal reward
@@ -273,7 +274,8 @@ class CFSMBDBackendJax:
             # Total reward = sum of step rewards + terminal - augmented penalty
             total_augmented_reward = total_reward + terminal_reward - augmented_penalty
 
-            v_n = total_g_plus / H
+            # Violation magnitude (per-trajectory scalar): max_t [g]_+.
+            v_n = max_g_plus
             return total_augmented_reward, v_n
 
         # Backward-compatible wrappers
@@ -356,7 +358,7 @@ class CFSMBDBackendJax:
             )(actions_batch)
             return rews, v
 
-        # Fused helper: compute (rews, r_p) without exposing v_batch.
+        # Fused helper: compute (rews, r_k, v_k stats) without exposing v_batch.
         # This reduces intermediate materialization/dispatch overhead and helps XLA reuse.
         from enerdynamics.core.constraints.schedulers.ConstraintScheduler.almadaptive.backends.alm_adaptive_jax import (
             quantile_90,
@@ -365,8 +367,14 @@ class CFSMBDBackendJax:
 
         def augmented_rewards_and_rp_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho):
             rews, v = augmented_and_v_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho)
+            # Risk residual: r_k = Q_0.9(v_1..v_M), with v_m = max_t [g]_+.
             r_p = quantile_90(v, _k_top_static)
-            return rews, r_p
+            # Violation statistics (batch):
+            # - v_k_mean: mean magnitude across samples
+            # - v_k_rate: fraction of violating samples
+            v_k_mean = jnp.mean(v)
+            v_k_rate = jnp.mean(v > 0.0)
+            return rews, r_p, v_k_rate, v_k_mean
 
         self._filter_actions_batch_jit = jax.jit(filter_actions_batch)
         self._filter_actions_single_jit = jax.jit(filter_actions_single)
@@ -520,6 +528,8 @@ class CFSMBDBackendJax:
                 margin = params["margin"]
                 aug_lam = params["aug_lambda"]
                 aug_rho = params["aug_rho"]
+                nu = params["nu"]
+                compute_cost_hat = params["compute_cost_hat"]
 
                 sched_params = {
                     "margin": margin,
@@ -537,10 +547,19 @@ class CFSMBDBackendJax:
 
                 Y0s_f = jax.lax.cond(do_qp, apply_filter, lambda ys: ys, Y0s)
 
-                # Compute (rews, r_p) in one fused call (avoid exposing v_batch)
-                rews, r_p = self._augmented_rewards_and_rp_batch_jit(x0_jnp, Y0s_f, margin, aug_lam, aug_rho)
+                # Compute (rews, r_k, v_k stats) in one fused call (avoid exposing v_batch)
+                rews, r_p, v_k_rate, v_k_mean = self._augmented_rewards_and_rp_batch_jit(
+                    x0_jnp, Y0s_f, margin, aug_lam, aug_rho
+                )
                 proj = jnp.mean(jnp.linalg.norm(Y0s_f - Y0s, axis=(1, 2)))
-                feedback = {"r_p": r_p, "proj": proj}
+                feedback = {
+                    "r_p": r_p,  # risk residual r_k
+                    "v_k_rate": v_k_rate,
+                    "v_k_mean": v_k_mean,
+                    "proj": proj,
+                    "compute_cost_hat": compute_cost_hat,
+                    "compute_budget_B_eff": params["compute_budget_B_eff"],
+                }
                 carry_sched_new = cs.jax_update(carry_sched, feedback, rng_sched_next)
 
                 rew_mean = jnp.mean(rews)
@@ -569,12 +588,14 @@ class CFSMBDBackendJax:
                     jnp.mean(rews), Ybar_next, Y0s_f,
                     margin, params["rho"], params["topK"],
                     params["I_QP"], params["eps"], aug_lam, params["qp_prob"],
+                    nu, compute_cost_hat, r_p, v_k_rate, v_k_mean,
                 )
 
             (rng_out, Ybar_final, _), (
                 reward_hist, Ybar_hist, Ysamples_hist,
                 margin_hist, rho_hist, topK_hist,
-                I_hist, eps_hist, lam_hist, p_hist,
+                I_hist, eps_hist, lam_hist, p_hist, nu_hist, compute_cost_hist,
+                r_hist, v_rate_hist, v_mean_hist,
             ) = jax.lax.scan(body, (rng_in, Ybar_init, carry_sched_init), diffusion_indices)
             # Keep reward/Ybar/sampled reversed for downstream (index 0 = clean). Log arrays
             # stay in scan order: [0]=first iter (noisy, idx=99), [-1]=last (clean, idx=1).
@@ -582,7 +603,8 @@ class CFSMBDBackendJax:
                 rng_out, Ybar_final,
                 reward_hist[::-1], Ybar_hist[::-1], Ysamples_hist[::-1],
                 margin_hist, rho_hist, topK_hist,
-                I_hist, eps_hist, lam_hist, p_hist,
+                I_hist, eps_hist, lam_hist, p_hist, nu_hist, compute_cost_hist,
+                r_hist, v_rate_hist, v_mean_hist,
             )
 
         reverse_diffuse_jit = jax.jit(reverse_diffuse)
@@ -601,7 +623,7 @@ class CFSMBDBackendJax:
                 compiled = reverse_adaptive_jit
                 t_compile = time.perf_counter() - t0
             t1 = time.perf_counter()
-            _, Ybar_final, reward_hist, actions_traj, sampled_traj, margin_hist, rho_hist, topK_hist, I_hist, eps_hist, lam_hist, p_hist = compiled(
+            _, Ybar_final, reward_hist, actions_traj, sampled_traj, margin_hist, rho_hist, topK_hist, I_hist, eps_hist, lam_hist, p_hist, nu_hist, compute_cost_hist, r_hist, v_rate_hist, v_mean_hist = compiled(
                 rng_d, Ybar_init, carry_sched_init
             )
             # Ensure compute finished for accurate timing
@@ -617,11 +639,21 @@ class CFSMBDBackendJax:
             eh = np.asarray(eps_hist)
             lh = np.asarray(lam_hist)
             ph = np.asarray(p_hist)
+            nh = np.asarray(nu_hist)
+            ch = np.asarray(compute_cost_hist)
+            rk = np.asarray(r_hist)
+            vr = np.asarray(v_rate_hist)
+            vm = np.asarray(v_mean_hist)
             # Scan order: k=0 = first iter (noisy, idx=99), k=99 = last (clean, idx=0).
             # Print diffusion_k 99 -> 0 (noisy -> clean), 100 steps.
             for k in range(len(mh)):
                 diffusion_k = (total_steps - 1) - k
-                print(f"[CFS-MBD JAX adaptive] step {diffusion_k}: margin={mh[k]:.6f} rho={rh[k]:.6f} topK={int(th[k])} I={int(ih[k])} eps={eh[k]:.2e} lambda={lh[k]:.6f} p={ph[k]:.6f}")
+                print(
+                    f"[CFS-MBD JAX adaptive] step {diffusion_k}: "
+                    f"r_k={rk[k]:.2f} v_rate={vr[k]:.2f} v_mean={vm[k]:.2f} "
+                    f"c_k={ch[k]:.2f} nu={nh[k]:.2f} p_k={ph[k]:.2f} "
+                    f"rho={rh[k]:.2f} topK={int(th[k])} I={int(ih[k])} eps={eh[k]:.2e} lambda={lh[k]:.2f}"
+                )
             margin_vary = len(np.unique(np.round(mh, 6))) > 1
             rho_vary = len(np.unique(np.round(rh, 6))) > 1
             topK_vary = len(np.unique(th)) > 1
@@ -629,7 +661,17 @@ class CFSMBDBackendJax:
             eps_vary = len(np.unique(np.round(eh, 8))) > 1
             lam_vary = len(np.unique(np.round(lh, 6))) > 1
             p_vary = len(np.unique(np.round(ph, 6))) > 1
-            print(f"[CFS-MBD JAX adaptive] vary: margin={margin_vary} rho={rho_vary} topK={topK_vary} I={I_vary} eps={eps_vary} lambda={lam_vary} p={p_vary}")
+            nu_vary = len(np.unique(np.round(nh, 6))) > 1
+            c_vary = len(np.unique(np.round(ch, 6))) > 1
+            r_vary = len(np.unique(np.round(rk, 6))) > 1
+            vr_vary = len(np.unique(np.round(vr, 6))) > 1
+            vm_vary = len(np.unique(np.round(vm, 6))) > 1
+            print(
+                f"[CFS-MBD JAX adaptive] vary: "
+                f"r_k={r_vary} v_rate={vr_vary} v_mean={vm_vary} "
+                f"c_k={c_vary} nu={nu_vary} p_k={p_vary} "
+                f"rho={rho_vary} topK={topK_vary} I={I_vary} eps={eps_vary} lambda={lam_vary}"
+            )
         else:
             t0 = time.perf_counter()
             try:
@@ -653,10 +695,10 @@ class CFSMBDBackendJax:
                 # Precompute: [0]=noisy (first iter), [99]=clean (last). Print diffusion_k 99->0, 100 steps.
                 for k in range(min(n_steps, len(mh))):
                     diffusion_k = (total_steps - 1) - k
-                    print(f"[CFS-MBD JAX precompute] step {diffusion_k}: margin={float(mh[k]):.6f} rho={float(rh[k]):.6f} topK={topk_val}")
+                    print(f"[CFS-MBD JAX precompute] step {diffusion_k}: rho={float(rh[k]):.2f} topK={topk_val}")
                 margin_vary = len(np.unique(np.round(mh[:n_steps], 6))) > 1 if n_steps <= len(mh) else False
                 rho_vary = len(np.unique(np.round(rh[:n_steps], 6))) > 1 if n_steps <= len(rh) else False
-                print(f"[CFS-MBD JAX precompute] margin/rho/topK vary across steps: margin={margin_vary} rho={rho_vary} topK=False")
+                print(f"[CFS-MBD JAX precompute] rho/topK vary across steps: rho={rho_vary} topK=False")
 
         # Postprocess timing: rollout + device->host
         t_post0 = time.perf_counter()
@@ -1109,10 +1151,24 @@ class CFSMBDBackendJax:
 
                 Y0s_f = jax.lax.cond(do_qp, apply_filter, lambda ys: ys, Y0s)
 
-                # feedback metrics (same as plan): r_p and proj (fused; avoids exposing v_batch)
-                rews, r_p = self._augmented_rewards_and_rp_batch_jit(x0_jnp, Y0s_f, margin, aug_lam, aug_rho)
+                # feedback metrics (same as plan): r_k and v_k stats (fused; avoids exposing v_batch)
+                rews, r_p, v_k_rate, v_k_mean = self._augmented_rewards_and_rp_batch_jit(
+                    x0_jnp, Y0s_f, margin, aug_lam, aug_rho
+                )
                 proj = jnp.mean(jnp.linalg.norm(Y0s_f - Y0s, axis=(1, 2)))
-                carry_sched_new = cs.jax_update(carry_sched_curr, {"r_p": r_p, "proj": proj}, rng_sched_next)
+                compute_cost_hat = params["compute_cost_hat"]
+                carry_sched_new = cs.jax_update(
+                    carry_sched_curr,
+                    {
+                        "r_p": r_p,
+                        "v_k_rate": v_k_rate,
+                        "v_k_mean": v_k_mean,
+                        "proj": proj,
+                        "compute_cost_hat": compute_cost_hat,
+                        "compute_budget_B_eff": params["compute_budget_B_eff"],
+                    },
+                    rng_sched_next,
+                )
 
                 rew_mean = jnp.mean(rews)
                 rew_std = jnp.std(rews)
@@ -1220,6 +1276,8 @@ class CFSMBDBackendJax:
                 # Batched quantile_90 along last axis (avoid Python/vmap overhead; helps fusion)
                 top_vals = jax.lax.top_k(v_batch, k_top)[0]  # (C, k_top)
                 r_p = jnp.min(top_vals, axis=-1)  # (C,)
+                v_k_mean = jnp.mean(v_batch, axis=-1)  # (C,)
+                v_k_rate = jnp.mean(v_batch > 0.0, axis=-1)  # (C,)
 
                 # Weighting per mode
                 rew_mean = jnp.mean(rews, axis=1, keepdims=True)
@@ -1242,10 +1300,23 @@ class CFSMBDBackendJax:
 
                 # Scheduler update uses r_p (from sample violations) and proj (from mean projection).
                 proj = jnp.linalg.norm(Ybar_next - Ybar_weighted, axis=(1, 2))  # (C,)
+                cost_hat = params_batch["compute_cost_hat"]  # (C,)
+                B_eff = params_batch["compute_budget_B_eff"]  # (C,)
                 carry_sched_new = jax.vmap(
-                    lambda carry_s, rp, pj, rng_s: cs.jax_update(carry_s, {"r_p": rp, "proj": pj}, rng_s),
-                    in_axes=(0, 0, 0, 0),
-                )(carry_sched_curr, r_p, proj, rng_sched_next)
+                    lambda carry_s, rp, vkr, vkm, pj, ch, b_eff, rng_s: cs.jax_update(
+                        carry_s,
+                        {
+                            "r_p": rp,
+                            "v_k_rate": vkr,
+                            "v_k_mean": vkm,
+                            "proj": pj,
+                            "compute_cost_hat": ch,
+                            "compute_budget_B_eff": b_eff,
+                        },
+                        rng_s,
+                    ),
+                    in_axes=(0, 0, 0, 0, 0, 0, 0, 0),
+                )(carry_sched_curr, r_p, v_k_rate, v_k_mean, proj, cost_hat, B_eff, rng_sched_next)
 
                 extra_sigma = extra_sigmas_by_idx[idx]
                 noise_extra = jax.vmap(
