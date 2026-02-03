@@ -21,7 +21,7 @@ method_params:
 
   # Augmented Lagrangian parameters
   aug_lambda: 200.0  # Dual variable
-  aug_rho: 250.0     # Penalty parameter
+  aug_rho: 1000.0     # Penalty parameter
 
   # Multi-mode: number of candidate trajectories to return
   num_modes: 50
@@ -64,8 +64,8 @@ scheduler_config:
       margin: 0.04
       rho: 10.0
       # QP filter: always solve full trajectory QP
-      qp_gate: true
-      qp_prob: 0.5
+      qp_gate: false
+      qp_prob: 1
       topK: null
       eps: 1e-4
       I_QP: 3
