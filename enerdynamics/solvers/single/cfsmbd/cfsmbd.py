@@ -192,13 +192,10 @@ class CFSMBDSolver(SamplingSolver):
         if C > 1 and mode_strategy == "multirun":
             backend = RuntimeBackendManager.get_backend()
             if backend.name == "jax":
-                # Ensure rng_key is a JAX PRNG key (convert if needed)
                 if not isinstance(rng_key, jnp.ndarray) or rng_key.shape != (2,):
-                    # If not a JAX key, create one from seed or convert
                     if isinstance(rng_key, (int, np.integer)):
                         rng_key = jax.random.PRNGKey(int(rng_key))
                     else:
-                        # Try to extract seed or use default
                         rng_key = jax.random.PRNGKey(self.seed)
                 keys = jax.random.split(rng_key, C)
             else:
@@ -215,48 +212,16 @@ class CFSMBDSolver(SamplingSolver):
             planner_num_modes_orig = int(getattr(planner, "num_modes", 1))
             planner.num_modes = 1
             try:
-                # Architecture optimization (no parameter / theory change):
-                # For multirun with many modes, avoid materializing huge diffusion histories for *every* mode.
-                # 1) Run a minimal batched solve to get final trajectories + costs for all modes.
-                # 2) Re-run a single full plan for the best mode to preserve detailed diffusion_* logs.
-                if backend.name == "jax" and hasattr(planner, "plan_batch_minimal"):
-                    t0 = time.time()
-                    batch = planner.plan_batch_minimal(x0_data, keys)  # dict of numpy arrays/lists
-                    t_batch = time.time() - t0
-                    candidate_states_list = batch["candidate_states"]
-                    candidate_actions_list = batch["candidate_actions"]
-                    candidate_costs = np.asarray(batch["candidate_costs"], dtype=np.float32)
-                    best_idx = int(np.nanargmin(candidate_costs))
-                    best_key = keys[best_idx]
-                    t1 = time.time()
-                    best_result = dict(planner.plan(x0_data, best_key))
-                    t_best = time.time() - t1
-                    # Attach timing breakdowns (if provided by backend)
-                    for k, v in batch.items():
-                        if isinstance(k, str) and k.startswith("timing_"):
-                            best_result[f"timing_multirun_batch_{k[len('timing_'):] }"] = v
-                    for k, v in list(best_result.items()):
-                        if isinstance(k, str) and k.startswith("timing_"):
-                            best_result[f"timing_multirun_best_{k[len('timing_'):] }"] = v
-                    best_result["candidate_states"] = candidate_states_list
-                    best_result["candidate_actions"] = candidate_actions_list
-                    best_result["candidate_costs"] = candidate_costs
-                    best_result["best_idx"] = best_idx
-                    best_result["mode_strategy"] = "multirun"
-                    best_result["multirun_impl"] = "plan_batch_minimal_then_best_plan"
-                    best_result["multirun_t_batch_minimal_s"] = float(t_batch)
-                    best_result["multirun_t_best_plan_s"] = float(t_best)
-                    best_result["multirun_C"] = int(C)
-                    result = best_result
-                    states_list = [np.asarray(s, dtype=np.float32) for s in result["states"]]
-                    actions_list = [np.asarray(a, dtype=np.float32) for a in result["actions"]]
-                    return Trajectory(states=states_list, actions=actions_list, info=result)
-
-                # Use batch version for parallel execution if available (may be slower due to per-mode logs).
+                # Use batch version for parallel execution if available.
                 if hasattr(planner, "plan_batch"):
+                    print("plan_batch available, using batch plan......")
                     results = planner.plan_batch(x0_data, keys)
                 else:
+                    print("plan_batch not available, using sequential plan.....")
                     results = [planner.plan(x0_data, k) for k in keys]
+            except Exception as e:
+                print(f"Error in plan_batch: {e}")
+                raise e
             finally:
                 planner.num_modes = planner_num_modes_orig
 
