@@ -16,7 +16,7 @@ method_params:
   action_extra_sigma: 0.3
   terminal_energy_weight: 100.0
   use_min_over_time: true
-  num_modes: 50
+  num_modes: 20
   mode_strategy: multirun
 
 obstacle_levels: [6]
