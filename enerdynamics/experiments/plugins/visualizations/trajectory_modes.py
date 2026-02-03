@@ -9,6 +9,7 @@ from typing import Dict, Any
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+from matplotlib.lines import Line2D
 
 from ...framework.base import VisualizationPlugin
 from ...common.visualization import draw_obstacles, EDOC_COLOR
@@ -102,14 +103,20 @@ class TrajectoryModesVisualizationPlugin(VisualizationPlugin):
         linewidth_other = float(viz_config.get('linewidth_other', 1.5))
         linewidth_best = float(viz_config.get('linewidth_best', 3.0))
         show_labels = bool(viz_config.get('show_labels', True))
-        max_modes_to_show = int(viz_config.get('max_modes_to_show', 20))  # Limit for clarity
+        # By default, show *all* returned modes; keep an optional cap for readability.
+        max_modes_to_show = viz_config.get('max_modes_to_show', None)
+        best_color = viz_config.get('best_color', EDOC_COLOR)
         
         # Get colormap for different modes
-        num_modes = min(len(candidate_states), max_modes_to_show)
-        if num_modes > 1:
-            colors = cm.get_cmap('tab20')(np.linspace(0, 1, num_modes))
+        if max_modes_to_show is None:
+            num_modes = int(len(candidate_states))
         else:
-            colors = [EDOC_COLOR]
+            num_modes = int(min(len(candidate_states), int(max_modes_to_show)))
+        cmap_name = viz_config.get('cmap', 'turbo' if num_modes > 20 else 'tab20')
+        if num_modes > 1:
+            colors = cm.get_cmap(cmap_name)(np.linspace(0, 1, num_modes))
+        else:
+            colors = [best_color]
         
         # Draw each candidate trajectory
         robot_radius = float(obstacle_config.get('robot_radius', 0.05))
@@ -132,19 +139,12 @@ class TrajectoryModesVisualizationPlugin(VisualizationPlugin):
                 continue
             
             is_best = (c == best_idx)
-            color = colors[c % len(colors)]
+            color = best_color if is_best else colors[c % len(colors)]
             lw = linewidth_best if is_best else linewidth_other
             alpha = alpha_best if is_best else alpha_other
-            
-            # Format cost label
-            cost_val = float(candidate_costs[c]) if c < len(candidate_costs) else 0.0
+
+            # Do not label each mode in the legend (avoids huge legends for many modes).
             label = None
-            if show_labels:
-                if is_best:
-                    label = f'Best (cost={cost_val:.2f})'
-                else:
-                    label = f'Mode {c} (cost={cost_val:.2f})'
-            
             ax.plot(positions[:, 0], positions[:, 1], 
                    color=color, linewidth=lw, alpha=alpha, label=label)
         
@@ -181,13 +181,27 @@ class TrajectoryModesVisualizationPlugin(VisualizationPlugin):
             zorder=10
         )
         ax.add_patch(target_circle)
-        ax.plot(target_pos[0], target_pos[1], 'r*', markersize=15, label='Target', zorder=10)
+        (target_star,) = ax.plot(target_pos[0], target_pos[1], 'r*', markersize=15, label='Target', zorder=10)
         
         title = config.get('title', f'Trajectory Modes ({num_modes} paths)')
         ax.set_title(title, fontsize=12)
         
         if show_labels:
-            ax.legend(loc='upper left', fontsize=8, ncol=1, framealpha=0.8)
+            # Compact legend: avoid per-mode labels; show only aggregate entries.
+            mode_handle = Line2D([0], [0], color='gray', linewidth=linewidth_other, alpha=alpha_other, label='Modes')
+            best_handle = Line2D([0], [0], color=best_color, linewidth=linewidth_best, alpha=alpha_best, label='Best')
+
+            handles = [mode_handle, best_handle]
+            labels = ['Modes', 'Best']
+
+            # Pull labeled handles from the axes (Start / Target / Target margin)
+            ax_handles, ax_labels = ax.get_legend_handles_labels()
+            for h, l in zip(ax_handles, ax_labels):
+                if l in ('Start', 'Target (margin)', 'Target') and l not in labels:
+                    handles.append(h)
+                    labels.append(l)
+
+            ax.legend(handles=handles, labels=labels, loc='upper left', fontsize=8, ncol=1, framealpha=0.8)
         ax.grid(True, alpha=0.3)
     
     def save(self, output_path: Any, fig: Any, **kwargs: Any) -> None:

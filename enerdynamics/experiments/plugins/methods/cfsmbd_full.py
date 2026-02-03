@@ -55,6 +55,7 @@ class CFSMBDFullMethodPlugin(MethodPlugin):
             action_extra_sigma=float(config.get("action_extra_sigma", 0.0)),  # Extra noise for diversity
             num_modes=int(config.get("num_modes", 1)),  # Number of candidate trajectories to return
             mode_strategy=str(config.get("mode_strategy", "multirun")),  # How to generate C paths
+            multirun_use_plan_batch_minimal=bool(config.get("multirun_use_plan_batch_minimal", False)),
             diversity_eta=float(config.get("diversity_eta", 1.0)),  # Diversity weight
             diversity_topK_cand=config.get("diversity_topK_cand", None),  # Pre-filter candidates
             diversity_use_state=bool(config.get("diversity_use_state", True)),  # Use state or action features
