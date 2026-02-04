@@ -28,7 +28,7 @@ method_params:
   num_modes: 20
   mode_strategy: multirun
 
-obstacle_levels: [9]
+obstacle_levels: [6]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -62,7 +62,7 @@ scheduler_config:
   type: composite
   constraint_schedulers:
     - type: alm_adaptive
-      margin: 0.06
+      margin: 0.05
       lam0: 0.0
       rho0: 1.0
       nu0: 0.0
@@ -124,11 +124,11 @@ scheduler_config:
       eta_c_eps: 0.01
 
       p_min: 0.0
-      p_max: 1
+      p_max: 1.0
       eps_min: 1e-5
       eps_max: 1e-2
       I_min: 1
-      I_max: 10
+      I_max: 5
       topK_min: 1
       topK_max: 8
       use_stochastic_gate: true
