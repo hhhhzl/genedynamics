@@ -61,7 +61,7 @@ scheduler_config:
   type: composite
   constraint_schedulers:
     - type: fixed
-      margin: 0.05
+      margin: 0.04
       rho: 10.0
       # QP filter: always solve full trajectory QP
       qp_gate: true

@@ -270,9 +270,15 @@ def solve_slack_qp_prefixsum_jax(
 
     v0 = max_violation(u0)
 
-    def cond_fn(carry):
-        i, _u, v = carry
-        return jnp.logical_and(i < maxiter_j, v > tol_j)
+    # Fast path: use fori_loop when maxiter is a Python int (best XLA performance).
+    # If maxiter is traced (e.g. from adaptive scheduler), fall back to while_loop.
+    try:
+        maxiter_i = int(maxiter)
+        maxiter_i = max(0, min(maxiter_i, 10_000))
+        use_fori = True
+    except Exception:
+        use_fori = False
+        maxiter_i = 0
 
     def body_fn(carry):
         i, u, _v = carry
@@ -297,9 +303,40 @@ def solve_slack_qp_prefixsum_jax(
         v_next = max_violation(u_next)
         return (i + 1, u_next, v_next)
 
-    _, u_star, v_star = jax.lax.while_loop(
-        cond_fn, body_fn, (jnp.asarray(0, dtype=jnp.int32), u0, v0)
-    )
+    def cond_fn(carry):
+        i, _u, v = carry
+        return jnp.logical_and(i < maxiter_j, v > tol_j)
+
+    def run_fori(_):
+        # fori_loop body: (i, u) -> u, one cumsum+einsum per iteration, early-stop via cond
+        def body_fori(_i, u):
+            u_prefix = jnp.cumsum(u, axis=0)
+            lhs = jnp.einsum("hkd,hd->hk", A_per_step, u_prefix)
+            viol_hk = jnp.maximum(0.0, jnp.where(valid, b_per_step - lhs, -jnp.inf))
+            flat_idx = jnp.argmax(viol_hk.reshape(-1))
+            t_idx = flat_idx // jnp.asarray(K, dtype=jnp.int32)
+            k_idx = flat_idx - t_idx * jnp.asarray(K, dtype=jnp.int32)
+            a = A_per_step[t_idx, k_idx]
+            v = viol_hk[t_idx, k_idx]
+            den = (jnp.asarray(t_idx + 1, dtype=jnp.float32) * jnp.dot(a, a)) + 1e-9
+            lam = v / (den + 1.0 / rho_eff)
+            prefix_mask = (jnp.arange(H, dtype=jnp.int32) <= t_idx).astype(jnp.float32)
+            u_next = jnp.clip(
+                u + (prefix_mask[:, None] * (lam * a[None, :])), L_lo, L_hi
+            )
+            do_update = jnp.logical_and(_i < maxiter_i, v > tol_j)
+            return jax.lax.cond(do_update, lambda _: u_next, lambda _: u, operand=None)
+        u_star = jax.lax.fori_loop(0, maxiter_i, body_fori, u0)
+        v_star = max_violation(u_star)
+        return u_star, v_star
+
+    def run_while(_):
+        _, u_star, v_star = jax.lax.while_loop(
+            cond_fn, body_fn, (jnp.asarray(0, dtype=jnp.int32), u0, v0)
+        )
+        return u_star, v_star
+
+    u_star, v_star = jax.lax.cond(use_fori, run_fori, run_while, operand=None)
     return u_star, v_star
 
 
