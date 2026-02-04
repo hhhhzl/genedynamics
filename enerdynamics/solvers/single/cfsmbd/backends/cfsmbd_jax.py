@@ -205,6 +205,8 @@ class CFSMBDBackendJax:
         self._rho_arr = None
         self._qp_gate_arr = None
         self._qp_prob_arr = None
+        self._I_QP_arr = None
+        self._eps_arr = None
         self._topK = -1
         if not self._use_jax_adaptive:
             try:
@@ -212,6 +214,8 @@ class CFSMBDBackendJax:
                 rho_list: List[float] = []
                 qp_gate_list: List[bool] = []
                 qp_prob_list: List[float] = []
+                I_QP_list: List[int] = []
+                eps_list: List[float] = []
                 topK_val = None
                 if self._cs is not None:
                     for k in range(self.Ndiffuse):
@@ -221,12 +225,16 @@ class CFSMBDBackendJax:
                         rho_list.append(float(d.get("rho", 1.0)))
                         qp_gate_list.append(bool(d.get("qp_gate", True)))
                         qp_prob_list.append(float(d.get("qp_prob", 1.0)))
+                        I_QP_list.append(int(d.get("I_QP", d.get("cfs_outer_iters", 1))))
+                        eps_list.append(float(d.get("eps", 1e-4)))
                         topK_val = d.get("topK", topK_val)
                 if margin_list:
                     self._margin_arr = jnp.asarray(margin_list, dtype=jnp.float32)
                     self._rho_arr = jnp.asarray(rho_list, dtype=jnp.float32)
                     self._qp_gate_arr = jnp.asarray(qp_gate_list, dtype=jnp.bool_)
                     self._qp_prob_arr = jnp.asarray(qp_prob_list, dtype=jnp.float32)
+                    self._I_QP_arr = jnp.asarray(I_QP_list, dtype=jnp.int32)
+                    self._eps_arr = jnp.asarray(eps_list, dtype=jnp.float32)
                 if topK_val is not None:
                     self._topK = int(topK_val)
             except Exception:
@@ -234,6 +242,8 @@ class CFSMBDBackendJax:
                 self._rho_arr = None
                 self._qp_gate_arr = None
                 self._qp_prob_arr = None
+                self._I_QP_arr = None
+                self._eps_arr = None
 
         # Precompute diffusion temperature schedule (T_k) if scheduler provides it.
         self._T_k_arr = None
@@ -638,17 +648,23 @@ class CFSMBDBackendJax:
                     rho = self._rho_arr[kk]
                     qp_gate = self._qp_gate_arr[kk]
                     qp_prob = self._qp_prob_arr[kk]
+                    I_QP = self._I_QP_arr[kk] if self._I_QP_arr is not None else jnp.asarray(1, dtype=jnp.int32)
+                    eps = self._eps_arr[kk] if self._eps_arr is not None else jnp.asarray(1e-4, dtype=jnp.float32)
                 else:
                     margin = jnp.asarray(0.0, dtype=jnp.float32)
                     rho = jnp.asarray(1.0, dtype=jnp.float32)
                     qp_gate = jnp.asarray(True, dtype=jnp.bool_)
                     qp_prob = jnp.asarray(1.0, dtype=jnp.float32)
+                    I_QP = jnp.asarray(1, dtype=jnp.int32)
+                    eps = jnp.asarray(1e-4, dtype=jnp.float32)
 
                 sched_params = {
                     "margin": margin,
                     "rho": rho,
                     "qp_gate": qp_gate,
                     "qp_prob": qp_prob,
+                    "I_QP": I_QP,
+                    "eps": eps,
                     "topK": jnp.asarray(self._topK if self._topK >= 0 else 8, dtype=jnp.int32),
                     "rng_key": filter_key,
                 }
@@ -992,17 +1008,23 @@ class CFSMBDBackendJax:
                     rho = self._rho_arr[kk]
                     qp_gate = self._qp_gate_arr[kk]
                     qp_prob = self._qp_prob_arr[kk]
+                    I_QP = self._I_QP_arr[kk] if self._I_QP_arr is not None else jnp.asarray(1, dtype=jnp.int32)
+                    eps = self._eps_arr[kk] if self._eps_arr is not None else jnp.asarray(1e-4, dtype=jnp.float32)
                 else:
                     margin = jnp.asarray(0.0, dtype=jnp.float32)
                     rho = jnp.asarray(1.0, dtype=jnp.float32)
                     qp_gate = jnp.asarray(True, dtype=jnp.bool_)
                     qp_prob = jnp.asarray(1.0, dtype=jnp.float32)
+                    I_QP = jnp.asarray(1, dtype=jnp.int32)
+                    eps = jnp.asarray(1e-4, dtype=jnp.float32)
                 
                 sched_params = {
                     "margin": margin,
                     "rho": rho,
                     "qp_gate": qp_gate,
                     "qp_prob": qp_prob,
+                    "I_QP": I_QP,
+                    "eps": eps,
                     "topK": jnp.asarray(self._topK if self._topK >= 0 else 8, dtype=jnp.int32),
                     "rng_key": filter_key,
                 }
