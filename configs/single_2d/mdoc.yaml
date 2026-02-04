@@ -21,7 +21,7 @@ method_params:
   base_beta: 5.0e-2
   terminal_energy_weight: 100.0
   # Multi-mode: number of candidate trajectories to return (C paths)
-  num_modes: 50
+  num_modes: 20
   mode_strategy: multirun
 
   # Visualization style
@@ -32,7 +32,7 @@ method_params:
   mdoc_viz_draw_disk: False
   mdoc_viz_draw_grad: False
 
-obstacle_levels: [6]
+obstacle_levels: [10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
