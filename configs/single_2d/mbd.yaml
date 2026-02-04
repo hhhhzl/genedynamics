@@ -15,10 +15,10 @@ method_params:
   action_extra_sigma: 0.3  # Extra noise for diversity (decays over diffusion steps)
   show_tqdm: true
   # Multi-mode: number of candidate trajectories to return (C paths)
-  num_modes: 50
+  num_modes: 20
   mode_strategy: multirun
 
-obstacle_levels: [3]
+obstacle_levels: [10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05

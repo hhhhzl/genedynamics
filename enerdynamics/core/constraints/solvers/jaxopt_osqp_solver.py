@@ -340,6 +340,15 @@ def solve_slack_qp_prefixsum_jax(
     return u_star, v_star
 
 
+try:
+    from enerdynamics.solvers.single.cfsmbd.backends._fast_prefixsum_qp import (
+        solve_slack_qp_prefixsum_jax as _fast_solve_slack_qp_prefixsum_jax,
+    )
+    solve_slack_qp_prefixsum_jax = _fast_solve_slack_qp_prefixsum_jax
+except ImportError:
+    pass  # keep the implementation above
+
+
 @register("solver", "jaxopt_osqp", "jax")
 class JAXOPTOsqpSolver(QPSolver):
     """

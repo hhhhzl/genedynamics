@@ -67,7 +67,7 @@ def solve_slack_qp_prefixsum_jax(
     tol_j = jnp.asarray(float(tol), dtype=jnp.float32)
 
     # Fixed upper bound (not unrolled): safe and fast for JIT/vmap.
-    MAXITER_STATIC = 1024
+    MAXITER_STATIC = 50
     try:
         # Fast path if maxiter is a Python int
         maxiter_i = int(maxiter)

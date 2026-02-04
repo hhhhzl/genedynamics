@@ -628,29 +628,14 @@ class CFSQPFullFilter(ConstraintFilter):
                 obstacle_branches_grad_tuple = tuple(obstacle_branches_grad[:max_k])
                 self._obstacle_branches_cache = (obstacle_branches_sdf_tuple, obstacle_branches_grad_tuple)
                 self._obstacles_cache_key = obstacles_cache_key
-
-            # ------------------------------------------------------------------
-            # Step D: Spatial grid candidate cache (B).
-            #
-            # Goal: for each queried position p (per timestep), instead of scanning
-            # all obstacles to compute sdf_array, only scan a fixed-size candidate
-            # list retrieved from the cell that contains p.
-            #
-            # Correctness: we build each cell's candidate list using a conservative
-            # bounding circle radius R_i per obstacle and a conservative threshold_upper
-            # so that any obstacle that can satisfy sdf(p) < threshold is included.
-            #
-            # Note: schedule_params["margin"] is a tracer under JIT; so we cannot
-            # build a per-step threshold-dependent structure inside JIT. We instead
-            # use a conservative upper bound that safely covers typical configs.
-            # ------------------------------------------------------------------
+            
             use_spatial_grid = False
             cell_obs_idx_np = None
             grid_x_min = grid_y_min = cell_size = None
             grid_W = grid_H = cell_max = 0
             try:
                 # Heuristic: for small obstacle counts, a spatial grid often costs more than it saves.
-                if max_k < 64:
+                if max_k < 128:
                     raise RuntimeError("Spatial grid disabled for small obstacle count")
 
                 # Only attempt if obstacles have centers and sizes.
