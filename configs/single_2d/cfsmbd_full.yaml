@@ -65,10 +65,10 @@ scheduler_config:
       rho: 10.0
       # QP filter: always solve full trajectory QP
       qp_gate: true
-      qp_prob: 0.8
-      topK: null
+      qp_prob: 1
+      topK: 8
       eps: 1e-4
-      I_QP: 10
+      I_QP: 5
   diffusion_schedulers:
     - type: fixed
       M_k: 64
