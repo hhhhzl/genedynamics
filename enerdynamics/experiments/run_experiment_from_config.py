@@ -23,6 +23,7 @@ from enerdynamics.experiments.plugins import (
     CFSMBDMethodPlugin,
     CFSMBDFullMethodPlugin,
     DPCCMethodPlugin,
+    SafeDiffuserMethodPlugin,
     SingleIntegrator2DPlugin,
     DoubleIntegrator2DPlugin,
     DroneEnvironmentPlugin,
@@ -169,6 +170,8 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(CFSMBDFullMethodPlugin(), 'method')
     if DPCCMethodPlugin is not None:
         runner.register_plugin(DPCCMethodPlugin(), 'method')
+    if SafeDiffuserMethodPlugin is not None:
+        runner.register_plugin(SafeDiffuserMethodPlugin(), 'method')
     
     # Environment plugins
     runner.register_plugin(SingleIntegrator2DPlugin(), 'environment')

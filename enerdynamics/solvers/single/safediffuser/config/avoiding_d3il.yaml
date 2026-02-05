@@ -1,0 +1,36 @@
+exp: avoiding-d3il
+
+# Task-level safety constraints for D3IL avoiding (SafeDiffuser-local).
+
+halfspace_variants:
+  - top-right-hard
+  - top-left-hard
+  - both-hard
+
+halfspace_constraints:
+  avoiding-d3il:
+    - [[0.8, -0.5], [0.4, 0.5], below]
+    - [[0.2, -0.5], [0.6, 0.5], below]
+    - [[0.8, -0.3], [0.575, 0.5], below]
+    - [[0.2, -0.3], [0.425, 0.5], below]
+
+obstacle_constraints:
+  avoiding-d3il:
+    - {type: sphere_outside, dimensions: [x, y], center: [0.4, 0.08], radius: 0.06}
+    - {type: sphere_outside, dimensions: [x, y], center: [0.6, 0.08], radius: 0.06}
+    - {type: sphere_outside, dimensions: [x, y], center: [0.5, -0.1], radius: 0.06}
+    - {type: sphere_outside, dimensions: [x, y], center: [0.4, 0.08], radius: 0.08}
+    - {type: sphere_outside, dimensions: [x, y], center: [0.6, 0.08], radius: 0.08}
+    - {type: sphere_outside, dimensions: [x, y], center: [0.5, -0.09], radius: 0.08}
+
+# Bounds on the per-step delta (dx,dy) used in safety QPs.
+# Note: in SafeDiffuser-style `invariance(x, xp1)` we constrain the denoising update
+# in desired position (x_des/y_des). This uses the same numeric limits as the action
+# bounds in DPCC configs, but we name it explicitly to avoid confusion.
+denoise_step_bounds:
+  avoiding-d3il:
+    - {type: lower, dimensions: [vx, vy], values: [-0.01, 0.0]}
+    - {type: upper, dimensions: [vx, vy], values: [0.01, 0.01]}
+    - {type: lower, dimensions: [vx, vy], values: [-0.012, 0.0]}
+    - {type: upper, dimensions: [vx, vy], values: [0.012, 0.012]}
+

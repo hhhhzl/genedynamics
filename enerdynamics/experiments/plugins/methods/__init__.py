@@ -11,6 +11,7 @@ from .mdoc import MDOCMethodPlugin
 from .cfsmbd import CFSMBDMethodPlugin
 from .cfsmbd_full import CFSMBDFullMethodPlugin
 from .dpcc import DPCCMethodPlugin
+from .safediffuser import SafeDiffuserMethodPlugin
 
 __all__ = [
     'EDOCMethodPlugin',
@@ -22,5 +23,6 @@ __all__ = [
     'CFSMBDMethodPlugin',
     'CFSMBDFullMethodPlugin',
     'DPCCMethodPlugin',
+    'SafeDiffuserMethodPlugin',
 ]
 
