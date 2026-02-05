@@ -31,7 +31,7 @@ obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
-  obstacle_radius_scale: 1.3
+  obstacle_radius_scale: 1.0
   p_max: 2.0
   map_bounds:
     x_min: -1.5
