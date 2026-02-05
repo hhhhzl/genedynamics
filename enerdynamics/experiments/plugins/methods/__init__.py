@@ -10,7 +10,10 @@ from .mbd_mpc import MBDMPCMethodPlugin
 from .mdoc import MDOCMethodPlugin
 from .cfsmbd import CFSMBDMethodPlugin
 from .cfsmbd_full import CFSMBDFullMethodPlugin
-from .dpcc import DPCCMethodPlugin
+try:
+    from .dpcc import DPCCMethodPlugin
+except Exception as e:
+    DPCCMethodPlugin = None
 
 __all__ = [
     'EDOCMethodPlugin',

@@ -108,20 +108,33 @@ class ExperimentRunner:
         env_plugin = self.registry.get_plugin('environment', self.config.env_name)
         
         # 3. Generate start/target positions (before obstacles, for obstacle generation)
-        # We need a temporary env to get target position
         temp_env = env_plugin.create_env(self.config.env_params)
         target_pos = np.asarray(temp_env.target, dtype=np.float32)
-        start_pos = self._generate_start_position(level, seed, temp_env, env_plugin)
-        
-        # 4. Generate obstacles
         obstacle_gen_name = self.config.obstacle_config.get('generator', 'box2d')
         obstacle_gen = self.registry.get_plugin('obstacle_generator', obstacle_gen_name)
-        # Pass env_name to obstacle config for environment-specific generation
         obstacle_config_with_env = {
             **self.config.obstacle_config,
             'env_name': self.config.env_name,
         }
-        obstacles = obstacle_gen.generate(level, seed, start_pos, target_pos, obstacle_config_with_env)
+        # 保证 start/goal 为圆心、robot_radius 为半径的圆不在障碍上；失败则重试采样 start
+        max_start_retries = 5
+        obstacles = None
+        for start_retry in range(max_start_retries):
+            start_pos = self._generate_start_position(
+                level, seed + 1000 * start_retry, temp_env, env_plugin
+            )
+            try:
+                obstacles = obstacle_gen.generate(
+                    level, seed, start_pos, target_pos, obstacle_config_with_env
+                )
+                break
+            except RuntimeError as e:
+                if "Start position" in str(e) or "Goal/target position" in str(e):
+                    if start_retry == max_start_retries - 1:
+                        raise
+                    continue
+                raise
+        assert obstacles is not None, "obstacle_gen.generate did not return"
         
         # 5. Create environment with obstacles (for physics backends that need obstacles in model)
         env_params_with_obstacles = {**self.config.env_params}
@@ -402,6 +415,10 @@ class ExperimentRunner:
         """
         Generate start position based on level and seed.
         
+        For 2D: start is sampled in the hardcoded box x in [-1, 0], y in [-1.5, -2],
+        with an inner margin of robot_radius so the robot fits. For 1D/3D: use
+        level/seed-based random direction and distance from target.
+        
         Args:
             level: Obstacle level
             seed: Random seed
@@ -414,13 +431,42 @@ class ExperimentRunner:
         np.random.seed(seed)
         target_pos = np.asarray(env.target, dtype=np.float32)
         p_max = getattr(env, 'p_max', 2.0)
+        obstacle_config = getattr(self.config, 'obstacle_config', None) or {}
+        robot_radius = float(obstacle_config.get('robot_radius', 0.05))
         
         # Extract target position (first 2 or 3 elements depending on environment)
         target_pos_flat = target_pos.flatten()
         pos_dim = min(len(target_pos_flat), 3)  # Support up to 3D positions
         target_pos_only = target_pos_flat[:pos_dim]
         
-        # Distance from target increases with level
+        # 2D: hardcoded start box x in [-1, 0], y in [-1.5, -2]; inner margin for robot
+        # y 轴下界 -2：保证 robot 中心 y >= -2 + robot_radius，整机不超出 y=-2
+        if pos_dim == 2:
+            x_min, x_max = -1.0, 0.0
+            y_low_bound = -2.0  # map 下界，robot 不得超出
+            y_max = -1.5
+            margin = robot_radius
+            x_lo = x_min + margin
+            x_hi = x_max - margin
+            y_lo = y_low_bound + margin  # 中心至少 -2 + robot_radius
+            y_hi = y_max - margin
+            if x_lo < x_hi and y_lo < y_hi:
+                start = np.array([
+                    np.random.uniform(x_lo, x_hi),
+                    np.random.uniform(y_lo, y_hi),
+                ], dtype=np.float32)
+            else:
+                start = np.array([(x_lo + x_hi) / 2, (y_lo + y_hi) / 2], dtype=np.float32)
+            # 显式裁剪，保证 robot 不超出 y=-2
+            start[1] = max(float(start[1]), y_low_bound + robot_radius)
+            state_dim = env_plugin.get_state_dim()
+            if state_dim > pos_dim:
+                start_full = np.concatenate([start, np.zeros(state_dim - pos_dim, dtype=np.float32)])
+            else:
+                start_full = start
+            return start_full.astype(np.float32)
+        
+        # 1D/3D: distance from target increases with level
         if pos_dim == 2:
             max_distance = 2.0 * np.sqrt(2.0)
         elif pos_dim == 3:
@@ -1084,7 +1130,7 @@ class ExperimentRunner:
 
     def _compute_cost_for_actions(
         self, env: Any, obstacles: Any, initial_state: np.ndarray, act_seq: np.ndarray,
-        violation_weight: float=100, clearance: float=0.0, robot_radius: float=0.05,
+        violation_weight: float=150, clearance: float=0.0, robot_radius: float=0.05,
     ) -> float:
         """Compute task cost (stage+terminal) + violation_weight * sum_t [g]_+ for one action sequence.
         [g]_+ uses effective margin = max(clearance, robot_radius) so penetration (sdf < robot_radius) is penalized.
@@ -1144,7 +1190,7 @@ class ExperimentRunner:
         viz_config = self.config.visualization_config or {}
         cost_config = viz_config.get('cost', {})
         # Default 100 so unsafe trajectories get high cost (task + 100*sum_t [g]_+)
-        violation_weight = float(cost_config.get('violation_weight', 100.0))
+        violation_weight = float(cost_config.get('violation_weight', 150.0))
         clearance = float(cost_config.get('clearance', 0.0))
         robot_radius = float(self.config.obstacle_config.get('robot_radius', 0.05))
 
@@ -1541,13 +1587,6 @@ class ExperimentRunner:
                     serializable_result["avg_planning_time_per_step"] = float(np.mean(pts)) if pts else 0.0
                 except Exception:
                     pass
-
-        if 'energies' in planning_result:
-            energies = planning_result['energies']
-            if hasattr(energies, 'tolist'):
-                serializable_result['energies'] = energies.tolist()
-            else:
-                serializable_result['energies'] = list(energies)
         
         # Save multi-mode trajectories to trajectory.json (not in results.json)
         if 'candidate_states' in planning_result:
