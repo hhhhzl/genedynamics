@@ -237,6 +237,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         method_name = getattr(exp_cfg, 'method', None) if exp_cfg is not None else None
         method_params = getattr(exp_cfg, 'method_params', {}) or {}
         is_ebmbd = (method_name == "ebmbd")  # Only EB-MBD draws barrier; MBD does not
+        is_mbd = (method_name == "mbd")  # MBD: no sample-rollout fan, clean plot
         # MDOC: exact method name or ablation config (mdoc_constraint_mode / cbf_eta in method_params)
         is_mdoc = (
             method_name == "mdoc"
@@ -302,6 +303,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     cfs_overlay_cfg=overlay_cfg,
                     is_ebmbd=is_ebmbd,
                     is_mdoc=is_mdoc,
+                    is_mbd=is_mbd,
                     draw_cfs_fan=draw_cfs_fan,
                 )
         else:
@@ -318,6 +320,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     cfs_overlay_cfg=overlay_cfg,
                     is_ebmbd=is_ebmbd,
                     is_mdoc=is_mdoc,
+                    is_mbd=is_mbd,
                     draw_cfs_fan=draw_cfs_fan,
                 )
     
@@ -332,6 +335,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         cfs_overlay_cfg: Any = None,
         is_ebmbd: bool = False,
         is_mdoc: bool = False,
+        is_mbd: bool = False,
         draw_cfs_fan: bool = True,
         show_title: bool = True,
         show_axis_labels: bool = True,
@@ -350,8 +354,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         if is_ebmbd:
             self._draw_barrier_field(ax, obstacles, x_min, x_max, y_min, y_max)
         
-        # Draw sample rollouts
-        if sample_actions is not None and len(sample_actions) > 0:
+        # Draw sample rollouts (skip for MBD: clean plot without fan)
+        if not is_mbd and sample_actions is not None and len(sample_actions) > 0:
             if is_ebmbd:
                 num_samples = len(sample_actions)
             else:
@@ -658,6 +662,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         method_name = getattr(exp_cfg, 'method', None) if exp_cfg is not None else None
         method_params = getattr(exp_cfg, 'method_params', {}) or {}
         is_ebmbd = (method_name == "ebmbd")  # Only EB-MBD draws barrier; MBD does not
+        is_mbd = (method_name == "mbd")  # MBD: no sample-rollout fan, clean plot
         is_mdoc = (
             method_name == "mdoc"
             or "mdoc_constraint_mode" in method_params
@@ -722,6 +727,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     cfs_overlay_cfg=overlay_cfg,
                     is_ebmbd=is_ebmbd,
                     is_mdoc=is_mdoc,
+                    is_mbd=is_mbd,
                     draw_cfs_fan=draw_cfs_fan,
                     show_title=False,
                     show_axis_labels=False,
@@ -759,6 +765,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                         cfs_overlay_cfg=overlay_cfg,
                         is_ebmbd=is_ebmbd,
                         is_mdoc=is_mdoc,
+                        is_mbd=is_mbd,
                         draw_cfs_fan=draw_cfs_fan,
                         show_title=True,
                         show_axis_labels=False,
@@ -802,6 +809,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     cfs_overlay_cfg=overlay_cfg,
                     is_ebmbd=is_ebmbd,
                     is_mdoc=is_mdoc,
+                    is_mbd=is_mbd,
                     draw_cfs_fan=draw_cfs_fan,
                     show_title=False,
                     show_axis_labels=False,

@@ -40,7 +40,7 @@ class Box3DObstacleGeneratorPlugin(ObstacleGeneratorPlugin):
                 - robot_radius: Robot radius (default: 0.1)
                 - map_bounds: Dictionary with x_min, x_max, y_min, y_max, z_min, z_max
                 - p_max: Position bounds (default: 2.0)
-                - obstacle_radius_scale: Scale factor (default: 1.3)
+                - obstacle_radius_scale: Scale factor (default: 1.1)
                 - min_obstacle_margin: Minimum margin (default: 2.4 * robot_radius)
                 - obstacle_type: "sphere" or "box" (default: "sphere")
                 
@@ -51,7 +51,7 @@ class Box3DObstacleGeneratorPlugin(ObstacleGeneratorPlugin):
         
         # Extract configuration
         robot_radius = config.get('robot_radius', 0.1)
-        obstacle_radius_scale = config.get('obstacle_radius_scale', 1.3)
+        obstacle_radius_scale = config.get('obstacle_radius_scale', 1.1)
         min_obstacle_margin = config.get('min_obstacle_margin', 2.4 * robot_radius)
         p_max = config.get('p_max', 2.0)
         obstacle_type = config.get('obstacle_type', 'sphere')
