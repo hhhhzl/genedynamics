@@ -19,6 +19,15 @@ def _safe_unit(v: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(v) + 1e-9
     return v / n
 
+
+def _get_method_name(exp_cfg: Any) -> Any:
+    """Get method name from config (object or dict) so is_mbd/is_ebmbd work for GIF and PNG."""
+    if exp_cfg is None:
+        return None
+    if isinstance(exp_cfg, dict):
+        return exp_cfg.get("method")
+    return getattr(exp_cfg, "method", None)
+
 def _add_cap_rectangle(
         self, ax: Any, p: np.ndarray, grad: np.ndarray,
         r: float, b: float, dt: float, scale: float,
@@ -234,10 +243,10 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         env_plugin = data['env_plugin']
         exp_cfg = config.get('config', None)
         overlay_cfg = config.get('cfs_overlay', None)
-        method_name = getattr(exp_cfg, 'method', None) if exp_cfg is not None else None
-        method_params = getattr(exp_cfg, 'method_params', {}) or {}
+        method_name = _get_method_name(exp_cfg)
+        method_params = (exp_cfg.get('method_params', {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, 'method_params', {})) or {}
         is_ebmbd = (method_name == "ebmbd")  # Only EB-MBD draws barrier; MBD does not
-        is_mbd = (method_name == "mbd")  # MBD: no sample-rollout fan, clean plot
+        is_mbd = (method_name == "mbd")  # MBD: no sample-rollout fan (PNG and GIF), clean plot
         # MDOC: exact method name or ablation config (mdoc_constraint_mode / cbf_eta in method_params)
         is_mdoc = (
             method_name == "mdoc"
@@ -408,8 +417,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
 
                 # Overlay CFS convexified halfspaces for this diffusion step (if enabled)
                 # For MDOC, we show the specialized Fans instead of full halfspaces.
-                # Skip when qp_gate is False and qp_prob is 0 (no QP filter used).
-                if exp_cfg is not None and not is_ebmbd and not is_mdoc and draw_cfs_fan:
+                # Skip for MBD (clean plot, no orange fan); skip when qp_gate is False and qp_prob is 0.
+                if exp_cfg is not None and not is_ebmbd and not is_mdoc and not is_mbd and draw_cfs_fan:
                     try:
                         draw_cfs_convexify_overlay(
                             ax,
@@ -659,10 +668,10 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         env_plugin = data['env_plugin']
         exp_cfg = config.get('config', None)
         overlay_cfg = config.get('cfs_overlay', None)
-        method_name = getattr(exp_cfg, 'method', None) if exp_cfg is not None else None
-        method_params = getattr(exp_cfg, 'method_params', {}) or {}
+        method_name = _get_method_name(exp_cfg)
+        method_params = (exp_cfg.get('method_params', {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, 'method_params', {})) or {}
         is_ebmbd = (method_name == "ebmbd")  # Only EB-MBD draws barrier; MBD does not
-        is_mbd = (method_name == "mbd")  # MBD: no sample-rollout fan, clean plot
+        is_mbd = (method_name == "mbd")  # MBD: no sample-rollout fan (PNG and GIF), clean plot
         is_mdoc = (
             method_name == "mdoc"
             or "mdoc_constraint_mode" in method_params
