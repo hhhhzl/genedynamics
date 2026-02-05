@@ -18,14 +18,14 @@ method_params:
   constraint_margin: 0.05  # Reduced from 0.25: tighter obstacle selection threshold
 
   # Augmented Lagrangian parameters (fixed for now)
-  aug_lambda: 10.0  # Dual variable
-  aug_rho: 20.0     # Penalty parameter
+  aug_lambda: 500.0  # Dual variable
+  aug_rho: 1000.0     # Penalty parameter
 
   # Multi-mode: number of candidate trajectories to return (C paths)
-  num_modes: 50
+  num_modes: 20
   mode_strategy: multirun
 
-obstacle_levels: [6]
+obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -39,9 +39,9 @@ obstacle_config:
   enable_connectivity_check: true
   enable_nonconvexity_check: true
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 backend: jax
-device: cpu
+device: cuda
 
 metrics:
   - ssr
@@ -49,11 +49,11 @@ metrics:
   - nonconvexity
 
 visualizations:
-  - trajectory_modes  # Shows C candidate paths with best highlighted
-  - trajectory        # Shows only the best (lowest cost) path
+  - trajectory_modes
+  - trajectory
   - diffusion
-  - energy_reward
-  - states
+  - cost
+  - adaptive
 
 scheduler_config:
   type: composite
@@ -62,11 +62,11 @@ scheduler_config:
       margin: 0.18
       rho: 10.0
       # QP filter: always solve per-step
-      qp_gate: true
-      qp_prob: 1.0
-      topK: null
+      qp_gate: False
+      qp_prob: 0
+      topK: 0
       eps: 1e-4
-      I_QP: 10
+      I_QP: 0
   diffusion_schedulers:
     - type: fixed
       M_k: 64

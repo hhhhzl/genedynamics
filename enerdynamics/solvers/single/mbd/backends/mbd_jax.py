@@ -51,10 +51,13 @@ class MBDBackendJax:
             scheduler = solver.config.get("scheduler")
             show_tqdm = solver.config.get("show_tqdm", False)
             action_extra_sigma = getattr(solver, "action_extra_sigma", solver.config.get("action_extra_sigma", 0.0))
+            terminal_energy_weight = float(solver.config.get("terminal_energy_weight", 100.0))
         else:
             action_extra_sigma = kwargs.get("action_extra_sigma", 0.0)
+            terminal_energy_weight = float(kwargs.get("terminal_energy_weight", 100.0))
         
         self.env = env_adapter
+        self.terminal_energy_weight = terminal_energy_weight
         self.energy = legacy_energy
         self.horizon = horizon
         self.dt = dt
@@ -94,13 +97,20 @@ class MBDBackendJax:
         self._cost_fn = jax.jit(cost_fn)
 
         def rollout_rewards(state_init, actions):
+            target_obj = getattr(self.env, "target", None)
+            target = jnp.asarray(target_obj, dtype=jnp.float32) if target_obj is not None else jnp.zeros(2)
+
             def step_fn(carry, action):
                 next_state = self._transition_fn(carry, action)
                 ctx = {"t": 0}
                 reward = -self._cost_fn(next_state, action, ctx)
                 return next_state, reward
 
-            _, rewards = jax.lax.scan(step_fn, state_init, actions)
+            final_state, rewards = jax.lax.scan(step_fn, state_init, actions)
+            # Terminal cost: -terminal_weight * dist(final_state, target)
+            terminal_dist = jnp.linalg.norm(final_state[0:2] - target[0:2])
+            terminal_reward = -jnp.asarray(self.terminal_energy_weight, dtype=jnp.float32) * terminal_dist
+            rewards = rewards.at[-1].add(terminal_reward)
             return rewards
 
         self._rollout_rewards_fn = jax.jit(rollout_rewards)
