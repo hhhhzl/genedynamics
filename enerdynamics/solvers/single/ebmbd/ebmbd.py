@@ -192,6 +192,11 @@ class EBMBDSolver(SamplingSolver):
             best_result["candidate_costs"] = candidate_costs
             best_result["best_idx"] = best_idx
             best_result["mode_strategy"] = "multirun"
+            best_result["multirun_keys"] = keys
+            best_result["multirun_diffusion_data"] = [
+                {"diffusion_actions_traj": r.get("diffusion_actions_traj"), "diffusion_sampled_actions": r.get("diffusion_sampled_actions")}
+                for r in results
+            ]
             result = best_result
         else:
             # Single-run (backend handles either 1 mode or diverse_topk selection)

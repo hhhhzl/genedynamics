@@ -70,7 +70,7 @@ class SingleIntegratorBox2DEnv:
             raise RuntimeError("jax_cost requires JAX to be installed.")
         target = jnp.asarray(self.target, dtype=jnp.float32)
         pos = state[..., 0:2]
-        return jnp.sum(8 * (pos - target) ** 2, axis=-1)
+        return jnp.sum((pos - target) ** 2, axis=-1)
 
     def step(self, x_next: Array, u: Array, t: int, info):
         x_proj = self._project_state(x_next)
