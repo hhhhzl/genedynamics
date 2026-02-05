@@ -9,26 +9,28 @@ from ...framework.base import VisualizationPlugin
 from ...common.visualization import EDOC_COLOR
 
 
-def invert_xaxis_labels(ax, max_step: int):
+def invert_xaxis_labels(ax, n_steps: int, one_based: bool = True):
     """
-    Invert x-axis labels to show 100->0 without reversing data.
-    
+    Set x-axis labels so that diffusion step runs from n_steps down to 1 (or 0).
+    Position 0 = noisiest (step n_steps), position n_steps-1 = cleanest (step 1).
+
     Args:
         ax: Matplotlib axis
-        max_step: Maximum step value (e.g., 100 for 0-100 range)
+        n_steps: Number of diffusion steps (e.g. 100)
+        one_based: If True, label cleanest as 1; if False, as 0.
     """
-    # Get current ticks
     ticks = ax.get_xticks()
-    
-    # Create inverted labels: step i -> label (max_step - i)
-    # Only create labels for ticks within valid range [0, max_step]
+    # Label at position i -> diffusion step (n_steps - i) when one_based, so 100..1
+    # When one_based and n_steps=100: i=0 -> 100, i=99 -> 1
     labels = []
     for tick in ticks:
-        if 0 <= tick <= max_step:
-            labels.append(f"{int(max_step - tick)}")
+        if 0 <= tick < n_steps:
+            lab = int(n_steps - tick) if one_based else int(n_steps - 1 - tick)
+            if one_based and lab < 1:
+                lab = 1
+            labels.append(f"{lab}")
         else:
             labels.append("")
-    
     ax.set_xticks(ticks)
     ax.set_xticklabels(labels)
 
@@ -94,15 +96,15 @@ class EnergyRewardVisualizationPlugin(VisualizationPlugin):
         
         # Plot reward over diffusion steps
         if reward_history is not None and len(reward_history) > 0:
-            # reward_history is indexed by diffusion step
-            # It represents the reward at each diffusion step during the reverse diffusion process
-            diffusion_steps = np.arange(len(reward_history))
-            max_step = len(reward_history) - 1
-            ax_reward.plot(diffusion_steps, reward_history, color=EDOC_COLOR, linewidth=2.0, label='Reward')
+            # Reverse so that left = noisiest (step 100), right = cleanest (step 1); reward increases left->right
+            reward_plot = np.asarray(reward_history)[::-1]
+            n_steps = len(reward_history)
+            diffusion_steps = np.arange(n_steps)
+            ax_reward.plot(diffusion_steps, reward_plot, color=EDOC_COLOR, linewidth=2.0, label='Reward')
             ax_reward.set_xlabel('Diffusion Step')
             ax_reward.set_ylabel('Reward')
             ax_reward.set_title('Reward Over Diffusion Steps')
-            invert_xaxis_labels(ax_reward, max_step)
+            invert_xaxis_labels(ax_reward, n_steps, one_based=True)  # Labels 100 down to 1
             ax_reward.legend()
             ax_reward.grid(True, alpha=0.3)
         elif len(rewards) > 0:
@@ -183,13 +185,15 @@ class EnergyRewardVisualizationPlugin(VisualizationPlugin):
                             energy_history.append(total_energy)
                         
                         if len(energy_history) > 0:
-                            diffusion_steps_energy = np.arange(len(energy_history))
-                            max_step = len(energy_history) - 1
-                            ax_energy.plot(diffusion_steps_energy, energy_history, color=EDOC_COLOR, linewidth=2.0, label='Energy')
+                            # Reverse so left = noisiest (step 100), right = cleanest (step 1)
+                            energy_plot = np.asarray(energy_history)[::-1]
+                            n_steps_energy = len(energy_history)
+                            diffusion_steps_energy = np.arange(n_steps_energy)
+                            ax_energy.plot(diffusion_steps_energy, energy_plot, color=EDOC_COLOR, linewidth=2.0, label='Energy')
                             ax_energy.set_xlabel('Diffusion Step')
                             ax_energy.set_ylabel('Energy')
                             ax_energy.set_title('Energy Over Diffusion Steps')
-                            invert_xaxis_labels(ax_energy, max_step)
+                            invert_xaxis_labels(ax_energy, n_steps_energy, one_based=True)  # Labels 100 down to 1
                             ax_energy.legend()
                             ax_energy.grid(True, alpha=0.3)
                             energy_plotted = True

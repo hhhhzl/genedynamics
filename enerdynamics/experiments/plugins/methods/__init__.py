@@ -10,8 +10,14 @@ from .mbd_mpc import MBDMPCMethodPlugin
 from .mdoc import MDOCMethodPlugin
 from .cfsmbd import CFSMBDMethodPlugin
 from .cfsmbd_full import CFSMBDFullMethodPlugin
-from .dpcc import DPCCMethodPlugin
-from .safediffuser import SafeDiffuserMethodPlugin
+try:
+    from .dpcc import DPCCMethodPlugin
+except Exception as e:
+    DPCCMethodPlugin = None
+try:
+    from .safediffuser import SafeDiffuserMethodPlugin
+except Exception:
+    SafeDiffuserMethodPlugin = None
 
 __all__ = [
     'EDOCMethodPlugin',

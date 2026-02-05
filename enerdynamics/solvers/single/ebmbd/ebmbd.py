@@ -63,6 +63,11 @@ class EBMBDSolver(SamplingSolver):
         seed: int = 0,
         scheduler: Any = None,
         show_tqdm: bool = False,
+        num_modes: int = 1,
+        mode_strategy: str = "multirun",
+        diversity_eta: float = 1.0,
+        diversity_topK_cand: int = None,
+        diversity_use_state: bool = True,
         **kwargs,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -89,6 +94,14 @@ class EBMBDSolver(SamplingSolver):
         self.seed = seed
         self.scheduler = scheduler
         self.show_tqdm = bool(show_tqdm)
+        self.num_modes = int(num_modes)  # Number of candidate trajectories to return
+        # How to produce multiple modes:
+        # - "multirun": run the solver C times with different RNG keys, take the best of each run.
+        # - "diverse_topk": pick C diverse candidates from samples inside a single diffusion run (backend-provided).
+        self.mode_strategy = str(mode_strategy)
+        self.diversity_eta = float(diversity_eta)  # Diversity weight for diverse top-K
+        self.diversity_topK_cand = int(diversity_topK_cand) if diversity_topK_cand is not None else None
+        self.diversity_use_state = bool(diversity_use_state)  # Use state features (True) or action features (False)
         # Optional obstacle manager + config (for fast JAX SDF via texture)
         self._obstacles = obstacles
         self._obstacle_config = obstacle_config or {}
@@ -128,7 +141,66 @@ class EBMBDSolver(SamplingSolver):
         x0_data = np.asarray(x0, dtype=np.float32) if not isinstance(x0, jnp.ndarray) else x0
         rng = kwargs.get("rng_key", jax.random.PRNGKey(self.seed))
 
-        result = self._backend_impl.reverse_diffuse(rng, x0_data)
+        # Multi-mode strategy: run C independent solves (like emerging_barrier_mbd's vmap over seeds)
+        if self.num_modes > 1 and self.mode_strategy.lower() == "multirun":
+            # Check backend type to determine how to handle rng
+            backend_name = getattr(self.backend, 'name', 'jax') if hasattr(self, 'backend') else 'jax'
+            if backend_name == "jax":
+                # Ensure rng is a JAX PRNG key (convert if needed)
+                if not isinstance(rng, jnp.ndarray) or rng.shape != (2,):
+                    # If not a JAX key, create one from seed or convert
+                    if isinstance(rng, (int, np.integer)):
+                        rng = jax.random.PRNGKey(int(rng))
+                    else:
+                        # Try to extract seed or use default
+                        rng = jax.random.PRNGKey(self.seed)
+                keys = jax.random.split(rng, self.num_modes)
+            else:
+                # NumPy backend: convert to integer seeds
+                if isinstance(rng, jnp.ndarray) and rng.shape == (2,):
+                    # Convert JAX key to integer seed (use hash of key values)
+                    base_seed = int(rng[0]) ^ int(rng[1])
+                elif isinstance(rng, (int, np.integer)):
+                    base_seed = int(rng)
+                else:
+                    base_seed = self.seed
+                # Generate C different seeds
+                keys = [base_seed + i for i in range(self.num_modes)]
+            backend_num_modes_orig = int(getattr(self._backend_impl, "num_modes", 1))
+            # Disable backend's within-run multi-mode selection; we aggregate runs here.
+            self._backend_impl.num_modes = 1
+            try:
+                # Use batch version for parallel execution
+                if hasattr(self._backend_impl, "reverse_diffuse_batch"):
+                    results = self._backend_impl.reverse_diffuse_batch(keys, x0_data)
+                else:
+                    # Fallback to sequential if batch not available
+                    results = [self._backend_impl.reverse_diffuse(k, x0_data) for k in keys]
+            finally:
+                self._backend_impl.num_modes = backend_num_modes_orig
+
+            candidate_states_list = [np.asarray(r["states"], dtype=np.float32) for r in results]
+            candidate_actions_list = [np.asarray(r["actions"], dtype=np.float32) for r in results]
+            candidate_costs = np.asarray(
+                [float(np.asarray(r.get("candidate_costs", [np.nan]))[int(r.get("best_idx", 0))]) for r in results],
+                dtype=np.float32,
+            )
+            best_idx = int(np.nanargmin(candidate_costs))
+            best_result = dict(results[best_idx])
+            best_result["candidate_states"] = candidate_states_list
+            best_result["candidate_actions"] = candidate_actions_list
+            best_result["candidate_costs"] = candidate_costs
+            best_result["best_idx"] = best_idx
+            best_result["mode_strategy"] = "multirun"
+            best_result["multirun_keys"] = keys
+            best_result["multirun_diffusion_data"] = [
+                {"diffusion_actions_traj": r.get("diffusion_actions_traj"), "diffusion_sampled_actions": r.get("diffusion_sampled_actions")}
+                for r in results
+            ]
+            result = best_result
+        else:
+            # Single-run (backend handles either 1 mode or diverse_topk selection)
+            result = self._backend_impl.reverse_diffuse(rng, x0_data)
 
         # Convert to Trajectory
         states = result["states"]

@@ -107,7 +107,7 @@ class GaussianDiffusion(nn.Module):
         )
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
-    def p_mean_variance(self, x, cond, t, returns=None, projector=None, constraints=None):
+    def p_mean_variance(self, x, cond, t, returns=None, projector=None, constraints=None): 
         if self.returns_condition:
             epsilon_cond = self.model(x, cond, t, returns, use_dropout=False)
             epsilon_uncond = self.model(x, cond, t, returns, force_dropout=True)
@@ -117,23 +117,20 @@ class GaussianDiffusion(nn.Module):
 
         t = t.detach().to(torch.int64)
         x_recon = self.predict_start_from_noise(x, t=t, noise=epsilon)
-
         if self.clip_denoised:
             x_recon.clamp_(-1.0, 1.0)
         else:
-            raise RuntimeError("clip_denoised is False; DPCC expects clamped samples.")
+            assert RuntimeError()
 
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior(
             x_start=x_recon, x_t=x, t=t
         )
-
         if projector is not None and projector.gradient:
             if self.goal_dim > 0:
                 grad = projector.compute_gradient(x_recon[:, :, :-self.goal_dim], constraints)
             else:
                 grad = projector.compute_gradient(x_recon, constraints)
             model_mean = model_mean + grad
-
         return model_mean, posterior_variance, posterior_log_variance
 
     @torch.no_grad()
@@ -196,7 +193,6 @@ class GaussianDiffusion(nn.Module):
                     costs[i] = projection_costs
 
             x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
-
             if return_diffusion:
                 diffusion.append(x)
 

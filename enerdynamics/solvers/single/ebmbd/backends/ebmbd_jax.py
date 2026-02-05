@@ -13,6 +13,8 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
+from enerdynamics.solvers.single.diffusion_adaptors import diverse_topk_modes
+
 try:
     from enerdynamics.core.registry.edoc_backends import register_edoc_backend
 except ImportError:
@@ -73,6 +75,12 @@ class EBMBDBackendJax:
         self.robot_radius = float(self.obstacle_config.get("robot_radius", 0.05))
         self.scheduler = getattr(solver, "scheduler", None)
         self.show_tqdm = bool(getattr(solver, "show_tqdm", False))
+        # Multi-mode support: number of candidate trajectories to return
+        self.num_modes = int(getattr(solver, "num_modes", 1))
+        # Diversity selection parameters
+        self.diversity_eta = float(getattr(solver, "diversity_eta", 1.0))
+        self.diversity_topK_cand = int(getattr(solver, "diversity_topK_cand", None) or (self.Nsample // 2))
+        self.diversity_use_state = bool(getattr(solver, "diversity_use_state", True))
 
         # Allow constraint scheduler to override barrier params (emerging_barrier)
         if self.scheduler is not None and hasattr(self.scheduler, "constraint_schedulers"):
@@ -247,6 +255,167 @@ class EBMBDBackendJax:
     # ------------------------------------------------------------------ #
     # Core reverse diffusion
     # ------------------------------------------------------------------ #
+    def reverse_diffuse_batch(self, rng_keys: jnp.ndarray, state_init: np.ndarray) -> list[Dict[str, Any]]:
+        """
+        Batch version of reverse_diffuse using jax.vmap for parallel execution.
+        
+        Args:
+            rng_keys: (C,) array of PRNG keys
+            state_init: initial state
+            
+        Returns:
+            List of C result dictionaries (same format as reverse_diffuse)
+        """
+        # Prepare shared schedule arrays (same as reverse_diffuse)
+        horizon = self.horizon
+        act_dim = self.env.act_dim
+        Ndiffuse = self.Ndiffuse
+        
+        try:
+            from enerdynamics.core.constraints.schedulers.utils import DiffusionNoiseSchedule
+            ds = None
+            if self.scheduler is not None and hasattr(self.scheduler, "diffusion_schedulers"):
+                ds_list = getattr(self.scheduler, "diffusion_schedulers", [])
+                if ds_list:
+                    ds = ds_list[0]
+            beta0 = self.beta0
+            betaT = self.betaT
+            Ndiffuse_override = Ndiffuse
+            if ds is not None:
+                from enerdynamics.core.constraints.core.types import ScheduleState
+                try:
+                    params = ds.diffusion_params(ScheduleState(k=0, K=max(Ndiffuse - 1, 1))) or {}
+                    beta0 = float(params.get("beta0", beta0))
+                    betaT = float(params.get("betaT", betaT))
+                    Ndiffuse_override = int(params.get("Ndiffuse", Ndiffuse_override))
+                except Exception:
+                    pass
+            betas_np = np.linspace(beta0, betaT, Ndiffuse_override, dtype=np.float32)
+            betas = jnp.asarray(DiffusionNoiseSchedule.from_betas(betas_np).betas, dtype=jnp.float32)
+            Ndiffuse = int(betas.shape[0])
+        except Exception:
+            betas = jnp.linspace(self.beta0, self.betaT, Ndiffuse, dtype=np.float32)
+        
+        alphas = 1.0 - betas
+        alphas_bar = jnp.cumprod(alphas)
+        sigmas = jnp.sqrt(1.0 - alphas_bar)
+        diffusion_indices = jnp.arange(Ndiffuse - 1, 0, -1, dtype=jnp.int32)
+        
+        denom = jnp.maximum(float(Ndiffuse - 1), 1.0)
+        progress_inc_by_idx = 1.0 - (jnp.arange(Ndiffuse, dtype=jnp.float32) / denom)
+        offset_by_idx = self.bound * (1.0 - (progress_inc_by_idx ** self.alpha))
+        extra_sigmas_by_idx = self.action_extra_sigma * (1.0 - progress_inc_by_idx)
+        
+        x0_jnp = jnp.asarray(state_init, dtype=jnp.float32)
+        temp_eps = jnp.maximum(self.temp, 1e-6)
+        
+        # Core diffusion function (pure JAX, can be vmapped)
+        def reverse_diffuse_core(rng_key):
+            rng, _ = jax.random.split(rng_key)
+            Ybar0 = jnp.zeros((horizon, act_dim), dtype=jnp.float32)
+            
+            def step_one(carry, idx):
+                rng_curr, Ybar_curr = carry
+                rng_curr, eps_key, extra_key = jax.random.split(rng_curr, 3)
+                
+                sqrt_alpha_bar_i = jnp.sqrt(alphas_bar[idx])
+                sigma_i = sigmas[idx]
+                Yi = Ybar_curr * sqrt_alpha_bar_i
+                
+                eps = jax.random.normal(eps_key, (self.Nsample, horizon, act_dim), dtype=jnp.float32)
+                Y0s = Ybar_curr[None, :] + sigma_i * eps
+                limit = self.action_limit
+                Y0s = jnp.clip(Y0s, -limit, limit)
+                
+                states_batch = self._rollout_states_batch_fn(x0_jnp, Y0s)
+                total_stage_terminal_cost, rews_mean = self._rollout_total_cost_batch_fn(x0_jnp, Y0s)
+                
+                min_sdf = self._compute_min_sdf_batch(states_batch)
+                offset = offset_by_idx[idx]
+                z_raw = min_sdf + offset
+                infeasible = z_raw <= 0.0
+                z = jnp.maximum(z_raw, 1e-6)
+                z = jnp.minimum(z, 1.0)
+                barrier = jnp.where(infeasible, jnp.inf, -self.mu * jnp.log(z))
+                
+                total_cost = total_stage_terminal_cost + barrier
+                scores = -total_cost
+                scores = jnp.where(jnp.isfinite(scores), scores, -1e9)
+                logw = scores / temp_eps
+                logw = logw - jnp.max(logw)
+                weights = jax.nn.softmax(logw)
+                weights = jnp.where(
+                    jnp.any(jnp.logical_not(jnp.isfinite(weights))),
+                    jnp.ones_like(weights) / weights.size,
+                    weights,
+                )
+                
+                Ybar_weighted = jnp.tensordot(weights, Y0s, axes=([0], [0]))
+                
+                one_minus_alpha_bar = 1.0 - alphas_bar[idx]
+                score_val = (-Yi + sqrt_alpha_bar_i * Ybar_weighted) / one_minus_alpha_bar
+                Yim1 = (Yi + one_minus_alpha_bar * score_val) / jnp.sqrt(alphas[idx])
+                sqrt_alpha_bar_prev = jnp.sqrt(alphas_bar[idx - 1])
+                Ybar_next = Yim1 / sqrt_alpha_bar_prev
+                
+                extra_sigma = extra_sigmas_by_idx[idx]
+                noise_extra = jax.random.normal(extra_key, (horizon, act_dim), dtype=jnp.float32)
+                Ybar_next = Ybar_next + extra_sigma * noise_extra
+                Ybar_next = jnp.clip(Ybar_next, -limit, limit)
+                # reward_history: stage + terminal only (for convergence comparison across methods)
+                reward_val = jnp.mean(-total_stage_terminal_cost)
+                return (rng_curr, Ybar_next), (reward_val, Ybar_next, Y0s)
+            
+            (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist) = jax.lax.scan(
+                step_one, (rng, Ybar0), diffusion_indices
+            )
+            
+            reward_hist = reward_hist[::-1]
+            Ybar_hist = Ybar_hist[::-1]
+            Ysamples_hist = Ysamples_hist[::-1]
+            
+            return Ybar_final, reward_hist, Ybar_hist, Ysamples_hist
+        
+        # Vmap the core function over rng_keys
+        reverse_diffuse_batch_jit = jax.jit(jax.vmap(reverse_diffuse_core, in_axes=0))
+        Ybar_finals, reward_hists, Ybar_hists, Ysamples_hists = reverse_diffuse_batch_jit(rng_keys)
+        
+        # Batch post-processing: clip, rollout states and rewards (aligned with mbd batch processing)
+        final_actions_batch = jnp.clip(Ybar_finals, -self.action_limit, self.action_limit)  # (C, H, act_dim)
+        states_batch = jax.vmap(self._rollout_states_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H+1, state_dim)
+        rewards_batch = jax.vmap(self._rollout_rewards_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H)
+        
+        # Convert to numpy
+        states_batch_np = np.asarray(states_batch)  # (C, H+1, state_dim)
+        actions_batch_np = np.asarray(final_actions_batch)  # (C, H, act_dim)
+        rewards_batch_np = np.asarray(rewards_batch)  # (C, H)
+        energies_batch_np = -rewards_batch_np  # (C, H)
+        
+        # Batch compute costs
+        total_costs = np.sum(energies_batch_np, axis=-1)  # (C,)
+        
+        # Build results list (only this loop remains, all computation is batched)
+        C = rng_keys.shape[0]
+        results = []
+        for i in range(C):
+            results.append({
+                "states": states_batch_np[i],
+                "actions": actions_batch_np[i],
+                "rewards": rewards_batch_np[i],
+                "energies": energies_batch_np[i],
+                "reward_history": np.asarray(reward_hists[i]),
+                "diffusion_actions_traj": np.asarray(Ybar_hists[i]),
+                "diffusion_sampled_actions": np.asarray(Ysamples_hists[i]),
+                "scheduler_params_history": [],
+                "rng": rng_keys[i],
+                "candidate_states": [states_batch_np[i]],
+                "candidate_actions": [actions_batch_np[i]],
+                "candidate_costs": np.asarray([float(total_costs[i])], dtype=np.float32),
+                "best_idx": 0,
+            })
+        
+        return results
+    
     def reverse_diffuse(self, rng_key: Any, state_init: np.ndarray) -> Dict[str, Any]:
         horizon = self.horizon
         act_dim = self.env.act_dim
@@ -373,8 +542,8 @@ class EBMBDBackendJax:
             # Clip
             Ybar_next = jnp.clip(Ybar_next, -limit, limit)
 
-            # For visualization, keep a per-step-average reward scalar (easier to compare across horizons)
-            reward_val = jnp.mean(rews_mean)
+            # reward_history: stage + terminal only (for convergence comparison across methods)
+            reward_val = jnp.mean(-total_stage_terminal_cost)
             return (rng_curr, Ybar_next), (reward_val, Ybar_next, Y0s)
 
         (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist) = jax.lax.scan(
@@ -390,9 +559,88 @@ class EBMBDBackendJax:
         final_states = self._rollout_states_fn(x0_jnp, Ybar_final)
         rewards_final = self._rollout_rewards_fn(x0_jnp, Ybar_final)  # (H,)
         energies_final = -rewards_final  # per-step stage energy = cost
+        total_cost_final = np.sum(energies_final)
+
+        # Multi-mode: collect candidate trajectories from final diffusion step
+        candidate_states_list = []
+        candidate_actions_list = []
+        candidate_costs_list = []
+        
+        if self.num_modes > 1 and len(Ysamples_hist) > 0:
+            # Strategy: sample from multiple diffusion steps to get diverse candidates
+            # Use steps with moderate noise (not too early, not too late)
+            num_steps_to_sample = min(3, len(Ysamples_hist))
+            step_indices = np.linspace(0, len(Ysamples_hist) - 1, num_steps_to_sample, dtype=int)
+            
+            all_samples_list = []
+            all_states_list = []
+            all_costs_list = []
+            
+            for step_idx in step_indices:
+                step_samples = Ysamples_hist[step_idx]  # (M, H, act_dim)
+                M = step_samples.shape[0]
+                
+                # Rollout all samples to get costs
+                states_step = self._rollout_states_batch_fn(x0_jnp, step_samples)  # (M, H+1, state_dim)
+                rewards_step = self._rollout_rewards_batch_fn(x0_jnp, step_samples)  # (M, H)
+                total_stage_terminal_cost_step, _ = self._rollout_total_cost_batch_fn(x0_jnp, step_samples)  # (M,)
+                
+                # Compute barrier costs for all samples
+                min_sdf_step = self._compute_min_sdf_batch(states_step)  # (M,)
+                # Use appropriate offset for this step (approximate, since we're sampling from history)
+                # For earlier steps, use larger offset; for later steps, use smaller offset
+                step_progress = float(step_idx) / max(len(Ysamples_hist) - 1, 1)
+                # Reverse progress: step_idx=0 (final) -> progress=0, step_idx=last -> progress=1
+                step_progress_rev = 1.0 - step_progress
+                offset_step = self.bound * (1.0 - (step_progress_rev ** self.alpha))
+                z_raw_step = min_sdf_step + offset_step
+                infeasible_step = z_raw_step <= 0.0
+                z_step = jnp.maximum(z_raw_step, 1e-6)
+                z_step = jnp.minimum(z_step, 1.0)
+                barrier_step = jnp.where(infeasible_step, jnp.inf, -self.mu * jnp.log(z_step))
+                
+                # Total cost for each sample
+                total_costs_step = total_stage_terminal_cost_step + barrier_step  # (M,)
+                
+                all_samples_list.append(step_samples)
+                all_states_list.append(states_step)
+                all_costs_list.append(np.asarray(total_costs_step, dtype=np.float32))
+            
+            # Concatenate samples from all steps
+            all_samples = np.concatenate(all_samples_list, axis=0)  # (M_total, H, act_dim)
+            all_states = np.concatenate(all_states_list, axis=0)  # (M_total, H+1, state_dim)
+            all_costs = np.concatenate(all_costs_list, axis=0)  # (M_total,)
+            
+            # Use diverse top-K selection
+            selected_indices, selected_costs = diverse_topk_modes(
+                all_samples,
+                all_states,
+                all_costs,
+                C=self.num_modes,
+                topK_cand=self.diversity_topK_cand,
+                eta=self.diversity_eta,
+                use_state_features=self.diversity_use_state,
+                feature_stride=4,
+            )
+            
+            # Extract candidate trajectories
+            # selected_indices are global indices, selected_costs are the corresponding costs
+            for i, idx in enumerate(selected_indices):
+                candidate_states_list.append(np.asarray(all_states[idx], dtype=np.float32))
+                candidate_actions_list.append(np.asarray(all_samples[idx], dtype=np.float32))
+                candidate_costs_list.append(float(selected_costs[i]))  # Use i, not idx, since selected_costs is already indexed
+            
+            # Find best index (lowest cost)
+            best_idx = int(np.argmin(candidate_costs_list))
+        else:
+            # Single mode: just use final trajectory
+            candidate_states_list = [np.asarray(final_states, dtype=np.float32)]
+            candidate_actions_list = [np.asarray(Ybar_final, dtype=np.float32)]
+            candidate_costs_list = [float(total_cost_final)]
+            best_idx = 0
 
         return {
-            "states": np.asarray(final_states, dtype=np.float32),
+            "states": np.asarray(final_states, dtype=np.float32),  # Best trajectory (for backward compatibility)
             "actions": np.asarray(Ybar_final, dtype=np.float32),
             "rewards": np.asarray(rewards_final, dtype=np.float32),
             "energies": np.asarray(energies_final, dtype=np.float32),
@@ -401,6 +649,11 @@ class EBMBDBackendJax:
             "diffusion_sampled_actions": np.asarray(Ysamples_hist, dtype=np.float32),
             "scheduler_params_history": [],
             "rng": rng_out,
+            # Multi-mode candidates
+            "candidate_states": candidate_states_list,
+            "candidate_actions": candidate_actions_list,
+            "candidate_costs": np.asarray(candidate_costs_list, dtype=np.float32),
+            "best_idx": best_idx,
         }
 
     # ------------------------------------------------------------------ #
