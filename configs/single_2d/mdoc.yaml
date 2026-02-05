@@ -32,7 +32,7 @@ method_params:
   mdoc_viz_draw_disk: False
   mdoc_viz_draw_grad: False
 
-obstacle_levels: [10]
+obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -46,9 +46,9 @@ obstacle_config:
   enable_connectivity_check: true
   enable_nonconvexity_check: true
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 backend: jax
-device: cpu
+device: cuda
 
 metrics:
   - ssr
@@ -56,17 +56,16 @@ metrics:
   - nonconvexity
 
 visualizations:
-  - trajectory_modes  # Shows C candidate paths with best highlighted
-  - trajectory        # Shows only the best (lowest cost) path
+  - trajectory_modes
+  - trajectory
   - diffusion
-  - energy_reward
-  - states
+  - cost
 
 scheduler_config:
   type: composite
   constraint_schedulers:
     - type: fixed
-      margin: 0.04
+      margin: 0.03
       rho: 10.0
       # QP filter: always solve per-step
       qp_gate: true

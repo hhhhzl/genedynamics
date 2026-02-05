@@ -77,6 +77,7 @@ class MBDSolver(SamplingSolver):
         diversity_eta: float = 1.0,
         diversity_topK_cand: int = None,
         diversity_use_state: bool = True,
+        terminal_energy_weight: float = 100.0,
         **kwargs,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -106,6 +107,7 @@ class MBDSolver(SamplingSolver):
                 diversity_eta=float(diversity_eta),
                 diversity_topK_cand=int(diversity_topK_cand) if diversity_topK_cand is not None else None,
                 diversity_use_state=bool(diversity_use_state),
+                terminal_energy_weight=float(terminal_energy_weight),
             )
         )
 
@@ -140,6 +142,7 @@ class MBDSolver(SamplingSolver):
                     seed=self.seed,
                     scheduler=self.config.get("scheduler"),
                     show_tqdm=self.config.get("show_tqdm", False),
+                    terminal_energy_weight=self.config.get("terminal_energy_weight", 100.0),
                 )
             else:
                 self._backend_impl = backend_cls(
@@ -156,6 +159,7 @@ class MBDSolver(SamplingSolver):
                     seed=self.seed,
                     scheduler=self.config.get("scheduler"),
                     show_tqdm=self.config.get("show_tqdm", False),
+                    terminal_energy_weight=self.config.get("terminal_energy_weight", 100.0),
                 )
         return self._backend_impl
 
@@ -238,6 +242,11 @@ class MBDSolver(SamplingSolver):
             best_result["candidate_costs"] = candidate_costs
             best_result["best_idx"] = best_idx
             best_result["mode_strategy"] = "multirun"
+            best_result["multirun_keys"] = keys
+            best_result["multirun_diffusion_data"] = [
+                {"diffusion_actions_traj": r.get("diffusion_actions_traj"), "diffusion_sampled_actions": r.get("diffusion_sampled_actions")}
+                for r in results
+            ]
             result = best_result
         else:
             result = planner.plan(x0_data, rng_key)

@@ -238,6 +238,40 @@ class CFSMBDSolver(SamplingSolver):
             best_result["candidate_costs"] = candidate_costs
             best_result["best_idx"] = best_idx
             best_result["mode_strategy"] = "multirun"
+            best_result["multirun_keys"] = keys
+            best_result["multirun_diffusion_data"] = [
+                {"diffusion_actions_traj": r.get("diffusion_actions_traj"), "diffusion_sampled_actions": r.get("diffusion_sampled_actions")}
+                for r in results
+            ]
+            # Stack all C modes' adaptive metrics for (C, K, 11) storage in adaptive/metrics.json
+            K_ref = None
+            for r in results:
+                for key in ("r_hist", "v_rate_hist", "v_mean_hist"):
+                    h = r.get(key)
+                    if h is not None and hasattr(h, "__len__"):
+                        K_ref = len(np.asarray(h).ravel())
+                        break
+                if K_ref is not None:
+                    break
+            if K_ref is None:
+                K_ref = int(getattr(planner, "Ndiffuse", 100))
+
+            def _stack_hist(key, default_val=np.nan):
+                arrs = []
+                for r in results:
+                    h = r.get(key)
+                    if h is not None and hasattr(h, "__len__"):
+                        a = np.asarray(h, dtype=np.float64).ravel()
+                        arrs.append(a[:K_ref] if len(a) >= K_ref else np.resize(a, K_ref))
+                    else:
+                        arrs.append(np.full(K_ref, default_val, dtype=np.float64))
+                return np.stack(arrs, axis=0)
+            for key in ("r_hist", "v_rate_hist", "v_mean_hist", "rho_hist", "topK_hist", "I_QP_hist",
+                       "eps_hist", "lambda_hist", "p_hist"):
+                stacked = _stack_hist(key)
+                best_result["all_" + key] = stacked
+            best_result["all_nu_hist"] = _stack_hist("nu_hist", default_val=np.nan)
+            best_result["all_compute_cost_hist"] = _stack_hist("compute_cost_hist", default_val=np.nan)
             result = best_result
         else:
             result = planner.plan(x0_data, rng_key)

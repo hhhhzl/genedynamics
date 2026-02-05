@@ -26,7 +26,8 @@ from enerdynamics.core.constraints.schedulers import (
     MergeStrategy,
     FixedConstraintScheduler,
     FixedDiffusionScheduler,
-    DualControlConstraintScheduler,
+    EmergingBarrierConstraintScheduler,
+    ALMAdaptiveConstraintScheduler,
 )
 
 # Import to trigger registration of all components
