@@ -30,7 +30,7 @@ class CFSMBDFullMethodPlugin(MethodPlugin):
         constraint_filter = CFSQPFullFilter(
             max_constraints_per_point=int(config.get("max_constraints_per_point", 8)),
             constraint_margin=float(config.get("constraint_margin", 0.25)),
-            use_slack=True,
+            use_slack=False,
         )
 
         solver = CFSMBDSolver(
@@ -52,6 +52,13 @@ class CFSMBDFullMethodPlugin(MethodPlugin):
             show_tqdm=bool(config.get("show_tqdm", False)),
             aug_lambda=float(config.get("aug_lambda", 0.0)),  # Fixed lambda
             aug_rho=float(config.get("aug_rho", 1.0)),  # Fixed rho
+            action_extra_sigma=float(config.get("action_extra_sigma", 0.0)),  # Extra noise for diversity
+            num_modes=int(config.get("num_modes", 1)),  # Number of candidate trajectories to return
+            mode_strategy=str(config.get("mode_strategy", "multirun")),  # How to generate C paths
+            multirun_use_plan_batch_minimal=bool(config.get("multirun_use_plan_batch_minimal", False)),
+            diversity_eta=float(config.get("diversity_eta", 1.0)),  # Diversity weight
+            diversity_topK_cand=config.get("diversity_topK_cand", None),  # Pre-filter candidates
+            diversity_use_state=bool(config.get("diversity_use_state", True)),  # Use state or action features
         )
         solver.env = env
         return solver

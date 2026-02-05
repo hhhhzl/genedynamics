@@ -70,7 +70,7 @@ class SingleIntegratorBox2DEnv:
             raise RuntimeError("jax_cost requires JAX to be installed.")
         target = jnp.asarray(self.target, dtype=jnp.float32)
         pos = state[..., 0:2]
-        return jnp.sum(8 * (pos - target) ** 2, axis=-1)
+        return jnp.sum((pos - target) ** 2, axis=-1)
 
     def step(self, x_next: Array, u: Array, t: int, info):
         x_proj = self._project_state(x_next)
@@ -104,6 +104,8 @@ class SingleIntegratorBox2DEnv:
     def jax_transition(self, state, action):
         if jnp is None:
             raise RuntimeError("jax_transition requires JAX to be installed.")
+        state = jnp.atleast_1d(jnp.asarray(state, dtype=jnp.float32))
+        action = jnp.atleast_1d(jnp.asarray(action, dtype=jnp.float32))
         u = jnp.clip(action, -self.control_limit, self.control_limit)
         p_next = state[..., 0:2] + self.dt * u[..., 0:2]
         p_next = jnp.clip(p_next, -self.p_max, self.p_max)

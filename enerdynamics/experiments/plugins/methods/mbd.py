@@ -41,9 +41,16 @@ class MBDMethodPlugin(MethodPlugin):
             beta0=config.get("beta0", 1e-4),
             betaT=config.get("betaT", 1e-2),
             action_limit=config.get("action_limit", getattr(env, "control_limit", 1.0)),
+            action_extra_sigma=config.get("action_extra_sigma", 0.0),  # Extra noise for diversity
             seed=config.get("np_random_seed", None) or 0,
             scheduler=config.get("scheduler"),  # pass composite scheduler (diffusion_schedulers)
             show_tqdm=config.get("show_tqdm", False),
+            num_modes=config.get("num_modes", 1),  # Number of candidate trajectories to return
+            mode_strategy=config.get("mode_strategy", "multirun"),
+            diversity_eta=config.get("diversity_eta", 1.0),  # Diversity weight
+            diversity_topK_cand=config.get("diversity_topK_cand", None),  # Pre-filter candidates
+            diversity_use_state=config.get("diversity_use_state", True),  # Use state or action features
+            terminal_energy_weight=float(config.get("terminal_energy_weight", 100.0)),
         )
         return solver
 

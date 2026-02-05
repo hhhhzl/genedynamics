@@ -12,13 +12,18 @@ env_params:
 method: mbd
 method_params:
   action_limit: 1.0
+  action_extra_sigma: 0.3  # Extra noise for diversity (decays over diffusion steps)
+  terminal_energy_weight: 100.0  # Terminal cost weight (stage + terminal for convergence comparison)
   show_tqdm: true
+  # Multi-mode: number of candidate trajectories to return (C paths)
+  num_modes: 20
+  mode_strategy: multirun
 
-obstacle_levels: [3]
+obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
-  obstacle_radius_scale: 1.3
+  obstacle_radius_scale: 1.0
   p_max: 2.0
   map_bounds:
     x_min: -1.5
@@ -33,15 +38,15 @@ scheduler_config:
   diffusion_schedulers:
     - type: fixed
       M_k: 64
-      T_k: 0.3
+      T_k: 0.5
       Ndiffuse: 100
       beta0: 1.0e-4
       betaT: 5.0e-2
   diffusion_merge_strategy: merge
 
-seeds: [0]
-backend: numpy
-device: cpu
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+backend: jax
+device: cuda
 
 metrics:
   - ssr
@@ -49,10 +54,10 @@ metrics:
   - nonconvexity
 
 visualizations:
+  - trajectory_modes
   - trajectory
   - diffusion
-  - energy_reward
-  - states
+  - cost
 
 metadata:
   description: "MBD default configuration for single integrator 2D environment"

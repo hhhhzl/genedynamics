@@ -108,20 +108,33 @@ class ExperimentRunner:
         env_plugin = self.registry.get_plugin('environment', self.config.env_name)
         
         # 3. Generate start/target positions (before obstacles, for obstacle generation)
-        # We need a temporary env to get target position
         temp_env = env_plugin.create_env(self.config.env_params)
         target_pos = np.asarray(temp_env.target, dtype=np.float32)
-        start_pos = self._generate_start_position(level, seed, temp_env, env_plugin)
-        
-        # 4. Generate obstacles
         obstacle_gen_name = self.config.obstacle_config.get('generator', 'box2d')
         obstacle_gen = self.registry.get_plugin('obstacle_generator', obstacle_gen_name)
-        # Pass env_name to obstacle config for environment-specific generation
         obstacle_config_with_env = {
             **self.config.obstacle_config,
             'env_name': self.config.env_name,
         }
-        obstacles = obstacle_gen.generate(level, seed, start_pos, target_pos, obstacle_config_with_env)
+        # 保证 start/goal 为圆心、robot_radius 为半径的圆不在障碍上；失败则重试采样 start
+        max_start_retries = 5
+        obstacles = None
+        for start_retry in range(max_start_retries):
+            start_pos = self._generate_start_position(
+                level, seed + 1000 * start_retry, temp_env, env_plugin
+            )
+            try:
+                obstacles = obstacle_gen.generate(
+                    level, seed, start_pos, target_pos, obstacle_config_with_env
+                )
+                break
+            except RuntimeError as e:
+                if "Start position" in str(e) or "Goal/target position" in str(e):
+                    if start_retry == max_start_retries - 1:
+                        raise
+                    continue
+                raise
+        assert obstacles is not None, "obstacle_gen.generate did not return"
         
         # 5. Create environment with obstacles (for physics backends that need obstacles in model)
         env_params_with_obstacles = {**self.config.env_params}
@@ -199,6 +212,26 @@ class ExperimentRunner:
             'obstacle_config': self.config.obstacle_config,  # Provide robot_radius/map bounds, etc.
             'np_random_seed': seed,  # Pass seed for reproducibility
         }
+        # Merge first diffusion_scheduler's M_k / Ndiffuse / T_k / beta into method_config
+        # so method plugins (MDOC, MBD, etc.) use YAML diffusion_schedulers values instead of defaults
+        if scheduler is not None and getattr(scheduler, 'diffusion_schedulers', None):
+            ds_list = scheduler.diffusion_schedulers
+            if ds_list:
+                from enerdynamics.core.constraints.core.types import ScheduleState
+                params = ds_list[0].diffusion_params(ScheduleState(k=0, K=1))
+                if params:
+                    if 'M_k' in params:
+                        method_config['Nsample'] = int(params['M_k'])
+                        method_config['action_nsample'] = int(params['M_k'])
+                    if 'Ndiffuse' in params and params.get('Ndiffuse') is not None:
+                        method_config['Ndiffuse'] = int(params['Ndiffuse'])
+                        method_config['action_diffuse_steps'] = int(params['Ndiffuse'])
+                    if 'T_k' in params:
+                        method_config['temp_sample'] = float(params['T_k'])
+                    if params.get('beta0') is not None:
+                        method_config['beta0'] = float(params['beta0'])
+                    if params.get('betaT') is not None:
+                        method_config['betaT'] = float(params['betaT'])
         planner = method_plugin.create_planner(env, energy, method_config)
         
         # 8. Run planning
@@ -241,12 +274,73 @@ class ExperimentRunner:
         # Check if planning returned a valid result
         if result is None:
             raise ValueError("Planning returned None. Planning may have failed.")
-        
+
+        # 8b. Recompute best_idx: prefer (safe AND success) + lowest cost; else lowest cost
+        robot_radius = float(self.config.obstacle_config.get('robot_radius', 0.05))
+        success_margin = 2 * robot_radius
+        cand_states = result.get('candidate_states', [])
+        cand_actions = result.get('candidate_actions', [])
+        cand_costs = result.get('candidate_costs', None)
+        if cand_states and cand_actions and cand_costs is not None:
+            best_idx = self._compute_best_idx_from_candidates(
+                list(cand_states), np.asarray(cand_costs), env, obstacles, constraint_manager,
+                env_plugin, robot_radius, success_margin,
+            )
+            result['best_idx'] = best_idx
+            best_states = cand_states[best_idx]
+            best_actions = cand_actions[best_idx]
+            result['states'] = [np.asarray(s, dtype=np.float32) for s in best_states]
+            act_arr = np.asarray(best_actions, dtype=np.float32)
+            result['actions'] = [act_arr[t] for t in range(act_arr.shape[0])] if act_arr.ndim >= 2 else [act_arr]
+            # Multirun: diffusion_steps must show same run as trajectory (our best_idx)
+            multirun_diff = result.get('multirun_diffusion_data', [])
+            if multirun_diff and 0 <= best_idx < len(multirun_diff):
+                dd = multirun_diff[best_idx]
+                if dd.get('diffusion_actions_traj') is not None:
+                    result['diffusion_actions_traj'] = dd['diffusion_actions_traj']
+                if dd.get('diffusion_sampled_actions') is not None:
+                    result['diffusion_sampled_actions'] = dd['diffusion_sampled_actions']
+
+        # 8c. Multirun: re-run single plan with best key to get exact best trajectory planning_time
+        if result.get('mode_strategy', '').lower() == 'multirun' and 'multirun_keys' in result:
+            multirun_keys = result['multirun_keys']
+            best_idx = int(result.get('best_idx', 0))
+            if 0 <= best_idx < len(multirun_keys):
+                best_key = multirun_keys[best_idx]
+                # Ensure JAX PRNGKey so re-run reproduces the same trajectory (keys may be numpy/list after copy)
+                try:
+                    import jax.numpy as jnp
+                    if hasattr(best_key, '__len__') and len(best_key) == 2:
+                        best_key = jnp.asarray([int(best_key[0]), int(best_key[1])], dtype=jnp.uint32)
+                    else:
+                        best_key = jnp.asarray(best_key, dtype=jnp.uint32)
+                except Exception:
+                    pass
+                print(f"[experiment] Re-running plan with best_idx={best_idx} for exact planning_time (key for selected trajectory)")
+                # Force single plan (avoid plan_batch): temporarily set num_modes=1
+                config = getattr(planner, 'config', None)
+                old_num_modes = None
+                if isinstance(config, dict) and 'num_modes' in config:
+                    old_num_modes = config['num_modes']
+                    config['num_modes'] = 1
+                try:
+                    t0 = time.time()
+                    method_plugin.plan(planner, start_pos, best_key)
+                    result['best_planning_time'] = float(time.time() - t0)
+                except Exception:
+                    pass
+                finally:
+                    if old_num_modes is not None and isinstance(config, dict):
+                        config['num_modes'] = old_num_modes
+
         # 9. Extract trajectory
         trajectory = self._extract_trajectory(result, env)
         
         # 10. Compute metrics
-        metrics = self._compute_metrics(trajectory, env, obstacles, constraint_manager, level, env_plugin=env_plugin)
+        metrics = self._compute_metrics(
+            trajectory, env, obstacles, constraint_manager, level,
+            env_plugin=env_plugin, planning_result=result, planning_time=planning_time,
+        )
         
         # 11. Prepare results
         # Add obstacle statistics for backward compatibility
@@ -284,6 +378,7 @@ class ExperimentRunner:
         
         # 12. Generate visualizations
         if self.config.visualizations:
+            print("Generating visualizations (folders/images)...")
             self._generate_visualizations(experiment_result, env, obstacles, env_plugin)
         
         total_time = time.time() - experiment_start_time
@@ -302,6 +397,7 @@ class ExperimentRunner:
         
         for level in self.config.obstacle_levels:
             for seed in self.config.seeds:
+                print(f"\n[experiment] Running level={level}, seed={seed}...")
                 try:
                     result = self.run_single_experiment(level, seed)
                     all_results.append(result)
@@ -319,6 +415,10 @@ class ExperimentRunner:
         """
         Generate start position based on level and seed.
         
+        For 2D: start is sampled in the hardcoded box x in [-1, 0], y in [-1.5, -2],
+        with an inner margin of robot_radius so the robot fits. For 1D/3D: use
+        level/seed-based random direction and distance from target.
+        
         Args:
             level: Obstacle level
             seed: Random seed
@@ -331,13 +431,42 @@ class ExperimentRunner:
         np.random.seed(seed)
         target_pos = np.asarray(env.target, dtype=np.float32)
         p_max = getattr(env, 'p_max', 2.0)
+        obstacle_config = getattr(self.config, 'obstacle_config', None) or {}
+        robot_radius = float(obstacle_config.get('robot_radius', 0.05))
         
         # Extract target position (first 2 or 3 elements depending on environment)
         target_pos_flat = target_pos.flatten()
         pos_dim = min(len(target_pos_flat), 3)  # Support up to 3D positions
         target_pos_only = target_pos_flat[:pos_dim]
         
-        # Distance from target increases with level
+        # 2D: hardcoded start box x in [-1, 0], y in [-1.5, -2]; inner margin for robot
+        # y 轴下界 -2：保证 robot 中心 y >= -2 + robot_radius，整机不超出 y=-2
+        if pos_dim == 2:
+            x_min, x_max = -1.0, 0.0
+            y_low_bound = -2.0  # map 下界，robot 不得超出
+            y_max = -1.5
+            margin = robot_radius
+            x_lo = x_min + margin
+            x_hi = x_max - margin
+            y_lo = y_low_bound + margin  # 中心至少 -2 + robot_radius
+            y_hi = y_max - margin
+            if x_lo < x_hi and y_lo < y_hi:
+                start = np.array([
+                    np.random.uniform(x_lo, x_hi),
+                    np.random.uniform(y_lo, y_hi),
+                ], dtype=np.float32)
+            else:
+                start = np.array([(x_lo + x_hi) / 2, (y_lo + y_hi) / 2], dtype=np.float32)
+            # 显式裁剪，保证 robot 不超出 y=-2
+            start[1] = max(float(start[1]), y_low_bound + robot_radius)
+            state_dim = env_plugin.get_state_dim()
+            if state_dim > pos_dim:
+                start_full = np.concatenate([start, np.zeros(state_dim - pos_dim, dtype=np.float32)])
+            else:
+                start_full = start
+            return start_full.astype(np.float32)
+        
+        # 1D/3D: distance from target increases with level
         if pos_dim == 2:
             max_distance = 2.0 * np.sqrt(2.0)
         elif pos_dim == 3:
@@ -424,6 +553,198 @@ class ExperimentRunner:
 
         return Trajectory(states=states_list, actions=actions_list, info=info or None)
     
+    def _compute_best_idx_from_candidates(
+        self,
+        candidate_states_list: list,
+        candidate_costs: np.ndarray,
+        env: Any,
+        obstacles: Any,
+        constraints: Any,
+        env_plugin: Any,
+        robot_radius: float,
+        success_margin: float,
+    ) -> int:
+        """
+        Best = lowest cost among (safe AND success) modes; if none, lowest cost over all.
+        """
+        n_modes = len(candidate_states_list)
+        if n_modes == 0:
+            return 0
+        costs = np.asarray(candidate_costs, dtype=np.float64).ravel()
+        if len(costs) != n_modes:
+            return int(np.argmin(costs)) if len(costs) > 0 else 0
+
+        def extract_pos_2d(s: np.ndarray) -> np.ndarray:
+            if env_plugin is not None and hasattr(env_plugin, "extract_position"):
+                p = np.asarray(env_plugin.extract_position(s), dtype=np.float32).reshape(-1)
+                return p[:2]
+            x = np.asarray(s, dtype=np.float32).reshape(-1)
+            return x[:2] if x.size >= 2 else x
+
+        target = np.asarray(env.target, dtype=np.float32)
+        target_pos = extract_pos_2d(target)
+        safe_success_mask = []
+        for states in candidate_states_list:
+            states_arr = [np.asarray(s, dtype=np.float32) for s in states]
+            if len(states_arr) == 0:
+                safe_success_mask.append(False)
+                continue
+            safe = True
+            if obstacles is not None and hasattr(obstacles, '__len__') and len(obstacles) > 0:
+                for s in states_arr:
+                    pos = extract_pos_2d(s)
+                    sdf = obstacles.sdf(pos)
+                    sdf_val = float(np.asarray(sdf).item() if hasattr(sdf, "item") else sdf)
+                    if sdf_val < robot_radius or obstacles.contains(pos):
+                        safe = False
+                        break
+            final_pos = extract_pos_2d(states_arr[-1])
+            task_success = bool(np.linalg.norm(final_pos - target_pos) < success_margin)
+            safe_success_mask.append(safe and task_success)
+
+        valid_indices = [i for i in range(n_modes) if safe_success_mask[i]]
+        if valid_indices:
+            return int(valid_indices[np.argmin(costs[valid_indices])])
+        return int(np.argmin(costs))
+
+    def _compute_trajectory_length_smoothness(self, trajectory: Trajectory, env_plugin: Any) -> tuple:
+        """Compute length, smoothness, geometric_smoothness for a single trajectory."""
+        def extract_pos_2d(s: np.ndarray) -> np.ndarray:
+            if env_plugin is not None and hasattr(env_plugin, "extract_position"):
+                p = np.asarray(env_plugin.extract_position(s), dtype=np.float32).reshape(-1)
+                return p[:2]
+            x = np.asarray(s, dtype=np.float32).reshape(-1)
+            return x[:2] if x.size >= 2 else x
+
+        states_arr = [np.asarray(s, dtype=np.float32) for s in trajectory.states]
+        if len(states_arr) < 2:
+            return 0.0, 0.0, 0.0
+        positions = np.array([extract_pos_2d(s) for s in states_arr])
+        seg_len = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+        length = float(np.sum(seg_len))
+        smooth = 0.0
+        if len(states_arr) >= 3:
+            vel = np.diff(positions, axis=0)
+            acc = np.diff(vel, axis=0)
+            n_acc = max(1, acc.shape[0])
+            smooth = float(np.sum(acc ** 2)) / n_acc
+        geom_smooth = 0.0
+        if len(positions) >= 3:
+            seg = np.diff(positions, axis=0)
+            seg_norm = np.linalg.norm(seg, axis=1, keepdims=True)
+            seg_norm = np.where(seg_norm < 1e-8, 1.0, seg_norm)
+            u = seg / seg_norm
+            dp = np.sum(u[1:] * u[:-1], axis=1)
+            dp = np.clip(dp, -1.0, 1.0)
+            angles = np.arccos(dp)
+            n_angles = max(1, len(angles))
+            geom_smooth = float(np.sum(angles ** 2)) / n_angles
+        return length, smooth, geom_smooth
+
+    def _compute_modes_metrics(
+        self,
+        candidate_states_list: list,
+        env: Any,
+        obstacles: Any,
+        constraints: Any,
+        env_plugin: Any,
+        robot_radius: float,
+        success_margin: float,
+    ) -> Dict[str, Any]:
+        """Compute modes-based metrics: ssr, length, smoothness, geometric_smoothness."""
+        n_modes = len(candidate_states_list)
+        if n_modes == 0:
+            return {}
+
+        def extract_pos_2d(s: np.ndarray) -> np.ndarray:
+            if env_plugin is not None and hasattr(env_plugin, "extract_position"):
+                p = np.asarray(env_plugin.extract_position(s), dtype=np.float32).reshape(-1)
+                return p[:2]
+            x = np.asarray(s, dtype=np.float32).reshape(-1)
+            return x[:2] if x.size >= 2 else x
+
+        ssr_count = 0
+        lengths = []
+        smoothnesses = []
+        geom_smoothnesses = []
+
+        target = np.asarray(env.target, dtype=np.float32)
+        target_pos = extract_pos_2d(target)
+
+        for states in candidate_states_list:
+            states_arr = [np.asarray(s, dtype=np.float32) for s in states]
+            if len(states_arr) == 0:
+                continue
+
+            # Safe: no collision
+            safe = True
+            if obstacles is not None and hasattr(obstacles, '__len__') and len(obstacles) > 0:
+                for s in states_arr:
+                    pos = extract_pos_2d(s)
+                    sdf = obstacles.sdf(pos)
+                    sdf_val = float(np.asarray(sdf).item() if hasattr(sdf, "item") else sdf)
+                    if sdf_val < robot_radius:
+                        safe = False
+                        break
+                    if obstacles.contains(pos):
+                        safe = False
+                        break
+
+            # Task success
+            final_pos = extract_pos_2d(states_arr[-1])
+            dist = float(np.linalg.norm(final_pos - target_pos))
+            task_success = bool(dist < success_margin)
+
+            if safe and task_success:
+                ssr_count += 1
+
+            # Length: sum of segment lengths
+            positions = np.array([extract_pos_2d(s) for s in states_arr])
+            seg_len = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+            length = float(np.sum(seg_len))
+            lengths.append(length)
+
+            # Smoothness (acceleration): mean squared ||acc|| per step (normalized by n_steps)
+            if len(states_arr) >= 3:
+                pos_arr = np.array([extract_pos_2d(s) for s in states_arr])
+                vel = np.diff(pos_arr, axis=0)
+                acc = np.diff(vel, axis=0)
+                n_acc = max(1, acc.shape[0])
+                smooth = float(np.sum(acc ** 2)) / n_acc
+            else:
+                smooth = 0.0
+            smoothnesses.append(smooth)
+
+            # Geometric smoothness: mean squared angle (rad²) per turn (normalized by n_angles)
+            if len(positions) >= 3:
+                seg = np.diff(positions, axis=0)
+                seg_norm = np.linalg.norm(seg, axis=1, keepdims=True)
+                seg_norm = np.where(seg_norm < 1e-8, 1.0, seg_norm)
+                u = seg / seg_norm
+                dp = np.sum(u[1:] * u[:-1], axis=1)
+                dp = np.clip(dp, -1.0, 1.0)
+                angles = np.arccos(dp)
+                n_angles = max(1, len(angles))
+                geom_smooth = float(np.sum(angles ** 2)) / n_angles
+            else:
+                geom_smooth = 0.0
+            geom_smoothnesses.append(geom_smooth)
+
+        n_valid = len(lengths)
+        if n_valid == 0:
+            return {}
+
+        out = {}
+        out['ssr'] = {
+            'ssr': float(ssr_count) / max(1, n_modes),
+            'ssr_count': int(ssr_count),
+        }
+        out['length'] = {'mean': float(np.mean(lengths)), 'std': float(np.std(lengths)) if n_valid > 1 else 0.0}
+        out['smoothness'] = {'mean': float(np.mean(smoothnesses)), 'std': float(np.std(smoothnesses)) if n_valid > 1 else 0.0}
+        out['geometric_smoothness'] = {'mean': float(np.mean(geom_smoothnesses)), 'std': float(np.std(geom_smoothnesses)) if n_valid > 1 else 0.0}
+        out['_per_mode'] = {'lengths': lengths, 'smoothnesses': smoothnesses, 'geom_smoothnesses': geom_smoothnesses}
+        return out
+
     def _compute_metrics(
         self,
         trajectory: Trajectory,
@@ -432,26 +753,90 @@ class ExperimentRunner:
         constraints: Any,
         level: int,
         env_plugin: Any = None,
+        planning_result: Optional[Dict[str, Any]] = None,
+        planning_time: float = 0.0,
     ) -> Dict[str, Any]:
         """
         Compute all requested metrics.
-        
-        Args:
-            trajectory: Computed trajectory
-            env: Environment instance
-            obstacles: Obstacle manager
-            constraints: Constraint manager
-            level: Obstacle level
-            
-        Returns:
-            Dictionary mapping metric names to values
+        When planning_result has candidate_states/candidate_actions, modes-based ssr, length,
+        smoothness, geometric_smoothness are computed and override/extend metrics.
+        metrics["best"]: best mode's planning_time, length, smoothness, geometric_smoothness.
+        For multirun: best.planning_time = planning_time / num_modes.
         """
         metrics_result = {}
-        
-        # Get robot radius from obstacle config
         robot_radius = float(self.config.obstacle_config.get('robot_radius', 0.05))
-        
+        success_margin = 2 * robot_radius
+
+        # Modes-based metrics when candidate data exists
+        candidate_states_list = []
+        if planning_result is not None:
+            cand_states = planning_result.get('candidate_states', [])
+            cand_actions = planning_result.get('candidate_actions', [])
+            initial_state = planning_result.get('initial_state', None)
+            if cand_states and len(cand_states) > 0:
+                candidate_states_list = list(cand_states)
+            elif cand_actions and initial_state is not None and hasattr(env, 'rollout_actions'):
+                initial = np.asarray(initial_state, dtype=np.float32)
+                for acts in cand_actions:
+                    acts_arr = np.asarray(acts, dtype=np.float32)
+                    try:
+                        states = env.rollout_actions(initial, acts_arr)
+                        candidate_states_list.append([np.asarray(s, dtype=np.float32) for s in states])
+                    except Exception:
+                        pass
+
+        if candidate_states_list:
+            modes_metrics = self._compute_modes_metrics(
+                candidate_states_list, env, obstacles, constraints, env_plugin,
+                robot_radius, success_margin,
+            )
+            if 'ssr' in modes_metrics:
+                metrics_result['ssr'] = modes_metrics['ssr']
+            if 'length' in modes_metrics:
+                metrics_result['length'] = modes_metrics['length']
+            if 'smoothness' in modes_metrics:
+                metrics_result['smoothness'] = modes_metrics['smoothness']
+            if 'geometric_smoothness' in modes_metrics:
+                metrics_result['geometric_smoothness'] = modes_metrics['geometric_smoothness']
+            # metrics["best"]: best mode's planning_time, length, smoothness, geometric_smoothness
+            best_idx = int(planning_result.get('best_idx', 0))
+            per_mode = modes_metrics.get('_per_mode', {})
+            lengths = per_mode.get('lengths', [])
+            smoothnesses = per_mode.get('smoothnesses', [])
+            geom_smoothnesses = per_mode.get('geom_smoothnesses', [])
+            n_modes = len(candidate_states_list)
+            mode_strategy = str(planning_result.get('mode_strategy', '')).lower()
+            if 'best_planning_time' in planning_result and planning_result['best_planning_time'] is not None:
+                best_planning_time = float(planning_result['best_planning_time'])
+            else:
+                best_planning_time = float(planning_time)
+                if n_modes > 1 and mode_strategy == 'multirun':
+                    best_planning_time = float(planning_time) / n_modes
+            best_length = float(lengths[best_idx]) if best_idx < len(lengths) else 0.0
+            best_smooth = float(smoothnesses[best_idx]) if best_idx < len(smoothnesses) else 0.0
+            best_geom = float(geom_smoothnesses[best_idx]) if best_idx < len(geom_smoothnesses) else 0.0
+            metrics_result['best'] = {
+                'planning_time': best_planning_time,
+                'length': best_length,
+                'smoothness': best_smooth,
+                'geometric_smoothness': best_geom,
+            }
+        else:
+            # Single trajectory: best = trajectory metrics
+            best_len, best_sm, best_gs = self._compute_trajectory_length_smoothness(
+                trajectory, env_plugin,
+            )
+            metrics_result['best'] = {
+                'planning_time': float(planning_time),
+                'length': best_len,
+                'smoothness': best_sm,
+                'geometric_smoothness': best_gs,
+            }
+
+        # Standard plugin metrics (skip ssr if already set by modes)
         for metric_name in self.config.metrics:
+            if metric_name == 'ssr' and 'ssr' in metrics_result:
+                continue
             try:
                 metric_plugin = self.registry.get_plugin('metric', metric_name)
                 metric_value = metric_plugin.compute(
@@ -461,11 +846,17 @@ class ExperimentRunner:
                     obstacle_config=self.config.obstacle_config,
                     env_plugin=env_plugin,
                 )
-                metrics_result[metric_name] = convert_to_json_serializable(metric_value)
+                val = convert_to_json_serializable(metric_value)
+                if metric_name == 'ssr' and isinstance(val, dict):
+                    # Keep only ssr field for modes consistency when we later add ssr from plugin
+                    metrics_result[metric_name] = {'ssr': float(val.get('ssr', 0.0))}
+                else:
+                    metrics_result[metric_name] = val
             except Exception as e:
                 print(f"Warning: Failed to compute metric '{metric_name}': {e}")
-                metrics_result[metric_name] = None
-        
+                if metric_name not in metrics_result:
+                    metrics_result[metric_name] = None
+
         return metrics_result
     
     def _generate_visualizations(self, result: Dict[str, Any], env: Any, 
@@ -482,32 +873,85 @@ class ExperimentRunner:
         viz_config = self.config.visualization_config or {}
         
         for viz_name in self.config.visualizations:
+            # Cost visualization is generated inline (no plugin)
+            if viz_name == 'cost':
+                try:
+                    self._generate_cost_visualization(result, env, obstacles, env_plugin)
+                except Exception as e:
+                    print(f"Warning: Failed to generate visualization 'cost': {e}")
+                    import traceback
+                    traceback.print_exc()
+                continue
+
+            # Adaptive (CFS-MBD scheduler metrics) visualization: inline
+            if viz_name == 'adaptive':
+                try:
+                    self._generate_adaptive_visualization(result, env_plugin)
+                except Exception as e:
+                    print(f"Warning: Failed to generate visualization 'adaptive': {e}")
+                    import traceback
+                    traceback.print_exc()
+                continue
+
             try:
                 viz_plugin = self.registry.get_plugin('visualization', viz_name)
             except KeyError:
                 print(f"Warning: Visualization plugin '{viz_name}' not found in registry")
                 continue
-            
+
             try:
                 # Create figure based on visualization type
                 import matplotlib.pyplot as plt
-                
+
                 # Visualization-specific figure creation
                 if viz_name == 'trajectory':
+                    out_dir = self._get_output_path(result['level'], result['seed'])
+                    trajectory_dir = out_dir / "trajectory"
+                    trajectory_dir.mkdir(parents=True, exist_ok=True)
+                    traj = result['trajectory']
+                    viz_cfg = {**viz_config.get(viz_name, {}), 'config': self.config}
+                    data_base = {
+                        'trajectory': traj,
+                        'env': env,
+                        'obstacles': obstacles,
+                        'env_plugin': env_plugin,
+                    }
+                    # Static PNG
                     fig, ax = plt.subplots(1, 1, figsize=(8, 8))
-                    viz_plugin.visualize(
-                        fig, ax,
-                        {
-                            'trajectory': result['trajectory'],
-                            'env': env,
-                            'obstacles': obstacles,
-                            'env_plugin': env_plugin,
-                        },
-                        {**viz_config.get(viz_name, {}), 'config': self.config}
-                    )
-                    output_path = self._get_output_path(result['level'], result['seed']) / f"{viz_name}.png"
-                    viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
+                    viz_plugin.visualize(fig, ax, data_base, viz_cfg)
+                    viz_plugin.save(trajectory_dir / "trajectory_best.png", fig, dpi=150, bbox_inches='tight')
                     plt.close(fig)
+                    # GIF: trajectory from start to end over time steps
+                    num_steps = max(0, len(traj.states) - 1)
+                    if num_steps >= 0:
+                        import imageio
+                        temp_frames = []
+                        try:
+                            for t in range(num_steps + 1):
+                                fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
+                                viz_plugin.visualize(
+                                    fig_g, ax_g,
+                                    {**data_base, 'partial_until_step': t, 'gif_style': True},
+                                    viz_cfg
+                                )
+                                tmp_path = trajectory_dir / f"_gif_best_{t}.png"
+                                fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                plt.close(fig_g)
+                                temp_frames.append(tmp_path)
+                            if temp_frames:
+                                frames = [imageio.v3.imread(p) for p in temp_frames]
+                                imageio.v3.imwrite(
+                                    trajectory_dir / "trajectory_best.gif",
+                                    frames,
+                                    duration=80,
+                                    loop=0,
+                                )
+                        finally:
+                            for p in temp_frames:
+                                try:
+                                    p.unlink()
+                                except OSError:
+                                    pass
                 
                 elif viz_name == 'trajectory_3d':
                     from mpl_toolkits.mplot3d import Axes3D
@@ -527,24 +971,80 @@ class ExperimentRunner:
                     viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
                     plt.close(fig)
                 
-                elif viz_name == 'diffusion':
-                    # Multiple subplots for diffusion steps
-                    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-                    viz_plugin.visualize(
-                        fig, axes,
-                        {
-                            'result': result['result'],
-                            'env': env,
-                            'obstacles': obstacles,
-                            'initial_state': result['result'].get('initial_state'),
-                            'env_plugin': env_plugin,
-                        },
-                        {**viz_config.get(viz_name, {}), 'config': self.config}
-                    )
-                    output_path = self._get_output_path(result['level'], result['seed']) / f"{viz_name}_steps.png"
-                    plt.tight_layout()
-                    viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
+                elif viz_name == 'trajectory_modes':
+                    out_dir = self._get_output_path(result['level'], result['seed'])
+                    trajectory_dir = out_dir / "trajectory"
+                    trajectory_dir.mkdir(parents=True, exist_ok=True)
+                    data_base = {
+                        'result': result['result'],
+                        'env': env,
+                        'obstacles': obstacles,
+                        'env_plugin': env_plugin,
+                    }
+                    viz_cfg = {**viz_config.get(viz_name, {}), 'config': self.config}
+                    # Static PNG
+                    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+                    viz_plugin.visualize(fig, ax, data_base, viz_cfg)
+                    viz_plugin.save(trajectory_dir / "trajectory_modes.png", fig, dpi=150, bbox_inches='tight')
                     plt.close(fig)
+                    # GIF: all modes advance in sync by time step
+                    planning_result = result.get('result', {})
+                    candidate_states = planning_result.get('candidate_states') or []
+                    if not candidate_states:
+                        states_list = planning_result.get('states', [])
+                        if states_list:
+                            candidate_states = [states_list]
+                    max_steps = 0
+                    for states_c in candidate_states:
+                        max_steps = max(max_steps, max(0, len(states_c) - 1))
+                    if max_steps >= 0 and candidate_states:
+                        import imageio
+                        temp_frames = []
+                        try:
+                            for t in range(max_steps + 1):
+                                fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
+                                viz_plugin.visualize(
+                                    fig_g, ax_g,
+                                    {**data_base, 'partial_until_step': t},
+                                    viz_cfg
+                                )
+                                tmp_path = trajectory_dir / f"_gif_modes_{t}.png"
+                                fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                plt.close(fig_g)
+                                temp_frames.append(tmp_path)
+                            if temp_frames:
+                                frames = [imageio.v3.imread(p) for p in temp_frames]
+                                imageio.v3.imwrite(
+                                    trajectory_dir / "trajectory_modes.gif",
+                                    frames,
+                                    duration=80,
+                                    loop=0,
+                                )
+                        finally:
+                            for p in temp_frames:
+                                try:
+                                    p.unlink()
+                                except OSError:
+                                    pass
+                
+                elif viz_name == 'diffusion':
+                    # Save individual PNGs (90%, 50%, 10%) and GIF to diffusion_steps/ subdirectory
+                    output_path = self._get_output_path(result['level'], result['seed'])
+                    diffusion_steps_dir = output_path / "diffusion_steps"
+                    data = {
+                        'result': result['result'],
+                        'env': env,
+                        'obstacles': obstacles,
+                        'initial_state': result['result'].get('initial_state'),
+                        'env_plugin': env_plugin,
+                    }
+                    viz_config_diffusion = {**viz_config.get(viz_name, {}), 'config': self.config}
+                    viz_plugin.save_individual_and_gif(
+                        diffusion_steps_dir,
+                        data,
+                        viz_config_diffusion,
+                        dpi=150,
+                    )
                 
                 elif viz_name == 'diffusion_3d':
                     # Multiple 3D subplots for diffusion steps
@@ -583,7 +1083,7 @@ class ExperimentRunner:
                     output_path = self._get_output_path(result['level'], result['seed']) / f"{viz_name}.png"
                     viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
                     plt.close(fig)
-                
+
                 elif viz_name == 'states':
                     state_dim = env_plugin.get_state_dim()
                     n_cols = 2
@@ -627,7 +1127,369 @@ class ExperimentRunner:
                 print(f"Warning: Failed to generate visualization '{viz_name}': {e}")
                 import traceback
                 traceback.print_exc()
-    
+
+    def _compute_cost_for_actions(
+        self, env: Any, obstacles: Any, initial_state: np.ndarray, act_seq: np.ndarray,
+        violation_weight: float=150, clearance: float=0.0, robot_radius: float=0.05,
+    ) -> float:
+        """Compute task cost (stage+terminal) + violation_weight * sum_t [g]_+ for one action sequence.
+        [g]_+ uses effective margin = max(clearance, robot_radius) so penetration (sdf < robot_radius) is penalized.
+        Uses batch SDF for positions (one call per rollout) for speed."""
+        task_cost = 0.0
+        violation = 0.0
+        if not hasattr(env, 'rollout_actions'):
+            return 0.0
+        try:
+            states = env.rollout_actions(np.asarray(initial_state, dtype=np.float32), np.asarray(act_seq, dtype=np.float32))
+            states = np.asarray(states)
+            positions = states[:, :2].astype(np.float32)  # (N, 2)
+
+            for t in range(len(states)):
+                if hasattr(env, 'cost'):
+                    task_cost += float(env.cost(states[t]))
+
+            # Batch SDF: one call for all positions
+            sdf_box = np.full(len(positions), float('inf'), dtype=np.float64)
+            if hasattr(env, 'jax_sdf'):
+                try:
+                    sdf_box = np.asarray(env.jax_sdf(positions), dtype=np.float64).ravel()
+                except Exception:
+                    pass
+            sdf_obs = np.full(len(positions), float('inf'), dtype=np.float64)
+            if obstacles is not None and hasattr(obstacles, 'sdf'):
+                try:
+                    sdf_obs = np.asarray(obstacles.sdf(positions), dtype=np.float64).ravel()
+                except Exception:
+                    pass
+            min_sdf = np.minimum(sdf_box, sdf_obs)
+            # Violation margin: at least robot_radius so penetration is penalized
+            effective_margin = max(clearance, robot_radius)
+            violation = float(np.sum(np.maximum(0.0, effective_margin - min_sdf)))
+
+            if hasattr(env, 'target') and len(states) > 0:
+                target = np.asarray(getattr(env, 'target', (0, 0)))
+                task_cost += 100.0 * float(np.linalg.norm(states[-1, :2] - target[:2]))
+        except Exception:
+            pass
+        return max(0.0, task_cost) + violation_weight * violation
+
+    def _generate_cost_visualization(self, result: Dict[str, Any], env: Any, obstacles: Any, env_plugin: Any = None) -> None:
+        """
+        Generate cost plots and cost.json under result_dir/cost/.
+        Cost = task cost (-reward) + violation_weight * sum_t [g]_+ (violation cost).
+        cost_modes = mean over M samples at each diffusion step, with std bound.
+        cost.json: M x H array (cost_per_mode), best_idx.
+        """
+        import matplotlib.pyplot as plt
+        from scipy.ndimage import uniform_filter1d
+
+        out_dir = self._get_output_path(result['level'], result['seed'])
+        cost_dir = out_dir / "cost"
+        cost_dir.mkdir(parents=True, exist_ok=True)
+
+        viz_config = self.config.visualization_config or {}
+        cost_config = viz_config.get('cost', {})
+        # Default 100 so unsafe trajectories get high cost (task + 100*sum_t [g]_+)
+        violation_weight = float(cost_config.get('violation_weight', 150.0))
+        clearance = float(cost_config.get('clearance', 0.0))
+        robot_radius = float(self.config.obstacle_config.get('robot_radius', 0.05))
+
+        planning_result = result.get('result', {})
+        reward_history = planning_result.get('reward_history', None)
+        if reward_history is None or (hasattr(reward_history, '__len__') and len(reward_history) == 0):
+            with open(cost_dir / "cost.json", 'w') as f:
+                json.dump({"cost_per_mode": [], "best_idx": 0}, f, indent=2)
+            return
+
+        reward_histories = [np.asarray(reward_history, dtype=np.float64).ravel()] if not (
+            isinstance(reward_history, (list, tuple)) and len(reward_history) > 0 and
+            (isinstance(reward_history[0], (list, tuple)) or (hasattr(reward_history[0], 'ndim') and reward_history[0].ndim >= 1))
+        ) else [np.asarray(r, dtype=np.float64).ravel() for r in reward_history]
+
+        n_steps = len(reward_histories[0])
+        initial_state = planning_result.get('initial_state', None)
+
+        # Build cost matrix: M samples x n_steps diffusion steps
+        # Use diffusion_sampled_actions for per-sample cost (cost_modes = mean over samples)
+        diffusion_sampled = planning_result.get('diffusion_sampled_actions', None)
+        diffusion_actions_traj = planning_result.get('diffusion_actions_traj', None)
+
+        cost_matrix = None  # (M, n_steps)
+        if diffusion_sampled is not None and initial_state is not None:
+            try:
+                ds = np.asarray(diffusion_sampled)
+                # ds: (n_steps, M, H, act_dim) - solver order index 0 = clean, so reverse for 100..1
+                ds_rev = ds[::-1] if ds.ndim == 4 else ds
+                n_s = ds_rev.shape[0]
+                M = ds_rev.shape[1] if ds_rev.ndim >= 2 else 1
+                cost_matrix = np.zeros((M, n_steps), dtype=np.float64)
+                for i in range(min(n_steps, n_s)):
+                    for m in range(M):
+                        act_seq = np.asarray(ds_rev[i, m], dtype=np.float32)
+                        c = self._compute_cost_for_actions(
+                            env, obstacles, initial_state, act_seq, violation_weight, clearance, robot_radius,
+                        )
+                        cost_matrix[m, i] = c
+            except Exception:
+                pass
+
+        # Fallback: use reward_history + diffusion_actions_traj (one curve = mean trajectory)
+        diffusion_actions_traj = planning_result.get('diffusion_actions_traj', None)
+        if cost_matrix is None or cost_matrix.size == 0:
+            task_cost_ordered = [np.maximum(-np.asarray(r), 0.0)[::-1] for r in reward_histories]
+            if diffusion_actions_traj is not None and initial_state is not None:
+                da = np.asarray(diffusion_actions_traj)
+                if da.ndim >= 2 and len(da) >= n_steps:
+                    actions_list = (da[::-1] if da.ndim == 3 else [da[i] for i in range(len(da))][::-1])
+                    cost_list = []
+                    for i in range(min(n_steps, len(actions_list))):
+                        c = self._compute_cost_for_actions(
+                            env, obstacles, initial_state, np.asarray(actions_list[i]),
+                            violation_weight, clearance, robot_radius,
+                        )
+                        cost_list.append(c)
+                    cost_matrix = np.array([cost_list], dtype=np.float64)
+                else:
+                    cost_matrix = np.array([task_cost_ordered[0]], dtype=np.float64)
+            else:
+                cost_matrix = np.array([task_cost_ordered[0]], dtype=np.float64)
+
+        # best_idx: prefer (safe AND success) + lowest final cost; else lowest final cost
+        robot_radius = float(self.config.obstacle_config.get('robot_radius', 0.05))
+        success_margin = 2 * robot_radius
+        M_rows = cost_matrix.shape[0]
+        final_costs = cost_matrix[:, -1]
+        candidate_states_for_cost = []
+        if diffusion_sampled is not None and initial_state is not None and hasattr(env, 'rollout_actions') and M_rows > 0:
+            try:
+                ds = np.asarray(diffusion_sampled)
+                ds_rev = ds[::-1] if ds.ndim == 4 else ds
+                n_s = ds_rev.shape[0]
+                for m in range(min(M_rows, ds_rev.shape[1] if ds_rev.ndim >= 2 else 1)):
+                    act_seq = np.asarray(ds_rev[-1, m], dtype=np.float32)
+                    states = env.rollout_actions(np.asarray(initial_state, dtype=np.float32), act_seq)
+                    candidate_states_for_cost.append([np.asarray(s, dtype=np.float32) for s in states])
+                if len(candidate_states_for_cost) == M_rows:
+                    best_idx = self._compute_best_idx_from_candidates(
+                        candidate_states_for_cost, final_costs, env, obstacles, None,
+                        env_plugin, robot_radius, success_margin,
+                    )
+                else:
+                    best_idx = int(np.argmin(final_costs))
+            except Exception:
+                best_idx = int(np.argmin(final_costs)) if M_rows > 0 else 0
+        else:
+            best_idx = int(np.argmin(final_costs)) if M_rows > 0 else 0
+        best_idx = min(max(0, best_idx), cost_matrix.shape[0] - 1)
+        cost_json = {
+            "cost_per_mode": [row.tolist() for row in cost_matrix],
+            "best_idx": best_idx,
+        }
+        with open(cost_dir / "cost.json", 'w') as f:
+            json.dump(cost_json, f, indent=2)
+
+        # cost_best = best trajectory (row best_idx)
+        cost_best = cost_matrix[best_idx]
+
+        # Smoothing window (odd)
+        smooth_size = max(3, min(15, n_steps // 5)) | 1
+        def smooth(y):
+            return uniform_filter1d(np.asarray(y, dtype=np.float64), size=smooth_size, mode='nearest')
+
+        x = np.arange(n_steps)
+        # X-axis: 100, 80, 60, 40, 20, 1 (data goes to 1)
+        def set_diffusion_axis(ax, n_steps):
+            tick_labels = [100, 80, 60, 40, 20, 1]
+            tick_positions = [n_steps - k for k in tick_labels if 1 <= k <= n_steps]
+            tick_labels = [k for k in tick_labels if 1 <= k <= n_steps]
+            if not tick_positions:
+                tick_positions = [0, n_steps - 1]
+                tick_labels = [str(n_steps), "1"]
+            ax.set_xticks(tick_positions)
+            ax.set_xticklabels([str(l) for l in tick_labels])
+            ax.set_xlabel('Diffusion Step')
+
+        # cost_best.png: best trajectory cost, smoothed, no grid
+        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+        cost_smooth = smooth(cost_best)
+        ax.plot(x, cost_smooth, color='#1f77b4', linewidth=2.0, label='Cost')
+        set_diffusion_axis(ax, n_steps)
+        ax.set_ylabel('Cost')
+        ax.set_title('Cost Over Diffusion Steps (Best Trajectory)')
+        ax.legend()
+        ax.set_ylim(bottom=0)
+        fig.savefig(cost_dir / "cost_best.png", dpi=150, bbox_inches='tight')
+        plt.close(fig)
+
+        # cost_modes.png: mean ± std over M samples at each diffusion step, smoothed, with bound
+        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+        mean_c = np.mean(cost_matrix, axis=0)
+        std_c = np.std(cost_matrix, axis=0)
+        mean_smooth = smooth(mean_c)
+        std_smooth = smooth(std_c)
+        ax.fill_between(x, mean_smooth - std_smooth, mean_smooth + std_smooth, alpha=0.3, color='#1f77b4')
+        ax.plot(x, mean_smooth, color='#1f77b4', linewidth=2.0, label='Mean cost')
+        set_diffusion_axis(ax, n_steps)
+        ax.set_ylabel('Cost')
+        ax.set_title('Cost Over Diffusion Steps (Modes Mean ± Std)')
+        ax.legend()
+        ax.set_ylim(bottom=0)
+        fig.savefig(cost_dir / "cost_modes.png", dpi=150, bbox_inches='tight')
+        plt.close(fig)
+
+    def _generate_adaptive_visualization(self, result: Dict[str, Any], env_plugin: Any = None) -> None:
+        """
+        Generate CFS-MBD adaptive/non-adaptive scheduler metrics under result_dir/adaptive/.
+        Plots: r_k, v_rate, v_mean, (c_k, nu for adaptive only), p_k, rho, topK, I_QP, eps, lambda
+        vs diffusion step; mean across modes with ±std band. Saves metrics.json (C, K, 11) + best_idx.
+        """
+        import matplotlib.pyplot as plt
+
+        planning_result = result.get('result', {})
+        if not isinstance(planning_result, dict):
+            return
+        r_hist = planning_result.get('r_hist')
+        if r_hist is None or (hasattr(r_hist, '__len__') and len(r_hist) == 0):
+            return
+
+        out_dir = self._get_output_path(result['level'], result['seed'])
+        adaptive_dir = out_dir / "adaptive"
+        adaptive_dir.mkdir(parents=True, exist_ok=True)
+
+        # Multirun: use all_* stacked (C, K) to build (C, K, 11); else single (1, K, 11)
+        all_r = planning_result.get('all_r_hist')
+        if all_r is not None and hasattr(all_r, 'ndim') and all_r.ndim == 2:
+            C, K = all_r.shape
+            def get_all(key: str):
+                h = planning_result.get('all_' + key)
+                if h is not None and hasattr(h, 'shape') and h.shape == (C, K):
+                    return np.asarray(h, dtype=np.float64)
+                return np.full((C, K), np.nan, dtype=np.float64)
+            metrics_arr = np.stack([
+                get_all('r_hist'),
+                get_all('v_rate_hist'),
+                get_all('v_mean_hist'),
+                get_all('compute_cost_hist'),
+                get_all('nu_hist'),
+                get_all('p_hist'),
+                get_all('rho_hist'),
+                get_all('topK_hist'),
+                get_all('I_QP_hist'),
+                get_all('eps_hist'),
+                get_all('lambda_hist'),
+            ], axis=-1)
+            best_idx = int(planning_result.get('best_idx', 0))
+            is_adaptive = bool(np.any(np.isfinite(metrics_arr[:, :, 3])))
+        else:
+            r_hist_arr = np.asarray(r_hist, dtype=np.float64).ravel()
+            K = len(r_hist_arr)
+            def get_hist(key: str, default_nan: bool = False):
+                h = planning_result.get(key)
+                if h is None:
+                    return np.full(K, np.nan, dtype=np.float64)
+                a = np.asarray(h, dtype=np.float64).ravel()
+                if len(a) < K:
+                    a = np.resize(np.asarray(a), K)
+                return a[:K].copy()
+
+            r_k = np.asarray(planning_result.get('r_hist'), dtype=np.float64).ravel()[:K]
+            v_rate = np.asarray(planning_result.get('v_rate_hist'), dtype=np.float64).ravel()[:K]
+            v_mean = np.asarray(planning_result.get('v_mean_hist'), dtype=np.float64).ravel()[:K]
+            c_k = get_hist('compute_cost_hist', default_nan=True)
+            nu = get_hist('nu_hist', default_nan=True)
+            p_k = get_hist('p_hist')
+            rho = get_hist('rho_hist')
+            topK = get_hist('topK_hist')
+            I_QP = get_hist('I_QP_hist')
+            eps = get_hist('eps_hist')
+            lam = get_hist('lambda_hist')
+
+            is_adaptive = bool(np.any(np.isfinite(np.asarray(c_k, dtype=np.float64))))
+            best_idx = int(planning_result.get('best_idx', 0))
+            metrics_arr = np.stack([
+                r_k, v_rate, v_mean, c_k, nu, p_k, rho, topK, I_QP, eps, lam
+            ], axis=-1)
+            metrics_arr = np.expand_dims(metrics_arr, axis=0)
+
+        metric_names = ['r_k', 'v_rate', 'v_mean', 'c_k', 'nu', 'p_k', 'rho', 'topK', 'I_QP', 'eps', 'lambda']
+        integer_metrics = {'topK', 'I_QP'}
+
+        def set_diffusion_axis(ax, n_steps):
+            tick_labels = [100, 80, 60, 40, 20, 1]
+            tick_positions = [n_steps - k for k in tick_labels if 1 <= k <= n_steps]
+            tick_labels = [k for k in tick_labels if 1 <= k <= n_steps]
+            if not tick_positions:
+                tick_positions = [0, n_steps - 1]
+                tick_labels = [str(n_steps), "1"]
+            ax.set_xticks(tick_positions)
+            ax.set_xticklabels([str(l) for l in tick_labels], fontsize=18)
+            ax.set_xlabel('Diffusion Step', fontsize=18)
+            ax.tick_params(axis='y', labelsize=18)
+
+        plot_indices = list(range(11)) if is_adaptive else [0, 1, 2, 5, 6, 7, 8, 9, 10]
+        x = np.arange(K)
+
+        for i in plot_indices:
+            name = metric_names[i]
+            # (C, K) -> mean (K,), std (K,); avoid RuntimeWarning when slice is all nan
+            vals = np.asarray(metrics_arr[:, :, i], dtype=np.float64)
+            has_finite = np.any(np.isfinite(vals))
+            if has_finite:
+                y_mean = np.nanmean(vals, axis=0)
+                y_std = np.nanstd(vals, axis=0)
+            else:
+                y_mean = np.full(K, np.nan, dtype=np.float64)
+                y_std = np.zeros(K, dtype=np.float64)
+            if np.any(np.isnan(y_std)):
+                y_std = np.where(np.isnan(y_std), 0.0, y_std)
+            if name in integer_metrics:
+                y_plot = np.round(y_mean).astype(np.float64)
+            else:
+                y_plot = y_mean
+            # Ensure std band is visible when C=1 (std=0) or very small std
+            y_finite = y_plot[np.isfinite(y_plot)]
+            if len(y_finite) > 0:
+                y_range = float(np.nanmax(y_plot) - np.nanmin(y_plot)) + 1e-9
+                y_scale = float(np.nanmax(np.abs(y_plot))) + 1e-9
+                min_half_width = max(0.02 * y_range, 1e-6 * y_scale)
+                y_std = np.maximum(np.asarray(y_std, dtype=np.float64), min_half_width)
+            fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+            ax.fill_between(x, y_plot - y_std, y_plot + y_std, alpha=0.3, color='#1f77b4')
+            ax.plot(x, y_plot, color='#1f77b4', linewidth=2.0, label=name)
+            set_diffusion_axis(ax, K)
+            ax.set_ylabel(name, fontsize=18)
+            ax.set_title(f'{name} vs Diffusion Step (modes mean ± std)', fontsize=22, fontweight='bold')
+            ax.legend()
+            # topK, I_QP: integer y-axis; eps: scientific; others: 2 decimal places
+            from matplotlib.ticker import FormatStrFormatter, MaxNLocator
+            if name in integer_metrics:
+                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+                ax.yaxis.set_major_formatter(FormatStrFormatter('%d'))
+            elif name == 'eps':
+                ax.ticklabel_format(axis='y', style='scientific', scilimits=(-2, 2))
+            else:
+                ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+            fig.savefig(adaptive_dir / f"{name}.png", dpi=150, bbox_inches='tight')
+            plt.close(fig)
+
+        def _nan_to_none(obj):
+            if isinstance(obj, (list, tuple)):
+                return [_nan_to_none(x) for x in obj]
+            if isinstance(obj, dict):
+                return {k: _nan_to_none(v) for k, v in obj.items()}
+            if isinstance(obj, float) and (obj != obj or abs(obj) == float('inf')):
+                return None
+            return obj
+
+        metrics_serializable = convert_to_json_serializable(metrics_arr)
+        metrics_json = {
+            "metrics": _nan_to_none(metrics_serializable),
+            "metric_names": metric_names,
+            "best_idx": best_idx,
+        }
+        with open(adaptive_dir / "metrics.json", 'w') as f:
+            json.dump(metrics_json, f, indent=2)
+
     def _get_output_path(self, level: int, seed: int) -> Path:
         """
         Get output path for experiment result.
@@ -663,28 +1525,21 @@ class ExperimentRunner:
             'total_time': result.get('total_time', result['planning_time']),
         }
         
-        # Add obstacle statistics and CFS flag for backward compatibility
+        # Add obstacle statistics
         serializable_result['num_obstacles'] = result.get('num_obstacles', 0)
         serializable_result['num_union_obstacles'] = result.get('num_union_obstacles', 0)
         serializable_result['num_primitives_total'] = result.get('num_primitives_total', 0)
-        serializable_result['cfs_enabled'] = result.get('cfs_enabled', False)
-        
-        # Flatten metrics for backward compatibility
-        # Extract SSR metrics to top level (as in old format)
+
+        planning_result = result.get('result', {})
+        cand_states = planning_result.get('candidate_states', []) if isinstance(planning_result, dict) else []
+        num_modes = len(cand_states) if cand_states else 1
+        if num_modes == 1 and isinstance(result.get('config_snapshot'), dict):
+            method_params = result['config_snapshot'].get('method_params', {})
+            if isinstance(method_params, dict) and 'num_modes' in method_params:
+                num_modes = int(method_params['num_modes'])
+        serializable_result['num_modes'] = num_modes
+
         metrics = result.get('metrics', {})
-        if 'ssr' in metrics and metrics['ssr'] is not None:
-            ssr_data = metrics['ssr']
-            if isinstance(ssr_data, dict):
-                # Extract SSR fields to top level for backward compatibility
-                serializable_result['ssr'] = float(ssr_data.get('ssr', 0.0))
-                serializable_result['safe'] = bool(ssr_data.get('safe', False))
-                serializable_result['task_success'] = bool(ssr_data.get('task_success', False))
-                serializable_result['distance_to_target'] = float(ssr_data.get('distance_to_target', float('inf')))
-                # For constraint feasibility, use 'feasible' if available, otherwise check for 'accel_feasible'
-                if 'feasible' in ssr_data:
-                    serializable_result['accel_feasible'] = bool(ssr_data.get('feasible', False))
-                elif 'accel_feasible' in ssr_data:
-                    serializable_result['accel_feasible'] = bool(ssr_data.get('accel_feasible', False))
         
         # Extract obstacle_density to top level
         if 'obstacle_density' in metrics and metrics['obstacle_density'] is not None:
@@ -704,21 +1559,17 @@ class ExperimentRunner:
                 if 'sdf' in nonconv_data and isinstance(nonconv_data['sdf'], dict):
                     serializable_result['nonconvexity_sdf'] = nonconv_data['sdf']
         
-        # Keep metrics dict for new code compatibility
-        serializable_result['metrics'] = metrics
-        
-        # Add trajectory
-        trajectory = result.get('trajectory')
-        if trajectory is not None:
-            serializable_result['trajectory'] = {
-                'states': [s.tolist() if isinstance(s, np.ndarray) else s 
-                          for s in trajectory.states],
-                'actions': [a.tolist() if isinstance(a, np.ndarray) else a 
-                           for a in trajectory.actions],
+        # Keep metrics dict (ssr = modes (success & safe)/total; no safe/feasible/task_success)
+        metrics_to_save = dict(metrics)
+        if 'ssr' in metrics_to_save and isinstance(metrics_to_save['ssr'], dict):
+            m = metrics_to_save['ssr']
+            metrics_to_save['ssr'] = {
+                'ssr': float(m.get('ssr', 0.0)),
+                'ssr_count': int(m.get('ssr_count', 0)),
             }
+        serializable_result['metrics'] = metrics_to_save
         
         # Add planning result data if available
-        planning_result = result.get('result', {})
         # Standardized rollout fields (for MPC / execution-based methods)
         if isinstance(planning_result, dict):
             if "exec_states" in planning_result:
@@ -736,20 +1587,44 @@ class ExperimentRunner:
                     serializable_result["avg_planning_time_per_step"] = float(np.mean(pts)) if pts else 0.0
                 except Exception:
                     pass
-
-        if 'energies' in planning_result:
-            energies = planning_result['energies']
-            if hasattr(energies, 'tolist'):
-                serializable_result['energies'] = energies.tolist()
-            else:
-                serializable_result['energies'] = list(energies)
         
-        if 'rewards' in planning_result:
-            rewards = planning_result['rewards']
-            if hasattr(rewards, 'tolist'):
-                serializable_result['rewards'] = rewards.tolist()
-            else:
-                serializable_result['rewards'] = list(rewards)
+        # Save multi-mode trajectories to trajectory.json (not in results.json)
+        if 'candidate_states' in planning_result:
+            candidate_states = planning_result['candidate_states']
+            candidate_actions = planning_result.get('candidate_actions', [])
+            candidate_costs = planning_result.get('candidate_costs', [])
+            best_idx = int(planning_result.get('best_idx', 0))
+            trajectory_json = {
+                'best_idx': best_idx,
+                'candidate_states': convert_to_json_serializable(candidate_states),
+            }
+            if candidate_actions:
+                trajectory_json['candidate_actions'] = convert_to_json_serializable(candidate_actions)
+            if len(candidate_costs) > 0:
+                trajectory_json['candidate_costs'] = (
+                    candidate_costs.tolist() if hasattr(candidate_costs, 'tolist') else list(candidate_costs)
+                )
+            trajectory_dir = output_path / "trajectory"
+            trajectory_dir.mkdir(parents=True, exist_ok=True)
+            with open(trajectory_dir / "trajectory.json", 'w') as f:
+                json.dump(trajectory_json, f, indent=2)
+
+        # Multirun diagnostics (architecture performance visibility)
+        # These keys are produced by the solver when using the minimal-batch multirun path.
+        if isinstance(planning_result, dict):
+            for k in [
+                "multirun_impl",
+                "multirun_C",
+                "multirun_t_batch_minimal_s",
+                "multirun_t_best_plan_s",
+            ]:
+                if k in planning_result:
+                    serializable_result[k] = convert_to_json_serializable(planning_result[k])
+
+            # Generic timing diagnostics (saved if present)
+            for k, v in planning_result.items():
+                if isinstance(k, str) and k.startswith("timing_"):
+                    serializable_result[k] = convert_to_json_serializable(v)
         
         # Save JSON
         with open(output_path / "results.json", 'w') as f:
@@ -770,11 +1645,14 @@ class ExperimentRunner:
         for level in self.config.obstacle_levels:
             level_results = [r for r in all_results if r['level'] == level]
             if level_results:
+                pt_list = [r['planning_time'] for r in level_results]
+                n_pt = len(pt_list)
                 # Compute average metrics
                 summary = {
                     'level': level,
-                    'num_experiments': len(level_results),
-                    'avg_planning_time': float(np.mean([r['planning_time'] for r in level_results])),
+                    'num_experiments': n_pt,
+                    'avg_planning_time': float(np.mean(pt_list)),
+                    'std_planning_time': float(np.std(pt_list)) if n_pt > 1 else 0.0,
                 }
                 
                 # Average metrics
@@ -791,6 +1669,28 @@ class ExperimentRunner:
                     
                     if metric_values:
                         summary[f'avg_{metric_name}'] = float(np.mean(metric_values))
+
+                # Best (best mode) metrics: average across level's results
+                best_list = [
+                    r['metrics']['best'] for r in level_results
+                    if isinstance(r.get('metrics'), dict) and isinstance(r['metrics'].get('best'), dict)
+                ]
+                if best_list:
+                    n_b = len(best_list)
+                    pt_b = [b['planning_time'] for b in best_list]
+                    len_b = [b['length'] for b in best_list]
+                    sm_b = [b['smoothness'] for b in best_list]
+                    gs_b = [b['geometric_smoothness'] for b in best_list]
+                    summary['best'] = {
+                        'planning_time': float(np.mean(pt_b)),
+                        'planning_time_std': float(np.std(pt_b)) if n_b > 1 else 0.0,
+                        'length': float(np.mean(len_b)),
+                        'length_std': float(np.std(len_b)) if n_b > 1 else 0.0,
+                        'smoothness': float(np.mean(sm_b)),
+                        'smoothness_std': float(np.std(sm_b)) if n_b > 1 else 0.0,
+                        'geometric_smoothness': float(np.mean(gs_b)),
+                        'geometric_smoothness_std': float(np.std(gs_b)) if n_b > 1 else 0.0,
+                    }
                 
                 level_summaries[f'level_{level}'] = summary
                 
@@ -800,12 +1700,35 @@ class ExperimentRunner:
                 with open(level_dir / "summary.json", 'w') as f:
                     json.dump(summary, f, indent=2)
         
-        # Overall summary
+        # Overall summary (include best: average of best-mode metrics across all results)
+        best_list_all = [
+            r['metrics']['best'] for r in all_results
+            if isinstance(r.get('metrics'), dict) and isinstance(r['metrics'].get('best'), dict)
+        ]
+        pt_all = [r['planning_time'] for r in all_results]
+        n_all = len(pt_all)
         overall_summary = {
-            'total_experiments': len(all_results),
-            'avg_planning_time': float(np.mean([r['planning_time'] for r in all_results])),
+            'total_experiments': n_all,
+            'avg_planning_time': float(np.mean(pt_all)),
+            'std_planning_time': float(np.std(pt_all)) if n_all > 1 else 0.0,
             'level_summaries': level_summaries,
         }
+        if best_list_all:
+            n_b_all = len(best_list_all)
+            pt_b = [b['planning_time'] for b in best_list_all]
+            len_b = [b['length'] for b in best_list_all]
+            sm_b = [b['smoothness'] for b in best_list_all]
+            gs_b = [b['geometric_smoothness'] for b in best_list_all]
+            overall_summary['best'] = {
+                'planning_time': float(np.mean(pt_b)),
+                'planning_time_std': float(np.std(pt_b)) if n_b_all > 1 else 0.0,
+                'length': float(np.mean(len_b)),
+                'length_std': float(np.std(len_b)) if n_b_all > 1 else 0.0,
+                'smoothness': float(np.mean(sm_b)),
+                'smoothness_std': float(np.std(sm_b)) if n_b_all > 1 else 0.0,
+                'geometric_smoothness': float(np.mean(gs_b)),
+                'geometric_smoothness_std': float(np.std(gs_b)) if n_b_all > 1 else 0.0,
+            }
         
         # Save overall summary
         with open(self.config.output_dir / "overall_summary.json", 'w') as f:

@@ -1,6 +1,6 @@
 # MDOC ablation: per-step CBF filter (QP projection), fixed schedulers
-name: single2d_mdoc_cbf_qp_perstep
-output_dir: results/single2d/ablation_mdoc/cbf_qp_perstep
+name: single2d_mdoc
+output_dir: results/single2d/mdoc
 
 env_name: single_integrator_box_2d
 env_params:
@@ -17,15 +17,26 @@ method_params:
   mdoc_constraint_mode: cbf_qp_perstep
   cbf_tau: 0.005
   cbf_eta: 1.5
-  cbf_margin: 0.1
+  cbf_margin: 0.04
   base_beta: 5.0e-2
   terminal_energy_weight: 100.0
+  # Multi-mode: number of candidate trajectories to return (C paths)
+  num_modes: 20
+  mode_strategy: multirun
 
-obstacle_levels: [9]
+  # Visualization style
+  mdoc_viz_style: "cap" # cap | rectangle    
+  mdoc_viz_scale: 1.0
+  mdoc_viz_band: 1          
+  mdoc_viz_use_beta: False
+  mdoc_viz_draw_disk: False
+  mdoc_viz_draw_grad: False
+
+obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
-  obstacle_radius_scale: 1.3
+  obstacle_radius_scale: 1.0
   p_max: 2.0
   map_bounds:
     x_min: -1.5
@@ -35,9 +46,9 @@ obstacle_config:
   enable_connectivity_check: true
   enable_nonconvexity_check: true
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 backend: jax
-device: cpu
+device: cuda
 
 metrics:
   - ssr
@@ -45,16 +56,16 @@ metrics:
   - nonconvexity
 
 visualizations:
+  - trajectory_modes
   - trajectory
   - diffusion
-  - energy_reward
-  - states
+  - cost
 
 scheduler_config:
   type: composite
   constraint_schedulers:
     - type: fixed
-      margin: 0.1
+      margin: 0.03
       rho: 10.0
       # QP filter: always solve per-step
       qp_gate: true

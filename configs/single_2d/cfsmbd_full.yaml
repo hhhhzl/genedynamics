@@ -12,20 +12,26 @@ env_params:
 method: cfsmbd_full
 method_params:
   show_tqdm: True
+  action_extra_sigma: 0.3
 
   # CFS parameters
-  max_constraints_per_point: 5
+  # Increase to reduce missed near-corner constraints.
+  max_constraints_per_point: 10
   constraint_margin: 0.25 
 
-  # Augmented Lagrangian parameters (fixed for now)
-  aug_lambda: 500.0  # Dual variable
-  aug_rho: 1000.0     # Penalty parameter
+  # Augmented Lagrangian parameters
+  aug_lambda: 300.0  # Dual variable
+  aug_rho: 500.0     # Penalty parameter
 
-obstacle_levels: [6]
+  # Multi-mode: number of modes to return
+  num_modes: 20
+  mode_strategy: multirun
+
+obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
-  obstacle_radius_scale: 1.3
+  obstacle_radius_scale: 1.0
   p_max: 2.0
   map_bounds:
     x_min: -1.5
@@ -35,9 +41,9 @@ obstacle_config:
   enable_connectivity_check: true
   enable_nonconvexity_check: true
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 backend: jax
-device: cpu
+device: cuda
 
 metrics:
   - ssr
@@ -45,26 +51,27 @@ metrics:
   - nonconvexity
 
 visualizations:
-  - trajectory
+  - trajectory_modes
+  - trajectory       
   - diffusion
-  - energy_reward
-  - states
+  - cost
+  - adaptive
 
 scheduler_config:
   type: composite
   constraint_schedulers:
     - type: fixed
-      margin: 0.18
+      margin: 0.05
       rho: 10.0
       # QP filter: always solve full trajectory QP
       qp_gate: true
-      qp_prob: 1.0
-      topK: null
+      qp_prob: 1
+      topK: 8
       eps: 1e-4
-      I_QP: 10
+      I_QP: 5
   diffusion_schedulers:
     - type: fixed
-      M_k: 512
+      M_k: 64
       T_k: 5e-1
       Ndiffuse: 100
       beta0: 1.0e-5
