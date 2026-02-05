@@ -20,7 +20,9 @@ CircleObstacle = SphereObstacle
 # Default constants for obstacle generation
 DEFAULT_ROBOT_RADIUS = 0.05
 DEFAULT_MIN_OBSTACLE_MARGIN = 2.4 * DEFAULT_ROBOT_RADIUS
-DEFAULT_OBSTACLE_RADIUS_SCALE = 1.3
+DEFAULT_OBSTACLE_RADIUS_SCALE = 1.0
+# Extra clearance for start/goal so obstacles stay clearly away (not tangent)
+START_GOAL_CLEARANCE_MARGIN = 0.03
 
 
 def check_obstacle_spacing(
@@ -84,6 +86,7 @@ def check_start_target_clearance(
 ) -> bool:
     """
     Ensure start/target are not inside (or too close to) the obstacle.
+    So the circle of radius `buffer` centered at start (or goal) does not overlap the obstacle.
     
     Uses obstacle SDF semantics:
     - sdf < 0  : inside
@@ -94,7 +97,8 @@ def check_start_target_clearance(
         obstacle: Obstacle instance
         start_pos: Start position
         target_pos: Target position
-        buffer: Minimum clearance buffer
+        buffer: Minimum clearance (center-to-obstacle distance); use robot_radius so the
+            robot-radius disk at start/goal stays clear.
         
     Returns:
         True if start/target have sufficient clearance, False otherwise
@@ -297,7 +301,7 @@ def place_union_obstacle(
             primitives.append(prim)
 
         union = UnionObstacle(obstacles=primitives, name=f"union_{union_idx}")
-        if not check_start_target_clearance(union, start_pos, target_pos, buffer=robot_radius):
+        if not check_start_target_clearance(union, start_pos, target_pos, buffer=robot_radius + START_GOAL_CLEARANCE_MARGIN):
             continue
 
         return union, base_center, union_radius
@@ -477,7 +481,7 @@ def generate_box2d_obstacles(
         target_pos: Target position (2D array)
         config: Configuration dictionary with keys:
             - robot_radius: Robot radius (default: 0.05)
-            - obstacle_radius_scale: Scale factor (default: 1.3)
+            - obstacle_radius_scale: Scale factor (default: 1.1)
             - min_obstacle_margin: Minimum margin (default: 2.4 * robot_radius)
             - p_max: Position bounds (default: 2.0)
             - map_bounds: Dict with x_min, x_max, y_min, y_max
@@ -551,7 +555,7 @@ def generate_box2d_obstacles(
                         size = np.array([radius, radius], dtype=np.float32)
                         obstacle = BoxObstacle(center=center, half_extents=size, name=f"box_{i}")
 
-                    if not check_start_target_clearance(obstacle, start_pos, target_pos, buffer=robot_radius):
+                    if not check_start_target_clearance(obstacle, start_pos, target_pos, buffer=robot_radius + START_GOAL_CLEARANCE_MARGIN):
                         continue
 
                     manager.add(obstacle)
@@ -564,7 +568,7 @@ def generate_box2d_obstacles(
 
     elif level <= 6:
         # Mixed convex (more diverse types and sizes)
-        num_obstacles = {4: 14, 5: 18, 6: 22}[level]
+        num_obstacles = {4: 18, 5: 24, 6: 28}[level]
         max_attempts = 100
         
         for i in range(num_obstacles):
@@ -601,7 +605,7 @@ def generate_box2d_obstacles(
                     else:
                         obstacle = SphereObstacle(center=center, radius=radius, name=f"small_circle_{i}")
 
-                    if not check_start_target_clearance(obstacle, start_pos, target_pos, buffer=robot_radius):
+                    if not check_start_target_clearance(obstacle, start_pos, target_pos, buffer=robot_radius + START_GOAL_CLEARANCE_MARGIN):
                         continue
 
                     manager.add(obstacle)
@@ -755,13 +759,22 @@ def generate_box2d_obstacles(
                 else:
                     print(f"Warning: placed all unions but connectivity gate failed in retries (last_connect_ok={last_connect_ok}).")
 
-    # Final sanity check
+    min_clearance = robot_radius + START_GOAL_CLEARANCE_MARGIN
     if len(manager) > 0:
-        sdf_start = manager.sdf(np.asarray(start_pos, dtype=np.float32))
+        start_pt = np.asarray(start_pos, dtype=np.float32).reshape(-1)[:2]
+        target_pt = np.asarray(target_pos, dtype=np.float32).reshape(-1)[:2]
+        sdf_start = manager.sdf(start_pt)
         sdf_start = float(np.asarray(sdf_start).item() if hasattr(sdf_start, "item") else sdf_start)
-        if sdf_start < robot_radius or manager.contains(np.asarray(start_pos, dtype=np.float32)):
+        if sdf_start < min_clearance or manager.contains(start_pt):
             raise RuntimeError(
-                f"Start position is in/too close to an obstacle (sdf={sdf_start:.6f}). "
+                f"Start position is in/too close to an obstacle (sdf={sdf_start:.6f}, need >= {min_clearance:.4f}). "
+                "Obstacle generation should prevent this."
+            )
+        sdf_goal = manager.sdf(target_pt)
+        sdf_goal = float(np.asarray(sdf_goal).item() if hasattr(sdf_goal, "item") else sdf_goal)
+        if sdf_goal < min_clearance or manager.contains(target_pt):
+            raise RuntimeError(
+                f"Goal/target position is in/too close to an obstacle (sdf={sdf_goal:.6f}, need >= {min_clearance:.4f}). "
                 "Obstacle generation should prevent this."
             )
 
