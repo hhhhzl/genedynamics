@@ -2,10 +2,12 @@
 Diffusion steps visualization plugin.
 """
 
+from pathlib import Path as PathLib
 from typing import Dict, Any, Tuple, List
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import imageio
 from matplotlib.patches import PathPatch, Polygon
 from matplotlib.path import Path
 
@@ -234,7 +236,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         overlay_cfg = config.get('cfs_overlay', None)
         method_name = getattr(exp_cfg, 'method', None) if exp_cfg is not None else None
         method_params = getattr(exp_cfg, 'method_params', {}) or {}
-        is_ebmbd = (method_name == "ebmbd" or method_name == "mbd")
+        is_ebmbd = (method_name == "ebmbd")  # Only EB-MBD draws barrier; MBD does not
         # MDOC: exact method name or ablation config (mdoc_constraint_mode / cbf_eta in method_params)
         is_mdoc = (
             method_name == "mdoc"
@@ -243,6 +245,21 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         )
         if is_ebmbd:
             overlay_cfg = None  # fully disable half-space overlays
+        
+        # When qp_gate is False and qp_prob is 0, skip CFS convexified halfspace (fan) overlay
+        draw_cfs_fan = True
+        if exp_cfg is not None:
+            scheduler_config = getattr(exp_cfg, 'scheduler_config', None)
+            if scheduler_config is not None:
+                cs_list = getattr(scheduler_config, 'constraint_schedulers', None)
+                if cs_list is None and isinstance(scheduler_config, dict):
+                    cs_list = scheduler_config.get('constraint_schedulers', [])
+                if cs_list and len(cs_list) > 0:
+                    first_cs = cs_list[0]
+                    qp_gate = first_cs.get('qp_gate', True) if isinstance(first_cs, dict) else getattr(first_cs, 'qp_gate', True)
+                    qp_prob = first_cs.get('qp_prob', 1.0) if isinstance(first_cs, dict) else getattr(first_cs, 'qp_prob', 1.0)
+                    if qp_gate is False and (qp_prob == 0 or qp_prob == 0.0):
+                        draw_cfs_fan = False
         
         # Get map bounds
         obstacle_config = config.get('config', {}).obstacle_config or {}
@@ -285,6 +302,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     cfs_overlay_cfg=overlay_cfg,
                     is_ebmbd=is_ebmbd,
                     is_mdoc=is_mdoc,
+                    draw_cfs_fan=draw_cfs_fan,
                 )
         else:
             # Fallback: show final trajectory
@@ -300,6 +318,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     cfs_overlay_cfg=overlay_cfg,
                     is_ebmbd=is_ebmbd,
                     is_mdoc=is_mdoc,
+                    draw_cfs_fan=draw_cfs_fan,
                 )
     
     def _visualize_single_step(
@@ -313,16 +332,21 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         cfs_overlay_cfg: Any = None,
         is_ebmbd: bool = False,
         is_mdoc: bool = False,
+        draw_cfs_fan: bool = True,
+        show_title: bool = True,
+        show_axis_labels: bool = True,
+        show_grid: bool = True,
     ) -> None:
         """Visualize a single diffusion step."""
         ax.set_aspect('equal')
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
-        
+        # EB-MBD: white background
+        if is_ebmbd:
+            ax.set_facecolor('white')
         # Draw obstacles
         draw_obstacles(ax, obstacles)
-        
-        # Draw barrier field for EB-MBD (Heatmap and Equipotential lines)
+        # Draw barrier field for EB-MBD (contour circles only, no heatmap; color = MDOC fan orange)
         if is_ebmbd:
             self._draw_barrier_field(ax, obstacles, x_min, x_max, y_min, y_max)
         
@@ -380,7 +404,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
 
                 # Overlay CFS convexified halfspaces for this diffusion step (if enabled)
                 # For MDOC, we show the specialized Fans instead of full halfspaces.
-                if exp_cfg is not None and not is_ebmbd and not is_mdoc:
+                # Skip when qp_gate is False and qp_prob is 0 (no QP filter used).
+                if exp_cfg is not None and not is_ebmbd and not is_mdoc and draw_cfs_fan:
                     try:
                         draw_cfs_convexify_overlay(
                             ax,
@@ -403,54 +428,52 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         target_pos = env_plugin.extract_position(target)
         ax.plot(target_pos[0], target_pos[1], 'r*', markersize=15, label='Target', zorder=10)
         
-        if title:
+        if show_title and title:
             ax.set_title(title, fontsize=12)
-        ax.grid(True, alpha=0.2)
+        if not show_axis_labels:
+            ax.set_xticks([])
+            ax.set_yticks([])
+            # Subtle spine styling
+            for spine in ax.spines.values():
+                spine.set_visible(True)
+                spine.set_color('#888888')
+                spine.set_linewidth(1.0)
+        if show_grid:
+            ax.grid(True, alpha=0.2)
     
     def _draw_barrier_field(
         self, ax: Any, obstacles: Any, 
         x_min: float, x_max: float, y_min: float, y_max: float,
         res: int = 60
     ) -> None:
-        """Draw background heatmap and equipotential lines for obstacles."""
+        """Draw emerging barrier contour circles only (no heatmap, no solid obstacles). Color matches MDOC fan edge."""
         if obstacles is None or len(obstacles) == 0:
             return
-            
+
+        # MDOC fan edge color for consistency
+        barrier_color = "#C46A2D"
         # Create grid for SDF sampling
         xs = np.linspace(x_min, x_max, res)
         ys = np.linspace(y_min, y_max, res)
         X, Y = np.meshgrid(xs, ys)
         points = np.stack([X.ravel(), Y.ravel()], axis=-1)
-        
+
         # Batch SDF computation
         try:
             sdf_vals = obstacles.sdf(points).reshape(res, res)
         except Exception:
             return
-            
-        # 1. Draw Equipotential Lines (3-5 levels of distance)
-        # We draw them for positive SDF (outside obstacles)
+
+        # Equipotential lines only (barrier circles), no heatmap
         levels = [0.05, 0.1, 0.2, 0.4]
         ax.contour(
-            X, Y, sdf_vals, 
-            levels=levels, 
-            colors='orange', 
-            alpha=0.15, 
-            linewidths=0.8,
-            linestyles='--'
-        )
-        
-        # 2. Draw light heatmap (more 'hot' near obstacles)
-        # Using a exponential decay for the heatmap intensity
-        heatmap_intensity = np.exp(-4.0 * np.maximum(0, sdf_vals))
-        ax.imshow(
-            heatmap_intensity, 
-            extent=[x_min, x_max, y_min, y_max], 
-            origin='lower', 
-            cmap='YlOrRd', 
-            alpha=0.06, 
-            zorder=0.5,
-            interpolation='bilinear'
+            X, Y, sdf_vals,
+            levels=levels,
+            colors=barrier_color,
+            alpha=0.4,
+            linewidths=1.0,
+            linestyles='--',
+            zorder=1.0,
         )
     
     def _draw_mdoc_fans(
@@ -606,4 +629,188 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         dpi = kwargs.get('dpi', 150)
         bbox_inches = kwargs.get('bbox_inches', 'tight')
         fig.savefig(output_path, dpi=dpi, bbox_inches=bbox_inches)
+
+    def save_individual_and_gif(
+        self,
+        output_dir: PathLib | str,
+        data: Dict[str, Any],
+        config: Dict[str, Any],
+        dpi: int = 150,
+        gif_duration_ms: float = 150,
+        gif_loop: int = 0,
+    ) -> None:
+        """
+        Save each diffusion fraction (90%, 50%, 10%) as separate PNGs
+        and generate a GIF from K-1 diffusion steps.
+        """
+        output_dir = PathLib(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        result = data['result']
+        env = data['env']
+        obstacles = data['obstacles']
+        initial_state = data.get('initial_state')
+        if initial_state is None:
+            initial_state = result.get('initial_state')
+        env_plugin = data['env_plugin']
+        exp_cfg = config.get('config', None)
+        overlay_cfg = config.get('cfs_overlay', None)
+        method_name = getattr(exp_cfg, 'method', None) if exp_cfg is not None else None
+        method_params = getattr(exp_cfg, 'method_params', {}) or {}
+        is_ebmbd = (method_name == "ebmbd")  # Only EB-MBD draws barrier; MBD does not
+        is_mdoc = (
+            method_name == "mdoc"
+            or "mdoc_constraint_mode" in method_params
+            or "cbf_eta" in method_params
+        )
+        if is_ebmbd:
+            overlay_cfg = None
+
+        draw_cfs_fan = True
+        if exp_cfg is not None:
+            scheduler_config = getattr(exp_cfg, 'scheduler_config', None)
+            if scheduler_config is not None:
+                cs_list = getattr(scheduler_config, 'constraint_schedulers', None)
+                if cs_list is None and isinstance(scheduler_config, dict):
+                    cs_list = scheduler_config.get('constraint_schedulers', [])
+                if cs_list and len(cs_list) > 0:
+                    first_cs = cs_list[0]
+                    qp_gate = first_cs.get('qp_gate', True) if isinstance(first_cs, dict) else getattr(first_cs, 'qp_gate', True)
+                    qp_prob = first_cs.get('qp_prob', 1.0) if isinstance(first_cs, dict) else getattr(first_cs, 'qp_prob', 1.0)
+                    if qp_gate is False and (qp_prob == 0 or qp_prob == 0.0):
+                        draw_cfs_fan = False
+
+        exp_cfg_for_obs = config.get('config', None)
+        obstacle_config = (getattr(exp_cfg_for_obs, 'obstacle_config', None) or {}) if exp_cfg_for_obs else {}
+        if not isinstance(obstacle_config, dict):
+            obstacle_config = {}
+        map_bounds = obstacle_config.get('map_bounds', {})
+        x_min = map_bounds.get('x_min', -2.0)
+        x_max = map_bounds.get('x_max', 2.0)
+        y_min = map_bounds.get('y_min', -2.0)
+        y_max = map_bounds.get('y_max', 2.0)
+
+        diffusion_actions = result.get('diffusion_actions_traj', None)
+        diffusion_samples = result.get('diffusion_sampled_actions', None)
+        diffusion_fractions = config.get('fractions', (0.1, 0.5, 0.9))
+
+        if diffusion_actions is not None and len(diffusion_actions) > 0:
+            diffusion_actions = np.asarray(diffusion_actions, dtype=np.float32)
+            Ndiffuse = diffusion_actions.shape[0]
+            diffusion_total_steps = max(0, Ndiffuse - 1)
+
+            # 1. Save individual PNGs: percentage = noise level (90%=high noise, 10%=low noise)
+            # frac in config = noise fraction; step_idx 0 = least noisy, Ndiffuse-1 = most noisy
+            for frac in diffusion_fractions:
+                step_idx = int(frac * (Ndiffuse - 1))
+                step_idx = max(0, min(step_idx, Ndiffuse - 1))
+                action_seq = diffusion_actions[step_idx]
+                sample_acts = None
+                if diffusion_samples is not None and len(diffusion_samples) > 0:
+                    diffusion_samples_arr = np.asarray(diffusion_samples, dtype=np.float32)
+                    if diffusion_samples_arr.ndim == 4 and diffusion_samples_arr.shape[0] > step_idx:
+                        sample_acts = diffusion_samples_arr[step_idx]
+                pct = round(frac * 100)
+                fig_single, ax_single = plt.subplots(1, 1, figsize=(6, 6))
+                self._visualize_single_step(
+                    ax_single, env, obstacles, initial_state, action_seq, sample_acts,
+                    env_plugin, x_min, x_max, y_min, y_max,
+                    title=None,
+                    exp_cfg=exp_cfg,
+                    diffusion_step=step_idx,
+                    diffusion_total_steps=diffusion_total_steps,
+                    cfs_overlay_cfg=overlay_cfg,
+                    is_ebmbd=is_ebmbd,
+                    is_mdoc=is_mdoc,
+                    draw_cfs_fan=draw_cfs_fan,
+                    show_title=False,
+                    show_axis_labels=False,
+                    show_grid=False,
+                )
+                out_path = output_dir / f"diffusion_steps_{pct}.png"
+                if is_ebmbd:
+                    fig_single.set_facecolor('white')
+                    ax_single.set_facecolor('white')
+                fig_single.savefig(out_path, dpi=dpi, bbox_inches='tight', facecolor=fig_single.get_facecolor())
+                plt.close(fig_single)
+
+            # 2. Generate GIF: 100% -> 1% (high noise to low noise)
+            # Order: step_idx Ndiffuse-1 (most noisy) -> 0 (least noisy)
+            temp_files = []
+            try:
+                for step_idx in range(Ndiffuse - 1, -1, -1):
+                    action_seq = diffusion_actions[step_idx]
+                    sample_acts = None
+                    if diffusion_samples is not None and len(diffusion_samples) > 0:
+                        diffusion_samples_arr = np.asarray(diffusion_samples, dtype=np.float32)
+                        if diffusion_samples_arr.ndim == 4 and diffusion_samples_arr.shape[0] > step_idx:
+                            sample_acts = diffusion_samples_arr[step_idx]
+                    # pct = noise level: step Ndiffuse-1 -> 100%, step 0 -> 0%
+                    denom = max(1, Ndiffuse - 1)
+                    pct = round(100.0 * step_idx / denom)
+                    fig_frame, ax_frame = plt.subplots(1, 1, figsize=(6, 6))
+                    self._visualize_single_step(
+                        ax_frame, env, obstacles, initial_state, action_seq, sample_acts,
+                        env_plugin, x_min, x_max, y_min, y_max,
+                        title=f"Diffusion {pct}%",
+                        exp_cfg=exp_cfg,
+                        diffusion_step=step_idx,
+                        diffusion_total_steps=diffusion_total_steps,
+                        cfs_overlay_cfg=overlay_cfg,
+                        is_ebmbd=is_ebmbd,
+                        is_mdoc=is_mdoc,
+                        draw_cfs_fan=draw_cfs_fan,
+                        show_title=True,
+                        show_axis_labels=False,
+                        show_grid=False,
+                    )
+                    tmp_path = output_dir / f"_gif_frame_{step_idx}.png"
+                    if is_ebmbd:
+                        fig_frame.set_facecolor('white')
+                        ax_frame.set_facecolor('white')
+                    fig_frame.savefig(tmp_path, dpi=dpi, bbox_inches='tight', facecolor=fig_frame.get_facecolor())
+                    plt.close(fig_frame)
+                    temp_files.append(tmp_path)
+                if temp_files:
+                    frames = [imageio.v3.imread(p) for p in temp_files]
+                    gif_path = output_dir / "diffusion_steps.gif"
+                    imageio.v3.imwrite(
+                        gif_path,
+                        frames,
+                        duration=gif_duration_ms,
+                        loop=gif_loop,
+                    )
+            finally:
+                for p in temp_files:
+                    try:
+                        p.unlink()
+                    except OSError:
+                        pass
+        else:
+            # Fallback: only save the 3 fraction PNGs with final trajectory
+            final_actions = result.get('actions', None)
+            for frac in diffusion_fractions:
+                pct = round(frac * 100)
+                fig_single, ax_single = plt.subplots(1, 1, figsize=(6, 6))
+                self._visualize_single_step(
+                    ax_single, env, obstacles, initial_state, final_actions, None,
+                    env_plugin, x_min, x_max, y_min, y_max,
+                    title=None,
+                    exp_cfg=exp_cfg,
+                    diffusion_step=0,
+                    diffusion_total_steps=0,
+                    cfs_overlay_cfg=overlay_cfg,
+                    is_ebmbd=is_ebmbd,
+                    is_mdoc=is_mdoc,
+                    draw_cfs_fan=draw_cfs_fan,
+                    show_title=False,
+                    show_axis_labels=False,
+                    show_grid=False,
+                )
+                out_path = output_dir / f"diffusion_steps_{pct}.png"
+                if is_ebmbd:
+                    fig_single.set_facecolor('white')
+                    ax_single.set_facecolor('white')
+                fig_single.savefig(out_path, dpi=dpi, bbox_inches='tight', facecolor=fig_single.get_facecolor())
+                plt.close(fig_single)
 

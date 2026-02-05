@@ -23,7 +23,8 @@ from . import ConstraintScheduler
 from .ConstraintScheduler import (
     ConstraintScheduler as ConstraintSchedulerBase,
     FixedConstraintScheduler,
-    DualControlConstraintScheduler,
+    EmergingBarrierConstraintScheduler,
+    ALMAdaptiveConstraintScheduler,
 )
 
 # New diffusion schedulers (import to trigger registration)
