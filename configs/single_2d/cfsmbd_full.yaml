@@ -27,7 +27,7 @@ method_params:
   num_modes: 20
   mode_strategy: multirun
 
-obstacle_levels: [9]
+obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -41,9 +41,9 @@ obstacle_config:
   enable_connectivity_check: true
   enable_nonconvexity_check: true
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 backend: jax
-device: cpu
+device: cuda
 
 metrics:
   - ssr
@@ -51,17 +51,17 @@ metrics:
   - nonconvexity
 
 visualizations:
-  - trajectory_modes  # Shows C candidate paths with best highlighted
-  - trajectory        # Shows only the best (lowest cost) path
+  - trajectory_modes
+  - trajectory       
   - diffusion
-  - energy_reward
-  - states
+  - cost
+  - adaptive
 
 scheduler_config:
   type: composite
   constraint_schedulers:
     - type: fixed
-      margin: 0.04
+      margin: 0.05
       rho: 10.0
       # QP filter: always solve full trajectory QP
       qp_gate: true

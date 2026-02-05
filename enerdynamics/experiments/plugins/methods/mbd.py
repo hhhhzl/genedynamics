@@ -50,6 +50,7 @@ class MBDMethodPlugin(MethodPlugin):
             diversity_eta=config.get("diversity_eta", 1.0),  # Diversity weight
             diversity_topK_cand=config.get("diversity_topK_cand", None),  # Pre-filter candidates
             diversity_use_state=config.get("diversity_use_state", True),  # Use state or action features
+            terminal_energy_weight=float(config.get("terminal_energy_weight", 100.0)),
         )
         return solver
 

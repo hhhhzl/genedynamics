@@ -55,54 +55,142 @@ class TrajectoryVisualizationPlugin(VisualizationPlugin):
         # Draw obstacles
         draw_obstacles(ax, obstacles)
         
-        # Draw trajectory
-        if len(trajectory.states) > 1:
-            positions = np.array([env_plugin.extract_position(np.asarray(s)) for s in trajectory.states])
-            color = config.get('color', EDOC_COLOR)
-            ax.plot(positions[:, 0], positions[:, 1], color=color, linewidth=2.0, label='Trajectory')
-            
-            # Draw start with robot radius
-            robot_radius = float(obstacle_config.get('robot_radius', 0.05))
-            start_circle = plt.Circle(
-                tuple(positions[0]),
-                robot_radius,
-                facecolor='white',
-                edgecolor=color,
-                linewidth=1.5,
-                label='Start'
-            )
-            ax.add_patch(start_circle)
-            
-            # Draw end with robot radius
-            end_circle = plt.Circle(
-                tuple(positions[-1]),
-                robot_radius,
-                facecolor=color,
-                edgecolor='black',
-                linewidth=0.5
-            )
-            ax.add_patch(end_circle)
-        
-        # Draw target with margin
+        partial_until_step = data.get('partial_until_step', None)
+        gif_style = data.get('gif_style', False)
+        robot_radius = float(obstacle_config.get('robot_radius', 0.05))
+        color = config.get('color', EDOC_COLOR)
+
+        # Full trajectory positions (for full line or midpoint / moving robot)
+        all_positions = np.array([env_plugin.extract_position(np.asarray(s)) for s in trajectory.states])
+        if len(all_positions) < 1:
+            all_positions = np.zeros((0, 2))
+
         target = np.asarray(env.target, dtype=np.float32)
         target_pos = env_plugin.extract_position(target)
-        robot_radius = float(obstacle_config.get('robot_radius', 0.05))
-        target_circle = plt.Circle(
-            tuple(target_pos),
-            robot_radius * 2,  # Robot diameter
-            facecolor='none',
-            edgecolor='red',
-            linewidth=1.5,
-            linestyle='--',
-            label='Target (margin)'
-        )
-        ax.add_patch(target_circle)
-        ax.plot(target_pos[0], target_pos[1], 'r*', markersize=15, label='Target')
+
+        def draw_tail(ax, positions, t, color, robot_radius, zorder=7, alpha_min=0.25, alpha_max=0.75):
+            """Draw tail as small circles behind robot at step t (progressively smaller and more transparent)."""
+            tail_length = min(5, t)
+            if tail_length <= 0:
+                return
+            # i=1: closest to robot (t-1), i=tail_length: oldest (t-tail_length)
+            for i in range(1, tail_length + 1):
+                idx = t - i
+                if idx < 0:
+                    continue
+                # Closest to robot (i=1) = largest; oldest (i=tail_length) = smallest
+                scale = 0.85 - 0.15 * (i - 1)  # 0.85, 0.70, 0.55, 0.40, 0.25 for i=1..5
+                r = max(0.03, robot_radius * scale)
+                # Closest = less transparent, oldest = more transparent
+                div = max(1, tail_length - 1)
+                alpha = alpha_max - (alpha_max - alpha_min) * (i - 1) / div
+                circle = plt.Circle(
+                    tuple(positions[idx]),
+                    r,
+                    facecolor=color,
+                    edgecolor=color,
+                    linewidth=0.3,
+                    alpha=alpha,
+                    zorder=zorder,
+                )
+                ax.add_patch(circle)
+
+        # For GIF style: full trajectory line; robot moves; tail from third-way (highly visible).
+        if gif_style and partial_until_step is not None:
+            if len(all_positions) > 1:
+                ax.plot(all_positions[:, 0], all_positions[:, 1], color=color, linewidth=2.0, zorder=4)
+            if len(all_positions) > 0:
+                ax.scatter(
+                    all_positions[0, 0], all_positions[0, 1],
+                    marker='o', s=30, facecolors='white', edgecolors=color,
+                    linewidths=1.0, zorder=6
+                )
+            t = min(partial_until_step, len(all_positions) - 1)
+            if t >= 0 and len(all_positions) > 0:
+                # Tail from first step so it's visible in the early segment (t>=1 gives at least one tail circle)
+                if t >= 1:
+                    draw_tail(ax, all_positions, t, color, robot_radius, zorder=7, alpha_min=0.25, alpha_max=0.75)
+                robot_circle = plt.Circle(
+                    tuple(all_positions[t]),
+                    robot_radius,
+                    facecolor=color,
+                    edgecolor='black',
+                    linewidth=0.5,
+                    zorder=8
+                )
+                ax.add_patch(robot_circle)
+        else:
+            # Static or legacy partial
+            states_to_use = trajectory.states
+            if partial_until_step is not None and not gif_style:
+                end_idx = min(partial_until_step + 1, len(trajectory.states))
+                states_to_use = trajectory.states[:end_idx]
+            if len(states_to_use) > 1:
+                positions = np.array([env_plugin.extract_position(np.asarray(s)) for s in states_to_use])
+                ax.plot(positions[:, 0], positions[:, 1], color=color, linewidth=2.0, zorder=4)
+                ax.scatter(
+                    positions[0, 0], positions[0, 1],
+                    marker='o', s=30, facecolors='white', edgecolors=color,
+                    linewidths=1.0, zorder=6
+                )
+                if partial_until_step is None:
+                    # PNG: robot_radius at t closest to midpoint between start and target; add tail
+                    start_xy = positions[0]
+                    mid_xy = 0.5 * (start_xy + target_pos)
+                    dists = np.linalg.norm(positions - mid_xy, axis=1)
+                    t_mid = int(np.argmin(dists))
+                    t_mid = min(t_mid, len(positions) - 1)
+                    tail_length = min(5, t_mid)
+                    if t_mid >= 1 and tail_length >= 1:
+                        draw_tail(ax, positions, t_mid, color, robot_radius, zorder=7, alpha_min=0.25, alpha_max=0.75)
+                    robot_circle = plt.Circle(
+                        tuple(positions[t_mid]),
+                        robot_radius,
+                        facecolor=color,
+                        edgecolor='black',
+                        linewidth=0.5,
+                        zorder=8
+                    )
+                    ax.add_patch(robot_circle)
+                else:
+                    # Legacy GIF frame (growing trajectory): head as dot or circle
+                    is_partial = partial_until_step < len(trajectory.states) - 1
+                    if is_partial:
+                        ax.scatter(
+                            positions[-1, 0], positions[-1, 1],
+                            marker='o', s=40, facecolors=color, edgecolors='black',
+                            linewidths=0.5, zorder=6
+                        )
+                    else:
+                        end_circle = plt.Circle(
+                            tuple(positions[-1]),
+                            robot_radius,
+                            facecolor=color,
+                            edgecolor='black',
+                            linewidth=0.5
+                        )
+                        ax.add_patch(end_circle)
+            elif len(states_to_use) == 1:
+                positions = np.array([env_plugin.extract_position(np.asarray(states_to_use[0]))])
+                ax.scatter(
+                    positions[0, 0], positions[0, 1],
+                    marker='o', s=30, facecolors='white', edgecolors=color,
+                    linewidths=1.0, zorder=6
+                )
+        
+        # Draw target (no margin circle)
+        ax.plot(target_pos[0], target_pos[1], 'r*', markersize=15)
         
         title = config.get('title', 'Final Trajectory')
-        ax.set_title(title, fontsize=12)
-        ax.legend()
+        ax.set_title(title, fontsize=20, fontweight='bold')
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_color('0.4')
+            spine.set_linewidth(0.8)
         ax.grid(True, alpha=0.3)
+        ax.set_facecolor('white')
     
     def save(self, output_path: Any, fig: Any, **kwargs: Any) -> None:
         """
