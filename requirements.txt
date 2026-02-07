@@ -18,10 +18,11 @@ matplotlib>=3.8.0
 seaborn>=0.13.0
 pandas>=2.2.0
 
-torch==2.6.0
+torch==2.10.0
 
 # Optional autodiff (JAX)
-jax==0.4.35
+jax==0.6.2[cuda12]
+# jax==0.6.2
 
 # Optional environments
 gym>=0.26.2
