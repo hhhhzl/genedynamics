@@ -1,0 +1,59 @@
+# MBD on D3IL avoiding (unified plugin: MPC or plan_once)
+# Diffusion params from scheduler_config.diffusion_schedulers (same format as single_2d/mbd)
+name: d3il_avoiding_mbd
+output_dir: results/d3il_avoiding/mbd
+
+env_name: d3il_avoiding_9d
+env_params:
+  render: false
+  horizon: 150
+  dt: 0.035
+
+method: d3il_unified
+method_params:
+  solver: mbd
+  execution: mpc  # or plan_once for open-loop
+  horizon: 20
+  dt: 0.035
+  action_limit: 0.05
+  action_extra_sigma: 0.3
+  terminal_energy_weight: 100.0
+  show_tqdm: true
+  num_modes: 20
+  mode_strategy: multirun
+  max_episode_length: 150
+
+obstacle_config:
+  generator: d3il_avoiding_fixed
+  use_d3il_preset: true
+  enable_connectivity_check: false
+  enable_nonconvexity_check: false
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 20
+      T_k: 0.5
+      Ndiffuse: 100
+      beta0: 1.0e-4
+      betaT: 5.0e-2
+  diffusion_merge_strategy: merge
+
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+backend: jax
+device: cuda
+
+metrics:
+  - ssr
+  - episode_outcome
+
+visualizations:
+  - trajectory_modes
+  - trajectory
+  - diffusion
+  - cost
+
+metadata:
+  description: "MBD on D3IL avoiding (d3il_unified, MPC)"
+  author: "enerdynamics"
