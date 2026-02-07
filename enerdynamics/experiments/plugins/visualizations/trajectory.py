@@ -80,7 +80,7 @@ class TrajectoryVisualizationPlugin(VisualizationPlugin):
                     continue
                 # Closest to robot (i=1) = largest; oldest (i=tail_length) = smallest
                 scale = 0.85 - 0.15 * (i - 1)  # 0.85, 0.70, 0.55, 0.40, 0.25 for i=1..5
-                r = max(0.03, robot_radius * scale)
+                r = robot_radius * scale
                 # Closest = less transparent, oldest = more transparent
                 div = max(1, tail_length - 1)
                 alpha = alpha_max - (alpha_max - alpha_min) * (i - 1) / div
