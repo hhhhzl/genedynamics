@@ -186,6 +186,33 @@ class D3ILAvoiding7dVelEnv:
             traj.append(np.asarray(x, dtype=np.float32))
         return np.stack(traj, axis=0)
 
+    def get_jacobian_xy(self, state: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Return (2, 7) Jacobian for tcp x,y w.r.t. joint velocities at the given 9D state.
+        Used to set plan_env linearization so MBD can couple tcp_xy to 7D actions.
+        Returns None if the inner env/robot is not available.
+        """
+        self._task_env._lazy_init()
+        inner = getattr(self._task_env, "_env", None)
+        if inner is None or not hasattr(inner, "robot"):
+            return None
+        robot = inner.robot
+        if not hasattr(robot, "getJacobian"):
+            return None
+        state = np.asarray(state, dtype=np.float32).reshape(-1)
+        if state.size != 9:
+            return None
+        q = state[2:9]
+        try:
+            J = robot.getJacobian(q)
+            J = np.asarray(J, dtype=np.float32)
+            if J.shape[0] >= 6 and J.shape[1] >= 7:
+                J_xy = J[0:2, :7].copy()
+                return J_xy
+            return None
+        except Exception:
+            return None
+
     def cost(self, state: np.ndarray) -> float:
         return 0.0
 

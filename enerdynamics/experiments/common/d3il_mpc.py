@@ -184,6 +184,7 @@ def run_plan_once_episode(
     plan_once_fn: Any,
     rng: Any,
     max_steps: Optional[int] = None,
+    continue_after_done: bool = False,
 ) -> Dict[str, Any]:
     """
     Plan once (full trajectory) then execute open-loop on the execution env.
@@ -214,7 +215,7 @@ def run_plan_once_episode(
     infos: List[Dict[str, Any]] = [info0]
     done = False
     for t in range(T):
-        if done:
+        if done and not continue_after_done:
             break
         u = np.asarray(actions[t], dtype=np.float32).reshape(-1)
         x_next, cost, done, step_info = exec_env.step(None, u, t=t, info={})
@@ -258,6 +259,12 @@ def make_plan_once_fn(
         horizon = getattr(solver, horizon_attr, getattr(plan_env, "horizon", 20))
         if hasattr(plan_env, "set_initial_state"):
             plan_env.set_initial_state(x0)
+        if hasattr(plan_env, "set_linearization") and isinstance(planner, dict):
+            exec_env = planner.get("exec_env")
+            if exec_env is not None and hasattr(exec_env, "get_jacobian_xy"):
+                J_xy = exec_env.get_jacobian_xy(np.asarray(x0, dtype=np.float32))
+                if J_xy is not None:
+                    plan_env.set_linearization(J_xy)
         kwargs: Dict[str, Any] = {"horizon": horizon}
         if rng_key is not None:
             kwargs[rng_key_name] = rng_key
@@ -292,6 +299,12 @@ def make_mpc_plan_step_fn(
         horizon = getattr(solver, horizon_attr, getattr(plan_env, "horizon", 20))
         if hasattr(plan_env, "set_initial_state"):
             plan_env.set_initial_state(x0)
+        if hasattr(plan_env, "set_linearization") and isinstance(planner, dict):
+            exec_env = planner.get("exec_env")
+            if exec_env is not None and hasattr(exec_env, "get_jacobian_xy"):
+                J_xy = exec_env.get_jacobian_xy(np.asarray(x0, dtype=np.float32))
+                if J_xy is not None:
+                    plan_env.set_linearization(J_xy)
         kwargs: Dict[str, Any] = {"horizon": horizon}
         if rng_key is not None:
             kwargs[rng_key_name] = rng_key
@@ -331,6 +344,7 @@ def run_d3il_unified(
             plan_once_fn=plan_once_fn,
             rng=rng,
             max_steps=max_steps,
+            continue_after_done=bool(config.get("continue_after_done", False)),
         )
     plan_step_fn = make_mpc_plan_step_fn(plan_env)
     return run_mpc_episode(
