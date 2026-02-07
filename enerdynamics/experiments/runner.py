@@ -19,7 +19,7 @@ from enerdynamics.experiments.plugins import (
     EBMBDMethodPlugin,
     MBDMethodPlugin,
     EDOCMPCMethodPlugin,
-    MBDMPCMethodPlugin,
+    D3ILUnifiedMethodPlugin,
     CFSMBDMethodPlugin,
     CFSMBDFullMethodPlugin,
     DPCCMethodPlugin,
@@ -31,6 +31,7 @@ from enerdynamics.experiments.plugins import (
     DroneFull3DPhysicsPlugin,
     ManipulatorEnvironmentPlugin,
     D3ILAvoidingPlugin,
+    D3ILAvoiding9DPlugin,
     AvoidingPlanEnvironmentPlugin,
     SSRMetricsPlugin,
     ObstacleDensityMetricsPlugin,
@@ -46,6 +47,7 @@ from enerdynamics.experiments.plugins import (
     SchedulerParamsVisualizationPlugin,
     Box2DObstacleGeneratorPlugin,
     Box3DObstacleGeneratorPlugin,
+    D3ILAvoidingFixedGeneratorPlugin,
 )
 
 
@@ -165,7 +167,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(EBMBDMethodPlugin(), 'method')
     runner.register_plugin(MBDMethodPlugin(), 'method')
     runner.register_plugin(EDOCMPCMethodPlugin(), 'method')
-    runner.register_plugin(MBDMPCMethodPlugin(), 'method')
+    runner.register_plugin(D3ILUnifiedMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDFullMethodPlugin(), 'method')
     if DPCCMethodPlugin is not None:
@@ -180,6 +182,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(DroneFull3DPhysicsPlugin(), 'environment')
     runner.register_plugin(ManipulatorEnvironmentPlugin(), 'environment')
     runner.register_plugin(D3ILAvoidingPlugin(), 'environment')
+    runner.register_plugin(D3ILAvoiding9DPlugin(), 'environment')
     runner.register_plugin(AvoidingPlanEnvironmentPlugin(), 'environment')
     
     # Metrics plugins
@@ -201,6 +204,7 @@ def register_all_plugins(runner: ExperimentRunner):
     # Obstacle generator plugins
     runner.register_plugin(Box2DObstacleGeneratorPlugin(), 'obstacle_generator')
     runner.register_plugin(Box3DObstacleGeneratorPlugin(), 'obstacle_generator')
+    runner.register_plugin(D3ILAvoidingFixedGeneratorPlugin(), 'obstacle_generator')
 
 
 if __name__ == "__main__":

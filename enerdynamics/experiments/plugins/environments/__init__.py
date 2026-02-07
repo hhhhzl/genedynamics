@@ -12,6 +12,7 @@ from .drone import (
 )
 from .manipulator import ManipulatorEnvironmentPlugin
 from .d3il_avoiding import D3ILAvoidingPlugin
+from .d3il_avoiding_9d import D3ILAvoiding9DPlugin
 from .avoiding_plan import AvoidingPlanEnvironmentPlugin
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     'DroneFull3DPhysicsPlugin',
     'ManipulatorEnvironmentPlugin',
     'D3ILAvoidingPlugin',
+    'D3ILAvoiding9DPlugin',
     'AvoidingPlanEnvironmentPlugin',
 ]
 
