@@ -28,6 +28,18 @@ def _get_method_name(exp_cfg: Any) -> Any:
         return exp_cfg.get("method")
     return getattr(exp_cfg, "method", None)
 
+
+def _is_mbd_solver(exp_cfg: Any) -> bool:
+    """True if the experiment uses MBD solver (method==mbd or d3il_unified with solver mbd). Used to skip CFS fan."""
+    method_name = _get_method_name(exp_cfg)
+    if method_name == "mbd":
+        return True
+    if method_name == "d3il_unified":
+        method_params = (exp_cfg.get("method_params", {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, "method_params", {})) or {}
+        if method_params.get("solver") == "mbd":
+            return True
+    return False
+
 def _add_cap_rectangle(
         self, ax: Any, p: np.ndarray, grad: np.ndarray,
         r: float, b: float, dt: float, scale: float,
@@ -246,7 +258,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         method_name = _get_method_name(exp_cfg)
         method_params = (exp_cfg.get('method_params', {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, 'method_params', {})) or {}
         is_ebmbd = (method_name == "ebmbd")  # Only EB-MBD draws barrier; MBD does not
-        is_mbd = (method_name == "mbd")  # MBD: no sample-rollout fan (PNG and GIF), clean plot
+        is_mbd = _is_mbd_solver(exp_cfg)  # MBD (or d3il_unified+solver mbd): no CFS fan
+        skip_sample_rollouts = (method_name == "mbd")  # only pure MBD (e.g. single_2d) hides sample lines; d3il_unified+mbd shows them
         # MDOC: exact method name or ablation config (mdoc_constraint_mode / cbf_eta in method_params)
         is_mdoc = (
             method_name == "mdoc"
@@ -313,6 +326,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     is_ebmbd=is_ebmbd,
                     is_mdoc=is_mdoc,
                     is_mbd=is_mbd,
+                    skip_sample_rollouts=skip_sample_rollouts,
                     draw_cfs_fan=draw_cfs_fan,
                 )
         else:
@@ -330,6 +344,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     is_ebmbd=is_ebmbd,
                     is_mdoc=is_mdoc,
                     is_mbd=is_mbd,
+                    skip_sample_rollouts=skip_sample_rollouts,
                     draw_cfs_fan=draw_cfs_fan,
                 )
     
@@ -345,6 +360,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         is_ebmbd: bool = False,
         is_mdoc: bool = False,
         is_mbd: bool = False,
+        skip_sample_rollouts: bool = False,
         draw_cfs_fan: bool = True,
         show_title: bool = True,
         show_axis_labels: bool = True,
@@ -363,8 +379,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         if is_ebmbd:
             self._draw_barrier_field(ax, obstacles, x_min, x_max, y_min, y_max)
         
-        # Draw sample rollouts (skip for MBD: clean plot without fan)
-        if not is_mbd and sample_actions is not None and len(sample_actions) > 0:
+        # Draw sample rollouts (skip only for pure MBD e.g. single_2d; d3il_unified+mbd shows samples)
+        if not skip_sample_rollouts and sample_actions is not None and len(sample_actions) > 0:
             if is_ebmbd:
                 num_samples = len(sample_actions)
             else:
@@ -672,7 +688,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         method_name = _get_method_name(exp_cfg)
         method_params = (exp_cfg.get('method_params', {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, 'method_params', {})) or {}
         is_ebmbd = (method_name == "ebmbd")  # Only EB-MBD draws barrier; MBD does not
-        is_mbd = (method_name == "mbd")  # MBD: no sample-rollout fan (PNG and GIF), clean plot
+        is_mbd = _is_mbd_solver(exp_cfg)  # MBD (or d3il_unified+solver mbd): no CFS fan
+        skip_sample_rollouts = (method_name == "mbd")  # only pure MBD hides sample lines; d3il_unified+mbd shows them
         is_mdoc = (
             method_name == "mdoc"
             or "mdoc_constraint_mode" in method_params
@@ -738,6 +755,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     is_ebmbd=is_ebmbd,
                     is_mdoc=is_mdoc,
                     is_mbd=is_mbd,
+                    skip_sample_rollouts=skip_sample_rollouts,
                     draw_cfs_fan=draw_cfs_fan,
                     show_title=False,
                     show_axis_labels=False,
@@ -776,6 +794,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                         is_ebmbd=is_ebmbd,
                         is_mdoc=is_mdoc,
                         is_mbd=is_mbd,
+                        skip_sample_rollouts=skip_sample_rollouts,
                         draw_cfs_fan=draw_cfs_fan,
                         show_title=True,
                         show_axis_labels=False,
@@ -820,6 +839,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     is_ebmbd=is_ebmbd,
                     is_mdoc=is_mdoc,
                     is_mbd=is_mbd,
+                    skip_sample_rollouts=skip_sample_rollouts,
                     draw_cfs_fan=draw_cfs_fan,
                     show_title=False,
                     show_axis_labels=False,

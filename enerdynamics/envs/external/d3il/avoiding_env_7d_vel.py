@@ -35,6 +35,7 @@ class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
     act_dim: int = 7
     control_limit: float = 1.5
     target: np.ndarray = np.array([0.4, 0.35], dtype=np.float32)
+    success_distance_threshold: float = 0.02  # only report success/done when within this distance
 
     def __init__(self, config: Optional[D3ILAvoiding7dVelSpecConfig] = None):
         self.config = config or D3ILAvoiding7dVelSpecConfig()
@@ -112,6 +113,14 @@ class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
                 extra["collision"] = bool(env.check_failure())
         except Exception:
             pass
+        # Only treat as success/done when within success_distance_threshold (e.g. 2*robot_radius)
+        dist_to_target = float(np.linalg.norm(np.asarray(next_state[:2], dtype=np.float64) - np.asarray(self.target, dtype=np.float64)))
+        if dist_to_target > self.success_distance_threshold:
+            done = False
+            extra["success"] = False
+        else:
+            done = True
+            extra["success"] = True
         info = {"obs_xy": next_state[:2], **extra}
         return next_state, cost, bool(done), ctx, info
 
@@ -178,11 +187,26 @@ class D3ILAvoiding7dVelEnv:
     def rollout_actions(
         self, state: np.ndarray, actions: np.ndarray
     ) -> np.ndarray:
-        """Roll out a sequence of actions from initial state using approx transition (no sim)."""
+        """Roll out a sequence of actions from initial state using approx transition (no sim).
+        When get_jacobian_xy is available (9D), uses J_xy at initial state so tcp_xy evolves
+        for diffusion/trajectory visualization; otherwise uses spec approx (tcp_xy fixed)."""
         x = np.asarray(state, dtype=np.float32).reshape(-1)
         traj = [x.copy()]
-        for act in np.asarray(actions, dtype=np.float32):
-            x = self._task_env.transition(x, act.reshape(-1))
+        actions_arr = np.asarray(actions, dtype=np.float32)
+        if actions_arr.ndim == 1:
+            actions_arr = actions_arr.reshape(1, -1)
+        J_xy = None
+        if x.size == 9 and hasattr(self, "get_jacobian_xy"):
+            J_xy = self.get_jacobian_xy(x)
+        dt = float(self.dt)
+        for act in actions_arr:
+            u = act.reshape(-1)
+            if J_xy is not None and J_xy.shape == (2, 7) and u.size == 7:
+                tcp_xy = x[:2] + dt * (J_xy @ u)
+                q_next = x[2:9] + dt * u
+                x = np.concatenate([tcp_xy, q_next], axis=0).astype(np.float32)
+            else:
+                x = self._task_env.transition(x, u)
             traj.append(np.asarray(x, dtype=np.float32))
         return np.stack(traj, axis=0)
 

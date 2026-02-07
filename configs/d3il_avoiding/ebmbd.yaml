@@ -4,7 +4,7 @@ output_dir: results/d3il_avoiding/ebmbd
 env_name: d3il_avoiding_9d
 env_params:
   render: false
-  horizon: 150
+  horizon: 64
   dt: 0.035
 
 method: d3il_unified
@@ -12,25 +12,33 @@ obstacle_levels: [0]
 
 method_params:
   solver: ebmbd
-  execution: plan_once  # plan_once ｜ mpc
-  horizon: 20
+  execution: plan_once
+  horizon: 64
   dt: 0.035
-  action_limit: 0.05
-  action_extra_sigma: 0.3
-  terminal_energy_weight: 100.0
+  action_limit: 0.8
+  action_extra_sigma: 0.4
+  terminal_energy_weight: 200.0
   use_min_over_time: true
   show_tqdm: true
   num_modes: 20
   mode_strategy: multirun
-  max_episode_length: 150
+  max_episode_length: 64
+  track_trajectory: true
+  tracker_k_joint: 2.0
 
 obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
   enable_connectivity_check: false
   enable_nonconvexity_check: false
+  robot_radius: 0.01
+  map_bounds:
+    x_min: 0.2
+    x_max: 0.8
+    y_min: -0.3
+    y_max: 0.4
 
-seeds: [0, 1, 2, 3, 4]
+seeds: [0]
 backend: jax
 device: cuda
 
@@ -38,7 +46,7 @@ scheduler_config:
   type: composite
   diffusion_schedulers:
     - type: fixed
-      M_k: 20
+      M_k: 64
       T_k: 5e-1
       Ndiffuse: 100
       beta0: 1.0e-4
@@ -46,12 +54,12 @@ scheduler_config:
   diffusion_merge_strategy: merge
   constraint_schedulers:
     - type: emerging_barrier
-      mu: 50.0
+      mu: 2.0
       alpha: 1.0
-      bound: 0.8
+      bound: 0.1
       use_min_over_time: true
-      terminal_energy_weight: 100.0
-      margin: 0.05
+      terminal_energy_weight: 200.0
+      margin: 0.01
   constraint_merge_strategy: merge
 
 metrics:

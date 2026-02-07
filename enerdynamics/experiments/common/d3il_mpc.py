@@ -38,6 +38,50 @@ def _split_rng(rng: Any, n: int) -> Tuple[Any, List[Any]]:
     return keys[0], [keys[i + 1] for i in range(n)]
 
 
+def _tracking_action(
+    exec_env: Any,
+    current_state: np.ndarray,
+    planned_state_next: np.ndarray,
+    planned_action_t: np.ndarray,
+    dt: float,
+    control_limit: float,
+    tracker_k_joint: float = 0.0,
+) -> np.ndarray:
+    """
+    Compute action that tracks the planned trajectory (task-space xy and optionally joints).
+
+    Used for plan_once + track_trajectory: instead of u = planned_action_t, we compute
+    u such that tcp_xy moves toward planned_state_next[:2] and (if tracker_k_joint > 0)
+    joints q move toward planned_state_next[2:9]. Requires exec_env with get_jacobian_xy
+    and 9D state; otherwise returns planned_action_t (open-loop).
+    """
+    current_state = np.asarray(current_state, dtype=np.float32).reshape(-1)
+    planned_state_next = np.asarray(planned_state_next, dtype=np.float32).reshape(-1)
+    planned_action_t = np.asarray(planned_action_t, dtype=np.float32).reshape(-1)
+    if current_state.size != 9 or planned_state_next.size < 2:
+        return planned_action_t
+    if not hasattr(exec_env, "get_jacobian_xy"):
+        return planned_action_t
+    J_xy = exec_env.get_jacobian_xy(current_state)
+    if J_xy is None:
+        return planned_action_t
+    J_xy = np.asarray(J_xy, dtype=np.float64)
+    if J_xy.shape != (2, 7):
+        return planned_action_t
+    v_xy_des = (planned_state_next[:2].astype(np.float64) - current_state[:2].astype(np.float64)) / max(dt, 1e-8)
+    # u = J_xy^+ @ v_xy_des (min-norm solution to J_xy @ u ≈ v_xy_des)
+    u_track, _res, _rank, _s = np.linalg.lstsq(J_xy, v_xy_des, rcond=None)
+    u_track = np.asarray(u_track, dtype=np.float32)
+    if u_track.size != 7:
+        return planned_action_t
+    # Joint-space tracking: pull q toward planned q (reduces drift, keeps J(q) aligned)
+    if tracker_k_joint > 0 and planned_state_next.size >= 9:
+        q_err = np.asarray(planned_state_next[2:9], dtype=np.float32) - np.asarray(current_state[2:9], dtype=np.float32)
+        u_track = u_track + tracker_k_joint * q_err
+    u = np.clip(u_track, -float(control_limit), float(control_limit))
+    return u
+
+
 def run_mpc_episode(
     *,
     exec_env: Any,
@@ -185,48 +229,113 @@ def run_plan_once_episode(
     rng: Any,
     max_steps: Optional[int] = None,
     continue_after_done: bool = False,
+    replan_every: Optional[int] = None,
+    track_trajectory: bool = False,
+    tracker_k_joint: float = 0.0,
 ) -> Dict[str, Any]:
     """
-    Plan once (full trajectory) then execute open-loop on the execution env.
+    Plan once (or every replan_every steps) then execute on the execution env.
 
-    All solvers can be used: plan_once_fn(planner, x0, rng) should return
-    a dict with "actions" (list of arrays). Optional "states" is ignored for execution.
+    If replan_every is None: one plan for full horizon, execute open-loop (or track).
+    If replan_every = N > 0: every N steps re-plan from current state with horizon N (chunked execution).
 
-    Args:
-        exec_env: Execution env.
-        planner: Planner dict or solver (passed to plan_once_fn).
-        plan_once_fn: callable(planner, x0, rng) -> dict with "actions" (list).
-        rng: RNG for reset and for plan_once_fn.
-        max_steps: Cap execution steps. If None, use len(actions).
+    plan_once_fn(planner, x0, rng, horizon=None) should return dict with "actions" (list)
+    and optionally "states" (list, length horizon+1) for track_trajectory.
 
-    Returns:
-        Same dict shape as run_mpc_episode.
+    When track_trajectory is True and plan returns "states", each step uses a tracking
+    action (J_xy^+ @ v_xy_des toward next planned state) instead of open-loop planned
+    action, when exec_env has get_jacobian_xy (9D). Falls back to open-loop otherwise.
+    Works with any model-based solver (MBD, EBMBD, MDOC, CFS-MBD).
     """
     x0, info0 = exec_env.reset(rng=rng)
-    result = plan_once_fn(planner, np.asarray(x0, dtype=np.float32), rng)
-    actions = result.get("actions") or result.get("action") or []
-    if not actions:
-        raise RuntimeError("plan_once_fn returned no actions")
-    T = len(actions) if max_steps is None else min(len(actions), max_steps)
-
     states: List[np.ndarray] = [np.asarray(x0, dtype=np.float32)]
     executed_actions: List[np.ndarray] = []
     costs: List[float] = []
     infos: List[Dict[str, Any]] = [info0]
     done = False
-    for t in range(T):
-        if done and not continue_after_done:
-            break
-        u = np.asarray(actions[t], dtype=np.float32).reshape(-1)
-        x_next, cost, done, step_info = exec_env.step(None, u, t=t, info={})
-        states.append(np.asarray(x_next, dtype=np.float32))
-        executed_actions.append(u.copy())
-        costs.append(float(cost) if cost is not None else 0.0)
-        infos.append(step_info)
+    rng_cur = rng
+    total_steps = int(max_steps) if max_steps is not None else 999999
+    dt = getattr(exec_env, "dt", 0.035)
+    control_limit = getattr(exec_env, "control_limit", 1.5)
+    k_joint = float(tracker_k_joint)
+
+    if replan_every is None or replan_every <= 0:
+        # True plan-once: one plan, execute all
+        result = plan_once_fn(planner, np.asarray(x0, dtype=np.float32), rng_cur)
+        actions = result.get("actions") or result.get("action") or []
+        if not actions:
+            raise RuntimeError("plan_once_fn returned no actions")
+        planned_states = result.get("states") or []
+        T = min(len(actions), total_steps)
+        for t in range(T):
+            if done and not continue_after_done:
+                break
+            if track_trajectory and planned_states:
+                # planned_states[0]=s0, ..., planned_states[T]=sT; at step t we want to go to planned_states[t+1]
+                idx_next = min(t + 1, len(planned_states) - 1)
+                planned_next = planned_states[idx_next] if idx_next >= 0 else planned_states[0]
+                u = _tracking_action(
+                    exec_env,
+                    states[-1],
+                    planned_next,
+                    np.asarray(actions[t], dtype=np.float32),
+                    dt,
+                    control_limit,
+                    tracker_k_joint=k_joint,
+                )
+            else:
+                u = np.asarray(actions[t], dtype=np.float32).reshape(-1)
+            x_next, cost, done, step_info = exec_env.step(None, u, t=t, info={})
+            states.append(np.asarray(x_next, dtype=np.float32))
+            executed_actions.append(u.copy())
+            costs.append(float(cost) if cost is not None else 0.0)
+            infos.append(step_info)
+    else:
+        # Chunked: replan every replan_every steps with horizon = chunk size
+        step_count = 0
+        while step_count < total_steps:
+            chunk = min(replan_every, total_steps - step_count)
+            if chunk <= 0:
+                break
+            current_x = states[-1]
+            result = plan_once_fn(planner, np.asarray(current_x, dtype=np.float32), rng_cur, horizon=chunk)
+            actions = result.get("actions") or result.get("action") or []
+            if not actions:
+                break
+            planned_states_chunk = result.get("states") or []
+            take = min(chunk, len(actions))
+            for i in range(take):
+                if done and not continue_after_done:
+                    break
+                if track_trajectory and planned_states_chunk:
+                    idx_next = min(i + 1, len(planned_states_chunk) - 1)
+                    planned_next = planned_states_chunk[idx_next] if idx_next >= 0 else planned_states_chunk[0]
+                    u = _tracking_action(
+                        exec_env,
+                        states[-1],
+                        planned_next,
+                        np.asarray(actions[i], dtype=np.float32),
+                        dt,
+                        control_limit,
+                        tracker_k_joint=k_joint,
+                    )
+                else:
+                    u = np.asarray(actions[i], dtype=np.float32).reshape(-1)
+                x_next, cost, done, step_info = exec_env.step(None, u, t=step_count, info={})
+                states.append(np.asarray(x_next, dtype=np.float32))
+                executed_actions.append(u.copy())
+                costs.append(float(cost) if cost is not None else 0.0)
+                infos.append(step_info)
+                step_count += 1
+            if take < chunk or (done and not continue_after_done):
+                break
+            # Advance rng for next chunk (simple split if has attr)
+            if hasattr(rng_cur, "split"):
+                rng_cur, _ = rng_cur.split(2)
 
     success = any(bool(i.get("success", False)) for i in infos if isinstance(i, dict))
     collision = any(bool(i.get("collision", False)) for i in infos if isinstance(i, dict))
-    return {
+    out = {
         "states": states,
         "actions": executed_actions,
         "exec_states": states,
@@ -240,6 +349,13 @@ def run_plan_once_episode(
         "done": bool(done),
         "steps": len(executed_actions),
     }
+    for k in ("reward_history", "diffusion_actions_traj", "diffusion_sampled_actions",
+              "candidate_states", "candidate_actions", "candidate_costs", "best_idx"):
+        if k in result and result[k] is not None:
+            out[k] = result[k]
+    if "initial_state" in result and result.get("initial_state") is not None and result.get("initial_state") is not states[0]:
+        out["plan_initial_state"] = result["initial_state"]
+    return out
 
 
 def make_plan_once_fn(
@@ -254,9 +370,9 @@ def make_plan_once_fn(
     Returns callable(planner, x0, rng) -> {"actions": [...], "states": [...]}.
     """
 
-    def plan_once_fn(planner: Any, x0: np.ndarray, rng_key: Any) -> Dict[str, Any]:
+    def plan_once_fn(planner: Any, x0: np.ndarray, rng_key: Any, horizon: Optional[int] = None) -> Dict[str, Any]:
         solver = planner[solver_key] if isinstance(planner, dict) else planner
-        horizon = getattr(solver, horizon_attr, getattr(plan_env, "horizon", 20))
+        H = horizon if horizon is not None else getattr(solver, horizon_attr, getattr(plan_env, "horizon", 20))
         if hasattr(plan_env, "set_initial_state"):
             plan_env.set_initial_state(x0)
         if hasattr(plan_env, "set_linearization") and isinstance(planner, dict):
@@ -265,13 +381,19 @@ def make_plan_once_fn(
                 J_xy = exec_env.get_jacobian_xy(np.asarray(x0, dtype=np.float32))
                 if J_xy is not None:
                     plan_env.set_linearization(J_xy)
-        kwargs: Dict[str, Any] = {"horizon": horizon}
+        kwargs: Dict[str, Any] = {"horizon": H}
         if rng_key is not None:
             kwargs[rng_key_name] = rng_key
         traj = solver.solve(x0, **kwargs)
         actions = getattr(traj, "actions", None) or []
         states = getattr(traj, "states", None) or []
-        return {"actions": list(actions), "states": list(states)}
+        info = getattr(traj, "info", None) or {}
+        out = {"actions": list(actions), "states": list(states)}
+        for k in ("reward_history", "diffusion_actions_traj", "diffusion_sampled_actions", "initial_state",
+                  "candidate_states", "candidate_actions", "candidate_costs", "best_idx"):
+            if k in info and info[k] is not None:
+                out[k] = info[k]
+        return out
 
     return plan_once_fn
 
@@ -338,6 +460,13 @@ def run_d3il_unified(
 
     if mode == "plan_once":
         plan_once_fn = make_plan_once_fn(plan_env)
+        replan_every = config.get("replan_every")
+        if isinstance(replan_every, (int, float)):
+            replan_every = int(replan_every)
+        else:
+            replan_every = None
+        track_trajectory = bool(config.get("track_trajectory", False))
+        tracker_k_joint = float(config.get("tracker_k_joint", 0.0))
         return run_plan_once_episode(
             exec_env=exec_env,
             planner=planner,
@@ -345,6 +474,9 @@ def run_d3il_unified(
             rng=rng,
             max_steps=max_steps,
             continue_after_done=bool(config.get("continue_after_done", False)),
+            replan_every=replan_every,
+            track_trajectory=track_trajectory,
+            tracker_k_joint=tracker_k_joint,
         )
     plan_step_fn = make_mpc_plan_step_fn(plan_env)
     return run_mpc_episode(
