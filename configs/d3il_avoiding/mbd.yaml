@@ -6,20 +6,22 @@ output_dir: results/d3il_avoiding/mbd
 env_name: d3il_avoiding_9d
 env_params:
   render: false
-  horizon: 150
-  dt: 0.035
+  horizon: 100
+  dt: 1
 
 method: d3il_unified
+obstacle_levels: [0]
+
 method_params:
   solver: mbd
-  execution: mpc  # or plan_once for open-loop
-  horizon: 20
-  dt: 0.035
+  execution: plan_once  # plan_once ｜ mpc
+  horizon: 100
+  dt: 1
   action_limit: 0.05
   action_extra_sigma: 0.3
   terminal_energy_weight: 100.0
   show_tqdm: true
-  num_modes: 20
+  num_modes: 2
   mode_strategy: multirun
   max_episode_length: 150
 
@@ -28,6 +30,11 @@ obstacle_config:
   use_d3il_preset: true
   enable_connectivity_check: false
   enable_nonconvexity_check: false
+  map_bounds:
+    x_min: 0.2
+    x_max: 0.8
+    y_min: -0.3
+    y_max: 0.4
 
 scheduler_config:
   type: composite
@@ -40,7 +47,7 @@ scheduler_config:
       betaT: 5.0e-2
   diffusion_merge_strategy: merge
 
-seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+seeds: [0]
 backend: jax
 device: cuda
 

@@ -8,9 +8,11 @@ env_params:
   dt: 0.035
 
 method: d3il_unified
+obstacle_levels: [0]
+
 method_params:
   solver: ebmbd
-  execution: mpc  # or plan_once for open-loop
+  execution: plan_once  # plan_once ｜ mpc
   horizon: 20
   dt: 0.035
   action_limit: 0.05
@@ -28,7 +30,7 @@ obstacle_config:
   enable_connectivity_check: false
   enable_nonconvexity_check: false
 
-seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+seeds: [0, 1, 2, 3, 4]
 backend: jax
 device: cuda
 
