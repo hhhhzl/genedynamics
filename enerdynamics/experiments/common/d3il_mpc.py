@@ -91,7 +91,7 @@ def run_mpc_episode(
 
         states.append(np.asarray(x_next, dtype=np.float32))
         actions.append(u0.copy())
-        costs.append(float(cost))
+        costs.append(float(cost) if cost is not None else 0.0)
         infos.append({**step_info, "plan_info": plan_info})
 
     # Episode-level summary signals
@@ -155,7 +155,7 @@ def run_open_loop_episode(
         x_next, cost, done, step_info = exec_env.step(None, u, t=t, info={})
         states.append(np.asarray(x_next, dtype=np.float32))
         executed_actions.append(u.copy())
-        costs.append(float(cost))
+        costs.append(float(cost) if cost is not None else 0.0)
         infos.append(step_info)
 
     success = any(bool(i.get("success", False)) for i in infos if isinstance(i, dict))
@@ -220,7 +220,7 @@ def run_plan_once_episode(
         x_next, cost, done, step_info = exec_env.step(None, u, t=t, info={})
         states.append(np.asarray(x_next, dtype=np.float32))
         executed_actions.append(u.copy())
-        costs.append(float(cost))
+        costs.append(float(cost) if cost is not None else 0.0)
         infos.append(step_info)
 
     success = any(bool(i.get("success", False)) for i in infos if isinstance(i, dict))

@@ -374,14 +374,15 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     sample_actions = sample_actions[indices]
             
             light_rgba = mcolors.to_rgba(EDOC_COLOR, alpha=0.15)
-            for acts in sample_actions:
-                states = env.rollout_actions(initial_state, acts)
-                if len(states) > 1:
-                    positions = np.array([env_plugin.extract_position(s) for s in states])
-                    ax.plot(positions[:, 0], positions[:, 1], color=light_rgba, linewidth=0.8)
+            if hasattr(env, "rollout_actions"):
+                for acts in sample_actions:
+                    states = env.rollout_actions(initial_state, acts)
+                    if len(states) > 1:
+                        positions = np.array([env_plugin.extract_position(s) for s in states])
+                        ax.plot(positions[:, 0], positions[:, 1], color=light_rgba, linewidth=0.8)
         
         # Draw main trajectory
-        if action_sequence is not None and len(action_sequence) > 0:
+        if action_sequence is not None and len(action_sequence) > 0 and hasattr(env, "rollout_actions"):
             states = env.rollout_actions(initial_state, action_sequence)
             if len(states) > 1:
                 positions = np.array([env_plugin.extract_position(s) for s in states])

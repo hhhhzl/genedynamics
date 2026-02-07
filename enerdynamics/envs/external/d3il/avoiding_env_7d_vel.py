@@ -99,7 +99,7 @@ class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
         obs, reward, done, d3il_info = env.step(env_action)
         next_state = self._robot_state_9d(env)
         ctx = {**ctx, "q": next_state[2:9].copy()}
-        cost = reward
+        cost = float(reward) if reward is not None else 0.0
         extra: Dict[str, Any] = {}
         try:
             if isinstance(d3il_info, tuple) and len(d3il_info) >= 2:
@@ -174,6 +174,17 @@ class D3ILAvoiding7dVelEnv:
 
     def transition(self, state: np.ndarray, action: np.ndarray) -> np.ndarray:
         return self._task_env.transition(state, action)
+
+    def rollout_actions(
+        self, state: np.ndarray, actions: np.ndarray
+    ) -> np.ndarray:
+        """Roll out a sequence of actions from initial state using approx transition (no sim)."""
+        x = np.asarray(state, dtype=np.float32).reshape(-1)
+        traj = [x.copy()]
+        for act in np.asarray(actions, dtype=np.float32):
+            x = self._task_env.transition(x, act.reshape(-1))
+            traj.append(np.asarray(x, dtype=np.float32))
+        return np.stack(traj, axis=0)
 
     def cost(self, state: np.ndarray) -> float:
         return 0.0
