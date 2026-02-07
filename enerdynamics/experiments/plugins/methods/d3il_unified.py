@@ -9,6 +9,17 @@ from typing import Dict, Any
 import numpy as np
 
 from enerdynamics.core.dynamics.adapters import EnvDynamicsAdapter
+
+
+class _ScaledStageEnergy:
+    """Wraps a legacy energy to scale stage (intermediate) cost by a constant."""
+
+    def __init__(self, energy: Any, scale: float):
+        self._energy = energy
+        self._scale = float(scale)
+
+    def compute(self, x: Any, u: Any, ctx: Any = None) -> Any:
+        return self._scale * self._energy.compute(x, u, ctx)
 from enerdynamics.core.backends.runtime import RuntimeBackendManager
 from enerdynamics.experiments.common.d3il_mpc import run_d3il_unified
 from ...framework.base import MethodPlugin
@@ -58,6 +69,9 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
         dynamics = EnvDynamicsAdapter(plan_env)
         solver_name = config.get("solver", "mbd").lower()
 
+        stage_weight = float(config.get("stage_cost_weight", 1.0))
+        energy_to_use = _ScaledStageEnergy(energy, stage_weight) if stage_weight != 1.0 else energy
+
         horizon = int(config.get("horizon", getattr(plan_env, "horizon", 20)))
         dt = float(config.get("dt", getattr(plan_env, "dt", 0.035)))
         action_limit = float(config.get("action_limit", getattr(plan_env, "control_limit", 0.05)))
@@ -66,7 +80,7 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
             from enerdynamics.solvers.single.mbd import MBDSolver
             solver = MBDSolver(
                 dynamics=dynamics,
-                energy=energy,
+                energy=energy_to_use,
                 backend=backend,
                 horizon=horizon,
                 dt=dt,
@@ -90,7 +104,7 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
             from enerdynamics.solvers.single.ebmbd import EBMBDSolver
             solver = EBMBDSolver(
                 dynamics=dynamics,
-                energy=energy,
+                energy=energy_to_use,
                 backend=backend,
                 horizon=horizon,
                 dt=dt,
@@ -137,7 +151,7 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
             }
             solver = MDOCSolver(
                 dynamics=dynamics,
-                energy=energy,
+                energy=energy_to_use,
                 backend=backend,
                 horizon=horizon,
                 dt=dt,
@@ -177,7 +191,7 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
                 )
             solver = CFSMBDSolver(
                 dynamics=dynamics,
-                energy=energy,
+                energy=energy_to_use,
                 backend=backend,
                 horizon=horizon,
                 dt=dt,
