@@ -1,7 +1,7 @@
 pip install -U pip setuptools wheel
 
 pip install --index-url https://download.pytorch.org/whl/cpu \
-  torch==2.10.0+cpu torchvision==0.15.0+cpu
+  torch==2.10.0+cpu torchvision==0.25.0+cpu
 
 pip install pybullet pyyaml scipy opencv-python matplotlib gin-config
 pip install "pip<24" "setuptools<66" "wheel<0.41"
