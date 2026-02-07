@@ -6,30 +6,32 @@ output_dir: results/d3il_avoiding/mbd
 env_name: d3il_avoiding_9d
 env_params:
   render: false
-  horizon: 100
-  dt: 1
+  horizon: 150
+  dt: 0.035
 
 method: d3il_unified
 obstacle_levels: [0]
 
 method_params:
   solver: mbd
-  execution: plan_once  # plan_once ｜ mpc
-  horizon: 100
-  dt: 1
-  action_limit: 0.05
+  execution: plan_once
+  horizon: 24
+  dt: 0.035
+  action_limit: 1.5
   action_extra_sigma: 0.3
-  terminal_energy_weight: 100.0
+  terminal_energy_weight: 2000.0
   show_tqdm: true
-  num_modes: 2
+  num_modes: 6
   mode_strategy: multirun
   max_episode_length: 150
+  continue_after_done: true
 
 obstacle_config:
   generator: d3il_avoiding_fixed
-  use_d3il_preset: true
+  use_d3il_preset: false
   enable_connectivity_check: false
   enable_nonconvexity_check: false
+  robot_radius: 0.01
   map_bounds:
     x_min: 0.2
     x_max: 0.8
@@ -40,9 +42,9 @@ scheduler_config:
   type: composite
   diffusion_schedulers:
     - type: fixed
-      M_k: 20
+      M_k: 16
       T_k: 0.5
-      Ndiffuse: 100
+      Ndiffuse: 60
       beta0: 1.0e-4
       betaT: 5.0e-2
   diffusion_merge_strategy: merge
