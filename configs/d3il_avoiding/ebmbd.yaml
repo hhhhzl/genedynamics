@@ -1,0 +1,67 @@
+name: d3il_avoiding_ebmbd
+output_dir: results/d3il_avoiding/ebmbd
+
+env_name: d3il_avoiding_9d
+env_params:
+  render: false
+  horizon: 150
+  dt: 0.035
+
+method: d3il_unified
+method_params:
+  solver: ebmbd
+  execution: mpc  # or plan_once for open-loop
+  horizon: 20
+  dt: 0.035
+  action_limit: 0.05
+  action_extra_sigma: 0.3
+  terminal_energy_weight: 100.0
+  use_min_over_time: true
+  show_tqdm: true
+  num_modes: 20
+  mode_strategy: multirun
+  max_episode_length: 150
+
+obstacle_config:
+  generator: d3il_avoiding_fixed
+  use_d3il_preset: true
+  enable_connectivity_check: false
+  enable_nonconvexity_check: false
+
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+backend: jax
+device: cuda
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 20
+      T_k: 5e-1
+      Ndiffuse: 100
+      beta0: 1.0e-4
+      betaT: 1.0e-2
+  diffusion_merge_strategy: merge
+  constraint_schedulers:
+    - type: emerging_barrier
+      mu: 50.0
+      alpha: 1.0
+      bound: 0.8
+      use_min_over_time: true
+      terminal_energy_weight: 100.0
+      margin: 0.05
+  constraint_merge_strategy: merge
+
+metrics:
+  - ssr
+  - episode_outcome
+
+visualizations:
+  - trajectory_modes
+  - trajectory
+  - diffusion
+  - cost
+
+metadata:
+  description: "EB-MBD on D3IL avoiding (d3il_unified, MPC)"
+  author: "enerdynamics"
