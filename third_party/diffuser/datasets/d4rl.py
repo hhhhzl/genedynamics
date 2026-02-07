@@ -1,0 +1,82 @@
+import os
+import numpy as np
+import pickle
+from pathlib import Path
+
+
+def _resolve_avoiding_data_dir() -> str:
+    """
+    Resolve the local directory that stores avoiding trajectory state files.
+
+    Priority:
+    1) Explicit env overrides:
+       - DPCC_AVOIDING_DATA_DIR
+       - D3IL_AVOIDING_DATA_DIR
+    2) Common repository-relative locations.
+    """
+    env_override = os.environ.get("DPCC_AVOIDING_DATA_DIR") or os.environ.get("D3IL_AVOIDING_DATA_DIR")
+    if env_override:
+        if os.path.isdir(env_override):
+            return env_override
+        raise FileNotFoundError(
+            f"Avoiding data directory from env var not found: {env_override}"
+        )
+
+    project_root = Path(__file__).resolve().parents[3]
+    candidates = [
+        project_root / "environments" / "dataset" / "data" / "avoiding" / "data",
+        project_root / "third_party" / "environments" / "dataset" / "data" / "avoiding" / "data",
+        project_root.parent / "dpcc" / "environments" / "dataset" / "data" / "avoiding" / "data",
+    ]
+
+    for path in candidates:
+        if path.is_dir():
+            return str(path)
+
+    raise FileNotFoundError(
+        "Could not locate avoiding dataset directory. Set DPCC_AVOIDING_DATA_DIR "
+        "or D3IL_AVOIDING_DATA_DIR to the folder containing trajectory state files."
+    )
+
+def sequence_dataset(env, preprocess_fn):
+    """
+    Returns an iterator through trajectories.
+    Args:
+        env: An OfflineEnv object.
+        dataset: An optional dataset to pass in for processing. If None,
+            the dataset will default to env.get_dataset()
+        **kwargs: Arguments to pass to env.get_dataset().
+    Returns:
+        An iterator through dictionaries with keys:
+            observations
+            actions
+            rewards
+            terminals
+    """
+
+    if env == 'avoiding-d3il' or env == 'd3il-avoiding':
+        data_dir = _resolve_avoiding_data_dir()
+        state_files = os.listdir(data_dir)
+
+        for file in state_files:
+            with open(os.path.join(data_dir, file), 'rb') as f:
+                env_state = pickle.load(f)
+
+                robot_des_pos = env_state['robot']['des_c_pos'][:, :2]
+                robot_c_pos = env_state['robot']['c_pos'][:, :2]
+
+                input_state = np.concatenate((robot_des_pos, robot_c_pos), axis=-1)
+
+                vel_state = robot_des_pos[1:] - robot_des_pos[:-1]
+                valid_len = len(vel_state)
+
+            episode_data = {
+                'observations': input_state[:-1],
+                'actions': vel_state,
+                'rewards': np.zeros(valid_len),
+                'terminals': np.concatenate((np.zeros(valid_len-1), np.array([1])))
+            }
+
+            yield episode_data
+    else:
+        raise NotImplementedError(f'Unsupported dataset without Minari: {env}')

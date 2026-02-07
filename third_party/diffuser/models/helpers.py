@@ -8,7 +8,7 @@ import einops
 from einops.layers.torch import Rearrange
 import pdb
 
-from enerdynamics.solvers.single.dpcc import diffuser_utils as utils
+import diffuser.utils as utils
 
 #-----------------------------------------------------------------------------#
 #---------------------------------- modules ----------------------------------#
