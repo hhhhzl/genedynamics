@@ -21,7 +21,7 @@ pandas>=2.2.0
 torch==2.10.0
 
 # Optional autodiff (JAX)
-jax==0.6.2[cuda12]
+jax[cuda12]
 # jax==0.6.2
 
 # Optional environments
