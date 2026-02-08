@@ -27,6 +27,8 @@ method_params:
   continue_after_done: true
   track_trajectory: true
   tracker_k_joint: 2.0
+  tracker_k_xy: 1.2
+  tracker_ff_alpha: 0.2
 
 obstacle_config:
   generator: d3il_avoiding_fixed

@@ -18,16 +18,18 @@ method_params:
   dt: 0.035
   action_limit: 0.8
   show_tqdm: true
-  num_modes: 1
+  num_modes: 20
   mode_strategy: multirun
   max_episode_length: 64
   track_trajectory: true
   tracker_k_joint: 5.0
+  tracker_k_xy: 1
+  tracker_ff_alpha: 0.2
 
   # Joint-lift CFS: A = J_xy(q)^T g_xy (7D), trajectory-level QP
   cfs_action_convexifier: cfs_action_joint
   max_constraints_per_point: 8
-  constraint_margin: 0.25
+  constraint_margin: 0.35
 
 obstacle_config:
   generator: d3il_avoiding_fixed
@@ -35,7 +37,7 @@ obstacle_config:
   obstacle_radius_by_level:
     0: [0.03, 0.025]
     1: [0.04, 0.035]
-    2: [0.05, 0.045]
+    2: [0.06, 0.055]
   enable_connectivity_check: false
   enable_nonconvexity_check: false
   robot_radius: 0.01
@@ -62,7 +64,7 @@ scheduler_config:
   diffusion_merge_strategy: merge
   constraint_schedulers:
     - type: fixed
-      margin: 0.01
+      margin: 0.02
       qp_gate: true
       qp_prob: 1.0
       topK: 8
