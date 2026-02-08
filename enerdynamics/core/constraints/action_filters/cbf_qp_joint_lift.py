@@ -15,6 +15,27 @@ import numpy as np
 from enerdynamics.core.constraints.action_filters.base import ConstraintFilter
 
 
+def _get_robot_radius_from_env(env: Any, default: float = 0.05) -> float:
+    """Resolve robot_radius from env, unwrapping DynamicsToEnvAdapter -> EnvDynamicsAdapter -> plan_env."""
+    try:
+        return float(getattr(env, "robot_radius"))
+    except (AttributeError, TypeError):
+        pass
+    inner = getattr(env, "dynamics", None)
+    if inner is not None:
+        try:
+            return float(getattr(inner, "robot_radius"))
+        except (AttributeError, TypeError):
+            pass
+        inner2 = getattr(inner, "env", None)
+        if inner2 is not None:
+            try:
+                return float(getattr(inner2, "robot_radius"))
+            except (AttributeError, TypeError):
+                pass
+    return default
+
+
 def _get_jacobian_xy_batch(env: Any, states: np.ndarray) -> np.ndarray:
     """(B, state_dim) -> (B, 2, 7). Returns zeros (2,7) per row when env has no J_xy."""
     states = np.asarray(states, dtype=np.float32)
@@ -37,16 +58,24 @@ def _get_jacobian_xy_batch(env: Any, states: np.ndarray) -> np.ndarray:
 
 
 def _get_jacobian_xy_single(env: Any, state: np.ndarray) -> np.ndarray:
-    """(state_dim,) -> (2, 7). Returns zeros when env has no J_xy."""
+    """(state_dim,) -> (2, 7). Returns zeros when env has no J_xy. Fallback: pseudo-identity so 2D grad lifts to [gx,gy,0..]."""
     state = np.asarray(state, dtype=np.float32).reshape(-1)
     get_j = getattr(env, "get_jacobian_xy", None)
+    act_dim = 7
+    fallback_j = np.zeros((2, act_dim), dtype=np.float32)
+    fallback_j[0, 0] = 1.0
+    fallback_j[1, 1] = 1.0
     if get_j is None or state.size < 9:
-        return np.zeros((2, 7), dtype=np.float32)
+        return fallback_j
     jxy = get_j(state)
     if jxy is None:
-        return np.zeros((2, 7), dtype=np.float32)
+        return fallback_j
     jxy = np.asarray(jxy, dtype=np.float32)
-    return jxy if jxy.shape == (2, 7) else np.zeros((2, 7), dtype=np.float32)
+    if jxy.shape != (2, act_dim):
+        return fallback_j
+    if np.max(np.abs(jxy)) < 1e-9:
+        return fallback_j
+    return jxy
 
 
 class QPBasedCBFFilterJointLift(ConstraintFilter):
@@ -81,7 +110,7 @@ class QPBasedCBFFilterJointLift(ConstraintFilter):
         eta = params.get("cbf_eta", 1.5)
         margin = params.get("cbf_margin", 0.1)
         base_beta = params.get("base_beta", 0.05)
-        robot_radius = getattr(env, "robot_radius", 0.05)
+        robot_radius = _get_robot_radius_from_env(env)
         dt = getattr(env, "dt", 0.05)
         control_limit = float(getattr(env, "control_limit", 1.0))
 
@@ -116,7 +145,18 @@ class QPBasedCBFFilterJointLift(ConstraintFilter):
         def body_fn(carry, u):
             x = carry
             pos = x[:2]
-            sdf, grad_xy = obstacles.sample_sdf_and_grad_2d(pos, backend="jax")
+            # Use pure_callback to avoid JAX tracing through SDF texture (tracer leak)
+            def _sdf_cb(pts):
+                sdf, grad = obstacles.sample_sdf_and_grad_2d(np.asarray(pts, dtype=np.float32).reshape(-1, 2), backend="numpy")
+                sdf = np.asarray(sdf, dtype=np.float32).reshape(-1)
+                grad = np.asarray(grad, dtype=np.float32).reshape(-1, 2)
+                return (float(sdf[0]) if sdf.size else 0.0, grad[0] if grad.size else np.zeros(2, dtype=np.float32))
+            sdf, grad_xy = jax.pure_callback(
+                _sdf_cb,
+                (jax.ShapeDtypeStruct((), jnp.float32), jax.ShapeDtypeStruct((2,), jnp.float32)),
+                pos,
+                vmap_method="sequential",
+            )
             h = sdf - (robot_radius + margin)
             grad_xy = jnp.reshape(grad_xy, (2,))
             J_xy = jax.pure_callback(
@@ -169,10 +209,28 @@ class QPBasedCBFFilterJointLift(ConstraintFilter):
         def body_fn(carry, u):
             x_batch = carry
             pos_batch = x_batch[:, :2]
-            sdf, grad_xy = obstacles.sample_sdf_and_grad_2d(pos_batch, backend="jax")
+            # Use pure_callback to avoid JAX tracing through SDF texture (tracer leak).
+            # pure_callback: avoid JAX tracing through SDF texture. Preserve leading dims (B_curr,) or (n_plans, B_curr).
+            batch_shape = pos_batch.shape[:-1]
+            def _sdf_batch_cb(pts):
+                pts_np = np.asarray(pts, dtype=np.float32)
+                orig_shape = pts_np.shape[:-1]
+                pts_flat = pts_np.reshape(-1, 2)
+                sdf, grad = obstacles.sample_sdf_and_grad_2d(pts_flat, backend="numpy")
+                sdf = np.asarray(sdf, dtype=np.float32).reshape(orig_shape)
+                grad = np.asarray(grad, dtype=np.float32).reshape(orig_shape + (2,))
+                return (sdf, grad)
+            sdf, grad_xy = jax.pure_callback(
+                _sdf_batch_cb,
+                (jax.ShapeDtypeStruct(batch_shape, jnp.float32), jax.ShapeDtypeStruct(batch_shape + (2,), jnp.float32)),
+                pos_batch,
+                vmap_method="expand_dims",
+            )
             h = sdf - (robot_radius + margin)
-            if grad_xy.ndim == 1:
-                grad_xy = jnp.broadcast_to(grad_xy, (B, 2))
+            if grad_xy.ndim == 2 and grad_xy.shape[-1] == 2:
+                pass
+            elif grad_xy.ndim == 1:
+                grad_xy = jnp.broadcast_to(grad_xy[:, None], grad_xy.shape + (2,))
             # vmap_method='sequential' so callback works when this scan is under vmap (e.g. MDOC plan_batch)
             J_xy_batch = jax.pure_callback(
                 lambda s: _get_jacobian_xy_single(env, np.asarray(s)),
@@ -231,7 +289,7 @@ class QPBasedCBFFilterJointLift(ConstraintFilter):
         eta = float(params.get("cbf_eta", 1.5))
         margin = float(params.get("cbf_margin", 0.1))
         base_beta = float(params.get("base_beta", 0.05))
-        robot_radius = float(getattr(env, "robot_radius", 0.05))
+        robot_radius = float(_get_robot_radius_from_env(env))
         dt = float(getattr(env, "dt", 0.05))
         control_limit = float(getattr(env, "control_limit", 1.0))
 
