@@ -219,7 +219,30 @@ class MBDBackendJax:
 
         Ybar_init = jnp.zeros((self.horizon, self.act_dim), dtype=jnp.float32)
         _, Ybar_final, reward_hist, actions_traj, sampled_traj = reverse_diffuse_jit(diffuse_rng, Ybar_init)
-    
+
+        # Single-mode: build and return result dict (same shape as plan_batch items)
+        final_actions = jnp.clip(Ybar_final, -self.action_limit, self.action_limit)
+        states = self._rollout_states_fn(x0_jnp, final_actions)
+        rewards = self._rollout_rewards_fn(x0_jnp, final_actions)
+        states_np = np.asarray(states)
+        actions_np = np.asarray(final_actions)
+        total_cost_final = -float(np.sum(rewards))
+        return {
+            "actions": actions_np,
+            "states": states_np,
+            "rewards": np.asarray(rewards, dtype=np.float32),
+            "total_reward": float(np.sum(rewards)),
+            "mean_reward": float(np.mean(rewards)) if rewards.size > 0 else 0.0,
+            "initial_state": states_np[0],
+            "reward_history": np.asarray(reward_hist, dtype=np.float32),
+            "diffusion_actions_traj": np.asarray(actions_traj, dtype=np.float32),
+            "diffusion_sampled_actions": np.asarray(sampled_traj, dtype=np.float32),
+            "candidate_states": [states_np],
+            "candidate_actions": [actions_np],
+            "candidate_costs": np.asarray([float(total_cost_final)], dtype=np.float32),
+            "best_idx": 0,
+        }
+
     def plan_batch(self, x0: State, rng_keys: jnp.ndarray) -> list[Dict[str, Any]]:
         """
         Batch version of plan using jax.vmap for parallel execution.

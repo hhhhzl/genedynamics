@@ -6,20 +6,27 @@ to run experiments from YAML configuration files.
 """
 
 import argparse
+import os
+import warnings
 from pathlib import Path
 import sys
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+# Headless/CI: use OSMesa (software) so no DISPLAY/EGL/GPU is needed; set MUJOCO_GL=egl if you have EGL
+if "MUJOCO_GL" not in os.environ:
+    os.environ.setdefault("MUJOCO_GL", "osmesa")
+
+# Suppress GLFW DISPLAY/init warnings when using headless (MUJOCO_GL=egl/osmesa)
+warnings.filterwarnings("ignore", message=".*[Dd]isplay|GLFW.*", module="glfw")
+
 from enerdynamics.experiments.framework import ExperimentRunner, ExperimentConfig
 from enerdynamics.experiments.plugins import (
-    EDOCMethodPlugin,
     MDOCMethodPlugin,
     EBMBDMethodPlugin,
     MBDMethodPlugin,
-    EDOCMPCMethodPlugin,
-    MBDMPCMethodPlugin,
+    D3ILUnifiedMethodPlugin,
     CFSMBDMethodPlugin,
     CFSMBDFullMethodPlugin,
     DPCCMethodPlugin,
@@ -32,6 +39,7 @@ from enerdynamics.experiments.plugins import (
     DroneFull3DPhysicsPlugin,
     ManipulatorEnvironmentPlugin,
     D3ILAvoidingPlugin,
+    D3ILAvoiding9DPlugin,
     AvoidingPlanEnvironmentPlugin,
     SSRMetricsPlugin,
     ObstacleDensityMetricsPlugin,
@@ -47,6 +55,7 @@ from enerdynamics.experiments.plugins import (
     SchedulerParamsVisualizationPlugin,
     Box2DObstacleGeneratorPlugin,
     Box3DObstacleGeneratorPlugin,
+    D3ILAvoidingFixedGeneratorPlugin,
 )
 
 
@@ -161,12 +170,10 @@ def register_all_plugins(runner: ExperimentRunner):
         runner: Experiment runner instance
     """
     # Method plugins
-    runner.register_plugin(EDOCMethodPlugin(), 'method')
     runner.register_plugin(MDOCMethodPlugin(), 'method')
     runner.register_plugin(EBMBDMethodPlugin(), 'method')
     runner.register_plugin(MBDMethodPlugin(), 'method')
-    runner.register_plugin(EDOCMPCMethodPlugin(), 'method')
-    runner.register_plugin(MBDMPCMethodPlugin(), 'method')
+    runner.register_plugin(D3ILUnifiedMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDFullMethodPlugin(), 'method')
     if DPCCMethodPlugin is not None:
@@ -183,6 +190,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(DroneFull3DPhysicsPlugin(), 'environment')
     runner.register_plugin(ManipulatorEnvironmentPlugin(), 'environment')
     runner.register_plugin(D3ILAvoidingPlugin(), 'environment')
+    runner.register_plugin(D3ILAvoiding9DPlugin(), 'environment')
     runner.register_plugin(AvoidingPlanEnvironmentPlugin(), 'environment')
     
     # Metrics plugins
@@ -204,6 +212,7 @@ def register_all_plugins(runner: ExperimentRunner):
     # Obstacle generator plugins
     runner.register_plugin(Box2DObstacleGeneratorPlugin(), 'obstacle_generator')
     runner.register_plugin(Box3DObstacleGeneratorPlugin(), 'obstacle_generator')
+    runner.register_plugin(D3ILAvoidingFixedGeneratorPlugin(), 'obstacle_generator')
 
 
 if __name__ == "__main__":

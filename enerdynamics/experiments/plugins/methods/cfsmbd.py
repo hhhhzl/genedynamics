@@ -26,11 +26,12 @@ class CFSMBDMethodPlugin(MethodPlugin):
         backend = RuntimeBackendManager.get_backend()
         dynamics = DynamicsToEnvAdapter(env, dt=dt)
 
-        # Create CFS-based filter
+        # Create CFS-based filter (cfs_action for 2D, cfs_action_joint for 7D joint)
         constraint_filter = CFSQPPerStepFilter(
             max_constraints_per_point=int(config.get("max_constraints_per_point", 8)),
             constraint_margin=float(config.get("constraint_margin", 0.25)),
             use_slack=True,
+            convexifier_name=str(config.get("cfs_action_convexifier", "cfs_action")),
         )
 
         solver = CFSMBDSolver(

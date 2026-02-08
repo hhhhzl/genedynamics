@@ -22,15 +22,38 @@ OBSTACLE_ALPHA = 0.5
 EDOC_COLOR = "#1f77b4"  # Blue
 MAX_SAMPLE_TRAJ_PLOT = 80
 
+# D3IL-only palette (trajectory/diffusion): (R,G,B) or (R,G,B,A) in [0,1]
+D3IL_BG_YELLOW = "#FFF1AD"
+D3IL_OBSTACLE_RED = "#F21B1B"
+D3IL_TARGET_GREEN = "#88F26B"
 
-def draw_obstacles(ax: plt.Axes, obstacles: ObstacleManager) -> None:
+
+def is_d3il_experiment(exp_cfg: Any) -> bool:
+    """True if this experiment is D3IL (method==d3il_unified or env_name contains 'd3il'). Only D3IL uses the yellow/red/green palette."""
+    if exp_cfg is None:
+        return False
+    method = exp_cfg.get("method") if isinstance(exp_cfg, dict) else getattr(exp_cfg, "method", None)
+    env_name = exp_cfg.get("env_name", "") if isinstance(exp_cfg, dict) else getattr(exp_cfg, "env_name", "")
+    return method == "d3il_unified" or ("d3il" in str(env_name))
+
+
+def draw_obstacles(
+    ax: plt.Axes,
+    obstacles: ObstacleManager,
+    obstacle_color: Optional[str] = None,
+    obstacle_alpha: Optional[float] = None,
+) -> None:
     """
     Draw obstacles on matplotlib axes.
-    
+
     Args:
         ax: Matplotlib axes
         obstacles: Obstacle manager instance
+        obstacle_color: Optional face color for obstacles (default: OBSTACLE_COLOR). Used by D3IL for red.
+        obstacle_alpha: Optional alpha for obstacles (default: OBSTACLE_ALPHA).
     """
+    face = obstacle_color if obstacle_color is not None else OBSTACLE_COLOR
+    alpha = obstacle_alpha if obstacle_alpha is not None else OBSTACLE_ALPHA
     for obstacle in obstacles:
         if isinstance(obstacle, (SphereObstacle, CircleObstacle)):
             center = np.asarray(obstacle.center, dtype=np.float32)
@@ -46,8 +69,8 @@ def draw_obstacles(ax: plt.Axes, obstacles: ObstacleManager) -> None:
             circle = plt.Circle(
                 tuple(center),
                 radius,
-                facecolor=OBSTACLE_COLOR,
-                alpha=OBSTACLE_ALPHA,
+                facecolor=face,
+                alpha=alpha,
                 edgecolor='darkgray',
                 linewidth=1.5
             )
@@ -76,8 +99,8 @@ def draw_obstacles(ax: plt.Axes, obstacles: ObstacleManager) -> None:
                 tuple(center - half_extents),
                 2 * float(half_extents[0]),
                 2 * float(half_extents[1]),
-                facecolor=OBSTACLE_COLOR,
-                alpha=OBSTACLE_ALPHA,
+                facecolor=face,
+                alpha=alpha,
                 edgecolor='darkgray',
                 linewidth=1.5
             )
@@ -99,8 +122,8 @@ def draw_obstacles(ax: plt.Axes, obstacles: ObstacleManager) -> None:
                     circle = plt.Circle(
                         tuple(center),
                         radius,
-                        facecolor=OBSTACLE_COLOR,
-                        alpha=OBSTACLE_ALPHA * 0.8,
+                        facecolor=face,
+                        alpha=alpha * 0.8,
                         edgecolor='darkgray',
                         linewidth=1.2
                     )
@@ -128,8 +151,8 @@ def draw_obstacles(ax: plt.Axes, obstacles: ObstacleManager) -> None:
                         tuple(center - half_extents),
                         2 * float(half_extents[0]),
                         2 * float(half_extents[1]),
-                        facecolor=OBSTACLE_COLOR,
-                        alpha=OBSTACLE_ALPHA * 0.8,
+                        facecolor=face,
+                        alpha=alpha * 0.8,
                         edgecolor='darkgray',
                         linewidth=1.2
                     )
