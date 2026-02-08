@@ -7,7 +7,6 @@ import numpy as np
 
 from enerdynamics.core.types import Trajectory
 from enerdynamics.solvers.single.dpcc.patch.avoiding_adapter import AvoidingDPCCAdapter
-from enerdynamics.solvers.single.dpcc.patch.policy import Policy
 from enerdynamics.solvers.single.dpcc.patch.projector import Projector
 
 
@@ -38,6 +37,7 @@ class DPCCBackendTorch:
         self._projector = None
         self._policy = None
         self._constraints_cache = None
+        self._stepper = None
 
     def _build_projector_and_policy(self):
         if self._projector is not None and self._policy is not None:
@@ -124,6 +124,18 @@ class DPCCBackendTorch:
             trajectory_selection = "temporal_consistency"
         elif "dpcc-c" in variant:
             trajectory_selection = "minimum_projection_cost"
+
+        # Route denoising loop through solver-side DPCC stepper.
+        if self._stepper is None:
+            from enerdynamics.solvers.single.dpcc.stepper import DPCCTorchStepper
+            self._stepper = DPCCTorchStepper(self.diffusion)
+            self.diffusion.p_sample = self._stepper.p_sample
+            self.diffusion.p_sample_loop = self._stepper.p_sample_loop
+            self.diffusion.grad_p_sample = self._stepper.grad_p_sample
+            self.diffusion.grad_p_sample_loop = self._stepper.grad_p_sample_loop
+            self.diffusion.grad_conditional_sample = self._stepper.grad_conditional_sample
+
+        from diffuser.sampling.policies import Policy
         policy = Policy(
             model=self.diffusion,
             normalizer=self.normalizer,
@@ -329,4 +341,3 @@ class DPCCBackendTorch:
                 states.append(np.asarray(states[-1], dtype=np.float32))
             trajectories.append(Trajectory(states=states, actions=actions))
         return trajectories
-
