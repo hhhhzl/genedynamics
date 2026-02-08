@@ -34,6 +34,7 @@ obstacle_config:
   enable_connectivity_check: false
   enable_nonconvexity_check: false
   robot_radius: 0.01
+  success_margin: 0.3
   map_bounds:
     x_min: 0.2
     x_max: 0.8
