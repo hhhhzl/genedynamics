@@ -11,11 +11,9 @@ This package contains implementations of various plugins:
 
 # Import and export all plugins for convenient access
 from .methods import (
-    EDOCMethodPlugin,
     EBMBDMethodPlugin,
     MBDMethodPlugin,
-    EDOCMPCMethodPlugin,
-    MBDMPCMethodPlugin,
+    D3ILUnifiedMethodPlugin,
     MDOCMethodPlugin,
     CFSMBDMethodPlugin,
     CFSMBDFullMethodPlugin,
@@ -32,6 +30,7 @@ from .environments import (
     DroneFull3DPhysicsPlugin,
     ManipulatorEnvironmentPlugin,
     D3ILAvoidingPlugin,
+    D3ILAvoiding9DPlugin,
     AvoidingPlanEnvironmentPlugin,
 )
 
@@ -56,6 +55,7 @@ from .visualizations import (
 from .obstacles import (
     Box2DObstacleGeneratorPlugin,
     Box3DObstacleGeneratorPlugin,
+    D3ILAvoidingFixedGeneratorPlugin,
 )
 
 __all__ = [
@@ -64,7 +64,7 @@ __all__ = [
     'EBMBDMethodPlugin',
     'MBDMethodPlugin',
     'EDOCMPCMethodPlugin',
-    'MBDMPCMethodPlugin',
+    'D3ILUnifiedMethodPlugin',
     'MDOCMethodPlugin',
     'CFSMBDMethodPlugin',
     'CFSMBDFullMethodPlugin',
@@ -79,6 +79,7 @@ __all__ = [
     'DroneFull3DPhysicsPlugin',
     'ManipulatorEnvironmentPlugin',
     'D3ILAvoidingPlugin',
+    'D3ILAvoiding9DPlugin',
     'AvoidingPlanEnvironmentPlugin',
     # Metrics
     'SSRMetricsPlugin',
@@ -97,5 +98,6 @@ __all__ = [
     # Obstacles
     'Box2DObstacleGeneratorPlugin',
     'Box3DObstacleGeneratorPlugin',
+    'D3ILAvoidingFixedGeneratorPlugin',
 ]
 

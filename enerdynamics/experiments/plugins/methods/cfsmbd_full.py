@@ -26,11 +26,12 @@ class CFSMBDFullMethodPlugin(MethodPlugin):
         backend = RuntimeBackendManager.get_backend()
         dynamics = DynamicsToEnvAdapter(env, dt=dt)
 
-        # Create CFS-based full trajectory QP filter
+        # Create CFS-based full trajectory QP filter (cfs_action for 2D, cfs_action_joint for 7D)
         constraint_filter = CFSQPFullFilter(
             max_constraints_per_point=int(config.get("max_constraints_per_point", 8)),
             constraint_margin=float(config.get("constraint_margin", 0.25)),
             use_slack=False,
+            convexifier_name=str(config.get("cfs_action_convexifier", "cfs_action")),
         )
 
         solver = CFSMBDSolver(

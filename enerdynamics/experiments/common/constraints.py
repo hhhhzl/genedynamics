@@ -402,12 +402,12 @@ def create_constraint_pipeline(
         project_states = True
         project_actions = False
     elif cfs_qp_mode == "u_traj":
-        convexifier_name = "cfs_action"
+        convexifier_name = str(method_params.get("cfs_action_convexifier", "cfs_action")) if method_params else "cfs_action"
         operator_name = "traj_qp_actions"
         project_states = False
         project_actions = True
     elif cfs_qp_mode == "u_perstep":
-        convexifier_name = "cfs_action"
+        convexifier_name = str(method_params.get("cfs_action_convexifier", "cfs_action")) if method_params else "cfs_action"
         operator_name = "per_step_qp"
         project_states = False
         project_actions = True

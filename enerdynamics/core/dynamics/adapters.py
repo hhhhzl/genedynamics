@@ -39,7 +39,11 @@ class EnvDynamicsAdapter(DynamicsModel):
             self.act_dim = env.action_size
         else:
             self.act_dim = 1
-    
+
+    def __getattr__(self, name: str):
+        """Forward attribute lookups (e.g. target) to the wrapped env for MBD/EDOC terminal cost."""
+        return getattr(self.env, name)
+
     def step(self, x: State, u: Action) -> State:
         """
         Single-step dynamics using environment's transition.
@@ -67,11 +71,17 @@ class EnvDynamicsAdapter(DynamicsModel):
     def jax_sdf(self, pos):
         """
         Pass-through JAX SDF if the wrapped environment provides it.
+        If the wrapped env does not provide jax_sdf (e.g. D3IL plan env), return a fallback
+        that is large positive everywhere (no obstacle) so EB-MBD and other barrier solvers
+        can run without crashing; obstacle avoidance then relies on cost only.
         """
         target = getattr(self.env, "jax_sdf", None)
-        if target is None:
+        if target is not None:
+            return target(pos)
+        if jnp is None:
             raise AttributeError("Underlying environment does not provide jax_sdf")
-        return target(pos)
+        # Fallback for envs without jax_sdf (e.g. d3il_unified plan env): free space everywhere
+        return jnp.ones(pos.shape[:-1], dtype=jnp.float32) * 1e5
 
 
 class DynamicsToEnvAdapter:
