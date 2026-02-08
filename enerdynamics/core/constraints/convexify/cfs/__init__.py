@@ -6,10 +6,11 @@ using linearization around reference points.
 """
 
 # Import to trigger registration
-from . import cfs  
+from . import cfs
 from . import backends
 from .cfs import CFSConvexifier
 from .action import CFSActionConvexifier
+from .action_joint_lift import CFSActionJointLiftConvexifier
 
-__all__ = ["CFSConvexifier", "CFSActionConvexifier"]
+__all__ = ["CFSConvexifier", "CFSActionConvexifier", "CFSActionJointLiftConvexifier"]
 

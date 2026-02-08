@@ -17,6 +17,7 @@ from ...framework.base import ObstacleGeneratorPlugin
 
 # Same geometry as D3IL avoiding_objects.py (6 cylinders -> 2D circles)
 # mid_pos=0.5, offset=0.075, first_level_y=-0.1, level_distance=0.18
+# Default: level 0 -> first 0.03, rest 0.025
 D3IL_FIXED_CIRCLES = [
     {"center": np.array([0.5, -0.1], dtype=np.float32), "radius": 0.03},
     {"center": np.array([0.5 - 0.075, -0.1 + 0.18], dtype=np.float32), "radius": 0.025},
@@ -25,6 +26,13 @@ D3IL_FIXED_CIRCLES = [
     {"center": np.array([0.5, -0.1 + 2 * 0.18], dtype=np.float32), "radius": 0.025},
     {"center": np.array([0.5 + 2 * 0.075, -0.1 + 2 * 0.18], dtype=np.float32), "radius": 0.025},
 ]
+
+# obstacle_radius_by_level: {level: [first_radius, rest_radius]}
+DEFAULT_OBSTACLE_RADIUS_BY_LEVEL = {
+    0: [0.03, 0.025],
+    1: [0.04, 0.035],
+    2: [0.05, 0.045],
+}
 
 
 class D3ILAvoidingFixedGeneratorPlugin(ObstacleGeneratorPlugin):
@@ -48,9 +56,12 @@ class D3ILAvoidingFixedGeneratorPlugin(ObstacleGeneratorPlugin):
         target_pos: np.ndarray,
         config: Dict[str, Any],
     ) -> ObstacleManager:
-        _ = (level, seed, start_pos, target_pos)
+        _ = (seed, start_pos, target_pos)
         use_preset = config.get("use_d3il_preset", True)
         custom = config.get("fixed_cylinders", None)
+        radius_by_level = config.get(
+            "obstacle_radius_by_level", DEFAULT_OBSTACLE_RADIUS_BY_LEVEL
+        )
 
         if custom is not None and len(custom) > 0:
             circles: List[Dict[str, Any]] = []
@@ -63,7 +74,15 @@ class D3ILAvoidingFixedGeneratorPlugin(ObstacleGeneratorPlugin):
                 radius = float(c.get("radius", 0.03))
                 circles.append({"center": center, "radius": radius})
         elif use_preset:
-            circles = list(D3IL_FIXED_CIRCLES)
+            radii = radius_by_level.get(level)
+            if radii is not None and len(radii) >= 2:
+                r_first, r_rest = float(radii[0]), float(radii[1])
+                circles = []
+                for i, c in enumerate(D3IL_FIXED_CIRCLES):
+                    r = r_first if i == 0 else r_rest
+                    circles.append({"center": c["center"].copy(), "radius": r})
+            else:
+                circles = list(D3IL_FIXED_CIRCLES)
         else:
             circles = []
 

@@ -5,11 +5,21 @@ This module provides the ExperimentRunner class that orchestrates
 experiment execution using the plugin system.
 """
 
+import inspect
 import time
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import numpy as np
+
+
+def _accepts_env(fn: Any) -> bool:
+    """True if fn accepts an 'env' argument (e.g. create_energy(self, env=None))."""
+    try:
+        sig = inspect.signature(fn)
+        return "env" in sig.parameters
+    except Exception:
+        return False
 
 from enerdynamics.core.types import Trajectory
 from enerdynamics.core.backends.runtime import RuntimeBackendManager
@@ -142,9 +152,21 @@ class ExperimentRunner:
         physics_backend = env_params_with_obstacles.get('physics_backend', None)
         if physics_backend in ['mujoco', 'isaac'] and len(obstacles) > 0:
             env_params_with_obstacles['obstacles'] = obstacles
-        
+        # For d3il_avoiding: pass level and obstacle_radius_by_level for MuJoCo sync (monkey-patch)
+        if self.config.env_name == 'd3il_avoiding_9d':
+            env_params_with_obstacles['obstacle_level'] = level
+            env_params_with_obstacles['obstacle_radius_by_level'] = (
+                self.config.obstacle_config.get('obstacle_radius_by_level')
+            )
+            # EE-only collision: use experiment obstacles + robot_radius so exec collision matches plan SSR
+            env_params_with_obstacles['obstacles'] = obstacles
+            env_params_with_obstacles['robot_radius'] = float(
+                self.config.obstacle_config.get('robot_radius', 0.05)
+            )
+            env_params_with_obstacles['collision_ee_only'] = True
+
         env = env_plugin.create_env(env_params_with_obstacles)
-        energy = env_plugin.create_energy()
+        energy = env_plugin.create_energy(env) if _accepts_env(env_plugin.create_energy) else env_plugin.create_energy()
         
         # Build SDF texture if needed (only for 2D environments)
         # For 3D environments, skip 2D SDF texture building
@@ -275,24 +297,129 @@ class ExperimentRunner:
         if result is None:
             raise ValueError("Planning returned None. Planning may have failed.")
 
-        # 8b. Recompute best_idx: prefer (safe AND success) + lowest cost; else lowest cost
+        # 8b. Recompute best_idx: prefer (safe AND success) + lowest cost; else lowest cost.
+        # D3IL: best_idx is set in 8b2 from execution results (among exec success & no collision, lowest cost).
         robot_radius = float(self.config.obstacle_config.get('robot_radius', 0.05))
-        success_margin = 2 * robot_radius
+        success_margin = float(self.config.obstacle_config.get('success_margin', 2 * robot_radius))
         cand_states = result.get('candidate_states', [])
         cand_actions = result.get('candidate_actions', [])
         cand_costs = result.get('candidate_costs', None)
+        is_d3il_style = (
+            getattr(self.config, 'method', None) == 'd3il_unified'
+            or 'd3il' in str(getattr(self.config, 'env_name', ''))
+        )
         if cand_states and cand_actions and cand_costs is not None:
-            best_idx = self._compute_best_idx_from_candidates(
-                list(cand_states), np.asarray(cand_costs), env, obstacles, constraint_manager,
-                env_plugin, robot_radius, success_margin,
-            )
+            if not is_d3il_style:
+                # Non-D3IL: plan-based best selection and overwrite now
+                if result.get('states') is not None:
+                    result['executed_states'] = [np.asarray(s, dtype=np.float32) for s in result['states']]
+                if result.get('actions') is not None:
+                    acts = result['actions']
+                    if isinstance(acts, (list, tuple)):
+                        result['executed_actions'] = [np.asarray(a, dtype=np.float32) for a in acts]
+                    else:
+                        act_arr = np.asarray(acts, dtype=np.float32)
+                        result['executed_actions'] = [act_arr[i] for i in range(act_arr.shape[0])] if act_arr.ndim >= 2 else [act_arr]
+                best_idx = self._compute_best_idx_from_candidates(
+                    list(cand_states), np.asarray(cand_costs), env, obstacles, constraint_manager,
+                    env_plugin, robot_radius, success_margin,
+                )
+                result['best_idx'] = best_idx
+                best_states = cand_states[best_idx]
+                best_actions = cand_actions[best_idx]
+                result['states'] = [np.asarray(s, dtype=np.float32) for s in best_states]
+                act_arr = np.asarray(best_actions, dtype=np.float32)
+                result['actions'] = [act_arr[t] for t in range(act_arr.shape[0])] if act_arr.ndim >= 2 else [act_arr]
+                multirun_diff = result.get('multirun_diffusion_data', [])
+                if multirun_diff and 0 <= best_idx < len(multirun_diff):
+                    dd = multirun_diff[best_idx]
+                    if dd.get('diffusion_actions_traj') is not None:
+                        result['diffusion_actions_traj'] = dd['diffusion_actions_traj']
+                    if dd.get('diffusion_sampled_actions') is not None:
+                        result['diffusion_sampled_actions'] = dd['diffusion_sampled_actions']
+
+        # 8b2. D3IL: run execution for every candidate; then set best_idx by execution (success & no collision, lowest cost)
+        if is_d3il_style and cand_states and len(cand_states) > 0 and cand_costs is not None:
+            from enerdynamics.experiments.common.d3il_mpc import run_plan_once_episode
+            method_params = getattr(self.config, 'method_params', None) or {}
+            if not isinstance(method_params, dict):
+                method_params = {}
+            track_trajectory = bool(method_params.get('track_trajectory', False))
+            tracker_k_joint = float(method_params.get('tracker_k_joint', 0.0))
+            max_steps = int(method_params.get('max_episode_length', getattr(env, 'horizon', 150)))
+            reset_rng = backend.create_rng(seed)
+            exec_candidate_states = []
+            exec_candidate_actions = []
+            exec_success = []
+            exec_collision = []
+            costs_arr = np.asarray(cand_costs, dtype=np.float64).ravel()
+            for c in range(len(cand_states)):
+                states_c = cand_states[c]
+                actions_c = cand_actions[c] if (cand_actions and c < len(cand_actions)) else None
+                if actions_c is None:
+                    act_dim = getattr(env, 'act_dim', 7)
+                    actions_c = [np.zeros(act_dim, dtype=np.float32) for _ in range(max(0, len(states_c) - 1))]
+                else:
+                    actions_c = np.asarray(actions_c, dtype=np.float32)
+                    if actions_c.ndim == 2:
+                        actions_c = [actions_c[i] for i in range(actions_c.shape[0])]
+                    else:
+                        actions_c = list(actions_c) if isinstance(actions_c, (list, tuple)) else [actions_c]
+
+                def make_plan_fn(planned_states, planned_actions):
+                    def plan_once_fn(_planner, _x0, _rng, horizon=None):
+                        return {"actions": planned_actions, "states": planned_states}
+                    return plan_once_fn
+
+                plan_once_c = make_plan_fn(states_c, actions_c)
+                try:
+                    run_out = run_plan_once_episode(
+                        exec_env=env,
+                        planner=planner,
+                        plan_once_fn=plan_once_c,
+                        rng=reset_rng,
+                        max_steps=max_steps,
+                        track_trajectory=track_trajectory,
+                        tracker_k_joint=tracker_k_joint,
+                    )
+                    exec_candidate_states.append(run_out.get('states', []))
+                    exec_candidate_actions.append(run_out.get('actions', []))
+                    exec_success.append(bool(run_out.get('success', False)))
+                    exec_collision.append(bool(run_out.get('collision', True)))
+                except Exception:
+                    exec_candidate_states.append(result.get('states', []))
+                    exec_candidate_actions.append([])
+                    exec_success.append(False)
+                    exec_collision.append(True)
+            result['exec_candidate_states'] = exec_candidate_states
+            # Best = lowest cost among (execution success and no collision); else lowest cost overall
+            valid = [c for c in range(len(cand_states)) if exec_success[c] and not exec_collision[c]]
+            if valid:
+                best_idx = int(valid[np.argmin(costs_arr[valid])])
+            else:
+                best_idx = int(np.argmin(costs_arr))
             result['best_idx'] = best_idx
-            best_states = cand_states[best_idx]
-            best_actions = cand_actions[best_idx]
-            result['states'] = [np.asarray(s, dtype=np.float32) for s in best_states]
-            act_arr = np.asarray(best_actions, dtype=np.float32)
+            result['states'] = [np.asarray(s, dtype=np.float32) for s in cand_states[best_idx]]
+            act_arr = np.asarray(cand_actions[best_idx], dtype=np.float32)
             result['actions'] = [act_arr[t] for t in range(act_arr.shape[0])] if act_arr.ndim >= 2 else [act_arr]
-            # Multirun: diffusion_steps must show same run as trajectory (our best_idx)
+            result['executed_states'] = [np.asarray(s, dtype=np.float32) for s in exec_candidate_states[best_idx]]
+            n_exec = len(result['executed_states']) - 1
+            exec_acts = exec_candidate_actions[best_idx] if best_idx < len(exec_candidate_actions) else []
+            if isinstance(exec_acts, (list, tuple)) and len(exec_acts) >= n_exec:
+                result['executed_actions'] = [np.asarray(exec_acts[i], dtype=np.float32) for i in range(n_exec)]
+            elif isinstance(exec_acts, (list, tuple)) and len(exec_acts) > 0:
+                result['executed_actions'] = [np.asarray(a, dtype=np.float32) for a in exec_acts]
+                act_dim = len(result['executed_actions'][0].ravel()) if result['executed_actions'] else getattr(env, 'act_dim', 7)
+                while len(result['executed_actions']) < n_exec:
+                    result['executed_actions'].append(np.zeros(act_dim, dtype=np.float32))
+            else:
+                planned = result['actions']
+                result['executed_actions'] = [np.asarray(planned[i], dtype=np.float32) for i in range(min(n_exec, len(planned)))]
+                act_dim = len(result['executed_actions'][0].ravel()) if result['executed_actions'] else getattr(env, 'act_dim', 7)
+                while len(result['executed_actions']) < n_exec:
+                    result['executed_actions'].append(np.zeros(act_dim, dtype=np.float32))
+            result['success'] = exec_success[best_idx]
+            result['collision'] = exec_collision[best_idx]
             multirun_diff = result.get('multirun_diffusion_data', [])
             if multirun_diff and 0 <= best_idx < len(multirun_diff):
                 dd = multirun_diff[best_idx]
@@ -300,6 +427,20 @@ class ExperimentRunner:
                     result['diffusion_actions_traj'] = dd['diffusion_actions_traj']
                 if dd.get('diffusion_sampled_actions') is not None:
                     result['diffusion_sampled_actions'] = dd['diffusion_sampled_actions']
+
+        # 8b1.5. D3IL: 3D GIF from *executed* states (after 8b2 so best is execution-based)
+        _states_3d = result.get('executed_states') or result.get('states')
+        if is_d3il_style and _states_3d and len(_states_3d) >= 2:
+            try:
+                out_dir = self._get_output_path(level, seed)
+                traj_dir = out_dir / "trajectory"
+                traj_dir.mkdir(parents=True, exist_ok=True)
+                self._render_d3il_exec_3d_gif(
+                    env, {'result': {'states': _states_3d}, 'seed': seed}, traj_dir, seed,
+                    use_current_scene=True, n_interp=2,
+                )
+            except Exception:
+                pass
 
         # 8c. Multirun: re-run single plan with best key to get exact best trajectory planning_time
         if result.get('mode_strategy', '').lower() == 'multirun' and 'multirun_keys' in result:
@@ -333,9 +474,16 @@ class ExperimentRunner:
                     if old_num_modes is not None and isinstance(config, dict):
                         config['num_modes'] = old_num_modes
 
-        # 9. Extract trajectory
-        trajectory = self._extract_trajectory(result, env)
-        
+        # 9. Extract trajectory (D3IL: use executed_states so trajectory_best_exec shows real execution)
+        is_d3il_style = (
+            getattr(self.config, 'method', None) == 'd3il_unified'
+            or 'd3il' in str(getattr(self.config, 'env_name', ''))
+        )
+        if is_d3il_style and result.get('executed_states') is not None:
+            trajectory = self._extract_trajectory_from_executed(result, env)
+        else:
+            trajectory = self._extract_trajectory(result, env)
+
         # 10. Compute metrics
         metrics = self._compute_metrics(
             trajectory, env, obstacles, constraint_manager, level,
@@ -428,6 +576,13 @@ class ExperimentRunner:
         Returns:
             Start position array (may be full state vector with velocities)
         """
+        # d3il_avoiding_9d: fixed center start (0.5, -0.28) - center x, below first obstacle row
+        if self.config.env_name == "d3il_avoiding_9d":
+            state_dim = env_plugin.get_state_dim()
+            start_xy = np.array([0.5, -0.28], dtype=np.float32)
+            start_full = np.concatenate([start_xy, np.zeros(state_dim - 2, dtype=np.float32)])
+            return start_full.astype(np.float32)
+
         np.random.seed(seed)
         target_pos = np.asarray(env.target, dtype=np.float32)
         p_max = getattr(env, 'p_max', 2.0)
@@ -552,7 +707,144 @@ class ExperimentRunner:
             info["collision"] = result.get("collision")
 
         return Trajectory(states=states_list, actions=actions_list, info=info or None)
-    
+
+    def _extract_trajectory_from_executed(self, result: Dict[str, Any], env: Any) -> Trajectory:
+        """
+        Build trajectory from executed_states/executed_actions (D3IL: so trajectory_best_exec shows real execution).
+        """
+        if result is None:
+            raise ValueError("Cannot extract trajectory from None result")
+        states_list = [np.asarray(s, dtype=np.float32) for s in result.get('executed_states', [])]
+        if len(states_list) == 0:
+            return self._extract_trajectory(result, env)
+        n_act = len(states_list) - 1
+        exec_actions = result.get('executed_actions')
+        if exec_actions is not None and len(exec_actions) >= n_act:
+            actions_list = [np.asarray(exec_actions[i], dtype=np.float32) for i in range(n_act)]
+        else:
+            fallback = result.get('actions', [])
+            act_dim = getattr(env, 'act_dim', 2)
+            if fallback and len(fallback) >= n_act:
+                actions_list = [np.asarray(fallback[i], dtype=np.float32) for i in range(n_act)]
+            else:
+                actions_list = []
+                for i in range(n_act):
+                    if fallback and i < len(fallback):
+                        actions_list.append(np.asarray(fallback[i], dtype=np.float32))
+                    else:
+                        actions_list.append(np.zeros(act_dim, dtype=np.float32))
+        info = {}
+        if "infos" in result:
+            info["infos"] = result.get("infos")
+        if "costs" in result:
+            info["costs"] = result.get("costs")
+        if "success" in result:
+            info["success"] = result.get("success")
+        if "collision" in result:
+            info["collision"] = result.get("collision")
+        return Trajectory(states=states_list, actions=actions_list, info=info or None)
+
+    def _extract_plan_trajectory(self, result: Dict[str, Any], env: Any) -> Optional[Trajectory]:
+        """Extract best planned trajectory from candidate_states/candidate_actions (for D3IL plan viz)."""
+        if result is None:
+            return None
+        cand_states = result.get('candidate_states', [])
+        cand_actions = result.get('candidate_actions', [])
+        best_idx = int(result.get('best_idx', 0))
+        if not cand_states or best_idx < 0 or best_idx >= len(cand_states):
+            return None
+        states_list = [np.asarray(s, dtype=np.float32) for s in cand_states[best_idx]]
+        if cand_actions and best_idx < len(cand_actions):
+            act = cand_actions[best_idx]
+            act = np.asarray(act, dtype=np.float32)
+            actions_list = [act[i] for i in range(act.shape[0])] if act.ndim >= 2 else [act]
+        else:
+            act_dim = getattr(env, 'act_dim', 2)
+            actions_list = [np.zeros(act_dim, dtype=np.float32) for _ in range(len(states_list) - 1)]
+        if len(actions_list) < len(states_list) - 1:
+            act_dim = getattr(env, 'act_dim', 2)
+            while len(actions_list) < len(states_list) - 1:
+                actions_list.append(np.zeros(act_dim, dtype=np.float32))
+        return Trajectory(states=states_list, actions=actions_list, info=None)
+
+    def _is_d3il_experiment(self, result: Dict[str, Any]) -> bool:
+        """True if this experiment uses d3il_unified (so we emit plan/exec split trajectory files)."""
+        cfg = result.get('config_snapshot') or {}
+        method = cfg.get('method') if isinstance(cfg, dict) else getattr(cfg, 'method', None)
+        return method == 'd3il_unified'
+
+    def _render_d3il_exec_3d_gif(
+        self,
+        env: Any,
+        result: Dict[str, Any],
+        trajectory_dir: Any,
+        seed: int,
+        width: int = 640,
+        height: int = 480,
+        duration_ms: float = 80.0,
+        use_current_scene: bool = False,
+        n_interp: int = 1,
+    ) -> None:
+        """
+        Render 3D GIF by setting the sim to each *recorded* state (pose from states), then capture.
+        use_current_scene=True: do not reset; scene is from main run. Call before 8b2.
+        n_interp: number of linear interpolated poses between consecutive states (1 = no interp).
+        """
+        try:
+            inner = getattr(getattr(env, "_task_env", None), "_env", None)
+            if inner is None or not hasattr(inner, "bp_cam"):
+                return
+            cam = getattr(inner, "bp_cam", None)
+            robot = getattr(inner, "robot", None)
+            if cam is None or not hasattr(cam, "_get_img_data"):
+                return
+            if robot is None or not hasattr(robot, "set_q"):
+                return
+            plan_result = result.get("result", {})
+            states = plan_result.get("states")
+            if not states:
+                return
+            states = [np.asarray(s, dtype=np.float64).reshape(-1).copy() for s in states]
+            if len(states) < 2:
+                return
+            if states[0].size < 9:
+                return
+            n_interp = max(1, int(n_interp))
+            poses = []
+            for i in range(len(states)):
+                q = np.asarray(states[i][2:9], dtype=np.float64, order='C').reshape(-1)
+                if q.size != 7:
+                    continue
+                poses.append(q)
+                if n_interp > 1 and i < len(states) - 1:
+                    q_next = np.asarray(states[i + 1][2:9], dtype=np.float64, order='C').reshape(-1)
+                    if q_next.size == 7:
+                        for k in range(1, n_interp):
+                            alpha = k / n_interp
+                            poses.append((1 - alpha) * q + alpha * q_next)
+            if len(poses) < 2:
+                return
+            if not use_current_scene:
+                backend = RuntimeBackendManager.get_backend()
+                rng = backend.create_rng(seed)
+                env.reset(rng=rng)
+            frames_rgb = []
+            for q in poses:
+                try:
+                    q_ = np.asarray(q, dtype=np.float64, order='C').reshape(7)
+                    robot.set_q(q_)
+                    rgb = cam._get_img_data(width=width, height=height, depth=False)
+                    if rgb is not None:
+                        frames_rgb.append(np.asarray(rgb, dtype=np.uint8))
+                except Exception:
+                    break
+            if len(frames_rgb) >= 2:
+                import imageio
+                out_path = trajectory_dir / "trajectory_best_exec_3d.gif"
+                imageio.v3.imwrite(out_path, frames_rgb, duration=duration_ms, loop=0)
+        except Exception:
+            pass
+
     def _compute_best_idx_from_candidates(
         self,
         candidate_states_list: list,
@@ -599,7 +891,12 @@ class ExperimentRunner:
                         safe = False
                         break
             final_pos = extract_pos_2d(states_arr[-1])
-            task_success = bool(np.linalg.norm(final_pos - target_pos) < success_margin)
+            # d3il_avoiding_9d: line target (y >= target_y), x can be anywhere in box
+            if env_plugin is not None and getattr(env_plugin, "name", None) == "d3il_avoiding_9d":
+                target_y = float(target_pos[1])
+                task_success = bool(final_pos[1] >= target_y - success_margin)
+            else:
+                task_success = bool(np.linalg.norm(final_pos - target_pos) < success_margin)
             safe_success_mask.append(safe and task_success)
 
         valid_indices = [i for i in range(n_modes) if safe_success_mask[i]]
@@ -692,8 +989,13 @@ class ExperimentRunner:
 
             # Task success
             final_pos = extract_pos_2d(states_arr[-1])
-            dist = float(np.linalg.norm(final_pos - target_pos))
-            task_success = bool(dist < success_margin)
+            # d3il_avoiding_9d: line target (y >= target_y), x can be anywhere in box
+            if env_plugin is not None and getattr(env_plugin, "name", None) == "d3il_avoiding_9d":
+                target_y = float(target_pos[1])
+                task_success = bool(final_pos[1] >= target_y - success_margin)
+            else:
+                dist = float(np.linalg.norm(final_pos - target_pos))
+                task_success = bool(dist < success_margin)
 
             if safe and task_success:
                 ssr_count += 1
@@ -765,7 +1067,7 @@ class ExperimentRunner:
         """
         metrics_result = {}
         robot_radius = float(self.config.obstacle_config.get('robot_radius', 0.05))
-        success_margin = 2 * robot_radius
+        success_margin = float(self.config.obstacle_config.get('success_margin', 2 * robot_radius))
 
         # Modes-based metrics when candidate data exists
         candidate_states_list = []
@@ -857,8 +1159,18 @@ class ExperimentRunner:
                 if metric_name not in metrics_result:
                     metrics_result[metric_name] = None
 
+        # Execution SSR (D3IL only): 1.0 if this run was success and collision-free (aligns with DPCC)
+        is_d3il_style = (
+            getattr(self.config, 'method', None) == 'd3il_unified'
+            or 'd3il' in str(getattr(self.config, 'env_name', ''))
+        )
+        if is_d3il_style and planning_result is not None:
+            succ = bool(planning_result.get('success', False))
+            coll = bool(planning_result.get('collision', True))
+            metrics_result['execution_ssr'] = {'execution_ssr': 1.0 if (succ and not coll) else 0.0}
+
         return metrics_result
-    
+
     def _generate_visualizations(self, result: Dict[str, Any], env: Any, 
                                 obstacles: Any, env_plugin: Any) -> None:
         """
@@ -908,50 +1220,99 @@ class ExperimentRunner:
                     out_dir = self._get_output_path(result['level'], result['seed'])
                     trajectory_dir = out_dir / "trajectory"
                     trajectory_dir.mkdir(parents=True, exist_ok=True)
-                    traj = result['trajectory']
                     viz_cfg = {**viz_config.get(viz_name, {}), 'config': self.config}
-                    data_base = {
-                        'trajectory': traj,
-                        'env': env,
-                        'obstacles': obstacles,
-                        'env_plugin': env_plugin,
-                    }
-                    # Static PNG
-                    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
-                    viz_plugin.visualize(fig, ax, data_base, viz_cfg)
-                    viz_plugin.save(trajectory_dir / "trajectory_best.png", fig, dpi=150, bbox_inches='tight')
-                    plt.close(fig)
-                    # GIF: trajectory from start to end over time steps
-                    num_steps = max(0, len(traj.states) - 1)
-                    if num_steps >= 0:
-                        import imageio
-                        temp_frames = []
-                        try:
-                            for t in range(num_steps + 1):
-                                fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
-                                viz_plugin.visualize(
-                                    fig_g, ax_g,
-                                    {**data_base, 'partial_until_step': t, 'gif_style': True},
-                                    viz_cfg
-                                )
-                                tmp_path = trajectory_dir / f"_gif_best_{t}.png"
-                                fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
-                                plt.close(fig_g)
-                                temp_frames.append(tmp_path)
-                            if temp_frames:
-                                frames = [imageio.v3.imread(p) for p in temp_frames]
-                                imageio.v3.imwrite(
-                                    trajectory_dir / "trajectory_best.gif",
-                                    frames,
-                                    duration=80,
-                                    loop=0,
-                                )
-                        finally:
-                            for p in temp_frames:
+                    is_d3il = self._is_d3il_experiment(result)
+                    if is_d3il:
+                        # D3IL: save trajectory_best_plan and trajectory_best_exec (and their GIFs)
+                        plan_traj = self._extract_plan_trajectory(result.get('result', {}), env)
+                        exec_traj = result['trajectory']
+                        for label, traj in [('plan', plan_traj), ('exec', exec_traj)]:
+                            if traj is None or len(traj.states) == 0:
+                                continue
+                            data_base = {
+                                'trajectory': traj,
+                                'env': env,
+                                'obstacles': obstacles,
+                                'env_plugin': env_plugin,
+                            }
+                            fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+                            viz_plugin.visualize(fig, ax, data_base, viz_cfg)
+                            viz_plugin.save(trajectory_dir / f"trajectory_best_{label}.png", fig, dpi=150, bbox_inches='tight')
+                            plt.close(fig)
+                            num_steps = max(0, len(traj.states) - 1)
+                            if num_steps >= 0:
+                                import imageio
+                                temp_frames = []
                                 try:
-                                    p.unlink()
-                                except OSError:
-                                    pass
+                                    for t in range(num_steps + 1):
+                                        fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
+                                        viz_plugin.visualize(
+                                            fig_g, ax_g,
+                                            {**data_base, 'partial_until_step': t, 'gif_style': True},
+                                            viz_cfg
+                                        )
+                                        tmp_path = trajectory_dir / f"_gif_best_{label}_{t}.png"
+                                        fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                        plt.close(fig_g)
+                                        temp_frames.append(tmp_path)
+                                    if temp_frames:
+                                        frames = [imageio.v3.imread(p) for p in temp_frames]
+                                        imageio.v3.imwrite(
+                                            trajectory_dir / f"trajectory_best_{label}.gif",
+                                            frames,
+                                            duration=80,
+                                            loop=0,
+                                        )
+                                finally:
+                                    for p in temp_frames:
+                                        try:
+                                            p.unlink()
+                                        except OSError:
+                                            pass
+                        # 3D GIF already generated in run_single_experiment (8b1.5) before 8b2
+                    else:
+                        # single_2d etc.: original trajectory_best.png / trajectory_best.gif only
+                        traj = result['trajectory']
+                        data_base = {
+                            'trajectory': traj,
+                            'env': env,
+                            'obstacles': obstacles,
+                            'env_plugin': env_plugin,
+                        }
+                        fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+                        viz_plugin.visualize(fig, ax, data_base, viz_cfg)
+                        viz_plugin.save(trajectory_dir / "trajectory_best.png", fig, dpi=150, bbox_inches='tight')
+                        plt.close(fig)
+                        num_steps = max(0, len(traj.states) - 1)
+                        if num_steps >= 0:
+                            import imageio
+                            temp_frames = []
+                            try:
+                                for t in range(num_steps + 1):
+                                    fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
+                                    viz_plugin.visualize(
+                                        fig_g, ax_g,
+                                        {**data_base, 'partial_until_step': t, 'gif_style': True},
+                                        viz_cfg
+                                    )
+                                    tmp_path = trajectory_dir / f"_gif_best_{t}.png"
+                                    fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                    plt.close(fig_g)
+                                    temp_frames.append(tmp_path)
+                                if temp_frames:
+                                    frames = [imageio.v3.imread(p) for p in temp_frames]
+                                    imageio.v3.imwrite(
+                                        trajectory_dir / "trajectory_best.gif",
+                                        frames,
+                                        duration=80,
+                                        loop=0,
+                                    )
+                            finally:
+                                for p in temp_frames:
+                                    try:
+                                        p.unlink()
+                                    except OSError:
+                                        pass
                 
                 elif viz_name == 'trajectory_3d':
                     from mpl_toolkits.mplot3d import Axes3D
@@ -975,57 +1336,152 @@ class ExperimentRunner:
                     out_dir = self._get_output_path(result['level'], result['seed'])
                     trajectory_dir = out_dir / "trajectory"
                     trajectory_dir.mkdir(parents=True, exist_ok=True)
-                    data_base = {
-                        'result': result['result'],
-                        'env': env,
-                        'obstacles': obstacles,
-                        'env_plugin': env_plugin,
-                    }
                     viz_cfg = {**viz_config.get(viz_name, {}), 'config': self.config}
-                    # Static PNG
-                    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
-                    viz_plugin.visualize(fig, ax, data_base, viz_cfg)
-                    viz_plugin.save(trajectory_dir / "trajectory_modes.png", fig, dpi=150, bbox_inches='tight')
-                    plt.close(fig)
-                    # GIF: all modes advance in sync by time step
-                    planning_result = result.get('result', {})
-                    candidate_states = planning_result.get('candidate_states') or []
-                    if not candidate_states:
-                        states_list = planning_result.get('states', [])
-                        if states_list:
-                            candidate_states = [states_list]
-                    max_steps = 0
-                    for states_c in candidate_states:
-                        max_steps = max(max_steps, max(0, len(states_c) - 1))
-                    if max_steps >= 0 and candidate_states:
-                        import imageio
-                        temp_frames = []
-                        try:
-                            for t in range(max_steps + 1):
-                                fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
-                                viz_plugin.visualize(
-                                    fig_g, ax_g,
-                                    {**data_base, 'partial_until_step': t},
-                                    viz_cfg
-                                )
-                                tmp_path = trajectory_dir / f"_gif_modes_{t}.png"
-                                fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
-                                plt.close(fig_g)
-                                temp_frames.append(tmp_path)
-                            if temp_frames:
-                                frames = [imageio.v3.imread(p) for p in temp_frames]
-                                imageio.v3.imwrite(
-                                    trajectory_dir / "trajectory_modes.gif",
-                                    frames,
-                                    duration=80,
-                                    loop=0,
-                                )
-                        finally:
-                            for p in temp_frames:
+                    is_d3il = self._is_d3il_experiment(result)
+                    if is_d3il:
+                        # D3IL: trajectory_modes_plan (candidate_states) and trajectory_modes_exec (exec states as single mode)
+                        planning_result = result.get('result', {})
+                        # Plan: use planning_result as-is (candidate_states from solver)
+                        data_plan = {
+                            'result': planning_result,
+                            'env': env,
+                            'obstacles': obstacles,
+                            'env_plugin': env_plugin,
+                        }
+                        fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+                        viz_plugin.visualize(fig, ax, data_plan, viz_cfg)
+                        viz_plugin.save(trajectory_dir / "trajectory_modes_plan.png", fig, dpi=150, bbox_inches='tight')
+                        plt.close(fig)
+                        cand_states_plan = planning_result.get('candidate_states') or []
+                        if not cand_states_plan and planning_result.get('states'):
+                            cand_states_plan = [planning_result['states']]
+                        max_steps_plan = max((max(0, len(c) - 1) for c in cand_states_plan), default=0)
+                        if max_steps_plan >= 0 and cand_states_plan:
+                            import imageio
+                            temp_frames = []
+                            try:
+                                for t in range(max_steps_plan + 1):
+                                    fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
+                                    viz_plugin.visualize(fig_g, ax_g, {**data_plan, 'partial_until_step': t}, viz_cfg)
+                                    tmp_path = trajectory_dir / f"_gif_modes_plan_{t}.png"
+                                    fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                    plt.close(fig_g)
+                                    temp_frames.append(tmp_path)
+                                if temp_frames:
+                                    frames = [imageio.v3.imread(p) for p in temp_frames]
+                                    imageio.v3.imwrite(trajectory_dir / "trajectory_modes_plan.gif", frames, duration=80, loop=0)
+                            finally:
+                                for p in temp_frames:
+                                    try:
+                                        p.unlink()
+                                    except OSError:
+                                        pass
+                        # Exec: all candidates' executions (exec_candidate_states) or fallback to single run
+                        exec_candidate_states = planning_result.get('exec_candidate_states')
+                        if exec_candidate_states and len(exec_candidate_states) > 0:
+                            result_exec = {
+                                'candidate_states': exec_candidate_states,
+                                'candidate_actions': planning_result.get('candidate_actions'),
+                                'best_idx': int(planning_result.get('best_idx', 0)),
+                            }
+                            if planning_result.get('candidate_costs') is not None:
+                                result_exec['candidate_costs'] = planning_result['candidate_costs']
+                        else:
+                            exec_states = planning_result.get('states', [])
+                            if exec_states:
+                                result_exec = {
+                                    'candidate_states': [exec_states],
+                                    'candidate_actions': planning_result.get('actions'),
+                                    'best_idx': 0,
+                                }
+                                if result_exec['candidate_actions'] is not None:
+                                    act = np.asarray(result_exec['candidate_actions'], dtype=np.float32)
+                                    result_exec['candidate_actions'] = [act] if act.ndim >= 2 else [act]
+                            else:
+                                result_exec = None
+                        if result_exec:
+                            data_exec = {
+                                'result': result_exec,
+                                'env': env,
+                                'obstacles': obstacles,
+                                'env_plugin': env_plugin,
+                            }
+                            fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+                            viz_plugin.visualize(fig, ax, data_exec, viz_cfg)
+                            viz_plugin.save(trajectory_dir / "trajectory_modes_exec.png", fig, dpi=150, bbox_inches='tight')
+                            plt.close(fig)
+                            cand_exec = result_exec['candidate_states']
+                            num_steps_exec = max((max(0, len(s) - 1) for s in cand_exec), default=0)
+                            if num_steps_exec >= 0 and cand_exec:
+                                import imageio
+                                temp_frames = []
                                 try:
-                                    p.unlink()
-                                except OSError:
-                                    pass
+                                    for t in range(num_steps_exec + 1):
+                                        fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
+                                        viz_plugin.visualize(fig_g, ax_g, {**data_exec, 'partial_until_step': t}, viz_cfg)
+                                        tmp_path = trajectory_dir / f"_gif_modes_exec_{t}.png"
+                                        fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                        plt.close(fig_g)
+                                        temp_frames.append(tmp_path)
+                                    if temp_frames:
+                                        frames = [imageio.v3.imread(p) for p in temp_frames]
+                                        imageio.v3.imwrite(trajectory_dir / "trajectory_modes_exec.gif", frames, duration=80, loop=0)
+                                finally:
+                                    for p in temp_frames:
+                                        try:
+                                            p.unlink()
+                                        except OSError:
+                                            pass
+                    else:
+                        # single_2d etc.: original trajectory_modes.png / trajectory_modes.gif only
+                        data_base = {
+                            'result': result['result'],
+                            'env': env,
+                            'obstacles': obstacles,
+                            'env_plugin': env_plugin,
+                        }
+                        fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+                        viz_plugin.visualize(fig, ax, data_base, viz_cfg)
+                        viz_plugin.save(trajectory_dir / "trajectory_modes.png", fig, dpi=150, bbox_inches='tight')
+                        plt.close(fig)
+                        planning_result = result.get('result', {})
+                        candidate_states = planning_result.get('candidate_states') or []
+                        if not candidate_states:
+                            states_list = planning_result.get('states', [])
+                            if states_list:
+                                candidate_states = [states_list]
+                        max_steps = 0
+                        for states_c in candidate_states:
+                            max_steps = max(max_steps, max(0, len(states_c) - 1))
+                        if max_steps >= 0 and candidate_states:
+                            import imageio
+                            temp_frames = []
+                            try:
+                                for t in range(max_steps + 1):
+                                    fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
+                                    viz_plugin.visualize(
+                                        fig_g, ax_g,
+                                        {**data_base, 'partial_until_step': t},
+                                        viz_cfg
+                                    )
+                                    tmp_path = trajectory_dir / f"_gif_modes_{t}.png"
+                                    fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                    plt.close(fig_g)
+                                    temp_frames.append(tmp_path)
+                                if temp_frames:
+                                    frames = [imageio.v3.imread(p) for p in temp_frames]
+                                    imageio.v3.imwrite(
+                                        trajectory_dir / "trajectory_modes.gif",
+                                        frames,
+                                        duration=80,
+                                        loop=0,
+                                    )
+                            finally:
+                                for p in temp_frames:
+                                    try:
+                                        p.unlink()
+                                    except OSError:
+                                        pass
                 
                 elif viz_name == 'diffusion':
                     # Save individual PNGs (90%, 50%, 10%) and GIF to diffusion_steps/ subdirectory
@@ -1256,7 +1712,7 @@ class ExperimentRunner:
 
         # best_idx: prefer (safe AND success) + lowest final cost; else lowest final cost
         robot_radius = float(self.config.obstacle_config.get('robot_radius', 0.05))
-        success_margin = 2 * robot_radius
+        success_margin = float(self.config.obstacle_config.get('success_margin', 2 * robot_radius))
         M_rows = cost_matrix.shape[0]
         final_costs = cost_matrix[:, -1]
         candidate_states_for_cost = []
@@ -1569,13 +2025,8 @@ class ExperimentRunner:
             }
         serializable_result['metrics'] = metrics_to_save
         
-        # Add planning result data if available
-        # Standardized rollout fields (for MPC / execution-based methods)
+        # Add planning result data if available (omit large arrays exec_states/exec_actions from results.json)
         if isinstance(planning_result, dict):
-            if "exec_states" in planning_result:
-                serializable_result["exec_states"] = convert_to_json_serializable(planning_result["exec_states"])
-            if "exec_actions" in planning_result:
-                serializable_result["exec_actions"] = convert_to_json_serializable(planning_result["exec_actions"])
             if "success" in planning_result:
                 serializable_result["success"] = convert_to_json_serializable(planning_result["success"])
             if "collision" in planning_result:
@@ -1661,14 +2112,27 @@ class ExperimentRunner:
                     for r in level_results:
                         if metric_name in r['metrics'] and r['metrics'][metric_name] is not None:
                             metric_val = r['metrics'][metric_name]
-                            # Handle nested metrics (e.g., SSR dict)
+                            # Handle nested metrics (e.g., SSR dict, execution_ssr dict)
                             if isinstance(metric_val, dict) and 'ssr' in metric_val:
                                 metric_values.append(metric_val['ssr'])
+                            elif isinstance(metric_val, dict) and 'execution_ssr' in metric_val:
+                                metric_values.append(metric_val['execution_ssr'])
                             elif isinstance(metric_val, (int, float)):
                                 metric_values.append(metric_val)
                     
                     if metric_values:
                         summary[f'avg_{metric_name}'] = float(np.mean(metric_values))
+
+                # Execution SSR (not in config.metrics): average when present
+                exec_ssr_list = []
+                for r in level_results:
+                    m = r.get('metrics') or {}
+                    if 'execution_ssr' in m and isinstance(m['execution_ssr'], dict):
+                        v = m['execution_ssr'].get('execution_ssr')
+                        if v is not None:
+                            exec_ssr_list.append(float(v))
+                if exec_ssr_list:
+                    summary['avg_execution_ssr'] = float(np.mean(exec_ssr_list))
 
                 # Best (best mode) metrics: average across level's results
                 best_list = [

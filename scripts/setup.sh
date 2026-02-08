@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
-# Keep this file as the stable entrypoint for local setup helpers.
-# (Some users have this hard-coded in their workflow.)
+. scripts/setup_d3il.sh
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+pip install -e .
 
-echo "[setup] If you want to use D3IL, run:"
-echo "  ${HERE}/setup_d3il.sh"
+python -c "import jax; print(jax.devices())"
 
-
+python -c "import torch; print(torch.cuda.is_available())"
