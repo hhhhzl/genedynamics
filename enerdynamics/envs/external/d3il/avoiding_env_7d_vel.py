@@ -19,6 +19,11 @@ from enerdynamics.envs.external.d3il.specs.base import D3ILTaskSpec, Context, D3
 @dataclass(frozen=True)
 class D3ILAvoiding7dVelSpecConfig(D3ILTaskConfig):
     quat_wxyz: Tuple[float, float, float, float] = (0.0, 1.0, 0.0, 0.0)
+    obstacle_level: Optional[int] = None
+    obstacle_radius_by_level: Optional[Dict[int, list]] = None
+    obstacles: Any = None  # ObstacleManager for EE-only collision
+    robot_radius: Optional[float] = None
+    collision_ee_only: bool = False
 
 
 class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
@@ -34,7 +39,7 @@ class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
     state_dim: int = 9
     act_dim: int = 7
     control_limit: float = 1.5
-    target: np.ndarray = np.array([0.4, 0.35], dtype=np.float32)
+    target: np.ndarray = np.array([0.5, 0.35], dtype=np.float32)  # center x of last obstacle row
     success_distance_threshold: float = 0.02  # only report success/done when within this distance
 
     def __init__(self, config: Optional[D3ILAvoiding7dVelSpecConfig] = None):
@@ -44,15 +49,128 @@ class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
         from enerdynamics.envs.external.d3il.bootstrap import ensure_d3il_on_path
 
         ensure_d3il_on_path()
+
+        # Monkey-patch get_obj_list for custom obstacle radii (sync with d3il_avoiding_fixed)
+        obstacle_level = getattr(self.config, "obstacle_level", None)
+        radius_by_level = getattr(self.config, "obstacle_radius_by_level", None)
+        if (
+            obstacle_level is not None
+            and radius_by_level is not None
+            and isinstance(radius_by_level, dict)
+        ):
+            radii = radius_by_level.get(obstacle_level)
+            if radii is not None and len(radii) >= 2:
+                r_first, r_rest = float(radii[0]), float(radii[1])
+
+                def _make_patched_get_obj_list(r1: float, r2: float):
+                    def _get_obj_list():
+                        try:
+                            from environments.d3il.d3il_sim.sims.universal_sim.PrimitiveObjects import (
+                                Box,
+                                Cylinder,
+                            )
+                        except ModuleNotFoundError:
+                            from d3il.d3il_sim.sims.universal_sim.PrimitiveObjects import (
+                                Box,
+                                Cylinder,
+                            )
+                        mid_pos = 0.5
+                        offset = 0.075
+                        first_level_y = -0.1
+                        level_distance = 0.18
+                        return [
+                            Cylinder(
+                                name="l1_obs",
+                                init_pos=[mid_pos, first_level_y, 0],
+                                init_quat=[1, 0, 0, 0],
+                                size=[r1, 0.07],
+                                rgba=[1, 0, 0, 1],
+                                static=True,
+                            ),
+                            Cylinder(
+                                name="l2_top_obs",
+                                init_pos=[mid_pos - offset, first_level_y + level_distance, 0],
+                                init_quat=[1, 0, 0, 0],
+                                size=[r2, 0.1],
+                                rgba=[1, 0, 0, 1],
+                                static=True,
+                            ),
+                            Cylinder(
+                                name="l2_bottom_obs",
+                                init_pos=[mid_pos + offset, first_level_y + level_distance, 0],
+                                init_quat=[1, 0, 0, 0],
+                                size=[r2, 0.1],
+                                rgba=[1, 0, 0, 1],
+                                static=True,
+                            ),
+                            Cylinder(
+                                name="l3_top_obs",
+                                init_pos=[
+                                    mid_pos - 2 * offset,
+                                    first_level_y + 2 * level_distance,
+                                    0,
+                                ],
+                                init_quat=[1, 0, 0, 0],
+                                size=[r2, 0.1],
+                                rgba=[1, 0, 0, 1],
+                                static=True,
+                            ),
+                            Cylinder(
+                                name="l3_mid_obs",
+                                init_pos=[mid_pos, first_level_y + 2 * level_distance, 0],
+                                init_quat=[1, 0, 0, 0],
+                                size=[r2, 0.1],
+                                rgba=[1, 0, 0, 1],
+                                static=True,
+                            ),
+                            Cylinder(
+                                name="l3_bottom_obs",
+                                init_pos=[
+                                    mid_pos + 2 * offset,
+                                    first_level_y + 2 * level_distance,
+                                    0,
+                                ],
+                                init_quat=[1, 0, 0, 0],
+                                size=[r2, 0.1],
+                                rgba=[1, 0, 0, 1],
+                                static=True,
+                            ),
+                            Box(
+                                name="finish_line",
+                                init_pos=[0.4, first_level_y + 2.5 * level_distance, 0],
+                                init_quat=[1, 0, 0, 0],
+                                size=[0.5, 0.01, 0.005],
+                                rgba=[0.0, 1.0, 0.0, 0.3],
+                                visual_only=True,
+                                static=True,
+                            ),
+                        ]
+
+                    return _get_obj_list
+
+                try:
+                    import environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.objects.avoiding_objects as ao
+                except ModuleNotFoundError:
+                    import d3il.environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.objects.avoiding_objects as ao
+                ao.get_obj_list = _make_patched_get_obj_list(r_first, r_rest)
+                _patched_obj_list = ao.get_obj_list()
+                _did_patch = True
+            else:
+                _did_patch = False
+                _patched_obj_list = None
+        else:
+            _did_patch = False
+            _patched_obj_list = None
+
+        import importlib
         try:
-            from d3il.environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.avoiding import (
-                ObstacleAvoidanceEnv,
-            )
+            from d3il.environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs import avoiding as av_mod
         except ModuleNotFoundError:
-            from environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.avoiding import (
-                ObstacleAvoidanceEnv,
-            )
-        return ObstacleAvoidanceEnv(render=bool(self.config.render))
+            from environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs import avoiding as av_mod
+        if _did_patch and _patched_obj_list is not None:
+            importlib.reload(av_mod)
+            av_mod.obj_list = _patched_obj_list
+        return av_mod.ObstacleAvoidanceEnv(render=bool(self.config.render))
 
     def start_env(self, env: Any) -> None:
         env.start()
@@ -109,10 +227,25 @@ class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
         except Exception:
             pass
         try:
-            if hasattr(env, "check_failure"):
+            if getattr(self.config, "collision_ee_only", False) and getattr(self.config, "obstacles", None) is not None and getattr(self.config, "robot_radius", None) is not None:
+                ee_xy = np.asarray(next_state[:2], dtype=np.float64).reshape(-1)
+                obstacles = self.config.obstacles
+                robot_radius = float(self.config.robot_radius)
+                sdf = obstacles.sdf(ee_xy)
+                sdf_val = float(np.asarray(sdf).item() if hasattr(sdf, "item") else sdf)
+                in_obs = bool(obstacles.contains(ee_xy)) if hasattr(obstacles, "contains") else False
+                # Small tolerance 1e-5 so boundary/numerical noise doesn't over-count collision
+                margin = max(0.0, robot_radius - 1e-5)
+                extra["collision"] = bool(sdf_val < margin or in_obs)
+            elif hasattr(env, "check_failure"):
                 extra["collision"] = bool(env.check_failure())
         except Exception:
             pass
+        if "collision" not in extra:
+            try:
+                extra["collision"] = bool(env.check_failure()) if hasattr(env, "check_failure") else False
+            except Exception:
+                extra["collision"] = False
         # Only treat as success/done when within success_distance_threshold (e.g. 2*robot_radius)
         dist_to_target = float(np.linalg.norm(np.asarray(next_state[:2], dtype=np.float64) - np.asarray(self.target, dtype=np.float64)))
         if dist_to_target > self.success_distance_threshold:
@@ -138,6 +271,11 @@ class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
 class D3ILAvoiding7dVelConfig:
     render: bool = False
     quat_wxyz: Tuple[float, float, float, float] = (0.0, 1.0, 0.0, 0.0)
+    obstacle_level: Optional[int] = None
+    obstacle_radius_by_level: Optional[Dict[int, list]] = None
+    obstacles: Any = None
+    robot_radius: Optional[float] = None
+    collision_ee_only: bool = False
 
 
 class D3ILAvoiding7dVelEnv:
@@ -151,6 +289,11 @@ class D3ILAvoiding7dVelEnv:
         spec_cfg = D3ILAvoiding7dVelSpecConfig(
             render=bool(self.config.render),
             quat_wxyz=self.config.quat_wxyz,
+            obstacle_level=getattr(self.config, "obstacle_level", None),
+            obstacle_radius_by_level=getattr(self.config, "obstacle_radius_by_level", None),
+            obstacles=getattr(self.config, "obstacles", None),
+            robot_radius=getattr(self.config, "robot_radius", None),
+            collision_ee_only=bool(getattr(self.config, "collision_ee_only", False)),
         )
         self._task_env = D3ILTaskEnv(D3ILAvoiding7dVelSpec(spec_cfg))
         self.dt = self._task_env.dt
