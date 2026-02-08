@@ -168,20 +168,17 @@ class ExperimentRunner:
         env = env_plugin.create_env(env_params_with_obstacles)
         energy = env_plugin.create_energy(env) if _accepts_env(env_plugin.create_energy) else env_plugin.create_energy()
         
-        # Build SDF texture if needed (only for 2D environments)
-        # For 3D environments, skip 2D SDF texture building
-        if level > 0 and len(obstacles) > 0:
-            # Check if this is a 3D environment by checking env_name or obstacle generator
+        # Build SDF texture if needed (for CBF/MDOC/CFS filters that use sample_sdf_and_grad_2d)
+        # Level 0 must also build texture so obstacles are seen by the filter
+        if len(obstacles) > 0:
             physics_backend = self.config.env_params.get('physics_backend', None)
             is_3d_env = (
-                self.config.env_name in ['drone_box_3d', 'drone', 'drone_full_3d', 'drone_full_3d_physics', 
+                self.config.env_name in ['drone_box_3d', 'drone', 'drone_full_3d', 'drone_full_3d_physics',
                                          'drone_full_3d_mujoco', 'drone_full_3d_isaac'] or
                 self.config.obstacle_config.get('generator', '') == 'box3d' or
                 physics_backend in ['mujoco', 'isaac']
             )
-            
             if not is_3d_env:
-                # Only build 2D SDF texture for 2D environments
                 map_bounds = self.config.obstacle_config.get('map_bounds', {})
                 obstacles.build_sdf_texture_2d(
                     x_min=float(map_bounds.get('x_min', -2.0)),

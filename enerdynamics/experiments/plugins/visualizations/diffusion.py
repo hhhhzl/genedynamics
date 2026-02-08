@@ -410,7 +410,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
             if is_ebmbd:
                 num_samples = len(sample_actions)
             else:
-                num_samples = min(len(sample_actions), MAX_SAMPLE_TRAJ_PLOT)
+                max_plot = (min(MAX_SAMPLE_TRAJ_PLOT, 24) if is_mdoc else MAX_SAMPLE_TRAJ_PLOT)
+                num_samples = min(len(sample_actions), max_plot)
                 if num_samples < len(sample_actions):
                     indices = np.linspace(0, len(sample_actions) - 1, num_samples, dtype=int)
                     sample_actions = sample_actions[indices]
@@ -558,7 +559,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
 
         # viz controls
         viz_style = str(method_params.get("mdoc_viz_style", "cap"))      # "cap" or "rectangle"
-        scale = float(method_params.get("mdoc_viz_scale", 4.0))          # workspace scaling for visibility
+        scale = float(method_params.get("mdoc_viz_scale", 1.5))          # workspace scaling (was 4.0; 1.5 keeps fan readable)
         informative_band = float(method_params.get("mdoc_viz_band", 0.85))  # draw only if |b/r| < band
         use_beta_in_viz = bool(method_params.get("mdoc_viz_use_beta", False))  # often False makes margin effect clearer
         step_override = method_params.get("mdoc_viz_step", None)
