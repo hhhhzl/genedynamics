@@ -65,10 +65,23 @@ def load_planning_checkpoint(
     dim = int(cfg.get("dim", 32))
     dim_mults = tuple(cfg.get("dim_mults", (1, 4, 8)))
 
-    obs_mins = np.asarray(cfg["obs_mins"], dtype=np.float32)
-    obs_maxs = np.asarray(cfg["obs_maxs"], dtype=np.float32)
-    act_mins = np.asarray(cfg["act_mins"], dtype=np.float32)
-    act_maxs = np.asarray(cfg["act_maxs"], dtype=np.float32)
+    obs_mins_v = cfg.get("obs_mins")
+    obs_maxs_v = cfg.get("obs_maxs")
+    act_mins_v = cfg.get("act_mins")
+    act_maxs_v = cfg.get("act_maxs")
+
+    if obs_mins_v is None or obs_maxs_v is None or act_mins_v is None or act_maxs_v is None:
+        raise ValueError(
+            "Missing obs/act mins/maxs in `safediffuser_planning.yaml`. "
+            "This runtime loader no longer reads `data_config.pkl` / `dataset_config.pkl`. "
+            "Re-run `scripts/convert_safediffuser_checkpoint.py` to regenerate the yaml."
+        )
+
+    obs_mins = np.asarray(obs_mins_v, dtype=np.float32)
+    obs_maxs = np.asarray(obs_maxs_v, dtype=np.float32)
+    act_mins = np.asarray(act_mins_v, dtype=np.float32)
+    act_maxs = np.asarray(act_maxs_v, dtype=np.float32)
+
     normalizer = PlanningNormalizer(obs_mins, obs_maxs, act_mins, act_maxs)
 
     model = TemporalUnet(
@@ -93,12 +106,17 @@ def load_planning_checkpoint(
     # attach for optional _format_conditions compatibility
     diffusion.normalizer = normalizer  # type: ignore[attr-defined]
 
-    if epoch == "latest":
+    epoch_i: int
+    epoch_str = str(epoch).strip().lower()
+    if epoch_str == "latest":
         epoch_i = _latest_epoch(checkpoint_dir)
+        state_path = checkpoint_dir / f"state_{epoch_i}.pt"
+    elif epoch_str == "best":
+        epoch_i = -1
+        state_path = checkpoint_dir / "state_best.pt"
     else:
         epoch_i = int(epoch)
-
-    state_path = checkpoint_dir / f"state_{epoch_i}.pt"
+        state_path = checkpoint_dir / f"state_{epoch_i}.pt"
     data = torch.load(state_path, map_location="cpu")
 
     # Accept either a dict with "model"/"ema" or a raw state_dict.

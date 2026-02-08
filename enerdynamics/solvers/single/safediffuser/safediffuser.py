@@ -59,7 +59,6 @@ class SafeDiffuserSolver(SamplingSolver):
                 raise ValueError(
                     f"SafeDiffuser solver requires torch backend, got '{runtime_backend.name}'."
                 )
-            horizon = int(self.plan_config.get("horizon", getattr(self.env, "horizon", 64)))
             batch_size = int(self.plan_config.get("batch_size", 8))
             checkpoint_dir = self.plan_config.get("checkpoint_dir")
             if not checkpoint_dir:
@@ -73,7 +72,6 @@ class SafeDiffuserSolver(SamplingSolver):
                 checkpoint_dir=str(checkpoint_dir),
                 epoch=epoch,
                 device=str(device),
-                horizon=horizon,
                 batch_size=batch_size,
                 goal_xy=self.goal_xy,
             )
@@ -86,7 +84,10 @@ class SafeDiffuserSolver(SamplingSolver):
         return [traj]
 
     def solve(self, x0: State, horizon: int, **kwargs: Any) -> Trajectory:
-        # We keep horizon in plan_config; ignore caller horizon if it disagrees.
+        # NOTE: `Solver.solve(x0, horizon, ...)` requires `horizon` by interface.
+        # For SafeDiffuser, the actual horizon is fixed by the diffusion checkpoint
+        # (`safediffuser_planning.yaml`). This argument is ignored.
+        _ = horizon
         planner = self._get_backend_impl()
         result = planner.plan(np.asarray(x0, dtype=np.float32), rng_key=kwargs.get("rng_key"))
         states_list = [np.asarray(s, dtype=np.float32) for s in result["states"]]

@@ -5,28 +5,12 @@ import pickle
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import numpy as np
 import yaml
 
-
-def _parse_list_floats(s: str) -> np.ndarray:
-    parts = [p.strip() for p in s.split(",") if p.strip()]
-    return np.asarray([float(p) for p in parts], dtype=np.float32)
-
-
-def _latest_epoch(input_dir: Path) -> int:
-    best = -1
-    for p in input_dir.glob("state_*.pt"):
-        try:
-            n = int(p.stem.replace("state_", ""))
-        except Exception:
-            continue
-        best = max(best, n)
-    if best < 0:
-        raise FileNotFoundError(f"No state_*.pt found under {input_dir}")
-    return best
+from safediffuser_utils.normalization_value_extractor import load_limits_from_dataset_artifacts
 
 
 def _add_safediffuser_to_syspath(safediffuser_root: Path) -> None:
@@ -65,12 +49,18 @@ def main() -> None:
     ap.add_argument("--safediffuser-root", type=str, default=None, help="Path to external SafeDiffuser repo (for unpickling Config)")
     ap.add_argument("--input-dir", type=str, required=True, help="SafeDiffuser logdir containing *_config.pkl and state_*.pt")
     ap.add_argument("--output-dir", type=str, required=True, help="Output directory for converted checkpoint")
-    ap.add_argument("--epoch", type=str, default="latest", help="Epoch number or 'latest'")
 
-    ap.add_argument("--obs-mins", type=str, default=None, help="Comma list, e.g. '0.2,-0.3,0.2,-0.3' (x_des,y_des,x,y)")
-    ap.add_argument("--obs-maxs", type=str, default=None, help="Comma list, e.g. '0.8,0.4,0.8,0.4'")
-    ap.add_argument("--act-mins", type=str, default=None, help="Comma list, e.g. '-0.05,-0.05'")
-    ap.add_argument("--act-maxs", type=str, default=None, help="Comma list, e.g. '0.05,0.05'")
+    ap.add_argument(
+        "--dataset-data-dir",
+        type=str,
+        required=True,
+        help=(
+            "Offline dataset directory used to compute mins/maxs. "
+            "For avoiding-d3il this must contain `env_*.pkl` files. "
+            "This is required because DPCC/SafeDiffuser `dataset_config.pkl` typically does NOT store mins/maxs "
+            "for LimitsNormalizer."
+        ),
+    )
 
     args = ap.parse_args()
 
@@ -115,39 +105,54 @@ def main() -> None:
     dim = int(model_dict.get("dim", 32))
     dim_mults = tuple(model_dict.get("dim_mults", (1, 4, 8)))
 
-    # Defaults for d3il-avoiding (4D obs, 2D act).
-    if args.obs_mins is None:
-        obs_mins = np.asarray([0.2, -0.3, 0.2, -0.3], dtype=np.float32)
-    else:
-        obs_mins = _parse_list_floats(args.obs_mins)
-    if args.obs_maxs is None:
-        obs_maxs = np.asarray([0.8, 0.4, 0.8, 0.4], dtype=np.float32)
-    else:
-        obs_maxs = _parse_list_floats(args.obs_maxs)
-    if args.act_mins is None:
-        act_mins = np.asarray([-0.05, -0.05], dtype=np.float32)
-    else:
-        act_mins = _parse_list_floats(args.act_mins)
-    if args.act_maxs is None:
-        act_maxs = np.asarray([0.05, 0.05], dtype=np.float32)
-    else:
-        act_maxs = _parse_list_floats(args.act_maxs)
+    # Compute mins/maxs from the offline dataset using dataset_config.pkl + env_*.pkl files.
+    dataset_config_pkl = input_dir / "dataset_config.pkl"
+    if not dataset_config_pkl.exists():
+        raise FileNotFoundError(
+            f"Missing `dataset_config.pkl` under input-dir: {dataset_config_pkl}. "
+            "This converter does not accept hard-coded/default mins/maxs."
+        )
+
+    dataset_data_dir = Path(args.dataset_data_dir).expanduser().resolve()
+    limits = load_limits_from_dataset_artifacts(
+        dataset_config_pkl=dataset_config_pkl,
+        dataset_data_dir=dataset_data_dir,
+    )
+    obs_mins, obs_maxs, act_mins, act_maxs = (
+        limits.obs_mins,
+        limits.obs_maxs,
+        limits.act_mins,
+        limits.act_maxs,
+    )
 
     if obs_mins.size != observation_dim or obs_maxs.size != observation_dim:
         raise ValueError(f"obs mins/maxs size must match observation_dim={observation_dim}")
     if act_mins.size != action_dim or act_maxs.size != action_dim:
         raise ValueError(f"act mins/maxs size must match action_dim={action_dim}")
 
-    # Pick epoch and copy state file.
-    if args.epoch == "latest":
-        epoch_i = _latest_epoch(input_dir)
-    else:
-        epoch_i = int(args.epoch)
-    src_state = input_dir / f"state_{epoch_i}.pt"
-    if not src_state.exists():
-        raise FileNotFoundError(f"Missing {src_state}")
-    dst_state = output_dir / src_state.name
-    shutil.copy2(src_state, dst_state)
+    # Copy ALL weights into output-dir so runtime can select any epoch via plan_config.diffusion_epoch.
+    src_states = sorted(input_dir.glob("state_*.pt"))
+
+    if not src_states:
+        raise FileNotFoundError(f"No state_*.pt found under {input_dir}")
+
+    copied_epochs: list[int] = []
+    for src_state in src_states:
+        if not src_state.exists():
+            raise FileNotFoundError(f"Missing {src_state}")
+        dst_state = output_dir / src_state.name
+        shutil.copy2(src_state, dst_state)
+        try:
+            copied_epochs.append(int(src_state.stem.replace("state_", "")))
+        except Exception:
+            pass
+
+    # Optional: also copy a `state_best.pt` if present.
+    src_best = input_dir / "state_best.pt"
+    has_best = False
+    if src_best.exists():
+        shutil.copy2(src_best, output_dir / src_best.name)
+        has_best = True
 
     # Write repo-independent planning yaml.
     out_cfg: Dict[str, Any] = {
@@ -166,6 +171,12 @@ def main() -> None:
         "act_mins": act_mins.tolist(),
         "act_maxs": act_maxs.tolist(),
     }
+    # Convenience metadata for humans: integers plus a special marker for `state_best.pt`.
+    available_epochs: list[Any] = sorted(set(int(x) for x in copied_epochs))
+    if has_best:
+        available_epochs.append("best")
+    if available_epochs:
+        out_cfg["available_epochs"] = available_epochs
     with open(output_dir / "safediffuser_planning.yaml", "w", encoding="utf-8") as f:
         yaml.safe_dump(out_cfg, f, sort_keys=False)
 
