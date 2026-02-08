@@ -14,10 +14,11 @@ import jax.numpy as jnp
 import numpy as np
 from enerdynamics.core.constraints.action_filters.base import ConstraintFilter
 
-# Reuse same helpers as QP joint-lift for J_xy
+# Reuse same helpers as QP joint-lift for J_xy and robot_radius
 from enerdynamics.core.constraints.action_filters.cbf_qp_joint_lift import (
     _get_jacobian_xy_batch,
     _get_jacobian_xy_single,
+    _get_robot_radius_from_env,
 )
 
 
@@ -51,7 +52,7 @@ class ClosedFormCBFFilterJointLift(ConstraintFilter):
         eta = params.get("cbf_eta", 1.5)
         margin = params.get("cbf_margin", 0.1)
         base_beta = params.get("base_beta", 0.05)
-        robot_radius = getattr(env, "robot_radius", 0.05)
+        robot_radius = _get_robot_radius_from_env(env)
         dt = getattr(env, "dt", 0.05)
         control_limit = float(getattr(env, "control_limit", 1.0))
 
@@ -85,7 +86,17 @@ class ClosedFormCBFFilterJointLift(ConstraintFilter):
         def body_fn(carry, u):
             x = carry
             pos = x[:2]
-            sdf, grad_xy = obstacles.sample_sdf_and_grad_2d(pos, backend="jax")
+            def _sdf_cb(pts):
+                sdf, grad = obstacles.sample_sdf_and_grad_2d(np.asarray(pts, dtype=np.float32).reshape(-1, 2), backend="numpy")
+                sdf = np.asarray(sdf, dtype=np.float32).reshape(-1)
+                grad = np.asarray(grad, dtype=np.float32).reshape(-1, 2)
+                return (float(sdf[0]) if sdf.size else 0.0, grad[0] if grad.size else np.zeros(2, dtype=np.float32))
+            sdf, grad_xy = jax.pure_callback(
+                _sdf_cb,
+                (jax.ShapeDtypeStruct((), jnp.float32), jax.ShapeDtypeStruct((2,), jnp.float32)),
+                pos,
+                vmap_method="sequential",
+            )
             h = sdf - (robot_radius + margin)
             grad_xy = jnp.reshape(grad_xy, (2,))
             J_xy = jax.pure_callback(
@@ -135,10 +146,24 @@ class ClosedFormCBFFilterJointLift(ConstraintFilter):
         def body_fn(carry, u):
             x_batch = carry
             pos_batch = x_batch[:, :2]
-            sdf, grad_xy = obstacles.sample_sdf_and_grad_2d(pos_batch, backend="jax")
+            batch_shape = pos_batch.shape[:-1]
+            def _sdf_batch_cb(pts):
+                pts_np = np.asarray(pts, dtype=np.float32)
+                orig_shape = pts_np.shape[:-1]
+                pts_flat = pts_np.reshape(-1, 2)
+                sdf, grad = obstacles.sample_sdf_and_grad_2d(pts_flat, backend="numpy")
+                sdf = np.asarray(sdf, dtype=np.float32).reshape(orig_shape)
+                grad = np.asarray(grad, dtype=np.float32).reshape(orig_shape + (2,))
+                return (sdf, grad)
+            sdf, grad_xy = jax.pure_callback(
+                _sdf_batch_cb,
+                (jax.ShapeDtypeStruct(batch_shape, jnp.float32), jax.ShapeDtypeStruct(batch_shape + (2,), jnp.float32)),
+                pos_batch,
+                vmap_method="expand_dims",
+            )
             h = sdf - (robot_radius + margin)
             if grad_xy.ndim == 1:
-                grad_xy = jnp.broadcast_to(grad_xy, (B, 2))
+                grad_xy = jnp.broadcast_to(grad_xy[:, None], grad_xy.shape + (2,))
             # vmap_method='sequential' so callback works when this scan is under vmap (e.g. MDOC plan_batch)
             J_xy_batch = jax.pure_callback(
                 lambda s: _get_jacobian_xy_single(env, np.asarray(s)),
@@ -193,7 +218,7 @@ class ClosedFormCBFFilterJointLift(ConstraintFilter):
         eta = float(params.get("cbf_eta", 1.5))
         margin = float(params.get("cbf_margin", 0.1))
         base_beta = float(params.get("base_beta", 0.05))
-        robot_radius = float(getattr(env, "robot_radius", 0.05))
+        robot_radius = float(_get_robot_radius_from_env(env))
         dt = float(getattr(env, "dt", 0.05))
         control_limit = float(getattr(env, "control_limit", 1.0))
 
