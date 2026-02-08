@@ -64,6 +64,13 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
             plan_env = _make_plan_env_9d(config, env)
         else:
             plan_env = _make_plan_env_4d(config, env)
+        # Sync plan env target to exec env (e.g. center 0.5, 0.35) so planning and cost use same target
+        if hasattr(env, "target") and hasattr(plan_env, "target"):
+            plan_env.target = np.asarray(env.target, dtype=np.float32).reshape(-1)[:2]
+        # Sync robot_radius so CFS filter gets correct clearance (plan_env is passed via adapter to filter)
+        obstacle_config = config.get("obstacle_config") or {}
+        plan_env.robot_radius = float(
+            obstacle_config.get("robot_radius", getattr(env, "robot_radius", 0.01)))
 
         backend = RuntimeBackendManager.get_backend()
         dynamics = EnvDynamicsAdapter(plan_env)
@@ -133,12 +140,22 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
             )
         elif solver_name == "mdoc":
             from enerdynamics.solvers.single.mdoc import MDOCSolver
-            from enerdynamics.core.constraints.action_filters import NoOpConstraintFilter, ClosedFormCBFFilter, QPBasedCBFFilter
+            from enerdynamics.core.constraints.action_filters import (
+                NoOpConstraintFilter,
+                ClosedFormCBFFilter,
+                QPBasedCBFFilter,
+                ClosedFormCBFFilterJointLift,
+                QPBasedCBFFilterJointLift,
+            )
             mode = config.get("mdoc_constraint_mode", "noop")
             if mode == "cbf_closed_form_perstep":
                 constraint_filter = ClosedFormCBFFilter()
             elif mode == "cbf_qp_perstep":
                 constraint_filter = QPBasedCBFFilter()
+            elif mode == "cbf_closed_form_joint_lift_perstep":
+                constraint_filter = ClosedFormCBFFilterJointLift()
+            elif mode == "cbf_qp_joint_lift_perstep":
+                constraint_filter = QPBasedCBFFilterJointLift()
             else:
                 constraint_filter = NoOpConstraintFilter()
             cbf_params = {
@@ -177,17 +194,20 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
             from enerdynamics.solvers.single.cfsmbd import CFSMBDSolver
             from enerdynamics.core.constraints.action_filters.cfs_qp_perstep import CFSQPPerStepFilter
             from enerdynamics.core.constraints.action_filters.cfs_qp_full import CFSQPFullFilter
+            cfs_convexifier_name = str(config.get("cfs_action_convexifier", "cfs_action"))
             if solver_name == "cfsmbd_full":
                 constraint_filter = CFSQPFullFilter(
                     max_constraints_per_point=int(config.get("max_constraints_per_point", 8)),
                     constraint_margin=float(config.get("constraint_margin", 0.25)),
                     use_slack=False,
+                    convexifier_name=cfs_convexifier_name,
                 )
             else:
                 constraint_filter = CFSQPPerStepFilter(
                     max_constraints_per_point=int(config.get("max_constraints_per_point", 8)),
                     constraint_margin=float(config.get("constraint_margin", 0.25)),
                     use_slack=True,
+                    convexifier_name=cfs_convexifier_name,
                 )
             solver = CFSMBDSolver(
                 dynamics=dynamics,

@@ -36,11 +36,15 @@ class D3ILAvoiding9DPlugin(EnvironmentPlugin):
             env.dt = float(config["dt"])
         return env
 
-    def create_energy(self) -> Any:
+    def create_energy(self, env: Any = None) -> Any:
         from enerdynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
         import jax.numpy as jnp
 
-        goal_xy = jnp.array([0.5, 0.35], dtype=jnp.float32)  # center of last obstacle row
+        # Use exec env target (e.g. center 0.5, 0.35) when provided; else default center of last obstacle row
+        if env is not None and hasattr(env, "target"):
+            goal_xy = jnp.asarray(np.asarray(env.target, dtype=np.float32).reshape(-1)[:2], dtype=jnp.float32)
+        else:
+            goal_xy = jnp.array([0.5, 0.35], dtype=jnp.float32)
 
         def task_energy(x, u, ctx):
             _ = (u, ctx)

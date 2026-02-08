@@ -10,7 +10,13 @@ import numpy as np
 from enerdynamics.solvers.single.mdoc import MDOCSolver
 from enerdynamics.core.dynamics import DynamicsToEnvAdapter
 from enerdynamics.core.backends.runtime import RuntimeBackendManager
-from enerdynamics.core.constraints.action_filters import NoOpConstraintFilter, ClosedFormCBFFilter, QPBasedCBFFilter
+from enerdynamics.core.constraints.action_filters import (
+    NoOpConstraintFilter,
+    ClosedFormCBFFilter,
+    QPBasedCBFFilter,
+    ClosedFormCBFFilterJointLift,
+    QPBasedCBFFilterJointLift,
+)
 from ...framework.base import MethodPlugin
 
 
@@ -32,6 +38,10 @@ class MDOCMethodPlugin(MethodPlugin):
             constraint_filter = ClosedFormCBFFilter()
         elif mode == "cbf_qp_perstep":
             constraint_filter = QPBasedCBFFilter()
+        elif mode == "cbf_closed_form_joint_lift_perstep":
+            constraint_filter = ClosedFormCBFFilterJointLift()
+        elif mode == "cbf_qp_joint_lift_perstep":
+            constraint_filter = QPBasedCBFFilterJointLift()
         else:
             constraint_filter = NoOpConstraintFilter()
 
