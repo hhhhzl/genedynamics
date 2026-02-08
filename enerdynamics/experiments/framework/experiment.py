@@ -5,11 +5,21 @@ This module provides the ExperimentRunner class that orchestrates
 experiment execution using the plugin system.
 """
 
+import inspect
 import time
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import numpy as np
+
+
+def _accepts_env(fn: Any) -> bool:
+    """True if fn accepts an 'env' argument (e.g. create_energy(self, env=None))."""
+    try:
+        sig = inspect.signature(fn)
+        return "env" in sig.parameters
+    except Exception:
+        return False
 
 from enerdynamics.core.types import Trajectory
 from enerdynamics.core.backends.runtime import RuntimeBackendManager
@@ -156,7 +166,7 @@ class ExperimentRunner:
             env_params_with_obstacles['collision_ee_only'] = True
 
         env = env_plugin.create_env(env_params_with_obstacles)
-        energy = env_plugin.create_energy()
+        energy = env_plugin.create_energy(env) if _accepts_env(env_plugin.create_energy) else env_plugin.create_energy()
         
         # Build SDF texture if needed (only for 2D environments)
         # For 3D environments, skip 2D SDF texture building
