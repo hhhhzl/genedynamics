@@ -188,6 +188,11 @@ class ExperimentRunner:
                     res=0.01,
                     force_rebuild=True,
                 )
+                # Pre-warm SDF texture to JAX when using JAX backend (avoids tracer leaks in JIT)
+                if getattr(self.config, 'backend', None) == 'jax':
+                    tex = obstacles.get_sdf_texture_2d()
+                    if tex is not None and hasattr(tex, 'to_jax'):
+                        tex.to_jax()
         
         # 6. Setup constraints
         constraint_config = self.config.constraint_config or {}
