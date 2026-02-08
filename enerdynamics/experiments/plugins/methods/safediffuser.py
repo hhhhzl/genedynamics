@@ -30,7 +30,6 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
             )
 
         plan_config = dict(config.get("plan_config", {}))
-        plan_config.setdefault("horizon", int(config.get("horizon", getattr(env, "horizon", 64))))
         plan_config.setdefault("batch_size", int(config.get("batch_size", 8)))
 
         ckpt_dir = config.get("safediffuser_checkpoint_dir") or plan_config.get("checkpoint_dir")
@@ -60,8 +59,10 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
         )
 
     def plan(self, planner: "SafeDiffuserSolver", initial_state: np.ndarray, rng: Any) -> Dict[str, Any]:
-        horizon = int(planner.plan_config.get("horizon", getattr(planner.env, "horizon", 64)))
-        traj = planner.solve(initial_state, horizon=horizon, rng_key=rng)
+        # NOTE: `Solver.solve(x0, horizon, ...)` requires a horizon argument by interface.
+        # For SafeDiffuser, the *actual* horizon is fixed by the converted checkpoint's
+        # `safediffuser_planning.yaml`, so this value is a placeholder and is ignored.
+        traj = planner.solve(initial_state, horizon=1, rng_key=rng)
         return {
             "states": traj.states,
             "actions": traj.actions,

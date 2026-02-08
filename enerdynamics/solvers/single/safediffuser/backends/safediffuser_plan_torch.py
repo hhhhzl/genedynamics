@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -32,7 +33,6 @@ class SafeDiffuserBackendTorch:
         checkpoint_dir: str,
         epoch: int | str = "latest",
         device: str = "cuda:0",
-        horizon: int,
         batch_size: int = 8,
         goal_xy: Optional[np.ndarray] = None,
     ):
@@ -40,7 +40,8 @@ class SafeDiffuserBackendTorch:
         self.checkpoint_dir = checkpoint_dir
         self.epoch = epoch
         self.device = device
-        self.horizon = int(horizon)
+        # Horizon is fixed by the diffusion checkpoint architecture.
+        self.horizon: int | None = None
         self.batch_size = int(batch_size)
         self.goal_xy = None if goal_xy is None else np.asarray(goal_xy, dtype=np.float32).reshape(2)
 
@@ -59,10 +60,18 @@ class SafeDiffuserBackendTorch:
         )
 
         loaded = load_planning_checkpoint(
-            self.checkpoint_dir, epoch=self.epoch, device=self.device
+            self.checkpoint_dir,
+            epoch=self.epoch,
+            device=self.device,
         )
         diffusion = loaded.ema
         normalizer = loaded.normalizer
+
+        # Derive horizon from checkpoint (authoritative).
+        ckpt_horizon = int(getattr(diffusion, "horizon", 0))
+        if ckpt_horizon <= 0:
+            raise ValueError("Loaded diffusion checkpoint has invalid horizon")
+        self.horizon = ckpt_horizon
 
         projector = None
         enable_cbf = bool(getattr(self.env, "enable_safety_cbf", False))
@@ -107,6 +116,7 @@ class SafeDiffuserBackendTorch:
             raise ValueError(f"SafeDiffuser backend expects x0 shape (4,), got {x0.shape}")
 
         self._ensure_loaded()
+        assert self.horizon is not None
 
         # Best-effort seeding (SafeDiffuser uses torch internally).
         if rng_key is not None:
