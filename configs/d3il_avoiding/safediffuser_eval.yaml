@@ -1,0 +1,37 @@
+name: d3il_avoiding_safediffuser_eval
+output_dir: results/d3il_avoiding/safediffuser
+
+env_name: d3il_avoiding
+env_params:
+  render: false
+
+method: safediffuser
+method_params:
+  safediffuser_checkpoint_dir: "D:/PATH/TO/converted_safediffuser_checkpoint"
+  diffusion_epoch: "best"  # or: latest / an integer like 5
+  device: "cuda"
+  batch_size: 8
+  # Optional:
+  # goal_xy: [0.4, 0.35]
+  plan_config: {}
+
+obstacle_levels: [0]
+obstacle_config:
+  generator: box2d
+  enable_connectivity_check: false
+  enable_nonconvexity_check: false
+
+seeds: [5]
+backend: torch
+device: cuda
+
+metrics:
+  - ssr
+  - episode_outcome
+
+visualizations:
+  - trajectory
+
+metadata:
+  description: "SafeDiffuser eval on D3IL avoiding (converted checkpoint + yaml-only runtime)"
+
