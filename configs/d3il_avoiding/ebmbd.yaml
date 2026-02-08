@@ -8,7 +8,7 @@ env_params:
   dt: 0.035
 
 method: d3il_unified
-obstacle_levels: [2]
+obstacle_levels: [0]
 
 method_params:
   solver: ebmbd
@@ -23,6 +23,8 @@ method_params:
   max_episode_length: 64
   track_trajectory: true
   tracker_k_joint: 5.0
+  tracker_k_xy: 1.2
+  tracker_ff_alpha: 0.2
 
 obstacle_config:
   generator: d3il_avoiding_fixed
@@ -30,7 +32,7 @@ obstacle_config:
   obstacle_radius_by_level:
     0: [0.03, 0.025]   # first obstacle, rest
     1: [0.04, 0.035]
-    2: [0.05, 0.045]
+    2: [0.06, 0.055]
   enable_connectivity_check: false
   enable_nonconvexity_check: false
   robot_radius: 0.01

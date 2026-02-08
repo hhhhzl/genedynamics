@@ -22,7 +22,9 @@ method_params:
   mode_strategy: multirun
   max_episode_length: 64
   track_trajectory: true
-  tracker_k_joint: 5.0
+  tracker_k_joint: 2.0
+  tracker_k_xy: 1.2
+  tracker_ff_alpha: 0.2
 
   # Joint-lift CBF (7D qdot): use J_xy(q)^T grad_xy, SDF at pos = state[:2]
   mdoc_constraint_mode: cbf_qp_joint_lift_perstep

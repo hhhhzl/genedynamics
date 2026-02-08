@@ -519,6 +519,16 @@ class CFSQPFullFilter(ConstraintFilter):
             robot_radius = float(getattr(env, "robot_radius", 0.05))
             control_limit = float(getattr(env, "control_limit", 1.0))
             constraint_margin_val = float(self.constraint_margin)
+            act_dim_from_actions = int(actions.shape[-1])
+            # Pure JAX Jacobian for act_dim > 2: avoid pure_callback in joint-lift path
+            J_xy_const = None
+            if act_dim_from_actions > 2:
+                jax_jacobian_fn = getattr(env, "jax_jacobian_xy", None)
+                if callable(jax_jacobian_fn):
+                    J_xy_const = jax_jacobian_fn()
+                if J_xy_const is None:
+                    J_xy_const = jnp.zeros((2, act_dim_from_actions), dtype=jnp.float32)
+                    J_xy_const = J_xy_const.at[0, 0].set(1.0).at[1, 1].set(1.0)
             
             # NOTE: `margin` / `rho` / `I_QP` may be per-sample vectors when called from
             # batched multirun paths (e.g. adaptive scheduler). We therefore compute
@@ -902,15 +912,8 @@ class CFSQPFullFilter(ConstraintFilter):
                     if act_dim == 2:
                         A_sel = grad_sel
                     else:
-                        states_for_lift = states_rollout[1:, :]
-                        out_shape = jax.ShapeDtypeStruct((H, k_select, act_dim), jnp.float32)
-                        A_sel = jax.pure_callback(
-                            lambda st, g: _lift_grad_sel_to_action_numpy(env, np.asarray(st), np.asarray(g), act_dim),
-                            out_shape,
-                            states_for_lift,
-                            grad_sel,
-                            vmap_method="sequential",
-                        )
+                        # Pure JAX lift (no callback): J_xy_const from env.jax_jacobian_xy()
+                        A_sel = jnp.einsum("ji,hkj->hki", J_xy_const[:, :act_dim], grad_sel)
 
                     # Structured hard/slack projection in action space (prefix constraints).
                     tol = jnp.asarray(1e-7, dtype=jnp.float32)
@@ -1076,19 +1079,11 @@ class CFSQPFullFilter(ConstraintFilter):
                     grad_per_step = constraint_results[0]  # (H, K, 2) position-space grad
                     b_per_step = constraint_results[1]  # (H, K)
                 
-                    # Opt 1: one callback to lift (H,K,2) -> (H,K,act_dim) instead of H callbacks
+                    # Opt 1: Pure JAX lift (H,K,2) -> (H,K,act_dim), no callback
                     if act_dim == 2:
                         A_per_step = grad_per_step
                     else:
-                        states_for_lift = states_rollout[1:, :]
-                        out_shape = jax.ShapeDtypeStruct((H, k_select, act_dim), jnp.float32)
-                        A_per_step = jax.pure_callback(
-                            lambda st, g: _lift_grad_sel_to_action_numpy(env, np.asarray(st), np.asarray(g), act_dim),
-                            out_shape,
-                            states_for_lift,
-                            grad_per_step,
-                            vmap_method="sequential",
-                        )
+                        A_per_step = jnp.einsum("ji,hkj->hki", J_xy_const[:, :act_dim], grad_per_step)
                 
                     # Opt 3: use same fast while_loop solver as fast path (no solve_slack_qp_prefixsum_jax)
                     valid = jnp.isfinite(b_per_step)

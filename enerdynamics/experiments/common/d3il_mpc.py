@@ -46,14 +46,17 @@ def _tracking_action(
     dt: float,
     control_limit: float,
     tracker_k_joint: float = 0.0,
+    tracker_k_xy: float = 1.0,
+    tracker_ff_alpha: float = 0.0,
 ) -> np.ndarray:
     """
     Compute action that tracks the planned trajectory (task-space xy and optionally joints).
 
     Used for plan_once + track_trajectory: instead of u = planned_action_t, we compute
     u such that tcp_xy moves toward planned_state_next[:2] and (if tracker_k_joint > 0)
-    joints q move toward planned_state_next[2:9]. Requires exec_env with get_jacobian_xy
-    and 9D state; otherwise returns planned_action_t (open-loop).
+    joints q move toward planned_state_next[2:9]. tracker_k_xy scales task-space velocity;
+    tracker_ff_alpha blends in planned_action_t (feed-forward). Requires exec_env with
+    get_jacobian_xy and 9D state; otherwise returns planned_action_t (open-loop).
     """
     current_state = np.asarray(current_state, dtype=np.float32).reshape(-1)
     planned_state_next = np.asarray(planned_state_next, dtype=np.float32).reshape(-1)
@@ -68,7 +71,8 @@ def _tracking_action(
     J_xy = np.asarray(J_xy, dtype=np.float64)
     if J_xy.shape != (2, 7):
         return planned_action_t
-    v_xy_des = (planned_state_next[:2].astype(np.float64) - current_state[:2].astype(np.float64)) / max(dt, 1e-8)
+    k_xy = max(0.0, float(tracker_k_xy))
+    v_xy_des = k_xy * (planned_state_next[:2].astype(np.float64) - current_state[:2].astype(np.float64)) / max(dt, 1e-8)
     # u = J_xy^+ @ v_xy_des (min-norm solution to J_xy @ u ≈ v_xy_des)
     u_track, _res, _rank, _s = np.linalg.lstsq(J_xy, v_xy_des, rcond=None)
     u_track = np.asarray(u_track, dtype=np.float32)
@@ -79,6 +83,10 @@ def _tracking_action(
         q_err = np.asarray(planned_state_next[2:9], dtype=np.float32) - np.asarray(current_state[2:9], dtype=np.float32)
         u_track = u_track + tracker_k_joint * q_err
     u = np.clip(u_track, -float(control_limit), float(control_limit))
+    if tracker_ff_alpha > 0 and planned_action_t.size >= 7:
+        alpha = np.clip(float(tracker_ff_alpha), 0.0, 1.0)
+        u = (1.0 - alpha) * u + alpha * np.asarray(planned_action_t[:7], dtype=np.float32)
+        u = np.clip(u, -float(control_limit), float(control_limit))
     return u
 
 
@@ -232,6 +240,8 @@ def run_plan_once_episode(
     replan_every: Optional[int] = None,
     track_trajectory: bool = False,
     tracker_k_joint: float = 0.0,
+    tracker_k_xy: float = 1.0,
+    tracker_ff_alpha: float = 0.0,
 ) -> Dict[str, Any]:
     """
     Plan once (or every replan_every steps) then execute on the execution env.
@@ -258,6 +268,8 @@ def run_plan_once_episode(
     dt = getattr(exec_env, "dt", 0.035)
     control_limit = getattr(exec_env, "control_limit", 1.5)
     k_joint = float(tracker_k_joint)
+    k_xy = float(tracker_k_xy)
+    ff_alpha = float(tracker_ff_alpha)
 
     if replan_every is None or replan_every <= 0:
         # True plan-once: one plan, execute all
@@ -283,6 +295,8 @@ def run_plan_once_episode(
                     dt,
                     control_limit,
                     tracker_k_joint=k_joint,
+                    tracker_k_xy=k_xy,
+                    tracker_ff_alpha=ff_alpha,
                 )
             else:
                 u = np.asarray(actions[t], dtype=np.float32).reshape(-1)
@@ -320,6 +334,8 @@ def run_plan_once_episode(
                         dt,
                         control_limit,
                         tracker_k_joint=k_joint,
+                        tracker_k_xy=k_xy,
+                        tracker_ff_alpha=ff_alpha,
                     )
                 else:
                     u = np.asarray(actions[i], dtype=np.float32).reshape(-1)
@@ -469,6 +485,8 @@ def run_d3il_unified(
             replan_every = None
         track_trajectory = bool(config.get("track_trajectory", False))
         tracker_k_joint = float(config.get("tracker_k_joint", 0.0))
+        tracker_k_xy = float(config.get("tracker_k_xy", 1.0))
+        tracker_ff_alpha = float(config.get("tracker_ff_alpha", 0.0))
         return run_plan_once_episode(
             exec_env=exec_env,
             planner=planner,
@@ -479,6 +497,8 @@ def run_d3il_unified(
             replan_every=replan_every,
             track_trajectory=track_trajectory,
             tracker_k_joint=tracker_k_joint,
+            tracker_k_xy=tracker_k_xy,
+            tracker_ff_alpha=tracker_ff_alpha,
         )
     plan_step_fn = make_mpc_plan_step_fn(plan_env)
     return run_mpc_episode(
