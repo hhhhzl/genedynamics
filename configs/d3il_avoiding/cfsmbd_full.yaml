@@ -9,7 +9,7 @@ env_params:
   dt: 0.035
 
 method: d3il_unified
-obstacle_levels: [0]
+obstacle_levels: [2]
 
 method_params:
   solver: cfsmbd_full
@@ -18,7 +18,7 @@ method_params:
   dt: 0.035
   action_limit: 0.8
   show_tqdm: true
-  num_modes: 1
+  num_modes: 20
   mode_strategy: multirun
   max_episode_length: 64
   track_trajectory: true
