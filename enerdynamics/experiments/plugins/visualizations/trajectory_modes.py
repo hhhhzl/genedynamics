@@ -8,8 +8,6 @@ with the best (lowest cost) trajectory highlighted.
 from typing import Dict, Any
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-from matplotlib.lines import Line2D
 
 from ...framework.base import VisualizationPlugin
 from ...common.visualization import draw_obstacles, EDOC_COLOR
@@ -96,113 +94,86 @@ class TrajectoryModesVisualizationPlugin(VisualizationPlugin):
         # Draw obstacles
         draw_obstacles(ax, obstacles)
         
-        # Visualization config
+        # Visualization config: all modes use unified best color
         viz_config = config.get('trajectory_modes', {})
-        alpha_other = float(viz_config.get('alpha_other', 0.35))
-        alpha_best = float(viz_config.get('alpha_best', 0.9))
-        linewidth_other = float(viz_config.get('linewidth_other', 1.5))
         linewidth_best = float(viz_config.get('linewidth_best', 3.0))
-        show_labels = bool(viz_config.get('show_labels', True))
-        # By default, show *all* returned modes; keep an optional cap for readability.
-        max_modes_to_show = viz_config.get('max_modes_to_show', None)
+        linewidth_other = float(viz_config.get('linewidth_other', 1.5))
+        alpha_best = float(viz_config.get('alpha_best', 0.9))
+        alpha_other = float(viz_config.get('alpha_other', 0.35))
         best_color = viz_config.get('best_color', EDOC_COLOR)
+        max_modes_to_show = viz_config.get('max_modes_to_show', None)
         
-        # Get colormap for different modes
         if max_modes_to_show is None:
             num_modes = int(len(candidate_states))
         else:
             num_modes = int(min(len(candidate_states), int(max_modes_to_show)))
-        cmap_name = viz_config.get('cmap', 'turbo' if num_modes > 20 else 'tab20')
-        if num_modes > 1:
-            colors = cm.get_cmap(cmap_name)(np.linspace(0, 1, num_modes))
-        else:
-            colors = [best_color]
         
-        # Draw each candidate trajectory
-        robot_radius = float(obstacle_config.get('robot_radius', 0.05))
-        
+        # Optional: draw only up to this time step (for GIF frames)
+        partial_until_step = data.get('partial_until_step', None)
+
+        # Draw each candidate trajectory (all same best color)
         for c in range(num_modes):
             states_c = candidate_states[c]
             if len(states_c) == 0:
                 continue
             
-            # Extract positions
             try:
                 positions = np.array([env_plugin.extract_position(np.asarray(s)) for s in states_c])
             except Exception:
-                # Fallback: assume states are already positions
                 positions = np.asarray(states_c)
                 if positions.ndim > 2:
-                    positions = positions[:, :2]  # Take first 2 dims
+                    positions = positions[:, :2]
+            
+            if partial_until_step is not None:
+                end_idx = min(partial_until_step + 1, len(positions))
+                positions = positions[:end_idx]
             
             if len(positions) < 2:
+                if len(positions) == 1:
+                    ax.plot(positions[0:1, 0], positions[0:1, 1], color=best_color,
+                            linewidth=linewidth_other if c != best_idx else linewidth_best,
+                            alpha=alpha_other if c != best_idx else alpha_best,
+                            marker='o', markersize=4)
                 continue
             
             is_best = (c == best_idx)
-            color = best_color if is_best else colors[c % len(colors)]
             lw = linewidth_best if is_best else linewidth_other
             alpha = alpha_best if is_best else alpha_other
-
-            # Do not label each mode in the legend (avoids huge legends for many modes).
-            label = None
-            ax.plot(positions[:, 0], positions[:, 1], 
-                   color=color, linewidth=lw, alpha=alpha, label=label)
+            ax.plot(positions[:, 0], positions[:, 1],
+                    color=best_color, linewidth=lw, alpha=alpha)
         
-        # Draw start point (from best trajectory)
+        # Draw start point (same size as diffusion_steps: scatter s=30)
         if len(candidate_states) > best_idx and len(candidate_states[best_idx]) > 0:
             best_states = candidate_states[best_idx]
             try:
                 start_pos = env_plugin.extract_position(np.asarray(best_states[0]))
             except Exception:
                 start_pos = np.asarray(best_states[0])[:2]
-            
-            start_circle = plt.Circle(
-                tuple(start_pos),
-                robot_radius,
-                facecolor='white',
-                edgecolor=colors[best_idx % len(colors)],
-                linewidth=2.0,
-                label='Start',
+            ax.scatter(
+                start_pos[0], start_pos[1],
+                marker='o',
+                s=30,
+                facecolors='white',
+                edgecolors=best_color,
+                linewidths=1.0,
                 zorder=10
             )
-            ax.add_patch(start_circle)
         
-        # Draw target
+        # Draw target (no margin circle)
         target = np.asarray(env.target, dtype=np.float32)
         target_pos = env_plugin.extract_position(target)
-        target_circle = plt.Circle(
-            tuple(target_pos),
-            robot_radius * 2,  # Robot diameter
-            facecolor='none',
-            edgecolor='red',
-            linewidth=1.5,
-            linestyle='--',
-            label='Target (margin)',
-            zorder=10
-        )
-        ax.add_patch(target_circle)
-        (target_star,) = ax.plot(target_pos[0], target_pos[1], 'r*', markersize=15, label='Target', zorder=10)
+        ax.plot(target_pos[0], target_pos[1], 'r*', markersize=15, zorder=10)
         
         title = config.get('title', f'Trajectory Modes ({num_modes} paths)')
-        ax.set_title(title, fontsize=12)
-        
-        if show_labels:
-            # Compact legend: avoid per-mode labels; show only aggregate entries.
-            mode_handle = Line2D([0], [0], color='gray', linewidth=linewidth_other, alpha=alpha_other, label='Modes')
-            best_handle = Line2D([0], [0], color=best_color, linewidth=linewidth_best, alpha=alpha_best, label='Best')
-
-            handles = [mode_handle, best_handle]
-            labels = ['Modes', 'Best']
-
-            # Pull labeled handles from the axes (Start / Target / Target margin)
-            ax_handles, ax_labels = ax.get_legend_handles_labels()
-            for h, l in zip(ax_handles, ax_labels):
-                if l in ('Start', 'Target (margin)', 'Target') and l not in labels:
-                    handles.append(h)
-                    labels.append(l)
-
-            ax.legend(handles=handles, labels=labels, loc='upper left', fontsize=8, ncol=1, framealpha=0.8)
+        ax.set_title(title, fontsize=20, fontweight='bold')
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_color('0.4')
+            spine.set_linewidth(0.8)
         ax.grid(True, alpha=0.3)
+        ax.set_facecolor('white')
     
     def save(self, output_path: Any, fig: Any, **kwargs: Any) -> None:
         """

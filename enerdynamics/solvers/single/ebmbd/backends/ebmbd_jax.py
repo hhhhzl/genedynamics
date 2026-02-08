@@ -362,8 +362,8 @@ class EBMBDBackendJax:
                 noise_extra = jax.random.normal(extra_key, (horizon, act_dim), dtype=jnp.float32)
                 Ybar_next = Ybar_next + extra_sigma * noise_extra
                 Ybar_next = jnp.clip(Ybar_next, -limit, limit)
-                
-                reward_val = jnp.mean(rews_mean)
+                # reward_history: stage + terminal only (for convergence comparison across methods)
+                reward_val = jnp.mean(-total_stage_terminal_cost)
                 return (rng_curr, Ybar_next), (reward_val, Ybar_next, Y0s)
             
             (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist) = jax.lax.scan(
@@ -542,8 +542,8 @@ class EBMBDBackendJax:
             # Clip
             Ybar_next = jnp.clip(Ybar_next, -limit, limit)
 
-            # For visualization, keep a per-step-average reward scalar (easier to compare across horizons)
-            reward_val = jnp.mean(rews_mean)
+            # reward_history: stage + terminal only (for convergence comparison across methods)
+            reward_val = jnp.mean(-total_stage_terminal_cost)
             return (rng_curr, Ybar_next), (reward_val, Ybar_next, Y0s)
 
         (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist) = jax.lax.scan(

@@ -41,7 +41,7 @@ class Box2DObstacleGeneratorPlugin(ObstacleGeneratorPlugin):
                 - robot_radius: Robot radius (default: 0.05)
                 - map_bounds: Dictionary with x_min, x_max, y_min, y_max
                 - p_max: Position bounds (default: 2.0)
-                - obstacle_radius_scale: Scale factor (default: 1.3)
+                - obstacle_radius_scale: Scale factor (default: 1.1)
                 - min_obstacle_margin: Minimum margin (default: 2.4 * robot_radius)
                 - enable_connectivity_check: Whether to check connectivity (default: True)
                 - enable_nonconvexity_check: Whether to check nonconvexity (default: True for levels 7-9)
@@ -52,7 +52,7 @@ class Box2DObstacleGeneratorPlugin(ObstacleGeneratorPlugin):
         # Prepare configuration for generate_box2d_obstacles
         gen_config = {
             'robot_radius': config.get('robot_radius', 0.05),
-            'obstacle_radius_scale': config.get('obstacle_radius_scale', 1.3),
+            'obstacle_radius_scale': config.get('obstacle_radius_scale', 1.1),
             'min_obstacle_margin': config.get('min_obstacle_margin', None),  # Will be computed from robot_radius
             'p_max': config.get('p_max', 2.0),
             'map_bounds': config.get('map_bounds', {
