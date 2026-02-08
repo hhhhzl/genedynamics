@@ -4,27 +4,99 @@ import argparse
 import pickle
 import shutil
 import sys
+import types
 from pathlib import Path
 from typing import Any, Dict
 
 import numpy as np
 import yaml
 
+# Ensure `scripts/` is importable regardless of current working directory.
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 from safediffuser_utils.normalization_value_extractor import load_limits_from_dataset_artifacts
 
 
-def _add_safediffuser_to_syspath(safediffuser_root: Path) -> None:
-    safediffuser_root = safediffuser_root.resolve()
-    if str(safediffuser_root) not in sys.path:
-        sys.path.insert(0, str(safediffuser_root))
-    diffuser_subdir = safediffuser_root / "diffuser"
-    if diffuser_subdir.exists() and str(diffuser_subdir) not in sys.path:
-        sys.path.insert(0, str(diffuser_subdir))
+def _install_minimal_diffuser_shims() -> Dict[str, types.ModuleType]:
+    """
+    Install minimal in-memory module shims so that DPCC/SafeDiffuser pickled Config objects
+    can be unpickled without the upstream `diffuser` package.
+    """
+
+    inserted: Dict[str, types.ModuleType] = {}
+
+    def ensure(name: str) -> types.ModuleType:
+        if name in sys.modules:
+            return sys.modules[name]
+        m = types.ModuleType(name)
+        sys.modules[name] = m
+        inserted[name] = m
+        return m
+
+    ensure("diffuser").__path__ = []  # type: ignore[attr-defined]
+    ensure("diffuser.utils")
+    mod_config = ensure("diffuser.utils.config")
+
+    class Config:
+        """Pickle-compatible Config shim with `_dict`."""
+
+        def __init__(self, _class=None, **kwargs: Any):
+            self._class = _class
+            self._dict = dict(kwargs)
+
+        def __call__(self, *args: Any, **kwargs: Any):
+            if self._class is None:
+                raise TypeError("Config has no _class")
+            merged = dict(self._dict)
+            merged.update(kwargs)
+            return self._class(*args, **merged)
+
+    mod_config.Config = Config  # type: ignore[attr-defined]
+
+    # Common referenced globals by module path.
+    mod_models = ensure("diffuser.models")
+    mod_models.__path__ = []  # type: ignore[attr-defined]
+
+    # diffusion_config.pkl often references diffuser.models.diffusion.GaussianDiffusion
+    mod_diffusion = ensure("diffuser.models.diffusion")
+
+    class GaussianDiffusion:
+        """Dummy GaussianDiffusion class for unpickling only."""
+
+        pass
+
+    mod_diffusion.GaussianDiffusion = GaussianDiffusion  # type: ignore[attr-defined]
+
+    # model_config.pkl sometimes references these
+    ensure("diffuser.models.temporal").TemporalUnet = type("TemporalUnet", (), {})  # type: ignore[attr-defined]
+    mod_unet = ensure("diffuser.models.unet1d_temporal_cond")
+    Dummy = type("UNet1DTemporalCondModel", (), {})
+    mod_unet.UNet1DTemporalCondModel = Dummy  # type: ignore[attr-defined]
+    mod_unet.Unet1DTemporalCond = Dummy  # type: ignore[attr-defined]
+
+    # trainer_config.pkl references diffuser.utils.training.Trainer (not needed here, but harmless)
+    mod_training = ensure("diffuser.utils.training")
+    mod_training.Trainer = type("Trainer", (), {})  # type: ignore[attr-defined]
+
+    # dataset_config.pkl references diffuser.datasets.sequence.SequenceDataset
+    ensure("diffuser.datasets")
+    mod_sequence = ensure("diffuser.datasets.sequence")
+    mod_sequence.SequenceDataset = type("SequenceDataset", (), {})  # type: ignore[attr-defined]
+
+    return inserted
+
 
 
 def _load_pickle(path: Path) -> Any:
-    with open(path, "rb") as f:
-        return pickle.load(f)
+    inserted = _install_minimal_diffuser_shims()
+    try:
+        with open(path, "rb") as f:
+            return pickle.load(f)
+    finally:
+        for name in list(inserted.keys()):
+            sys.modules.pop(name, None)
 
 
 def _extract_cfg(config_obj: Any) -> Dict[str, Any]:
@@ -46,7 +118,6 @@ def _extract_model_kind(config_obj: Any) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Convert SafeDiffuser logdir to enerdynamics safediffuser checkpoint")
-    ap.add_argument("--safediffuser-root", type=str, default=None, help="Path to external SafeDiffuser repo (for unpickling Config)")
     ap.add_argument("--input-dir", type=str, required=True, help="SafeDiffuser logdir containing *_config.pkl and state_*.pt")
     ap.add_argument("--output-dir", type=str, required=True, help="Output directory for converted checkpoint")
 
@@ -67,9 +138,6 @@ def main() -> None:
     input_dir = Path(args.input_dir).expanduser().resolve()
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    if args.safediffuser_root:
-        _add_safediffuser_to_syspath(Path(args.safediffuser_root))
 
     model_cfg_pkl = input_dir / "model_config.pkl"
     diffusion_cfg_pkl = input_dir / "diffusion_config.pkl"
