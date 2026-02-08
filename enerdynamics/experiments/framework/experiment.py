@@ -348,6 +348,8 @@ class ExperimentRunner:
                 method_params = {}
             track_trajectory = bool(method_params.get('track_trajectory', False))
             tracker_k_joint = float(method_params.get('tracker_k_joint', 0.0))
+            tracker_k_xy = float(method_params.get('tracker_k_xy', 1.0))
+            tracker_ff_alpha = float(method_params.get('tracker_ff_alpha', 0.0))
             max_steps = int(method_params.get('max_episode_length', getattr(env, 'horizon', 150)))
             reset_rng = backend.create_rng(seed)
             exec_candidate_states = []
@@ -383,6 +385,8 @@ class ExperimentRunner:
                         max_steps=max_steps,
                         track_trajectory=track_trajectory,
                         tracker_k_joint=tracker_k_joint,
+                        tracker_k_xy=tracker_k_xy,
+                        tracker_ff_alpha=tracker_ff_alpha,
                     )
                     exec_candidate_states.append(run_out.get('states', []))
                     exec_candidate_actions.append(run_out.get('actions', []))
@@ -422,6 +426,13 @@ class ExperimentRunner:
                     result['executed_actions'].append(np.zeros(act_dim, dtype=np.float32))
             result['success'] = exec_success[best_idx]
             result['collision'] = exec_collision[best_idx]
+            # Execution SSR = (executions that were success and no collision) / total executions
+            exec_ssr_count = sum(1 for i in range(len(exec_success)) if exec_success[i] and not exec_collision[i])
+            n_exec_total = len(exec_success)
+            result['execution_ssr'] = {
+                'execution_ssr': exec_ssr_count / max(1, n_exec_total),
+                'execution_ssr_count': exec_ssr_count,
+            }
             multirun_diff = result.get('multirun_diffusion_data', [])
             if multirun_diff and 0 <= best_idx < len(multirun_diff):
                 dd = multirun_diff[best_idx]
@@ -940,6 +951,61 @@ class ExperimentRunner:
             geom_smooth = float(np.sum(angles ** 2)) / n_angles
         return length, smooth, geom_smooth
 
+    def _violation_rate_band(
+        self,
+        states_list: list,
+        obstacles: Any,
+        robot_radius: float,
+        extract_pos_2d: Any,
+        n_along_max: int = 150,
+        n_perp: int = 8,
+    ) -> float:
+        """
+        Compute fraction of trajectory band (width 2*robot_radius) that lies inside obstacles.
+        Samples points along the polyline and in the perpendicular disk; returns
+        (count of points inside obstacle) / (total points). Returns 0.0 if no obstacles.
+        """
+        if obstacles is None or not (hasattr(obstacles, '__len__') and len(obstacles) > 0):
+            return 0.0
+        states_arr = [np.asarray(s, dtype=np.float32) for s in states_list]
+        if len(states_arr) < 2:
+            return 0.0
+        positions = np.array([extract_pos_2d(s) for s in states_arr])
+        seg_len = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+        total_len = float(np.sum(seg_len))
+        if total_len < 1e-8:
+            return 0.0
+        n_along = min(n_along_max, max(10, int(total_len / 0.01)))
+        # Linear interpolation along polyline by arc length
+        cum = np.concatenate([[0], np.cumsum(seg_len)])
+        s_vals = np.linspace(0, total_len, n_along, endpoint=False)
+        path_pts = []
+        for s in s_vals:
+            idx = np.searchsorted(cum, s, side='right') - 1
+            idx = max(0, min(idx, len(positions) - 2))
+            local = (s - cum[idx]) / max(1e-10, seg_len[idx])
+            local = float(np.clip(local, 0, 1))
+            p = (1 - local) * positions[idx] + local * positions[idx + 1]
+            path_pts.append(p)
+        path_pts = np.array(path_pts, dtype=np.float32)
+        # Sample band: at each path point, sample n_perp points on circle of radius robot_radius
+        radius = float(robot_radius)
+        angles = np.linspace(0, 2 * np.pi, n_perp, endpoint=False)
+        violations = 0
+        total = 0
+        for i in range(path_pts.shape[0]):
+            for a in angles:
+                pt = path_pts[i] + radius * np.array([np.cos(a), np.sin(a)], dtype=np.float32)
+                total += 1
+                try:
+                    sdf_val = obstacles.sdf(pt)
+                    sdf_val = float(np.asarray(sdf_val).item() if hasattr(sdf_val, "item") else sdf_val)
+                    if sdf_val < 0 or (hasattr(obstacles, 'contains') and obstacles.contains(pt)):
+                        violations += 1
+                except Exception:
+                    violations += 1
+        return violations / max(1, total)
+
     def _compute_modes_metrics(
         self,
         candidate_states_list: list,
@@ -966,6 +1032,7 @@ class ExperimentRunner:
         lengths = []
         smoothnesses = []
         geom_smoothnesses = []
+        violation_rates = []
 
         target = np.asarray(env.target, dtype=np.float32)
         target_pos = extract_pos_2d(target)
@@ -1034,6 +1101,10 @@ class ExperimentRunner:
                 geom_smooth = 0.0
             geom_smoothnesses.append(geom_smooth)
 
+            # Violation rate: fraction of trajectory band (width 2*robot_radius) inside obstacles
+            vr = self._violation_rate_band(states, obstacles, robot_radius, extract_pos_2d)
+            violation_rates.append(vr)
+
         n_valid = len(lengths)
         if n_valid == 0:
             return {}
@@ -1042,6 +1113,8 @@ class ExperimentRunner:
         out['ssr'] = {
             'ssr': float(ssr_count) / max(1, n_modes),
             'ssr_count': int(ssr_count),
+            'violation_rate_mean': float(np.mean(violation_rates)) if violation_rates else 0.0,
+            'violation_rate_std': float(np.std(violation_rates)) if len(violation_rates) > 1 else 0.0,
         }
         out['length'] = {'mean': float(np.mean(lengths)), 'std': float(np.std(lengths)) if n_valid > 1 else 0.0}
         out['smoothness'] = {'mean': float(np.mean(smoothnesses)), 'std': float(np.std(smoothnesses)) if n_valid > 1 else 0.0}
@@ -1161,16 +1234,37 @@ class ExperimentRunner:
                 if metric_name not in metrics_result:
                     metrics_result[metric_name] = None
 
-        # Execution SSR (D3IL only): 1.0 if this run was success and collision-free (aligns with DPCC)
+        # Execution SSR (D3IL only): (success & no-collision executions) / total executions; or 0/1 for single run
         is_d3il_style = (
             getattr(self.config, 'method', None) == 'd3il_unified'
             or 'd3il' in str(getattr(self.config, 'env_name', ''))
         )
         if is_d3il_style and planning_result is not None:
-            succ = bool(planning_result.get('success', False))
-            coll = bool(planning_result.get('collision', True))
-            metrics_result['execution_ssr'] = {'execution_ssr': 1.0 if (succ and not coll) else 0.0}
-
+            if isinstance(planning_result.get('execution_ssr'), dict):
+                metrics_result['execution_ssr'] = dict(planning_result['execution_ssr'])
+            else:
+                succ = bool(planning_result.get('success', False))
+                coll = bool(planning_result.get('collision', True))
+                metrics_result['execution_ssr'] = {'execution_ssr': 1.0 if (succ and not coll) else 0.0}
+            # Violation rate for executed trajectories (band 2*robot_radius, averaged over all executions)
+            exec_states_list = planning_result.get('exec_candidate_states', [])
+            if not exec_states_list:
+                single_states = planning_result.get('executed_states') or planning_result.get('states')
+                if single_states is not None:
+                    exec_states_list = [single_states]
+            if exec_states_list and obstacles is not None:
+                def extract_pos_2d(s):
+                    if env_plugin is not None and hasattr(env_plugin, "extract_position"):
+                        p = np.asarray(env_plugin.extract_position(s), dtype=np.float32).reshape(-1)
+                        return p[:2]
+                    x = np.asarray(s, dtype=np.float32).reshape(-1)
+                    return x[:2] if x.size >= 2 else x
+                exec_violation_rates = []
+                for states in exec_states_list:
+                    vr = self._violation_rate_band(states, obstacles, robot_radius, extract_pos_2d)
+                    exec_violation_rates.append(vr)
+                metrics_result['execution_ssr']['violation_rate_mean'] = float(np.mean(exec_violation_rates)) if exec_violation_rates else 0.0
+                metrics_result['execution_ssr']['violation_rate_std'] = float(np.std(exec_violation_rates)) if len(exec_violation_rates) > 1 else 0.0
         return metrics_result
 
     def _generate_visualizations(self, result: Dict[str, Any], env: Any, 
@@ -2024,6 +2118,8 @@ class ExperimentRunner:
             metrics_to_save['ssr'] = {
                 'ssr': float(m.get('ssr', 0.0)),
                 'ssr_count': int(m.get('ssr_count', 0)),
+                'violation_rate_mean': float(m.get('violation_rate_mean', 0.0)),
+                'violation_rate_std': float(m.get('violation_rate_std', 0.0)),
             }
         serializable_result['metrics'] = metrics_to_save
         
