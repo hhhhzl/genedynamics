@@ -4,8 +4,8 @@ scipy>=1.13.0
 pyyaml>=6.0.1
 tqdm>=4.65.0
 trimesh==4.10.1
-# Robotics Pinocchio (imported as `pinocchio`)
-# pinocchio==3.9.0
+pin==2.7.0
+# pinocchio==0.4.3
 # pinocchio-python==3.9.0
 pybullet==3.2.7
 imageio>=2.37.2
@@ -21,7 +21,7 @@ pandas>=2.2.0
 torch==2.10.0
 
 # Optional autodiff (JAX)
-jax==0.6.2[cuda12]
+jax[cuda12]
 # jax==0.6.2
 
 # Optional environments

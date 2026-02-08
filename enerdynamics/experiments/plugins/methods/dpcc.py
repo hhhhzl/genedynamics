@@ -33,10 +33,13 @@ def _ensure_dpcc_on_path(dpcc_root: str | Path | None) -> Path:
         candidates.append(Path(dpcc_root))
 
     project_root = Path(__file__).resolve().parents[4]
+    third_party = project_root / "third_party"
     # NOTE: we iterate in increasing priority but insert with sys.path.insert(0),
     # so later entries end up ahead. Keep highest priority last in this list.
     candidates.append(project_root / "dpcc")         # child in repo (lowest priority)
     candidates.append(project_root.parent / "dpcc")  # sibling repo
+    # Add third_party so `import diffuser` resolves to third_party/diffuser.
+    candidates.append(third_party)
     # Prefer the vendored copy inside this repo before any external checkouts.
     local_dpcc = Path(__file__).resolve().parents[3] / "solvers" / "single" / "dpcc"
     candidates.append(local_dpcc)
@@ -90,7 +93,7 @@ class DPCCMethodPlugin(MethodPlugin):
         except Exception as exc:
             raise ImportError("PyYAML is required for DPCC config loading.") from exc
 
-        from enerdynamics.solvers.single.dpcc import diffuser_utils as dpcc_utils
+        import diffuser.utils as dpcc_utils
 
         project_root = Path(__file__).resolve().parents[4]
         local_default_cfg = project_root / "enerdynamics" / "solvers" / "single" / "dpcc" / "config" / "projection_eval.yaml"

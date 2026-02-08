@@ -44,7 +44,7 @@ scheduler_config:
       M_k: 64
       T_k: 5e-1
       Ndiffuse: 100
-      beta0: 1.0e-4
+      beta0: 1.0e-5
       betaT: 1.0e-2
   diffusion_merge_strategy: merge
   constraint_schedulers:

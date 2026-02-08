@@ -61,6 +61,14 @@ class AvoidingPlanEnv9D:
     def clear_linearization(self) -> None:
         self._J_xy = None
 
+    def get_jacobian_xy(self, state: np.ndarray) -> Optional[np.ndarray]:
+        """Return (2, 7) Jacobian for tcp_xy w.r.t. qdot. Used by CFS/MDOC joint-lift filters.
+        Returns the frozen _J_xy if set (e.g. via set_linearization from exec_env); else None."""
+        _ = state
+        if self._J_xy is None:
+            return None
+        return np.asarray(self._J_xy, dtype=np.float32)
+
     def set_initial_state(self, x0: np.ndarray) -> None:
         x0 = np.asarray(x0, dtype=np.float32).reshape(-1)
         if x0.size != 9:
