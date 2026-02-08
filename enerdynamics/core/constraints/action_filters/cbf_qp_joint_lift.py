@@ -140,31 +140,22 @@ class QPBasedCBFFilterJointLift(ConstraintFilter):
         control_limit: float,
     ) -> Any:
         act_dim = u_seq.shape[-1]
-        out_shape = jax.ShapeDtypeStruct((2, 7), jnp.float32)
+        # Pure JAX path: no callbacks. SDF/grad from texture, Jacobian from env.
+        jax_jacobian_fn = getattr(env, "jax_jacobian_xy", None)
+        J_xy_const = jax_jacobian_fn() if callable(jax_jacobian_fn) else None
+        if J_xy_const is None:
+            J_xy_const = jnp.zeros((2, 7), dtype=jnp.float32)
+            J_xy_const = J_xy_const.at[0, 0].set(1.0).at[1, 1].set(1.0)
 
         def body_fn(carry, u):
             x = carry
             pos = x[:2]
-            # Use pure_callback to avoid JAX tracing through SDF texture (tracer leak)
-            def _sdf_cb(pts):
-                sdf, grad = obstacles.sample_sdf_and_grad_2d(np.asarray(pts, dtype=np.float32).reshape(-1, 2), backend="numpy")
-                sdf = np.asarray(sdf, dtype=np.float32).reshape(-1)
-                grad = np.asarray(grad, dtype=np.float32).reshape(-1, 2)
-                return (float(sdf[0]) if sdf.size else 0.0, grad[0] if grad.size else np.zeros(2, dtype=np.float32))
-            sdf, grad_xy = jax.pure_callback(
-                _sdf_cb,
-                (jax.ShapeDtypeStruct((), jnp.float32), jax.ShapeDtypeStruct((2,), jnp.float32)),
-                pos,
-                vmap_method="sequential",
-            )
-            h = sdf - (robot_radius + margin)
+            # Direct JAX sampling (no callback) - texture.to_jax() must be pre-warmed in experiment
+            sdf, grad_xy = obstacles.sample_sdf_and_grad_2d(pos, backend="jax")
+            sdf = jnp.reshape(sdf, ())
             grad_xy = jnp.reshape(grad_xy, (2,))
-            J_xy = jax.pure_callback(
-                lambda s: _get_jacobian_xy_single(env, np.asarray(s)),
-                out_shape,
-                x,
-                vmap_method="sequential",
-            )
+            h = sdf - (robot_radius + margin)
+            J_xy = J_xy_const
             A = jnp.dot(J_xy.T, grad_xy)
             A = jnp.reshape(A, (act_dim,)) if A.size == act_dim else jnp.pad(A, (0, max(0, act_dim - A.size)))
             b = -(eta / dt) * h + base_beta
@@ -204,41 +195,28 @@ class QPBasedCBFFilterJointLift(ConstraintFilter):
     ) -> Any:
         B, H, act_dim = actions.shape
         state_dim = x0.shape[-1]
-        out_shape_single = jax.ShapeDtypeStruct((2, 7), jnp.float32)
+        # Pure JAX path: no callbacks. SDF/grad from texture, Jacobian from env (frozen per plan).
+        jax_jacobian_fn = getattr(env, "jax_jacobian_xy", None)
+        J_xy_const = jax_jacobian_fn() if callable(jax_jacobian_fn) else None
+        if J_xy_const is None:
+            J_xy_const = jnp.zeros((2, 7), dtype=jnp.float32)
+            J_xy_const = J_xy_const.at[0, 0].set(1.0).at[1, 1].set(1.0)
 
         def body_fn(carry, u):
             x_batch = carry
             pos_batch = x_batch[:, :2]
-            # Use pure_callback to avoid JAX tracing through SDF texture (tracer leak).
-            # pure_callback: avoid JAX tracing through SDF texture. Preserve leading dims (B_curr,) or (n_plans, B_curr).
-            batch_shape = pos_batch.shape[:-1]
-            def _sdf_batch_cb(pts):
-                pts_np = np.asarray(pts, dtype=np.float32)
-                orig_shape = pts_np.shape[:-1]
-                pts_flat = pts_np.reshape(-1, 2)
-                sdf, grad = obstacles.sample_sdf_and_grad_2d(pts_flat, backend="numpy")
-                sdf = np.asarray(sdf, dtype=np.float32).reshape(orig_shape)
-                grad = np.asarray(grad, dtype=np.float32).reshape(orig_shape + (2,))
-                return (sdf, grad)
-            sdf, grad_xy = jax.pure_callback(
-                _sdf_batch_cb,
-                (jax.ShapeDtypeStruct(batch_shape, jnp.float32), jax.ShapeDtypeStruct(batch_shape + (2,), jnp.float32)),
-                pos_batch,
-                vmap_method="expand_dims",
-            )
+            # Direct JAX batch sampling (no callback) - texture.to_jax() must be pre-warmed in experiment
+            sdf, grad_xy = obstacles.sample_sdf_and_grad_2d(pos_batch, backend="jax")
+            sdf = jnp.reshape(sdf, sdf.shape)  # keep batch dims
+            grad_xy = jnp.reshape(grad_xy, pos_batch.shape[:-1] + (2,))
             h = sdf - (robot_radius + margin)
             if grad_xy.ndim == 2 and grad_xy.shape[-1] == 2:
                 pass
             elif grad_xy.ndim == 1:
                 grad_xy = jnp.broadcast_to(grad_xy[:, None], grad_xy.shape + (2,))
-            # vmap_method='sequential' so callback works when this scan is under vmap (e.g. MDOC plan_batch)
-            J_xy_batch = jax.pure_callback(
-                lambda s: _get_jacobian_xy_single(env, np.asarray(s)),
-                out_shape_single,
-                x_batch,
-                vmap_method="sequential",
-            )
-            # Support both (B, 2, 7) and (outer, B, 2, 7) when scan is under vmap
+            # Jacobian is constant per plan; broadcast to batch (supports vmap: batch_shape = (n_plans, B))
+            batch_shape = pos_batch.shape[:-1]
+            J_xy_batch = jnp.broadcast_to(J_xy_const, batch_shape + (2, 7))
             A_batch = jnp.einsum("...ij,...i->...j", J_xy_batch, grad_xy)
             if A_batch.shape[-1] < act_dim:
                 pad_width = [(0, 0)] * (A_batch.ndim - 1) + [(0, act_dim - A_batch.shape[-1])]
