@@ -177,6 +177,7 @@ cython_debug/
 #.idea/
 
 # Trifinger dataset files
+third_party/environments/dataset/
 
 
 /results/*.json
