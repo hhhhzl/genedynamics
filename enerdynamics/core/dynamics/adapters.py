@@ -118,6 +118,10 @@ class DynamicsToEnvAdapter:
         else:
             # Default fallback
             self.act_dim = 1
+
+    def __getattr__(self, name: str):
+        """Forward attribute lookups (e.g. robot_radius, target) to wrapped dynamics/env."""
+        return getattr(self.dynamics, name)
     
     def transition(self, state, action):
         """Numpy transition function."""

@@ -8,8 +8,6 @@ then solves a single QP over the entire action sequence to project actions into 
 from __future__ import annotations
 from typing import Any, Optional
 import numpy as np
-import os
-
 try:
     import jax
     import jax.numpy as jnp
@@ -340,20 +338,10 @@ class CFSQPFullFilter(ConstraintFilter):
                     schedule_state=schedule_state, schedule_params=schedule_params, **kwargs
                 )
             except Exception as e:
-                # Return unchanged (no-op)
-                print("CFSQPFullFilter JAX path failed, returning unfiltered actions:", str(e)[:200])
                 if 'tracer' in str(e).lower() or 'jax' in str(e).lower():
                     return actions
                 raise
 
-        # Optional runtime assertion to confirm we're not silently taking NumPy fallback.
-        # Enable via: ENERDYNAMICS_ASSERT_JAX_FILTER=1
-        if os.getenv("ENERDYNAMICS_ASSERT_JAX_FILTER", "").strip() in ("1", "true", "True"):
-            raise RuntimeError(
-                "CFSQPFullFilter.apply_actions took NumPy fallback, but JAX was expected. "
-                "Check caller is passing jax.Array/Tracer actions."
-            )
-        
         # NumPy path: full CFS + QP filtering
         actions_np = np.asarray(actions, dtype=np.float32)
         is_batch = actions_np.ndim == 3
@@ -442,41 +430,6 @@ class CFSQPFullFilter(ConstraintFilter):
                 else:
                     A_full = np.zeros((H, H * act_dim), dtype=np.float32)
                     b_full = np.full(H, -np.inf, dtype=np.float32)
-
-                if outer_iter == 0:
-                    n_valid = 0
-                    n_infeasible = 0
-                    if A_ps.ndim == 3:
-                        for t in range(A_ps.shape[0]):
-                            for k in range(A_ps.shape[1]):
-                                if b_ps[t, k] <= -1e8:
-                                    continue
-                                n_valid += 1
-                                A_row = np.asarray(A_ps[t, k, :], dtype=np.float64)
-                                b_val = float(b_ps[t, k])
-                                max_lhs = L * float(np.sum(np.abs(A_row)))
-                                if b_val > max_lhs:
-                                    n_infeasible += 1
-                        label = "u_perstep"
-                    elif A_ps.ndim == 2 and A_ps.shape[1] == H * act_dim:
-                        for i in range(A_ps.shape[0]):
-                            if not np.isfinite(b_ps[i]):
-                                continue
-                            n_valid += 1
-                            A_row = np.asarray(A_ps[i, :], dtype=np.float64)
-                            b_val = float(b_ps[i])
-                            max_lhs = L * float(np.sum(np.abs(A_row)))
-                            if b_val > max_lhs:
-                                n_infeasible += 1
-                        label = "u_traj"
-                    else:
-                        label = None
-                    if label and n_valid > 0:
-                        ratio = n_infeasible / n_valid
-                        print(
-                            f"[CFS {label}] valid={n_valid} infeasible(b>L*||A||_1)={n_infeasible} "
-                            f"ratio={ratio:.2%} (L={L}) outer_iters={cfs_outer_iters}"
-                        )
 
                 u_nom_flat = u_seq.flatten()
                 u_safe_flat = self._solve_full_trajectory_qp_numpy(

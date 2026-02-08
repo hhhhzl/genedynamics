@@ -27,7 +27,7 @@ method_params:
   # Joint-lift CFS: A = J_xy(q)^T g_xy (7D), trajectory-level QP
   cfs_action_convexifier: cfs_action_joint
   max_constraints_per_point: 8
-  constraint_margin: 0.25
+  constraint_margin: 0.35
 
 obstacle_config:
   generator: d3il_avoiding_fixed
@@ -62,7 +62,7 @@ scheduler_config:
   diffusion_merge_strategy: merge
   constraint_schedulers:
     - type: fixed
-      margin: 0.01
+      margin: 0.02
       qp_gate: true
       qp_prob: 1.0
       topK: 8
