@@ -19,11 +19,11 @@ method_params:
   num_modes: 20
   mode_strategy: multirun
 
-obstacle_levels: [6]
+obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
-  obstacle_radius_scale: 1.3
+  obstacle_radius_scale: 1.0
   p_max: 2.0
   map_bounds:
     x_min: -1.5
@@ -33,9 +33,9 @@ obstacle_config:
   enable_connectivity_check: true
   enable_nonconvexity_check: true
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 backend: jax
-device: cpu
+device: cuda
 
 scheduler_config:
   type: composite
@@ -66,8 +66,7 @@ visualizations:
   - trajectory_modes  # Shows C candidate paths with best highlighted
   - trajectory        # Shows only the best (lowest cost) path
   - diffusion
-  - energy_reward
-  - states
+  - cost
 
 metadata:
   description: "EB-MBD default configuration for single integrator 2D environment"

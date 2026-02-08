@@ -33,9 +33,11 @@ class MBDBackendNumpy:
         seed: int = 0,
         scheduler: Any = None,
         show_tqdm: bool = False,
+        terminal_energy_weight: float = 100.0,
     ):
         self.env = env_adapter
         self.energy = legacy_energy
+        self.terminal_energy_weight = float(terminal_energy_weight)
         self.horizon = horizon
         self.dt = dt
         self.Nsample = Nsample
@@ -89,13 +91,21 @@ class MBDBackendNumpy:
         return np.stack(states, axis=0)
 
     def _rollout_rewards(self, state_init: np.ndarray, actions: np.ndarray) -> np.ndarray:
-        """Roll out rewards (negative cost)."""
+        """Roll out rewards (negative cost): stage cost + terminal cost."""
         rewards = np.zeros((actions.shape[0],), dtype=np.float32)
         s = np.asarray(state_init, dtype=np.float32)
         for t, a in enumerate(actions):
             s = self._step_env(s, a, t)
             ctx = {"t": int(t)}
             rewards[t] = -float(self.energy.compute(s, a, ctx))
+        # Terminal cost: -terminal_weight * dist(final_state, target)
+        target = np.asarray(getattr(self.env, "target", (0.0, 0.0)), dtype=np.float32)
+        if hasattr(target, "__len__") and len(target) >= 2:
+            terminal_dist = float(np.linalg.norm(s[:2] - target[:2]))
+        else:
+            terminal_dist = float(np.linalg.norm(s[:2] - np.zeros(2, dtype=np.float32)))
+        terminal_reward = -self.terminal_energy_weight * terminal_dist
+        rewards[-1] += terminal_reward
         return rewards
 
     # ------------------------------------------------------------------ #

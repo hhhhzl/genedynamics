@@ -205,6 +205,8 @@ class CFSMBDBackendJax:
         self._rho_arr = None
         self._qp_gate_arr = None
         self._qp_prob_arr = None
+        self._I_QP_arr = None
+        self._eps_arr = None
         self._topK = -1
         if not self._use_jax_adaptive:
             try:
@@ -212,6 +214,8 @@ class CFSMBDBackendJax:
                 rho_list: List[float] = []
                 qp_gate_list: List[bool] = []
                 qp_prob_list: List[float] = []
+                I_QP_list: List[int] = []
+                eps_list: List[float] = []
                 topK_val = None
                 if self._cs is not None:
                     for k in range(self.Ndiffuse):
@@ -221,12 +225,16 @@ class CFSMBDBackendJax:
                         rho_list.append(float(d.get("rho", 1.0)))
                         qp_gate_list.append(bool(d.get("qp_gate", True)))
                         qp_prob_list.append(float(d.get("qp_prob", 1.0)))
+                        I_QP_list.append(int(d.get("I_QP", d.get("cfs_outer_iters", 1))))
+                        eps_list.append(float(d.get("eps", 1e-4)))
                         topK_val = d.get("topK", topK_val)
                 if margin_list:
                     self._margin_arr = jnp.asarray(margin_list, dtype=jnp.float32)
                     self._rho_arr = jnp.asarray(rho_list, dtype=jnp.float32)
                     self._qp_gate_arr = jnp.asarray(qp_gate_list, dtype=jnp.bool_)
                     self._qp_prob_arr = jnp.asarray(qp_prob_list, dtype=jnp.float32)
+                    self._I_QP_arr = jnp.asarray(I_QP_list, dtype=jnp.int32)
+                    self._eps_arr = jnp.asarray(eps_list, dtype=jnp.float32)
                 if topK_val is not None:
                     self._topK = int(topK_val)
             except Exception:
@@ -234,6 +242,8 @@ class CFSMBDBackendJax:
                 self._rho_arr = None
                 self._qp_gate_arr = None
                 self._qp_prob_arr = None
+                self._I_QP_arr = None
+                self._eps_arr = None
 
         # Precompute diffusion temperature schedule (T_k) if scheduler provides it.
         self._T_k_arr = None
@@ -578,8 +588,11 @@ class CFSMBDBackendJax:
             Ybar_next = Ybar_next + extra_sigma * noise_extra
             Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
 
+            # reward_history: stage + terminal only (for convergence comparison across methods)
+            rews_plain = self._rollout_rewards_batch_fn(x0_jnp, Y0s_f)  # (M, H)
+            reward_stage_terminal = jnp.mean(jnp.sum(rews_plain, axis=-1))
             return (rng_curr, Ybar_next, carry_sched_new), (
-                jnp.mean(rews), Ybar_next, Y0s_f,
+                reward_stage_terminal, Ybar_next, Y0s_f,
                 margin, params["rho"], params["topK"],
                 params["I_QP"], params["eps"], aug_lam, params["qp_prob"],
                 nu, compute_cost_hat, r_p, v_k_rate, v_k_mean,
@@ -638,36 +651,33 @@ class CFSMBDBackendJax:
                     rho = self._rho_arr[kk]
                     qp_gate = self._qp_gate_arr[kk]
                     qp_prob = self._qp_prob_arr[kk]
+                    I_QP = self._I_QP_arr[kk] if self._I_QP_arr is not None else jnp.asarray(1, dtype=jnp.int32)
+                    eps = self._eps_arr[kk] if self._eps_arr is not None else jnp.asarray(1e-4, dtype=jnp.float32)
                 else:
                     margin = jnp.asarray(0.0, dtype=jnp.float32)
                     rho = jnp.asarray(1.0, dtype=jnp.float32)
                     qp_gate = jnp.asarray(True, dtype=jnp.bool_)
                     qp_prob = jnp.asarray(1.0, dtype=jnp.float32)
+                    I_QP = jnp.asarray(1, dtype=jnp.int32)
+                    eps = jnp.asarray(1e-4, dtype=jnp.float32)
 
                 sched_params = {
                     "margin": margin,
                     "rho": rho,
                     "qp_gate": qp_gate,
                     "qp_prob": qp_prob,
+                    "I_QP": I_QP,
+                    "eps": eps,
                     "topK": jnp.asarray(self._topK if self._topK >= 0 else 8, dtype=jnp.int32),
                     "rng_key": filter_key,
                 }
 
                 Y0s_f = self._filter_actions_batch_jit(x0_jnp, Y0s, sched_state, sched_params)
 
-                def compute_augmented_reward(actions_seq):
-                    return self._rollout_rewards_with_augmented_fn(
-                        x0_jnp, actions_seq, margin,
-                        jnp.asarray(self.aug_lambda, dtype=jnp.float32),
-                        jnp.asarray(self.aug_rho, dtype=jnp.float32),
-                    )
-
-                rews = self._augmented_rewards_batch_jit(
-                    x0_jnp,
-                    Y0s_f,
-                    margin,
-                    jnp.asarray(self.aug_lambda, dtype=jnp.float32),
-                    jnp.asarray(self.aug_rho, dtype=jnp.float32),
+                aug_lam = jnp.asarray(self.aug_lambda, dtype=jnp.float32)
+                aug_rho = jnp.asarray(self.aug_rho, dtype=jnp.float32)
+                rews, r_p, v_k_rate, v_k_mean = self._augmented_rewards_and_rp_batch_jit(
+                    x0_jnp, Y0s_f, margin, aug_lam, aug_rho
                 )
                 rew_mean = jnp.mean(rews)
                 rew_std = jnp.std(rews)
@@ -690,12 +700,15 @@ class CFSMBDBackendJax:
                 Ybar_next = Ybar_next + extra_sigma * noise_extra
                 Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
 
-                return (rng_curr, Ybar_next), (jnp.mean(rews), Ybar_next, Y0s_f)
+                # reward_history: stage + terminal only (for convergence comparison across methods)
+                rews_plain = self._rollout_rewards_batch_fn(x0_jnp, Y0s_f)  # (M, H)
+                reward_stage_terminal = jnp.mean(jnp.sum(rews_plain, axis=-1))
+                return (rng_curr, Ybar_next), (reward_stage_terminal, Ybar_next, Y0s_f, r_p, v_k_rate, v_k_mean)
 
-            (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist) = jax.lax.scan(
+            (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist, r_hist, v_rate_hist, v_mean_hist) = jax.lax.scan(
                 body, (rng_in, Ybar_init), diffusion_indices
             )
-            return rng_out, Ybar_final, reward_hist[::-1], Ybar_hist[::-1], Ysamples_hist[::-1]
+            return rng_out, Ybar_final, reward_hist[::-1], Ybar_hist[::-1], Ysamples_hist[::-1], r_hist, v_rate_hist, v_mean_hist
 
         reverse_diffuse_jit = jax.jit(reverse_diffuse)
 
@@ -722,46 +735,8 @@ class CFSMBDBackendJax:
             except Exception:
                 pass
             t_run = time.perf_counter() - t1
-            mh = np.asarray(margin_hist)
-            rh = np.asarray(rho_hist)
-            th = np.asarray(topK_hist, dtype=np.int32)
-            ih = np.asarray(I_hist, dtype=np.int32)
-            eh = np.asarray(eps_hist)
-            lh = np.asarray(lam_hist)
-            ph = np.asarray(p_hist)
-            nh = np.asarray(nu_hist)
-            ch = np.asarray(compute_cost_hist)
-            rk = np.asarray(r_hist)
-            vr = np.asarray(v_rate_hist)
-            vm = np.asarray(v_mean_hist)
-            # Scan order: k=0 = first iter (noisy, idx=99), k=99 = last (clean, idx=0).
-            # Print diffusion_k 99 -> 0 (noisy -> clean), 100 steps.
-            for k in range(len(mh)):
-                diffusion_k = (total_steps - 1) - k
-                print(
-                    f"[CFS-MBD JAX adaptive] step {diffusion_k}: "
-                    f"r_k={rk[k]:.2f} v_rate={vr[k]:.2f} v_mean={vm[k]:.2f} "
-                    f"c_k={ch[k]:.2f} nu={nh[k]:.2f} p_k={ph[k]:.2f} "
-                    f"rho={rh[k]:.2f} topK={int(th[k])} I={int(ih[k])} eps={eh[k]:.2e} lambda={lh[k]:.2f}"
-                )
-            margin_vary = len(np.unique(np.round(mh, 6))) > 1
-            rho_vary = len(np.unique(np.round(rh, 6))) > 1
-            topK_vary = len(np.unique(th)) > 1
-            I_vary = len(np.unique(ih)) > 1
-            eps_vary = len(np.unique(np.round(eh, 8))) > 1
-            lam_vary = len(np.unique(np.round(lh, 6))) > 1
-            p_vary = len(np.unique(np.round(ph, 6))) > 1
-            nu_vary = len(np.unique(np.round(nh, 6))) > 1
-            c_vary = len(np.unique(np.round(ch, 6))) > 1
-            r_vary = len(np.unique(np.round(rk, 6))) > 1
-            vr_vary = len(np.unique(np.round(vr, 6))) > 1
-            vm_vary = len(np.unique(np.round(vm, 6))) > 1
-            print(
-                f"[CFS-MBD JAX adaptive] vary: "
-                f"r_k={r_vary} v_rate={vr_vary} v_mean={vm_vary} "
-                f"c_k={c_vary} nu={nu_vary} p_k={p_vary} "
-                f"rho={rho_vary} topK={topK_vary} I={I_vary} eps={eps_vary} lambda={lam_vary}"
-            )
+            I_QP_hist = I_hist
+            lambda_hist = lam_hist
         else:
             t0 = time.perf_counter()
             try:
@@ -771,24 +746,23 @@ class CFSMBDBackendJax:
                 compiled = reverse_diffuse_jit
                 t_compile = time.perf_counter() - t0
             t1 = time.perf_counter()
-            _, Ybar_final, reward_hist, actions_traj, sampled_traj = compiled(diffuse_rng, Ybar_init)
+            _, Ybar_final, reward_hist, actions_traj, sampled_traj, r_hist, v_rate_hist, v_mean_hist = compiled(diffuse_rng, Ybar_init)
             try:
                 Ybar_final.block_until_ready()
             except Exception:
                 pass
             t_run = time.perf_counter() - t1
-            n_steps = self.Ndiffuse
-            if self._margin_arr is not None and self._rho_arr is not None:
-                mh = np.asarray(self._margin_arr)
-                rh = np.asarray(self._rho_arr)
-                topk_val = int(self._topK) if self._topK >= 0 else 8
-                # Precompute: [0]=noisy (first iter), [99]=clean (last). Print diffusion_k 99->0, 100 steps.
-                for k in range(min(n_steps, len(mh))):
-                    diffusion_k = (total_steps - 1) - k
-                    print(f"[CFS-MBD JAX precompute] step {diffusion_k}: rho={float(rh[k]):.2f} topK={topk_val}")
-                margin_vary = len(np.unique(np.round(mh[:n_steps], 6))) > 1 if n_steps <= len(mh) else False
-                rho_vary = len(np.unique(np.round(rh[:n_steps], 6))) > 1 if n_steps <= len(rh) else False
-                print(f"[CFS-MBD JAX precompute] rho/topK vary across steps: rho={rho_vary} topK=False")
+            # Non-adaptive: constant schedule arrays and nan for c_k, nu (rho = aug_rho for display)
+            K = self.Ndiffuse
+            rho_hist = np.full(K, float(self.aug_rho), dtype=np.float32)
+            p_hist = np.asarray(self._qp_prob_arr[:K]).flatten().astype(np.float32) if (self._qp_prob_arr is not None and self._qp_prob_arr.size >= K) else np.full(K, 1.0, dtype=np.float32)
+            topK_val = int(self._topK) if self._topK >= 0 else 8
+            topK_hist = np.full(K, float(topK_val), dtype=np.float32)
+            I_QP_hist = np.asarray(self._I_QP_arr[:K]).flatten().astype(np.float32) if (self._I_QP_arr is not None and self._I_QP_arr.size >= K) else np.full(K, 1.0, dtype=np.float32)
+            eps_hist = np.asarray(self._eps_arr[:K]).flatten().astype(np.float32) if (self._eps_arr is not None and self._eps_arr.size >= K) else np.full(K, 1e-4, dtype=np.float32)
+            lambda_hist = np.full(K, float(self.aug_lambda), dtype=np.float32)
+            compute_cost_hist = np.full(K, np.nan, dtype=np.float32)
+            nu_hist = np.full(K, np.nan, dtype=np.float32)
 
         # Postprocess timing: rollout + device->host
         t_post0 = time.perf_counter()
@@ -885,6 +859,17 @@ class CFSMBDBackendJax:
             "diffusion_rewards": np.asarray(reward_hist),
             "diffusion_actions_traj": np.asarray(actions_traj),
             "diffusion_sampled_actions": np.asarray(sampled_traj),
+            "r_hist": np.asarray(r_hist, dtype=np.float32),
+            "v_rate_hist": np.asarray(v_rate_hist, dtype=np.float32),
+            "v_mean_hist": np.asarray(v_mean_hist, dtype=np.float32),
+            "rho_hist": np.asarray(rho_hist, dtype=np.float32),
+            "topK_hist": np.asarray(topK_hist, dtype=np.float32),
+            "I_QP_hist": np.asarray(I_QP_hist, dtype=np.float32),
+            "eps_hist": np.asarray(eps_hist, dtype=np.float32),
+            "lambda_hist": np.asarray(lambda_hist, dtype=np.float32),
+            "p_hist": np.asarray(p_hist, dtype=np.float32),
+            "nu_hist": np.asarray(nu_hist, dtype=np.float32),
+            "compute_cost_hist": np.asarray(compute_cost_hist, dtype=np.float32),
             # Multi-mode candidates
             "candidate_states": candidate_states_list,
             "candidate_actions": candidate_actions_list,
@@ -923,11 +908,22 @@ class CFSMBDBackendJax:
                 jax.vmap(self._run_adaptive_diffuse_single, in_axes=(None, 0, None, 0))
             )
             batched = batched_fn(x0_jnp, rng_d_all, Ybar_init, carry_sched_inits)
-            # batched: (rng_out, Ybar_final, reward_hist, actions_traj, sampled_traj, margin_hist, ...)
+            # batched: (rng_out, Ybar_final, reward_hist, actions_traj, sampled_traj, margin_hist, rho_hist, topK_hist, I_hist, eps_hist, lam_hist, p_hist, nu_hist, compute_cost_hist, r_hist, v_rate_hist, v_mean_hist)
             Ybar_finals = batched[1]
             reward_hists = batched[2]
             actions_trajs = batched[3]
             sampled_trajs = batched[4]
+            rho_hists = batched[6]
+            topK_hists = batched[7]
+            I_QP_hists = batched[8]
+            eps_hists = batched[9]
+            lam_hists = batched[10]
+            p_hists = batched[11]
+            nu_hists = batched[12]
+            compute_cost_hists = batched[13]
+            r_hists = batched[14]
+            v_rate_hists = batched[15]
+            v_mean_hists = batched[16]
             final_actions_batch = jnp.clip(Ybar_finals, -self.action_limit, self.action_limit)
             states_batch = jax.vmap(self._rollout_states_fn, in_axes=(None, 0))(
                 x0_jnp, final_actions_batch
@@ -951,6 +947,17 @@ class CFSMBDBackendJax:
                     "diffusion_rewards": np.asarray(reward_hists[i]),
                     "diffusion_actions_traj": np.asarray(actions_trajs[i]),
                     "diffusion_sampled_actions": np.asarray(sampled_trajs[i]),
+                    "r_hist": np.asarray(r_hists[i], dtype=np.float32),
+                    "v_rate_hist": np.asarray(v_rate_hists[i], dtype=np.float32),
+                    "v_mean_hist": np.asarray(v_mean_hists[i], dtype=np.float32),
+                    "rho_hist": np.asarray(rho_hists[i], dtype=np.float32),
+                    "topK_hist": np.asarray(topK_hists[i], dtype=np.float32),
+                    "I_QP_hist": np.asarray(I_QP_hists[i], dtype=np.float32),
+                    "eps_hist": np.asarray(eps_hists[i], dtype=np.float32),
+                    "lambda_hist": np.asarray(lam_hists[i], dtype=np.float32),
+                    "p_hist": np.asarray(p_hists[i], dtype=np.float32),
+                    "nu_hist": np.asarray(nu_hists[i], dtype=np.float32),
+                    "compute_cost_hist": np.asarray(compute_cost_hists[i], dtype=np.float32),
                     "candidate_states": [states_batch_np[i]],
                     "candidate_actions": [actions_batch_np[i]],
                     "candidate_costs": np.asarray([float(total_costs[i])], dtype=np.float32),
@@ -992,17 +999,23 @@ class CFSMBDBackendJax:
                     rho = self._rho_arr[kk]
                     qp_gate = self._qp_gate_arr[kk]
                     qp_prob = self._qp_prob_arr[kk]
+                    I_QP = self._I_QP_arr[kk] if self._I_QP_arr is not None else jnp.asarray(1, dtype=jnp.int32)
+                    eps = self._eps_arr[kk] if self._eps_arr is not None else jnp.asarray(1e-4, dtype=jnp.float32)
                 else:
                     margin = jnp.asarray(0.0, dtype=jnp.float32)
                     rho = jnp.asarray(1.0, dtype=jnp.float32)
                     qp_gate = jnp.asarray(True, dtype=jnp.bool_)
                     qp_prob = jnp.asarray(1.0, dtype=jnp.float32)
+                    I_QP = jnp.asarray(1, dtype=jnp.int32)
+                    eps = jnp.asarray(1e-4, dtype=jnp.float32)
                 
                 sched_params = {
                     "margin": margin,
                     "rho": rho,
                     "qp_gate": qp_gate,
                     "qp_prob": qp_prob,
+                    "I_QP": I_QP,
+                    "eps": eps,
                     "topK": jnp.asarray(self._topK if self._topK >= 0 else 8, dtype=jnp.int32),
                     "rng_key": filter_key,
                 }
@@ -1014,19 +1027,10 @@ class CFSMBDBackendJax:
 
                 Y0s_f = jax.lax.cond(qp_gate, _apply_filter_batch, lambda ys: ys, Y0s)
                 
-                def compute_augmented_reward(actions_seq):
-                    return self._rollout_rewards_with_augmented_fn(
-                        x0_jnp, actions_seq, margin,
-                        jnp.asarray(self.aug_lambda, dtype=jnp.float32),
-                        jnp.asarray(self.aug_rho, dtype=jnp.float32),
-                    )
-                
-                rews = self._augmented_rewards_batch_jit(
-                    x0_jnp,
-                    Y0s_f,
-                    margin,
-                    jnp.asarray(self.aug_lambda, dtype=jnp.float32),
-                    jnp.asarray(self.aug_rho, dtype=jnp.float32),
+                aug_lam = jnp.asarray(self.aug_lambda, dtype=jnp.float32)
+                aug_rho = jnp.asarray(self.aug_rho, dtype=jnp.float32)
+                rews, r_p, v_k_rate, v_k_mean = self._augmented_rewards_and_rp_batch_jit(
+                    x0_jnp, Y0s_f, margin, aug_lam, aug_rho
                 )
                 rew_mean = jnp.mean(rews)
                 rew_std = jnp.std(rews)
@@ -1053,17 +1057,17 @@ class CFSMBDBackendJax:
                 Ybar_next = Ybar_next + extra_sigma * noise_extra
                 Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
                 
-                return (rng_curr, Ybar_next), (jnp.mean(rews), Ybar_next, Y0s_f)
+                return (rng_curr, Ybar_next), (jnp.mean(rews), Ybar_next, Y0s_f, r_p, v_k_rate, v_k_mean)
             
             Ybar_init = jnp.zeros((self.horizon, self.act_dim), dtype=jnp.float32)
-            (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist) = jax.lax.scan(
+            (rng_out, Ybar_final), (reward_hist, Ybar_hist, Ysamples_hist, r_hist, v_rate_hist, v_mean_hist) = jax.lax.scan(
                 body, (rng, Ybar_init), diffusion_indices
             )
-            return Ybar_final, reward_hist[::-1], Ybar_hist[::-1], Ysamples_hist[::-1]
+            return Ybar_final, reward_hist[::-1], Ybar_hist[::-1], Ysamples_hist[::-1], r_hist, v_rate_hist, v_mean_hist
         
         # Vmap over rng_keys (aligned with ebmbd: pass rng_keys directly, split inside core)
         reverse_diffuse_batch_jit = jax.jit(jax.vmap(reverse_diffuse_core, in_axes=0))
-        Ybar_finals, reward_hists, actions_trajs, sampled_trajs = reverse_diffuse_batch_jit(rng_keys)
+        Ybar_finals, reward_hists, actions_trajs, sampled_trajs, r_hists, v_rate_hists, v_mean_hists = reverse_diffuse_batch_jit(rng_keys)
         
         # Batch post-processing: clip, rollout states and rewards (aligned with mbd batch processing)
         final_actions_batch = jnp.clip(Ybar_finals, -self.action_limit, self.action_limit)  # (C, H, act_dim)
@@ -1079,6 +1083,18 @@ class CFSMBDBackendJax:
         total_costs = -np.sum(rewards_batch_np, axis=-1)  # (C,)
         total_rewards = np.sum(rewards_batch_np, axis=-1)  # (C,)
         
+        # Non-adaptive: constant schedule arrays (same as plan()) and nan for c_k, nu (rho = aug_rho for display)
+        K = self.Ndiffuse
+        rho_hist = np.full(K, float(self.aug_rho), dtype=np.float32)
+        p_hist = np.asarray(self._qp_prob_arr[:K]).flatten().astype(np.float32) if (self._qp_prob_arr is not None and self._qp_prob_arr.size >= K) else np.full(K, 1.0, dtype=np.float32)
+        topK_val = int(self._topK) if self._topK >= 0 else 8
+        topK_hist = np.full(K, float(topK_val), dtype=np.float32)
+        I_QP_hist = np.asarray(self._I_QP_arr[:K]).flatten().astype(np.float32) if (self._I_QP_arr is not None and self._I_QP_arr.size >= K) else np.full(K, 1.0, dtype=np.float32)
+        eps_hist = np.asarray(self._eps_arr[:K]).flatten().astype(np.float32) if (self._eps_arr is not None and self._eps_arr.size >= K) else np.full(K, 1e-4, dtype=np.float32)
+        lambda_hist = np.full(K, float(self.aug_lambda), dtype=np.float32)
+        compute_cost_hist = np.full(K, np.nan, dtype=np.float32)
+        nu_hist = np.full(K, np.nan, dtype=np.float32)
+
         # Build results list (aligned with ebmbd format)
         C = rng_keys.shape[0]
         results = []
@@ -1089,8 +1105,20 @@ class CFSMBDBackendJax:
                 "rewards": rewards_batch_np[i],
                 "initial_state": states_batch_np[i, 0],
                 "reward_history": np.asarray(reward_hists[i]),  # Aligned with ebmbd: use "reward_history" instead of "diffusion_rewards"
+                "diffusion_rewards": np.asarray(reward_hists[i]),
                 "diffusion_actions_traj": np.asarray(actions_trajs[i]),
                 "diffusion_sampled_actions": np.asarray(sampled_trajs[i]),
+                "r_hist": np.asarray(r_hists[i], dtype=np.float32),
+                "v_rate_hist": np.asarray(v_rate_hists[i], dtype=np.float32),
+                "v_mean_hist": np.asarray(v_mean_hists[i], dtype=np.float32),
+                "rho_hist": rho_hist,
+                "topK_hist": topK_hist,
+                "I_QP_hist": I_QP_hist,
+                "eps_hist": eps_hist,
+                "lambda_hist": lambda_hist,
+                "p_hist": p_hist,
+                "nu_hist": nu_hist,
+                "compute_cost_hist": compute_cost_hist,
                 "candidate_states": [states_batch_np[i]],
                 "candidate_actions": [actions_batch_np[i]],
                 "candidate_costs": np.asarray([float(total_costs[i])], dtype=np.float32),
