@@ -265,12 +265,13 @@ def run_plan_once_episode(
         actions = result.get("actions") or result.get("action") or []
         if not actions:
             raise RuntimeError("plan_once_fn returned no actions")
-        planned_states = result.get("states") or []
+        _ps = result.get("states")
+        planned_states = [] if _ps is None else (_ps if isinstance(_ps, list) else list(_ps))
         T = min(len(actions), total_steps)
         for t in range(T):
             if done and not continue_after_done:
                 break
-            if track_trajectory and planned_states:
+            if track_trajectory and len(planned_states) > 0:
                 # planned_states[0]=s0, ..., planned_states[T]=sT; at step t we want to go to planned_states[t+1]
                 idx_next = min(t + 1, len(planned_states) - 1)
                 planned_next = planned_states[idx_next] if idx_next >= 0 else planned_states[0]
@@ -302,12 +303,13 @@ def run_plan_once_episode(
             actions = result.get("actions") or result.get("action") or []
             if not actions:
                 break
-            planned_states_chunk = result.get("states") or []
+            _psc = result.get("states")
+            planned_states_chunk = [] if _psc is None else (_psc if isinstance(_psc, list) else list(_psc))
             take = min(chunk, len(actions))
             for i in range(take):
                 if done and not continue_after_done:
                     break
-                if track_trajectory and planned_states_chunk:
+                if track_trajectory and len(planned_states_chunk) > 0:
                     idx_next = min(i + 1, len(planned_states_chunk) - 1)
                     planned_next = planned_states_chunk[idx_next] if idx_next >= 0 else planned_states_chunk[0]
                     u = _tracking_action(

@@ -12,7 +12,15 @@ from matplotlib.patches import PathPatch, Polygon
 from matplotlib.path import Path
 
 from ...framework.base import VisualizationPlugin
-from ...common.visualization import draw_obstacles, EDOC_COLOR, MAX_SAMPLE_TRAJ_PLOT
+from ...common.visualization import (
+    draw_obstacles,
+    EDOC_COLOR,
+    MAX_SAMPLE_TRAJ_PLOT,
+    is_d3il_experiment,
+    D3IL_BG_YELLOW,
+    D3IL_OBSTACLE_RED,
+    D3IL_TARGET_GREEN,
+)
 from .cfs_convexify_overlay import draw_cfs_convexify_overlay
 
 def _safe_unit(v: np.ndarray) -> np.ndarray:
@@ -37,6 +45,18 @@ def _is_mbd_solver(exp_cfg: Any) -> bool:
     if method_name == "d3il_unified":
         method_params = (exp_cfg.get("method_params", {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, "method_params", {})) or {}
         if method_params.get("solver") == "mbd":
+            return True
+    return False
+
+
+def _is_ebmbd_solver(exp_cfg: Any) -> bool:
+    """True if the experiment uses EB-MBD solver (method==ebmbd or d3il_unified with solver ebmbd). Used to draw barrier rings."""
+    method_name = _get_method_name(exp_cfg)
+    if method_name == "ebmbd":
+        return True
+    if method_name == "d3il_unified":
+        method_params = (exp_cfg.get("method_params", {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, "method_params", {})) or {}
+        if method_params.get("solver") == "ebmbd":
             return True
     return False
 
@@ -257,7 +277,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         overlay_cfg = config.get('cfs_overlay', None)
         method_name = _get_method_name(exp_cfg)
         method_params = (exp_cfg.get('method_params', {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, 'method_params', {})) or {}
-        is_ebmbd = (method_name == "ebmbd")  # Only EB-MBD draws barrier; MBD does not
+        is_ebmbd = _is_ebmbd_solver(exp_cfg)  # EB-MBD (or d3il_unified+solver ebmbd): draw barrier rings (same as single_2d)
         is_mbd = _is_mbd_solver(exp_cfg)  # MBD (or d3il_unified+solver mbd): no CFS fan
         skip_sample_rollouts = (method_name == "mbd")  # only pure MBD (e.g. single_2d) hides sample lines; d3il_unified+mbd shows them
         # MDOC: exact method name or ablation config (mdoc_constraint_mode / cbf_eta in method_params)
@@ -370,11 +390,17 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         ax.set_aspect('equal')
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
-        # EB-MBD: white background
-        if is_ebmbd:
+        is_d3il = is_d3il_experiment(exp_cfg)
+        # Background: D3IL -> pale yellow; else EB-MBD -> white; else default
+        if is_d3il:
+            ax.set_facecolor(D3IL_BG_YELLOW)
+        elif is_ebmbd:
             ax.set_facecolor('white')
-        # Draw obstacles
-        draw_obstacles(ax, obstacles)
+        # Draw obstacles (D3IL: red; single2d/default: gray)
+        if is_d3il:
+            draw_obstacles(ax, obstacles, obstacle_color=D3IL_OBSTACLE_RED, obstacle_alpha=1.0)
+        else:
+            draw_obstacles(ax, obstacles)
         # Draw barrier field for EB-MBD (contour circles only, no heatmap; color = MDOC fan orange)
         if is_ebmbd:
             self._draw_barrier_field(ax, obstacles, x_min, x_max, y_min, y_max)
@@ -453,10 +479,11 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                         # Never fail the diffusion visualization due to overlay issues
                         pass
         
-        # Draw target
+        # Draw target. D3IL: green; single2d: red.
         target = np.asarray(env.target)
         target_pos = env_plugin.extract_position(target)
-        ax.plot(target_pos[0], target_pos[1], 'r*', markersize=15, label='Target', zorder=10)
+        target_color = D3IL_TARGET_GREEN if is_d3il else 'r'
+        ax.plot(target_pos[0], target_pos[1], color=target_color, marker='*', markersize=15, linestyle='', label='Target', zorder=10)
         
         if show_title and title:
             ax.set_title(title, fontsize=12)
@@ -687,7 +714,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         overlay_cfg = config.get('cfs_overlay', None)
         method_name = _get_method_name(exp_cfg)
         method_params = (exp_cfg.get('method_params', {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, 'method_params', {})) or {}
-        is_ebmbd = (method_name == "ebmbd")  # Only EB-MBD draws barrier; MBD does not
+        is_ebmbd = _is_ebmbd_solver(exp_cfg)  # EB-MBD (or d3il_unified+solver ebmbd): draw barrier rings
         is_mbd = _is_mbd_solver(exp_cfg)  # MBD (or d3il_unified+solver mbd): no CFS fan
         skip_sample_rollouts = (method_name == "mbd")  # only pure MBD hides sample lines; d3il_unified+mbd shows them
         is_mdoc = (
@@ -695,6 +722,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
             or "mdoc_constraint_mode" in method_params
             or "cbf_eta" in method_params
         )
+        is_d3il = is_d3il_experiment(exp_cfg)
         if is_ebmbd:
             overlay_cfg = None
 
@@ -762,7 +790,10 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     show_grid=False,
                 )
                 out_path = output_dir / f"diffusion_steps_{pct}.png"
-                if is_ebmbd:
+                if is_d3il:
+                    fig_single.set_facecolor(D3IL_BG_YELLOW)
+                    ax_single.set_facecolor(D3IL_BG_YELLOW)
+                elif is_ebmbd:
                     fig_single.set_facecolor('white')
                     ax_single.set_facecolor('white')
                 fig_single.savefig(out_path, dpi=dpi, bbox_inches='tight', facecolor=fig_single.get_facecolor())
@@ -801,7 +832,10 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                         show_grid=False,
                     )
                     tmp_path = output_dir / f"_gif_frame_{step_idx}.png"
-                    if is_ebmbd:
+                    if is_d3il:
+                        fig_frame.set_facecolor(D3IL_BG_YELLOW)
+                        ax_frame.set_facecolor(D3IL_BG_YELLOW)
+                    elif is_ebmbd:
                         fig_frame.set_facecolor('white')
                         ax_frame.set_facecolor('white')
                     fig_frame.savefig(tmp_path, dpi=dpi, bbox_inches='tight', facecolor=fig_frame.get_facecolor())
@@ -846,7 +880,10 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     show_grid=False,
                 )
                 out_path = output_dir / f"diffusion_steps_{pct}.png"
-                if is_ebmbd:
+                if is_d3il:
+                    fig_single.set_facecolor(D3IL_BG_YELLOW)
+                    ax_single.set_facecolor(D3IL_BG_YELLOW)
+                elif is_ebmbd:
                     fig_single.set_facecolor('white')
                     ax_single.set_facecolor('white')
                 fig_single.savefig(out_path, dpi=dpi, bbox_inches='tight', facecolor=fig_single.get_facecolor())

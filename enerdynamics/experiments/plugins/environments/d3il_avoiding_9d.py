@@ -23,6 +23,11 @@ class D3ILAvoiding9DPlugin(EnvironmentPlugin):
     def create_env(self, config: Dict[str, Any]) -> Any:
         env_cfg = D3ILAvoiding7dVelConfig(
             render=bool(config.get("render", False)),
+            obstacle_level=config.get("obstacle_level"),
+            obstacle_radius_by_level=config.get("obstacle_radius_by_level"),
+            obstacles=config.get("obstacles"),
+            robot_radius=config.get("robot_radius"),
+            collision_ee_only=bool(config.get("collision_ee_only", False)),
         )
         env = D3ILAvoiding7dVelEnv(env_cfg)
         if "horizon" in config:
@@ -35,7 +40,7 @@ class D3ILAvoiding9DPlugin(EnvironmentPlugin):
         from enerdynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
         import jax.numpy as jnp
 
-        goal_xy = jnp.array([0.4, 0.35], dtype=jnp.float32)
+        goal_xy = jnp.array([0.5, 0.35], dtype=jnp.float32)  # center of last obstacle row
 
         def task_energy(x, u, ctx):
             _ = (u, ctx)
