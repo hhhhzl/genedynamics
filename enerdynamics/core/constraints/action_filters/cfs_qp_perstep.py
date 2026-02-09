@@ -38,10 +38,12 @@ class CFSQPPerStepFilter(ConstraintFilter):
         max_constraints_per_point: int = 8,
         constraint_margin: float = 0.25,
         use_slack: bool = True,
+        convexifier_name: str = "cfs_action",
     ):
         self.max_constraints_per_point = max_constraints_per_point
         self.constraint_margin = constraint_margin
         self.use_slack = use_slack
+        self.convexifier_name = str(convexifier_name)
         self._cfs_action_convexifier = None  # Lazy init
         self._obstacles_list = None  # Cached obstacle list for JAX multi-constraint
         self._num_obstacles = None  # Cached number of obstacles
@@ -53,10 +55,19 @@ class CFSQPPerStepFilter(ConstraintFilter):
         self._spatial_grid_cache_key = None
     
     def _get_cfs_convexifier(self, obstacles, env):
-        """Lazy initialization of CFS action convexifier."""
+        """Lazy initialization of CFS action convexifier (registry by convexifier_name)."""
         if self._cfs_action_convexifier is None:
-            from enerdynamics.core.constraints.convexify.cfs.action import CFSActionConvexifier
-            self._cfs_action_convexifier = CFSActionConvexifier(
+            if self.convexifier_name == "cfs_action_joint":
+                import enerdynamics.core.constraints.convexify.cfs.action_joint_lift  # noqa: F401
+            from enerdynamics.core.constraints.core.registry import get_registry
+            registry = get_registry()
+            impl_class = registry.get("convexifier", self.convexifier_name, "numpy")
+            if impl_class is None:
+                impl_class = registry.get("convexifier", self.convexifier_name, "jax")
+            if impl_class is None:
+                from enerdynamics.core.constraints.convexify.cfs.action import CFSActionConvexifier
+                impl_class = CFSActionConvexifier
+            self._cfs_action_convexifier = impl_class(
                 obstacles=obstacles,
                 env=env,
                 action_mode="u_perstep",

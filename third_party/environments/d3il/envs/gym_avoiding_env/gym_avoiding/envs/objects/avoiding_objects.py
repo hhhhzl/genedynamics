@@ -2,7 +2,7 @@ import numpy as np
 
 from environments.d3il.d3il_sim.sims.universal_sim.PrimitiveObjects import Box, Sphere, Cylinder
 
-init_end_eff_pos = [0.525, -0.28, 0.12]
+init_end_eff_pos = [0.5, -0.28, 0.12]  # center x=0.5, below first obstacle row
 
 
 def get_obj_list():

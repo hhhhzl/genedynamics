@@ -11,10 +11,8 @@ This package contains implementations of various plugins:
 
 # Import and export all plugins for convenient access
 from .methods import (
-    EDOCMethodPlugin,
     EBMBDMethodPlugin,
     MBDMethodPlugin,
-    EDOCMPCMethodPlugin,
     D3ILUnifiedMethodPlugin,
     MDOCMethodPlugin,
     CFSMBDMethodPlugin,
