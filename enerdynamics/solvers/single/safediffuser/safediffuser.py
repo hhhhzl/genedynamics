@@ -90,7 +90,8 @@ class SafeDiffuserSolver(SamplingSolver):
         result = planner.plan(np.asarray(x0, dtype=np.float32), rng_key=kwargs.get("rng_key"))
         states_list = [np.asarray(s, dtype=np.float32) for s in result["states"]]
         actions_list = [np.asarray(a, dtype=np.float32) for a in result["actions"]]
-        return Trajectory(states=states_list, actions=actions_list, info=result.get("info"))
+        print(states_list)
+        return Trajectory(states=states_list, actions=actions_list[:-1], info=result.get("info"))
 
 
 if register_solver is not None:
