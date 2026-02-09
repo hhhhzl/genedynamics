@@ -167,19 +167,34 @@ class AvoidingDPCCAdapter:
             # - most other entries are keyed by exp (e.g. "avoiding-d3il")
             if key in {"dt", "enlarge_constraints"}:
                 return value.get(robot_name, default)
-            return value.get(exp, default)
+            for exp_key in self._exp_candidates(exp):
+                if exp_key in value:
+                    return value[exp_key]
+            return default
         return value
+
+    def _exp_candidates(self, exp: str):
+        candidates = [exp]
+        if exp.endswith("-9d"):
+            candidates.append(exp[:-3])  # fallback: avoiding-d3il-9d -> avoiding-d3il
+        return candidates
 
     def _get_halfspace_list(self, exp: str):
         all_constraints = self.config.get("halfspace_constraints", {})
         if isinstance(all_constraints, dict):
-            return all_constraints.get(exp, [])
+            for exp_key in self._exp_candidates(exp):
+                if exp_key in all_constraints:
+                    return all_constraints[exp_key]
+            return []
         return all_constraints or []
 
     def _get_obstacle_list(self, exp: str):
         all_constraints = self.config.get("obstacle_constraints", {})
         if isinstance(all_constraints, dict):
-            return all_constraints.get(exp, [])
+            for exp_key in self._exp_candidates(exp):
+                if exp_key in all_constraints:
+                    return all_constraints[exp_key]
+            return []
         return all_constraints or []
 
     def _select_avoiding_constraints(

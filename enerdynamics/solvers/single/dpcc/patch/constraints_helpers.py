@@ -51,11 +51,24 @@ def formulate_dynamics_constraints(exp, act_obs_indices, action_dim):
             ("deriv", np.array([act_obs_indices["z"], act_obs_indices["vz"]])),
         ]
     if "avoiding" in exp and action_dim > 0:
-        dynamic_constraints = [
-            ("deriv", np.array([act_obs_indices["x"], act_obs_indices["vx"]])),
-            ("deriv", np.array([act_obs_indices["y"], act_obs_indices["vy"]])),
-            ("deriv", np.array([act_obs_indices["x_des"], act_obs_indices["vx"]])),
-            ("deriv", np.array([act_obs_indices["y_des"], act_obs_indices["vy"]])),
-        ]
+        # 9D avoiding (state=[x,y,q1..q7], action=[qdot1..qdot7]):
+        # keep q <- qdot consistency constraints only.
+        if (
+            "9d" in exp
+            and action_dim >= 7
+            and all(f"q{i}" in act_obs_indices for i in range(1, 8))
+            and all(f"qdot{i}" in act_obs_indices for i in range(1, 8))
+        ):
+            dynamic_constraints = [
+                ("deriv", np.array([act_obs_indices[f"q{i}"], act_obs_indices[f"qdot{i}"]]))
+                for i in range(1, 8)
+            ]
+        else:
+            # Legacy 4D avoiding constraints.
+            dynamic_constraints = [
+                ("deriv", np.array([act_obs_indices["x"], act_obs_indices["vx"]])),
+                ("deriv", np.array([act_obs_indices["y"], act_obs_indices["vy"]])),
+                ("deriv", np.array([act_obs_indices["x_des"], act_obs_indices["vx"]])),
+                ("deriv", np.array([act_obs_indices["y_des"], act_obs_indices["vy"]])),
+            ]
     return dynamic_constraints
-
