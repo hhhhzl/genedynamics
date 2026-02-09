@@ -8,7 +8,14 @@ import matplotlib.pyplot as plt
 
 from enerdynamics.core.types import Trajectory
 from ...framework.base import VisualizationPlugin
-from ...common.visualization import draw_obstacles, EDOC_COLOR
+from ...common.visualization import (
+    draw_obstacles,
+    EDOC_COLOR,
+    is_d3il_experiment,
+    D3IL_BG_YELLOW,
+    D3IL_OBSTACLE_RED,
+    D3IL_TARGET_GREEN,
+)
 
 
 class TrajectoryVisualizationPlugin(VisualizationPlugin):
@@ -51,9 +58,15 @@ class TrajectoryVisualizationPlugin(VisualizationPlugin):
         ax.set_aspect('equal')
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
-        
-        # Draw obstacles
-        draw_obstacles(ax, obstacles)
+        exp_cfg = config.get("config")
+        is_d3il = is_d3il_experiment(exp_cfg)
+        if is_d3il:
+            ax.set_facecolor(D3IL_BG_YELLOW)
+        # Draw obstacles (D3IL: red; single2d/default: gray)
+        if is_d3il:
+            draw_obstacles(ax, obstacles, obstacle_color=D3IL_OBSTACLE_RED, obstacle_alpha=1.0)
+        else:
+            draw_obstacles(ax, obstacles)
         
         partial_until_step = data.get('partial_until_step', None)
         gif_style = data.get('gif_style', False)
@@ -80,7 +93,7 @@ class TrajectoryVisualizationPlugin(VisualizationPlugin):
                     continue
                 # Closest to robot (i=1) = largest; oldest (i=tail_length) = smallest
                 scale = 0.85 - 0.15 * (i - 1)  # 0.85, 0.70, 0.55, 0.40, 0.25 for i=1..5
-                r = max(0.03, robot_radius * scale)
+                r = robot_radius * scale
                 # Closest = less transparent, oldest = more transparent
                 div = max(1, tail_length - 1)
                 alpha = alpha_max - (alpha_max - alpha_min) * (i - 1) / div
@@ -178,8 +191,9 @@ class TrajectoryVisualizationPlugin(VisualizationPlugin):
                     linewidths=1.0, zorder=6
                 )
         
-        # Draw target (no margin circle)
-        ax.plot(target_pos[0], target_pos[1], 'r*', markersize=15)
+        # Draw target (no margin circle). D3IL: green; single2d: red.
+        target_color = D3IL_TARGET_GREEN if is_d3il else 'r'
+        ax.plot(target_pos[0], target_pos[1], color=target_color, marker='*', markersize=15, linestyle='')
         
         title = config.get('title', 'Final Trajectory')
         ax.set_title(title, fontsize=20, fontweight='bold')
@@ -190,7 +204,8 @@ class TrajectoryVisualizationPlugin(VisualizationPlugin):
             spine.set_color('0.4')
             spine.set_linewidth(0.8)
         ax.grid(True, alpha=0.3)
-        ax.set_facecolor('white')
+        if not is_d3il:
+            ax.set_facecolor('white')
     
     def save(self, output_path: Any, fig: Any, **kwargs: Any) -> None:
         """

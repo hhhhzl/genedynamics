@@ -1,5 +1,6 @@
-name: d3il_avoiding_ebmbd
-output_dir: results/d3il_avoiding/ebmbd
+# MDOC on D3IL avoiding (9D state, 7D qdot) with joint-lift CBF filter
+name: d3il_avoiding_mdoc
+output_dir: results/d3il_avoiding/mdoc
 
 env_name: d3il_avoiding_9d
 env_params:
@@ -11,28 +12,44 @@ method: d3il_unified
 obstacle_levels: [0]
 
 method_params:
-  solver: ebmbd
+  solver: mdoc
   execution: plan_once
   horizon: 64
   dt: 0.035
   action_limit: 0.8
-  action_extra_sigma: 0.3
   show_tqdm: true
   num_modes: 20
   mode_strategy: multirun
   max_episode_length: 64
   track_trajectory: true
-  tracker_k_joint: 5.0
+  tracker_k_joint: 2.0
   tracker_k_xy: 1.2
   tracker_ff_alpha: 0.2
+
+  # Joint-lift CBF (7D qdot): use J_xy(q)^T grad_xy, SDF at pos = state[:2]
+  mdoc_constraint_mode: cbf_qp_joint_lift_perstep
+  cbf_tau: 0.01
+  cbf_eta: 1
+  cbf_margin: 0.01
+  base_beta: 0.05
+  terminal_energy_weight: 160.0
+  guide_weight: 20.0
+
+  # Visualization style
+  mdoc_viz_style: "cap" # cap | rectangle    
+  mdoc_viz_scale: 1.0
+  mdoc_viz_band: 1          
+  mdoc_viz_use_beta: False
+  mdoc_viz_draw_disk: False
+  mdoc_viz_draw_grad: False
 
 obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
   obstacle_radius_by_level:
-    0: [0.03, 0.025]   # first obstacle, rest
+    0: [0.03, 0.025]
     1: [0.04, 0.035]
-    2: [0.06, 0.055]
+    2: [0.05, 0.045]
   enable_connectivity_check: false
   enable_nonconvexity_check: false
   robot_radius: 0.01
@@ -58,13 +75,14 @@ scheduler_config:
       betaT: 1.0e-2
   diffusion_merge_strategy: merge
   constraint_schedulers:
-    - type: emerging_barrier
-      mu: 5.0
-      alpha: 2.0
-      bound: 0.15
-      use_min_over_time: true
-      terminal_energy_weight: 170.0
+    - type: fixed
       margin: 0.01
+      rho: 10.0
+      qp_gate: true
+      qp_prob: 1.0
+      topK: null
+      eps: 1e-4
+      I_QP: 10
   constraint_merge_strategy: merge
 
 metrics:
@@ -78,5 +96,5 @@ visualizations:
   - cost
 
 metadata:
-  description: "EB-MBD on D3IL avoiding (d3il_unified, MPC)"
+  description: "MDOC on D3IL avoiding (joint-lift CBF-QP, 7D qdot)"
   author: "enerdynamics"

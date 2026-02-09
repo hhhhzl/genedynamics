@@ -51,7 +51,7 @@ class JaxBackend:
         self.device = device
         
         # Set up device
-        if device == "gpu":
+        if device == "gpu" or device == "cuda":
             try:
                 devices = jax.devices("gpu")
                 if len(devices) == 0:
@@ -59,12 +59,14 @@ class JaxBackend:
                     self.device = "cpu"
                     self.devices = jax.devices("cpu")
                 else:
+                    print(f"Using GPU devices: {devices}")
                     self.devices = devices
             except Exception as e:
                 print(f"Warning: GPU setup failed ({e}), falling back to CPU")
                 self.device = "cpu"
                 self.devices = jax.devices("cpu")
         else:
+            print(f"Using CPU devices")
             self.devices = jax.devices("cpu")
             self.device = "cpu"
     

@@ -237,13 +237,36 @@ class ObstacleManager:
     ):
         """
         Sample (sdf, grad) using the cached 2D SDF texture.
-        Call build_sdf_texture_2d() once before using this.
+        Call build_sdf_texture_2d() once before using this for 2D environments with obstacles.
+        When no texture is built (e.g. level=0, no obstacles), returns free-space values
+        (large sdf, zero grad) so CBF-style filters effectively no-op.
         """
-        if self._sdf_texture_2d is None:
-            raise RuntimeError(
-                "SDF texture not built. Call ObstacleManager.build_sdf_texture_2d(...) first."
-            )
-        return self._sdf_texture_2d.sample(points, backend=backend, device=device)
+        if self._sdf_texture_2d is not None:
+            return self._sdf_texture_2d.sample(points, backend=backend, device=device)
+        # No obstacles or texture not built: return free space (large sdf, zero grad)
+        # so that CBF conditions (e.g. h < tau) do not trigger projection
+        large_sdf = 1e6
+        shape = getattr(points, "shape", (2,))
+        if len(shape) > 1:
+            out_shape = shape[:-1]
+            grad_shape = shape
+        else:
+            out_shape = ()
+            grad_shape = (2,)
+        if backend == "jax" and jnp is not None:
+            sdf = jnp.full(out_shape, large_sdf, dtype=jnp.float32)
+            grad = jnp.zeros(grad_shape, dtype=jnp.float32)
+            return sdf, grad
+        if backend == "torch" and torch is not None:
+            dev = device or (points.device if hasattr(points, "device") else None)
+            sdf = torch.full((*out_shape,) if out_shape else (1,), large_sdf, dtype=torch.float32, device=dev)
+            if not out_shape:
+                sdf = sdf.squeeze(0)
+            grad = torch.zeros(grad_shape, dtype=torch.float32, device=dev)
+            return sdf, grad
+        sdf = np.full(out_shape, large_sdf, dtype=np.float32)
+        grad = np.zeros(grad_shape, dtype=np.float32)
+        return sdf, grad
     
     def contains(self, point: np.ndarray) -> bool:
         """

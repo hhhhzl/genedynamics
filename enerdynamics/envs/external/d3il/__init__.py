@@ -7,6 +7,9 @@ git submodule), without polluting the core enerdynamics package.
 """
 
 from .bootstrap import ensure_d3il_on_path
+
+# Ensure path and pinocchio compat as soon as d3il is used, before any third_party code loads
+ensure_d3il_on_path()
 from .avoiding_env import D3ILAvoidingEnv, D3ILAvoidingConfig
 from .avoiding_plan_env_9d import AvoidingPlanEnv9D, AvoidingPlanSpec9D
 from .avoiding_env_7d_vel import D3ILAvoiding7dVelEnv, D3ILAvoiding7dVelConfig

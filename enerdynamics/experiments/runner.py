@@ -6,19 +6,26 @@ to run experiments from YAML configuration files.
 """
 
 import argparse
+import os
+import warnings
 from pathlib import Path
 import sys
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+# Headless/CI: use OSMesa (software) so no DISPLAY/EGL/GPU is needed; set MUJOCO_GL=egl if you have EGL
+if "MUJOCO_GL" not in os.environ:
+    os.environ.setdefault("MUJOCO_GL", "osmesa")
+
+# Suppress GLFW DISPLAY/init warnings when using headless (MUJOCO_GL=egl/osmesa)
+warnings.filterwarnings("ignore", message=".*[Dd]isplay|GLFW.*", module="glfw")
+
 from enerdynamics.experiments.framework import ExperimentRunner, ExperimentConfig
 from enerdynamics.experiments.plugins import (
-    EDOCMethodPlugin,
     MDOCMethodPlugin,
     EBMBDMethodPlugin,
     MBDMethodPlugin,
-    EDOCMPCMethodPlugin,
     D3ILUnifiedMethodPlugin,
     CFSMBDMethodPlugin,
     CFSMBDFullMethodPlugin,
@@ -162,11 +169,9 @@ def register_all_plugins(runner: ExperimentRunner):
         runner: Experiment runner instance
     """
     # Method plugins
-    runner.register_plugin(EDOCMethodPlugin(), 'method')
     runner.register_plugin(MDOCMethodPlugin(), 'method')
     runner.register_plugin(EBMBDMethodPlugin(), 'method')
     runner.register_plugin(MBDMethodPlugin(), 'method')
-    runner.register_plugin(EDOCMPCMethodPlugin(), 'method')
     runner.register_plugin(D3ILUnifiedMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDFullMethodPlugin(), 'method')
