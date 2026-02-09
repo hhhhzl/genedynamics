@@ -3,15 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from qpth.qp import QPFunction
 
 import numpy as np
 import torch
 import yaml
 
-try:
-    from qpth.qp import QPFunction  # type: ignore
-except Exception:  # pragma: no cover
-    QPFunction = None
 
 
 @dataclass(frozen=True)
@@ -30,15 +27,6 @@ class AvoidingCBFConfig:
     alpha: float = 0.2
     # Correct only first action (t=0) by default (fast + MPC-like)
     correct_all_steps: bool = False
-    # Which halfspace variant to enforce. If None, enforce all halfspace constraints.
-    halfspace_variant: Optional[str] = None
-
-
-def _default_constraint_config_path() -> str:
-    here = Path(__file__).resolve()
-    project_root = here.parents[4]  # .../enerdynamics/enerdynamics/solvers/single/safediffuser
-    # Prefer SafeDiffuser-local constraint config.
-    return str(project_root / "config" / "avoiding_d3il.yaml")
 
 
 def _load_constraint_config(path: str | Path) -> Dict[str, Any]:
@@ -63,14 +51,14 @@ class AvoidingCBFQPCorrector:
         normalizer: Any,
         config: Optional[AvoidingCBFConfig] = None,
     ):
-        if QPFunction is None:
-            raise ImportError("qpth is required for CBF-QP safety correction. Install `qpth`.")
 
         self.normalizer = normalizer
-        self.cfg = config or AvoidingCBFConfig(constraint_config_path=_default_constraint_config_path())
+        self.cfg = config
 
         constraint_config = _load_constraint_config(self.cfg.constraint_config_path)
         exp = self.cfg.exp
+
+        self._halfspace_variants = self._resolve_halfspace_variant(constraint_config)
 
         # Load obstacle constraints for this exp.
         obstacles_all = constraint_config.get("obstacle_constraints", {})
@@ -99,8 +87,8 @@ class AvoidingCBFQPCorrector:
         self.halfspaces_raw = list(halfspace_constraints)
 
         # Optional bounds on the per-step delta (dx,dy).
-        # Key: `denoise_step_bounds` (SafeDiffuser-local, unambiguous).
-        bounds_all = constraint_config.get("denoise_step_bounds", {})
+        # Key: `denoise_step_bound` (SafeDiffuser-local, unambiguous).
+        bounds_all = constraint_config.get("denoise_step_bound", {})
         if isinstance(bounds_all, dict):
             bounds_spec = bounds_all.get(exp, []) or []
         else:
@@ -176,17 +164,30 @@ class AvoidingCBFQPCorrector:
 
     def _select_halfspaces(self) -> List:
         hs = self.halfspaces_raw
-        v = self.cfg.halfspace_variant
-        if v is None:
+        vs = self._halfspace_variants
+        assert len(hs) >= len(vs), f"Halfspace constraints ({len(hs)}) must be >= halfspace variants ({len(vs)})"
+        if len(vs) == 0:
             return hs
         # Match dpcc selection convention (by index)
-        if v == "top-left-hard" and len(hs) >= 1:
-            return [hs[0]]
-        if v == "top-right-hard" and len(hs) >= 2:
-            return [hs[1]]
-        if v == "both-hard" and len(hs) >= 4:
-            return [hs[2], hs[3]]
-        return hs
+        copy_hs = []
+        for v in vs:
+            if v == "top-left-hard":
+                copy_hs.append(hs[0])
+            if v == "top-right-hard":
+                copy_hs.append(hs[1])
+            if v == "top-left-easy":
+                copy_hs.append(hs[2])
+            if v == "top-right-easy":
+                copy_hs.append(hs[3])
+        
+        return copy_hs
+
+    def _resolve_halfspace_variant(self, constraint_config: Dict[str, Any]) -> Optional[str]:
+        """
+        Prefer an explicit variant from config; fallback to the first entry in halfspace_variants.
+        """
+        variants = constraint_config.get("halfspace_variants") or []
+        return variants
 
     @staticmethod
     def _halfspace_to_ineq(constraint) -> Tuple[np.ndarray, float]:

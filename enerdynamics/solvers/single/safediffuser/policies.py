@@ -39,13 +39,11 @@ class SafeDiffuserPolicy:
         projector: Any | None = None,
         preprocess_fns: Optional[Iterable[Any]] = None,
         test_ret: float = 0.0,
-        which_trajectory: int = 0,
     ):
         self.model = model
         self.normalizer = normalizer
         self.projector = projector
         self.test_ret = float(test_ret)
-        self.which_trajectory = int(which_trajectory)
 
         preprocess_fns = list(preprocess_fns or [])
         try:
@@ -127,9 +125,6 @@ class SafeDiffuserPolicy:
             diff_obs = diff[:, :, :, self.action_dim :]
             diffusion_paths = self.normalizer.unnormalize(diff_obs, "observations")
 
-        idx = int(self.which_trajectory)
-        idx = max(0, min(idx, B - 1))
-        action0 = actions[idx, 0]
         trajectories = Trajectories(actions, obs)
-        return action0, trajectories, diffusion_paths
+        return actions, trajectories, diffusion_paths
 
