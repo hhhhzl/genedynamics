@@ -136,6 +136,44 @@ class AvoidingCBFQPCorrector:
         self._half_c_t: Optional[torch.Tensor] = None  # (Hh,2) inequality c·p <= d
         self._half_d_t: Optional[torch.Tensor] = None  # (Hh,)
 
+    def _get_limits_np(self, key: str) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Extract (mins, maxs) arrays from either:
+        - our `PlanningNormalizer` (safediffuser_utils), or
+        - third_party `diffuser.datasets.normalization.DatasetNormalizer`.
+        """
+        norms = getattr(self.normalizer, "normalizers", None)
+        if not isinstance(norms, dict) or key not in norms:
+            get_fn = getattr(self.normalizer, "get_field_normalizers", None)
+            if callable(get_fn):
+                norms = get_fn()
+        if not isinstance(norms, dict) or key not in norms:
+            raise TypeError(f"Unsupported normalizer type {type(self.normalizer)}; missing normalizers['{key}']")
+        n = norms[key]
+        mins = np.asarray(getattr(n, "mins"), dtype=np.float32).reshape(-1)
+        maxs = np.asarray(getattr(n, "maxs"), dtype=np.float32).reshape(-1)
+        return mins, maxs
+
+    def _unnormalize_torch(self, x: torch.Tensor, key: str) -> torch.Tensor:
+        fn = getattr(self.normalizer, "unnormalize_torch", None)
+        if callable(fn):
+            return fn(x, key)
+        mins_np, maxs_np = self._get_limits_np(key)
+        mins = torch.tensor(mins_np, dtype=torch.float32, device=x.device)
+        maxs = torch.tensor(maxs_np, dtype=torch.float32, device=x.device)
+        x01 = (x + 1.0) / 2.0
+        return x01 * (maxs - mins) + mins
+
+    def _normalize_torch(self, x: torch.Tensor, key: str) -> torch.Tensor:
+        fn = getattr(self.normalizer, "normalize_torch", None)
+        if callable(fn):
+            return fn(x, key)
+        mins_np, maxs_np = self._get_limits_np(key)
+        mins = torch.tensor(mins_np, dtype=torch.float32, device=x.device)
+        maxs = torch.tensor(maxs_np, dtype=torch.float32, device=x.device)
+        x01 = (x - mins) / (maxs - mins)
+        return 2.0 * x01 - 1.0
+
     def _select_halfspaces(self) -> List:
         hs = self.halfspaces_raw
         v = self.cfg.halfspace_variant
@@ -234,8 +272,8 @@ class AvoidingCBFQPCorrector:
         normed_obs_next = xp1[:, :, A:]
 
         # Unnormalize observations to physical (torch-native).
-        obs_prev_phys = self.normalizer.unnormalize_torch(normed_obs_prev, "observations")
-        obs_next_phys = self.normalizer.unnormalize_torch(normed_obs_next, "observations")
+        obs_prev_phys = self._unnormalize_torch(normed_obs_prev, "observations")
+        obs_next_phys = self._unnormalize_torch(normed_obs_next, "observations")
 
         x_des_idx, y_des_idx = self.cfg.des_idx
 
@@ -301,7 +339,7 @@ class AvoidingCBFQPCorrector:
         obs_next_phys_new[:, t_indices, y_des_idx] = p_next_corr[:, :, 1]
 
         # Renormalize corrected observations back into xp1.
-        normed_obs_next_new = self.normalizer.normalize_torch(obs_next_phys_new, "observations")
+        normed_obs_next_new = self._normalize_torch(obs_next_phys_new, "observations")
         xp1_out = xp1.clone()
         xp1_out[:, :, A:] = normed_obs_next_new
         return xp1_out
