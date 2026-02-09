@@ -16,81 +16,82 @@ class SafeDiffuserPlanResult:
 
 class SafeDiffuserBackendTorch:
     """
-    Torch backend that delegates planning to external SafeDiffuser Policy.
-
-    Notes:
-    - Expects a SafeDiffuser `Policy` instance (from external repo) that supports:
-        action, samples, diffusion_paths, safe1, safe2, elbo = policy(cond, batch_size=B)
-      where `samples.actions` and `samples.observations` are numpy arrays.
-    - We treat `samples.observations` as the planned state trajectory.
-    - We treat `samples.actions` as the planned action trajectory.
+    Torch backend that matches DPCC's denoising architecture (third_party/diffuser),
+    but applies SafeDiffuser-style safety correction on every denoising step via
+    `projector.invariance(x_prev, xp1)`.
     """
 
     def __init__(
         self,
         *,
         env: Any,
-        checkpoint_dir: str,
-        epoch: int | str = "latest",
-        device: str = "cuda:0",
-        batch_size: int = 8,
+        diffusion: Any,
+        normalizer: Any,
+        plan_config: Dict[str, Any],
+        device: str = "cuda",
+        seed: int = 0,
         goal_xy: Optional[np.ndarray] = None,
     ):
         self.env = env
-        self.checkpoint_dir = checkpoint_dir
-        self.epoch = epoch
+        self.diffusion = diffusion
+        self.normalizer = normalizer
+        self.plan_config = plan_config
         self.device = device
-        # Horizon is fixed by the diffusion checkpoint architecture.
-        self.horizon: int | None = None
-        self.batch_size = int(batch_size)
+        self.seed = int(seed)
         self.goal_xy = None if goal_xy is None else np.asarray(goal_xy, dtype=np.float32).reshape(2)
 
         self._policy = None
+        self._projector = None
+        self._stepper = None
 
-    def _ensure_loaded(self) -> None:
+    def _ensure_ready(self) -> None:
         if self._policy is not None:
             return
-        from enerdynamics.solvers.single.safediffuser.diffuser_utils.serialization import (
-            load_planning_checkpoint,
-        )
-        from enerdynamics.solvers.single.safediffuser.patch.policy import Policy
         from enerdynamics.solvers.single.safediffuser.patch.avoiding_cbf_qp import (
             AvoidingCBFConfig,
             AvoidingCBFQPCorrector,
         )
+        from enerdynamics.solvers.single.safediffuser.stepper import SafeDiffuserTorchStepper
+        from enerdynamics.solvers.single.safediffuser.policies import SafeDiffuserPolicy
 
-        loaded = load_planning_checkpoint(
-            self.checkpoint_dir,
-            epoch=self.epoch,
-            device=self.device,
-        )
-        diffusion = loaded.ema
-        normalizer = loaded.normalizer
+        diffusion = self.diffusion
+        normalizer = self.normalizer
 
-        # Derive horizon from checkpoint (authoritative).
-        ckpt_horizon = int(getattr(diffusion, "horizon", 0))
-        if ckpt_horizon <= 0:
-            raise ValueError("Loaded diffusion checkpoint has invalid horizon")
-        self.horizon = ckpt_horizon
+        # Route denoising loop through solver-side SafeDiffuser stepper (DPCC-like).
+        if self._stepper is None:
+            self._stepper = SafeDiffuserTorchStepper(diffusion)
+            diffusion.p_sample = self._stepper.p_sample
+            diffusion.p_sample_loop = self._stepper.p_sample_loop
 
         projector = None
-        enable_cbf = bool(getattr(self.env, "enable_safety_cbf", False))
-        if enable_cbf:
+        enable_safety = bool(self.plan_config.get("enable_safety", True))
+        if enable_safety:
             cfg_path = getattr(self.env, "constraint_config_path", "") or str(
                 Path(__file__).resolve().parents[1]
                 / "config"
                 / "avoiding_d3il.yaml"
             )
+            correct_all_steps = bool(self.plan_config.get("correct_all_steps", False))
             projector = AvoidingCBFQPCorrector(
                 normalizer=normalizer,
                 config=AvoidingCBFConfig(
                     constraint_config_path=cfg_path,
-                    exp="avoiding-d3il",
-                    halfspace_variant=getattr(self.env, "halfspace_variant", None),
+                    exp=str(self.plan_config.get("exp", "avoiding-d3il")),
+                    halfspace_variant=self.plan_config.get("halfspace_variant"),
+                    correct_all_steps=correct_all_steps,
                 ),
             )
 
-        self._policy = Policy(diffusion, normalizer, projector=projector)
+        self._projector = projector
+        # Use a SafeDiffuser-specific policy wrapper (no trajectory_selection semantics).
+        self._policy = SafeDiffuserPolicy(
+            model=diffusion,
+            normalizer=normalizer,
+            projector=projector,
+            preprocess_fns=self.plan_config.get("preprocess_fns", []),
+            test_ret=float(self.plan_config.get("test_ret", 0)),
+            which_trajectory=int(self.plan_config.get("which_trajectory", 0)),
+        )
 
     def _build_goal_state_4d(self) -> np.ndarray:
         """
@@ -115,47 +116,47 @@ class SafeDiffuserBackendTorch:
         if x0.size != 4:
             raise ValueError(f"SafeDiffuser backend expects x0 shape (4,), got {x0.shape}")
 
-        self._ensure_loaded()
-        assert self.horizon is not None
+        self._ensure_ready()
 
-        # Best-effort seeding (SafeDiffuser uses torch internally).
-        if rng_key is not None:
-            try:
-                import torch
+        # Seeding (best-effort): make sampling deterministic per call when desired.
+        try:
+            import torch
 
+            if rng_key is not None:
                 seed = int(getattr(rng_key, "integers", lambda low, high: 0)(0, 2**31 - 1))
-                torch.manual_seed(seed)
-            except Exception:
-                pass
+            else:
+                seed = self.seed
+            torch.manual_seed(seed)
+        except Exception:
+            pass
 
         cond: Dict[int, np.ndarray] = {}
+        horizon = int(self.plan_config.get("horizon", getattr(self.diffusion, "horizon", 64)))
         cond[0] = x0
-        cond[self.horizon - 1] = self._build_goal_state_4d()
+        cond[horizon - 1] = self._build_goal_state_4d()
 
-        action0, samples, diffusion_paths, safe1, safe2, elbo = self._policy(
-            cond, batch_size=self.batch_size
+        batch_size = int(self.plan_config.get("batch_size", 8))
+        action0, trajectories, diffusion_paths = self._policy(
+            cond,
+            batch_size=batch_size,
+            horizon=horizon,
+            return_diffusion=bool(self.plan_config.get("return_diffusion", True)),
         )
 
-        # SafeDiffuser returns: samples.actions [B,H,A], samples.observations [B,H,O]
-        actions = np.asarray(samples.actions[0], dtype=np.float32)
-        states = np.asarray(samples.observations[0], dtype=np.float32)
+        # third_party Policy returns: trajectories.actions [B,H,A], trajectories.observations [B,H,O]
+        actions = np.asarray(trajectories.actions[0], dtype=np.float32)
+        states = np.asarray(trajectories.observations[0], dtype=np.float32)
 
         # Convert to list-of-arrays as expected by enerdynamics.core.types.Trajectory
         states_list = [states[t].copy() for t in range(states.shape[0])]
         actions_list = [actions[t].copy() for t in range(actions.shape[0])]
 
         info: Dict[str, Any] = {
-            "safe1": float(safe1) if np.isscalar(safe1) else safe1,
-            "safe2": float(safe2) if np.isscalar(safe2) else safe2,
-            "elbo": float(elbo) if np.isscalar(elbo) else elbo,
             "action0": np.asarray(action0, dtype=np.float32).tolist(),
+            "safety": "cbf_qp_invariance" if self._projector is not None else "none",
         }
-        # diffusion_paths can be large; keep only a minimal preview
-        try:
-            dp = np.asarray(diffusion_paths)
-            info["diffusion_paths_shape"] = list(dp.shape)
-        except Exception:
-            pass
+        if diffusion_paths is not None:
+            info["diffusion_paths_shape"] = list(np.asarray(diffusion_paths).shape)
 
         return {
             "states": states_list,
