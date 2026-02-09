@@ -4,7 +4,9 @@ SafeDiffuser method plugin implementation.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict
+import sys
 
 import numpy as np
 
@@ -29,19 +31,71 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
                 "SafeDiffuser solver not available."
             )
 
-        plan_config = dict(config.get("plan_config", {}))
-        plan_config.setdefault("batch_size", int(config.get("batch_size", 8)))
+        # Ensure vendored diffuser is importable.
+        project_root = Path(__file__).resolve().parents[4]
+        third_party = (project_root / "third_party").resolve()
+        if str(third_party) not in sys.path:
+            sys.path.insert(0, str(third_party))
 
-        ckpt_dir = config.get("safediffuser_checkpoint_dir") or plan_config.get("checkpoint_dir")
-        if not ckpt_dir:
-            raise ValueError(
-                "Missing `safediffuser_checkpoint_dir` in config. "
-                "It should point to a converted checkpoint containing "
-                "`safediffuser_planning.yaml` and `state_*.pt`."
-            )
-        plan_config.setdefault("checkpoint_dir", ckpt_dir)
-        plan_config.setdefault("device", str(config.get("device", "cuda:0")))
-        plan_config.setdefault("diffusion_epoch", config.get("diffusion_epoch", "latest"))
+        import diffuser.utils as d_utils  # type: ignore
+
+        exp = config.get("exp", "avoiding-d3il")
+        # Match DPCC convention: prefer explicit seed from method_params.
+        seed = int(config.get("seed", config.get("np_random_seed", 0)))
+        device = str(config.get("device", "cuda"))
+
+        # Mirror DPCC's loading convention.
+        loadbase = config.get("loadbase", "logs")
+        dataset = config.get("dataset", exp)
+        diffusion_loadpath = config.get("diffusion_loadpath", "diffusion")
+        diffusion_epoch = config.get("diffusion_epoch", "latest")
+
+        diffusion_experiment = d_utils.load_diffusion(
+            loadbase,
+            dataset,
+            diffusion_loadpath,
+            str(seed),
+            epoch=diffusion_epoch,
+            device=device,
+        )
+        diffusion = diffusion_experiment.diffusion
+        normalizer = diffusion_experiment.dataset.normalizer
+
+        plan_config = dict(config.get("plan_config", {}))
+        plan_config.setdefault("exp", exp)
+        plan_config.setdefault(
+            "horizon",
+            int(config.get("horizon", getattr(env, "horizon", getattr(diffusion, "horizon", 64)))),
+        )
+        plan_config.setdefault("batch_size", int(config.get("batch_size", 8)))
+        plan_config.setdefault(
+            "enable_safety",
+            bool(config.get("enable_safety", plan_config.get("enable_safety", True))),
+        )
+        plan_config.setdefault(
+            "correct_all_steps",
+            bool(config.get("correct_all_steps", plan_config.get("correct_all_steps", False))),
+        )
+        plan_config.setdefault(
+            "halfspace_variant",
+            config.get("halfspace_variant", plan_config.get("halfspace_variant")),
+        )
+        plan_config.setdefault(
+            "which_trajectory",
+            int(config.get("which_trajectory", plan_config.get("which_trajectory", 0))),
+        )
+        plan_config.setdefault(
+            "return_diffusion",
+            bool(config.get("return_diffusion", plan_config.get("return_diffusion", True))),
+        )
+        plan_config.setdefault(
+            "test_ret",
+            float(config.get("test_ret", plan_config.get("test_ret", 0.0))),
+        )
+        plan_config.setdefault(
+            "preprocess_fns",
+            config.get("preprocess_fns", plan_config.get("preprocess_fns", [])),
+        )
 
         # Goal comes from d3il env wrapper by default.
         goal_xy = np.asarray(config.get("goal_xy", getattr(env, "target", None)), dtype=np.float32) if getattr(env, "target", None) is not None or config.get("goal_xy") is not None else None
@@ -54,15 +108,17 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
             energy=energy,
             backend=backend,
             env=env,
+            diffusion=diffusion,
+            normalizer=normalizer,
             plan_config=plan_config,
             goal_xy=goal_xy,
+            device=device,
+            seed=seed,
         )
 
     def plan(self, planner: "SafeDiffuserSolver", initial_state: np.ndarray, rng: Any) -> Dict[str, Any]:
-        # NOTE: `Solver.solve(x0, horizon, ...)` requires a horizon argument by interface.
-        # For SafeDiffuser, the *actual* horizon is fixed by the converted checkpoint's
-        # `safediffuser_planning.yaml`, so this value is a placeholder and is ignored.
-        traj = planner.solve(initial_state, horizon=1, rng_key=rng)
+        horizon = int(planner.plan_config.get("horizon", getattr(planner.env, "horizon", 64)))
+        traj = planner.solve(initial_state, horizon=horizon, rng_key=rng)
         return {
             "states": traj.states,
             "actions": traj.actions,

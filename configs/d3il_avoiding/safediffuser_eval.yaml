@@ -7,12 +7,21 @@ env_params:
 
 method: safediffuser
 method_params:
-  safediffuser_checkpoint_dir: "D:/PATH/TO/converted_safediffuser_checkpoint"
-  diffusion_epoch: "best"  # or: latest / an integer like 5
-  device: "cuda"
+  # Mirror DPCC-style diffuser logdir loading (no conversion step).
+  # This should match how DPCC loads checkpoints via `diffuser.utils.load_diffusion(...)`.
+  loadbase: logs
+  exp: avoiding-d3il
+  dataset: avoiding-d3il
+  diffusion_loadpath: diffusion/H8_K20_Dmodels.GaussianDiffusion
+  diffusion_epoch: 'best'  # or: "best" / an integer like 50000
+  seed: 5
+  device: cuda
   batch_size: 8
-  # Optional:
-  # goal_xy: [0.4, 0.35]
+  enable_safety: true
+  # Apply CBF/QP invariance on every denoising step (DDPM iteration).
+  # (This is separate from `correct_all_steps`, which toggles correcting all trajectory timesteps vs only t=0.)
+  correct_all_steps: True
+
   plan_config: {}
 
 obstacle_levels: [0]
@@ -33,5 +42,5 @@ visualizations:
   - trajectory
 
 metadata:
-  description: "SafeDiffuser eval on D3IL avoiding (converted checkpoint + yaml-only runtime)"
+  description: "SafeDiffuser eval on D3IL avoiding (DPCC-style diffuser loading + per-denoise-step CBF/QP)"
 
