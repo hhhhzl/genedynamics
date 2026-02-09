@@ -13,6 +13,7 @@ method_params:
   loadbase: logs
   exp: avoiding-d3il
   dataset: avoiding-d3il
+  safediffuser_config_path: enerdynamics/solvers/single/safediffuser/config/avoiding_d3il.yaml
   diffusion_loadpath: diffusion/H8_K20_Dmodels.GaussianDiffusion
   diffusion_epoch: 'best'  # or: "best" / an integer like 50000
   seed: 5
@@ -21,7 +22,8 @@ method_params:
   enable_safety: true
   # Apply CBF/QP invariance on every denoising step (DDPM iteration).
   # (This is separate from `correct_all_steps`, which toggles correcting all trajectory timesteps vs only t=0.)
-  correct_all_steps: True
+  correct_all_steps: true
+  which_trajectory: 5
 
   plan_config: {}
 

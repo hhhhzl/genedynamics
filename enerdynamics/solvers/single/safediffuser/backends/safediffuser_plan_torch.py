@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import numpy as np
+import torch
 
 
 @dataclass(frozen=True)
@@ -63,26 +64,20 @@ class SafeDiffuserBackendTorch:
             diffusion.p_sample = self._stepper.p_sample
             diffusion.p_sample_loop = self._stepper.p_sample_loop
 
-        projector = None
         enable_safety = bool(self.plan_config.get("enable_safety", True))
         if enable_safety:
-            cfg_path = getattr(self.env, "constraint_config_path", "") or str(
-                Path(__file__).resolve().parents[1]
-                / "config"
-                / "avoiding_d3il.yaml"
-            )
+            cfg_path = str(self.plan_config.get("safediffuser_config_path", "enerdynamics/solvers/single/safediffuser/config/avoiding_d3il.yaml"))
             correct_all_steps = bool(self.plan_config.get("correct_all_steps", False))
             projector = AvoidingCBFQPCorrector(
                 normalizer=normalizer,
                 config=AvoidingCBFConfig(
                     constraint_config_path=cfg_path,
                     exp=str(self.plan_config.get("exp", "avoiding-d3il")),
-                    halfspace_variant=self.plan_config.get("halfspace_variant"),
                     correct_all_steps=correct_all_steps,
                 ),
             )
 
-        self._projector = projector
+        self._projector = projector if projector is not None else None
         # Use a SafeDiffuser-specific policy wrapper (no trajectory_selection semantics).
         self._policy = SafeDiffuserPolicy(
             model=diffusion,
@@ -90,8 +85,8 @@ class SafeDiffuserBackendTorch:
             projector=projector,
             preprocess_fns=self.plan_config.get("preprocess_fns", []),
             test_ret=float(self.plan_config.get("test_ret", 0)),
-            which_trajectory=int(self.plan_config.get("which_trajectory", 0)),
         )
+        self.which_trajectory=int(self.plan_config.get("which_trajectory", 0))
 
     def _build_goal_state_4d(self) -> np.ndarray:
         """
@@ -120,8 +115,6 @@ class SafeDiffuserBackendTorch:
 
         # Seeding (best-effort): make sampling deterministic per call when desired.
         try:
-            import torch
-
             if rng_key is not None:
                 seed = int(getattr(rng_key, "integers", lambda low, high: 0)(0, 2**31 - 1))
             else:
@@ -131,12 +124,12 @@ class SafeDiffuserBackendTorch:
             pass
 
         cond: Dict[int, np.ndarray] = {}
-        horizon = int(self.plan_config.get("horizon", getattr(self.diffusion, "horizon", 64)))
+        horizon = int(self.plan_config.get("horizon", getattr(self.diffusion, "horizon", 8)))
         cond[0] = x0
         cond[horizon - 1] = self._build_goal_state_4d()
 
-        batch_size = int(self.plan_config.get("batch_size", 8))
-        action0, trajectories, diffusion_paths = self._policy(
+        batch_size = int(self.plan_config.get("batch_size", 4))
+        all_sampled_action, trajectories, diffusion_paths = self._policy(
             cond,
             batch_size=batch_size,
             horizon=horizon,
@@ -144,13 +137,14 @@ class SafeDiffuserBackendTorch:
         )
 
         # third_party Policy returns: trajectories.actions [B,H,A], trajectories.observations [B,H,O]
-        actions = np.asarray(trajectories.actions[0], dtype=np.float32)
-        states = np.asarray(trajectories.observations[0], dtype=np.float32)
+        actions = np.asarray(trajectories.actions[self.which_trajectory], dtype=np.float32)
+        states = np.asarray(trajectories.observations[self.which_trajectory], dtype=np.float32)
 
         # Convert to list-of-arrays as expected by enerdynamics.core.types.Trajectory
         states_list = [states[t].copy() for t in range(states.shape[0])]
         actions_list = [actions[t].copy() for t in range(actions.shape[0])]
-
+        action0 = all_sampled_action[max(0, min(int(self.which_trajectory), batch_size - 1)), 0]
+        
         info: Dict[str, Any] = {
             "action0": np.asarray(action0, dtype=np.float32).tolist(),
             "safety": "cbf_qp_invariance" if self._projector is not None else "none",

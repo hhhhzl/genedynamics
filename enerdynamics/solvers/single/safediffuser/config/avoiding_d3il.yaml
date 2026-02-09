@@ -2,17 +2,16 @@ exp: avoiding-d3il
 
 # Task-level safety constraints for D3IL avoiding (SafeDiffuser-local).
 
-halfspace_variants:
-  - top-right-hard
+halfspace_variants: 
   - top-left-hard
-  - both-hard
+  - top-right-hard
 
 halfspace_constraints:
   avoiding-d3il:
-    - [[0.8, -0.5], [0.4, 0.5], below]
-    - [[0.2, -0.5], [0.6, 0.5], below]
-    - [[0.8, -0.3], [0.575, 0.5], below]
-    - [[0.2, -0.3], [0.425, 0.5], below]
+    - [[0.8, -0.5], [0.4, 0.5], below] # hard (\ shape)
+    - [[0.2, -0.5], [0.6, 0.5], below] # hard (/ shape)
+    - [[0.8, -0.3], [0.575, 0.5], below] # easier (\ shape)
+    - [[0.2, -0.3], [0.425, 0.5], below] # easier (/ shape)
 
 obstacle_constraints:
   avoiding-d3il:
@@ -27,10 +26,8 @@ obstacle_constraints:
 # Note: in SafeDiffuser-style `invariance(x, xp1)` we constrain the denoising update
 # in desired position (x_des/y_des). This uses the same numeric limits as the action
 # bounds in DPCC configs, but we name it explicitly to avoid confusion.
-denoise_step_bounds:
+denoise_step_bound:
   avoiding-d3il:
-    - {type: lower, dimensions: [vx, vy], values: [-0.01, 0.0]}
-    - {type: upper, dimensions: [vx, vy], values: [0.01, 0.01]}
-    - {type: lower, dimensions: [vx, vy], values: [-0.012, 0.0]}
-    - {type: upper, dimensions: [vx, vy], values: [0.012, 0.012]}
+    - {type: lower, dimensions: [vx, vy], values: [-0.2, -0.2]}
+    - {type: upper, dimensions: [vx, vy], values: [0.2, 0.2]}
 

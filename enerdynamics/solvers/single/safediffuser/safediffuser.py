@@ -85,12 +85,14 @@ class SafeDiffuserSolver(SamplingSolver):
     def solve(self, x0: State, horizon: int, **kwargs: Any) -> Trajectory:
         # NOTE: `Solver.solve(x0, horizon, ...)` requires `horizon` by interface.
         # We use `plan_config.horizon` (or model horizon) as the authoritative one.
-        _ = horizon
+        _ = horizon # type: ignore
         planner = self._get_backend_impl()
         result = planner.plan(np.asarray(x0, dtype=np.float32), rng_key=kwargs.get("rng_key"))
         states_list = [np.asarray(s, dtype=np.float32) for s in result["states"]]
         actions_list = [np.asarray(a, dtype=np.float32) for a in result["actions"]]
-        print(states_list)
+        print(result.get("states"))
+        print("initial state:", x0)
+        print("self.goal_xy:", self.goal_xy)
         return Trajectory(states=states_list, actions=actions_list[:-1], info=result.get("info"))
 
 
