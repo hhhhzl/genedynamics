@@ -3,7 +3,6 @@ output_dir: results/d3il_avoiding/safediffuser
 
 env_name: d3il_avoiding
 env_params:
-  horizon: 8
   render: false
 
 method: safediffuser
