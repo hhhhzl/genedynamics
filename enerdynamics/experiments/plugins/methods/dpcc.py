@@ -167,6 +167,17 @@ class DPCCMethodPlugin(MethodPlugin):
         plan_config.setdefault("variant", config.get("variant", "dpcc"))
         plan_config.setdefault("solver", config.get("solver", "scipy"))
         plan_config.setdefault("halfspace_variant", config.get("halfspace_variant"))
+        # Align DPCC planning constraints with framework obstacle generation by default.
+        plan_config.setdefault(
+            "align_constraints_with_framework",
+            config.get("align_constraints_with_framework", True),
+        )
+        plan_config.setdefault(
+            "disable_halfspace_when_aligned",
+            config.get("disable_halfspace_when_aligned", True),
+        )
+        plan_config.setdefault("obstacles", config.get("obstacles"))
+        plan_config.setdefault("obstacle_config", config.get("obstacle_config", {}))
 
         dynamics = DynamicsToEnvAdapter(env, dt=plan_config["dt"])
         backend = RuntimeBackendManager.get_backend()
