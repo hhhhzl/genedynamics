@@ -50,6 +50,8 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
         )
         diffusion = diffusion_experiment.diffusion
         normalizer = diffusion_experiment.dataset.normalizer
+        if hasattr(diffusion, "clip_denoised"):
+            diffusion.clip_denoised = True
 
         plan_config = dict(config.get("plan_config", {}))
         plan_config.setdefault("exp", exp)
@@ -62,6 +64,11 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
         plan_config.setdefault("enable_safety", bool(config.get("enable_safety", True)))
         plan_config.setdefault("correct_all_steps", bool(config.get("correct_all_steps", False)))
         plan_config.setdefault("which_trajectory", int(config.get("which_trajectory", 0)))
+        plan_config.setdefault("receding_horizon", bool(config.get("receding_horizon", True)))
+        plan_config.setdefault("max_episode_length", int(config.get("max_episode_length", 200)))
+        plan_config.setdefault("safediffuser_pos_idx", tuple(config.get("safediffuser_pos_idx", (0,1))))
+        plan_config.setdefault("derive_action_from_states", bool(config.get("derive_action_from_states", True)))
+
         # inner default config
         plan_config.setdefault("return_diffusion", bool(config.get("return_diffusion", True)))
         plan_config.setdefault("test_ret", float(config.get("test_ret", 0.0)))
@@ -87,6 +94,19 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
         )
 
     def plan(self, planner: "SafeDiffuserSolver", initial_state: np.ndarray, rng: Any) -> Dict[str, Any]:
+        try:
+            seed = int(getattr(rng, "integers", lambda low, high: 0)(0, 2**31 - 1))
+            reset_out = planner.env.reset(seed=seed)  # 有些 env 支持 seed
+        except TypeError:
+            reset_out = planner.env.reset()
+        except Exception:
+            reset_out = planner.env.reset()
+
+        if reset_out is not None:
+            if isinstance(reset_out, (tuple, list)) and len(reset_out) > 0:
+                initial_state = np.asarray(reset_out[0], dtype=np.float32)
+            else:
+                initial_state = np.asarray(reset_out, dtype=np.float32)
         horizon = int(planner.plan_config.get("horizon", getattr(planner.diffusion, "horizon", 8)))
         traj = planner.solve(initial_state, horizon=horizon, rng_key=rng)
         return {
