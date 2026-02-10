@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -41,6 +41,12 @@ class SafeDiffuserBackendTorch:
         self.seed = int(seed)
         self.goal_xy = None if goal_xy is None else np.asarray(goal_xy, dtype=np.float32).reshape(2)
 
+        # SafeDiffuser execution details.
+        # For avoiding-d3il, we typically constrain/correct the XY *position* components in obs.
+        # Default (0,1) corresponds to obs = [x_des, y_des, x, y] (desired position components).
+        self.pos_idx: Tuple[int, int] = tuple(self.plan_config.get('safediffuser_pos_idx', (0, 1)))  # type: ignore
+        self.derive_action_from_states: bool = bool(self.plan_config.get('derive_action_from_states', True))
+
         self._policy = None
         self._projector = None
         self._stepper = None
@@ -64,20 +70,23 @@ class SafeDiffuserBackendTorch:
             diffusion.p_sample = self._stepper.p_sample
             diffusion.p_sample_loop = self._stepper.p_sample_loop
 
+        projector = None
+
         enable_safety = bool(self.plan_config.get("enable_safety", True))
         if enable_safety:
             cfg_path = str(self.plan_config.get("safediffuser_config_path", "enerdynamics/solvers/single/safediffuser/config/avoiding_d3il.yaml"))
-            correct_all_steps = bool(self.plan_config.get("correct_all_steps", False))
+            correct_all_steps = bool(self.plan_config.get("correct_all_steps", True))
             projector = AvoidingCBFQPCorrector(
                 normalizer=normalizer,
                 config=AvoidingCBFConfig(
                     constraint_config_path=cfg_path,
                     exp=str(self.plan_config.get("exp", "avoiding-d3il")),
+                    des_idx=tuple(self.pos_idx),
                     correct_all_steps=correct_all_steps,
                 ),
             )
 
-        self._projector = projector if projector is not None else None
+        self._projector = projector
         # Use a SafeDiffuser-specific policy wrapper (no trajectory_selection semantics).
         self._policy = SafeDiffuserPolicy(
             model=diffusion,
@@ -125,6 +134,8 @@ class SafeDiffuserBackendTorch:
 
         cond: Dict[int, np.ndarray] = {}
         horizon = int(self.plan_config.get("horizon", getattr(self.diffusion, "horizon", 8)))
+        
+        x0 = x0.copy()
         cond[0] = x0
         cond[horizon - 1] = self._build_goal_state_4d()
 
@@ -137,16 +148,41 @@ class SafeDiffuserBackendTorch:
         )
 
         # third_party Policy returns: trajectories.actions [B,H,A], trajectories.observations [B,H,O]
-        actions = np.asarray(trajectories.actions[self.which_trajectory], dtype=np.float32)
+        actions_raw = np.asarray(trajectories.actions[self.which_trajectory], dtype=np.float32)
         states = np.asarray(trajectories.observations[self.which_trajectory], dtype=np.float32)
+
+        # If the projector modifies the *state* samples (SafeDiffuser invariance hook), the
+        # action slice produced by the diffusion model can become inconsistent. In SafeDiffuser
+        # implementations that execute controls derived from the generated (corrected) states,
+        # we should compute actions from the corrected states.
+        actions_exec = actions_raw
+        if (
+            self.derive_action_from_states
+            and states.ndim == 2
+            and states.shape[0] >= 2
+            and actions_raw.shape[-1] == 2
+        ):
+            i0, i1 = int(self.pos_idx[0]), int(self.pos_idx[1])
+            if 0 <= i0 < states.shape[1] and 0 <= i1 < states.shape[1]:
+                pos = states[:, [i0, i1]]
+                delta = pos[1:] - pos[:-1]
+                actions_exec = np.zeros_like(actions_raw, dtype=np.float32)
+                actions_exec[:-1, :] = delta.astype(np.float32)
 
         # Convert to list-of-arrays as expected by enerdynamics.core.types.Trajectory
         states_list = [states[t].copy() for t in range(states.shape[0])]
-        actions_list = [actions[t].copy() for t in range(actions.shape[0])]
-        action0 = all_sampled_action[max(0, min(int(self.which_trajectory), batch_size - 1)), 0]
+        actions_list = [actions_exec[t].copy() for t in range(actions_exec.shape[0])]
+
+        # For debugging: keep both the raw diffusion action and the executed action.
+        action0_raw = actions_raw[0].copy()
+        action0 = actions_exec[0].copy()
         
         info: Dict[str, Any] = {
             "action0": np.asarray(action0, dtype=np.float32).tolist(),
+            "action0_raw": np.asarray(action0_raw, dtype=np.float32).tolist(),
+            "action0_source": "derived_from_states" if self.derive_action_from_states else "diffusion_action_slice",
+            "goal_xy": np.asarray(self.goal_xy, dtype=np.float32).tolist(),
+            "pos_idx": [int(self.pos_idx[0]), int(self.pos_idx[1])],
             "safety": "cbf_qp_invariance" if self._projector is not None else "none",
         }
         if diffusion_paths is not None:

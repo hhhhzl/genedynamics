@@ -23,6 +23,10 @@ method_params:
   # (This is separate from `correct_all_steps`, which toggles correcting all trajectory timesteps vs only t=0.)
   correct_all_steps: true
   which_trajectory: 5
+  receding_horizon: true
+  max_episode_length: 600
+  safediffuser_pos_idx: [0,1]
+  derive_action_from_states: true
 
   plan_config: {}
 
@@ -32,7 +36,7 @@ obstacle_config:
   enable_connectivity_check: false
   enable_nonconvexity_check: false
 
-seeds: [5]
+seeds: [0]
 backend: torch
 device: cuda
 
