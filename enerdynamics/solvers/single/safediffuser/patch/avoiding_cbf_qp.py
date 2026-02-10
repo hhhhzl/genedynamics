@@ -278,7 +278,19 @@ class AvoidingCBFQPCorrector:
 
         x_des_idx, y_des_idx = self.cfg.des_idx
 
-        t_indices = list(range(H)) if self.cfg.correct_all_steps else [0]
+        # Choose which *time indices* inside the horizon to correct.
+        # Important: conditioning typically pins t=0 (current state) and t=H-1 (goal).
+        # If we correct those endpoints, `apply_conditioning` may overwrite the correction.
+        if self.cfg.correct_all_steps:
+            t_indices = list(range(H))
+        else:
+            # 'MPC-like' fast mode: correct the first *unconditioned* step (usually t=1).
+            t_indices = [min(1, H - 1)]
+
+        # Skip endpoints that are commonly conditioned.
+        t_indices = [t for t in t_indices if t != 0 and t != (H - 1)]
+        if len(t_indices) == 0:
+            return xp1
 
         p_prev = obs_prev_phys[:, t_indices, :][:, :, [x_des_idx, y_des_idx]].reshape(-1, 2)  # (BT,2)
         p_next_nom = obs_next_phys[:, t_indices, :][:, :, [x_des_idx, y_des_idx]].reshape(-1, 2)  # (BT,2)
@@ -334,6 +346,8 @@ class AvoidingCBFQPCorrector:
         except Exception:
             delta_star = delta0
 
+        # print(f"delta_star: {delta_star}")
+        # print(f"delta_star shape: {delta_star.shape}")
         obs_next_phys_new = obs_next_phys.clone()
         p_next_corr = (p_prev + delta_star).reshape(B, len(t_indices), 2)
         obs_next_phys_new[:, t_indices, x_des_idx] = p_next_corr[:, :, 0]
@@ -342,6 +356,8 @@ class AvoidingCBFQPCorrector:
         # Renormalize corrected observations back into xp1.
         normed_obs_next_new = self._normalize_torch(obs_next_phys_new, "observations")
         xp1_out = xp1.clone()
+        # print(f"xp1: {xp1[0, :, A:A+2]}")
         xp1_out[:, :, A:] = normed_obs_next_new
+        # print(f"xp1_out: {xp1_out[0, :, A:A+2]}")
         return xp1_out
 
