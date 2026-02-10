@@ -21,12 +21,16 @@ method_params:
   dt: 1
   batch_size: 4
   max_episode_length: 200
-  variant: dpcc
+  variant: dpcc-c
   solver: scipy
 
 obstacle_levels: [0]
 obstacle_config:
-  generator: box2d
+  generator: d3il_avoiding_fixed
+  use_d3il_preset: false
+  fixed_cylinders:
+    - center: [0.52, 0.02]
+      radius: 0.035
   enable_connectivity_check: false
   enable_nonconvexity_check: false
 
