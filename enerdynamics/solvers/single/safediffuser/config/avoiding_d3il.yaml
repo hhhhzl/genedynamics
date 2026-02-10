@@ -4,7 +4,7 @@ exp: avoiding-d3il
 
 halfspace_variants: 
   - top-left-hard
-  - top-right-hard
+  # - top-right-hard
 
 halfspace_constraints:
   avoiding-d3il:
@@ -15,12 +15,12 @@ halfspace_constraints:
 
 obstacle_constraints:
   avoiding-d3il:
-    - {type: sphere_outside, dimensions: [x, y], center: [0.4, 0.08], radius: 0.06}
-    - {type: sphere_outside, dimensions: [x, y], center: [0.6, 0.08], radius: 0.06}
-    - {type: sphere_outside, dimensions: [x, y], center: [0.5, -0.1], radius: 0.06}
-    - {type: sphere_outside, dimensions: [x, y], center: [0.4, 0.08], radius: 0.08}
-    - {type: sphere_outside, dimensions: [x, y], center: [0.6, 0.08], radius: 0.08}
-    - {type: sphere_outside, dimensions: [x, y], center: [0.5, -0.09], radius: 0.08}
+    - {type: sphere_outside, dimensions: [x, y], center: [0.4, 0.08], radius: 0.055}
+    - {type: sphere_outside, dimensions: [x, y], center: [0.6, 0.08], radius: 0.055}
+    - {type: sphere_outside, dimensions: [x, y], center: [0.5, -0.1], radius: 0.055}
+    # - {type: sphere_outside, dimensions: [x, y], center: [0.4, 0.08], radius: 0.03}
+    # - {type: sphere_outside, dimensions: [x, y], center: [0.6, 0.08], radius: 0.03}
+    # - {type: sphere_outside, dimensions: [x, y], center: [0.5, -0.09], radius: 0.03}
 
 # Bounds on the per-step delta (dx,dy) used in safety QPs.
 # Note: in SafeDiffuser-style `invariance(x, xp1)` we constrain the denoising update
