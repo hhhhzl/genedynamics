@@ -20,6 +20,9 @@ from enerdynamics.core.types import State, Trajectory
 from enerdynamics.solvers.single.safediffuser.backends.safediffuser_plan_torch import (
     SafeDiffuserBackendTorch,
 )
+from enerdynamics.solvers.single.safediffuser.patch.avoiding_9d_adapter import (
+    Avoiding9DAdapter,
+)
 
 try:
     from enerdynamics.core.registry.solvers import register_solver
@@ -163,11 +166,17 @@ class SafeDiffuserSolver(SamplingSolver):
         rng_key = kwargs.get("rng_key")
 
         use_mpc = bool(self.plan_config.get("receding_horizon", True))
+        x0_arr = np.asarray(x0, dtype=np.float32).reshape(-1)
+        if int(getattr(self.env, "state_dim", x0_arr.size)) >= 9:
+            return self._solve_9d(planner, x0_arr, rng_key=rng_key, use_mpc=use_mpc)
+
         if not use_mpc:
-            result = planner.plan(np.asarray(x0, dtype=np.float32), rng_key=rng_key)
+            result = planner.plan(x0_arr, rng_key=rng_key)
             states_list = [np.asarray(s, dtype=np.float32) for s in result["states"]]
             actions_list = [np.asarray(a, dtype=np.float32) for a in result["actions"]]
-            return Trajectory(states=states_list, actions=actions_list[:-1], info=result.get("info"))
+            info = dict(result.get("info") or {})
+            info = self._attach_4d_lift_to_info(states_list, info)
+            return Trajectory(states=states_list, actions=actions_list[:-1], info=info)
 
         # --- Receding-horizon rollout (SafeDiffuser / MPC style) ---
         max_steps = int(self.plan_config.get("max_episode_length", 200))
@@ -198,8 +207,158 @@ class SafeDiffuserSolver(SamplingSolver):
                 break
 
         last_info.update({"mpc": True, "success": success, "steps": len(actions_exec)})
+        last_info = self._attach_4d_lift_to_info(states_exec, last_info)
 
         return Trajectory(states=states_exec, actions=actions_exec, info=last_info)
+
+    def _solve_9d(
+        self,
+        planner: SafeDiffuserBackendTorch,
+        x0_9d: np.ndarray,
+        *,
+        rng_key: Any | None,
+        use_mpc: bool,
+    ) -> Trajectory:
+        dt = float(getattr(self.env, "dt", self.plan_config.get("dt", 0.035)))
+        qdot_limit = float(getattr(self.env, "control_limit", 1.5))
+        adapter = Avoiding9DAdapter(
+            env=self.env,
+            dt=dt,
+            qdot_limit=qdot_limit,
+            target_xy=self.goal_xy,
+        )
+
+        max_steps = int(self.plan_config.get("max_episode_length", 200))
+        obs9 = np.asarray(x0_9d, dtype=np.float32).reshape(-1)
+        if obs9.size < 9:
+            try:
+                reset_out = self.env.reset()
+                obs9 = np.asarray(reset_out[0] if isinstance(reset_out, (tuple, list)) else reset_out, dtype=np.float32).reshape(-1)
+            except Exception as exc:
+                raise ValueError(f"9D solve requires 9D initial state; got shape {x0_9d.shape}") from exc
+        if obs9.size < 9:
+            raise ValueError(f"9D solve requires 9D initial state; got shape {obs9.shape}")
+
+        q_cur = adapter.get_current_q(obs9)
+        if q_cur is None:
+            q_cur = obs9[2:9].copy()
+
+        states_exec_9d: List[np.ndarray] = [obs9.copy()]
+        actions_exec_9d: List[np.ndarray] = []
+        states_query_4d: List[np.ndarray] = []
+        actions_plan_2d: List[np.ndarray] = []
+
+        last_info: Dict[str, Any] = {}
+        success = False
+        done = False
+
+        if not use_mpc:
+            plan_in = adapter.obs9d_to_obs4d(obs9)
+            result = planner.plan(plan_in, rng_key=rng_key)
+            last_info = dict(result.get("info") or {})
+            planned_actions = [np.asarray(a, dtype=np.float32).reshape(-1)[:2] for a in result.get("actions", [])]
+
+            for t, a2 in enumerate(planned_actions):
+                qdot = adapter.delta_xy_to_qdot7(q_cur, a2, dt=dt)
+                next_obs9, step_success, step_done, step_info = adapter.step_9d(qdot, obs9, t=t)
+                actions_exec_9d.append(qdot.copy())
+                obs9 = next_obs9
+                states_exec_9d.append(obs9.copy())
+                states_query_4d.append(plan_in.copy())
+                actions_plan_2d.append(a2.copy())
+                q_next = adapter.get_current_q(obs9)
+                if q_next is not None:
+                    q_cur = q_next
+
+                success = bool(step_success or success or step_info.get("success", False))
+                done = bool(step_done or step_info.get("terminated", False) or step_info.get("done", False))
+                if success or done:
+                    last_info.update({"terminal_info": step_info})
+                    break
+        else:
+            for t in range(max_steps):
+                plan_in = adapter.obs9d_to_obs4d(obs9)
+                result = planner.plan(plan_in, rng_key=rng_key)
+                last_info = dict(result.get("info") or {})
+                a2 = np.asarray(result["actions"][0], dtype=np.float32).reshape(-1)[:2]
+                qdot = adapter.delta_xy_to_qdot7(q_cur, a2, dt=dt)
+
+                next_obs9, step_success, step_done, step_info = adapter.step_9d(qdot, obs9, t=t)
+                actions_exec_9d.append(qdot.copy())
+                obs9 = next_obs9
+                states_exec_9d.append(obs9.copy())
+                states_query_4d.append(plan_in.copy())
+                actions_plan_2d.append(a2.copy())
+                q_next = adapter.get_current_q(obs9)
+                if q_next is not None:
+                    q_cur = q_next
+
+                success = bool(step_success or success or step_info.get("success", False))
+                done = bool(step_done or step_info.get("terminated", False) or step_info.get("done", False))
+                if success or done:
+                    last_info.update({"terminal_info": step_info})
+                    break
+
+        last_info.update(
+            {
+                "mpc": bool(use_mpc),
+                "success": bool(success),
+                "steps": int(len(actions_exec_9d)),
+                "state_layout_9d": "[x, y, q1..q7]",
+                "action_layout_9d": "[qdot1..qdot7]",
+                "states_9d": [np.asarray(s, dtype=np.float32) for s in states_exec_9d],
+                "actions_9d": [np.asarray(a, dtype=np.float32) for a in actions_exec_9d],
+                "states_query_4d": [np.asarray(s, dtype=np.float32) for s in states_query_4d],
+                "actions_plan_2d": [np.asarray(a, dtype=np.float32) for a in actions_plan_2d],
+            }
+        )
+
+        return Trajectory(
+            states=[np.asarray(s, dtype=np.float32) for s in states_exec_9d],
+            actions=[np.asarray(a, dtype=np.float32) for a in actions_exec_9d],
+            info=last_info,
+        )
+
+    def _attach_4d_lift_to_info(self, states_4d: List[np.ndarray], info_in: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        For 4D runs, generate a DPCC-style post-processed 9D trajectory for visualization.
+        """
+        info = dict(info_in or {})
+        if not bool(self.plan_config.get("export_lifted_9d", True)):
+            return info
+
+        if len(states_4d) < 2:
+            return info
+        s0 = np.asarray(states_4d[0], dtype=np.float32).reshape(-1)
+        if s0.size < 4:
+            return info
+
+        dt = float(getattr(self.env, "dt", self.plan_config.get("dt", 0.035)))
+        qdot_limit = float(self.plan_config.get("lift_qdot_limit", 1.5))
+        adapter = Avoiding9DAdapter(
+            env=self.env,
+            dt=dt,
+            qdot_limit=qdot_limit,
+            target_xy=self.goal_xy,
+        )
+        q0 = adapter.get_current_q()
+        states_9d, actions_9d = adapter.lift_4d_to_9d_trajectory(
+            [np.asarray(s, dtype=np.float32) for s in states_4d],
+            initial_q=q0,
+            dt=dt,
+            xy_indices=(
+                int(self.plan_config.get("lift_xy_idx0", 2)),
+                int(self.plan_config.get("lift_xy_idx1", 3)),
+            ),
+        )
+        if states_9d is None or actions_9d is None:
+            return info
+
+        info["states_9d"] = [np.asarray(s, dtype=np.float32) for s in states_9d]
+        info["actions_9d"] = [np.asarray(a, dtype=np.float32) for a in actions_9d]
+        info["state_layout_9d"] = "[x, y, q1..q7]"
+        info["action_layout_9d"] = "[qdot1..qdot7]"
+        return info
 
 
 if register_solver is not None:

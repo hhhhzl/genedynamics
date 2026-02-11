@@ -184,18 +184,7 @@ class SafeDiffuserBackendTorch:
         gx, gy = float(goal_xy[0]), float(goal_xy[1])
         return np.array([gx, gy, gx, gy], dtype=np.float32)
 
-    def plan(self, x0: np.ndarray, *, rng_key: Any | None = None) -> Dict[str, Any]:
-        """
-        Plan a full horizon trajectory.
-
-        Args:
-            x0: initial state, expected shape (4,) for D3ILAvoiding: [x_des, y_des, x, y]
-            rng_key: optional RNG (used to seed torch if possible)
-        """
-        x0 = np.asarray(x0, dtype=np.float32).reshape(-1)
-        if x0.size != 4:
-            raise ValueError(f"SafeDiffuser backend expects x0 shape (4,), got {x0.shape}")
-
+    def _plan_core_4d(self, x0_4d: np.ndarray, *, rng_key: Any | None = None) -> Dict[str, Any]:
         self._ensure_ready()
 
         # Seeding (best-effort): make sampling deterministic per call when desired.
@@ -211,7 +200,7 @@ class SafeDiffuserBackendTorch:
         cond: Dict[int, np.ndarray] = {}
         horizon = int(self.plan_config.get("horizon", getattr(self.diffusion, "horizon", 8)))
         
-        x0 = x0.copy()
+        x0 = np.asarray(x0_4d, dtype=np.float32).reshape(-1).copy()
         cond[0] = x0
         cond[horizon - 1] = self._build_goal_state_4d()
 
@@ -276,3 +265,23 @@ class SafeDiffuserBackendTorch:
             "actions": actions_list,
             "info": info,
         }
+
+    def plan(self, x0: np.ndarray, *, rng_key: Any | None = None) -> Dict[str, Any]:
+        """
+        Plan a full horizon trajectory.
+
+        Accepts either:
+        - 4D avoiding state: [x_des, y_des, x, y]
+        - 9D avoiding state: [x, y, q1..q7] (converted to 4D conditions)
+        """
+        x = np.asarray(x0, dtype=np.float32).reshape(-1)
+        if x.size == 4:
+            x4 = x
+        elif x.size >= 2:
+            goal_xy = self.goal_xy
+            if goal_xy is None:
+                goal_xy = np.asarray(getattr(self.env, "target"), dtype=np.float32).reshape(-1)[:2]
+            x4 = np.array([float(goal_xy[0]), float(goal_xy[1]), float(x[0]), float(x[1])], dtype=np.float32)
+        else:
+            raise ValueError(f"SafeDiffuser backend expects x0 with at least 2 dims, got {x.shape}")
+        return self._plan_core_4d(x4, rng_key=rng_key)

@@ -113,9 +113,14 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
                 initial_state = np.asarray(reset_out, dtype=np.float32)
         horizon = int(planner.plan_config.get("horizon", getattr(planner.diffusion, "horizon", 8)))
         traj = planner.solve(initial_state, horizon=horizon, rng_key=rng)
-        return {
+        out = {
             "states": traj.states,
             "actions": traj.actions,
             "initial_state": initial_state,
             "info": traj.info,
         }
+        info = traj.info if isinstance(traj.info, dict) else {}
+        if "states_9d" in info and "actions_9d" in info:
+            out["states_9d"] = info["states_9d"]
+            out["actions_9d"] = info["actions_9d"]
+        return out
