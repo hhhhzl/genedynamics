@@ -32,6 +32,8 @@ class SafeDiffuserBackendTorch:
         device: str = "cuda",
         seed: int = 0,
         goal_xy: Optional[np.ndarray] = None,
+        constraint_manager: Any = None,
+        constraint_pipeline: Any = None,
     ):
         self.env = env
         self.diffusion = diffusion
@@ -40,16 +42,90 @@ class SafeDiffuserBackendTorch:
         self.device = device
         self.seed = int(seed)
         self.goal_xy = None if goal_xy is None else np.asarray(goal_xy, dtype=np.float32).reshape(2)
+        self.constraint_manager = constraint_manager
+        self.constraint_pipeline = constraint_pipeline
 
         # SafeDiffuser execution details.
         # For avoiding-d3il, we typically constrain/correct the XY *position* components in obs.
         # Default (0,1) corresponds to obs = [x_des, y_des, x, y] (desired position components).
         self.pos_idx: Tuple[int, int] = tuple(self.plan_config.get('safediffuser_pos_idx', (0, 1)))  # type: ignore
         self.derive_action_from_states: bool = bool(self.plan_config.get('derive_action_from_states', True))
+        self.use_framework_constraints: bool = bool(self.plan_config.get("use_framework_constraints", True))
 
         self._policy = None
         self._projector = None
         self._stepper = None
+
+    def _apply_framework_constraints(
+        self,
+        states_list: list[np.ndarray],
+        actions_list: list[np.ndarray],
+    ) -> tuple[list[np.ndarray], list[np.ndarray], Dict[str, Any]]:
+        if not self.use_framework_constraints:
+            return states_list, actions_list, {"framework_constraint_impl": "disabled"}
+
+        if self.constraint_pipeline is None and self.constraint_manager is None:
+            return states_list, actions_list, {"framework_constraint_impl": "none"}
+
+        if len(states_list) < 2 or len(actions_list) < 1:
+            return states_list, actions_list, {"framework_constraint_impl": "skipped_short_traj"}
+
+        try:
+            from enerdynamics.core.types import Trajectory
+
+            # Trajectory requires len(states) == len(actions) + 1.
+            n_actions_nominal = min(len(actions_list), len(states_list) - 1)
+            nominal = Trajectory(
+                states=[np.asarray(s, dtype=np.float32) for s in states_list],
+                actions=[np.asarray(a, dtype=np.float32) for a in actions_list[:n_actions_nominal]],
+                info={},
+            )
+
+            repaired = nominal
+            out_info: Dict[str, Any] = {}
+
+            if self.constraint_pipeline is not None:
+                from enerdynamics.core.constraints.core.types import ScheduleState
+
+                repaired, pipe_info = self.constraint_pipeline.apply(
+                    nominal=nominal,
+                    ref=nominal,
+                    state=ScheduleState(k=0, K=1),
+                )
+                out_info["framework_constraint_impl"] = "constraint_pipeline"
+                out_info["framework_constraint_info_keys"] = (
+                    list(pipe_info.keys()) if isinstance(pipe_info, dict) else []
+                )
+            elif (
+                self.constraint_manager is not None
+                and hasattr(self.constraint_manager, "has_hard")
+                and self.constraint_manager.has_hard()
+            ):
+                repaired = self.constraint_manager.project_hard(
+                    nominal, step=0, total_steps=1
+                )
+                out_info["framework_constraint_impl"] = "constraint_manager_hard"
+            else:
+                out_info["framework_constraint_impl"] = "none_active"
+                return states_list, actions_list, out_info
+
+            repaired_states = [np.asarray(s, dtype=np.float32) for s in repaired.states]
+            repaired_actions = [np.asarray(a, dtype=np.float32) for a in repaired.actions]
+
+            # Keep SafeDiffuser's original action-list length contract.
+            merged_actions: list[np.ndarray] = []
+            for i in range(len(actions_list)):
+                if i < len(repaired_actions):
+                    merged_actions.append(repaired_actions[i].copy())
+                else:
+                    merged_actions.append(np.asarray(actions_list[i], dtype=np.float32).copy())
+
+            return repaired_states, merged_actions, out_info
+        except Exception as exc:
+            return states_list, actions_list, {
+                "framework_constraint_impl": "error",
+                "framework_constraint_error": str(exc),
+            }
 
     def _ensure_ready(self) -> None:
         if self._policy is not None:
@@ -172,19 +248,26 @@ class SafeDiffuserBackendTorch:
         # Convert to list-of-arrays as expected by enerdynamics.core.types.Trajectory
         states_list = [states[t].copy() for t in range(states.shape[0])]
         actions_list = [actions_exec[t].copy() for t in range(actions_exec.shape[0])]
+        states_list, actions_list, fw_info = self._apply_framework_constraints(states_list, actions_list)
 
         # For debugging: keep both the raw diffusion action and the executed action.
         action0_raw = actions_raw[0].copy()
-        action0 = actions_exec[0].copy()
+        action0 = np.asarray(actions_list[0], dtype=np.float32).copy()
+        goal_xy_info = (
+            np.asarray(self.goal_xy, dtype=np.float32).tolist()
+            if self.goal_xy is not None
+            else np.asarray(getattr(self.env, "target"), dtype=np.float32).reshape(-1)[:2].tolist()
+        )
         
         info: Dict[str, Any] = {
             "action0": np.asarray(action0, dtype=np.float32).tolist(),
             "action0_raw": np.asarray(action0_raw, dtype=np.float32).tolist(),
             "action0_source": "derived_from_states" if self.derive_action_from_states else "diffusion_action_slice",
-            "goal_xy": np.asarray(self.goal_xy, dtype=np.float32).tolist(),
+            "goal_xy": goal_xy_info,
             "pos_idx": [int(self.pos_idx[0]), int(self.pos_idx[1])],
             "safety": "cbf_qp_invariance" if self._projector is not None else "none",
         }
+        info.update(fw_info)
         if diffusion_paths is not None:
             info["diffusion_paths_shape"] = list(np.asarray(diffusion_paths).shape)
 
@@ -193,4 +276,3 @@ class SafeDiffuserBackendTorch:
             "actions": actions_list,
             "info": info,
         }
-
