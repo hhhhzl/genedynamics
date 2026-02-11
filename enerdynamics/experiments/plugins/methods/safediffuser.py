@@ -77,8 +77,8 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
             bool(config.get("align_constraints_with_framework", True)),
         )
         plan_config.setdefault(
-            "disable_halfspace_when_aligned",
-            bool(config.get("disable_halfspace_when_aligned", True)),
+            "halfspace_variants",
+            config.get("halfspace_variants", None),
         )
         plan_config.setdefault("obstacles", config.get("obstacles"))
         plan_config.setdefault("obstacle_config", config.get("obstacle_config", {}))

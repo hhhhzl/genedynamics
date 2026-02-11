@@ -31,7 +31,8 @@ class AvoidingCBFConfig:
     runtime_obstacles: Any = None
     runtime_obstacle_config: Optional[Dict[str, Any]] = None
     align_constraints_with_framework: bool = True
-    disable_halfspace_when_aligned: bool = True
+    halfspace_variants: List[str] = None  # e.g., ["top-left", "bottom-right"]
+    map_bounds: Dict[str, float] = runtime_obstacle_config.get("map_bounds", None) if runtime_obstacle_config is not None else None
 
 
 def _load_constraint_config(path: str | Path) -> Dict[str, Any]:
@@ -88,7 +89,23 @@ class AvoidingCBFQPCorrector:
             )
             if aligned_runtime:
                 obstacle_constraints = aligned_runtime
-                if self.cfg.disable_halfspace_when_aligned:
+                if self.cfg.halfspace_variants is not None and len(self.cfg.halfspace_variants) > 0:
+                    if self.cfg.map_bounds is not None:
+                        x_min = float(self.cfg.map_bounds.get("x_min", 0.2))
+                        x_max = float(self.cfg.map_bounds.get("x_max", 0.8))
+                        y_min = float(self.cfg.map_bounds.get("y_min", -0.3))
+                        y_max = float(self.cfg.map_bounds.get("y_max", 0.4))
+                        # Create halfspaces for map bounds
+                        self.halfspaces_raw = [
+                            [[x_min, y_min], [x_min, y_max], "right"],  # left
+                            [[x_max, y_min], [x_max, y_max], "left"],   # right
+                            [[x_min, y_min], [x_max, y_min], "above"],  # bottom
+                            [[x_min, y_max], [x_max, y_max], "below"],  # top  
+                        ]
+                        self._halfspace_variants = self.cfg.halfspace_variants
+                    else:
+                        self.halfspaces_raw = []
+                else:
                     self.halfspaces_raw = []
 
         # Keep only sphere_outside in XY.
@@ -224,14 +241,12 @@ class AvoidingCBFQPCorrector:
         # Match dpcc selection convention (by index)
         copy_hs = []
         for v in vs:
-            if v == "top-left-hard":
+            if v == "top-left":
                 copy_hs.append(hs[0])
-            if v == "top-right-hard":
-                copy_hs.append(hs[1])
-            if v == "top-left-easy":
-                copy_hs.append(hs[2])
-            if v == "top-right-easy":
                 copy_hs.append(hs[3])
+            if v == "bottom-right":
+                copy_hs.append(hs[1])
+                copy_hs.append(hs[2])
         
         return copy_hs
 
@@ -244,25 +259,40 @@ class AvoidingCBFQPCorrector:
 
     @staticmethod
     def _halfspace_to_ineq(constraint) -> Tuple[np.ndarray, float]:
-        """
-        Convert constraint [[x1,y1],[x2,y2],side] into inequality c·p <= d.
-        """
         p1 = np.asarray(constraint[0], dtype=np.float32)
         p2 = np.asarray(constraint[1], dtype=np.float32)
         side = str(constraint[2])
-        m = float((p2[1] - p1[1]) / (p2[0] - p1[0]))
-        d_line = float(p1[1] - m * p1[0])
+
+        dx = float(p2[0] - p1[0])
+        dy = float(p2[1] - p1[1])
+
+        # Vertical line: x = const
+        if abs(dx) < 1e-12:
+            x0 = float(p1[0])
+            if side == "left":       # x <= x0
+                c = np.array([1.0, 0.0], dtype=np.float32)
+                d = x0
+            elif side == "right":    # x >= x0
+                c = np.array([-1.0, 0.0], dtype=np.float32)
+                d = -x0
+            else:
+                raise ValueError(f"Vertical halfspace must use side 'left' or 'right', got: {side}")
+            return c, d
+
+        # Non-vertical: y = m x + b
+        m = dy / dx
+        b = float(p1[1] - m * p1[0])
+
         if side == "below":
-            # y <= m x + d  => (-m)x + y <= d
-            c = np.array([-m, 1.0], dtype=np.float32)
-            d = d_line
+            c = np.array([-m, 1.0], dtype=np.float32)   # (-m)x + y <= b
+            d = b
         elif side == "above":
-            # y >= m x + d  => (m)x - y <= -d
-            c = np.array([m, -1.0], dtype=np.float32)
-            d = -d_line
+            c = np.array([m, -1.0], dtype=np.float32)   # (m)x - y <= -b
+            d = -b
         else:
             raise ValueError(f"Unknown halfspace side: {side}")
         return c, d
+
 
     def _ensure_cache(self, device: torch.device) -> None:
         if self._cached_device == device:
