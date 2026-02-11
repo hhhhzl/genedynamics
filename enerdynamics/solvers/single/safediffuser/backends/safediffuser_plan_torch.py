@@ -165,7 +165,7 @@ class SafeDiffuserBackendTorch:
                     align_constraints_with_framework=bool(
                         self.plan_config.get("align_constraints_with_framework", True)
                     ),
-                    half_space_variants=self.plan_config.get("halfspace_variants", None)
+                    halfspace_variants=self.plan_config.get("halfspace_variants", None)
                 ),
             )
 
