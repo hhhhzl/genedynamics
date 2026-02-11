@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
+import importlib
 
 import numpy as np
 
@@ -13,6 +14,9 @@ from .base import D3ILTaskSpec, Context, D3ILTaskConfig
 class D3ILAvoidingSpecConfig(D3ILTaskConfig):
     # Controller expects 7D: [x_des, y_des, z_fixed, quat_wxyz(4)]
     quat_wxyz: Tuple[float, float, float, float] = (0.0, 1.0, 0.0, 0.0)
+    obstacle_level: Optional[int] = None
+    obstacle_radius_by_level: Optional[Dict[int, list]] = None
+    obstacles: Any = None
 
 
 class D3ILAvoidingSpec(D3ILTaskSpec):
@@ -35,18 +39,107 @@ class D3ILAvoidingSpec(D3ILTaskSpec):
 
     def make_env(self) -> Any:
         ensure_d3il_on_path()
+        obj_list_override = None
+        has_runtime_obstacles = getattr(self.config, "obstacles", None) is not None
+        circles = self._extract_xy_circles(self.config.obstacles)
+        # If framework obstacles are provided, always sync MuJoCo scene to them.
+        # This includes the empty case (level 0 => no cylinders).
+        if has_runtime_obstacles:
+            obj_list_override = self._build_obj_list_from_circles(circles)
+
         try:
             # Prefer fully-qualified d3il import when available (e.g., pip-installed d3il)
             from d3il.environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.avoiding import (  # type: ignore
                 ObstacleAvoidanceEnv,
             )
+            import d3il.environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.avoiding as av_mod
+            import d3il.environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.objects.avoiding_objects as ao
         except ModuleNotFoundError:
             # Fallback to vendored layout (third_party/environments/d3il/...)
             from environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.avoiding import (
                 ObstacleAvoidanceEnv,
             )
+            import environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.avoiding as av_mod
+            import environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.objects.avoiding_objects as ao
 
+        if obj_list_override is not None:
+            ao.get_obj_list = lambda: obj_list_override
+            importlib.reload(av_mod)
+            av_mod.obj_list = obj_list_override
         return ObstacleAvoidanceEnv(render=bool(self.config.render))
+
+    def _extract_xy_circles(self, obstacles: Any) -> list:
+        """
+        Extract 2D circle obstacles as (x, y, radius) from framework obstacles.
+        """
+        if obstacles is None:
+            return []
+        if hasattr(obstacles, "obstacles"):
+            obs_iter = getattr(obstacles, "obstacles") or []
+        elif isinstance(obstacles, (list, tuple)):
+            obs_iter = obstacles
+        else:
+            return []
+
+        circles = []
+        for obs in obs_iter:
+            center = getattr(obs, "center", None)
+            if center is None:
+                continue
+            c = np.asarray(center, dtype=np.float32).reshape(-1)
+            if c.size < 2:
+                continue
+            radius = getattr(obs, "radius", None)
+            if radius is None and hasattr(obs, "half_extents"):
+                he = np.asarray(getattr(obs, "half_extents"), dtype=np.float32).reshape(-1)
+                if he.size >= 2:
+                    radius = float(max(he[0], he[1]))
+            if radius is None:
+                continue
+            circles.append((float(c[0]), float(c[1]), float(radius)))
+        return circles
+
+    def _build_obj_list_from_circles(self, circles: list) -> list:
+        """
+        Build D3IL obstacle objects from (x, y, radius) circles.
+        """
+        try:
+            from environments.d3il.d3il_sim.sims.universal_sim.PrimitiveObjects import (
+                Box,
+                Cylinder,
+            )
+        except ModuleNotFoundError:
+            from d3il.d3il_sim.sims.universal_sim.PrimitiveObjects import (
+                Box,
+                Cylinder,
+            )
+
+        obj_list = []
+        for i, (x, y, r) in enumerate(circles):
+            obj_list.append(
+                Cylinder(
+                    name=f"obs_{i}",
+                    init_pos=[x, y, 0.0],
+                    init_quat=[1, 0, 0, 0],
+                    size=[max(1e-4, float(r)), 0.1],
+                    rgba=[1, 0, 0, 1],
+                    static=True,
+                )
+            )
+
+        # Keep finish line to preserve original task visual cue.
+        obj_list.append(
+            Box(
+                name="finish_line",
+                init_pos=[0.4, 0.35, 0],
+                init_quat=[1, 0, 0, 0],
+                size=[0.5, 0.01, 0.005],
+                rgba=[0.0, 1.0, 0.0, 0.3],
+                visual_only=True,
+                static=True,
+            )
+        )
+        return obj_list
 
     def start_env(self, env: Any) -> None:
         env.start()
@@ -122,4 +215,3 @@ class D3ILAvoidingSpec(D3ILTaskSpec):
         next_des = s[:2] + u
         next_xy = next_des
         return np.concatenate([next_des, next_xy], axis=0).astype(np.float32)
-

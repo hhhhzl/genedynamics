@@ -15,6 +15,27 @@ import numpy as np
 from enerdynamics.core.constraints.action_filters.base import ConstraintFilter
 
 
+def _get_robot_radius_from_env(env: Any, default: float = 0.05) -> float:
+    """Resolve robot_radius from env, unwrapping DynamicsToEnvAdapter -> EnvDynamicsAdapter -> plan_env."""
+    try:
+        return float(getattr(env, "robot_radius"))
+    except (AttributeError, TypeError):
+        pass
+    inner = getattr(env, "dynamics", None)
+    if inner is not None:
+        try:
+            return float(getattr(inner, "robot_radius"))
+        except (AttributeError, TypeError):
+            pass
+        inner2 = getattr(inner, "env", None)
+        if inner2 is not None:
+            try:
+                return float(getattr(inner2, "robot_radius"))
+            except (AttributeError, TypeError):
+                pass
+    return default
+
+
 def _get_jacobian_xy_batch(env: Any, states: np.ndarray) -> np.ndarray:
     """(B, state_dim) -> (B, 2, 7). Returns zeros (2,7) per row when env has no J_xy."""
     states = np.asarray(states, dtype=np.float32)
@@ -37,16 +58,24 @@ def _get_jacobian_xy_batch(env: Any, states: np.ndarray) -> np.ndarray:
 
 
 def _get_jacobian_xy_single(env: Any, state: np.ndarray) -> np.ndarray:
-    """(state_dim,) -> (2, 7). Returns zeros when env has no J_xy."""
+    """(state_dim,) -> (2, 7). Returns zeros when env has no J_xy. Fallback: pseudo-identity so 2D grad lifts to [gx,gy,0..]."""
     state = np.asarray(state, dtype=np.float32).reshape(-1)
     get_j = getattr(env, "get_jacobian_xy", None)
+    act_dim = 7
+    fallback_j = np.zeros((2, act_dim), dtype=np.float32)
+    fallback_j[0, 0] = 1.0
+    fallback_j[1, 1] = 1.0
     if get_j is None or state.size < 9:
-        return np.zeros((2, 7), dtype=np.float32)
+        return fallback_j
     jxy = get_j(state)
     if jxy is None:
-        return np.zeros((2, 7), dtype=np.float32)
+        return fallback_j
     jxy = np.asarray(jxy, dtype=np.float32)
-    return jxy if jxy.shape == (2, 7) else np.zeros((2, 7), dtype=np.float32)
+    if jxy.shape != (2, act_dim):
+        return fallback_j
+    if np.max(np.abs(jxy)) < 1e-9:
+        return fallback_j
+    return jxy
 
 
 class QPBasedCBFFilterJointLift(ConstraintFilter):
@@ -81,7 +110,7 @@ class QPBasedCBFFilterJointLift(ConstraintFilter):
         eta = params.get("cbf_eta", 1.5)
         margin = params.get("cbf_margin", 0.1)
         base_beta = params.get("base_beta", 0.05)
-        robot_radius = getattr(env, "robot_radius", 0.05)
+        robot_radius = _get_robot_radius_from_env(env)
         dt = getattr(env, "dt", 0.05)
         control_limit = float(getattr(env, "control_limit", 1.0))
 
@@ -111,20 +140,22 @@ class QPBasedCBFFilterJointLift(ConstraintFilter):
         control_limit: float,
     ) -> Any:
         act_dim = u_seq.shape[-1]
-        out_shape = jax.ShapeDtypeStruct((2, 7), jnp.float32)
+        # Pure JAX path: no callbacks. SDF/grad from texture, Jacobian from env.
+        jax_jacobian_fn = getattr(env, "jax_jacobian_xy", None)
+        J_xy_const = jax_jacobian_fn() if callable(jax_jacobian_fn) else None
+        if J_xy_const is None:
+            J_xy_const = jnp.zeros((2, 7), dtype=jnp.float32)
+            J_xy_const = J_xy_const.at[0, 0].set(1.0).at[1, 1].set(1.0)
 
         def body_fn(carry, u):
             x = carry
             pos = x[:2]
+            # Direct JAX sampling (no callback) - texture.to_jax() must be pre-warmed in experiment
             sdf, grad_xy = obstacles.sample_sdf_and_grad_2d(pos, backend="jax")
-            h = sdf - (robot_radius + margin)
+            sdf = jnp.reshape(sdf, ())
             grad_xy = jnp.reshape(grad_xy, (2,))
-            J_xy = jax.pure_callback(
-                lambda s: _get_jacobian_xy_single(env, np.asarray(s)),
-                out_shape,
-                x,
-                vmap_method="sequential",
-            )
+            h = sdf - (robot_radius + margin)
+            J_xy = J_xy_const
             A = jnp.dot(J_xy.T, grad_xy)
             A = jnp.reshape(A, (act_dim,)) if A.size == act_dim else jnp.pad(A, (0, max(0, act_dim - A.size)))
             b = -(eta / dt) * h + base_beta
@@ -164,23 +195,28 @@ class QPBasedCBFFilterJointLift(ConstraintFilter):
     ) -> Any:
         B, H, act_dim = actions.shape
         state_dim = x0.shape[-1]
-        out_shape_single = jax.ShapeDtypeStruct((2, 7), jnp.float32)
+        # Pure JAX path: no callbacks. SDF/grad from texture, Jacobian from env (frozen per plan).
+        jax_jacobian_fn = getattr(env, "jax_jacobian_xy", None)
+        J_xy_const = jax_jacobian_fn() if callable(jax_jacobian_fn) else None
+        if J_xy_const is None:
+            J_xy_const = jnp.zeros((2, 7), dtype=jnp.float32)
+            J_xy_const = J_xy_const.at[0, 0].set(1.0).at[1, 1].set(1.0)
 
         def body_fn(carry, u):
             x_batch = carry
             pos_batch = x_batch[:, :2]
+            # Direct JAX batch sampling (no callback) - texture.to_jax() must be pre-warmed in experiment
             sdf, grad_xy = obstacles.sample_sdf_and_grad_2d(pos_batch, backend="jax")
+            sdf = jnp.reshape(sdf, sdf.shape)  # keep batch dims
+            grad_xy = jnp.reshape(grad_xy, pos_batch.shape[:-1] + (2,))
             h = sdf - (robot_radius + margin)
-            if grad_xy.ndim == 1:
-                grad_xy = jnp.broadcast_to(grad_xy, (B, 2))
-            # vmap_method='sequential' so callback works when this scan is under vmap (e.g. MDOC plan_batch)
-            J_xy_batch = jax.pure_callback(
-                lambda s: _get_jacobian_xy_single(env, np.asarray(s)),
-                out_shape_single,
-                x_batch,
-                vmap_method="sequential",
-            )
-            # Support both (B, 2, 7) and (outer, B, 2, 7) when scan is under vmap
+            if grad_xy.ndim == 2 and grad_xy.shape[-1] == 2:
+                pass
+            elif grad_xy.ndim == 1:
+                grad_xy = jnp.broadcast_to(grad_xy[:, None], grad_xy.shape + (2,))
+            # Jacobian is constant per plan; broadcast to batch (supports vmap: batch_shape = (n_plans, B))
+            batch_shape = pos_batch.shape[:-1]
+            J_xy_batch = jnp.broadcast_to(J_xy_const, batch_shape + (2, 7))
             A_batch = jnp.einsum("...ij,...i->...j", J_xy_batch, grad_xy)
             if A_batch.shape[-1] < act_dim:
                 pad_width = [(0, 0)] * (A_batch.ndim - 1) + [(0, act_dim - A_batch.shape[-1])]
@@ -231,7 +267,7 @@ class QPBasedCBFFilterJointLift(ConstraintFilter):
         eta = float(params.get("cbf_eta", 1.5))
         margin = float(params.get("cbf_margin", 0.1))
         base_beta = float(params.get("base_beta", 0.05))
-        robot_radius = float(getattr(env, "robot_radius", 0.05))
+        robot_radius = float(_get_robot_radius_from_env(env))
         dt = float(getattr(env, "dt", 0.05))
         control_limit = float(getattr(env, "control_limit", 1.0))
 

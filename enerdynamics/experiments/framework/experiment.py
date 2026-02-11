@@ -152,36 +152,34 @@ class ExperimentRunner:
         physics_backend = env_params_with_obstacles.get('physics_backend', None)
         if physics_backend in ['mujoco', 'isaac'] and len(obstacles) > 0:
             env_params_with_obstacles['obstacles'] = obstacles
-        # For d3il_avoiding: pass level and obstacle_radius_by_level for MuJoCo sync (monkey-patch)
-        if self.config.env_name == 'd3il_avoiding_9d':
+        # For D3IL avoiding envs: pass obstacle info for MuJoCo scene sync.
+        if self.config.env_name in ['d3il_avoiding_9d', 'd3il_avoiding']:
             env_params_with_obstacles['obstacle_level'] = level
             env_params_with_obstacles['obstacle_radius_by_level'] = (
                 self.config.obstacle_config.get('obstacle_radius_by_level')
             )
-            # EE-only collision: use experiment obstacles + robot_radius so exec collision matches plan SSR
             env_params_with_obstacles['obstacles'] = obstacles
-            env_params_with_obstacles['robot_radius'] = float(
-                self.config.obstacle_config.get('robot_radius', 0.05)
-            )
-            env_params_with_obstacles['collision_ee_only'] = True
+            # EE-only collision settings are only used by the 9D env implementation.
+            if self.config.env_name == 'd3il_avoiding_9d':
+                env_params_with_obstacles['robot_radius'] = float(
+                    self.config.obstacle_config.get('robot_radius', 0.05)
+                )
+                env_params_with_obstacles['collision_ee_only'] = True
 
         env = env_plugin.create_env(env_params_with_obstacles)
         energy = env_plugin.create_energy(env) if _accepts_env(env_plugin.create_energy) else env_plugin.create_energy()
         
-        # Build SDF texture if needed (only for 2D environments)
-        # For 3D environments, skip 2D SDF texture building
-        if level > 0 and len(obstacles) > 0:
-            # Check if this is a 3D environment by checking env_name or obstacle generator
+        # Build SDF texture if needed (for CBF/MDOC/CFS filters that use sample_sdf_and_grad_2d)
+        # Level 0 must also build texture so obstacles are seen by the filter
+        if len(obstacles) > 0:
             physics_backend = self.config.env_params.get('physics_backend', None)
             is_3d_env = (
-                self.config.env_name in ['drone_box_3d', 'drone', 'drone_full_3d', 'drone_full_3d_physics', 
+                self.config.env_name in ['drone_box_3d', 'drone', 'drone_full_3d', 'drone_full_3d_physics',
                                          'drone_full_3d_mujoco', 'drone_full_3d_isaac'] or
                 self.config.obstacle_config.get('generator', '') == 'box3d' or
                 physics_backend in ['mujoco', 'isaac']
             )
-            
             if not is_3d_env:
-                # Only build 2D SDF texture for 2D environments
                 map_bounds = self.config.obstacle_config.get('map_bounds', {})
                 obstacles.build_sdf_texture_2d(
                     x_min=float(map_bounds.get('x_min', -2.0)),
@@ -191,6 +189,11 @@ class ExperimentRunner:
                     res=0.01,
                     force_rebuild=True,
                 )
+                # Pre-warm SDF texture to JAX when using JAX backend (avoids tracer leaks in JIT)
+                if getattr(self.config, 'backend', None) == 'jax':
+                    tex = obstacles.get_sdf_texture_2d()
+                    if tex is not None and hasattr(tex, 'to_jax'):
+                        tex.to_jax()
         
         # 6. Setup constraints
         constraint_config = self.config.constraint_config or {}
@@ -346,6 +349,8 @@ class ExperimentRunner:
                 method_params = {}
             track_trajectory = bool(method_params.get('track_trajectory', False))
             tracker_k_joint = float(method_params.get('tracker_k_joint', 0.0))
+            tracker_k_xy = float(method_params.get('tracker_k_xy', 1.0))
+            tracker_ff_alpha = float(method_params.get('tracker_ff_alpha', 0.0))
             max_steps = int(method_params.get('max_episode_length', getattr(env, 'horizon', 150)))
             reset_rng = backend.create_rng(seed)
             exec_candidate_states = []
@@ -381,6 +386,8 @@ class ExperimentRunner:
                         max_steps=max_steps,
                         track_trajectory=track_trajectory,
                         tracker_k_joint=tracker_k_joint,
+                        tracker_k_xy=tracker_k_xy,
+                        tracker_ff_alpha=tracker_ff_alpha,
                     )
                     exec_candidate_states.append(run_out.get('states', []))
                     exec_candidate_actions.append(run_out.get('actions', []))
@@ -420,6 +427,13 @@ class ExperimentRunner:
                     result['executed_actions'].append(np.zeros(act_dim, dtype=np.float32))
             result['success'] = exec_success[best_idx]
             result['collision'] = exec_collision[best_idx]
+            # Execution SSR = (executions that were success and no collision) / total executions
+            exec_ssr_count = sum(1 for i in range(len(exec_success)) if exec_success[i] and not exec_collision[i])
+            n_exec_total = len(exec_success)
+            result['execution_ssr'] = {
+                'execution_ssr': exec_ssr_count / max(1, n_exec_total),
+                'execution_ssr_count': exec_ssr_count,
+            }
             multirun_diff = result.get('multirun_diffusion_data', [])
             if multirun_diff and 0 <= best_idx < len(multirun_diff):
                 dd = multirun_diff[best_idx]
@@ -430,18 +444,20 @@ class ExperimentRunner:
 
         # 8b1.5. D3IL: 3D GIF from *executed* states (after 8b2 so best is execution-based)
         _states_3d = result.get('executed_states') or result.get('states')
-        info_dict = result.get('info', {}) if isinstance(result.get('info', {}), dict) else {}
-        states_9d_info = info_dict.get('states_9d')
-        if (not _states_3d or len(_states_3d) == 0) and states_9d_info:
-            _states_3d = states_9d_info
-        elif _states_3d and len(_states_3d) > 0:
+        info_dict = result.get("info", {}) if isinstance(result.get("info"), dict) else {}
+        # For 4D DPCC runs, states are 4D; prefer lifted 9D states for robot 3D GIF.
+        if _states_3d:
             try:
                 s0 = np.asarray(_states_3d[0], dtype=np.float32).reshape(-1)
-                if s0.size < 9 and states_9d_info:
-                    _states_3d = states_9d_info
+                if s0.size < 9:
+                    lifted = result.get("states_9d", info_dict.get("states_9d"))
+                    if lifted:
+                        _states_3d = lifted
             except Exception:
-                if states_9d_info:
-                    _states_3d = states_9d_info
+                lifted = result.get("states_9d", info_dict.get("states_9d"))
+                if lifted:
+                    _states_3d = lifted
+
         if is_d3il_style and _states_3d and len(_states_3d) >= 2:
             try:
                 out_dir = self._get_output_path(level, seed)
@@ -814,19 +830,6 @@ class ExperimentRunner:
                 return
             plan_result = result.get("result", {})
             states = plan_result.get("states")
-            # Fallback: methods that keep lifted 9D trajectory in info (e.g., SafeDiffuser 4D->9D lift)
-            if (
-                (not states or len(states) == 0)
-                and isinstance(plan_result.get("info"), dict)
-                and plan_result["info"].get("states_9d") is not None
-            ):
-                states = plan_result["info"].get("states_9d")
-            if states and len(states) > 0:
-                s0 = np.asarray(states[0], dtype=np.float64).reshape(-1)
-                if s0.size < 9 and isinstance(plan_result.get("info"), dict):
-                    states_9d = plan_result["info"].get("states_9d")
-                    if states_9d is not None and len(states_9d) > 0:
-                        states = states_9d
             if not states:
                 return
             states = [np.asarray(s, dtype=np.float64).reshape(-1).copy() for s in states]
@@ -963,6 +966,61 @@ class ExperimentRunner:
             geom_smooth = float(np.sum(angles ** 2)) / n_angles
         return length, smooth, geom_smooth
 
+    def _violation_rate_band(
+        self,
+        states_list: list,
+        obstacles: Any,
+        robot_radius: float,
+        extract_pos_2d: Any,
+        n_along_max: int = 150,
+        n_perp: int = 8,
+    ) -> float:
+        """
+        Compute fraction of trajectory band (width 2*robot_radius) that lies inside obstacles.
+        Samples points along the polyline and in the perpendicular disk; returns
+        (count of points inside obstacle) / (total points). Returns 0.0 if no obstacles.
+        """
+        if obstacles is None or not (hasattr(obstacles, '__len__') and len(obstacles) > 0):
+            return 0.0
+        states_arr = [np.asarray(s, dtype=np.float32) for s in states_list]
+        if len(states_arr) < 2:
+            return 0.0
+        positions = np.array([extract_pos_2d(s) for s in states_arr])
+        seg_len = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+        total_len = float(np.sum(seg_len))
+        if total_len < 1e-8:
+            return 0.0
+        n_along = min(n_along_max, max(10, int(total_len / 0.01)))
+        # Linear interpolation along polyline by arc length
+        cum = np.concatenate([[0], np.cumsum(seg_len)])
+        s_vals = np.linspace(0, total_len, n_along, endpoint=False)
+        path_pts = []
+        for s in s_vals:
+            idx = np.searchsorted(cum, s, side='right') - 1
+            idx = max(0, min(idx, len(positions) - 2))
+            local = (s - cum[idx]) / max(1e-10, seg_len[idx])
+            local = float(np.clip(local, 0, 1))
+            p = (1 - local) * positions[idx] + local * positions[idx + 1]
+            path_pts.append(p)
+        path_pts = np.array(path_pts, dtype=np.float32)
+        # Sample band: at each path point, sample n_perp points on circle of radius robot_radius
+        radius = float(robot_radius)
+        angles = np.linspace(0, 2 * np.pi, n_perp, endpoint=False)
+        violations = 0
+        total = 0
+        for i in range(path_pts.shape[0]):
+            for a in angles:
+                pt = path_pts[i] + radius * np.array([np.cos(a), np.sin(a)], dtype=np.float32)
+                total += 1
+                try:
+                    sdf_val = obstacles.sdf(pt)
+                    sdf_val = float(np.asarray(sdf_val).item() if hasattr(sdf_val, "item") else sdf_val)
+                    if sdf_val < 0 or (hasattr(obstacles, 'contains') and obstacles.contains(pt)):
+                        violations += 1
+                except Exception:
+                    violations += 1
+        return violations / max(1, total)
+
     def _compute_modes_metrics(
         self,
         candidate_states_list: list,
@@ -989,6 +1047,7 @@ class ExperimentRunner:
         lengths = []
         smoothnesses = []
         geom_smoothnesses = []
+        violation_rates = []
 
         target = np.asarray(env.target, dtype=np.float32)
         target_pos = extract_pos_2d(target)
@@ -1057,6 +1116,10 @@ class ExperimentRunner:
                 geom_smooth = 0.0
             geom_smoothnesses.append(geom_smooth)
 
+            # Violation rate: fraction of trajectory band (width 2*robot_radius) inside obstacles
+            vr = self._violation_rate_band(states, obstacles, robot_radius, extract_pos_2d)
+            violation_rates.append(vr)
+
         n_valid = len(lengths)
         if n_valid == 0:
             return {}
@@ -1065,6 +1128,8 @@ class ExperimentRunner:
         out['ssr'] = {
             'ssr': float(ssr_count) / max(1, n_modes),
             'ssr_count': int(ssr_count),
+            'violation_rate_mean': float(np.mean(violation_rates)) if violation_rates else 0.0,
+            'violation_rate_std': float(np.std(violation_rates)) if len(violation_rates) > 1 else 0.0,
         }
         out['length'] = {'mean': float(np.mean(lengths)), 'std': float(np.std(lengths)) if n_valid > 1 else 0.0}
         out['smoothness'] = {'mean': float(np.mean(smoothnesses)), 'std': float(np.std(smoothnesses)) if n_valid > 1 else 0.0}
@@ -1184,16 +1249,37 @@ class ExperimentRunner:
                 if metric_name not in metrics_result:
                     metrics_result[metric_name] = None
 
-        # Execution SSR (D3IL only): 1.0 if this run was success and collision-free (aligns with DPCC)
+        # Execution SSR (D3IL only): (success & no-collision executions) / total executions; or 0/1 for single run
         is_d3il_style = (
             getattr(self.config, 'method', None) == 'd3il_unified'
             or 'd3il' in str(getattr(self.config, 'env_name', ''))
         )
         if is_d3il_style and planning_result is not None:
-            succ = bool(planning_result.get('success', False))
-            coll = bool(planning_result.get('collision', True))
-            metrics_result['execution_ssr'] = {'execution_ssr': 1.0 if (succ and not coll) else 0.0}
-
+            if isinstance(planning_result.get('execution_ssr'), dict):
+                metrics_result['execution_ssr'] = dict(planning_result['execution_ssr'])
+            else:
+                succ = bool(planning_result.get('success', False))
+                coll = bool(planning_result.get('collision', True))
+                metrics_result['execution_ssr'] = {'execution_ssr': 1.0 if (succ and not coll) else 0.0}
+            # Violation rate for executed trajectories (band 2*robot_radius, averaged over all executions)
+            exec_states_list = planning_result.get('exec_candidate_states', [])
+            if not exec_states_list:
+                single_states = planning_result.get('executed_states') or planning_result.get('states')
+                if single_states is not None:
+                    exec_states_list = [single_states]
+            if exec_states_list and obstacles is not None:
+                def extract_pos_2d(s):
+                    if env_plugin is not None and hasattr(env_plugin, "extract_position"):
+                        p = np.asarray(env_plugin.extract_position(s), dtype=np.float32).reshape(-1)
+                        return p[:2]
+                    x = np.asarray(s, dtype=np.float32).reshape(-1)
+                    return x[:2] if x.size >= 2 else x
+                exec_violation_rates = []
+                for states in exec_states_list:
+                    vr = self._violation_rate_band(states, obstacles, robot_radius, extract_pos_2d)
+                    exec_violation_rates.append(vr)
+                metrics_result['execution_ssr']['violation_rate_mean'] = float(np.mean(exec_violation_rates)) if exec_violation_rates else 0.0
+                metrics_result['execution_ssr']['violation_rate_std'] = float(np.std(exec_violation_rates)) if len(exec_violation_rates) > 1 else 0.0
         return metrics_result
 
     def _generate_visualizations(self, result: Dict[str, Any], env: Any, 
@@ -2047,6 +2133,8 @@ class ExperimentRunner:
             metrics_to_save['ssr'] = {
                 'ssr': float(m.get('ssr', 0.0)),
                 'ssr_count': int(m.get('ssr_count', 0)),
+                'violation_rate_mean': float(m.get('violation_rate_mean', 0.0)),
+                'violation_rate_std': float(m.get('violation_rate_std', 0.0)),
             }
         serializable_result['metrics'] = metrics_to_save
         
@@ -2085,26 +2173,29 @@ class ExperimentRunner:
             with open(trajectory_dir / "trajectory.json", 'w') as f:
                 json.dump(trajectory_json, f, indent=2)
 
-        # Save 9D trajectory json when available (DPCC-style payload).
-        if isinstance(planning_result, dict):
-            info = planning_result.get("info", {}) if isinstance(planning_result.get("info"), dict) else {}
-            states_9d = planning_result.get("states_9d", info.get("states_9d"))
-            actions_9d = planning_result.get("actions_9d", info.get("actions_9d"))
-            if states_9d is not None and actions_9d is not None:
-                trajectory_9d_json = {
-                    "states": convert_to_json_serializable(planning_result.get("states", [])),
-                    "actions": convert_to_json_serializable(planning_result.get("actions", [])),
-                    "state_layout": "[x_des, y_des, x, y]",
-                    "action_layout": "[dx, dy]",
-                    "states_9d": convert_to_json_serializable(states_9d),
-                    "actions_9d": convert_to_json_serializable(actions_9d),
-                    "state_layout_9d": info.get("state_layout_9d", "[x, y, q1..q7]"),
-                    "action_layout_9d": info.get("action_layout_9d", "[qdot1..qdot7]"),
-                }
+        # Save lifted 9D trajectory for 4D D3IL runs when available.
+        if isinstance(planning_result, dict) and (
+            "states_9d" in planning_result or ("info" in planning_result and isinstance(planning_result.get("info"), dict) and "states_9d" in planning_result.get("info", {}))
+        ):
+            info_dict = planning_result.get("info", {}) if isinstance(planning_result.get("info"), dict) else {}
+            states_9d = planning_result.get("states_9d", info_dict.get("states_9d", []))
+            actions_9d = planning_result.get("actions_9d", info_dict.get("actions_9d", []))
+            if states_9d:
                 trajectory_dir = output_path / "trajectory"
                 trajectory_dir.mkdir(parents=True, exist_ok=True)
+                lifted_json = {
+                    "state_layout": "[x, y, q1..q7]",
+                    "action_layout": "[qdot1..qdot7]",
+                    "states": convert_to_json_serializable(states_9d),
+                    "actions": convert_to_json_serializable(actions_9d),
+                    # Backward-compatible aliases.
+                    "state_layout_9d": "[x, y, q1..q7]",
+                    "action_layout_9d": "[qdot1..qdot7]",
+                    "states_9d": convert_to_json_serializable(states_9d),
+                    "actions_9d": convert_to_json_serializable(actions_9d),
+                }
                 with open(trajectory_dir / "trajectory_9d.json", "w") as f:
-                    json.dump(trajectory_9d_json, f, indent=2)
+                    json.dump(lifted_json, f, indent=2)
 
         # Multirun diagnostics (architecture performance visibility)
         # These keys are produced by the solver when using the minimal-batch multirun path.
