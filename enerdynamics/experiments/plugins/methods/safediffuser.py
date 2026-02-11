@@ -68,6 +68,8 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
         plan_config.setdefault("max_episode_length", int(config.get("max_episode_length", 200)))
         plan_config.setdefault("safediffuser_pos_idx", tuple(config.get("safediffuser_pos_idx", (0,1))))
         plan_config.setdefault("derive_action_from_states", bool(config.get("derive_action_from_states", True)))
+        # Align with enerdynamics unified constraint stack when available.
+        plan_config.setdefault("use_framework_constraints", bool(config.get("use_framework_constraints", True)))
 
         # inner default config
         plan_config.setdefault("return_diffusion", bool(config.get("return_diffusion", True)))
@@ -91,6 +93,8 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
             goal_xy=goal_xy,
             device=device,
             seed=seed,
+            constraint_manager=config.get("constraint_manager"),
+            constraint_pipeline=config.get("constraint_pipeline"),
         )
 
     def plan(self, planner: "SafeDiffuserSolver", initial_state: np.ndarray, rng: Any) -> Dict[str, Any]:
