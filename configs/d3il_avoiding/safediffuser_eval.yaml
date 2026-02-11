@@ -22,7 +22,7 @@ method_params:
   # Apply CBF/QP invariance on every denoising step (DDPM iteration).
   # (This is separate from `correct_all_steps`, which toggles correcting all trajectory timesteps vs only t=0.)
   correct_all_steps: true
-  which_trajectory: 5
+  which_trajectory: 3
   receding_horizon: true
   max_episode_length: 600
   safediffuser_pos_idx: [0,1]

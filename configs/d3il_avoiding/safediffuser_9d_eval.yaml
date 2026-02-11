@@ -1,0 +1,66 @@
+name: d3il_avoiding_9d_safediffuser_eval
+output_dir: results/d3il_avoiding/safediffuser_9d
+
+env_name: d3il_avoiding_9d
+env_params:
+  render: false
+  horizon: 64
+  dt: 0.035
+
+method: safediffuser
+method_params:
+  # NOTE:
+  # This is a 9D config template aligned with existing D3IL 9D experiment style.
+  # Current safediffuser backend implementation is still 4D/2D-control oriented
+  # and may require additional code adaptation for full 9D execution.
+  loadbase: logs
+  exp: avoiding-d3il
+  dataset: avoiding-d3il
+  safediffuser_config_path: enerdynamics/enerdynamics/solvers/single/safediffuser/config/avoiding_d3il.yaml
+  diffusion_loadpath: diffusion/H8_K20_Dmodels.GaussianDiffusion
+  diffusion_epoch: "best"
+  seed: 5
+  device: cuda
+  batch_size: 8
+  enable_safety: true
+  correct_all_steps: true
+  which_trajectory: 0
+  receding_horizon: true
+  max_episode_length: 64
+  safediffuser_pos_idx: [0, 1]
+  derive_action_from_states: true
+  use_framework_constraints: true
+
+  plan_config: {}
+
+obstacle_levels: [0]
+obstacle_config:
+  generator: d3il_avoiding_fixed
+  use_d3il_preset: true
+  obstacle_radius_by_level:
+    0: [0.03, 0.025]
+    1: [0.04, 0.035]
+    2: [0.05, 0.045]
+  enable_connectivity_check: false
+  enable_nonconvexity_check: false
+  robot_radius: 0.01
+  success_margin: 0.024
+  map_bounds:
+    x_min: 0.2
+    x_max: 0.8
+    y_min: -0.3
+    y_max: 0.4
+
+seeds: [0]
+backend: torch
+device: cuda
+
+metrics:
+  - ssr
+  - episode_outcome
+
+visualizations:
+  - trajectory
+
+metadata:
+  description: "SafeDiffuser eval template on D3IL avoiding 9D (requires 9D safediffuser backend compatibility)."
