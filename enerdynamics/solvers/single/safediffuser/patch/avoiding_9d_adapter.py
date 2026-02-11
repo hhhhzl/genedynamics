@@ -132,6 +132,7 @@ class Avoiding9DAdapter:
         initial_q: Optional[np.ndarray] = None,
         dt: Optional[float] = None,
         xy_indices: Tuple[int, int] = (2, 3),
+        mode: str = "delta",
     ) -> Tuple[Optional[List[np.ndarray]], Optional[List[np.ndarray]]]:
         """
         Convert 4D avoiding trajectory [x_des, y_des, x, y] to 9D [x, y, q1..q7].
@@ -154,6 +155,7 @@ class Avoiding9DAdapter:
 
         states_9d: List[np.ndarray] = []
         actions_9d: List[np.ndarray] = []
+        mode = str(mode).lower()
         for t in range(len(states_4d)):
             s_t = np.asarray(states_4d[t], dtype=np.float32).reshape(-1)
             if s_t.size <= max(ix, iy):
@@ -170,10 +172,16 @@ class Avoiding9DAdapter:
             xy_next = np.array([s_next[ix], s_next[iy]], dtype=np.float32)
             q_prev = q_cur.copy()
             try:
-                q_solved = self.solve_ik_xy(q_prev, xy_next, max_iters=20, tol=2e-3)
-                qdot = (q_solved - q_prev) / dt_eff
-                qdot = np.asarray(qdot, dtype=np.float32).reshape(-1)[:7]
-                qdot = np.clip(qdot, -float(self.qdot_limit), float(self.qdot_limit))
+                if mode == "ik":
+                    q_solved = self.solve_ik_xy(q_prev, xy_next, max_iters=20, tol=2e-3)
+                    qdot = (q_solved - q_prev) / dt_eff
+                    qdot = np.asarray(qdot, dtype=np.float32).reshape(-1)[:7]
+                    qdot = np.clip(qdot, -float(self.qdot_limit), float(self.qdot_limit))
+                else:
+                    # Default: incremental Jacobian lift from delta_xy, usually smoother and
+                    # less likely to introduce backtracking than per-step IK re-solving.
+                    delta_xy = (xy_next - xy_t).astype(np.float32)
+                    qdot = self.delta_xy_to_qdot7(q_prev, delta_xy, dt=dt_eff)
                 q_cur = self._clip_q_joint_limits(q_prev + dt_eff * qdot)
             except Exception:
                 qdot = np.zeros(7, dtype=np.float32)
