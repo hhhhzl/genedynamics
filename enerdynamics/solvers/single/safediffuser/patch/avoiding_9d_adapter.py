@@ -156,6 +156,19 @@ class Avoiding9DAdapter:
         states_9d: List[np.ndarray] = []
         actions_9d: List[np.ndarray] = []
         mode = str(mode).lower()
+        # Align the very first joint pose to the first XY waypoint so rendered 3D
+        # trajectory starts from the same location as the 4D path.
+        if mode == "ik":
+            s0 = np.asarray(states_4d[0], dtype=np.float32).reshape(-1)
+            if s0.size <= max(ix, iy):
+                return None, None
+            xy0 = np.array([s0[ix], s0[iy]], dtype=np.float32)
+            try:
+                q_cur = self.solve_ik_xy(q_cur, xy0, max_iters=30, tol=1e-3)
+                q_cur = self._clip_q_joint_limits(q_cur)
+            except Exception:
+                pass
+
         for t in range(len(states_4d)):
             s_t = np.asarray(states_4d[t], dtype=np.float32).reshape(-1)
             if s_t.size <= max(ix, iy):
@@ -177,12 +190,15 @@ class Avoiding9DAdapter:
                     qdot = (q_solved - q_prev) / dt_eff
                     qdot = np.asarray(qdot, dtype=np.float32).reshape(-1)[:7]
                     qdot = np.clip(qdot, -float(self.qdot_limit), float(self.qdot_limit))
+                    # For visualization lift, prefer end-pose consistency with IK target.
+                    # Keep qdot clipped in logs, but keep pose on IK solution branch.
+                    q_cur = self._clip_q_joint_limits(q_solved)
                 else:
                     # Default: incremental Jacobian lift from delta_xy, usually smoother and
                     # less likely to introduce backtracking than per-step IK re-solving.
                     delta_xy = (xy_next - xy_t).astype(np.float32)
                     qdot = self.delta_xy_to_qdot7(q_prev, delta_xy, dt=dt_eff)
-                q_cur = self._clip_q_joint_limits(q_prev + dt_eff * qdot)
+                    q_cur = self._clip_q_joint_limits(q_prev + dt_eff * qdot)
             except Exception:
                 qdot = np.zeros(7, dtype=np.float32)
                 q_cur = q_prev

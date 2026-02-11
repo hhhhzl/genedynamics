@@ -239,6 +239,81 @@ class SafeDiffuserSolver(SamplingSolver):
         if obs9.size < 9:
             raise ValueError(f"9D solve requires 9D initial state; got shape {obs9.shape}")
 
+        native_9d = bool(self.plan_config.get("native_9d", False))
+        if native_9d:
+            states_exec_9d: List[np.ndarray] = [obs9.copy()]
+            actions_exec_9d: List[np.ndarray] = []
+            states_query_9d: List[np.ndarray] = []
+            actions_plan_7d: List[np.ndarray] = []
+            last_info: Dict[str, Any] = {}
+            success = False
+            done = False
+
+            if not use_mpc:
+                result = planner.plan(obs9, rng_key=rng_key)
+                last_info = dict(result.get("info") or {})
+                for t, a in enumerate(result.get("actions", [])):
+                    a7 = np.asarray(a, dtype=np.float32).reshape(-1)
+                    if a7.size < 7:
+                        raise ValueError(
+                            f"Native 9D SafeDiffuser expects 7D actions, got shape {a7.shape}"
+                        )
+                    a7 = a7[:7]
+                    next_obs9, step_success, step_done, step_info = adapter.step_9d(a7, obs9, t=t)
+                    actions_exec_9d.append(a7.copy())
+                    obs9 = next_obs9
+                    states_exec_9d.append(obs9.copy())
+                    states_query_9d.append(np.asarray(states_exec_9d[-2], dtype=np.float32).copy())
+                    actions_plan_7d.append(a7.copy())
+                    success = bool(step_success or success or step_info.get("success", False))
+                    done = bool(step_done or step_info.get("terminated", False) or step_info.get("done", False))
+                    if success or done:
+                        last_info.update({"terminal_info": step_info})
+                        break
+            else:
+                for t in range(max_steps):
+                    result = planner.plan(obs9, rng_key=rng_key)
+                    last_info = dict(result.get("info") or {})
+                    a7 = np.asarray(result["actions"][0], dtype=np.float32).reshape(-1)
+                    if a7.size < 7:
+                        raise ValueError(
+                            f"Native 9D SafeDiffuser expects 7D actions, got shape {a7.shape}"
+                        )
+                    a7 = a7[:7]
+                    next_obs9, step_success, step_done, step_info = adapter.step_9d(a7, obs9, t=t)
+                    actions_exec_9d.append(a7.copy())
+                    states_query_9d.append(obs9.copy())
+                    actions_plan_7d.append(a7.copy())
+                    obs9 = next_obs9
+                    states_exec_9d.append(obs9.copy())
+
+                    success = bool(step_success or success or step_info.get("success", False))
+                    done = bool(step_done or step_info.get("terminated", False) or step_info.get("done", False))
+                    if success or done:
+                        last_info.update({"terminal_info": step_info})
+                        break
+
+            last_info.update(
+                {
+                    "native_9d": True,
+                    "mpc": bool(use_mpc),
+                    "success": bool(success),
+                    "steps": int(len(actions_exec_9d)),
+                    "state_layout_9d": "[x, y, q1..q7]",
+                    "action_layout_9d": "[qdot1..qdot7]",
+                    "states_9d": [np.asarray(s, dtype=np.float32) for s in states_exec_9d],
+                    "actions_9d": [np.asarray(a, dtype=np.float32) for a in actions_exec_9d],
+                    "states_query_9d": [np.asarray(s, dtype=np.float32) for s in states_query_9d],
+                    "actions_plan_7d": [np.asarray(a, dtype=np.float32) for a in actions_plan_7d],
+                }
+            )
+
+            return Trajectory(
+                states=[np.asarray(s, dtype=np.float32) for s in states_exec_9d],
+                actions=[np.asarray(a, dtype=np.float32) for a in actions_exec_9d],
+                info=last_info,
+            )
+
         q_cur = adapter.get_current_q(obs9)
         if q_cur is None:
             q_cur = obs9[2:9].copy()
@@ -350,7 +425,7 @@ class SafeDiffuserSolver(SamplingSolver):
                 int(self.plan_config.get("lift_xy_idx0", 2)),
                 int(self.plan_config.get("lift_xy_idx1", 3)),
             ),
-            mode=str(self.plan_config.get("lift_mode", "delta")),
+            mode=str(self.plan_config.get("lift_mode", "ik")),
         )
         if states_9d is None or actions_9d is None:
             return info
