@@ -44,6 +44,7 @@ class SafeDiffuserBackendTorch:
         self.goal_xy = None if goal_xy is None else np.asarray(goal_xy, dtype=np.float32).reshape(2)
         self.constraint_manager = constraint_manager
         self.constraint_pipeline = constraint_pipeline
+        self.native_9d: bool = bool(self.plan_config.get("native_9d", False))
 
         # SafeDiffuser execution details.
         # For avoiding-d3il, we typically constrain/correct the XY *position* components in obs.
@@ -159,6 +160,14 @@ class SafeDiffuserBackendTorch:
                     exp=str(self.plan_config.get("exp", "avoiding-d3il")),
                     des_idx=tuple(self.pos_idx),
                     correct_all_steps=correct_all_steps,
+                    runtime_obstacles=self.plan_config.get("obstacles"),
+                    runtime_obstacle_config=self.plan_config.get("obstacle_config", {}),
+                    align_constraints_with_framework=bool(
+                        self.plan_config.get("align_constraints_with_framework", True)
+                    ),
+                    disable_halfspace_when_aligned=bool(
+                        self.plan_config.get("disable_halfspace_when_aligned", True)
+                    ),
                 ),
             )
 
@@ -183,6 +192,22 @@ class SafeDiffuserBackendTorch:
             goal_xy = np.asarray(getattr(self.env, "target"), dtype=np.float32).reshape(-1)[:2]
         gx, gy = float(goal_xy[0]), float(goal_xy[1])
         return np.array([gx, gy, gx, gy], dtype=np.float32)
+
+    def _build_goal_state_9d(self, x0_9d: np.ndarray) -> np.ndarray:
+        """
+        Build a 9D goal state aligned with D3ILAvoiding9D state:
+          [x, y, q1..q7]
+        Keep joints from x0 and only set XY to the task goal.
+        """
+        x0 = np.asarray(x0_9d, dtype=np.float32).reshape(-1).copy()
+        if x0.size < 9:
+            raise ValueError(f"9D goal build expects x0 size >= 9, got {x0.shape}")
+        goal_xy = self.goal_xy
+        if goal_xy is None:
+            goal_xy = np.asarray(getattr(self.env, "target"), dtype=np.float32).reshape(-1)[:2]
+        x0[0] = float(goal_xy[0])
+        x0[1] = float(goal_xy[1])
+        return x0[:9].astype(np.float32)
 
     def _plan_core_4d(self, x0_4d: np.ndarray, *, rng_key: Any | None = None) -> Dict[str, Any]:
         self._ensure_ready()
@@ -266,15 +291,81 @@ class SafeDiffuserBackendTorch:
             "info": info,
         }
 
+    def _plan_core_9d(self, x0_9d: np.ndarray, *, rng_key: Any | None = None) -> Dict[str, Any]:
+        self._ensure_ready()
+
+        try:
+            if rng_key is not None:
+                seed = int(getattr(rng_key, "integers", lambda low, high: 0)(0, 2**31 - 1))
+            else:
+                seed = self.seed
+            torch.manual_seed(seed)
+        except Exception:
+            pass
+
+        cond: Dict[int, np.ndarray] = {}
+        horizon = int(self.plan_config.get("horizon", getattr(self.diffusion, "horizon", 8)))
+
+        x0 = np.asarray(x0_9d, dtype=np.float32).reshape(-1).copy()
+        if x0.size < 9:
+            raise ValueError(f"Native 9D SafeDiffuser expects x0 size >= 9, got {x0.shape}")
+        cond[0] = x0[:9]
+        cond[horizon - 1] = self._build_goal_state_9d(x0)
+
+        batch_size = int(self.plan_config.get("batch_size", 4))
+        _all_sampled_action, trajectories, diffusion_paths = self._policy(
+            cond,
+            batch_size=batch_size,
+            horizon=horizon,
+            return_diffusion=bool(self.plan_config.get("return_diffusion", True)),
+        )
+
+        actions_raw = np.asarray(trajectories.actions[self.which_trajectory], dtype=np.float32)
+        states = np.asarray(trajectories.observations[self.which_trajectory], dtype=np.float32)
+        actions_exec = actions_raw
+
+        states_list = [states[t].copy() for t in range(states.shape[0])]
+        actions_list = [actions_exec[t].copy() for t in range(actions_exec.shape[0])]
+        states_list, actions_list, fw_info = self._apply_framework_constraints(states_list, actions_list)
+
+        action0_raw = actions_raw[0].copy()
+        action0 = np.asarray(actions_list[0], dtype=np.float32).copy()
+        goal_xy_info = (
+            np.asarray(self.goal_xy, dtype=np.float32).tolist()
+            if self.goal_xy is not None
+            else np.asarray(getattr(self.env, "target"), dtype=np.float32).reshape(-1)[:2].tolist()
+        )
+        info: Dict[str, Any] = {
+            "action0": np.asarray(action0, dtype=np.float32).tolist(),
+            "action0_raw": np.asarray(action0_raw, dtype=np.float32).tolist(),
+            "action0_source": "diffusion_action_slice",
+            "goal_xy": goal_xy_info,
+            "native_9d": True,
+            "safety": "cbf_qp_invariance" if self._projector is not None else "none",
+        }
+        info.update(fw_info)
+        if diffusion_paths is not None:
+            info["diffusion_paths_shape"] = list(np.asarray(diffusion_paths).shape)
+
+        return {
+            "states": states_list,
+            "actions": actions_list,
+            "info": info,
+        }
+
     def plan(self, x0: np.ndarray, *, rng_key: Any | None = None) -> Dict[str, Any]:
         """
         Plan a full horizon trajectory.
 
-        Accepts either:
-        - 4D avoiding state: [x_des, y_des, x, y]
-        - 9D avoiding state: [x, y, q1..q7] (converted to 4D conditions)
+        Accepts:
+        - native_9d=False: 4D avoiding state or 9D state compressed to 4D conditions
+        - native_9d=True: full 9D avoiding state [x, y, q1..q7]
         """
         x = np.asarray(x0, dtype=np.float32).reshape(-1)
+        if self.native_9d:
+            if x.size < 9:
+                raise ValueError(f"Native 9D SafeDiffuser expects x0 size >= 9, got {x.shape}")
+            return self._plan_core_9d(x, rng_key=rng_key)
         if x.size == 4:
             x4 = x
         elif x.size >= 2:

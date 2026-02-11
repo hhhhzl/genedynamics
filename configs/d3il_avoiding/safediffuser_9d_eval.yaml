@@ -4,30 +4,33 @@ output_dir: results/d3il_avoiding/safediffuser_9d
 env_name: d3il_avoiding_9d
 env_params:
   render: false
-  horizon: 64
+  horizon: 8
   dt: 0.035
 
 method: safediffuser
 method_params:
-  # 9D execution path:
-  # obs9d -> obs4d (for SafeDiffuser planning) -> delta_xy -> qdot7 (Jacobian lift) -> env.step.
+  # Native 9D path:
+  # obs9d -> SafeDiffuser(9D) -> action7d -> env.step
   loadbase: logs
-  exp: avoiding-d3il
-  dataset: avoiding-d3il
+  exp: avoiding-d3il-9d
+  dataset: avoiding-d3il-9d
   safediffuser_config_path: enerdynamics/solvers/single/safediffuser/config/avoiding_d3il.yaml
   diffusion_loadpath: diffusion/H8_K20_Dmodels.GaussianDiffusion
   diffusion_epoch: "best"
   seed: 5
   device: cuda
-  batch_size: 8
+  batch_size: 4
   enable_safety: true
   correct_all_steps: true
   which_trajectory: 0
+  native_9d: true
   receding_horizon: true
-  max_episode_length: 64
+  max_episode_length: 200
   safediffuser_pos_idx: [0, 1]
-  derive_action_from_states: true
+  derive_action_from_states: false
   use_framework_constraints: true
+  align_constraints_with_framework: true
+  disable_halfspace_when_aligned: true
 
   plan_config: {}
 
@@ -38,11 +41,9 @@ obstacle_config:
   obstacle_radius_by_level:
     0: [0.03, 0.025]
     1: [0.04, 0.035]
-    2: [0.05, 0.045]
+    2: [0.06, 0.045]
   enable_connectivity_check: false
   enable_nonconvexity_check: false
-  robot_radius: 0.01
-  success_margin: 0.024
   map_bounds:
     x_min: 0.2
     x_max: 0.8
@@ -62,4 +63,4 @@ visualizations:
 
 
 metadata:
-  description: "SafeDiffuser eval on D3IL avoiding 9D (4D SafeDiffuser planning + Jacobian-based 9D execution lift)."
+  description: "SafeDiffuser native-9D eval on D3IL avoiding 9D (CBF enabled, framework-aligned constraints)."
