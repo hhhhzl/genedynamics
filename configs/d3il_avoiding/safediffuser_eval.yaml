@@ -28,6 +28,7 @@ method_params:
   safediffuser_pos_idx: [0,1]
   derive_action_from_states: true
   export_lifted_9d: true
+  lift_mode: delta  # delta | ik
 
   plan_config: {}
 

@@ -430,6 +430,18 @@ class ExperimentRunner:
 
         # 8b1.5. D3IL: 3D GIF from *executed* states (after 8b2 so best is execution-based)
         _states_3d = result.get('executed_states') or result.get('states')
+        info_dict = result.get('info', {}) if isinstance(result.get('info', {}), dict) else {}
+        states_9d_info = info_dict.get('states_9d')
+        if (not _states_3d or len(_states_3d) == 0) and states_9d_info:
+            _states_3d = states_9d_info
+        elif _states_3d and len(_states_3d) > 0:
+            try:
+                s0 = np.asarray(_states_3d[0], dtype=np.float32).reshape(-1)
+                if s0.size < 9 and states_9d_info:
+                    _states_3d = states_9d_info
+            except Exception:
+                if states_9d_info:
+                    _states_3d = states_9d_info
         if is_d3il_style and _states_3d and len(_states_3d) >= 2:
             try:
                 out_dir = self._get_output_path(level, seed)
@@ -802,6 +814,19 @@ class ExperimentRunner:
                 return
             plan_result = result.get("result", {})
             states = plan_result.get("states")
+            # Fallback: methods that keep lifted 9D trajectory in info (e.g., SafeDiffuser 4D->9D lift)
+            if (
+                (not states or len(states) == 0)
+                and isinstance(plan_result.get("info"), dict)
+                and plan_result["info"].get("states_9d") is not None
+            ):
+                states = plan_result["info"].get("states_9d")
+            if states and len(states) > 0:
+                s0 = np.asarray(states[0], dtype=np.float64).reshape(-1)
+                if s0.size < 9 and isinstance(plan_result.get("info"), dict):
+                    states_9d = plan_result["info"].get("states_9d")
+                    if states_9d is not None and len(states_9d) > 0:
+                        states = states_9d
             if not states:
                 return
             states = [np.asarray(s, dtype=np.float64).reshape(-1).copy() for s in states]
@@ -2060,6 +2085,27 @@ class ExperimentRunner:
             with open(trajectory_dir / "trajectory.json", 'w') as f:
                 json.dump(trajectory_json, f, indent=2)
 
+        # Save 9D trajectory json when available (DPCC-style payload).
+        if isinstance(planning_result, dict):
+            info = planning_result.get("info", {}) if isinstance(planning_result.get("info"), dict) else {}
+            states_9d = planning_result.get("states_9d", info.get("states_9d"))
+            actions_9d = planning_result.get("actions_9d", info.get("actions_9d"))
+            if states_9d is not None and actions_9d is not None:
+                trajectory_9d_json = {
+                    "states": convert_to_json_serializable(planning_result.get("states", [])),
+                    "actions": convert_to_json_serializable(planning_result.get("actions", [])),
+                    "state_layout": "[x_des, y_des, x, y]",
+                    "action_layout": "[dx, dy]",
+                    "states_9d": convert_to_json_serializable(states_9d),
+                    "actions_9d": convert_to_json_serializable(actions_9d),
+                    "state_layout_9d": info.get("state_layout_9d", "[x, y, q1..q7]"),
+                    "action_layout_9d": info.get("action_layout_9d", "[qdot1..qdot7]"),
+                }
+                trajectory_dir = output_path / "trajectory"
+                trajectory_dir.mkdir(parents=True, exist_ok=True)
+                with open(trajectory_dir / "trajectory_9d.json", "w") as f:
+                    json.dump(trajectory_9d_json, f, indent=2)
+
         # Multirun diagnostics (architecture performance visibility)
         # These keys are produced by the solver when using the minimal-batch multirun path.
         if isinstance(planning_result, dict):
@@ -2197,4 +2243,3 @@ class ExperimentRunner:
         # Save overall summary
         with open(self.config.output_dir / "overall_summary.json", 'w') as f:
             json.dump(overall_summary, f, indent=2)
-

@@ -350,6 +350,7 @@ class SafeDiffuserSolver(SamplingSolver):
                 int(self.plan_config.get("lift_xy_idx0", 2)),
                 int(self.plan_config.get("lift_xy_idx1", 3)),
             ),
+            mode=str(self.plan_config.get("lift_mode", "delta")),
         )
         if states_9d is None or actions_9d is None:
             return info
