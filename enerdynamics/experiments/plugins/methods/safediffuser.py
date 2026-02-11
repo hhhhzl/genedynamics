@@ -68,8 +68,20 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
         plan_config.setdefault("max_episode_length", int(config.get("max_episode_length", 200)))
         plan_config.setdefault("safediffuser_pos_idx", tuple(config.get("safediffuser_pos_idx", (0,1))))
         plan_config.setdefault("derive_action_from_states", bool(config.get("derive_action_from_states", True)))
+        plan_config.setdefault("native_9d", bool(config.get("native_9d", False)))
         # Align with enerdynamics unified constraint stack when available.
         plan_config.setdefault("use_framework_constraints", bool(config.get("use_framework_constraints", True)))
+        # Align CBF obstacle set with framework runtime obstacle generation.
+        plan_config.setdefault(
+            "align_constraints_with_framework",
+            bool(config.get("align_constraints_with_framework", True)),
+        )
+        plan_config.setdefault(
+            "disable_halfspace_when_aligned",
+            bool(config.get("disable_halfspace_when_aligned", True)),
+        )
+        plan_config.setdefault("obstacles", config.get("obstacles"))
+        plan_config.setdefault("obstacle_config", config.get("obstacle_config", {}))
 
         # inner default config
         plan_config.setdefault("return_diffusion", bool(config.get("return_diffusion", True)))

@@ -869,7 +869,8 @@ class ExperimentRunner:
             if len(frames_rgb) >= 2:
                 import imageio
                 out_path = trajectory_dir / "trajectory_best_exec_3d.gif"
-                imageio.v3.imwrite(out_path, frames_rgb, duration=duration_ms, loop=0)
+                # Play once to avoid visual jump from last frame back to first frame.
+                imageio.v3.imwrite(out_path, frames_rgb, duration=duration_ms, loop=1)
         except Exception:
             pass
 
