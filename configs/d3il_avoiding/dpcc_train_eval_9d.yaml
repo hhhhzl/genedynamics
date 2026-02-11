@@ -1,27 +1,27 @@
-name: d3il_avoiding_dpcc_eval
-output_dir: results/d3il_avoiding/dpcc
+name: d3il_avoiding_dpcc_eval_9d
+output_dir: results/d3il_avoiding/dpcc_9d
 
-env_name: d3il_avoiding
+env_name: d3il_avoiding_9d
 env_params:
   render: false
   horizon: 8
-  dt: 1
+  dt: 0.035
 
 method: dpcc
 method_params:
-  exp: avoiding-d3il
+  exp: avoiding-d3il-9d
   dpcc_config_path: enerdynamics/solvers/single/dpcc/config/projection_eval.yaml
   loadbase: logs
-  dataset: avoiding-d3il
+  dataset: avoiding-d3il-9d
   diffusion_loadpath: diffusion/H8_K20_Dmodels.GaussianDiffusion
   diffusion_epoch: 'best'
   device: cuda
   seed: 5
   horizon: 8
-  dt: 1
+  dt: 0.035
   batch_size: 4
   max_episode_length: 200
-  variant: dpcc-t-tightened
+  variant: dpcc-c
   solver: scipy
 
 obstacle_levels: [0]
@@ -34,6 +34,8 @@ obstacle_config:
     2: [0.06, 0.055]
   enable_connectivity_check: false
   enable_nonconvexity_check: false
+  robot_radius: 0.01
+  success_margin: 0.025
   map_bounds:
     x_min: 0.2
     x_max: 0.8
@@ -52,4 +54,4 @@ visualizations:
   - trajectory
 
 metadata:
-  description: "DPCC eval on D3IL avoiding"
+  description: "DPCC eval on D3IL avoiding 9D"

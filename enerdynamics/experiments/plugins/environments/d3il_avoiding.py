@@ -24,6 +24,9 @@ class D3ILAvoidingPlugin(EnvironmentPlugin):
         # Note: we keep config minimal for now. Future tasks will need task-specific parameters.
         env_cfg = D3ILAvoidingConfig(
             render=bool(config.get("render", False)),
+            obstacle_level=config.get("obstacle_level"),
+            obstacle_radius_by_level=config.get("obstacle_radius_by_level"),
+            obstacles=config.get("obstacles"),
         )
         env = D3ILAvoidingEnv(env_cfg)
         # Allow overriding horizon/dt if desired (mostly for logging/compat)
@@ -62,5 +65,4 @@ class D3ILAvoidingPlugin(EnvironmentPlugin):
         if s.size >= 4:
             return s[2:4]
         return s[:2]
-
 

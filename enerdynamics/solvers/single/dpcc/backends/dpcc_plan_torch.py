@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -51,6 +51,12 @@ class DPCCBackendTorch:
         if halfspace_variant is None and "avoiding" in exp:
             hv = self.constraint_config.get("avoiding_halfspace_variants") or []
             halfspace_variant = hv[0] if len(hv) > 0 else None
+        align_with_framework = bool(
+            self.plan_config.get("align_constraints_with_framework", True)
+        )
+        disable_halfspace_when_aligned = bool(
+            self.plan_config.get("disable_halfspace_when_aligned", True)
+        )
 
         # Match DPCC eval.py: parse gradient + dt multipliers from variant string.
         gradient = True if "gradient" in str(variant) else False
@@ -79,6 +85,10 @@ class DPCCBackendTorch:
             trajectory_dim=trajectory_dim,
             action_dim=action_dim,
             act_obs_indices=act_obs_indices,
+            runtime_obstacles=self.plan_config.get("obstacles"),
+            runtime_obstacle_config=self.plan_config.get("obstacle_config", {}),
+            align_with_framework=align_with_framework,
+            disable_halfspace_when_aligned=disable_halfspace_when_aligned,
         )
         if "model_free" in variant and "tightened" in variant:
             constraints = constraints_info["constraint_list_without_prior_tightened"]
@@ -182,6 +192,8 @@ class DPCCBackendTorch:
         sampled_trajectories_all = []
         obs_buffers_all = []
         action_buffers_all = []
+        fixed_z_all = []
+        initial_q_all = []
 
         # Run trials (match eval.py loop structure)
         for i in range(n_trials):
@@ -195,6 +207,8 @@ class DPCCBackendTorch:
             # Match dpcc/scripts/eval.py for avoiding: env.reset() without a seed per trial.
             obs, action, fixed_z = self.adapter.reset(seed=None)
             obs0 = np.asarray(obs, dtype=np.float32)
+            fixed_z_all.append(np.asarray(fixed_z, dtype=np.float32).reshape(-1))
+            initial_q_all.append(self._get_current_robot_q())
 
             # DPCC eval buffers (do NOT include initial obs0)
             obs_buffer_dpcc = []
@@ -295,6 +309,12 @@ class DPCCBackendTorch:
         # Return the first trial as the primary trajectory (framework expects a single trajectory)
         states = [np.asarray(s, dtype=np.float32) for s in obs_buffers_all[0]]
         actions = [np.asarray(a, dtype=np.float32) for a in action_buffers_all[0]]
+        lifted_states_9d, lifted_actions_9d = self._lift_4d_to_9d_trajectory(
+            states=states,
+            initial_q=(initial_q_all[0] if len(initial_q_all) > 0 else None),
+            fixed_z=(fixed_z_all[0] if len(fixed_z_all) > 0 else None),
+            exp=exp,
+        )
 
         info = {
             # Primary (trial-0) summary
@@ -321,7 +341,16 @@ class DPCCBackendTorch:
             "batch_size": batch_size,
             "max_episode_length": max_episode_length,
         }
-        return {"states": states, "actions": actions, "info": info}
+        if lifted_states_9d is not None and lifted_actions_9d is not None:
+            info["states_9d"] = lifted_states_9d
+            info["actions_9d"] = lifted_actions_9d
+            info["state_layout_9d"] = "[x, y, q1..q7]"
+            info["action_layout_9d"] = "[qdot1..qdot7]"
+        result = {"states": states, "actions": actions, "info": info}
+        if lifted_states_9d is not None and lifted_actions_9d is not None:
+            result["states_9d"] = lifted_states_9d
+            result["actions_9d"] = lifted_actions_9d
+        return result
 
     def sample_trajectories(
         self, x0: Any | None, n_samples: int, rng_key: Any | None = None
@@ -341,3 +370,143 @@ class DPCCBackendTorch:
                 states.append(np.asarray(states[-1], dtype=np.float32))
             trajectories.append(Trajectory(states=states, actions=actions))
         return trajectories
+
+    def _lift_4d_to_9d_trajectory(
+        self,
+        *,
+        states: List[np.ndarray],
+        initial_q: Optional[np.ndarray],
+        fixed_z: Optional[np.ndarray],
+        exp: str,
+    ) -> Tuple[Optional[List[np.ndarray]], Optional[List[np.ndarray]]]:
+        """
+        Convert 4D avoiding trajectory [x_des, y_des, x, y] to 9D
+        [x, y, q1..q7] by differential IK (Jacobian pseudo-inverse).
+        """
+        if "9d" in str(exp).lower() or len(states) < 2:
+            return None, None
+        obs_indices = self.indices.get("observations", {})
+        if "x" not in obs_indices or "y" not in obs_indices:
+            return None, None
+
+        robot, _quat = self._get_robot_and_quat()
+        if robot is None:
+            return None, None
+        if not hasattr(robot, "getForwardKinematics") or not hasattr(robot, "getJacobian"):
+            return None, None
+
+        if initial_q is None:
+            return None, None
+        q_cur = np.asarray(initial_q, dtype=np.float32).reshape(-1)[:7].copy()
+        if q_cur.size != 7:
+            return None, None
+
+        # Keep IK integration consistent with 9D environment timing.
+        dt = float(self.plan_config.get("lift_ik_dt", 0.035))
+        dt = max(1e-6, dt)
+        _ = fixed_z
+
+        states_9d: List[np.ndarray] = []
+        actions_9d: List[np.ndarray] = []
+        for t in range(len(states)):
+            s_t = np.asarray(states[t], dtype=np.float32).reshape(-1)
+            xy_t = np.array([s_t[obs_indices["x"]], s_t[obs_indices["y"]]], dtype=np.float32)
+
+            state_9d_t = np.concatenate([xy_t, q_cur.astype(np.float32)], axis=0)
+            states_9d.append(state_9d_t)
+            if t >= len(states) - 1:
+                break
+
+            s_next = np.asarray(states[t + 1], dtype=np.float32).reshape(-1)
+            xy_next = np.array(
+                [s_next[obs_indices["x"]], s_next[obs_indices["y"]]], dtype=np.float32
+            )
+            q_prev = q_cur.copy()
+            try:
+                q_solved = self._solve_ik_xy(
+                    robot=robot, q_init=q_prev, xy_target=xy_next, max_iters=20, tol=2e-3
+                )
+                qdot = (q_solved - q_prev) / dt
+                qdot = np.asarray(qdot, dtype=np.float32).reshape(-1)[:7]
+                qdot = np.clip(qdot, -1.5, 1.5)
+                q_next = q_prev + dt * qdot
+                if hasattr(robot, "joint_pos_min") and hasattr(robot, "joint_pos_max"):
+                    qmin = np.asarray(robot.joint_pos_min, dtype=np.float32).reshape(-1)[:7]
+                    qmax = np.asarray(robot.joint_pos_max, dtype=np.float32).reshape(-1)[:7]
+                    q_next = np.clip(q_next, qmin, qmax)
+                q_cur = q_next.astype(np.float32)
+            except Exception:
+                # Keep continuity even if one IK step fails.
+                qdot = np.zeros(7, dtype=np.float32)
+                q_cur = q_prev
+
+            actions_9d.append(np.asarray(qdot, dtype=np.float32))
+
+        # ensure action length matches trajectory convention (N-1)
+        if len(actions_9d) > max(0, len(states_9d) - 1):
+            actions_9d = actions_9d[: len(states_9d) - 1]
+        return states_9d, actions_9d
+
+    def _solve_ik_xy(
+        self,
+        *,
+        robot: Any,
+        q_init: np.ndarray,
+        xy_target: np.ndarray,
+        max_iters: int = 20,
+        tol: float = 2e-3,
+    ) -> np.ndarray:
+        """
+        Damped least-squares IK in XY only.
+        """
+        q = np.asarray(q_init, dtype=np.float32).reshape(-1)[:7].copy()
+        target = np.asarray(xy_target, dtype=np.float32).reshape(-1)[:2]
+        lam = 1e-3
+
+        for _ in range(max_iters):
+            pos, _quat = robot.getForwardKinematics(q)
+            ee_xy = np.asarray(pos, dtype=np.float32).reshape(-1)[:2]
+            err = target - ee_xy
+            if float(np.linalg.norm(err)) <= tol:
+                break
+
+            J = np.asarray(robot.getJacobian(q), dtype=np.float32)
+            J_xy = J[:2, :7]
+            JJt = J_xy @ J_xy.T
+            step_xy = np.linalg.solve(JJt + lam * np.eye(2, dtype=np.float32), err)
+            dq = J_xy.T @ step_xy
+            q = q + dq.astype(np.float32)
+
+            if hasattr(robot, "joint_pos_min") and hasattr(robot, "joint_pos_max"):
+                qmin = np.asarray(robot.joint_pos_min, dtype=np.float32).reshape(-1)[:7]
+                qmax = np.asarray(robot.joint_pos_max, dtype=np.float32).reshape(-1)[:7]
+                q = np.clip(q, qmin, qmax)
+        return q.astype(np.float32)
+
+    def _get_current_robot_q(self) -> Optional[np.ndarray]:
+        robot, _quat = self._get_robot_and_quat()
+        if robot is None:
+            return None
+        try:
+            robot.receiveState()
+            q = np.asarray(robot.current_j_pos, dtype=np.float32).reshape(-1)[:7]
+            if q.size != 7:
+                return None
+            return q.copy()
+        except Exception:
+            return None
+
+    def _get_robot_and_quat(self) -> Tuple[Any, np.ndarray]:
+        quat_default = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
+        inner = getattr(getattr(self.env, "_task_env", None), "_env", None)
+        robot = getattr(inner, "robot", None) if inner is not None else None
+        if robot is None:
+            return None, quat_default
+        quat = quat_default
+        try:
+            robot.receiveState()
+            if hasattr(robot, "current_c_quat"):
+                quat = np.asarray(robot.current_c_quat, dtype=np.float32).reshape(-1)[:4]
+        except Exception:
+            pass
+        return robot, quat

@@ -22,16 +22,26 @@ method_params:
   mode_strategy: multirun
   max_episode_length: 64
   track_trajectory: true
-  tracker_k_joint: 5.0
+  tracker_k_joint: 2.0
+  tracker_k_xy: 1.2
+  tracker_ff_alpha: 0.2
 
   # Joint-lift CBF (7D qdot): use J_xy(q)^T grad_xy, SDF at pos = state[:2]
   mdoc_constraint_mode: cbf_qp_joint_lift_perstep
-  cbf_tau: 0.005
-  cbf_eta: 1.5
+  cbf_tau: 0.01
+  cbf_eta: 1
   cbf_margin: 0.01
   base_beta: 0.05
   terminal_energy_weight: 160.0
   guide_weight: 20.0
+
+  # Visualization style
+  mdoc_viz_style: "cap" # cap | rectangle    
+  mdoc_viz_scale: 1.0
+  mdoc_viz_band: 1          
+  mdoc_viz_use_beta: False
+  mdoc_viz_draw_disk: False
+  mdoc_viz_draw_grad: False
 
 obstacle_config:
   generator: d3il_avoiding_fixed
@@ -70,6 +80,9 @@ scheduler_config:
       rho: 10.0
       qp_gate: true
       qp_prob: 1.0
+      topK: null
+      eps: 1e-4
+      I_QP: 10
   constraint_merge_strategy: merge
 
 metrics:
