@@ -27,6 +27,7 @@ method_params:
   max_episode_length: 600
   safediffuser_pos_idx: [0,1]
   derive_action_from_states: true
+  export_lifted_9d: true
 
   plan_config: {}
 
@@ -57,6 +58,6 @@ metrics:
 visualizations:
   - trajectory
 
+
 metadata:
   description: "SafeDiffuser eval on D3IL avoiding (DPCC-style diffuser loading + per-denoise-step CBF/QP)"
-
