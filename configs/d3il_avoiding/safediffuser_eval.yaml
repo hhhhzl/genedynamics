@@ -59,6 +59,5 @@ metrics:
 visualizations:
   - trajectory
 
-
 metadata:
   description: "SafeDiffuser eval on D3IL avoiding (DPCC-style diffuser loading + per-denoise-step CBF/QP)"
