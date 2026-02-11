@@ -3,15 +3,15 @@ exp: avoiding-d3il
 # Task-level safety constraints for D3IL avoiding (SafeDiffuser-local).
 
 halfspace_variants: 
-  - top-left-hard
-  # - top-right-hard
+  - top-left
+  - bottom-right
 
 halfspace_constraints:
   avoiding-d3il:
-    - [[0.8, -0.5], [0.4, 0.5], below] # hard (\ shape)
-    - [[0.2, -0.5], [0.6, 0.5], below] # hard (/ shape)
-    - [[0.8, -0.3], [0.575, 0.5], below] # easier (\ shape)
-    - [[0.2, -0.3], [0.425, 0.5], below] # easier (/ shape)
+    - [[0.2, -0.3], [0.2,  0.4], right]  # left
+    - [[0.8, -0.3], [0.8,  0.4], left]   # right
+    - [[0.2, -0.3], [0.8, -0.3], above]  # bottom
+    - [[0.2,  0.4], [0.8,  0.4], below]  # top
 
 obstacle_constraints:
   avoiding-d3il:
