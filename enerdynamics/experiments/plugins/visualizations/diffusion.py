@@ -279,7 +279,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         method_params = (exp_cfg.get('method_params', {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, 'method_params', {})) or {}
         is_ebmbd = _is_ebmbd_solver(exp_cfg)  # EB-MBD (or d3il_unified+solver ebmbd): draw barrier rings (same as single_2d)
         is_mbd = _is_mbd_solver(exp_cfg)  # MBD (or d3il_unified+solver mbd): no CFS fan
-        skip_sample_rollouts = (method_name == "mbd")  # only pure MBD (e.g. single_2d) hides sample lines; d3il_unified+mbd shows them
+        skip_sample_rollouts = False  # draw sample trajectories for all methods including MBD (single_2d)
         # MDOC: exact method name or ablation config (mdoc_constraint_mode / cbf_eta in method_params)
         is_mdoc = (
             method_name == "mdoc"
@@ -289,11 +289,18 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         if is_ebmbd:
             overlay_cfg = None  # fully disable half-space overlays
         
-        # When qp_gate is False and qp_prob is 0, skip CFS convexified halfspace (fan) overlay
+        # When no QP is used (e.g. mdcoas-a), skip CFS convexified halfspace (fan) overlay
         draw_cfs_fan = True
         if exp_cfg is not None:
+            # Explicitly disable CFS fan for mdcoas-a (no-QP variant) by config name/output_dir
+            _name = getattr(exp_cfg, 'name', None) or (exp_cfg.get('name') if isinstance(exp_cfg, dict) else None)
+            _out = getattr(exp_cfg, 'output_dir', None) or (exp_cfg.get('output_dir') if isinstance(exp_cfg, dict) else None)
+            if _name and 'mdcoas-a' in str(_name):
+                draw_cfs_fan = False
+            if _out and 'mdcoas-a' in str(_out):
+                draw_cfs_fan = False
             scheduler_config = getattr(exp_cfg, 'scheduler_config', None)
-            if scheduler_config is not None:
+            if scheduler_config is not None and draw_cfs_fan:
                 cs_list = getattr(scheduler_config, 'constraint_schedulers', None)
                 if cs_list is None and isinstance(scheduler_config, dict):
                     cs_list = scheduler_config.get('constraint_schedulers', [])
@@ -302,6 +309,10 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     qp_gate = first_cs.get('qp_gate', True) if isinstance(first_cs, dict) else getattr(first_cs, 'qp_gate', True)
                     qp_prob = first_cs.get('qp_prob', 1.0) if isinstance(first_cs, dict) else getattr(first_cs, 'qp_prob', 1.0)
                     if qp_gate is False and (qp_prob == 0 or qp_prob == 0.0):
+                        draw_cfs_fan = False
+                    p_min = first_cs.get('p_min', 0.0) if isinstance(first_cs, dict) else getattr(first_cs, 'p_min', 0.0)
+                    p_max = first_cs.get('p_max', 1.0) if isinstance(first_cs, dict) else getattr(first_cs, 'p_max', 1.0)
+                    if p_min == 0.0 and p_max == 0.0:
                         draw_cfs_fan = False
         
         # Get map bounds
@@ -717,7 +728,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         method_params = (exp_cfg.get('method_params', {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, 'method_params', {})) or {}
         is_ebmbd = _is_ebmbd_solver(exp_cfg)  # EB-MBD (or d3il_unified+solver ebmbd): draw barrier rings
         is_mbd = _is_mbd_solver(exp_cfg)  # MBD (or d3il_unified+solver mbd): no CFS fan
-        skip_sample_rollouts = (method_name == "mbd")  # only pure MBD hides sample lines; d3il_unified+mbd shows them
+        skip_sample_rollouts = False  # draw sample trajectories for all methods including MBD (single_2d)
         is_mdoc = (
             method_name == "mdoc"
             or "mdoc_constraint_mode" in method_params
@@ -727,10 +738,17 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         if is_ebmbd:
             overlay_cfg = None
 
+        # Same CFS fan logic as _draw_diffusion_steps (no fan for mdcoas-a / no-QP)
         draw_cfs_fan = True
         if exp_cfg is not None:
+            _name = getattr(exp_cfg, 'name', None) or (exp_cfg.get('name') if isinstance(exp_cfg, dict) else None)
+            _out = getattr(exp_cfg, 'output_dir', None) or (exp_cfg.get('output_dir') if isinstance(exp_cfg, dict) else None)
+            if _name and 'mdcoas-a' in str(_name):
+                draw_cfs_fan = False
+            if _out and 'mdcoas-a' in str(_out):
+                draw_cfs_fan = False
             scheduler_config = getattr(exp_cfg, 'scheduler_config', None)
-            if scheduler_config is not None:
+            if scheduler_config is not None and draw_cfs_fan:
                 cs_list = getattr(scheduler_config, 'constraint_schedulers', None)
                 if cs_list is None and isinstance(scheduler_config, dict):
                     cs_list = scheduler_config.get('constraint_schedulers', [])
@@ -739,6 +757,10 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     qp_gate = first_cs.get('qp_gate', True) if isinstance(first_cs, dict) else getattr(first_cs, 'qp_gate', True)
                     qp_prob = first_cs.get('qp_prob', 1.0) if isinstance(first_cs, dict) else getattr(first_cs, 'qp_prob', 1.0)
                     if qp_gate is False and (qp_prob == 0 or qp_prob == 0.0):
+                        draw_cfs_fan = False
+                    p_min = first_cs.get('p_min', 0.0) if isinstance(first_cs, dict) else getattr(first_cs, 'p_min', 0.0)
+                    p_max = first_cs.get('p_max', 1.0) if isinstance(first_cs, dict) else getattr(first_cs, 'p_max', 1.0)
+                    if p_min == 0.0 and p_max == 0.0:
                         draw_cfs_fan = False
 
         exp_cfg_for_obs = config.get('config', None)

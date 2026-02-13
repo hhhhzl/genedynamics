@@ -129,8 +129,9 @@ class Trajectory3DVisualizationPlugin(VisualizationPlugin):
             linewidths=1.5
         )
         
-        title = config.get('title', '3D Trajectory')
-        ax.set_title(title, fontsize=12)
+        title = config.get('title', '')
+        if title:
+            ax.set_title(title, fontsize=12)
         ax.set_xlabel('X', fontsize=10)
         ax.set_ylabel('Y', fontsize=10)
         ax.set_zlabel('Z', fontsize=10)
