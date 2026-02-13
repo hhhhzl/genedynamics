@@ -40,8 +40,8 @@ scheduler_config:
       M_k: 64
       T_k: 0.5
       Ndiffuse: 100
-      beta0: 1.0e-4
-      betaT: 5.0e-2
+      beta0: 1e-5
+      betaT: 1e-2
   diffusion_merge_strategy: merge
 
 seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

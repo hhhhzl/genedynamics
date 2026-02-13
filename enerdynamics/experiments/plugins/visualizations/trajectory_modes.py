@@ -178,8 +178,9 @@ class TrajectoryModesVisualizationPlugin(VisualizationPlugin):
         target_color = D3IL_TARGET_GREEN if is_d3il else 'r'
         ax.plot(target_pos[0], target_pos[1], color=target_color, marker='*', markersize=15, linestyle='', zorder=10)
         
-        title = config.get('title', f'Trajectory Modes ({num_modes} paths)')
-        ax.set_title(title, fontsize=20, fontweight='bold')
+        title = config.get('title', '')
+        if title:
+            ax.set_title(title, fontsize=20, fontweight='bold')
         ax.set_xticks([])
         ax.set_yticks([])
         for spine in ax.spines.values():
