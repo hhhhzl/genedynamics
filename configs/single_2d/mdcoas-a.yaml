@@ -1,7 +1,7 @@
-# CFS-MBD full trajectory QP with ALM adaptive constraint scheduling
-# Same as cfsmbd_full but uses alm_adaptive scheduler (residual-driven lambda/rho + QP effort).
-name: single2d_cfsmbd_full_adaptive
-output_dir: results/single2d/cfsmbd_full_adaptive
+# MDCOAS-A: MDCOAS with ALM scheduler, no QP (p_min=p_max=0).
+# Semantics: c_k ≡ 0 (no QP), so compute dual ν_k → 0; no compute budget control.
+name: single2d_mdcoas
+output_dir: results/single2d/mdcoas-a
 
 env_name: single_integrator_box_2d
 env_params:
@@ -28,7 +28,7 @@ method_params:
   num_modes: 20
   mode_strategy: multirun
 
-obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+obstacle_levels: [10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -42,7 +42,7 @@ obstacle_config:
   enable_connectivity_check: true
   enable_nonconvexity_check: true
 
-seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+seeds: [0]
 backend: jax
 device: cuda
 
@@ -79,7 +79,7 @@ scheduler_config:
       eta_nu: 0.05
       nu_max: 0.0
 
-      # Non-monotone ALM (λ forgetting + ρ hysteresis)
+      # ALM
       eta_lam_forget: 0.02
       rho_min: 0.5
       rho_tau_hi: 5.0e-4
@@ -92,7 +92,7 @@ scheduler_config:
       kappa: 0.9
       r_tol: 5e-4
 
-      # Non-monotone controller (v_k-based)
+      # Non-monotone controller
       v_signal_mode: rate   # rate | mean
       v_star: 0.0
       v_ema_beta: 0.3
@@ -123,21 +123,22 @@ scheduler_config:
       eta_eps_minus: 0.003
       eta_c_eps: 0.01
 
+      # No QP effort control
       p_min: 0.0
-      p_max: 1.0
-      eps_min: 1e-5
-      eps_max: 1e-2
-      I_min: 1
-      I_max: 5
-      topK_min: 1
-      topK_max: 8
-      use_stochastic_gate: true
+      p_max: 0.0
+      eps_min: 0.0
+      eps_max: 0.0
+      I_min: 0
+      I_max: 0
+      topK_min: 0
+      topK_max: 0
+      use_stochastic_gate: false
   diffusion_schedulers:
     - type: fixed
       M_k: 64
       T_k: 5e-1
       Ndiffuse: 100
-      beta0: 1.0e-5
+      beta0: 1e-5
       betaT: 1e-2
   constraint_merge_strategy: merge
   diffusion_merge_strategy: merge
