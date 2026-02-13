@@ -1,6 +1,6 @@
-# CFS-MBD: MBD with Augmented Lagrangian objective and CFS-based full trajectory QP projection
-name: single2d_cfsmbd_full
-output_dir: results/single2d/cfsmbd_full
+# MDCOAS-F: Fixed QP (always on). c_k = Z_k * Ĉ_k proxy (constant when QP every step); ν not used (fixed strategy).
+name: single2d_mdcoas-f
+output_dir: results/single2d/mdcoas-f
 
 env_name: single_integrator_box_2d
 env_params:
@@ -27,7 +27,7 @@ method_params:
   num_modes: 20
   mode_strategy: multirun
 
-obstacle_levels: [6]
+obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -41,7 +41,7 @@ obstacle_config:
   enable_connectivity_check: true
   enable_nonconvexity_check: true
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 backend: jax
 device: cuda
 
@@ -62,7 +62,6 @@ scheduler_config:
   constraint_schedulers:
     - type: fixed
       margin: 0.05
-      rho: 10.0
       # QP filter: always solve full trajectory QP
       qp_gate: true
       qp_prob: 1
@@ -74,7 +73,7 @@ scheduler_config:
       M_k: 64
       T_k: 5e-1
       Ndiffuse: 100
-      beta0: 1.0e-5
+      beta0: 1e-5
       betaT: 1e-2
   constraint_merge_strategy: merge
   diffusion_merge_strategy: merge
