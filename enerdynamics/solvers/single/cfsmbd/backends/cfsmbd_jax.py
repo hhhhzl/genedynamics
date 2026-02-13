@@ -752,7 +752,7 @@ class CFSMBDBackendJax:
             except Exception:
                 pass
             t_run = time.perf_counter() - t1
-            # Non-adaptive: constant schedule arrays and nan for c_k, nu (rho = aug_rho for display)
+            # Non-adaptive (fixed): build schedule arrays for logging only (unchanged from before).
             K = self.Ndiffuse
             rho_hist = np.full(K, float(self.aug_rho), dtype=np.float32)
             p_hist = np.asarray(self._qp_prob_arr[:K]).flatten().astype(np.float32) if (self._qp_prob_arr is not None and self._qp_prob_arr.size >= K) else np.full(K, 1.0, dtype=np.float32)
@@ -761,8 +761,14 @@ class CFSMBDBackendJax:
             I_QP_hist = np.asarray(self._I_QP_arr[:K]).flatten().astype(np.float32) if (self._I_QP_arr is not None and self._I_QP_arr.size >= K) else np.full(K, 1.0, dtype=np.float32)
             eps_hist = np.asarray(self._eps_arr[:K]).flatten().astype(np.float32) if (self._eps_arr is not None and self._eps_arr.size >= K) else np.full(K, 1e-4, dtype=np.float32)
             lambda_hist = np.full(K, float(self.aug_lambda), dtype=np.float32)
-            compute_cost_hist = np.full(K, np.nan, dtype=np.float32)
-            nu_hist = np.full(K, np.nan, dtype=np.float32)
+            # Logging only (no effect on planning): c_k proxy and ν=0 for fixed strategy.
+            _gate = self._qp_gate_arr
+            qp_on = bool(np.all(np.asarray(_gate)[:K])) if (_gate is not None and getattr(_gate, "size", 0) >= K) else True
+            if qp_on:
+                compute_cost_hist = (p_hist * topK_hist * I_QP_hist).astype(np.float32)
+            else:
+                compute_cost_hist = np.zeros(K, dtype=np.float32)
+            nu_hist = np.zeros(K, dtype=np.float32)
 
         # Postprocess timing: rollout + device->host
         t_post0 = time.perf_counter()
@@ -1083,7 +1089,7 @@ class CFSMBDBackendJax:
         total_costs = -np.sum(rewards_batch_np, axis=-1)  # (C,)
         total_rewards = np.sum(rewards_batch_np, axis=-1)  # (C,)
         
-        # Non-adaptive: constant schedule arrays (same as plan()) and nan for c_k, nu (rho = aug_rho for display)
+        # Non-adaptive (fixed): same schedule + logging-only c_k/nu as in plan().
         K = self.Ndiffuse
         rho_hist = np.full(K, float(self.aug_rho), dtype=np.float32)
         p_hist = np.asarray(self._qp_prob_arr[:K]).flatten().astype(np.float32) if (self._qp_prob_arr is not None and self._qp_prob_arr.size >= K) else np.full(K, 1.0, dtype=np.float32)
@@ -1092,8 +1098,13 @@ class CFSMBDBackendJax:
         I_QP_hist = np.asarray(self._I_QP_arr[:K]).flatten().astype(np.float32) if (self._I_QP_arr is not None and self._I_QP_arr.size >= K) else np.full(K, 1.0, dtype=np.float32)
         eps_hist = np.asarray(self._eps_arr[:K]).flatten().astype(np.float32) if (self._eps_arr is not None and self._eps_arr.size >= K) else np.full(K, 1e-4, dtype=np.float32)
         lambda_hist = np.full(K, float(self.aug_lambda), dtype=np.float32)
-        compute_cost_hist = np.full(K, np.nan, dtype=np.float32)
-        nu_hist = np.full(K, np.nan, dtype=np.float32)
+        _gate = self._qp_gate_arr
+        qp_on = bool(np.all(np.asarray(_gate)[:K])) if (_gate is not None and getattr(_gate, "size", 0) >= K) else True
+        if qp_on:
+            compute_cost_hist = (p_hist * topK_hist * I_QP_hist).astype(np.float32)
+        else:
+            compute_cost_hist = np.zeros(K, dtype=np.float32)
+        nu_hist = np.zeros(K, dtype=np.float32)
 
         # Build results list (aligned with ebmbd format)
         C = rng_keys.shape[0]
