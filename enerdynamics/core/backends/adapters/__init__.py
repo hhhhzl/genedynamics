@@ -7,7 +7,7 @@ various physics engines.
 
 from enerdynamics.core.backends.physics import PhysicsBackend, DummyPhysicsBackend
 
-# MuJoCo adapter (optional)
+# MuJoCo adapter (optional; skip if mujoco not installed)
 try:
     from enerdynamics.core.backends.adapters.mujoco_adapter import MujocoPhysicsBackend
     __all__ = [
@@ -15,7 +15,7 @@ try:
         "DummyPhysicsBackend",
         "MujocoPhysicsBackend",
     ]
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     __all__ = [
         "PhysicsBackend",
         "DummyPhysicsBackend",
