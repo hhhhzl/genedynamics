@@ -12,6 +12,10 @@ try:
     from .dpcc import DPCCMethodPlugin
 except Exception as e:
     DPCCMethodPlugin = None
+try:
+    from .safediffuser import SafeDiffuserMethodPlugin
+except Exception:
+    SafeDiffuserMethodPlugin = None
 
 __all__ = [
     'EBMBDMethodPlugin',
@@ -21,5 +25,6 @@ __all__ = [
     'CFSMBDMethodPlugin',
     'CFSMBDFullMethodPlugin',
     'DPCCMethodPlugin',
+    'SafeDiffuserMethodPlugin',
 ]
 

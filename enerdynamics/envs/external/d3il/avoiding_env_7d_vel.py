@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
+import importlib
 
 import numpy as np
 
@@ -50,10 +51,23 @@ class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
 
         ensure_d3il_on_path()
 
-        # Monkey-patch get_obj_list for custom obstacle radii (sync with d3il_avoiding_fixed)
+        # Priority 1: Use framework-generated obstacles directly (positions + sizes).
+        has_runtime_obstacles = getattr(self.config, "obstacles", None) is not None
+        runtime_circles = self._extract_xy_circles(getattr(self.config, "obstacles", None))
+        if has_runtime_obstacles:
+            # Always sync MuJoCo scene to framework obstacles, including empty set.
+            _patched_obj_list = self._build_obj_list_from_circles(runtime_circles)
+            _did_patch = True
+        else:
+            _patched_obj_list = None
+            _did_patch = False
+
+        # Priority 2 (fallback): monkey-patch fixed D3IL layout with custom radii.
         obstacle_level = getattr(self.config, "obstacle_level", None)
         radius_by_level = getattr(self.config, "obstacle_radius_by_level", None)
         if (
+            not _did_patch
+            and
             obstacle_level is not None
             and radius_by_level is not None
             and isinstance(radius_by_level, dict)
@@ -158,11 +172,7 @@ class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
             else:
                 _did_patch = False
                 _patched_obj_list = None
-        else:
-            _did_patch = False
-            _patched_obj_list = None
-
-        import importlib
+        
         try:
             from d3il.environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs import avoiding as av_mod
         except ModuleNotFoundError:
@@ -171,6 +181,78 @@ class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
             importlib.reload(av_mod)
             av_mod.obj_list = _patched_obj_list
         return av_mod.ObstacleAvoidanceEnv(render=bool(self.config.render))
+
+    def _extract_xy_circles(self, obstacles: Any) -> list:
+        """
+        Extract 2D circle obstacles as (x, y, radius) from framework obstacles.
+        """
+        if obstacles is None:
+            return []
+        if hasattr(obstacles, "obstacles"):
+            obs_iter = getattr(obstacles, "obstacles") or []
+        elif isinstance(obstacles, (list, tuple)):
+            obs_iter = obstacles
+        else:
+            return []
+
+        circles = []
+        for obs in obs_iter:
+            center = getattr(obs, "center", None)
+            if center is None:
+                continue
+            c = np.asarray(center, dtype=np.float32).reshape(-1)
+            if c.size < 2:
+                continue
+            radius = getattr(obs, "radius", None)
+            if radius is None and hasattr(obs, "half_extents"):
+                he = np.asarray(getattr(obs, "half_extents"), dtype=np.float32).reshape(-1)
+                if he.size >= 2:
+                    radius = float(max(he[0], he[1]))
+            if radius is None:
+                continue
+            circles.append((float(c[0]), float(c[1]), float(radius)))
+        return circles
+
+    def _build_obj_list_from_circles(self, circles: list) -> list:
+        """
+        Build D3IL obstacle objects from (x, y, radius) circles.
+        """
+        try:
+            from environments.d3il.d3il_sim.sims.universal_sim.PrimitiveObjects import (
+                Box,
+                Cylinder,
+            )
+        except ModuleNotFoundError:
+            from d3il.d3il_sim.sims.universal_sim.PrimitiveObjects import (
+                Box,
+                Cylinder,
+            )
+
+        obj_list = []
+        for i, (x, y, r) in enumerate(circles):
+            obj_list.append(
+                Cylinder(
+                    name=f"obs_{i}",
+                    init_pos=[x, y, 0.0],
+                    init_quat=[1, 0, 0, 0],
+                    size=[max(1e-4, float(r)), 0.1],
+                    rgba=[1, 0, 0, 1],
+                    static=True,
+                )
+            )
+
+        obj_list.append(
+            Box(
+                name="finish_line",
+                init_pos=[0.4, 0.35, 0],
+                init_quat=[1, 0, 0, 0],
+                size=[0.5, 0.01, 0.005],
+                rgba=[0.0, 1.0, 0.0, 0.3],
+                visual_only=True,
+                static=True,
+            )
+        )
+        return obj_list
 
     def start_env(self, env: Any) -> None:
         env.start()
