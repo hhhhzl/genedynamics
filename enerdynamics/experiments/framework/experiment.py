@@ -152,18 +152,19 @@ class ExperimentRunner:
         physics_backend = env_params_with_obstacles.get('physics_backend', None)
         if physics_backend in ['mujoco', 'isaac'] and len(obstacles) > 0:
             env_params_with_obstacles['obstacles'] = obstacles
-        # For d3il_avoiding: pass level and obstacle_radius_by_level for MuJoCo sync (monkey-patch)
-        if self.config.env_name == 'd3il_avoiding_9d':
+        # For D3IL avoiding envs: pass obstacle info for MuJoCo scene sync.
+        if self.config.env_name in ['d3il_avoiding_9d', 'd3il_avoiding']:
             env_params_with_obstacles['obstacle_level'] = level
             env_params_with_obstacles['obstacle_radius_by_level'] = (
                 self.config.obstacle_config.get('obstacle_radius_by_level')
             )
-            # EE-only collision: use experiment obstacles + robot_radius so exec collision matches plan SSR
             env_params_with_obstacles['obstacles'] = obstacles
-            env_params_with_obstacles['robot_radius'] = float(
-                self.config.obstacle_config.get('robot_radius', 0.05)
-            )
-            env_params_with_obstacles['collision_ee_only'] = True
+            # EE-only collision settings are only used by the 9D env implementation.
+            if self.config.env_name == 'd3il_avoiding_9d':
+                env_params_with_obstacles['robot_radius'] = float(
+                    self.config.obstacle_config.get('robot_radius', 0.05)
+                )
+                env_params_with_obstacles['collision_ee_only'] = True
 
         env = env_plugin.create_env(env_params_with_obstacles)
         energy = env_plugin.create_energy(env) if _accepts_env(env_plugin.create_energy) else env_plugin.create_energy()
@@ -443,6 +444,20 @@ class ExperimentRunner:
 
         # 8b1.5. D3IL: 3D GIF from *executed* states (after 8b2 so best is execution-based)
         _states_3d = result.get('executed_states') or result.get('states')
+        info_dict = result.get("info", {}) if isinstance(result.get("info"), dict) else {}
+        # For 4D DPCC runs, states are 4D; prefer lifted 9D states for robot 3D GIF.
+        if _states_3d:
+            try:
+                s0 = np.asarray(_states_3d[0], dtype=np.float32).reshape(-1)
+                if s0.size < 9:
+                    lifted = result.get("states_9d", info_dict.get("states_9d"))
+                    if lifted:
+                        _states_3d = lifted
+            except Exception:
+                lifted = result.get("states_9d", info_dict.get("states_9d"))
+                if lifted:
+                    _states_3d = lifted
+
         if is_d3il_style and _states_3d and len(_states_3d) >= 2:
             try:
                 out_dir = self._get_output_path(level, seed)
@@ -854,7 +869,8 @@ class ExperimentRunner:
             if len(frames_rgb) >= 2:
                 import imageio
                 out_path = trajectory_dir / "trajectory_best_exec_3d.gif"
-                imageio.v3.imwrite(out_path, frames_rgb, duration=duration_ms, loop=0)
+                # Play once to avoid visual jump from last frame back to first frame.
+                imageio.v3.imwrite(out_path, frames_rgb, duration=duration_ms, loop=1)
         except Exception:
             pass
 
@@ -2158,6 +2174,30 @@ class ExperimentRunner:
             with open(trajectory_dir / "trajectory.json", 'w') as f:
                 json.dump(trajectory_json, f, indent=2)
 
+        # Save lifted 9D trajectory for 4D D3IL runs when available.
+        if isinstance(planning_result, dict) and (
+            "states_9d" in planning_result or ("info" in planning_result and isinstance(planning_result.get("info"), dict) and "states_9d" in planning_result.get("info", {}))
+        ):
+            info_dict = planning_result.get("info", {}) if isinstance(planning_result.get("info"), dict) else {}
+            states_9d = planning_result.get("states_9d", info_dict.get("states_9d", []))
+            actions_9d = planning_result.get("actions_9d", info_dict.get("actions_9d", []))
+            if states_9d:
+                trajectory_dir = output_path / "trajectory"
+                trajectory_dir.mkdir(parents=True, exist_ok=True)
+                lifted_json = {
+                    "state_layout": "[x, y, q1..q7]",
+                    "action_layout": "[qdot1..qdot7]",
+                    "states": convert_to_json_serializable(states_9d),
+                    "actions": convert_to_json_serializable(actions_9d),
+                    # Backward-compatible aliases.
+                    "state_layout_9d": "[x, y, q1..q7]",
+                    "action_layout_9d": "[qdot1..qdot7]",
+                    "states_9d": convert_to_json_serializable(states_9d),
+                    "actions_9d": convert_to_json_serializable(actions_9d),
+                }
+                with open(trajectory_dir / "trajectory_9d.json", "w") as f:
+                    json.dump(lifted_json, f, indent=2)
+
         # Multirun diagnostics (architecture performance visibility)
         # These keys are produced by the solver when using the minimal-batch multirun path.
         if isinstance(planning_result, dict):
@@ -2295,4 +2335,3 @@ class ExperimentRunner:
         # Save overall summary
         with open(self.config.output_dir / "overall_summary.json", 'w') as f:
             json.dump(overall_summary, f, indent=2)
-

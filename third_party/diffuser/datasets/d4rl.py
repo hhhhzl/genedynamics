@@ -26,7 +26,6 @@ def _resolve_avoiding_data_dir() -> str:
     candidates = [
         project_root / "environments" / "dataset" / "data" / "avoiding" / "data",
         project_root / "third_party" / "environments" / "dataset" / "data" / "avoiding" / "data",
-        project_root.parent / "dpcc" / "environments" / "dataset" / "data" / "avoiding" / "data",
     ]
 
     for path in candidates:
@@ -54,25 +53,34 @@ def sequence_dataset(env, preprocess_fn):
             terminals
     """
 
-    if env == 'avoiding-d3il' or env == 'd3il-avoiding':
+    if env in ('avoiding-d3il', 'd3il-avoiding', 'avoiding-d3il-9d', 'd3il-avoiding-9d'):
         data_dir = _resolve_avoiding_data_dir()
         state_files = os.listdir(data_dir)
 
         for file in state_files:
             with open(os.path.join(data_dir, file), 'rb') as f:
                 env_state = pickle.load(f)
+                robot_state = env_state['robot']
 
-                robot_des_pos = env_state['robot']['des_c_pos'][:, :2]
-                robot_c_pos = env_state['robot']['c_pos'][:, :2]
+                if env in ('avoiding-d3il-9d', 'd3il-avoiding-9d'):
+                    # 9D planning state: [tcp_xy, q], action: qdot
+                    tcp_xy = robot_state['c_pos'][:, :2]
+                    q = robot_state['j_pos'][:, :7]
+                    qdot = robot_state['j_vel'][:, :7]
+                    input_state = np.concatenate((tcp_xy, q), axis=-1)
+                    action = qdot[:-1]
+                else:
+                    # Legacy DPCC avoiding setup.
+                    robot_des_pos = robot_state['des_c_pos'][:, :2]
+                    robot_c_pos = robot_state['c_pos'][:, :2]
+                    input_state = np.concatenate((robot_des_pos, robot_c_pos), axis=-1)
+                    action = robot_des_pos[1:] - robot_des_pos[:-1]
 
-                input_state = np.concatenate((robot_des_pos, robot_c_pos), axis=-1)
-
-                vel_state = robot_des_pos[1:] - robot_des_pos[:-1]
-                valid_len = len(vel_state)
+                valid_len = len(action)
 
             episode_data = {
                 'observations': input_state[:-1],
-                'actions': vel_state,
+                'actions': action,
                 'rewards': np.zeros(valid_len),
                 'terminals': np.concatenate((np.zeros(valid_len-1), np.array([1])))
             }
