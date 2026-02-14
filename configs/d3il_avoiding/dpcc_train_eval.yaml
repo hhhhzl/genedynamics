@@ -39,6 +39,7 @@ obstacle_config:
     x_max: 0.8
     y_min: -0.3
     y_max: 0.4
+  robot_radius: 0.01
 
 seeds: [5]
 backend: torch
@@ -49,7 +50,10 @@ metrics:
   - episode_outcome
 
 visualizations:
+  - trajectory_modes
   - trajectory
+  - diffusion
+  - cost
 
 metadata:
   description: "DPCC eval on D3IL avoiding"
