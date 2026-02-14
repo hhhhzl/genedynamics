@@ -1,0 +1,66 @@
+name: d3il_avoiding_9d_safediffuser_eval
+output_dir: results/d3il_avoiding/safediffuser_9d
+
+env_name: d3il_avoiding_9d
+env_params:
+  render: false
+  horizon: 8
+  dt: 0.035
+
+method: safediffuser
+method_params:
+  # Native 9D path:
+  # obs9d -> SafeDiffuser(9D) -> action7d -> env.step
+  loadbase: logs
+  exp: avoiding-d3il-9d
+  dataset: avoiding-d3il-9d
+  safediffuser_config_path: enerdynamics/solvers/single/safediffuser/config/avoiding_d3il.yaml
+  diffusion_loadpath: diffusion/H8_K20_Dmodels.GaussianDiffusion
+  diffusion_epoch: "best"
+  seed: 5
+  device: cuda
+  batch_size: 4
+  enable_safety: true
+  correct_all_steps: true
+  which_trajectory: 0
+  native_9d: true
+  receding_horizon: true
+  max_episode_length: 200
+  safediffuser_pos_idx: [0, 1]
+  derive_action_from_states: false
+  use_framework_constraints: true
+  align_constraints_with_framework: true
+  disable_halfspace_when_aligned: true
+
+  plan_config: {}
+
+obstacle_levels: [0]
+obstacle_config:
+  generator: d3il_avoiding_fixed
+  use_d3il_preset: true
+  obstacle_radius_by_level:
+    0: [0.03, 0.025]
+    1: [0.04, 0.035]
+    2: [0.06, 0.045]
+  enable_connectivity_check: false
+  enable_nonconvexity_check: false
+  map_bounds:
+    x_min: 0.2
+    x_max: 0.8
+    y_min: -0.3
+    y_max: 0.4
+
+seeds: [0]
+backend: torch
+device: cuda
+
+metrics:
+  - ssr
+  - episode_outcome
+
+visualizations:
+  - trajectory
+
+
+metadata:
+  description: "SafeDiffuser native-9D eval on D3IL avoiding 9D (CBF enabled, framework-aligned constraints)."

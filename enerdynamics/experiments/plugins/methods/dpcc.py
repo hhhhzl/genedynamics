@@ -144,8 +144,11 @@ class DPCCMethodPlugin(MethodPlugin):
         normalizer = diffusion_experiment.dataset.normalizer
 
         robot_name = exp.split("-")[0]
-        obs_indices = dpcc_config.get("observation_indices", {}).get(robot_name, {})
-        act_indices = dpcc_config.get("action_indices", {}).get(robot_name, {})
+        index_key = f"{robot_name}_9d" if "9d" in exp else robot_name
+        obs_indices_map = dpcc_config.get("observation_indices", {})
+        act_indices_map = dpcc_config.get("action_indices", {})
+        obs_indices = obs_indices_map.get(index_key, obs_indices_map.get(robot_name, {}))
+        act_indices = act_indices_map.get(index_key, act_indices_map.get(robot_name, {}))
         indices = {"observations": obs_indices, "actions": act_indices}
 
         plan_config = dict(config.get("plan_config", {}))
@@ -164,6 +167,17 @@ class DPCCMethodPlugin(MethodPlugin):
         plan_config.setdefault("variant", config.get("variant", "dpcc"))
         plan_config.setdefault("solver", config.get("solver", "scipy"))
         plan_config.setdefault("halfspace_variant", config.get("halfspace_variant"))
+        # Align DPCC planning constraints with framework obstacle generation by default.
+        plan_config.setdefault(
+            "align_constraints_with_framework",
+            config.get("align_constraints_with_framework", True),
+        )
+        plan_config.setdefault(
+            "disable_halfspace_when_aligned",
+            config.get("disable_halfspace_when_aligned", True),
+        )
+        plan_config.setdefault("obstacles", config.get("obstacles"))
+        plan_config.setdefault("obstacle_config", config.get("obstacle_config", {}))
 
         dynamics = DynamicsToEnvAdapter(env, dt=plan_config["dt"])
         backend = RuntimeBackendManager.get_backend()

@@ -26,6 +26,9 @@ class D3ILAvoidingConfig:
     # The D3IL avoiding controller expects a 7D action:
     # [x_des, y_des, z_fixed, quat_wxyz(4)]
     quat_wxyz: Tuple[float, float, float, float] = (0.0, 1.0, 0.0, 0.0)
+    obstacle_level: Optional[int] = None
+    obstacle_radius_by_level: Optional[Dict[int, list]] = None
+    obstacles: Any = None
 
 
 class D3ILAvoidingEnv:
@@ -51,6 +54,9 @@ class D3ILAvoidingEnv:
         spec_cfg = D3ILAvoidingSpecConfig(
             render=bool(self.config.render),
             quat_wxyz=self.config.quat_wxyz,
+            obstacle_level=self.config.obstacle_level,
+            obstacle_radius_by_level=self.config.obstacle_radius_by_level,
+            obstacles=self.config.obstacles,
         )
         self._task_env = D3ILTaskEnv(D3ILAvoidingSpec(spec_cfg))
 
@@ -114,4 +120,3 @@ class D3ILAvoidingEnv:
         if inner_env is None or not hasattr(inner_env, "robot_state"):
             raise AttributeError("Underlying D3IL env has no robot_state")
         return inner_env.robot_state()
-
