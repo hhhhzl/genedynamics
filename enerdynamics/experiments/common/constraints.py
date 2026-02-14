@@ -366,17 +366,6 @@ def create_constraint_pipeline(
             rho_end=1.0,
         )
     
-    # Create pipeline configuration
-    # Disable JIT for now to test JAX backend without JIT compilation issues
-    pipeline_config = PipelineConfig(
-        backend=backend_name,
-        use_jit=False,  # Disable JIT for testing (can enable later)
-        use_batch=True,
-        cache_constraints=True,
-        cache_params=True,
-        verbose=False,
-    )
-    
     # Ablation / mode selection for EDOC + CFS
     # - state_traj: classic CFS state-space constraints + traj_qp or projection
     # - u_traj: convert CFS state constraints into trajectory-level action constraints + traj_qp_actions
@@ -416,40 +405,71 @@ def create_constraint_pipeline(
             f"Unknown cfs_qp_mode='{cfs_qp_mode}'. Expected 'state_traj', 'u_traj', or 'u_perstep'."
         )
     
-    # Create pipeline
-    # Note: Action constraints (SpeedConstraint, AccelerationConstraint) are handled
-    # separately in the solver, not in the pipeline
-    pipeline = HighPerformanceConstraintPipeline(
-        convexifier_name=convexifier_name,
-        operator_name=operator_name,
-        scheduler_name="cosine_anneal",
-        config=pipeline_config,
-        obstacles=obstacles,
-        env=env,  # Needed for cfs_action mapping
-        position_extractor=None,  # Use default
-        action_mode=cfs_qp_mode if cfs_qp_mode in ("u_traj", "u_perstep") else None,
-        max_constraints_per_point=int(
-            method_params.get('cfs_max_constraints_per_point') if (method_params is not None and 'cfs_max_constraints_per_point' in method_params)
-            else cfs_config.get('max_constraints_per_point', 8)
-        ),
-        constraint_margin=float(
-            method_params.get('cfs_constraint_margin') if (method_params is not None and 'cfs_constraint_margin' in method_params)
-            else cfs_config.get('constraint_margin', 0.25)
-        ),
-        robot_radius=robot_radius,
-        # Operator parameters
-        project_states=project_states,
-        project_actions=project_actions,
-        use_slack=True,  # Use slack-QP by default (if using traj_qp)
-        solver_backend=backend_name,
-        # JAX convexifier parameters
-        use_jit=False,  # Disable JIT for testing (can enable later)
-        # Scheduler parameters (passed to scheduler if it needs them)
-        margin_start=scheduler.margin_start,
-        margin_end=scheduler.margin_end,
-        rho_start=scheduler.rho_start,
-        rho_end=scheduler.rho_end,
-    )
+    # Build with backend fallback for constraint components.
+    # Runtime solver backend can be torch, but CFS convexifier/operator only support jax/numpy.
+    backend_candidates = [str(backend_name), "jax", "numpy"]
+    deduped_candidates: List[str] = []
+    for b in backend_candidates:
+        if b not in deduped_candidates:
+            deduped_candidates.append(b)
+
+    last_error: Optional[Exception] = None
+    pipeline = None
+    for pipeline_backend in deduped_candidates:
+        try:
+            pipeline_config = PipelineConfig(
+                backend=pipeline_backend,
+                use_jit=False,  # Disable JIT for testing (can enable later)
+                use_batch=True,
+                cache_constraints=True,
+                cache_params=True,
+                verbose=False,
+            )
+            # Note: Action constraints (SpeedConstraint, AccelerationConstraint) are handled
+            # separately in the solver, not in the pipeline.
+            pipeline = HighPerformanceConstraintPipeline(
+                convexifier_name=convexifier_name,
+                operator_name=operator_name,
+                scheduler_name="cosine_anneal",
+                config=pipeline_config,
+                obstacles=obstacles,
+                env=env,  # Needed for cfs_action mapping
+                position_extractor=None,  # Use default
+                action_mode=cfs_qp_mode if cfs_qp_mode in ("u_traj", "u_perstep") else None,
+                max_constraints_per_point=int(
+                    method_params.get('cfs_max_constraints_per_point') if (method_params is not None and 'cfs_max_constraints_per_point' in method_params)
+                    else cfs_config.get('max_constraints_per_point', 8)
+                ),
+                constraint_margin=float(
+                    method_params.get('cfs_constraint_margin') if (method_params is not None and 'cfs_constraint_margin' in method_params)
+                    else cfs_config.get('constraint_margin', 0.25)
+                ),
+                robot_radius=robot_radius,
+                # Operator parameters
+                project_states=project_states,
+                project_actions=project_actions,
+                use_slack=True,  # Use slack-QP by default (if using traj_qp)
+                solver_backend=pipeline_backend,
+                # JAX convexifier parameters
+                use_jit=False,  # Disable JIT for testing (can enable later)
+                # Scheduler parameters (passed to scheduler if it needs them)
+                margin_start=scheduler.margin_start,
+                margin_end=scheduler.margin_end,
+                rho_start=scheduler.rho_start,
+                rho_end=scheduler.rho_end,
+            )
+            break
+        except ValueError as exc:
+            last_error = exc
+            # Retry only for backend registration mismatches.
+            if "not found" in str(exc):
+                continue
+            raise
+
+    if pipeline is None:
+        if last_error is not None:
+            raise last_error
+        raise ValueError("Failed to create constraint pipeline with available backends.")
     
     # Override scheduler with the one we created
     pipeline.scheduler = scheduler
@@ -690,4 +710,3 @@ def create_scheduler_from_config(
         return composite
     else:
         raise ValueError(f"Unknown scheduler type: {scheduler_type}")
-
