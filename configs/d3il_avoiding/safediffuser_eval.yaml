@@ -33,7 +33,7 @@ method_params:
 
   plan_config: {}
 
-obstacle_levels: [0]
+obstacle_levels: [2]
 obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true

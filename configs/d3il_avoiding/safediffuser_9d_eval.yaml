@@ -6,6 +6,7 @@ env_params:
   render: false
   horizon: 8
   dt: 0.035
+  collision_ee_only: true
 
 method: safediffuser
 method_params:
@@ -34,7 +35,7 @@ method_params:
 
   plan_config: {}
 
-obstacle_levels: [0]
+obstacle_levels: [1, 2]
 obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
@@ -62,8 +63,6 @@ metrics:
 visualizations:
   - trajectory_modes
   - trajectory
-  - diffusion
-  - cost
 
 
 metadata:
