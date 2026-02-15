@@ -9,22 +9,9 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-
-# #region agent log
-def _dbg(loc: str, msg: str, data: Dict[str, Any], hid: str) -> None:
-    p = "/workspace/enerdynamics/.cursor/debug.log"
-    try:
-        if os.path.dirname(p):
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-        with open(p, "a") as f:
-            f.write(json.dumps({"location": loc, "message": msg, "data": data, "hypothesisId": hid, "timestamp": int(time.time() * 1000)}, default=lambda x: x.tolist() if hasattr(x, "tolist") else str(x)) + "\n")
-    except Exception:
-        pass
-# #endregion
 
 from enerdynamics.core.backends import Backend
 from enerdynamics.core.backends.runtime import RuntimeBackendManager
@@ -267,10 +254,6 @@ class SafeDiffuserSolver(SamplingSolver):
             success = False
             done = False
             plan_once_chunks_9d = int(self.plan_config.get("plan_once_chunks", 1))
-            # #region agent log
-            _dbg("safediffuser._solve_9d", "native_9d branch", {"use_mpc": use_mpc, "plan_once_chunks": plan_once_chunks_9d, "branch": "not_use_mpc" if not use_mpc else ("concatenated" if plan_once_chunks_9d > 1 else "receding")}, "H1")
-            _dbg("safediffuser._solve_9d", "native_9d branch", {"use_mpc": use_mpc}, "H2")
-            # #endregion
 
             if not use_mpc:
                 result = planner.plan(obs9, rng_key=rng_key)
