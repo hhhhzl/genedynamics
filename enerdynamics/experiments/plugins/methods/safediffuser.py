@@ -92,6 +92,9 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
         plan_config.setdefault("preprocess_fns", config.get("preprocess_fns", []))
         plan_config.setdefault("use_target_line", config.get("use_target_line", False))
         plan_config.setdefault("num_targets", config.get("num_targets", 4))
+        # 9D extra action-space safety projection (optional)
+        plan_config.setdefault("action_cbf_alpha", float(config.get("action_cbf_alpha", 0.5)))
+        plan_config.setdefault("action_cbf_margin", float(config.get("action_cbf_margin", 0.0)))
 
         # Goal comes from d3il env wrapper by default.
         goal_xy = np.asarray(config.get("goal_xy", getattr(env, "target", None)), dtype=np.float32) if getattr(env, "target", None) is not None or config.get("goal_xy") is not None else None
@@ -141,7 +144,17 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
             out["states_9d"] = info["states_9d"]
             out["actions_9d"] = info["actions_9d"]
         if isinstance(traj.info, dict):
-            for k in ("candidate_states", "candidate_actions", "candidate_costs", "best_idx"):
+            for k in (
+                "candidate_states",
+                "candidate_actions",
+                "candidate_costs",
+                "best_idx",
+                # Optional per-mode goal assignment metadata (multi-target debugging)
+                "candidate_goals_xy",
+                "candidate_goals_idx",
+                "use_target_line",
+                "num_targets",
+            ):
                 if k in traj.info:
                     out[k] = traj.info[k]
         return out

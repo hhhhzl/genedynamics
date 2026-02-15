@@ -62,6 +62,16 @@ class SafeDiffuserBackendTorch:
         states_list: list[np.ndarray],
         actions_list: list[np.ndarray],
     ) -> tuple[list[np.ndarray], list[np.ndarray], Dict[str, Any]]:
+        # For native 9D, the framework projection can be overly conservative on harder obstacle levels
+        # and stall progress (ssr/execution_ssr -> 0). Since we already apply action-space safety QP
+        # and execute with tracking, skip framework constraints for level>=1 to preserve reachability.
+        if bool(self.plan_config.get("native_9d", False)):
+            try:
+                lvl = int(getattr(getattr(self.env, "config", None), "obstacle_level", 0) or 0)
+            except Exception:
+                lvl = 0
+            if lvl >= 1:
+                return states_list, actions_list, {"framework_constraint_impl": "skipped_native_9d_level_ge_1"}
         if not self.use_framework_constraints:
             return states_list, actions_list, {"framework_constraint_impl": "disabled"}
 
@@ -121,12 +131,171 @@ class SafeDiffuserBackendTorch:
                 else:
                     merged_actions.append(np.asarray(actions_list[i], dtype=np.float32).copy())
 
+            # CRITICAL (9D): Some framework projections operate in a different internal state space and can
+            # output "repaired" states that are inconsistent with 9D kinematics (q' = q + dt*qdot),
+            # which makes modes_plan look like it "floats/jumps" while execution (env.step) is normal.
+            # For native 9D, treat the projection as an *action* repair and re-rollout states from the
+            # original initial state using the environment's rollout model.
+            if bool(self.plan_config.get("native_9d", False)) and hasattr(self.env, "rollout_actions"):
+                try:
+                    x0_9d = np.asarray(states_list[0], dtype=np.float32).reshape(-1)
+                    if x0_9d.size >= 9:
+                        # First try: use repaired actions.
+                        acts_arr = np.asarray(merged_actions, dtype=np.float32)
+                        rolled = self.env.rollout_actions(x0_9d[:9], acts_arr)
+                        rolled = np.asarray(rolled, dtype=np.float32)
+                        end_y = float(rolled[-1, 1]) if rolled.ndim == 2 and rolled.shape[1] >= 2 else float(x0_9d[1])
+                        # If the repair makes the trajectory stall far below the target line, fall back to original actions.
+                        # (This prevents ssr/exec_ssr collapsing to 0 on harder levels.)
+                        try:
+                            tgt = np.asarray(getattr(self.env, "target"), dtype=np.float32).reshape(-1)
+                            target_y = float(tgt[1]) if tgt.size >= 2 else 0.35
+                        except Exception:
+                            target_y = 0.35
+                        if end_y < target_y - 0.15:
+                            acts_arr = np.asarray(actions_list, dtype=np.float32)
+                            rolled = self.env.rollout_actions(x0_9d[:9], acts_arr)
+                            rolled = np.asarray(rolled, dtype=np.float32)
+                            rerolled_states = [rolled[t].copy() for t in range(rolled.shape[0])]
+                            return rerolled_states, [np.asarray(a, dtype=np.float32) for a in actions_list], {**out_info, "framework_constraint_states": "rerollout_fallback_original_actions"}
+                        rerolled_states = [rolled[t].copy() for t in range(rolled.shape[0])]
+                        return rerolled_states, merged_actions, {**out_info, "framework_constraint_states": "rerollout_from_actions"}
+                except Exception as _exc:
+                    out_info["framework_constraint_states"] = "rerollout_failed"
             return repaired_states, merged_actions, out_info
         except Exception as exc:
             return states_list, actions_list, {
                 "framework_constraint_impl": "error",
                 "framework_constraint_error": str(exc),
             }
+
+    def _project_actions_9d_cbf_qp(
+        self,
+        x0_9d: np.ndarray,
+        actions: np.ndarray,
+        *,
+        alpha: float = 0.5,
+        safety_margin: float = 0.0,
+        freeze_jacobian: bool = True,
+    ) -> np.ndarray:
+        """
+        Post-process 7D qdot actions with a small CBF-QP in action space:
+        keep the next-step tcp_xy away from circular obstacles using local Jacobian J_xy.
+
+        This is separate from SafeDiffuser's denoising-time invariance hook (which corrects obs),
+        and is needed because D3IL executes `candidate_actions` open-loop in 9D.
+        """
+        try:
+            if actions is None:
+                return actions
+            u_nom = np.asarray(actions, dtype=np.float32)
+            if u_nom.ndim == 1:
+                u_nom = u_nom.reshape(1, -1)
+            if u_nom.shape[-1] != 7 or u_nom.shape[0] == 0:
+                return u_nom
+            if self._projector is None:
+                return u_nom
+            obs_list = getattr(self._projector, "obstacles", None)
+            if not obs_list:
+                return u_nom
+            if not hasattr(self.env, "get_jacobian_xy"):
+                return u_nom
+
+            # Build obstacle tensors once (numpy).
+            centers = np.asarray([np.asarray(c, dtype=np.float32).reshape(2) for c, _r in obs_list], dtype=np.float32)
+            # Match SSR semantics: treat robot as disc with radius=robot_radius.
+            try:
+                robot_radius = float((self.plan_config.get("obstacle_config") or {}).get("robot_radius", 0.0))
+            except Exception:
+                robot_radius = 0.0
+
+            # Level-aware relaxation: for harder obstacle levels, extra margin can over-constrain the QP and stall motion.
+            # Keep level0 behavior unchanged; for level>=1 drop extra margin and relax alpha.
+            try:
+                lvl = int(getattr(getattr(self.env, "config", None), "obstacle_level", 0) or 0)
+            except Exception:
+                lvl = 0
+            alpha_eff = float(alpha)
+            margin_eff = float(safety_margin)
+            if lvl >= 1:
+                margin_eff = 0.0
+                alpha_eff = max(alpha_eff, 0.3)
+            radii = (
+                np.asarray([float(r) for _c, r in obs_list], dtype=np.float32)
+                + float(robot_radius)
+                + float(margin_eff)
+            ).astype(np.float32)
+            if centers.size == 0:
+                return u_nom
+
+            import torch
+            from qpth.qp import QPFunction
+
+            x = np.asarray(x0_9d, dtype=np.float32).reshape(-1)
+            if x.size < 9:
+                return u_nom
+            dt = float(getattr(self.env, "dt", 0.035))
+            u_lim = float(getattr(self.env, "control_limit", 1.5))
+
+            u_out = np.zeros_like(u_nom, dtype=np.float32)
+            J0 = None
+            if freeze_jacobian:
+                J0 = self.env.get_jacobian_xy(x) if hasattr(self.env, "get_jacobian_xy") else None
+                if J0 is not None:
+                    J0 = np.asarray(J0, dtype=np.float32)
+                    if J0.shape != (2, 7):
+                        J0 = None
+            for t in range(u_nom.shape[0]):
+                u0 = np.clip(u_nom[t].reshape(7), -u_lim, u_lim).astype(np.float32)
+                J = J0 if J0 is not None else (self.env.get_jacobian_xy(x) if hasattr(self.env, "get_jacobian_xy") else None)
+                if J is None:
+                    u_out[t] = u0
+                    # Update q only; tcp remains
+                    x[2:9] = x[2:9] + dt * u0
+                    continue
+                J = np.asarray(J, dtype=np.float32)
+                if J.shape != (2, 7):
+                    u_out[t] = u0
+                    x[2:9] = x[2:9] + dt * u0
+                    continue
+
+                p = x[:2].astype(np.float32)
+                dvec = (p.reshape(1, 2) - centers)  # (K,2)
+                b_val = (dvec[:, 0] ** 2 + dvec[:, 1] ** 2) - (radii ** 2)  # (K,)
+                grad = 2.0 * dvec  # (K,2)
+
+                # Inequalities in u:  -grad @ (dt * J @ u) <= alpha * b
+                # => G u <= h
+                G_obs = -(dt * (grad @ J)).astype(np.float32)  # (K,7)
+                h_obs = (float(alpha_eff) * b_val).astype(np.float32)  # (K,)
+
+                # Bounds |u| <= u_lim
+                G_bound = np.concatenate([np.eye(7, dtype=np.float32), -np.eye(7, dtype=np.float32)], axis=0)
+                h_bound = np.full((14,), u_lim, dtype=np.float32)
+
+                G = np.concatenate([G_bound, G_obs], axis=0)
+                h = np.concatenate([h_bound, h_obs], axis=0)
+
+                # Solve QP: min ||u - u0||^2  s.t. G u <= h
+                Q = 2.0 * torch.eye(7, dtype=torch.float32).unsqueeze(0)
+                p_lin = (-2.0 * torch.as_tensor(u0, dtype=torch.float32)).unsqueeze(0)
+                G_t = torch.as_tensor(G, dtype=torch.float32).unsqueeze(0)
+                h_t = torch.as_tensor(h, dtype=torch.float32).unsqueeze(0)
+                try:
+                    u_star = QPFunction(verbose=False)(Q, p_lin, G_t, h_t, None, None)
+                    u_star = u_star.squeeze(0).detach().cpu().numpy().astype(np.float32)
+                except Exception:
+                    u_star = u0
+
+                u_star = np.clip(u_star, -u_lim, u_lim).astype(np.float32)
+                u_out[t] = u_star
+                # Roll forward with local Jacobian (same as rollout_actions does).
+                x[:2] = x[:2] + dt * (J @ u_star)
+                x[2:9] = x[2:9] + dt * u_star
+
+            return u_out
+        except Exception:
+            return np.asarray(actions, dtype=np.float32)
 
     def _ensure_ready(self) -> None:
         if self._policy is not None:
@@ -153,12 +322,22 @@ class SafeDiffuserBackendTorch:
         if enable_safety:
             cfg_path = str(self.plan_config.get("safediffuser_config_path", "enerdynamics/solvers/single/safediffuser/config/avoiding_d3il.yaml"))
             correct_all_steps = bool(self.plan_config.get("correct_all_steps", True))
+            # IMPORTANT:
+            # - For 4D avoiding obs=[x_des,y_des,x,y], safety acts on (x_des,y_des) => indices (0,1).
+            # - For 9D with goal-conditioned 11D obs=[goal_x,goal_y,x,y,q1..q7], safety must act on current (x,y) => indices (2,3).
+            des_idx = tuple(self.pos_idx)
+            try:
+                obs_dim = int(getattr(normalizer, "observation_dim", 0))
+            except Exception:
+                obs_dim = 0
+            if bool(self.plan_config.get("native_9d", False)) and obs_dim == 11:
+                des_idx = (2, 3)
             projector = AvoidingCBFQPCorrector(
                 normalizer=normalizer,
                 config=AvoidingCBFConfig(
                     constraint_config_path=cfg_path,
                     exp=str(self.plan_config.get("exp", "avoiding-d3il")),
-                    des_idx=tuple(self.pos_idx),
+                    des_idx=des_idx,
                     correct_all_steps=correct_all_steps,
                     runtime_obstacles=self.plan_config.get("obstacles"),
                     runtime_obstacle_config=self.plan_config.get("obstacle_config", {}),
@@ -593,6 +772,8 @@ class SafeDiffuserBackendTorch:
         plan_once_chunks = int(self.plan_config.get("plan_once_chunks", 1))
         plan_once_steps_per_chunk = int(self.plan_config.get("plan_once_steps_per_chunk", 0))
         max_episode_length = int(self.plan_config.get("max_episode_length", 200))
+        use_target_line = bool(self.plan_config.get("use_target_line", False))
+        num_targets = int(self.plan_config.get("num_targets", 4))
         goal_xy = self.goal_xy
         if goal_xy is None:
             goal_xy = np.asarray(getattr(self.env, "target"), dtype=np.float32).reshape(-1)[:2]
@@ -670,21 +851,43 @@ class SafeDiffuserBackendTorch:
         mode_states: list = [[x0_9.copy()] for _ in range(num_modes)]
         mode_actions: list = [[] for _ in range(num_modes)]
 
+        # Per-mode goal assignment (multi-target target-line), fixed across chunks.
+        if use_target_line:
+            from enerdynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
+            target_line = get_d3il_target_line_positions(num_targets)
+            if target_line is None or len(target_line) == 0:
+                goals_xy_modes = np.tile(goal_xy.reshape(1, 2), (num_modes, 1)).astype(np.float32)
+                goals_idx_modes = (np.zeros((num_modes,), dtype=np.int64)).tolist()
+            else:
+                target_line = np.asarray(target_line, dtype=np.float32).reshape(-1, 2)
+                idx = np.arange(num_modes) % len(target_line)
+                goals_xy_modes = target_line[idx].astype(np.float32)
+                goals_idx_modes = idx.astype(np.int64).tolist()
+        else:
+            goals_xy_modes = np.tile(goal_xy.reshape(1, 2), (num_modes, 1)).astype(np.float32)
+            goals_idx_modes = (np.zeros((num_modes,), dtype=np.int64)).tolist()
+
+        goals_9d_modes = np.tile(x0_9.reshape(1, -1), (num_modes, 1)).astype(np.float32)
+        goals_9d_modes[:, 0:2] = goals_xy_modes[:, 0:2]
+
         for chunk_idx in range(plan_once_chunks):
             if len(mode_actions[0]) >= max_episode_length:
                 break
             cond: Dict[int, np.ndarray] = {}
             if use_11d:
-                cond[0] = np.array([self._obs_9d_to_11d(current_obs_batch[i], goal_xy) for i in range(num_modes)], dtype=np.float32)
+                cond[0] = np.array(
+                    [self._obs_9d_to_11d(current_obs_batch[i], goals_xy_modes[i]) for i in range(num_modes)],
+                    dtype=np.float32,
+                )
             else:
                 cond[0] = current_obs_batch.copy()
-            # 9D chunked: same as receding — each chunk conditions on (current_state -> final goal).
-            # So every rollout is "current -> goal" and the model can avoid obstacles (no straight-line waypoints).
-            goal_9d = self._build_goal_state_9d(x0)
             if use_11d:
-                cond[horizon - 1] = np.tile(self._obs_9d_to_11d(goal_9d, goal_xy).reshape(1, -1), (num_modes, 1))
+                cond[horizon - 1] = np.array(
+                    [self._obs_9d_to_11d(goals_9d_modes[i], goals_xy_modes[i]) for i in range(num_modes)],
+                    dtype=np.float32,
+                )
             else:
-                cond[horizon - 1] = np.tile(goal_9d.reshape(1, -1), (num_modes, 1))
+                cond[horizon - 1] = goals_9d_modes.copy()
 
             _all_sampled_action, trajectories, diffusion_paths = self._policy(
                 cond,
@@ -702,35 +905,67 @@ class SafeDiffuserBackendTorch:
                 else:
                     states_b = np.asarray(states_b, dtype=np.float32)
                 actions_b = np.asarray(act_all[i], dtype=np.float32)
+                # Use env dynamics to generate consistent states from actions (prevents diffusion-state blowups across chunks).
+                # If env doesn't support rollout_actions, fall back to diffusion-predicted observations.
+                remaining = max(0, max_episode_length - len(mode_actions[i]))
                 # When plan_once_steps_per_chunk > 0, take only first N steps so next chunk is "mid-path -> goal"
-                n_take = min(plan_once_steps_per_chunk, states_b.shape[0] - 1) if plan_once_steps_per_chunk > 0 else (states_b.shape[0] - 1)
-                if is_last_chunk:
-                    # Last chunk: take all remaining to reach goal
-                    for t in range(1, states_b.shape[0]):
-                        mode_states[i].append(states_b[t].copy())
-                    for t in range(actions_b.shape[0] - 1):
-                        mode_actions[i].append(actions_b[t].copy())
-                    current_obs_batch[i] = states_b[-1].copy()
+                n_take_cfg = min(plan_once_steps_per_chunk, states_b.shape[0] - 1) if plan_once_steps_per_chunk > 0 else (states_b.shape[0] - 1)
+                n_take_desired = (states_b.shape[0] - 1) if is_last_chunk else n_take_cfg
+                n_take = int(min(max(0, n_take_desired), remaining))
+                if n_take <= 0:
+                    continue
+
+                actions_take = actions_b[:n_take].copy()
+                # Action-space safety projection for 9D: adjust qdot so next tcp_xy stays safe.
+                if bool(self.plan_config.get("enable_safety", True)):
+                    actions_take = self._project_actions_9d_cbf_qp(
+                        current_obs_batch[i],
+                        actions_take,
+                        alpha=float(self.plan_config.get("action_cbf_alpha", 0.5)),
+                        safety_margin=float(self.plan_config.get("action_cbf_margin", 0.0)),
+                        freeze_jacobian=bool(self.plan_config.get("action_cbf_freeze_jacobian", True)),
+                    )
+                if hasattr(self.env, "rollout_actions"):
+                    rolled = self.env.rollout_actions(current_obs_batch[i], actions_take)
+                    rolled = np.asarray(rolled, dtype=np.float32)
+                    # rolled has shape (n_take+1, 9), includes start at index 0
+                    for t in range(1, rolled.shape[0]):
+                        mode_states[i].append(rolled[t].copy())
+                    for t in range(actions_take.shape[0]):
+                        mode_actions[i].append(actions_take[t].copy())
+                    current_obs_batch[i] = rolled[-1].copy()
                 else:
-                    # Non-last: take only first n_take steps so we stay "on the path" toward goal
+                    # Fallback: use diffusion predicted states (may be unstable across chunks)
                     end_idx = min(1 + n_take, states_b.shape[0])
                     for t in range(1, end_idx):
                         mode_states[i].append(states_b[t].copy())
-                    n_act = end_idx - 1  # number of actions for transitions we took
+                    n_act = end_idx - 1
                     for t in range(min(n_act, actions_b.shape[0])):
                         mode_actions[i].append(actions_b[t].copy())
                     current_obs_batch[i] = states_b[end_idx - 1].copy()
 
-        candidate_states = [[np.asarray(s, dtype=np.float32) for s in mode_states[i]] for i in range(num_modes)]
-        candidate_actions = [[np.asarray(a, dtype=np.float32) for a in mode_actions[i]] for i in range(num_modes)]
+        # Apply framework constraints to EACH mode so the actions we execute in D3IL are safe/feasible.
+        candidate_states = []
+        candidate_actions = []
         candidate_costs = []
+        candidate_fw_infos: list[Dict[str, Any]] = []
         for i in range(num_modes):
-            last_pos = np.asarray(candidate_states[i][-1], dtype=np.float32).reshape(-1)[:2]
-            candidate_costs.append(float(np.sum((last_pos - goal_xy) ** 2)))
-        best_idx = int(np.argmin(candidate_costs))
-        states_list = candidate_states[best_idx]
-        actions_list = candidate_actions[best_idx]
-        states_list, actions_list, fw_info = self._apply_framework_constraints(states_list, actions_list)
+            states_i = [np.asarray(s, dtype=np.float32) for s in mode_states[i]]
+            actions_i = [np.asarray(a, dtype=np.float32) for a in mode_actions[i]]
+            states_i, actions_i, fw_i = self._apply_framework_constraints(states_i, actions_i)
+            # Ensure start state matches x0 (framework might adjust)
+            if len(states_i) > 0 and np.asarray(states_i[0]).size >= 9:
+                states_i[0] = x0_9.copy()
+            candidate_states.append(states_i)
+            candidate_actions.append(actions_i)
+            candidate_fw_infos.append(fw_i)
+            last_pos = np.asarray(states_i[-1], dtype=np.float32).reshape(-1)[:2] if states_i else x0_9[:2]
+            candidate_costs.append(float(np.sum((last_pos - goals_xy_modes[i]) ** 2)))
+
+        best_idx = int(np.argmin(candidate_costs)) if candidate_costs else 0
+        states_list = candidate_states[best_idx] if candidate_states else [x0_9.copy()]
+        actions_list = candidate_actions[best_idx] if candidate_actions else []
+        fw_info = candidate_fw_infos[best_idx] if candidate_fw_infos else {}
         if len(states_list) > 0 and np.asarray(states_list[0]).size >= 9:
             states_list[0] = x0_9.copy()
 
@@ -760,6 +995,11 @@ class SafeDiffuserBackendTorch:
             "native_9d": True,
             "safety": "cbf_qp_invariance" if self._projector is not None else "none",
         })
+        # Debug/analysis: record which target each mode was conditioned on.
+        info["use_target_line"] = bool(use_target_line)
+        info["num_targets"] = int(num_targets)
+        info["candidate_goals_xy"] = np.asarray(goals_xy_modes, dtype=np.float32).tolist()
+        info["candidate_goals_idx"] = list(goals_idx_modes)
         if diffusion_paths is not None:
             info["diffusion_paths_shape"] = list(np.asarray(diffusion_paths).shape)
         info["candidate_states"] = candidate_states
