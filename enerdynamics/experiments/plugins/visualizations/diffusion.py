@@ -491,11 +491,19 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                         # Never fail the diffusion visualization due to overlay issues
                         pass
         
-        # Draw target. D3IL: green; single2d: red.
-        target = np.asarray(env.target)
-        target_pos = env_plugin.extract_position(target)
-        target_color = D3IL_TARGET_GREEN if is_d3il else 'r'
-        ax.plot(target_pos[0], target_pos[1], color=target_color, marker='*', markersize=15, linestyle='', label='Target', zorder=10)
+        # Draw target. D3IL: green; single2d: red. use_target_line: draw line (align with model-based baselines).
+        method_params = (exp_cfg.get('method_params', {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, 'method_params', None)) if exp_cfg is not None else {}
+        method_params = method_params or {}
+        use_target_line = bool(method_params.get('use_target_line', False))
+        if use_target_line and is_d3il and env_plugin is not None and getattr(env_plugin, "name", None) in ("d3il_avoiding_9d", "d3il_avoiding"):
+            from enerdynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import D3IL_TARGET_LINE_Y
+            xs = np.array([x_min, x_max])
+            ax.plot(xs, np.full_like(xs, D3IL_TARGET_LINE_Y), color=D3IL_TARGET_GREEN, linewidth=3.0, linestyle='-', zorder=10, label='Target line')
+        else:
+            target = np.asarray(env.target)
+            target_pos = env_plugin.extract_position(target)
+            target_color = D3IL_TARGET_GREEN if is_d3il else 'r'
+            ax.plot(target_pos[0], target_pos[1], color=target_color, marker='*', markersize=15, linestyle='', label='Target', zorder=10)
         
         if show_title and title:
             ax.set_title(title, fontsize=12)

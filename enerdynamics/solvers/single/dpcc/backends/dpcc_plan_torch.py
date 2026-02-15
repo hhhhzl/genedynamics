@@ -158,8 +158,162 @@ class DPCCBackendTorch:
         self._projector = projector
         self._policy = policy
 
+    def _plan_once(self, x0: Any, horizon: int, rng_key: Any | None) -> Dict[str, Any]:
+        """Plan once (one or more diffusion+projection chunks) and return planned trajectory + multi-mode candidates."""
+        x0 = np.asarray(x0, dtype=np.float32).reshape(-1)
+        obs = x0.copy()
+        if self.diffusion.observation_dim == 11 and obs.size == 9:
+            target_xy = np.asarray(self.adapter.env.target, dtype=np.float32).reshape(-1)[:2]
+            obs = np.concatenate([target_xy, obs], axis=0)
+
+        num_modes = int(self.plan_config.get("num_modes", self.plan_config.get("batch_size", 4)))
+        plan_once_chunks = int(self.plan_config.get("plan_once_chunks", 1))
+        use_target_line = bool(self.plan_config.get("use_target_line", False))
+        num_targets = int(self.plan_config.get("num_targets", 4))
+        max_episode_length = int(self.plan_config.get("max_episode_length", 200))
+        constraints = self._constraints_cache.get("constraint_list", []) if self._constraints_cache else []
+
+        if plan_once_chunks <= 1:
+            # Single chunk: one plan call, C candidates
+            if use_target_line and self.diffusion.observation_dim == 11 and obs.size >= 11:
+                from enerdynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
+                target_line = get_d3il_target_line_positions(num_targets)
+                obs_batch = np.tile(np.asarray(obs, dtype=np.float32).reshape(1, -1), (num_modes, 1))
+                for i in range(num_modes):
+                    obs_batch[i, :2] = target_line[i % len(target_line)]
+                cond = {0: obs_batch}
+                batch_cond = True
+            else:
+                cond = {0: obs}
+                batch_cond = False
+            out = self._policy(
+                conditions=cond,
+                batch_size=num_modes,
+                horizon=horizon,
+                disable_projection=False,
+                constraints=constraints,
+                return_infos=True,
+                batch_conditions=batch_cond,
+            )
+            action, trajectories, infos = out
+            observations = np.asarray(trajectories.observations, dtype=np.float32)
+            actions = np.asarray(trajectories.actions, dtype=np.float32)
+        else:
+            # Batched chunked (EBMBD-aligned): num_modes independent long trajectories in one batched loop
+            obs_dim = int(self.diffusion.observation_dim)
+            x0_obs_chunk = np.asarray(obs[:obs_dim], dtype=np.float32) if obs.size >= obs_dim else np.asarray(obs, dtype=np.float32)
+            # current_obs_batch: (num_modes, obs_dim) — one condition per mode
+            current_obs_batch = np.tile(np.asarray(obs, dtype=np.float32).reshape(1, -1), (num_modes, 1))
+            if use_target_line and obs_dim >= 11:
+                from enerdynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
+                target_line = get_d3il_target_line_positions(num_targets)
+                for i in range(num_modes):
+                    current_obs_batch[i, :2] = target_line[i % len(target_line)]
+            # Per-mode trajectory lists: list of (T, obs_dim) states and (T, action_dim) actions
+            mode_states = [[x0_obs_chunk.copy()] for _ in range(num_modes)]
+            mode_actions = [[] for _ in range(num_modes)]
+            cost_per_mode = np.zeros(num_modes, dtype=np.float64)
+            for _ in range(plan_once_chunks):
+                if len(mode_actions[0]) >= max_episode_length:
+                    break
+                out = self._policy(
+                    conditions={0: current_obs_batch},
+                    batch_size=num_modes,
+                    horizon=horizon,
+                    disable_projection=False,
+                    constraints=constraints,
+                    return_infos=True,
+                    batch_conditions=True,
+                )
+                _action, trajectories, infos = out
+                observations = np.asarray(trajectories.observations, dtype=np.float32)  # (num_modes, horizon, obs_dim)
+                actions = np.asarray(trajectories.actions, dtype=np.float32)  # (num_modes, horizon, action_dim)
+                for i in range(num_modes):
+                    for t in range(observations.shape[1]):
+                        mode_states[i].append(observations[i, t].copy())
+                    for t in range(actions.shape[1]):
+                        mode_actions[i].append(actions[i, t].copy())
+                    current_obs_batch[i] = observations[i, -1]
+                projection_costs = infos.get("projection_costs")
+                if projection_costs is not None and isinstance(projection_costs, dict):
+                    for cost_arr in projection_costs.values():
+                        arr = np.asarray(cost_arr, dtype=np.float64).ravel()
+                        if arr.size >= num_modes:
+                            cost_per_mode += arr[:num_modes]
+            # Build (num_modes, T, obs_dim) and (num_modes, T, action_dim) for candidate_*; ensure first state is x0
+            observations = np.zeros((num_modes, len(mode_states[0]), obs_dim), dtype=np.float32)
+            for i in range(num_modes):
+                for t, s in enumerate(mode_states[i]):
+                    observations[i, t] = np.asarray(s, dtype=np.float32)[:obs_dim]
+            act_dim = np.asarray(mode_actions[0][0]).ravel().size if mode_actions[0] else 1
+            actions = np.zeros((num_modes, len(mode_actions[0]), act_dim), dtype=np.float32)
+            for i in range(num_modes):
+                for t, a in enumerate(mode_actions[i]):
+                    actions[i, t] = np.asarray(a, dtype=np.float32).ravel()[:act_dim]
+            # Overwrite first state of every candidate with x0 for viz
+            for i in range(num_modes):
+                observations[i, 0] = x0_obs_chunk
+            infos = {"projection_costs": {0: cost_per_mode}}
+
+        C = observations.shape[0]
+        obs_dim = observations.shape[2] if observations.ndim >= 3 else observations.shape[1]
+        # Ensure first state of every candidate is exactly x0 (for correct start in viz)
+        x0_obs = np.asarray(obs[:obs_dim], dtype=np.float32) if obs.size >= obs_dim else np.asarray(obs, dtype=np.float32)
+
+        candidate_states = []
+        candidate_actions = []
+        for i in range(C):
+            # states = actions + 1: x0 then planned steps; add duplicate last state only when H == num_actions (single-chunk)
+            H = observations.shape[1]
+            states_i = [x0_obs.copy()] + [observations[i, t] for t in range(1, H)]
+            if actions.shape[1] == H:
+                states_i = states_i + [np.asarray(observations[i, H - 1], dtype=np.float32)]
+            acts_i = [actions[i, t] for t in range(actions.shape[1])]
+            candidate_states.append(states_i)
+            candidate_actions.append(acts_i)
+
+        # Total projection cost per candidate (sum over timesteps)
+        projection_costs = infos.get("projection_costs")
+        if projection_costs is not None and isinstance(projection_costs, dict):
+            cost_per_sample = np.zeros(C, dtype=np.float64)
+            for _timestep, cost_arr in projection_costs.items():
+                arr = np.asarray(cost_arr, dtype=np.float64).ravel()
+                if arr.size >= C:
+                    cost_per_sample += arr[:C]
+            candidate_costs = cost_per_sample.astype(np.float32)
+        else:
+            candidate_costs = np.zeros(C, dtype=np.float32)
+
+        best_idx = int(np.argmin(candidate_costs))
+        states = candidate_states[best_idx]
+        actions_list = candidate_actions[best_idx]
+
+        info = {
+            "candidate_states": candidate_states,
+            "candidate_actions": candidate_actions,
+            "candidate_costs": candidate_costs,
+            "best_idx": best_idx,
+            "mode_strategy": "multirun",
+        }
+        return {
+            "states": states,
+            "actions": actions_list,
+            "initial_state": x0,
+            "info": info,
+            "candidate_states": candidate_states,
+            "candidate_actions": candidate_actions,
+            "candidate_costs": candidate_costs,
+            "best_idx": best_idx,
+        }
+
     def plan(self, x0: Any | None = None, rng_key: Any | None = None) -> Dict[str, Any]:
         self._build_projector_and_policy()
+
+        execution = self.plan_config.get("execution", "mpc")
+        if execution == "plan_once":
+            horizon = int(self.plan_config.get("horizon", self.diffusion.horizon))
+            x0_use = x0 if x0 is not None else self.adapter.reset(seed=self.seed)[0]
+            return self._plan_once(x0_use, horizon, rng_key)
 
         max_episode_length = int(self.plan_config.get("max_episode_length", 200))
         batch_size = int(self.plan_config.get("batch_size", 8))

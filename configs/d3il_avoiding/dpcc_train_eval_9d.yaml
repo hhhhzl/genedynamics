@@ -21,7 +21,7 @@ method_params:
   dt: 0.035
   batch_size: 4
   max_episode_length: 200
-  variant: diffuser
+  variant: dpcc-c-tightened
   solver: scipy
 
 obstacle_levels: [0]
@@ -41,6 +41,7 @@ obstacle_config:
     x_max: 0.8
     y_min: -0.3
     y_max: 0.4
+  robot_radius: 0.01
 
 seeds: [5]
 backend: torch
@@ -51,10 +52,10 @@ metrics:
   - episode_outcome
 
 visualizations:
+  - trajectory_modes
   - trajectory
   - diffusion
   - cost
-  - trajectory_modes
 
 metadata:
   description: "DPCC eval on D3IL avoiding 9D"

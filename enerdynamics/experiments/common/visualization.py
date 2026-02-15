@@ -23,7 +23,7 @@ EDOC_COLOR = "#1f77b4"  # Blue
 MAX_SAMPLE_TRAJ_PLOT = 80
 
 # D3IL-only palette (trajectory/diffusion): (R,G,B) or (R,G,B,A) in [0,1]
-D3IL_BG_YELLOW = "#FFF1AD"
+D3IL_BG_YELLOW = "#FFFFE6"
 D3IL_OBSTACLE_RED = "#F21B1B"
 D3IL_TARGET_GREEN = "#88F26B"
 

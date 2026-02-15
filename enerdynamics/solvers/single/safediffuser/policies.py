@@ -73,8 +73,12 @@ class SafeDiffuserPolicy:
             lambda v: torch.as_tensor(v, dtype=torch.float32, device=self.device),
             conditions,
         )
-        # Repeat for batch sampling: [obs_dim] -> [B, obs_dim]
-        conditions = _apply_dict(einops.repeat, conditions, "d -> repeat d", repeat=batch_size)
+        # Repeat for batch sampling: [obs_dim] -> [B, obs_dim], unless already [B, obs_dim] (batch conditions)
+        def _repeat_or_keep(v, b):
+            if hasattr(v, "ndim") and v.ndim == 2 and v.shape[0] == b:
+                return v
+            return einops.repeat(v, "d -> repeat d", repeat=b)
+        conditions = _apply_dict(_repeat_or_keep, conditions, batch_size)
         return conditions
 
     def __call__(

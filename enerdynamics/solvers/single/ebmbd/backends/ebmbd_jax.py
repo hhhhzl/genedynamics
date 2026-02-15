@@ -14,6 +14,7 @@ import jax
 import jax.numpy as jnp
 
 from enerdynamics.solvers.single.diffusion_adaptors import diverse_topk_modes
+from enerdynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
 
 try:
     from enerdynamics.core.registry.edoc_backends import register_edoc_backend
@@ -77,6 +78,8 @@ class EBMBDBackendJax:
         self.show_tqdm = bool(getattr(solver, "show_tqdm", False))
         # Multi-mode support: number of candidate trajectories to return
         self.num_modes = int(getattr(solver, "num_modes", 1))
+        self.use_target_line = bool(getattr(solver, "use_target_line", False))
+        self.num_targets = int(getattr(solver, "num_targets", 4))
         # Diversity selection parameters
         self.diversity_eta = float(getattr(solver, "diversity_eta", 1.0))
         self.diversity_topK_cand = int(getattr(solver, "diversity_topK_cand", None) or (self.Nsample // 2))
@@ -147,8 +150,13 @@ class EBMBDBackendJax:
         self._rollout_states_batch_fn = jax.jit(jax.vmap(self._rollout_states_fn, in_axes=(None, 0)))
         self._rollout_rewards_fn = jax.jit(self._build_rollout_rewards_fn())
         self._rollout_rewards_batch_fn = jax.jit(jax.vmap(self._rollout_rewards_fn, in_axes=(None, 0)))
+        self._rollout_rewards_with_target_fn = jax.jit(self._build_rollout_rewards_with_target_fn())
         self._rollout_total_cost_fn = jax.jit(self._build_rollout_total_cost_fn())
         self._rollout_total_cost_batch_fn = jax.jit(jax.vmap(self._rollout_total_cost_fn, in_axes=(None, 0)))
+        _rollout_total_cost_with_target_fn = self._build_rollout_total_cost_with_target_fn()
+        self._rollout_total_cost_with_target_batch_fn = jax.jit(
+            jax.vmap(_rollout_total_cost_with_target_fn, in_axes=(None, 0, None))
+        )
 
         # SDF backends (box and/or obstacle SDF texture)
         self._box_sdf_fn = jax.jit(self.env.jax_sdf) if hasattr(self.env, "jax_sdf") else None
@@ -252,6 +260,60 @@ class EBMBDBackendJax:
 
         return rollout_total_cost
 
+    def _build_rollout_total_cost_with_target_fn(self):
+        """Total cost with per-mode target passed in ctx."""
+        terminal_w = jnp.asarray(self.terminal_energy_weight, dtype=jnp.float32)
+        act_dim = self.env.act_dim
+
+        def rollout_total_cost_with_target(state_init, actions, target):
+            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:2]
+            ctx_base = {"target_xy": target}
+            H = actions.shape[0]
+
+            def do_stage(_):
+                def step_fn(carry, act):
+                    nxt = self._transition_fn(carry, act)
+                    c = self._cost_fn(nxt, act, {**ctx_base, "t": 0})
+                    return nxt, c
+
+                terminal_state, costs = jax.lax.scan(step_fn, state_init, actions[:-1])
+                total_stage = jnp.sum(costs)
+                terminal_state = self._transition_fn(terminal_state, actions[-1])
+                zero_u = jnp.zeros((act_dim,), dtype=jnp.float32)
+                terminal_c = self._cost_fn(terminal_state, zero_u, {**ctx_base, "t": H})
+                total = total_stage + terminal_w * terminal_c
+                rews_mean = -total_stage / jnp.maximum(float(H - 1), 1.0)
+                return total, rews_mean
+
+            def only_terminal(_):
+                terminal_state = self._transition_fn(state_init, actions[0])
+                zero_u = jnp.zeros((act_dim,), dtype=jnp.float32)
+                terminal_c = self._cost_fn(terminal_state, zero_u, {**ctx_base, "t": 1})
+                total = terminal_w * terminal_c
+                rews_mean = jnp.asarray(0.0, dtype=jnp.float32)
+                return total, rews_mean
+
+            return jax.lax.cond(H > 1, do_stage, only_terminal, operand=None)
+
+        return rollout_total_cost_with_target
+
+    def _build_rollout_rewards_with_target_fn(self):
+        def rollout_rewards_with_target(state_init, actions, target):
+            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:2]
+            t_idxs = jnp.arange(actions.shape[0], dtype=jnp.int32)
+
+            def step_fn(carry, inp):
+                action, t = inp
+                next_state = self._transition_fn(carry, action)
+                ctx = {"t": t, "target_xy": target}
+                reward = -self._cost_fn(next_state, action, ctx)
+                return next_state, reward
+
+            _, rewards = jax.lax.scan(step_fn, state_init, (actions, t_idxs))
+            return rewards
+
+        return rollout_rewards_with_target
+
     # ------------------------------------------------------------------ #
     # Core reverse diffusion
     # ------------------------------------------------------------------ #
@@ -308,9 +370,21 @@ class EBMBDBackendJax:
         
         x0_jnp = jnp.asarray(state_init, dtype=jnp.float32)
         temp_eps = jnp.maximum(self.temp, 1e-6)
-        
+
+        C = int(rng_keys.shape[0])
+        if getattr(self, "use_target_line", False) and C > 0:
+            target_line = get_d3il_target_line_positions(getattr(self, "num_targets", 4))
+            targets_per_mode = jnp.asarray(
+                np.asarray([target_line[i % len(target_line)] for i in range(C)], dtype=np.float32),
+                dtype=jnp.float32,
+            )
+        else:
+            default_tgt = getattr(self.env, "target", None)
+            default_tgt = np.asarray(default_tgt, dtype=np.float32).reshape(-1)[:2] if default_tgt is not None else np.zeros(2, dtype=np.float32)
+            targets_per_mode = jnp.tile(jnp.asarray(default_tgt, dtype=jnp.float32), (C, 1))
+
         # Core diffusion function (pure JAX, can be vmapped)
-        def reverse_diffuse_core(rng_key):
+        def reverse_diffuse_core(rng_key, target):
             rng, _ = jax.random.split(rng_key)
             Ybar0 = jnp.zeros((horizon, act_dim), dtype=jnp.float32)
             
@@ -328,7 +402,7 @@ class EBMBDBackendJax:
                 Y0s = jnp.clip(Y0s, -limit, limit)
                 
                 states_batch = self._rollout_states_batch_fn(x0_jnp, Y0s)
-                total_stage_terminal_cost, rews_mean = self._rollout_total_cost_batch_fn(x0_jnp, Y0s)
+                total_stage_terminal_cost, rews_mean = self._rollout_total_cost_with_target_batch_fn(x0_jnp, Y0s, target)
                 
                 min_sdf = self._compute_min_sdf_batch(states_batch)
                 offset = offset_by_idx[idx]
@@ -376,14 +450,14 @@ class EBMBDBackendJax:
             
             return Ybar_final, reward_hist, Ybar_hist, Ysamples_hist
         
-        # Vmap the core function over rng_keys
-        reverse_diffuse_batch_jit = jax.jit(jax.vmap(reverse_diffuse_core, in_axes=0))
-        Ybar_finals, reward_hists, Ybar_hists, Ysamples_hists = reverse_diffuse_batch_jit(rng_keys)
+        # Vmap the core function over (rng_keys, targets_per_mode)
+        reverse_diffuse_batch_jit = jax.jit(jax.vmap(reverse_diffuse_core, in_axes=(0, 0)))
+        Ybar_finals, reward_hists, Ybar_hists, Ysamples_hists = reverse_diffuse_batch_jit(rng_keys, targets_per_mode)
         
-        # Batch post-processing: clip, rollout states and rewards (aligned with mbd batch processing)
+        # Batch post-processing: clip, rollout states and rewards (use per-mode target when use_target_line)
         final_actions_batch = jnp.clip(Ybar_finals, -self.action_limit, self.action_limit)  # (C, H, act_dim)
         states_batch = jax.vmap(self._rollout_states_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H+1, state_dim)
-        rewards_batch = jax.vmap(self._rollout_rewards_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H)
+        rewards_batch = jax.vmap(self._rollout_rewards_with_target_fn, in_axes=(None, 0, 0))(x0_jnp, final_actions_batch, targets_per_mode)  # (C, H)
         
         # Convert to numpy
         states_batch_np = np.asarray(states_batch)  # (C, H+1, state_dim)
