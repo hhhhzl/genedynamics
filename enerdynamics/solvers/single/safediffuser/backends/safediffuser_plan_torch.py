@@ -969,18 +969,6 @@ class SafeDiffuserBackendTorch:
         if len(states_list) > 0 and np.asarray(states_list[0]).size >= 9:
             states_list[0] = x0_9.copy()
 
-        # #region agent log
-        try:
-            import json as _j, os as _o, time as _t
-            _p = "/workspace/enerdynamics/.cursor/debug.log"
-            if _o.path.dirname(_p):
-                _o.makedirs(_o.path.dirname(_p), exist_ok=True)
-            with open(_p, "a") as _f:
-                _f.write(_j.dumps({"location": "_plan_core_9d_chunked", "message": "chunked result", "data": {"num_modes": num_modes, "plan_once_chunks": plan_once_chunks, "len_actions": len(actions_list), "best_idx": best_idx, "costs": np.asarray(candidate_costs).tolist()}, "hypothesisId": "H1", "timestamp": int(_t.time() * 1000)}, default=lambda x: x.tolist() if hasattr(x, "tolist") else str(x)) + "\n")
-        except Exception:
-            pass
-        # #endregion
-
         action0 = np.asarray(actions_list[0], dtype=np.float32).copy() if actions_list else np.zeros(7, dtype=np.float32)
         goal_xy_info = (
             np.asarray(self.goal_xy, dtype=np.float32).tolist()
