@@ -5,7 +5,7 @@ env_name: d3il_avoiding_9d
 env_params:
   render: false
   horizon: 8
-  dt: 0.035
+  dt: 0.035  # 9D uses qdot integration; must match training/sim
 
 method: dpcc
 method_params:
@@ -21,7 +21,7 @@ method_params:
   dt: 0.035
   batch_size: 4
   max_episode_length: 200
-  variant: dpcc-c
+  variant: diffuser
   solver: scipy
 
 obstacle_levels: [0]
@@ -52,6 +52,9 @@ metrics:
 
 visualizations:
   - trajectory
+  - diffusion
+  - cost
+  - trajectory_modes
 
 metadata:
   description: "DPCC eval on D3IL avoiding 9D"
