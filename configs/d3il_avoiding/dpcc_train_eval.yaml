@@ -21,17 +21,21 @@ method_params:
   dt: 1
   batch_size: 4
   max_episode_length: 200
-  variant: dpcc-t-tightened
+  variant: dpcc-c-tightened
   solver: scipy
+  execution: plan_once
+  num_modes: 20
+  plan_once_chunks: 25
+  use_target_line: true  # target as line in viz (align with model-based baselines)
 
-obstacle_levels: [1]
+obstacle_levels: [0]
 obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
   obstacle_radius_by_level:
-    0: [0.03, 0.025]
-    1: [0.04, 0.035]
-    2: [0.06, 0.055]
+    0: [0.03, 0.03]
+    1: [0.04, 0.04]
+    2: [0.05, 0.05]
   enable_connectivity_check: false
   enable_nonconvexity_check: false
   robot_radius: 0.01
@@ -40,8 +44,9 @@ obstacle_config:
     x_max: 0.8
     y_min: -0.3
     y_max: 0.4
+  robot_radius: 0.01
 
-seeds: [5]
+seeds: [0]
 backend: torch
 device: cuda
 
@@ -50,10 +55,8 @@ metrics:
   - episode_outcome
 
 visualizations:
-  - trajectory
-  - diffusion
-  - cost
   - trajectory_modes
+  - trajectory
 
 metadata:
   description: "DPCC eval on D3IL avoiding"

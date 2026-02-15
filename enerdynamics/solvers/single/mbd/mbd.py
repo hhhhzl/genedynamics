@@ -78,6 +78,8 @@ class MBDSolver(SamplingSolver):
         diversity_topK_cand: int = None,
         diversity_use_state: bool = True,
         terminal_energy_weight: float = 100.0,
+        use_target_line: bool = False,
+        num_targets: int = 4,
         **kwargs,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -108,6 +110,8 @@ class MBDSolver(SamplingSolver):
                 diversity_topK_cand=int(diversity_topK_cand) if diversity_topK_cand is not None else None,
                 diversity_use_state=bool(diversity_use_state),
                 terminal_energy_weight=float(terminal_energy_weight),
+                use_target_line=bool(use_target_line),
+                num_targets=int(num_targets),
             )
         )
 

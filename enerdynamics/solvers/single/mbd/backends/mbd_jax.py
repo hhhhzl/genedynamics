@@ -9,6 +9,7 @@ import jax
 import jax.numpy as jnp
 
 from enerdynamics.solvers.single.diffusion_adaptors import diverse_topk_modes
+from enerdynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
 
 from enerdynamics.core.types import Trajectory, State
 
@@ -75,11 +76,15 @@ class MBDBackendJax:
         # Multi-mode support: number of candidate trajectories to return
         if solver is not None:
             self.num_modes = int(solver.config.get("num_modes", 1))
+            self.use_target_line = bool(solver.config.get("use_target_line", False))
+            self.num_targets = int(solver.config.get("num_targets", 4))
             self.diversity_eta = float(solver.config.get("diversity_eta", 1.0))
             self.diversity_topK_cand = int(solver.config.get("diversity_topK_cand", None) or (self.Nsample // 2))
             self.diversity_use_state = bool(solver.config.get("diversity_use_state", True))
         else:
             self.num_modes = 1
+            self.use_target_line = False
+            self.num_targets = 4
             self.diversity_eta = 1.0
             self.diversity_topK_cand = self.Nsample // 2
             self.diversity_use_state = True
@@ -102,7 +107,7 @@ class MBDBackendJax:
 
             def step_fn(carry, action):
                 next_state = self._transition_fn(carry, action)
-                ctx = {"t": 0}
+                ctx = {"t": 0, "target_xy": target}
                 reward = -self._cost_fn(next_state, action, ctx)
                 return next_state, reward
 
@@ -113,8 +118,25 @@ class MBDBackendJax:
             rewards = rewards.at[-1].add(terminal_reward)
             return rewards
 
+        def rollout_rewards_with_target(state_init, actions, target):
+            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:2]
+
+            def step_fn(carry, action):
+                next_state = self._transition_fn(carry, action)
+                ctx = {"t": 0, "target_xy": target}
+                reward = -self._cost_fn(next_state, action, ctx)
+                return next_state, reward
+
+            final_state, rewards = jax.lax.scan(step_fn, state_init, actions)
+            terminal_dist = jnp.linalg.norm(final_state[0:2] - target[0:2])
+            terminal_reward = -jnp.asarray(self.terminal_energy_weight, dtype=jnp.float32) * terminal_dist
+            rewards = rewards.at[-1].add(terminal_reward)
+            return rewards
+
         self._rollout_rewards_fn = jax.jit(rollout_rewards)
         self._rollout_rewards_batch_fn = jax.jit(jax.vmap(self._rollout_rewards_fn, in_axes=(None, 0)))
+        self._rollout_rewards_with_target_fn = jax.jit(rollout_rewards_with_target)
+        self._rollout_rewards_with_target_batch_fn = jax.jit(jax.vmap(self._rollout_rewards_with_target_fn, in_axes=(None, 0, None)))
 
         def rollout_states(state_init, actions):
             def step_fn(carry, action):
@@ -255,7 +277,18 @@ class MBDBackendJax:
             List of C result dictionaries (same format as plan)
         """
         x0_jnp = jnp.asarray(x0, dtype=jnp.float32)
-        
+        C = int(rng_keys.shape[0])
+        if getattr(self, "use_target_line", False) and C > 0:
+            target_line = get_d3il_target_line_positions(getattr(self, "num_targets", 4))
+            targets_per_mode = jnp.asarray(
+                np.asarray([target_line[i % len(target_line)] for i in range(C)], dtype=np.float32),
+                dtype=jnp.float32,
+            )
+        else:
+            default_tgt = getattr(self.env, "target", None)
+            default_tgt = np.asarray(default_tgt, dtype=np.float32).reshape(-1)[:2] if default_tgt is not None else np.zeros(2, dtype=np.float32)
+            targets_per_mode = jnp.tile(jnp.asarray(default_tgt, dtype=jnp.float32), (C, 1))
+
         try:
             from enerdynamics.core.constraints.schedulers.utils import DiffusionNoiseSchedule
             betas_np = np.linspace(self.beta0, self.betaT, self.Ndiffuse, dtype=np.float32)
@@ -290,19 +323,20 @@ class MBDBackendJax:
             T_k_list = [self.temp_sample for _ in range(self.Ndiffuse)]
         T_k_arr = jnp.asarray(T_k_list, dtype=jnp.float32)
         
-        def reverse_diffuse_core(rng_key):
+        def reverse_diffuse_core(rng_key, target):
             # Split rng inside core function (aligned with ebmbd)
             rng, _ = jax.random.split(rng_key)
+
             def body(carry, idx):
                 rng_curr, Ybar_curr = carry
                 rng_curr, noise_key, extra_key = jax.random.split(rng_curr, 3)
-                
+
                 Yi = Ybar_curr * jnp.sqrt(alphas_bar[idx])
                 eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
                 Y0s = eps * sigmas[idx] + Ybar_curr
                 Y0s = jnp.clip(Y0s, -self.action_limit, self.action_limit)
-                
-                rews = self._rollout_rewards_batch_fn(x0_jnp, Y0s)
+
+                rews = self._rollout_rewards_with_target_batch_fn(x0_jnp, Y0s, target)
                 rews_mean = jnp.mean(rews, axis=-1)
                 
                 rew_mean = jnp.mean(rews_mean)
@@ -334,28 +368,25 @@ class MBDBackendJax:
             Ysamples_hist = Ysamples_hist[::-1]
             return Ybar_final, reward_hist, Ybar_hist, Ysamples_hist
         
-        # Vmap over rng_keys (aligned with ebmbd: pass rng_keys directly, split inside core)
-        reverse_diffuse_batch_jit = jax.jit(jax.vmap(reverse_diffuse_core, in_axes=0))
-        Ybar_finals, reward_hists, actions_trajs, sampled_trajs = reverse_diffuse_batch_jit(rng_keys)
+        # Vmap over (rng_keys, targets_per_mode) for per-mode target support
+        reverse_diffuse_batch_jit = jax.jit(jax.vmap(reverse_diffuse_core, in_axes=(0, 0)))
+        Ybar_finals, reward_hists, actions_trajs, sampled_trajs = reverse_diffuse_batch_jit(rng_keys, targets_per_mode)
         
-        # Batch post-processing: clip, rollout states and rewards
+        # Batch post-processing: clip, rollout states and rewards (use per-mode target when use_target_line)
         final_actions_batch = jnp.clip(Ybar_finals, -self.action_limit, self.action_limit)  # (C, H, act_dim)
         states_batch = jax.vmap(self._rollout_states_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H+1, state_dim)
-        rewards_batch = jax.vmap(self._rollout_rewards_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H)
+        rewards_batch = jax.vmap(self._rollout_rewards_with_target_fn, in_axes=(None, 0, 0))(x0_jnp, final_actions_batch, targets_per_mode)  # (C, H)
         
-        # Batch energy computation using _cost_fn (JAX-compatible)
-        # states_batch: (C, H+1, state_dim), actions_batch: (C, H, act_dim)
-        # For each trajectory, compute energy at each time step: state[t+1], action[t]
-        # Use vmap to batch over both trajectories and time steps
+        # Batch energy computation using _cost_fn (JAX-compatible, per-mode target)
         states_for_energy = states_batch[:, 1:, :]  # (C, H, state_dim) - skip initial state
-        # Vmap over both batch dimension and time dimension
-        def compute_energy_batch(state, action):
-            return self._cost_fn(state, action, {"t": 0})  # ctx doesn't matter for JAX
-        
-        # Vmap over both (C, H) dimensions
-        energies_batch = jax.vmap(jax.vmap(compute_energy_batch, in_axes=(0, 0)), in_axes=(0, 0))(
-            states_for_energy, final_actions_batch
-        )  # (C, H)
+
+        def compute_energy_with_target(state, action, target):
+            return self._cost_fn(state, action, {"t": 0, "target_xy": target})
+
+        energies_batch = jax.vmap(
+            jax.vmap(compute_energy_with_target, in_axes=(0, 0, None)),
+            in_axes=(0, 0, 0),
+        )(states_for_energy, final_actions_batch, targets_per_mode)  # (C, H)
         
         # Convert to numpy
         states_batch_np = np.asarray(states_batch)  # (C, H+1, state_dim)

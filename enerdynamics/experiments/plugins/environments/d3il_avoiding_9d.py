@@ -47,9 +47,18 @@ class D3ILAvoiding9DPlugin(EnvironmentPlugin):
             goal_xy = jnp.array([0.5, 0.35], dtype=jnp.float32)
 
         def task_energy(x, u, ctx):
-            _ = (u, ctx)
+            _ = u
             pos = x[:2]
-            return jnp.sum((pos - goal_xy) ** 2)
+            # Support per-mode target from ctx (for use_target_line); else use default goal_xy
+            if ctx is not None and isinstance(ctx, dict) and "target_xy" in ctx:
+                goal = jnp.asarray(ctx["target_xy"], dtype=jnp.float32)
+                if goal.ndim >= 1 and goal.size >= 2:
+                    goal = goal.reshape(-1)[:2]
+                else:
+                    goal = goal_xy
+            else:
+                goal = goal_xy
+            return jnp.sum((pos - goal) ** 2)
 
         return LegacyEnergyFunctional({"task": EnergyTerm(task_energy, 1.0)})
 

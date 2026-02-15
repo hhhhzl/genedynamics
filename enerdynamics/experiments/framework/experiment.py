@@ -355,6 +355,7 @@ class ExperimentRunner:
             reset_rng = backend.create_rng(seed)
             exec_candidate_states = []
             exec_candidate_actions = []
+            exec_candidate_states_9d = []
             exec_success = []
             exec_collision = []
             costs_arr = np.asarray(cand_costs, dtype=np.float64).ravel()
@@ -391,11 +392,13 @@ class ExperimentRunner:
                     )
                     exec_candidate_states.append(run_out.get('states', []))
                     exec_candidate_actions.append(run_out.get('actions', []))
+                    exec_candidate_states_9d.append(run_out.get('states_9d'))
                     exec_success.append(bool(run_out.get('success', False)))
                     exec_collision.append(bool(run_out.get('collision', True)))
                 except Exception:
                     exec_candidate_states.append(result.get('states', []))
                     exec_candidate_actions.append([])
+                    exec_candidate_states_9d.append(None)
                     exec_success.append(False)
                     exec_collision.append(True)
             result['exec_candidate_states'] = exec_candidate_states
@@ -406,6 +409,10 @@ class ExperimentRunner:
             else:
                 best_idx = int(np.argmin(costs_arr))
             result['best_idx'] = best_idx
+            if exec_candidate_states_9d and best_idx < len(exec_candidate_states_9d):
+                best_9d = exec_candidate_states_9d[best_idx]
+                if best_9d is not None and len(best_9d) >= 2:
+                    result['states_9d'] = [np.asarray(s, dtype=np.float32) for s in best_9d]
             result['states'] = [np.asarray(s, dtype=np.float32) for s in cand_states[best_idx]]
             act_arr = np.asarray(cand_actions[best_idx], dtype=np.float32)
             result['actions'] = [act_arr[t] for t in range(act_arr.shape[0])] if act_arr.ndim >= 2 else [act_arr]
@@ -427,7 +434,9 @@ class ExperimentRunner:
                     result['executed_actions'].append(np.zeros(act_dim, dtype=np.float32))
             result['success'] = exec_success[best_idx]
             result['collision'] = exec_collision[best_idx]
-            # Execution SSR = (executions that were success and no collision) / total executions
+            result['exec_success_per_mode'] = list(exec_success)
+            result['exec_collision_per_mode'] = list(exec_collision)
+            # Execution SSR = (executions that were success and no collision) / total (violation recomputed in _compute_metrics)
             exec_ssr_count = sum(1 for i in range(len(exec_success)) if exec_success[i] and not exec_collision[i])
             n_exec_total = len(exec_success)
             result['execution_ssr'] = {
@@ -604,6 +613,13 @@ class ExperimentRunner:
         Returns:
             Start position array (may be full state vector with velocities)
         """
+        # d3il_avoiding (4D): use the env reset observation directly.
+        # The generic 2D sampler (x in [-1,0], y in [-2,-1.5]) is for toy 2D environments and
+        # produces out-of-map starts for D3IL.
+        if self.config.env_name == "d3il_avoiding":
+            obs, _info = env.reset(seed=seed)
+            return np.asarray(obs, dtype=np.float32)
+
         # d3il_avoiding_9d: fixed center start (0.5, -0.28) - center x, below first obstacle row
         if self.config.env_name == "d3il_avoiding_9d":
             state_dim = env_plugin.get_state_dim()
@@ -796,10 +812,11 @@ class ExperimentRunner:
         return Trajectory(states=states_list, actions=actions_list, info=None)
 
     def _is_d3il_experiment(self, result: Dict[str, Any]) -> bool:
-        """True if this experiment uses d3il_unified (so we emit plan/exec split trajectory files)."""
+        """True if this experiment is a D3IL env (emit plan/exec split trajectory files)."""
         cfg = result.get('config_snapshot') or {}
         method = cfg.get('method') if isinstance(cfg, dict) else getattr(cfg, 'method', None)
-        return method == 'd3il_unified'
+        env_name = cfg.get('env_name', '') if isinstance(cfg, dict) else getattr(cfg, 'env_name', '')
+        return (method == 'd3il_unified') or ("d3il" in str(env_name))
 
     def _render_d3il_exec_3d_gif(
         self,
@@ -1031,11 +1048,17 @@ class ExperimentRunner:
         env_plugin: Any,
         robot_radius: float,
         success_margin: float,
+        *,
+        use_target_line: bool = False,
+        num_targets: int = 4,
+        num_modes: int = 0,
     ) -> Dict[str, Any]:
         """Compute modes-based metrics: ssr, length, smoothness, geometric_smoothness."""
         n_modes = len(candidate_states_list)
         if n_modes == 0:
             return {}
+        if num_modes <= 0:
+            num_modes = n_modes
 
         def extract_pos_2d(s: np.ndarray) -> np.ndarray:
             if env_plugin is not None and hasattr(env_plugin, "extract_position"):
@@ -1052,8 +1075,12 @@ class ExperimentRunner:
 
         target = np.asarray(env.target, dtype=np.float32)
         target_pos = extract_pos_2d(target)
+        target_line = None
+        if use_target_line and env_plugin is not None and getattr(env_plugin, "name", None) == "d3il_avoiding_9d":
+            from enerdynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
+            target_line = get_d3il_target_line_positions(num_targets)
 
-        for states in candidate_states_list:
+        for i, states in enumerate(candidate_states_list):
             states_arr = [np.asarray(s, dtype=np.float32) for s in states]
             if len(states_arr) == 0:
                 continue
@@ -1074,8 +1101,13 @@ class ExperimentRunner:
 
             # Task success
             final_pos = extract_pos_2d(states_arr[-1])
-            # d3il_avoiding_9d: line target (y >= target_y), x can be anywhere in box
-            if env_plugin is not None and getattr(env_plugin, "name", None) == "d3il_avoiding_9d":
+            # use_target_line + d3il_avoiding_9d: per-mode target (model-based modes SSR)
+            if target_line is not None and len(target_line) > 0:
+                tgt_i = target_line[i % len(target_line)]
+                dist = float(np.linalg.norm(final_pos - tgt_i))
+                task_success = bool(dist < success_margin)
+            # d3il_avoiding (4D) or d3il_avoiding_9d: line target (y >= target_y), "过了线就可以了"
+            elif env_plugin is not None and getattr(env_plugin, "name", None) in ("d3il_avoiding_9d", "d3il_avoiding"):
                 target_y = float(target_pos[1])
                 task_success = bool(final_pos[1] >= target_y - success_margin)
             else:
@@ -1179,9 +1211,15 @@ class ExperimentRunner:
                         pass
 
         if candidate_states_list:
+            method_params = getattr(self.config, "method_params", None) or {}
+            use_target_line = bool(method_params.get("use_target_line", False))
+            num_targets = int(method_params.get("num_targets", 4))
             modes_metrics = self._compute_modes_metrics(
                 candidate_states_list, env, obstacles, constraints, env_plugin,
                 robot_radius, success_margin,
+                use_target_line=use_target_line,
+                num_targets=num_targets,
+                num_modes=len(candidate_states_list),
             )
             if 'ssr' in modes_metrics:
                 metrics_result['ssr'] = modes_metrics['ssr']
@@ -1281,6 +1319,22 @@ class ExperimentRunner:
                     exec_violation_rates.append(vr)
                 metrics_result['execution_ssr']['violation_rate_mean'] = float(np.mean(exec_violation_rates)) if exec_violation_rates else 0.0
                 metrics_result['execution_ssr']['violation_rate_std'] = float(np.std(exec_violation_rates)) if len(exec_violation_rates) > 1 else 0.0
+                # Execution SSR only counts runs that are success & no collision & (effectively) zero violation
+                exec_success_pm = planning_result.get('exec_success_per_mode')
+                exec_collision_pm = planning_result.get('exec_collision_per_mode')
+                if (
+                    exec_success_pm is not None and exec_collision_pm is not None
+                    and len(exec_success_pm) == len(exec_states_list)
+                    and len(exec_violation_rates) == len(exec_states_list)
+                ):
+                    violation_threshold = 1e-9
+                    exec_ssr_count = sum(
+                        1 for i in range(len(exec_states_list))
+                        if exec_success_pm[i] and not exec_collision_pm[i] and exec_violation_rates[i] < violation_threshold
+                    )
+                    n_exec_total = len(exec_states_list)
+                    metrics_result['execution_ssr']['execution_ssr'] = float(exec_ssr_count) / max(1, n_exec_total)
+                    metrics_result['execution_ssr']['execution_ssr_count'] = int(exec_ssr_count)
         return metrics_result
 
     def _generate_visualizations(self, result: Dict[str, Any], env: Any, 

@@ -120,3 +120,25 @@ class D3ILAvoidingEnv:
         if inner_env is None or not hasattr(inner_env, "robot_state"):
             raise AttributeError("Underlying D3IL env has no robot_state")
         return inner_env.robot_state()
+
+    def robot_state_9d(self) -> Optional[np.ndarray]:
+        """
+        Return 9D state [x, y, q1..q7] for 3D visualization (trajectory_best_exec_3d.gif).
+        Uses current_c_pos[:2] and current_j_pos from the underlying sim robot.
+        """
+        self._task_env._lazy_init()
+        inner_env = getattr(self._task_env, "_env", None)
+        if inner_env is None or not hasattr(inner_env, "robot"):
+            return None
+        robot = getattr(inner_env, "robot", None)
+        if robot is None:
+            return None
+        c_pos = getattr(robot, "current_c_pos", None)
+        j_pos = getattr(robot, "current_j_pos", None)
+        if c_pos is None or j_pos is None:
+            return None
+        c_pos = np.asarray(c_pos, dtype=np.float32).reshape(-1)
+        j_pos = np.asarray(j_pos, dtype=np.float32).reshape(-1)
+        if c_pos.size < 2 or j_pos.size < 7:
+            return None
+        return np.concatenate([c_pos[:2], j_pos[:7]], axis=0).astype(np.float32)

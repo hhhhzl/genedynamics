@@ -21,6 +21,7 @@ import jax.numpy as jnp
 
 from enerdynamics.solvers.single.diffusion_adaptors import diverse_topk_modes
 from enerdynamics.solvers.single.cfsmbd.backends import _batched_alm_adaptive as _batched_alm
+from enerdynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
 
 from enerdynamics.core.types import Trajectory, State
 from enerdynamics.core.constraints.core.types import ScheduleState
@@ -95,6 +96,8 @@ class CFSMBDBackendJax:
         # Multi-mode support: number of candidate trajectories to return
         if solver is not None:
             self.num_modes = int(solver.config.get("num_modes", 1))
+            self.use_target_line = bool(solver.config.get("use_target_line", False))
+            self.num_targets = int(solver.config.get("num_targets", 4))
             self.diversity_eta = float(solver.config.get("diversity_eta", 1.0))
             self.diversity_topK_cand = int(solver.config.get("diversity_topK_cand", None) or (self.Nsample // 2))
             self.diversity_use_state = bool(solver.config.get("diversity_use_state", True))
@@ -104,6 +107,8 @@ class CFSMBDBackendJax:
             self.use_batched_alm_adaptive = bool(solver.config.get("use_batched_alm_adaptive", False))
         else:
             self.num_modes = 1
+            self.use_target_line = False
+            self.num_targets = 4
             self.diversity_eta = 1.0
             self.diversity_topK_cand = self.Nsample // 2
             self.diversity_use_state = True
@@ -307,28 +312,23 @@ class CFSMBDBackendJax:
                 # If SDF computation fails, return 0 (no violation)
                 return jnp.asarray(0.0, dtype=jnp.float32)
 
-        def rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho):
+        def rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho, target):
             """
             Rollout rewards with augmented Lagrangian penalty.
+            target: (2,) goal for terminal reward and ctx.target_xy for stage cost.
 
             Returns:
               - total_augmented_reward: scalar
               - v_n: scalar, max_t [g]_+ (used for risk residual r_k and violation stats v_k)
-
-            Performance note:
-            We intentionally avoid materializing per-step g_plus arrays. Instead we accumulate:
-              sum_g = Σ [g]_+    and   sum_sq_g = Σ [g]_+^2
-            so mean([g]_+^2) = sum_sq_g / H.
             """
-            target_obj = getattr(self.env, "target", None)
-            target = jnp.asarray(target_obj, dtype=jnp.float32) if target_obj is not None else jnp.zeros(2)
+            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:2]
 
             def step_fn(carry, action_and_t):
                 next_state, cum_reward, cum_g_plus, cum_g_plus_sq, max_g_plus = carry
                 action, t = action_and_t
                 
                 next_state = self._transition_fn(next_state, action)
-                ctx = {"t": t}
+                ctx = {"t": t, "target_xy": target}
                 
                 # Standard running cost
                 reward = -self._cost_fn(next_state, action, ctx)
@@ -368,25 +368,27 @@ class CFSMBDBackendJax:
             v_n = max_g_plus
             return total_augmented_reward, v_n
 
-        # Backward-compatible wrappers
-        def rollout_rewards_with_augmented(state_init, actions, clearance, aug_lambda, aug_rho):
-            total_aug, _ = rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho)
+        def _default_target():
+            t = getattr(self.env, "target", None)
+            return jnp.asarray(t, dtype=jnp.float32).reshape(-1)[:2] if t is not None else jnp.zeros(2)
+
+        def rollout_rewards_with_augmented(state_init, actions, clearance, aug_lambda, aug_rho, target):
+            total_aug, _ = rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho, target)
             return total_aug
 
-        def rollout_rewards_with_augmented_and_v(state_init, actions, clearance, aug_lambda, aug_rho):
-            return rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho)
+        def rollout_rewards_with_augmented_and_v(state_init, actions, clearance, aug_lambda, aug_rho, target):
+            return rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho, target)
 
-        def rollout_rewards(state_init, actions):
-            """Rollout rewards per step (for visualization)."""
-            target_obj = getattr(self.env, "target", None)
-            target = jnp.asarray(target_obj, dtype=jnp.float32) if target_obj is not None else jnp.zeros(2)
+        def rollout_rewards(state_init, actions, target):
+            """Rollout rewards per step (for visualization). target: (2,) goal."""
+            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:2]
             
             def step_fn(carry, action_and_t):
                 next_state, cum_reward = carry
                 action, t = action_and_t
                 
                 next_state = self._transition_fn(next_state, action)
-                ctx = {"t": t}
+                ctx = {"t": t, "target_xy": target}
                 reward = -self._cost_fn(next_state, action, ctx)
                 return (next_state, cum_reward + reward), reward
 
@@ -402,8 +404,7 @@ class CFSMBDBackendJax:
             
             return step_rewards
 
-        # JIT compile functions
-        self._rollout_rewards_fn = jax.jit(rollout_rewards)
+        # JIT compile: rollout_rewards(state_init, actions, target)
         
         # Batch version with augmented Lagrangian (takes clearance, aug_lambda, aug_rho as static)
         # Note: We need to make clearance, aug_lambda, aug_rho static args since they vary per diffusion step
@@ -435,28 +436,27 @@ class CFSMBDBackendJax:
                 schedule_params=sched_params,
             )
 
-        def augmented_rewards_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho):
+        def augmented_rewards_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho, target):
             return jax.vmap(
-                lambda actions_seq: rollout_rewards_with_augmented(x0_in, actions_seq, clearance, aug_lambda, aug_rho),
+                lambda actions_seq: rollout_rewards_with_augmented(x0_in, actions_seq, clearance, aug_lambda, aug_rho, target),
                 in_axes=0,
             )(actions_batch)
 
-        def augmented_and_v_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho):
+        def augmented_and_v_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho, target):
             rews, v = jax.vmap(
-                lambda actions_seq: rollout_rewards_with_augmented_and_v(x0_in, actions_seq, clearance, aug_lambda, aug_rho),
+                lambda actions_seq: rollout_rewards_with_augmented_and_v(x0_in, actions_seq, clearance, aug_lambda, aug_rho, target),
                 in_axes=0,
             )(actions_batch)
             return rews, v
 
         # Fused helper: compute (rews, r_k, v_k stats) without exposing v_batch.
-        # This reduces intermediate materialization/dispatch overhead and helps XLA reuse.
         from enerdynamics.core.constraints.schedulers.ConstraintScheduler.almadaptive.backends.alm_adaptive_jax import (
             quantile_90,
         )
         _k_top_static = max(1, min(self.Nsample, int(math.ceil(0.1 * self.Nsample))))
 
-        def augmented_rewards_and_rp_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho):
-            rews, v = augmented_and_v_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho)
+        def augmented_rewards_and_rp_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho, target):
+            rews, v = augmented_and_v_batch(x0_in, actions_batch, clearance, aug_lambda, aug_rho, target)
             # Risk residual: r_k = Q_0.9(v_1..v_M), with v_m = max_t [g]_+.
             r_p = quantile_90(v, _k_top_static)
             # Violation statistics (batch):
@@ -486,9 +486,12 @@ class CFSMBDBackendJax:
         def rollout_states_batch(state_init, actions_batch):
             return jax.vmap(lambda a: rollout_states(state_init, a), in_axes=0)(actions_batch)
 
-        def rollout_rewards_batch(state_init, actions_batch):
-            return jax.vmap(lambda a: rollout_rewards(state_init, a), in_axes=0)(actions_batch)
+        def rollout_rewards_batch(state_init, actions_batch, target):
+            return jax.vmap(lambda a: rollout_rewards(state_init, a, target), in_axes=0)(actions_batch)
 
+        self._default_target = _default_target()
+        self._rollout_rewards_fn = jax.jit(lambda x0, a: rollout_rewards(x0, a, self._default_target))
+        self._rollout_rewards_with_target_fn = jax.jit(rollout_rewards)
         self._rollout_states_batch_fn = jax.jit(rollout_states_batch)
         self._rollout_rewards_batch_fn = jax.jit(rollout_rewards_batch)
 
@@ -498,6 +501,7 @@ class CFSMBDBackendJax:
         rng_in: Any,
         Ybar_init: jnp.ndarray,
         carry_sched_init: Any,
+        target: jnp.ndarray,
     ) -> tuple:
         """
         Single adaptive reverse-diffusion run. Used by plan() and vmap'd by plan_batch().
@@ -554,7 +558,7 @@ class CFSMBDBackendJax:
             Y0s_f = jax.lax.cond(do_qp, apply_filter, lambda ys: ys, Y0s)
 
             rews, r_p, v_k_rate, v_k_mean = self._augmented_rewards_and_rp_batch_jit(
-                x0_jnp, Y0s_f, margin, aug_lam, aug_rho
+                x0_jnp, Y0s_f, margin, aug_lam, aug_rho, target
             )
             proj = jnp.mean(jnp.linalg.norm(Y0s_f - Y0s, axis=(1, 2)))
             feedback = {
@@ -589,7 +593,7 @@ class CFSMBDBackendJax:
             Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
 
             # reward_history: stage + terminal only (for convergence comparison across methods)
-            rews_plain = self._rollout_rewards_batch_fn(x0_jnp, Y0s_f)  # (M, H)
+            rews_plain = self._rollout_rewards_batch_fn(x0_jnp, Y0s_f, target)  # (M, H)
             reward_stage_terminal = jnp.mean(jnp.sum(rews_plain, axis=-1))
             return (rng_curr, Ybar_next, carry_sched_new), (
                 reward_stage_terminal, Ybar_next, Y0s_f,
@@ -677,7 +681,7 @@ class CFSMBDBackendJax:
                 aug_lam = jnp.asarray(self.aug_lambda, dtype=jnp.float32)
                 aug_rho = jnp.asarray(self.aug_rho, dtype=jnp.float32)
                 rews, r_p, v_k_rate, v_k_mean = self._augmented_rewards_and_rp_batch_jit(
-                    x0_jnp, Y0s_f, margin, aug_lam, aug_rho
+                    x0_jnp, Y0s_f, margin, aug_lam, aug_rho, self._default_target
                 )
                 rew_mean = jnp.mean(rews)
                 rew_std = jnp.std(rews)
@@ -701,7 +705,7 @@ class CFSMBDBackendJax:
                 Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
 
                 # reward_history: stage + terminal only (for convergence comparison across methods)
-                rews_plain = self._rollout_rewards_batch_fn(x0_jnp, Y0s_f)  # (M, H)
+                rews_plain = self._rollout_rewards_batch_fn(x0_jnp, Y0s_f, self._default_target)  # (M, H)
                 reward_stage_terminal = jnp.mean(jnp.sum(rews_plain, axis=-1))
                 return (rng_curr, Ybar_next), (reward_stage_terminal, Ybar_next, Y0s_f, r_p, v_k_rate, v_k_mean)
 
@@ -720,14 +724,14 @@ class CFSMBDBackendJax:
             # Timing: compilation + run (best-effort; compile may be cached)
             t0 = time.perf_counter()
             try:
-                compiled = reverse_adaptive_jit.lower(x0_jnp, rng_d, Ybar_init, carry_sched_init).compile()
+                compiled = reverse_adaptive_jit.lower(x0_jnp, rng_d, Ybar_init, carry_sched_init, self._default_target).compile()
                 t_compile = time.perf_counter() - t0
             except Exception:
                 compiled = reverse_adaptive_jit
                 t_compile = time.perf_counter() - t0
             t1 = time.perf_counter()
             _, Ybar_final, reward_hist, actions_traj, sampled_traj, margin_hist, rho_hist, topK_hist, I_hist, eps_hist, lam_hist, p_hist, nu_hist, compute_cost_hist, r_hist, v_rate_hist, v_mean_hist = compiled(
-                x0_jnp, rng_d, Ybar_init, carry_sched_init
+                x0_jnp, rng_d, Ybar_init, carry_sched_init, self._default_target
             )
             # Ensure compute finished for accurate timing
             try:
@@ -902,6 +906,16 @@ class CFSMBDBackendJax:
             List of C result dictionaries (same format as plan)
         """
         x0_jnp = jnp.asarray(x0, dtype=jnp.float32)
+        C = int(rng_keys.shape[0])
+        if getattr(self, "use_target_line", False) and C > 0:
+            target_line = get_d3il_target_line_positions(getattr(self, "num_targets", 4))
+            targets_per_mode = jnp.asarray(
+                np.asarray([target_line[i % len(target_line)] for i in range(C)], dtype=np.float32),
+                dtype=jnp.float32,
+            )
+        else:
+            default_tgt = np.asarray(self._default_target, dtype=np.float32).reshape(-1)[:2]
+            targets_per_mode = jnp.tile(jnp.asarray(default_tgt, dtype=jnp.float32), (C, 1))
         if self._use_jax_adaptive:
             # True JAX batch: vmap over _run_adaptive_diffuse_single (same CFS filter path as plan()).
             # vmap(jax.random.split)(rng_keys) returns shape (C, 2, 2), not two arrays; slice to get (C, 2) each.
@@ -911,9 +925,9 @@ class CFSMBDBackendJax:
             carry_sched_inits = jax.vmap(self._cs.jax_init_carry)(rng_sched_all)
             Ybar_init = jnp.zeros((self.horizon, self.act_dim), dtype=jnp.float32)
             batched_fn = jax.jit(
-                jax.vmap(self._run_adaptive_diffuse_single, in_axes=(None, 0, None, 0))
+                jax.vmap(self._run_adaptive_diffuse_single, in_axes=(None, 0, None, 0, 0))
             )
-            batched = batched_fn(x0_jnp, rng_d_all, Ybar_init, carry_sched_inits)
+            batched = batched_fn(x0_jnp, rng_d_all, Ybar_init, carry_sched_inits, targets_per_mode)
             # batched: (rng_out, Ybar_final, reward_hist, actions_traj, sampled_traj, margin_hist, rho_hist, topK_hist, I_hist, eps_hist, lam_hist, p_hist, nu_hist, compute_cost_hist, r_hist, v_rate_hist, v_mean_hist)
             Ybar_finals = batched[1]
             reward_hists = batched[2]
@@ -934,14 +948,13 @@ class CFSMBDBackendJax:
             states_batch = jax.vmap(self._rollout_states_fn, in_axes=(None, 0))(
                 x0_jnp, final_actions_batch
             )
-            rewards_batch = jax.vmap(self._rollout_rewards_fn, in_axes=(None, 0))(
-                x0_jnp, final_actions_batch
+            rewards_batch = jax.vmap(self._rollout_rewards_with_target_fn, in_axes=(None, 0, 0))(
+                x0_jnp, final_actions_batch, targets_per_mode
             )
             states_batch_np = np.asarray(states_batch)
             actions_batch_np = np.asarray(final_actions_batch)
             rewards_batch_np = np.asarray(rewards_batch)
             total_costs = -np.sum(rewards_batch_np, axis=-1)
-            C = rng_keys.shape[0]
             results = []
             for i in range(C):
                 results.append({
@@ -986,7 +999,7 @@ class CFSMBDBackendJax:
         progress_inc_by_idx_batch = 1.0 - (jnp.arange(self.Ndiffuse, dtype=jnp.float32) / denom_batch)
         extra_sigmas_by_idx_batch = self.action_extra_sigma * (1.0 - progress_inc_by_idx_batch)
         
-        def reverse_diffuse_core(rng_key):
+        def reverse_diffuse_core(rng_key, target):
             # Split rng inside core function (aligned with ebmbd)
             rng, _ = jax.random.split(rng_key)
             def body(carry, idx):
@@ -1036,7 +1049,7 @@ class CFSMBDBackendJax:
                 aug_lam = jnp.asarray(self.aug_lambda, dtype=jnp.float32)
                 aug_rho = jnp.asarray(self.aug_rho, dtype=jnp.float32)
                 rews, r_p, v_k_rate, v_k_mean = self._augmented_rewards_and_rp_batch_jit(
-                    x0_jnp, Y0s_f, margin, aug_lam, aug_rho
+                    x0_jnp, Y0s_f, margin, aug_lam, aug_rho, target
                 )
                 rew_mean = jnp.mean(rews)
                 rew_std = jnp.std(rews)
@@ -1071,14 +1084,14 @@ class CFSMBDBackendJax:
             )
             return Ybar_final, reward_hist[::-1], Ybar_hist[::-1], Ysamples_hist[::-1], r_hist, v_rate_hist, v_mean_hist
         
-        # Vmap over rng_keys (aligned with ebmbd: pass rng_keys directly, split inside core)
-        reverse_diffuse_batch_jit = jax.jit(jax.vmap(reverse_diffuse_core, in_axes=0))
-        Ybar_finals, reward_hists, actions_trajs, sampled_trajs, r_hists, v_rate_hists, v_mean_hists = reverse_diffuse_batch_jit(rng_keys)
+        # Vmap over (rng_keys, targets) for per-mode targets (Option B)
+        reverse_diffuse_batch_jit = jax.jit(jax.vmap(reverse_diffuse_core, in_axes=(0, 0)))
+        Ybar_finals, reward_hists, actions_trajs, sampled_trajs, r_hists, v_rate_hists, v_mean_hists = reverse_diffuse_batch_jit(rng_keys, targets_per_mode)
         
         # Batch post-processing: clip, rollout states and rewards (aligned with mbd batch processing)
         final_actions_batch = jnp.clip(Ybar_finals, -self.action_limit, self.action_limit)  # (C, H, act_dim)
         states_batch = jax.vmap(self._rollout_states_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H+1, state_dim)
-        rewards_batch = jax.vmap(self._rollout_rewards_fn, in_axes=(None, 0))(x0_jnp, final_actions_batch)  # (C, H)
+        rewards_batch = jax.vmap(self._rollout_rewards_with_target_fn, in_axes=(None, 0, 0))(x0_jnp, final_actions_batch, targets_per_mode)  # (C, H)
         
         # Convert to numpy
         states_batch_np = np.asarray(states_batch)  # (C, H+1, state_dim)

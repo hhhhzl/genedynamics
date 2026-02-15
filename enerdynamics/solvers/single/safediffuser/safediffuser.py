@@ -7,9 +7,24 @@ architecture used by DPCC (vendored `third_party/diffuser`).
 
 from __future__ import annotations
 
+import json
+import os
+import time
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+
+# #region agent log
+def _dbg(loc: str, msg: str, data: Dict[str, Any], hid: str) -> None:
+    p = "/workspace/enerdynamics/.cursor/debug.log"
+    try:
+        if os.path.dirname(p):
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "a") as f:
+            f.write(json.dumps({"location": loc, "message": msg, "data": data, "hypothesisId": hid, "timestamp": int(time.time() * 1000)}, default=lambda x: x.tolist() if hasattr(x, "tolist") else str(x)) + "\n")
+    except Exception:
+        pass
+# #endregion
 
 from enerdynamics.core.backends import Backend
 from enerdynamics.core.backends.runtime import RuntimeBackendManager
@@ -176,7 +191,10 @@ class SafeDiffuserSolver(SamplingSolver):
             actions_list = [np.asarray(a, dtype=np.float32) for a in result["actions"]]
             info = dict(result.get("info") or {})
             info = self._attach_4d_lift_to_info(states_list, info)
-            return Trajectory(states=states_list, actions=actions_list[:-1], info=info)
+            # Trajectory requires len(states) == len(actions) + 1. Backend may return same-length (single chunk) or actions = states - 1 (chunked).
+            if len(actions_list) == len(states_list):
+                actions_list = actions_list[:-1]
+            return Trajectory(states=states_list, actions=actions_list, info=info)
 
         # --- Receding-horizon rollout (SafeDiffuser / MPC style) ---
         max_steps = int(self.plan_config.get("max_episode_length", 200))
@@ -248,12 +266,28 @@ class SafeDiffuserSolver(SamplingSolver):
             last_info: Dict[str, Any] = {}
             success = False
             done = False
+            plan_once_chunks_9d = int(self.plan_config.get("plan_once_chunks", 1))
+            # #region agent log
+            _dbg("safediffuser._solve_9d", "native_9d branch", {"use_mpc": use_mpc, "plan_once_chunks": plan_once_chunks_9d, "branch": "not_use_mpc" if not use_mpc else ("concatenated" if plan_once_chunks_9d > 1 else "receding")}, "H1")
+            _dbg("safediffuser._solve_9d", "native_9d branch", {"use_mpc": use_mpc}, "H2")
+            # #endregion
 
             if not use_mpc:
                 result = planner.plan(obs9, rng_key=rng_key)
                 last_info = dict(result.get("info") or {})
-                for t, a in enumerate(result.get("actions", [])):
-                    a7 = np.asarray(a, dtype=np.float32).reshape(-1)
+                planned_states = result.get("states") or []
+                track_plan_xy = bool(self.plan_config.get("track_plan_xy", True))
+                actions_to_exec = result.get("actions") or []
+                q_cur = np.asarray(obs9[2:9], dtype=np.float32).reshape(-1)[:7]
+                for t in range(len(actions_to_exec)):
+                    a = actions_to_exec[t]
+                    if track_plan_xy and t + 1 < len(planned_states):
+                        desired_next_xy = np.asarray(planned_states[t + 1], dtype=np.float32).reshape(-1)[:2]
+                        delta_xy = desired_next_xy - np.asarray(obs9[:2], dtype=np.float32)
+                        a7 = adapter.delta_xy_to_qdot7(q_cur, delta_xy, dt=dt)
+                        a7 = np.asarray(a7, dtype=np.float32).reshape(-1)[:7]
+                    else:
+                        a7 = np.asarray(a, dtype=np.float32).reshape(-1)[:7]
                     if a7.size < 7:
                         raise ValueError(
                             f"Native 9D SafeDiffuser expects 7D actions, got shape {a7.shape}"
@@ -265,33 +299,71 @@ class SafeDiffuserSolver(SamplingSolver):
                     states_exec_9d.append(obs9.copy())
                     states_query_9d.append(np.asarray(states_exec_9d[-2], dtype=np.float32).copy())
                     actions_plan_7d.append(a7.copy())
+                    q_next = adapter.get_current_q(obs9)
+                    if q_next is not None:
+                        q_cur = np.asarray(q_next, dtype=np.float32).reshape(-1)[:7]
+                    else:
+                        q_cur = np.asarray(obs9[2:9], dtype=np.float32).reshape(-1)[:7]
                     success = bool(step_success or success or step_info.get("success", False))
                     done = bool(step_done or step_info.get("terminated", False) or step_info.get("done", False))
                     if success or done:
                         last_info.update({"terminal_info": step_info})
                         break
             else:
-                for t in range(max_steps):
+                _target_xy = np.asarray(adapter._get_target_xy(), dtype=np.float64) if hasattr(adapter, "_get_target_xy") else np.asarray(getattr(self.env, "target", [0.5, 0.35]), dtype=np.float64)[:2]
+                track_plan_xy = bool(self.plan_config.get("track_plan_xy", True))
+                plan_once_chunks_9d = int(self.plan_config.get("plan_once_chunks", 1))
+                use_concatenated_plan = plan_once_chunks_9d > 1
+
+                if use_concatenated_plan:
                     result = planner.plan(obs9, rng_key=rng_key)
                     last_info = dict(result.get("info") or {})
-                    a7 = np.asarray(result["actions"][0], dtype=np.float32).reshape(-1)
-                    if a7.size < 7:
-                        raise ValueError(
-                            f"Native 9D SafeDiffuser expects 7D actions, got shape {a7.shape}"
-                        )
-                    a7 = a7[:7]
-                    next_obs9, step_success, step_done, step_info = adapter.step_9d(a7, obs9, t=t)
-                    actions_exec_9d.append(a7.copy())
-                    states_query_9d.append(obs9.copy())
-                    actions_plan_7d.append(a7.copy())
-                    obs9 = next_obs9
-                    states_exec_9d.append(obs9.copy())
-
-                    success = bool(step_success or success or step_info.get("success", False))
-                    done = bool(step_done or step_info.get("terminated", False) or step_info.get("done", False))
-                    if success or done:
-                        last_info.update({"terminal_info": step_info})
-                        break
+                    planned_states = result.get("states") or []
+                    planned_actions = result.get("actions") or []
+                    for step_idx in range(min(len(planned_actions), max_steps)):
+                        if track_plan_xy and step_idx + 1 < len(planned_states):
+                            desired_next_xy = np.asarray(planned_states[step_idx + 1], dtype=np.float32).reshape(-1)[:2]
+                            delta_xy = desired_next_xy - np.asarray(obs9[:2], dtype=np.float32)
+                            q_cur = np.asarray(obs9[2:9], dtype=np.float32).reshape(-1)[:7]
+                            a7 = adapter.delta_xy_to_qdot7(q_cur, delta_xy, dt=dt)
+                            a7 = np.asarray(a7, dtype=np.float32).reshape(-1)[:7]
+                        else:
+                            a7 = np.asarray(planned_actions[step_idx], dtype=np.float32).reshape(-1)[:7]
+                        next_obs9, step_success, step_done, step_info = adapter.step_9d(a7, obs9, t=step_idx)
+                        actions_exec_9d.append(a7.copy())
+                        states_query_9d.append(obs9.copy())
+                        actions_plan_7d.append(a7.copy())
+                        obs9 = next_obs9
+                        states_exec_9d.append(obs9.copy())
+                        success = bool(step_success or success or step_info.get("success", False))
+                        done = bool(step_done or step_info.get("terminated", False) or step_info.get("done", False))
+                        if success or done:
+                            last_info.update({"terminal_info": step_info})
+                            break
+                else:
+                    for t in range(max_steps):
+                        result = planner.plan(obs9, rng_key=rng_key)
+                        last_info = dict(result.get("info") or {})
+                        planned_states = result.get("states") or []
+                        if track_plan_xy and len(planned_states) >= 2:
+                            desired_next_xy = np.asarray(planned_states[1], dtype=np.float32).reshape(-1)[:2]
+                            delta_xy = desired_next_xy - np.asarray(obs9[:2], dtype=np.float32)
+                            q_cur = np.asarray(obs9[2:9], dtype=np.float32).reshape(-1)[:7]
+                            a7 = adapter.delta_xy_to_qdot7(q_cur, delta_xy, dt=dt)
+                            a7 = np.asarray(a7, dtype=np.float32).reshape(-1)[:7]
+                        else:
+                            a7 = np.asarray(result["actions"][0], dtype=np.float32).reshape(-1)[:7]
+                        next_obs9, step_success, step_done, step_info = adapter.step_9d(a7, obs9, t=t)
+                        actions_exec_9d.append(a7.copy())
+                        states_query_9d.append(obs9.copy())
+                        actions_plan_7d.append(a7.copy())
+                        obs9 = next_obs9
+                        states_exec_9d.append(obs9.copy())
+                        success = bool(step_success or success or step_info.get("success", False))
+                        done = bool(step_done or step_info.get("terminated", False) or step_info.get("done", False))
+                        if success or done:
+                            last_info.update({"terminal_info": step_info})
+                            break
 
             last_info.update(
                 {

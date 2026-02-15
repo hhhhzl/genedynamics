@@ -4,11 +4,12 @@ output_dir: results/d3il_avoiding/safediffuser
 env_name: d3il_avoiding
 env_params:
   render: false
+  horizon: 8
+  dt: 1
 
 method: safediffuser
 method_params:
   # Mirror DPCC-style diffuser logdir loading (no conversion step).
-  # This should match how DPCC loads checkpoints via `diffuser.utils.load_diffusion(...)`.
   loadbase: logs
   exp: avoiding-d3il
   dataset: avoiding-d3il
@@ -22,9 +23,13 @@ method_params:
   # Apply CBF/QP invariance on every denoising step (DDPM iteration).
   # (This is separate from `correct_all_steps`, which toggles correcting all trajectory timesteps vs only t=0.)
   correct_all_steps: true
-  which_trajectory: 3
-  receding_horizon: true
-  max_episode_length: 600
+  which_trajectory: 0  # ignored when num_modes > 1; best_idx selects best
+  receding_horizon: false
+  num_modes: 20
+  plan_once_chunks: 25
+  use_target_line: true   # target as line (plan + viz, align with DPCC)
+  num_targets: 4 
+  max_episode_length: 200
   safediffuser_pos_idx: [0,1]
   derive_action_from_states: true
   export_lifted_9d: true
@@ -38,9 +43,9 @@ obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
   obstacle_radius_by_level:
-    0: [0.03, 0.025]
-    1: [0.04, 0.035]
-    2: [0.06, 0.055]
+    0: [0.03, 0.03]
+    1: [0.04, 0.04]
+    2: [0.05, 0.05]
   enable_connectivity_check: false
   enable_nonconvexity_check: false
   map_bounds:
@@ -48,8 +53,9 @@ obstacle_config:
     x_max: 0.8
     y_min: -0.3
     y_max: 0.4
-
-seeds: [0]
+  robot_radius: 0.01
+  
+seeds: [5]
 backend: torch
 device: cuda
 
@@ -58,7 +64,9 @@ metrics:
   - episode_outcome
 
 visualizations:
+  - trajectory_modes
   - trajectory
 
+
 metadata:
-  description: "SafeDiffuser eval on D3IL avoiding (DPCC-style diffuser loading + per-denoise-step CBF/QP)"
+  description: "SafeDiffuser eval on D3IL avoiding (plan once + multi-mode, aligned with DPCC)"
