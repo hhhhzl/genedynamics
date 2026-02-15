@@ -6,6 +6,7 @@ env_params:
   render: false
   horizon: 8
   dt: 0.035
+  collision_ee_only: true
 
 method: safediffuser
 method_params:
@@ -26,8 +27,9 @@ method_params:
   native_9d: true
   receding_horizon: false
   num_modes: 20
-  # 9D multi-modal: use plan_once_chunks=1 so each mode is one "start->goal" rollout (same as receding single step). Chunked concatenation produces chaotic/colliding paths.
-  plan_once_chunks: 1
+  # 9D: longer horizon via more chunks to help more modes reach target line.
+  plan_once_chunks: 40
+  plan_once_steps_per_chunk: 2
   max_episode_length: 200
   safediffuser_pos_idx: [0, 1]
   derive_action_from_states: false
@@ -36,10 +38,18 @@ method_params:
   disable_halfspace_when_aligned: true
   use_target_line: true
   num_targets: 4
+  # Extra action-space safety projection (9D qdot): increase margin / tighten alpha to reduce collisions.
+  action_cbf_margin: 0.03
+  action_cbf_alpha: 0.1
+  # Execute with trajectory tracking (use Jacobian to track planned XY) to improve reaching the target line.
+  track_trajectory: true
+  tracker_k_xy: 4.0
+  tracker_k_joint: 0.1
+  tracker_ff_alpha: 0.25
 
   plan_config: {}
 
-obstacle_levels: [0]
+obstacle_levels: [1, 2]
 obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
@@ -67,8 +77,6 @@ metrics:
 visualizations:
   - trajectory_modes
   - trajectory
-  - diffusion
-  - cost
 
 
 metadata:

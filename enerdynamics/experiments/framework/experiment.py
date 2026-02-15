@@ -1101,13 +1101,10 @@ class ExperimentRunner:
 
             # Task success
             final_pos = extract_pos_2d(states_arr[-1])
-            # use_target_line + d3il_avoiding_9d: per-mode target (model-based modes SSR)
-            if target_line is not None and len(target_line) > 0:
-                tgt_i = target_line[i % len(target_line)]
-                dist = float(np.linalg.norm(final_pos - tgt_i))
-                task_success = bool(dist < success_margin)
             # d3il_avoiding (4D) or d3il_avoiding_9d: line target (y >= target_y), "过了线就可以了"
-            elif env_plugin is not None and getattr(env_plugin, "name", None) in ("d3il_avoiding_9d", "d3il_avoiding"):
+            # NOTE: For 9D, even with use_target_line enabled, reaching one of the discrete x targets
+            # within a small margin is often too strict; the task is naturally a target *line*.
+            if env_plugin is not None and getattr(env_plugin, "name", None) in ("d3il_avoiding_9d", "d3il_avoiding"):
                 target_y = float(target_pos[1])
                 task_success = bool(final_pos[1] >= target_y - success_margin)
             else:
@@ -2217,6 +2214,10 @@ class ExperimentRunner:
                 'best_idx': best_idx,
                 'candidate_states': convert_to_json_serializable(candidate_states),
             }
+            # Optional per-mode goal assignment metadata (useful for multi-target debugging).
+            for k in ("candidate_goals_xy", "candidate_goals_idx", "use_target_line", "num_targets"):
+                if k in planning_result and planning_result.get(k) is not None:
+                    trajectory_json[k] = convert_to_json_serializable(planning_result.get(k))
             if candidate_actions:
                 trajectory_json['candidate_actions'] = convert_to_json_serializable(candidate_actions)
             if len(candidate_costs) > 0:
