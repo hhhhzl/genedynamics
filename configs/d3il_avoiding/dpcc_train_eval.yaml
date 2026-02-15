@@ -24,7 +24,7 @@ method_params:
   variant: dpcc-t-tightened
   solver: scipy
 
-obstacle_levels: [0]
+obstacle_levels: [1]
 obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
@@ -34,6 +34,7 @@ obstacle_config:
     2: [0.06, 0.055]
   enable_connectivity_check: false
   enable_nonconvexity_check: false
+  robot_radius: 0.01
   map_bounds:
     x_min: 0.2
     x_max: 0.8
@@ -50,6 +51,9 @@ metrics:
 
 visualizations:
   - trajectory
+  - diffusion
+  - cost
+  - trajectory_modes
 
 metadata:
   description: "DPCC eval on D3IL avoiding"
