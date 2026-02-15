@@ -49,7 +49,7 @@ method_params:
 
   plan_config: {}
 
-obstacle_levels: [1, 2]
+obstacle_levels: [0, 1, 2]
 obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
@@ -66,7 +66,7 @@ obstacle_config:
     y_max: 0.4
   robot_radius: 0.01
 
-seeds: [5]
+seeds: [0, 1, 2, 3, 4]
 backend: torch
 device: cuda
 

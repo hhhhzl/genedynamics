@@ -29,9 +29,9 @@ obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
   obstacle_radius_by_level:
-    0: [0.03, 0.025]
-    1: [0.04, 0.035]
-    2: [0.06, 0.055]
+    0: [0.03, 0.03]
+    1: [0.04, 0.04]
+    2: [0.05, 0.05]
   enable_connectivity_check: false
   enable_nonconvexity_check: false
   robot_radius: 0.01
