@@ -217,6 +217,10 @@ class DPCCBackendTorch:
             desired_next_pos = None
 
             for t in range(max_episode_length):
+                # 9D with target: env returns 9D state; policy expects 11D [x_des, y_des, x, y, q1..q7]. Inject target.
+                if self.diffusion.observation_dim == 11 and obs.size == 9:
+                    target_xy = np.asarray(self.adapter.env.target, dtype=np.float32).reshape(-1)[:2]
+                    obs = np.concatenate([target_xy, obs], axis=0)
                 # --- Safety violation checks (match dpcc/scripts/eval.py) ---
                 violated_this_timestep = 0
                 if "halfspace" in constraint_types:
@@ -268,6 +272,11 @@ class DPCCBackendTorch:
                 )
                 avg_time[i] += time.time() - start
 
+                # 9D eval: clip qdot to control_limit before env.step (no projector in diffuser variant)
+                if "9d" in str(exp) and action_dim == 7:
+                    limit = float(getattr(self.adapter.env, "control_limit", 1.5))
+                    action = np.clip(np.asarray(action, dtype=np.float32).reshape(-1), -limit, limit)
+
                 # Step environment
                 obs, success, terminated, info = self.adapter.step(action, obs, fixed_z)
                 # Tracking error (match eval.py)
@@ -282,7 +291,9 @@ class DPCCBackendTorch:
                 if t % save_samples_every == 0:
                     sampled_trajectories.append(samples.observations[:, :, :])
 
-                obs_buffer_dpcc.append(obs)
+                # Store 9D env state for trajectory (framework expects 9D for 9d exp)
+                obs_to_store = obs[2:11] if (obs.size == 11) else obs
+                obs_buffer_dpcc.append(obs_to_store)
                 action_buffer.append(action)
 
                 if success:
@@ -358,6 +369,10 @@ class DPCCBackendTorch:
         self._build_projector_and_policy()
         horizon = int(self.plan_config.get("horizon", self.diffusion.horizon))
         obs = x0 if x0 is not None else self.adapter.reset(seed=self.seed)[0]
+        obs = np.asarray(obs, dtype=np.float32).reshape(-1)
+        if self.diffusion.observation_dim == 11 and obs.size == 9:
+            target_xy = np.asarray(self.adapter.env.target, dtype=np.float32).reshape(-1)[:2]
+            obs = np.concatenate([target_xy, obs], axis=0)
 
         _, samples = self._policy(
             conditions={0: obs}, batch_size=n_samples, horizon=horizon, disable_projection=False
