@@ -15,6 +15,8 @@ try:
 except ImportError:
     MUJOCO_AVAILABLE = False
     mujoco = None
+    # Skip defining MujocoPhysicsBackend so adapters/backends can optional-import cleanly
+    raise ImportError("mujoco is not installed. Install with: pip install mujoco") from None
 
 from enerdynamics.core.backends.physics import PhysicsBackend
 from enerdynamics.core.types import State, Action

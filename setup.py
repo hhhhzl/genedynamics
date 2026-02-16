@@ -10,8 +10,8 @@ requires_list = []
 with open(path.join(here, 'requirements.txt'), encoding='utf-8') as f:
     for line in f:
         raw = str(line).strip()
-        # Skip comments / blanks
-        if not raw or raw.startswith("#"):
+        # Skip comments, blanks, and pip options (e.g. --extra-index-url)
+        if not raw or raw.startswith("#") or raw.startswith("-"):
             continue
         requires_list.append(raw)
 

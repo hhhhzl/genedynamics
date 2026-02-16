@@ -14,11 +14,12 @@ n_trials: 2
 
 dt: {
   'avoiding': 1,    # Since a = [delta_x, delta_y] and not [vx, vy]
+  'avoiding_9d': 0.035,  # 9D: qdot integration step (s)
 }
 observation_indices: {
   'avoiding': {'x_des': 0, 'y_des': 1, 'x': 2, 'y': 3},
-  # 9D state ordering in this repo: [x, y, q1..q7]
-  'avoiding_9d': {'x': 0, 'y': 1, 'q1': 2, 'q2': 3, 'q3': 4, 'q4': 5, 'q5': 6, 'q6': 7, 'q7': 8},
+  # 9D with target: [x_des, y_des, x, y, q1..q7] (11D, goal-conditioned like 4D)
+  'avoiding_9d': {'x_des': 0, 'y_des': 1, 'x': 2, 'y': 3, 'q1': 4, 'q2': 5, 'q3': 6, 'q4': 7, 'q5': 8, 'q6': 9, 'q7': 10},
 }
 
 action_indices: {

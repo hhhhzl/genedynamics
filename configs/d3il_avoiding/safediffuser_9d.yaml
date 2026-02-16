@@ -6,6 +6,7 @@ env_params:
   render: false
   horizon: 8
   dt: 0.035
+  collision_ee_only: true
 
 method: safediffuser
 method_params:
@@ -17,31 +18,45 @@ method_params:
   safediffuser_config_path: enerdynamics/solvers/single/safediffuser/config/avoiding_d3il.yaml
   diffusion_loadpath: diffusion/H8_K20_Dmodels.GaussianDiffusion
   diffusion_epoch: "best"
-  seed: 5
+  seed: 5 # seed for pretrained model
   device: cuda
   batch_size: 4
   enable_safety: true
   correct_all_steps: true
   which_trajectory: 0
   native_9d: true
-  receding_horizon: true
+  receding_horizon: false
+  num_modes: 20
+  # 9D: longer horizon via more chunks to help more modes reach target line.
+  plan_once_chunks: 40
+  plan_once_steps_per_chunk: 2
   max_episode_length: 200
   safediffuser_pos_idx: [0, 1]
   derive_action_from_states: false
   use_framework_constraints: true
   align_constraints_with_framework: true
   disable_halfspace_when_aligned: true
+  use_target_line: true
+  num_targets: 4
+  # Extra action-space safety projection (9D qdot): increase margin / tighten alpha to reduce collisions.
+  action_cbf_margin: 0.03
+  action_cbf_alpha: 0.1
+  # Execute with trajectory tracking (use Jacobian to track planned XY) to improve reaching the target line.
+  track_trajectory: true
+  tracker_k_xy: 4.0
+  tracker_k_joint: 0.1
+  tracker_ff_alpha: 0.25
 
   plan_config: {}
 
-obstacle_levels: [0]
+obstacle_levels: [0, 1, 2]
 obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
   obstacle_radius_by_level:
-    0: [0.03, 0.025]
-    1: [0.04, 0.035]
-    2: [0.06, 0.045]
+    0: [0.03, 0.03]
+    1: [0.04, 0.04]
+    2: [0.05, 0.05]
   enable_connectivity_check: false
   enable_nonconvexity_check: false
   map_bounds:
@@ -49,8 +64,9 @@ obstacle_config:
     x_max: 0.8
     y_min: -0.3
     y_max: 0.4
+  robot_radius: 0.01
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4]
 backend: torch
 device: cuda
 
@@ -59,6 +75,7 @@ metrics:
   - episode_outcome
 
 visualizations:
+  - trajectory_modes
   - trajectory
 
 

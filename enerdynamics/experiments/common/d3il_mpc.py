@@ -262,6 +262,14 @@ def run_plan_once_episode(
     executed_actions: List[np.ndarray] = []
     costs: List[float] = []
     infos: List[Dict[str, Any]] = [info0]
+    states_9d: List[np.ndarray] = []
+    if hasattr(exec_env, "robot_state_9d"):
+        try:
+            s9 = exec_env.robot_state_9d()
+            if s9 is not None and np.asarray(s9).size >= 9:
+                states_9d.append(np.asarray(s9, dtype=np.float32))
+        except Exception:
+            pass
     done = False
     rng_cur = rng
     total_steps = int(max_steps) if max_steps is not None else 999999
@@ -305,6 +313,13 @@ def run_plan_once_episode(
             executed_actions.append(u.copy())
             costs.append(float(cost) if cost is not None else 0.0)
             infos.append(step_info)
+            if hasattr(exec_env, "robot_state_9d"):
+                try:
+                    s9 = exec_env.robot_state_9d()
+                    if s9 is not None and np.asarray(s9).size >= 9:
+                        states_9d.append(np.asarray(s9, dtype=np.float32))
+                except Exception:
+                    pass
     else:
         # Chunked: replan every replan_every steps with horizon = chunk size
         step_count = 0
@@ -344,6 +359,13 @@ def run_plan_once_episode(
                 executed_actions.append(u.copy())
                 costs.append(float(cost) if cost is not None else 0.0)
                 infos.append(step_info)
+                if hasattr(exec_env, "robot_state_9d"):
+                    try:
+                        s9 = exec_env.robot_state_9d()
+                        if s9 is not None and np.asarray(s9).size >= 9:
+                            states_9d.append(np.asarray(s9, dtype=np.float32))
+                    except Exception:
+                        pass
                 step_count += 1
             if take < chunk or (done and not continue_after_done):
                 break
@@ -367,6 +389,8 @@ def run_plan_once_episode(
         "done": bool(done),
         "steps": len(executed_actions),
     }
+    if states_9d and len(states_9d) >= 2:
+        out["states_9d"] = states_9d
     for k in ("reward_history", "diffusion_actions_traj", "diffusion_sampled_actions",
               "candidate_states", "candidate_actions", "candidate_costs", "best_idx"):
         if k in result and result[k] is not None:
