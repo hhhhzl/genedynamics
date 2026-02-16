@@ -402,6 +402,7 @@ class ExperimentRunner:
                     exec_success.append(False)
                     exec_collision.append(True)
             result['exec_candidate_states'] = exec_candidate_states
+            result['exec_candidate_states_9d'] = exec_candidate_states_9d
             # Best = lowest cost among (execution success and no collision); else lowest cost overall
             valid = [c for c in range(len(cand_states)) if exec_success[c] and not exec_collision[c]]
             if valid:
@@ -478,6 +479,68 @@ class ExperimentRunner:
                 )
             except Exception:
                 pass
+
+        # 8b1.6. D3IL: top-5 exec 3D GIFs (rank 1 = best already above; add rank2..rank5)
+        exec_candidate_states = result.get('exec_candidate_states') or []
+        exec_candidate_states_9d = result.get('exec_candidate_states_9d') or []
+        cand_costs = result.get('candidate_costs')
+        if isinstance(cand_costs, np.ndarray):
+            costs_arr = np.asarray(cand_costs, dtype=np.float64).ravel()
+        else:
+            costs_arr = np.array(cand_costs or [], dtype=np.float64)
+        exec_success = result.get('exec_success_per_mode') or []
+        exec_collision = result.get('exec_collision_per_mode') or []
+        n_modes = len(exec_candidate_states)
+        if (
+            is_d3il_style
+            and n_modes >= 2
+            and len(costs_arr) >= n_modes
+            and len(exec_success) >= n_modes
+            and len(exec_collision) >= n_modes
+        ):
+            valid = [c for c in range(n_modes) if exec_success[c] and not exec_collision[c]]
+            invalid = [c for c in range(n_modes) if c not in valid]
+            valid_sorted = [valid[i] for i in np.argsort(costs_arr[valid])] if valid else []
+            invalid_sorted = [invalid[i] for i in np.argsort(costs_arr[invalid])] if invalid else []
+            top5_indices = (valid_sorted + invalid_sorted)[:5]
+            out_dir = self._get_output_path(level, seed)
+            traj_dir = out_dir / "trajectory"
+            traj_dir.mkdir(parents=True, exist_ok=True)
+            for rank_one_based in range(2, 6):
+                if rank_one_based - 1 >= len(top5_indices):
+                    break
+                idx = top5_indices[rank_one_based - 1]
+                states_rank = list(exec_candidate_states[idx]) if idx < len(exec_candidate_states) else []
+                if len(states_rank) < 2:
+                    continue
+                states_9d_rank = None
+                if idx < len(exec_candidate_states_9d) and exec_candidate_states_9d[idx] is not None:
+                    states_9d_rank = exec_candidate_states_9d[idx]
+                if states_9d_rank and len(states_9d_rank) >= 2:
+                    _states_3d_rank = [np.asarray(s, dtype=np.float32) for s in states_9d_rank]
+                else:
+                    try:
+                        s0 = np.asarray(states_rank[0], dtype=np.float32).reshape(-1)
+                        if s0.size >= 9:
+                            _states_3d_rank = [np.asarray(s, dtype=np.float32) for s in states_rank]
+                        else:
+                            _states_3d_rank = None
+                    except Exception:
+                        _states_3d_rank = None
+                if _states_3d_rank is None or len(_states_3d_rank) < 2:
+                    continue
+                try:
+                    self._render_d3il_exec_3d_gif(
+                        env,
+                        {'result': {'states': _states_3d_rank}, 'seed': seed},
+                        traj_dir,
+                        seed,
+                        use_current_scene=True,
+                        n_interp=2,
+                        filename_suffix=f"rank{rank_one_based}",
+                    )
+                except Exception:
+                    pass
 
         # 8c. Multirun: re-run single plan with best key to get exact best trajectory planning_time
         if result.get('mode_strategy', '').lower() == 'multirun' and 'multirun_keys' in result:
@@ -829,11 +892,13 @@ class ExperimentRunner:
         duration_ms: float = 80.0,
         use_current_scene: bool = False,
         n_interp: int = 1,
+        filename_suffix: Optional[str] = None,
     ) -> None:
         """
         Render 3D GIF by setting the sim to each *recorded* state (pose from states), then capture.
         use_current_scene=True: do not reset; scene is from main run. Call before 8b2.
         n_interp: number of linear interpolated poses between consecutive states (1 = no interp).
+        filename_suffix: if set (e.g. "rank2"), output is trajectory_best_exec_3d_rank2.gif; else trajectory_best_exec_3d.gif.
         """
         try:
             inner = getattr(getattr(env, "_task_env", None), "_env", None)
@@ -874,18 +939,31 @@ class ExperimentRunner:
                 rng = backend.create_rng(seed)
                 env.reset(rng=rng)
             frames_rgb = []
+            last_ok_frame = None
             for q in poses:
                 try:
                     q_ = np.asarray(q, dtype=np.float64, order='C').reshape(7)
                     robot.set_q(q_)
                     rgb = cam._get_img_data(width=width, height=height, depth=False)
                     if rgb is not None:
-                        frames_rgb.append(np.asarray(rgb, dtype=np.uint8))
+                        frame = np.asarray(rgb, dtype=np.uint8)
+                        frames_rgb.append(frame)
+                        last_ok_frame = frame
+                    elif last_ok_frame is not None:
+                        frames_rgb.append(np.asarray(last_ok_frame, dtype=np.uint8))
                 except Exception:
-                    break
+                    # Do not break: keep rendering so we get full trajectory including goal.
+                    # Use last successful frame for this pose (e.g. near-goal poses can fail in level 1/2).
+                    if last_ok_frame is not None:
+                        frames_rgb.append(np.asarray(last_ok_frame, dtype=np.uint8))
+            if len(frames_rgb) == 1:
+                frames_rgb.append(np.asarray(frames_rgb[0], dtype=np.uint8))
             if len(frames_rgb) >= 2:
                 import imageio
-                out_path = trajectory_dir / "trajectory_best_exec_3d.gif"
+                basename = "trajectory_best_exec_3d"
+                if filename_suffix:
+                    basename = f"{basename}_{filename_suffix}"
+                out_path = trajectory_dir / f"{basename}.gif"
                 # Play once to avoid visual jump from last frame back to first frame.
                 imageio.v3.imwrite(out_path, frames_rgb, duration=duration_ms, loop=1)
         except Exception:
@@ -2348,6 +2426,13 @@ class ExperimentRunner:
                         'geometric_smoothness': float(np.mean(gs_b)),
                         'geometric_smoothness_std': float(np.std(gs_b)) if n_b > 1 else 0.0,
                     }
+                    # Per-level aggregate over all seeds (same as best when one best per seed; explicit for clarity)
+                    summary['length'] = float(np.mean(len_b))
+                    summary['length_std'] = float(np.std(len_b)) if n_b > 1 else 0.0
+                    summary['smoothness'] = float(np.mean(sm_b))
+                    summary['smoothness_std'] = float(np.std(sm_b)) if n_b > 1 else 0.0
+                    summary['geometric_smoothness'] = float(np.mean(gs_b))
+                    summary['geometric_smoothness_std'] = float(np.std(gs_b)) if n_b > 1 else 0.0
                 
                 level_summaries[f'level_{level}'] = summary
                 

@@ -6,6 +6,7 @@ env_params:
   render: false
   horizon: 8
   dt: 0.035  # 9D uses qdot integration; must match training/sim
+  collision_ee_only: true
 
 method: dpcc
 method_params:
@@ -16,15 +17,26 @@ method_params:
   diffusion_loadpath: diffusion/H8_K20_Dmodels.GaussianDiffusion
   diffusion_epoch: 'best'
   device: cuda
-  seed: 5
+  seed: 5 # seed for pretrained model
   horizon: 8
   dt: 0.035
   batch_size: 4
   max_episode_length: 200
   variant: dpcc-c-tightened
   solver: scipy
+  # --- Stage A: method-level parity with 4D DPCC ---
+  execution: plan_once
+  num_modes: 20
+  plan_once_chunks: 25
+  use_target_line: true
+  num_targets: 4
+  # --- Align execution behavior with safediffuser_9d_eval.yaml ---
+  track_trajectory: true
+  tracker_k_xy: 4.0
+  tracker_k_joint: 0.1
+  tracker_ff_alpha: 0.25
 
-obstacle_levels: [0]
+obstacle_levels: [0, 1, 2]
 obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
@@ -43,7 +55,7 @@ obstacle_config:
     y_max: 0.4
   robot_radius: 0.01
 
-seeds: [5]
+seeds: [0, 1, 2, 3, 4]
 backend: torch
 device: cuda
 

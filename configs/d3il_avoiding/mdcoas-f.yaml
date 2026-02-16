@@ -1,6 +1,6 @@
 # CFS-MBD full trajectory QP on D3IL avoiding (9D state, 7D qdot) with joint-lift CFS-QP
-name: d3il_avoiding_cfsmbd_full
-output_dir: results/d3il_avoiding/cfsmbd_full
+name: d3il_avoiding_mdcoas-f
+output_dir: results/d3il_avoiding/mdcoas-f
 
 env_name: d3il_avoiding_9d
 env_params:
@@ -9,7 +9,7 @@ env_params:
   dt: 0.03
 
 method: d3il_unified
-obstacle_levels: [2]
+obstacle_levels: [0, 1, 2]
 
 method_params:
   solver: cfsmbd_full
@@ -50,7 +50,7 @@ obstacle_config:
     y_min: -0.3
     y_max: 0.4
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4]
 backend: jax
 device: cuda
 

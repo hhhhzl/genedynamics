@@ -438,6 +438,32 @@ class D3ILAvoiding7dVelEnv:
             traj.append(np.asarray(x, dtype=np.float32))
         return np.stack(traj, axis=0)
 
+    def forward_kinematics_xy(self, q: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Return tcp (x,y) from joint positions q (7D) using the underlying robot FK.
+
+        This is used to make planned 9D trajectories kinematically consistent:
+        tcp_xy := FK(q) rather than the diffusion/projection observation's tcp_xy.
+        """
+        try:
+            self._task_env._lazy_init()
+            inner = getattr(self._task_env, "_env", None)
+            if inner is None or not hasattr(inner, "robot"):
+                return None
+            robot = inner.robot
+            if not hasattr(robot, "getForwardKinematics"):
+                return None
+            q = np.asarray(q, dtype=np.float32).reshape(-1)
+            if q.size != 7:
+                return None
+            pos, _quat = robot.getForwardKinematics(q)
+            pos = np.asarray(pos, dtype=np.float32).reshape(-1)
+            if pos.size < 2:
+                return None
+            return pos[:2].copy()
+        except Exception:
+            return None
+
     def get_jacobian_xy(self, state: np.ndarray) -> Optional[np.ndarray]:
         """
         Return (2, 7) Jacobian for tcp x,y w.r.t. joint velocities at the given 9D state.
