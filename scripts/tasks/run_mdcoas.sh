@@ -14,7 +14,6 @@ python -m enerdynamics.experiments.runner configs/single_2d/mdcoas-f.yaml
 python -m enerdynamics.experiments.runner configs/d3il_avoiding/ebmbd.yaml
 python -m enerdynamics.experiments.runner configs/d3il_avoiding/mdoc.yaml
 python -m enerdynamics.experiments.runner configs/d3il_avoiding/mdcoas.yaml
-python -m enerdynamics.experiments.runner configs/d3il_avoiding/mdcoas-a.yaml
 python -m enerdynamics.experiments.runner configs/d3il_avoiding/mdcoas-f.yaml
 python -m enerdynamics.experiments.runner configs/d3il_avoiding/safediffuser.yaml
 python -m enerdynamics.experiments.runner configs/d3il_avoiding/safediffuser_9d.yaml
