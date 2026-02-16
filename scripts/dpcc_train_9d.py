@@ -99,10 +99,10 @@ def train_one_seed(args):
     observation_dim = dataset.observation_dim
     action_dim = dataset.action_dim
 
-    if observation_dim != 9 or action_dim != 7:
+    if observation_dim != 11 or action_dim != 7:
         raise ValueError(
-            f"Expected 9D state + 7D action, got observation_dim={observation_dim}, action_dim={action_dim}. "
-            "Please check avoiding-d3il-9d extraction in third_party/diffuser/datasets/d4rl.py"
+            f"Expected 11D state (with target) + 7D action, got observation_dim={observation_dim}, action_dim={action_dim}. "
+            "Ensure avoiding-d3il-9d data includes des_c_pos so obs = [x_des, y_des, x, y, q1..q7] in third_party/diffuser/datasets/d4rl.py"
         )
 
     model_config = utils.Config(

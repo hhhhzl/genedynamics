@@ -83,7 +83,11 @@ class DPCCSolver(SamplingSolver):
         result = planner.plan(x0, rng_key=kwargs.get("rng_key"))
         states_list = [np.asarray(s, dtype=np.float32) for s in result["states"]]
         actions_list = [np.asarray(a, dtype=np.float32) for a in result["actions"]]
-        return Trajectory(states=states_list, actions=actions_list, info=result.get("info"))
+        info = dict(result.get("info") or {})
+        for k in ("candidate_states", "candidate_actions", "candidate_costs", "best_idx"):
+            if k in result:
+                info[k] = result[k]
+        return Trajectory(states=states_list, actions=actions_list, info=info)
 
 
 if register_solver is not None:

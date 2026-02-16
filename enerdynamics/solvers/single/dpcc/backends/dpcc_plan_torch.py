@@ -39,8 +39,8 @@ class DPCCBackendTorch:
         self._constraints_cache = None
         self._stepper = None
 
-    def _build_projector_and_policy(self):
-        if self._projector is not None and self._policy is not None:
+    def _build_projector_and_policy(self, *, x0_9d: np.ndarray | None = None, force_rebuild: bool = False):
+        if (not force_rebuild) and self._projector is not None and self._policy is not None:
             return
 
         variant = self.plan_config.get("variant", "dpcc")
@@ -99,6 +99,28 @@ class DPCCBackendTorch:
         else:
             constraints = constraints_info["constraint_list"]
 
+        # DPCC 9D fix (still DPCC projection): add frozen-Jacobian x/y dynamics constraints.
+        # Without these, x/y are unconstrained and can teleport, producing "乱飘" in modes_plan.
+        try:
+            if "avoiding" in str(exp) and "9d" in str(exp) and x0_9d is not None:
+                env = self.adapter.env
+                if hasattr(env, "get_jacobian_xy") and callable(getattr(env, "get_jacobian_xy")):
+                    x0_arr = np.asarray(x0_9d, dtype=np.float32).reshape(-1)
+                    if x0_arr.size >= 9:
+                        J = env.get_jacobian_xy(x0_arr[:9])
+                        J = None if J is None else np.asarray(J, dtype=np.float32)
+                        if J is not None and J.shape == (2, 7):
+                            x_idx = int(act_obs_indices.get("x", -1))
+                            y_idx = int(act_obs_indices.get("y", -1))
+                            qdot_idxs = [int(act_obs_indices.get(f"qdot{i}", -1)) for i in range(1, 8)]
+                            if x_idx >= 0 and y_idx >= 0 and all(j >= 0 for j in qdot_idxs):
+                                constraints = list(constraints) + [
+                                    ("deriv_lin", (x_idx, qdot_idxs, J[0].tolist())),
+                                    ("deriv_lin", (y_idx, qdot_idxs, J[1].tolist())),
+                                ]
+        except Exception:
+            pass
+
         self._constraints_cache = constraints_info
 
         # DPCC config convention: dt is keyed by robot_name (e.g. "avoiding")
@@ -107,6 +129,13 @@ class DPCCBackendTorch:
         if isinstance(dt_cfg, dict):
             dt_default = dt_cfg.get(robot_name)
         dt = self.plan_config.get("dt", dt_default if dt_default is not None else 0.1)
+        # 9D avoiding uses qdot integration; trust env.dt (matches execution) to avoid
+        # accidentally falling back to DPCC's 4D dt=1 convention.
+        try:
+            if "9d" in str(exp) and hasattr(self.adapter, "env") and getattr(self.adapter.env, "dt", None) is not None:
+                dt = float(getattr(self.adapter.env, "dt"))
+        except Exception:
+            pass
         delta_t = float(dt) * float(dt_multiplier)
 
         projector = Projector(
@@ -158,7 +187,254 @@ class DPCCBackendTorch:
         self._projector = projector
         self._policy = policy
 
+    def _plan_once(self, x0: Any, horizon: int, rng_key: Any | None) -> Dict[str, Any]:
+        """Plan once (one or more diffusion+projection chunks) and return planned trajectory + multi-mode candidates."""
+        x0 = np.asarray(x0, dtype=np.float32).reshape(-1)
+        obs = x0.copy()
+        if self.diffusion.observation_dim == 11 and obs.size == 9:
+            target_xy = np.asarray(self.adapter.env.target, dtype=np.float32).reshape(-1)[:2]
+            obs = np.concatenate([target_xy, obs], axis=0)
+
+        num_modes = int(self.plan_config.get("num_modes", self.plan_config.get("batch_size", 4)))
+        plan_once_chunks = int(self.plan_config.get("plan_once_chunks", 1))
+        use_target_line = bool(self.plan_config.get("use_target_line", False))
+        num_targets = int(self.plan_config.get("num_targets", 4))
+        max_episode_length = int(self.plan_config.get("max_episode_length", 200))
+        constraints = self._constraints_cache.get("constraint_list", []) if self._constraints_cache else []
+
+        if plan_once_chunks <= 1:
+            # Single chunk: one plan call, C candidates
+            if use_target_line and self.diffusion.observation_dim == 11 and obs.size >= 11:
+                from enerdynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
+                target_line = get_d3il_target_line_positions(num_targets)
+                obs_batch = np.tile(np.asarray(obs, dtype=np.float32).reshape(1, -1), (num_modes, 1))
+                for i in range(num_modes):
+                    obs_batch[i, :2] = target_line[i % len(target_line)]
+                cond = {0: obs_batch}
+                batch_cond = True
+            else:
+                cond = {0: obs}
+                batch_cond = False
+            out = self._policy(
+                conditions=cond,
+                batch_size=num_modes,
+                horizon=horizon,
+                disable_projection=False,
+                constraints=constraints,
+                return_infos=True,
+                batch_conditions=batch_cond,
+            )
+            action, trajectories, infos = out
+            observations = np.asarray(trajectories.observations, dtype=np.float32)
+            actions = np.asarray(trajectories.actions, dtype=np.float32)
+        else:
+            # Batched chunked (EBMBD-aligned): num_modes independent long trajectories in one batched loop
+            obs_dim = int(self.diffusion.observation_dim)
+            x0_obs_chunk = np.asarray(obs[:obs_dim], dtype=np.float32) if obs.size >= obs_dim else np.asarray(obs, dtype=np.float32)
+            # current_obs_batch: (num_modes, obs_dim) — one condition per mode
+            current_obs_batch = np.tile(np.asarray(obs, dtype=np.float32).reshape(1, -1), (num_modes, 1))
+            if use_target_line and obs_dim >= 11:
+                from enerdynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
+                target_line = get_d3il_target_line_positions(num_targets)
+                for i in range(num_modes):
+                    current_obs_batch[i, :2] = target_line[i % len(target_line)]
+            # Per-mode trajectory lists: list of (T, obs_dim) states and (T, action_dim) actions
+            mode_states = [[x0_obs_chunk.copy()] for _ in range(num_modes)]
+            mode_actions = [[] for _ in range(num_modes)]
+            cost_per_mode = np.zeros(num_modes, dtype=np.float64)
+            for _ in range(plan_once_chunks):
+                if len(mode_actions[0]) >= max_episode_length:
+                    break
+                out = self._policy(
+                    conditions={0: current_obs_batch},
+                    batch_size=num_modes,
+                    horizon=horizon,
+                    disable_projection=False,
+                    constraints=constraints,
+                    return_infos=True,
+                    batch_conditions=True,
+                )
+                _action, trajectories, infos = out
+                observations = np.asarray(trajectories.observations, dtype=np.float32)  # (num_modes, horizon, obs_dim)
+                actions = np.asarray(trajectories.actions, dtype=np.float32)  # (num_modes, horizon, action_dim)
+                for i in range(num_modes):
+                    for t in range(observations.shape[1]):
+                        mode_states[i].append(observations[i, t].copy())
+                    for t in range(actions.shape[1]):
+                        mode_actions[i].append(actions[i, t].copy())
+                    current_obs_batch[i] = observations[i, -1]
+                projection_costs = infos.get("projection_costs")
+                if projection_costs is not None and isinstance(projection_costs, dict):
+                    for cost_arr in projection_costs.values():
+                        arr = np.asarray(cost_arr, dtype=np.float64).ravel()
+                        if arr.size >= num_modes:
+                            cost_per_mode += arr[:num_modes]
+            # Build (num_modes, T, obs_dim) and (num_modes, T, action_dim) for candidate_*; ensure first state is x0
+            observations = np.zeros((num_modes, len(mode_states[0]), obs_dim), dtype=np.float32)
+            for i in range(num_modes):
+                for t, s in enumerate(mode_states[i]):
+                    observations[i, t] = np.asarray(s, dtype=np.float32)[:obs_dim]
+            act_dim = np.asarray(mode_actions[0][0]).ravel().size if mode_actions[0] else 1
+            actions = np.zeros((num_modes, len(mode_actions[0]), act_dim), dtype=np.float32)
+            for i in range(num_modes):
+                for t, a in enumerate(mode_actions[i]):
+                    actions[i, t] = np.asarray(a, dtype=np.float32).ravel()[:act_dim]
+            # Overwrite first state of every candidate with x0 for viz
+            for i in range(num_modes):
+                observations[i, 0] = x0_obs_chunk
+            infos = {"projection_costs": {0: cost_per_mode}}
+
+        C = observations.shape[0]
+        obs_dim = observations.shape[2] if observations.ndim >= 3 else observations.shape[1]
+        # Ensure first state of every candidate is exactly x0 (for correct start in viz)
+        x0_obs = np.asarray(obs[:obs_dim], dtype=np.float32) if obs.size >= obs_dim else np.asarray(obs, dtype=np.float32)
+
+        def _obs11_to_9d(o: np.ndarray) -> np.ndarray:
+            """11D [x_des,y_des,x,y,q1..q7] -> 9D [x,y,q1..q7] for d3il_avoiding_9d viz/metrics."""
+            arr = np.asarray(o, dtype=np.float32).reshape(-1)
+            if arr.size >= 11:
+                return np.concatenate([arr[2:4], arr[4:11]], axis=0).astype(np.float32)
+            return arr[:9].copy().astype(np.float32)
+
+        # Stage B: DPCC 9D plan_once emits 11D observations for goal-conditioned models.
+        # Convert to 9D states so env_plugin.extract_position (state[:2]) uses real tcp_xy, not x_des/y_des.
+        to_9d = (self.diffusion.observation_dim == 11 and x0.size == 9)
+        if to_9d:
+            # Keep start state exactly as provided (x0 is 9D [x,y,q]).
+            x0_obs = np.asarray(x0, dtype=np.float32).reshape(-1)[:9].copy()
+
+        candidate_states = []
+        candidate_actions = []
+        for i in range(C):
+            # states = actions + 1: x0 then planned steps; add duplicate last state only when H == num_actions (single-chunk)
+            H = observations.shape[1]
+            if to_9d:
+                states_i = [x0_obs.copy()] + [_obs11_to_9d(observations[i, t]) for t in range(1, H)]
+            else:
+                states_i = [x0_obs.copy()] + [observations[i, t] for t in range(1, H)]
+            if actions.shape[1] == H:
+                states_i = states_i + ([_obs11_to_9d(observations[i, H - 1])] if to_9d else [np.asarray(observations[i, H - 1], dtype=np.float32)])
+            acts_i = [actions[i, t] for t in range(actions.shape[1])]
+            candidate_states.append(states_i)
+            candidate_actions.append(acts_i)
+
+        # Stage C: handled inside projection by adding frozen-Jacobian x/y dynamics constraints
+        # in _build_projector_and_policy (deriv_lin). Do not post-hoc rewrite states here.
+        #
+        # However, DPCC 9D observation contains both:
+        #   - (x_des, y_des): planned reference trajectory
+        #   - (x, y): "state" variables that may be weakly coupled in 9D (can teleport)
+        # For effect-level alignment with SafeDiffuser 9D SSR/execution_ssr, we can rebuild a
+        # kinematically trackable planned trajectory by tracking (x_des,y_des) with Jacobian IK.
+        if to_9d and bool(self.plan_config.get("repair_plan_with_tracking", True)):
+            plan_env = getattr(self.adapter, "env", None)
+            if plan_env is not None and hasattr(plan_env, "get_jacobian_xy"):
+                try:
+                    from enerdynamics.experiments.common.d3il_mpc import _tracking_action as _track_act
+                except Exception:
+                    _track_act = None
+                if _track_act is not None:
+                    dt = float(getattr(plan_env, "dt", 0.035))
+                    control_limit = float(getattr(plan_env, "control_limit", 1.5))
+                    k_xy = float(self.plan_config.get("tracker_k_xy", 4.0))
+                    k_joint = float(self.plan_config.get("tracker_k_joint", 0.1))
+                    ff_alpha = float(self.plan_config.get("tracker_ff_alpha", 0.25))
+
+                    rebuilt_states: list[list[np.ndarray]] = []
+                    rebuilt_actions: list[list[np.ndarray]] = []
+                    ok = True
+                    for i in range(C):
+                        T = len(candidate_actions[i])
+                        if T <= 0:
+                            ok = False
+                            break
+                        x = np.asarray(x0, dtype=np.float32).reshape(-1)[:9].copy()
+                        states_i = [x.copy()]
+                        actions_i = []
+                        for t in range(T):
+                            # Reference from DPCC plan: x_des/y_des, plus (optional) desired q.
+                            obs_t = np.asarray(observations[i, min(t, observations.shape[1] - 1)], dtype=np.float32).reshape(-1)
+                            if obs_t.size >= 11:
+                                ref_xy = obs_t[0:2].copy()
+                                ref_q = obs_t[4:11].copy()
+                            else:
+                                ref_xy = obs_t[:2].copy() if obs_t.size >= 2 else x[:2].copy()
+                                ref_q = x[2:9].copy()
+                            planned_next = np.concatenate([ref_xy, ref_q], axis=0).astype(np.float32)
+                            u_nom = np.asarray(candidate_actions[i][t], dtype=np.float32).reshape(-1)
+                            u = _track_act(
+                                exec_env=plan_env,
+                                current_state=x,
+                                planned_state_next=planned_next,
+                                planned_action_t=u_nom,
+                                dt=dt,
+                                control_limit=control_limit,
+                                tracker_k_joint=k_joint,
+                                tracker_k_xy=k_xy,
+                                tracker_ff_alpha=ff_alpha,
+                            )
+                            u = np.asarray(u, dtype=np.float32).reshape(-1)
+                            if u.size != 7:
+                                ok = False
+                                break
+                            actions_i.append(u.copy())
+                            # Roll forward with local Jacobian (same semantics as env.rollout_actions).
+                            J_xy = plan_env.get_jacobian_xy(x) if hasattr(plan_env, "get_jacobian_xy") else None
+                            J_xy = None if J_xy is None else np.asarray(J_xy, dtype=np.float32)
+                            if J_xy is not None and J_xy.shape == (2, 7):
+                                x[:2] = x[:2] + dt * (J_xy @ u)
+                            x[2:9] = x[2:9] + dt * u
+                            states_i.append(x.copy())
+                        if not ok:
+                            break
+                        rebuilt_states.append([s.copy() for s in states_i])
+                        rebuilt_actions.append([a.copy() for a in actions_i])
+                    if ok and len(rebuilt_states) == C:
+                        candidate_states = rebuilt_states
+                        candidate_actions = rebuilt_actions
+
+        # Total projection cost per candidate (sum over timesteps)
+        projection_costs = infos.get("projection_costs")
+        if projection_costs is not None and isinstance(projection_costs, dict):
+            cost_per_sample = np.zeros(C, dtype=np.float64)
+            for _timestep, cost_arr in projection_costs.items():
+                arr = np.asarray(cost_arr, dtype=np.float64).ravel()
+                if arr.size >= C:
+                    cost_per_sample += arr[:C]
+            candidate_costs = cost_per_sample.astype(np.float32)
+        else:
+            candidate_costs = np.zeros(C, dtype=np.float32)
+
+        best_idx = int(np.argmin(candidate_costs))
+        states = candidate_states[best_idx]
+        actions_list = candidate_actions[best_idx]
+
+        info = {
+            "candidate_states": candidate_states,
+            "candidate_actions": candidate_actions,
+            "candidate_costs": candidate_costs,
+            "best_idx": best_idx,
+            "mode_strategy": "multirun",
+        }
+        return {
+            "states": states,
+            "actions": actions_list,
+            "initial_state": x0,
+            "info": info,
+            "candidate_states": candidate_states,
+            "candidate_actions": candidate_actions,
+            "candidate_costs": candidate_costs,
+            "best_idx": best_idx,
+        }
+
     def plan(self, x0: Any | None = None, rng_key: Any | None = None) -> Dict[str, Any]:
+        execution = self.plan_config.get("execution", "mpc")
+        if execution == "plan_once":
+            horizon = int(self.plan_config.get("horizon", self.diffusion.horizon))
+            x0_use = x0 if x0 is not None else self.adapter.reset(seed=self.seed)[0]
+            # Rebuild projector/policy with frozen Jacobian at x0 (9D).
+            self._build_projector_and_policy(x0_9d=np.asarray(x0_use, dtype=np.float32), force_rebuild=True)
+            return self._plan_once(x0_use, horizon, rng_key)
         self._build_projector_and_policy()
 
         max_episode_length = int(self.plan_config.get("max_episode_length", 200))
@@ -217,6 +493,10 @@ class DPCCBackendTorch:
             desired_next_pos = None
 
             for t in range(max_episode_length):
+                # 9D with target: env returns 9D state; policy expects 11D [x_des, y_des, x, y, q1..q7]. Inject target.
+                if self.diffusion.observation_dim == 11 and obs.size == 9:
+                    target_xy = np.asarray(self.adapter.env.target, dtype=np.float32).reshape(-1)[:2]
+                    obs = np.concatenate([target_xy, obs], axis=0)
                 # --- Safety violation checks (match dpcc/scripts/eval.py) ---
                 violated_this_timestep = 0
                 if "halfspace" in constraint_types:
@@ -268,6 +548,11 @@ class DPCCBackendTorch:
                 )
                 avg_time[i] += time.time() - start
 
+                # 9D eval: clip qdot to control_limit before env.step (no projector in diffuser variant)
+                if "9d" in str(exp) and action_dim == 7:
+                    limit = float(getattr(self.adapter.env, "control_limit", 1.5))
+                    action = np.clip(np.asarray(action, dtype=np.float32).reshape(-1), -limit, limit)
+
                 # Step environment
                 obs, success, terminated, info = self.adapter.step(action, obs, fixed_z)
                 # Tracking error (match eval.py)
@@ -282,7 +567,9 @@ class DPCCBackendTorch:
                 if t % save_samples_every == 0:
                     sampled_trajectories.append(samples.observations[:, :, :])
 
-                obs_buffer_dpcc.append(obs)
+                # Store 9D env state for trajectory (framework expects 9D for 9d exp)
+                obs_to_store = obs[2:11] if (obs.size == 11) else obs
+                obs_buffer_dpcc.append(obs_to_store)
                 action_buffer.append(action)
 
                 if success:
@@ -358,6 +645,10 @@ class DPCCBackendTorch:
         self._build_projector_and_policy()
         horizon = int(self.plan_config.get("horizon", self.diffusion.horizon))
         obs = x0 if x0 is not None else self.adapter.reset(seed=self.seed)[0]
+        obs = np.asarray(obs, dtype=np.float32).reshape(-1)
+        if self.diffusion.observation_dim == 11 and obs.size == 9:
+            target_xy = np.asarray(self.adapter.env.target, dtype=np.float32).reshape(-1)[:2]
+            obs = np.concatenate([target_xy, obs], axis=0)
 
         _, samples = self._policy(
             conditions={0: obs}, batch_size=n_samples, horizon=horizon, disable_projection=False

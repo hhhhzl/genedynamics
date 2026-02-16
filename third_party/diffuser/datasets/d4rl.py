@@ -63,11 +63,20 @@ def sequence_dataset(env, preprocess_fn):
                 robot_state = env_state['robot']
 
                 if env in ('avoiding-d3il-9d', 'd3il-avoiding-9d'):
-                    # 9D planning state: [tcp_xy, q], action: qdot
+                    # 9D with target: obs = [x_des, y_des, x, y, q1..q7] (11D).
                     tcp_xy = robot_state['c_pos'][:, :2]
                     q = robot_state['j_pos'][:, :7]
                     qdot = robot_state['j_vel'][:, :7]
-                    input_state = np.concatenate((tcp_xy, q), axis=-1)
+                    try:
+                        des_xy = robot_state['des_c_pos'][:, :2]
+                        input_state = np.concatenate((des_xy, tcp_xy, q), axis=-1)  # 11D
+                    except (KeyError, TypeError):
+                        import warnings
+                        warnings.warn(
+                            "avoiding-d3il-9d: 'des_c_pos' not in robot_state, using 9D obs without target. "
+                            "Add target to data or use data that includes des_c_pos for goal-conditioned 9D."
+                        )
+                        input_state = np.concatenate((tcp_xy, q), axis=-1)  # 9D fallback
                     action = qdot[:-1]
                 else:
                     # Legacy DPCC avoiding setup.
@@ -78,6 +87,8 @@ def sequence_dataset(env, preprocess_fn):
 
                 valid_len = len(action)
 
+            # Rewards: both 4D and 9D use zeros here. Target-reaching signal may be added
+            # elsewhere (e.g. preprocessing) for 4D; 9D has no target in obs so no alignment.
             episode_data = {
                 'observations': input_state[:-1],
                 'actions': action,
