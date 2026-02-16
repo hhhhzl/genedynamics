@@ -92,7 +92,7 @@ class Projector:
         )
 
         for constraint_spec in constraint_list:
-            if constraint_spec[0] == "deriv":
+            if isinstance(constraint_spec, (list, tuple)) and str(constraint_spec[0]).startswith("deriv"):
                 self.dynamic_constraints.constraint_list.append(constraint_spec)
             elif constraint_spec[0] in {"lb", "ub", "eq", "ineq"}:
                 self.safety_constraints.constraint_list.append(constraint_spec)
@@ -127,8 +127,10 @@ class Projector:
                 s_0 = s_0.cpu().numpy()
             counter = 0
             for constraint in self.dynamic_constraints.constraint_list:
-                if constraint[0] == "deriv":
-                    x_idx = int(constraint[1][0])
+                if isinstance(constraint, (list, tuple)) and str(constraint[0]).startswith("deriv"):
+                    vals = constraint[1]
+                    # ("deriv", [x_idx, dx_idx]) or ("deriv_lin", (x_idx, [dx_idxs], [coeffs]))
+                    x_idx = int(vals[0]) if hasattr(vals, "__len__") else int(vals)
                     b[counter * self.horizon] = s_0[x_idx]
                     counter += 1
 
@@ -374,7 +376,7 @@ class DynamicConstraints(Constraints):
         for constraint in constraint_list:
             type = constraint[0]
             vals = constraint[1]
-            if "deriv" in type:
+            if type == "deriv":
                 x_idx = int(vals[0])
                 dx_idx = int(vals[1])
 
@@ -400,6 +402,58 @@ class DynamicConstraints(Constraints):
                         mat_append[i, i * self.transition_dim + x_idx] = 1
                         mat_append[i, i * self.transition_dim + dx_idx] = self.dt
                         mat_append[i, (i + 1) * self.transition_dim + x_idx] = -1
+                        vec_append[i] = 0
+
+                if self.skip_initial_state:
+                    mat_fix_initial = torch.zeros(1, self.transition_dim * self.horizon, device=self.device)
+                    mat_fix_initial[0, x_idx] = 1
+                    mat_append = torch.cat((mat_fix_initial, mat_append), dim=0)
+                    vec_append = torch.cat((torch.tensor([0], device=self.device), vec_append), dim=0)
+
+                self.A = torch.cat((self.A, mat_append), dim=0)
+                self.b = torch.cat((self.b, vec_append), dim=0)
+            elif type == "deriv_lin":
+                # Linear dynamics: x_{t+1} = x_t + dt * sum_k coeff_k * dx_k_t
+                # vals = (x_idx, dx_idxs, coeffs)
+                x_idx = int(vals[0])
+                dx_idxs = list(vals[1])
+                coeffs = np.asarray(vals[2], dtype=np.float32).reshape(-1)
+                if len(dx_idxs) != int(coeffs.size):
+                    raise ValueError("deriv_lin expects matching dx_idxs and coeffs lengths")
+
+                mat_append = torch.zeros(self.horizon - 1, self.transition_dim * self.horizon, device=self.device)
+                vec_append = torch.zeros(self.horizon - 1, device=self.device)
+
+                if self.normalizer is not None:
+                    x_min = float(self.normalizer.mins[x_idx])
+                    x_max = float(self.normalizer.maxs[x_idx])
+                    x_diff = x_max - x_min
+                    # For each dx dim
+                    dx_min = [float(self.normalizer.mins[int(j)]) for j in dx_idxs]
+                    dx_max = [float(self.normalizer.maxs[int(j)]) for j in dx_idxs]
+                    dx_diff = [dx_max[k] - dx_min[k] for k in range(len(dx_idxs))]
+                    dx_sum = [dx_max[k] + dx_min[k] for k in range(len(dx_idxs))]
+
+                for i in range(self.horizon - 1):
+                    if self.normalizer is not None:
+                        mat_append[i, i * self.transition_dim + x_idx] = 1 * x_diff
+                        mat_append[i, (i + 1) * self.transition_dim + x_idx] = -1 * x_diff
+                        const = 0.0
+                        for k, dx_idx in enumerate(dx_idxs):
+                            mat_append[i, i * self.transition_dim + int(dx_idx)] = (
+                                mat_append[i, i * self.transition_dim + int(dx_idx)]
+                                + float(self.dt) * float(coeffs[k]) * float(dx_diff[k])
+                            )
+                            const += float(coeffs[k]) * float(dx_sum[k])
+                        vec_append[i] = -const * float(self.dt)
+                    else:
+                        mat_append[i, i * self.transition_dim + x_idx] = 1
+                        mat_append[i, (i + 1) * self.transition_dim + x_idx] = -1
+                        for k, dx_idx in enumerate(dx_idxs):
+                            mat_append[i, i * self.transition_dim + int(dx_idx)] = (
+                                mat_append[i, i * self.transition_dim + int(dx_idx)]
+                                + float(self.dt) * float(coeffs[k])
+                            )
                         vec_append[i] = 0
 
                 if self.skip_initial_state:

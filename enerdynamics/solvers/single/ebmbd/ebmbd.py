@@ -68,6 +68,8 @@ class EBMBDSolver(SamplingSolver):
         diversity_eta: float = 1.0,
         diversity_topK_cand: int = None,
         diversity_use_state: bool = True,
+        use_target_line: bool = False,
+        num_targets: int = 4,
         **kwargs,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -102,6 +104,8 @@ class EBMBDSolver(SamplingSolver):
         self.diversity_eta = float(diversity_eta)  # Diversity weight for diverse top-K
         self.diversity_topK_cand = int(diversity_topK_cand) if diversity_topK_cand is not None else None
         self.diversity_use_state = bool(diversity_use_state)  # Use state features (True) or action features (False)
+        self.use_target_line = bool(use_target_line)
+        self.num_targets = int(num_targets)
         # Optional obstacle manager + config (for fast JAX SDF via texture)
         self._obstacles = obstacles
         self._obstacle_config = obstacle_config or {}

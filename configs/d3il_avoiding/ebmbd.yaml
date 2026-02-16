@@ -5,34 +5,36 @@ env_name: d3il_avoiding_9d
 env_params:
   render: false
   horizon: 64
-  dt: 0.035
+  dt: 0.03
 
 method: d3il_unified
-obstacle_levels: [0]
+obstacle_levels: [0, 1, 2]
 
 method_params:
   solver: ebmbd
   execution: plan_once
   horizon: 64
-  dt: 0.035
+  dt: 0.03
   action_limit: 0.8
   action_extra_sigma: 0.3
   show_tqdm: true
   num_modes: 20
   mode_strategy: multirun
+  use_target_line: true
+  num_targets: 4
   max_episode_length: 64
   track_trajectory: true
-  tracker_k_joint: 5.0
-  tracker_k_xy: 1.2
+  tracker_k_joint: 2.0
+  tracker_k_xy: 1
   tracker_ff_alpha: 0.2
 
 obstacle_config:
   generator: d3il_avoiding_fixed
   use_d3il_preset: true
   obstacle_radius_by_level:
-    0: [0.03, 0.025]   # first obstacle, rest
-    1: [0.04, 0.035]
-    2: [0.06, 0.055]
+    0: [0.03, 0.03]   # first obstacle, rest
+    1: [0.04, 0.04]
+    2: [0.05, 0.05]
   enable_connectivity_check: false
   enable_nonconvexity_check: false
   robot_radius: 0.01
@@ -43,7 +45,7 @@ obstacle_config:
     y_min: -0.3
     y_max: 0.4
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4]
 backend: jax
 device: cuda
 
