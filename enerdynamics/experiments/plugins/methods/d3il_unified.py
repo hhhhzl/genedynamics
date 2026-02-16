@@ -106,6 +106,8 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
                 diversity_topK_cand=config.get("diversity_topK_cand"),
                 diversity_use_state=bool(config.get("diversity_use_state", True)),
                 terminal_energy_weight=float(config.get("terminal_energy_weight", 0.0)),
+                use_target_line=bool(config.get("use_target_line", False)),
+                num_targets=int(config.get("num_targets", 4)),
             )
         elif solver_name == "ebmbd":
             from enerdynamics.solvers.single.ebmbd import EBMBDSolver
@@ -137,6 +139,8 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
                 diversity_eta=float(config.get("diversity_eta", 1.0)),
                 diversity_topK_cand=config.get("diversity_topK_cand"),
                 diversity_use_state=bool(config.get("diversity_use_state", True)),
+                use_target_line=bool(config.get("use_target_line", False)),
+                num_targets=int(config.get("num_targets", 4)),
             )
         elif solver_name == "mdoc":
             from enerdynamics.solvers.single.mdoc import MDOCSolver
@@ -188,6 +192,8 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
                 diversity_eta=float(config.get("diversity_eta", 1.0)),
                 diversity_topK_cand=config.get("diversity_topK_cand"),
                 diversity_use_state=bool(config.get("diversity_use_state", True)),
+                use_target_line=bool(config.get("use_target_line", False)),
+                num_targets=int(config.get("num_targets", 4)),
                 **cbf_params,
             )
         elif solver_name in ("cfsmbd", "cfsmbd_full"):
@@ -234,6 +240,8 @@ class D3ILUnifiedMethodPlugin(MethodPlugin):
                 diversity_eta=float(config.get("diversity_eta", 1.0)),
                 diversity_topK_cand=config.get("diversity_topK_cand"),
                 diversity_use_state=bool(config.get("diversity_use_state", True)),
+                use_target_line=bool(config.get("use_target_line", False)),
+                num_targets=int(config.get("num_targets", 4)),
             )
             if solver_name == "cfsmbd_full":
                 solver.multirun_use_plan_batch_minimal = bool(config.get("multirun_use_plan_batch_minimal", False))

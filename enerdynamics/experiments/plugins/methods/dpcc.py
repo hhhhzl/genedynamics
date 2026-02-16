@@ -144,8 +144,11 @@ class DPCCMethodPlugin(MethodPlugin):
         normalizer = diffusion_experiment.dataset.normalizer
 
         robot_name = exp.split("-")[0]
-        obs_indices = dpcc_config.get("observation_indices", {}).get(robot_name, {})
-        act_indices = dpcc_config.get("action_indices", {}).get(robot_name, {})
+        index_key = f"{robot_name}_9d" if "9d" in exp else robot_name
+        obs_indices_map = dpcc_config.get("observation_indices", {})
+        act_indices_map = dpcc_config.get("action_indices", {})
+        obs_indices = obs_indices_map.get(index_key, obs_indices_map.get(robot_name, {}))
+        act_indices = act_indices_map.get(index_key, act_indices_map.get(robot_name, {}))
         indices = {"observations": obs_indices, "actions": act_indices}
 
         plan_config = dict(config.get("plan_config", {}))
@@ -164,6 +167,22 @@ class DPCCMethodPlugin(MethodPlugin):
         plan_config.setdefault("variant", config.get("variant", "dpcc"))
         plan_config.setdefault("solver", config.get("solver", "scipy"))
         plan_config.setdefault("halfspace_variant", config.get("halfspace_variant"))
+        # Align DPCC planning constraints with framework obstacle generation by default.
+        plan_config.setdefault(
+            "align_constraints_with_framework",
+            config.get("align_constraints_with_framework", True),
+        )
+        plan_config.setdefault(
+            "disable_halfspace_when_aligned",
+            config.get("disable_halfspace_when_aligned", True),
+        )
+        plan_config.setdefault("obstacles", config.get("obstacles"))
+        plan_config.setdefault("obstacle_config", config.get("obstacle_config", {}))
+        plan_config.setdefault("execution", config.get("execution", "mpc"))
+        plan_config.setdefault("num_modes", config.get("num_modes", 1))
+        plan_config.setdefault("plan_once_chunks", config.get("plan_once_chunks", 1))
+        plan_config.setdefault("use_target_line", config.get("use_target_line", False))
+        plan_config.setdefault("num_targets", config.get("num_targets", 4))
 
         dynamics = DynamicsToEnvAdapter(env, dt=plan_config["dt"])
         backend = RuntimeBackendManager.get_backend()
@@ -186,9 +205,14 @@ class DPCCMethodPlugin(MethodPlugin):
     def plan(self, planner: DPCCSolver, initial_state: np.ndarray, rng: Any) -> Dict[str, Any]:
         horizon = planner.plan_config.get("horizon", getattr(planner.env, "horizon", 64))
         traj = planner.solve(initial_state, horizon=horizon, rng_key=rng)
-        return {
+        out = {
             "states": traj.states,
             "actions": traj.actions,
             "initial_state": initial_state,
             "info": traj.info,
         }
+        if isinstance(traj.info, dict):
+            for k in ("candidate_states", "candidate_actions", "candidate_costs", "best_idx"):
+                if k in traj.info:
+                    out[k] = traj.info[k]
+        return out

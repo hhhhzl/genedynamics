@@ -71,35 +71,81 @@ The environment plugin used is:
 
 ---
 
-### 4) How to run D3IL Avoiding (train → eval)
+### 4) How to run D3IL Avoiding (4D and 9D)
 
-#### 4.1 Train (DPCC original script)
+All commands below are from repository root (`/home/lbw/mbd-project`).
 
-Training is currently executed using the original DPCC script (this is intentional to keep the experiment runner reusable and not method-specific):
-
-```bash
-python dpcc/scripts/train.py
-```
-
-This produces DPCC checkpoints/logs under the DPCC logging scheme (commonly `logs/`).
-
-#### 4.2 Eval (enerdynamics experiment runner)
-
-We provide a standard `ExperimentConfig` YAML:
-
-- `configs/d3il_avoiding/dpcc_train_eval.yaml` (despite the name, it is **eval** config; training is done by DPCC script above)
-
-Run evaluation via the shared runner:
+#### 4.1 Train 4D DPCC diffusion
 
 ```bash
-python enerdynamics/experiments/run_experiment_from_config.py configs/d3il_avoiding/dpcc_train_eval.yaml
+python scripts/dpcc_train.py \
+  --config-file configs/d3il_avoiding/dpcc_diffusion_train.py \
+  --dataset avoiding-d3il \
+  --device cuda
 ```
 
-This will:
+Default training config: `dpcc/config/avoiding-d3il.py`.
 
-- create the D3IL avoiding env via `D3ILAvoidingPlugin`
-- create the DPCC method via `DPCCMethodPlugin` (loads your trained model from `loadbase`/`diffusion_loadpath`)
-- run planning/rollout and save results under the experiment `output_dir`
+#### 4.2 Train 9D DPCC diffusion (state `[x, y, q1..q7]`, action `[qdot1..qdot7]`)
+
+```bash
+python scripts/dpcc_train_9d.py \
+  --config-file configs/d3il_avoiding/dpcc_diffusion_train.py \
+  --dataset avoiding-d3il-9d \
+  --device cuda
+```
+
+Default training config: `enerdynamics/configs/d3il_avoiding/dpcc_diffusion_train.py`.
+
+#### 4.3 Eval 4D with experiment runner
+
+```bash
+python enerdynamics/experiments/runner.py \
+  enerdynamics/configs/d3il_avoiding/dpcc_train_eval.yaml
+```
+
+This uses:
+- env plugin: `d3il_avoiding` (4D)
+- method plugin: `dpcc`
+- diffusion checkpoint from `method_params.loadbase/dataset/diffusion_loadpath/seed`.
+
+#### 4.4 Eval 9D with experiment runner
+
+```bash
+python enerdynamics/experiments/runner.py \
+  enerdynamics/configs/d3il_avoiding/dpcc_train_eval_9d.yaml
+```
+
+#### 4.5 Eval 9D trained diffusion (quick rollout script)
+
+Use the dedicated test script for 9D checkpoints:
+
+```bash
+python scripts/dpcc_test_diffusion.py \
+  --env-name d3il_avoiding_9d \
+  --dataset avoiding-d3il-9d \
+  --exp avoiding-d3il-9d \
+  --seed 5 \
+  --device cuda \
+  --diffusion-loadpath diffusion/H8_K20_Dmodels.GaussianDiffusion \
+  --epoch best \
+  --variant diffuser \
+  --n-trials 5
+```
+
+Optional: save eval summary JSON
+
+```bash
+python scripts/dpcc_test_diffusion.py \
+  --env-name d3il_avoiding_9d \
+  --dataset avoiding-d3il-9d \
+  --exp avoiding-d3il-9d \
+  --seed 5 \
+  --device cuda \
+  --diffusion-loadpath diffusion/H8_K20_Dmodels.GaussianDiffusion \
+  --epoch best \
+  --save-json results/d3il_avoiding/dpcc_test_seed5.json
+```
 
 Notes for strict DPCC parity:
 
@@ -119,13 +165,16 @@ Notes for strict DPCC parity:
 
 ### 5) What files are generated (training vs evaluation)
 
-#### Training outputs (DPCC repo)
-The DPCC training script writes checkpoints/logs under its own structure (typically under `logs/`).
+#### Training outputs
+The train scripts write checkpoints/logs under `logs/`:
+- 4D: `logs/avoiding-d3il/...`
+- 9D: `logs/avoiding-d3il-9d/...`
+
 Your eval config points to these fields:
 
 - `method_params.loadbase`: base directory (default: `logs`)
 - `method_params.diffusion_loadpath`: diffusion subdir (default: `diffusion`)
-- `method_params.dataset`: dataset name (default: `avoiding-d3il`)
+- `method_params.dataset`: dataset name (e.g. `avoiding-d3il` or `avoiding-d3il-9d`)
 - `method_params.seed`: run seed subfolder used by the loader
 
 #### Evaluation outputs (enerdynamics experiments)

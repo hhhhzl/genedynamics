@@ -18,6 +18,7 @@ from .methods import (
     CFSMBDMethodPlugin,
     CFSMBDFullMethodPlugin,
     DPCCMethodPlugin,
+    SafeDiffuserMethodPlugin,
 )
 
 from .environments import (
@@ -68,6 +69,7 @@ __all__ = [
     'CFSMBDMethodPlugin',
     'CFSMBDFullMethodPlugin',
     'DPCCMethodPlugin',
+    'SafeDiffuserMethodPlugin',
     # Environments
     'SingleIntegrator2DPlugin',
     'DoubleIntegrator2DPlugin',

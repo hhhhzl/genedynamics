@@ -69,6 +69,8 @@ class MDOCSolver(SamplingSolver):
         diversity_eta: float = 1.0,
         diversity_topK_cand: int = None,
         diversity_use_state: bool = True,
+        use_target_line: bool = False,
+        num_targets: int = 4,
         **kwargs: Any,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -96,6 +98,8 @@ class MDOCSolver(SamplingSolver):
                 diversity_eta=float(diversity_eta),
                 diversity_topK_cand=int(diversity_topK_cand) if diversity_topK_cand is not None else None,
                 diversity_use_state=bool(diversity_use_state),
+                use_target_line=bool(use_target_line),
+                num_targets=int(num_targets),
             )
         )
 
