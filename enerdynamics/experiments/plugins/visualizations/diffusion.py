@@ -396,8 +396,10 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         show_title: bool = True,
         show_axis_labels: bool = True,
         show_grid: bool = True,
+        states_sequence: Any = None,
     ) -> None:
-        """Visualize a single diffusion step."""
+        """Visualize a single diffusion step. If states_sequence is provided (e.g. candidate_states[best_idx]),
+        use it for the main trajectory so it matches trajectory_best_plan.png."""
         ax.set_aspect('equal')
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
@@ -435,61 +437,68 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                         positions = np.array([env_plugin.extract_position(s) for s in states])
                         ax.plot(positions[:, 0], positions[:, 1], color=light_rgba, linewidth=0.8)
         
-        # Draw main trajectory
-        if action_sequence is not None and len(action_sequence) > 0 and hasattr(env, "rollout_actions"):
+        # Draw main trajectory: prefer states_sequence (same as trajectory_best_plan) when provided
+        positions = None
+        if states_sequence is not None and len(states_sequence) > 1:
+            try:
+                positions = np.array([env_plugin.extract_position(np.asarray(s)) for s in states_sequence])
+            except Exception:
+                positions = None
+        if positions is None and action_sequence is not None and len(action_sequence) > 0 and hasattr(env, "rollout_actions"):
             states = env.rollout_actions(initial_state, action_sequence)
             if len(states) > 1:
                 positions = np.array([env_plugin.extract_position(s) for s in states])
-                # Trajectory below fans so MDOC fans are visible (fans use zorder 5.5+)
-                ax.plot(positions[:, 0], positions[:, 1], color=EDOC_COLOR, linewidth=2.5, zorder=4.5)
-                
-                # Draw start
-                ax.scatter(
-                    positions[0, 0],
-                    positions[0, 1],
-                    marker='o',
-                    s=30,
-                    facecolors='white',
-                    edgecolors=EDOC_COLOR,
-                    linewidths=1.0,
-                    zorder=6
-                )
-                # Draw end
-                ax.scatter(
-                    positions[-1, 0],
-                    positions[-1, 1],
-                    marker='*',
-                    s=55,
-                    facecolors=EDOC_COLOR,
-                    edgecolors='black',
-                    linewidths=0.5,
-                    zorder=6
-                )
+        if positions is not None and len(positions) > 1:
+            # Trajectory below fans so MDOC fans are visible (fans use zorder 5.5+)
+            ax.plot(positions[:, 0], positions[:, 1], color=EDOC_COLOR, linewidth=2.5, zorder=4.5)
+            
+            # Draw start
+            ax.scatter(
+                positions[0, 0],
+                positions[0, 1],
+                marker='o',
+                s=30,
+                facecolors='white',
+                edgecolors=EDOC_COLOR,
+                linewidths=1.0,
+                zorder=6
+            )
+            # Draw end
+            ax.scatter(
+                positions[-1, 0],
+                positions[-1, 1],
+                marker='*',
+                s=55,
+                facecolors=EDOC_COLOR,
+                edgecolors='black',
+                linewidths=0.5,
+                zorder=6
+            )
 
-                # Draw MDOC conservative fan visualization
-                if is_mdoc:
-                    self._draw_mdoc_fans(ax, env, obstacles, positions, exp_cfg)
+            # Draw MDOC conservative fan visualization
+            if is_mdoc:
+                self._draw_mdoc_fans(ax, env, obstacles, positions, exp_cfg)
 
-                # Overlay CFS convexified halfspaces for this diffusion step (if enabled)
-                # For MDOC, we show the specialized Fans instead of full halfspaces.
-                # Skip for MBD (clean plot, no orange fan); skip when qp_gate is False and qp_prob is 0.
-                if exp_cfg is not None and not is_ebmbd and not is_mdoc and not is_mbd and draw_cfs_fan:
-                    try:
-                        draw_cfs_convexify_overlay(
-                            ax,
-                            env=env,
-                            obstacles=obstacles,
-                            initial_state=np.asarray(initial_state, dtype=np.float32),
-                            action_sequence=np.asarray(action_sequence, dtype=np.float32),
-                            env_plugin=env_plugin,
-                            exp_cfg=exp_cfg,
-                            diffusion_step=int(diffusion_step),
-                            diffusion_total_steps=int(diffusion_total_steps),
-                            overlay_cfg=cfs_overlay_cfg if isinstance(cfs_overlay_cfg, dict) else None,
-                        )
-                    except Exception:
-                        # Never fail the diffusion visualization due to overlay issues
-                        pass
+            # Overlay CFS convexified halfspaces for this diffusion step (if enabled)
+            # For MDOC, we show the specialized Fans instead of full halfspaces.
+            # Skip for MBD (clean plot, no orange fan); skip when qp_gate is False and qp_prob is 0.
+            if exp_cfg is not None and not is_ebmbd and not is_mdoc and not is_mbd and draw_cfs_fan and action_sequence is not None:
+                try:
+                    draw_cfs_convexify_overlay(
+                        ax,
+                        env=env,
+                        obstacles=obstacles,
+                        initial_state=np.asarray(initial_state, dtype=np.float32),
+                        action_sequence=np.asarray(action_sequence, dtype=np.float32),
+                        env_plugin=env_plugin,
+                        exp_cfg=exp_cfg,
+                        diffusion_step=int(diffusion_step),
+                        diffusion_total_steps=int(diffusion_total_steps),
+                        overlay_cfg=cfs_overlay_cfg if isinstance(cfs_overlay_cfg, dict) else None,
+                    )
+                except Exception:
+                    # Never fail the diffusion visualization due to overlay issues
+                    pass
         
         # Draw target. D3IL: green; single2d: red. use_target_line: draw line (align with model-based baselines).
         method_params = (exp_cfg.get('method_params', {}) if isinstance(exp_cfg, dict) else getattr(exp_cfg, 'method_params', None)) if exp_cfg is not None else {}
@@ -784,6 +793,20 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         diffusion_actions = result.get('diffusion_actions_traj', None)
         diffusion_samples = result.get('diffusion_sampled_actions', None)
         diffusion_fractions = config.get('fractions', (0.1, 0.5, 0.9))
+        # Best plan trajectory (candidate_states[best_idx]) so diffusion_steps_10 matches trajectory_best_plan.png
+        candidate_states = result.get('candidate_states', [])
+        candidate_actions = result.get('candidate_actions', [])
+        best_idx = int(result.get('best_idx', 0))
+        best_plan_states = None
+        best_plan_actions = None
+        if candidate_states and 0 <= best_idx < len(candidate_states):
+            best_plan_states = candidate_states[best_idx]
+            if candidate_actions and best_idx < len(candidate_actions):
+                act = candidate_actions[best_idx]
+                act = np.asarray(act, dtype=np.float32)
+                best_plan_actions = act if act.ndim >= 2 else (act.reshape(1, -1) if act.size > 0 else None)
+            if best_plan_states is not None and len(best_plan_states) < 2:
+                best_plan_states = None
 
         if diffusion_actions is not None and len(diffusion_actions) > 0:
             diffusion_actions = np.asarray(diffusion_actions, dtype=np.float32)
@@ -792,6 +815,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
 
             # 1. Save individual PNGs: percentage = noise level (90%=high noise, 10%=low noise)
             # frac in config = noise fraction; step_idx 0 = least noisy, Ndiffuse-1 = most noisy
+            # For the smallest fraction (10% = final plan), use best plan states so it matches trajectory_best_plan.png
+            min_frac = min(diffusion_fractions) if diffusion_fractions else 0.1
             for frac in diffusion_fractions:
                 step_idx = int(frac * (Ndiffuse - 1))
                 step_idx = max(0, min(step_idx, Ndiffuse - 1))
@@ -802,9 +827,12 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     if diffusion_samples_arr.ndim == 4 and diffusion_samples_arr.shape[0] > step_idx:
                         sample_acts = diffusion_samples_arr[step_idx]
                 pct = round(frac * 100)
+                use_best_plan = frac == min_frac and best_plan_states is not None
+                states_for_viz = list(best_plan_states) if use_best_plan else None
+                action_for_viz = best_plan_actions if use_best_plan else action_seq
                 fig_single, ax_single = plt.subplots(1, 1, figsize=(6, 6))
                 self._visualize_single_step(
-                    ax_single, env, obstacles, initial_state, action_seq, sample_acts,
+                    ax_single, env, obstacles, initial_state, action_for_viz, sample_acts,
                     env_plugin, x_min, x_max, y_min, y_max,
                     title=None,
                     exp_cfg=exp_cfg,
@@ -819,6 +847,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     show_title=False,
                     show_axis_labels=False,
                     show_grid=False,
+                    states_sequence=states_for_viz,
                 )
                 out_path = output_dir / f"diffusion_steps_{pct}.png"
                 if is_d3il:
@@ -890,11 +919,15 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         else:
             # Fallback: only save the 3 fraction PNGs with final trajectory
             final_actions = result.get('actions', None)
+            min_frac_fb = min(diffusion_fractions) if diffusion_fractions else 0.1
             for frac in diffusion_fractions:
                 pct = round(frac * 100)
+                use_best_plan_fb = frac == min_frac_fb and best_plan_states is not None
+                states_for_viz_fb = list(best_plan_states) if use_best_plan_fb else None
+                action_for_viz_fb = best_plan_actions if use_best_plan_fb else final_actions
                 fig_single, ax_single = plt.subplots(1, 1, figsize=(6, 6))
                 self._visualize_single_step(
-                    ax_single, env, obstacles, initial_state, final_actions, None,
+                    ax_single, env, obstacles, initial_state, action_for_viz_fb, None,
                     env_plugin, x_min, x_max, y_min, y_max,
                     title=None,
                     exp_cfg=exp_cfg,
@@ -909,6 +942,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     show_title=False,
                     show_axis_labels=False,
                     show_grid=False,
+                    states_sequence=states_for_viz_fb,
                 )
                 out_path = output_dir / f"diffusion_steps_{pct}.png"
                 if is_d3il:

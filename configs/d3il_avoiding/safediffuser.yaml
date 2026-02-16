@@ -16,7 +16,7 @@ method_params:
   safediffuser_config_path: enerdynamics/solvers/single/safediffuser/config/avoiding_d3il.yaml
   diffusion_loadpath: diffusion/H8_K20_Dmodels.GaussianDiffusion
   diffusion_epoch: 'best'  # or: "best" / an integer like 50000
-  seed: 5
+  seed: 5 # seed for pretrained model
   device: cuda
   batch_size: 8
   enable_safety: true
