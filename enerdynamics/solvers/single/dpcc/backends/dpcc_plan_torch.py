@@ -39,8 +39,8 @@ class DPCCBackendTorch:
         self._constraints_cache = None
         self._stepper = None
 
-    def _build_projector_and_policy(self):
-        if self._projector is not None and self._policy is not None:
+    def _build_projector_and_policy(self, *, x0_9d: np.ndarray | None = None, force_rebuild: bool = False):
+        if (not force_rebuild) and self._projector is not None and self._policy is not None:
             return
 
         variant = self.plan_config.get("variant", "dpcc")
@@ -99,6 +99,28 @@ class DPCCBackendTorch:
         else:
             constraints = constraints_info["constraint_list"]
 
+        # DPCC 9D fix (still DPCC projection): add frozen-Jacobian x/y dynamics constraints.
+        # Without these, x/y are unconstrained and can teleport, producing "乱飘" in modes_plan.
+        try:
+            if "avoiding" in str(exp) and "9d" in str(exp) and x0_9d is not None:
+                env = self.adapter.env
+                if hasattr(env, "get_jacobian_xy") and callable(getattr(env, "get_jacobian_xy")):
+                    x0_arr = np.asarray(x0_9d, dtype=np.float32).reshape(-1)
+                    if x0_arr.size >= 9:
+                        J = env.get_jacobian_xy(x0_arr[:9])
+                        J = None if J is None else np.asarray(J, dtype=np.float32)
+                        if J is not None and J.shape == (2, 7):
+                            x_idx = int(act_obs_indices.get("x", -1))
+                            y_idx = int(act_obs_indices.get("y", -1))
+                            qdot_idxs = [int(act_obs_indices.get(f"qdot{i}", -1)) for i in range(1, 8)]
+                            if x_idx >= 0 and y_idx >= 0 and all(j >= 0 for j in qdot_idxs):
+                                constraints = list(constraints) + [
+                                    ("deriv_lin", (x_idx, qdot_idxs, J[0].tolist())),
+                                    ("deriv_lin", (y_idx, qdot_idxs, J[1].tolist())),
+                                ]
+        except Exception:
+            pass
+
         self._constraints_cache = constraints_info
 
         # DPCC config convention: dt is keyed by robot_name (e.g. "avoiding")
@@ -107,6 +129,13 @@ class DPCCBackendTorch:
         if isinstance(dt_cfg, dict):
             dt_default = dt_cfg.get(robot_name)
         dt = self.plan_config.get("dt", dt_default if dt_default is not None else 0.1)
+        # 9D avoiding uses qdot integration; trust env.dt (matches execution) to avoid
+        # accidentally falling back to DPCC's 4D dt=1 convention.
+        try:
+            if "9d" in str(exp) and hasattr(self.adapter, "env") and getattr(self.adapter.env, "dt", None) is not None:
+                dt = float(getattr(self.adapter.env, "dt"))
+        except Exception:
+            pass
         delta_t = float(dt) * float(dt_multiplier)
 
         projector = Projector(
