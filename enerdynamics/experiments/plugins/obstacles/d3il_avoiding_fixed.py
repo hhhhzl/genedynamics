@@ -34,6 +34,40 @@ DEFAULT_OBSTACLE_RADIUS_BY_LEVEL = {
     2: [0.05, 0.045],
 }
 
+# Target line: 4 positions along y=0.35 (same as D3IL goal_ypos), x at:
+# 1) left of first obstacle (0.35), 2) between 1st&2nd, 3) between 2nd&3rd, 4) right of third (0.65)
+# Last row obstacles: x at 0.35, 0.5, 0.65
+D3IL_TARGET_LINE_Y = 0.35
+D3IL_TARGET_LINE_POSITIONS = np.array(
+    [
+        [0.25, D3IL_TARGET_LINE_Y],   # left of first obstacle
+        [0.425, D3IL_TARGET_LINE_Y],  # between 1st and 2nd
+        [0.575, D3IL_TARGET_LINE_Y],  # between 2nd and 3rd
+        [0.75, D3IL_TARGET_LINE_Y],   # right of third obstacle
+    ],
+    dtype=np.float32,
+)
+
+
+def get_d3il_target_line_positions(num_targets: int = 4) -> np.ndarray:
+    """
+    Return D3IL target line positions for multi-target mode.
+    Same y as D3IL goal; x distributed across gaps between last-row obstacles.
+    """
+    if num_targets <= 0:
+        return np.zeros((0, 2), dtype=np.float32)
+    if num_targets <= len(D3IL_TARGET_LINE_POSITIONS):
+        return D3IL_TARGET_LINE_POSITIONS[:num_targets].copy()
+    # Interpolate if more targets requested
+    n = len(D3IL_TARGET_LINE_POSITIONS)
+    indices = np.linspace(0, n - 1, num_targets, dtype=np.float32)
+    result = np.zeros((num_targets, 2), dtype=np.float32)
+    for i, idx in enumerate(indices):
+        lo, hi = int(np.floor(idx)), min(int(np.ceil(idx)), n - 1)
+        frac = idx - np.floor(idx)
+        result[i] = (1 - frac) * D3IL_TARGET_LINE_POSITIONS[lo] + frac * D3IL_TARGET_LINE_POSITIONS[hi]
+    return result
+
 
 class D3ILAvoidingFixedGeneratorPlugin(ObstacleGeneratorPlugin):
     """

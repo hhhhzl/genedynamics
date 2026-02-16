@@ -40,9 +40,9 @@ class Policy:
         # Previous observations
         self.prev_observations = None
 
-    def __call__(self, conditions, batch_size=1, horizon=16, test_ret=None, constraints=None, disable_projection=False):
+    def __call__(self, conditions, batch_size=1, horizon=16, test_ret=None, constraints=None, disable_projection=False, return_infos=False, batch_conditions=False):
         conditions = {k: self.preprocess_fn(v) for k, v in conditions.items()}
-        conditions = self._format_conditions(conditions, batch_size)
+        conditions = self._format_conditions(conditions, batch_size, batch_conditions=batch_conditions)
 
         test_ret = test_ret if test_ret is not None else self.test_ret
         returns = to_device(test_ret * torch.ones(batch_size, 1), 'cuda')
@@ -61,8 +61,11 @@ class Policy:
             diffusion_trajectories = utils.to_np(infos['diffusion'])         # Shape: batch_size x T x horizon x transition_dim     
             observations = self.normalizer.unnormalize(diffusion_trajectories[:, :, :, self.action_dim:], 'observations')
         
-        # Sort according to similarity with previous observations
-        if self.trajectory_selection == 'temporal_consistency' and not disable_projection and self.prev_observations is not None:   # Temporal consistency
+        # Sort according to similarity with previous observations (skip when batch_conditions to keep mode index alignment)
+        if batch_conditions:
+            which_trajectory = 0
+            self.prev_observations = observations.copy()
+        elif self.trajectory_selection == 'temporal_consistency' and not disable_projection and self.prev_observations is not None:   # Temporal consistency
             order = np.argsort(np.linalg.norm(observations[:,:-1,:] - self.prev_observations[:,1:,:], axis=(1,2)))
             which_trajectory = order[0]
             observations = observations[order]
@@ -73,7 +76,8 @@ class Policy:
             which_trajectory = np.argmin(costs_total)
         else:                                                                                                                       # Random selection
             which_trajectory = 0
-        self.prev_observations = np.repeat(np.expand_dims(observations[0], axis=0), batch_size, axis=0)
+        if not batch_conditions:
+            self.prev_observations = np.repeat(np.expand_dims(observations[0], axis=0), batch_size, axis=0)
 
         ## Extract or calculate action
         if self.inverse_dynamics:
@@ -93,6 +97,8 @@ class Policy:
 
         trajectories = Trajectories(actions, observations)
 
+        if return_infos:
+            return action, trajectories, infos
         return action, trajectories
 
     @property
@@ -100,17 +106,23 @@ class Policy:
         parameters = list(self.model.parameters())
         return parameters[0].device
 
-    def _format_conditions(self, conditions, batch_size):
+    def _format_conditions(self, conditions, batch_size, batch_conditions=False):
         conditions = utils.apply_dict(
             self.normalizer.normalize,
             conditions,
             'observations',
         )
         conditions = utils.to_torch(conditions, dtype=torch.float32, device='cpu')
-        conditions = utils.apply_dict(
-            einops.repeat,
-            conditions,
-            'd -> repeat d', repeat=batch_size,
-        )
+        if not batch_conditions:
+            conditions = utils.apply_dict(
+                einops.repeat,
+                conditions,
+                'd -> repeat d', repeat=batch_size,
+            )
+        else:
+            # conditions[0] is already (batch_size, obs_dim); ensure shape
+            for k, v in conditions.items():
+                if hasattr(v, 'shape') and v.dim() == 1:
+                    conditions[k] = v.unsqueeze(0).expand(batch_size, -1)
         return conditions
     

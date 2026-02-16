@@ -152,18 +152,19 @@ class ExperimentRunner:
         physics_backend = env_params_with_obstacles.get('physics_backend', None)
         if physics_backend in ['mujoco', 'isaac'] and len(obstacles) > 0:
             env_params_with_obstacles['obstacles'] = obstacles
-        # For d3il_avoiding: pass level and obstacle_radius_by_level for MuJoCo sync (monkey-patch)
-        if self.config.env_name == 'd3il_avoiding_9d':
+        # For D3IL avoiding envs: pass obstacle info for MuJoCo scene sync.
+        if self.config.env_name in ['d3il_avoiding_9d', 'd3il_avoiding']:
             env_params_with_obstacles['obstacle_level'] = level
             env_params_with_obstacles['obstacle_radius_by_level'] = (
                 self.config.obstacle_config.get('obstacle_radius_by_level')
             )
-            # EE-only collision: use experiment obstacles + robot_radius so exec collision matches plan SSR
             env_params_with_obstacles['obstacles'] = obstacles
-            env_params_with_obstacles['robot_radius'] = float(
-                self.config.obstacle_config.get('robot_radius', 0.05)
-            )
-            env_params_with_obstacles['collision_ee_only'] = True
+            # EE-only collision settings are only used by the 9D env implementation.
+            if self.config.env_name == 'd3il_avoiding_9d':
+                env_params_with_obstacles['robot_radius'] = float(
+                    self.config.obstacle_config.get('robot_radius', 0.05)
+                )
+                env_params_with_obstacles['collision_ee_only'] = True
 
         env = env_plugin.create_env(env_params_with_obstacles)
         energy = env_plugin.create_energy(env) if _accepts_env(env_plugin.create_energy) else env_plugin.create_energy()
@@ -354,6 +355,7 @@ class ExperimentRunner:
             reset_rng = backend.create_rng(seed)
             exec_candidate_states = []
             exec_candidate_actions = []
+            exec_candidate_states_9d = []
             exec_success = []
             exec_collision = []
             costs_arr = np.asarray(cand_costs, dtype=np.float64).ravel()
@@ -390,14 +392,17 @@ class ExperimentRunner:
                     )
                     exec_candidate_states.append(run_out.get('states', []))
                     exec_candidate_actions.append(run_out.get('actions', []))
+                    exec_candidate_states_9d.append(run_out.get('states_9d'))
                     exec_success.append(bool(run_out.get('success', False)))
                     exec_collision.append(bool(run_out.get('collision', True)))
                 except Exception:
                     exec_candidate_states.append(result.get('states', []))
                     exec_candidate_actions.append([])
+                    exec_candidate_states_9d.append(None)
                     exec_success.append(False)
                     exec_collision.append(True)
             result['exec_candidate_states'] = exec_candidate_states
+            result['exec_candidate_states_9d'] = exec_candidate_states_9d
             # Best = lowest cost among (execution success and no collision); else lowest cost overall
             valid = [c for c in range(len(cand_states)) if exec_success[c] and not exec_collision[c]]
             if valid:
@@ -405,6 +410,10 @@ class ExperimentRunner:
             else:
                 best_idx = int(np.argmin(costs_arr))
             result['best_idx'] = best_idx
+            if exec_candidate_states_9d and best_idx < len(exec_candidate_states_9d):
+                best_9d = exec_candidate_states_9d[best_idx]
+                if best_9d is not None and len(best_9d) >= 2:
+                    result['states_9d'] = [np.asarray(s, dtype=np.float32) for s in best_9d]
             result['states'] = [np.asarray(s, dtype=np.float32) for s in cand_states[best_idx]]
             act_arr = np.asarray(cand_actions[best_idx], dtype=np.float32)
             result['actions'] = [act_arr[t] for t in range(act_arr.shape[0])] if act_arr.ndim >= 2 else [act_arr]
@@ -426,7 +435,9 @@ class ExperimentRunner:
                     result['executed_actions'].append(np.zeros(act_dim, dtype=np.float32))
             result['success'] = exec_success[best_idx]
             result['collision'] = exec_collision[best_idx]
-            # Execution SSR = (executions that were success and no collision) / total executions
+            result['exec_success_per_mode'] = list(exec_success)
+            result['exec_collision_per_mode'] = list(exec_collision)
+            # Execution SSR = (executions that were success and no collision) / total (violation recomputed in _compute_metrics)
             exec_ssr_count = sum(1 for i in range(len(exec_success)) if exec_success[i] and not exec_collision[i])
             n_exec_total = len(exec_success)
             result['execution_ssr'] = {
@@ -443,6 +454,20 @@ class ExperimentRunner:
 
         # 8b1.5. D3IL: 3D GIF from *executed* states (after 8b2 so best is execution-based)
         _states_3d = result.get('executed_states') or result.get('states')
+        info_dict = result.get("info", {}) if isinstance(result.get("info"), dict) else {}
+        # For 4D DPCC runs, states are 4D; prefer lifted 9D states for robot 3D GIF.
+        if _states_3d:
+            try:
+                s0 = np.asarray(_states_3d[0], dtype=np.float32).reshape(-1)
+                if s0.size < 9:
+                    lifted = result.get("states_9d", info_dict.get("states_9d"))
+                    if lifted:
+                        _states_3d = lifted
+            except Exception:
+                lifted = result.get("states_9d", info_dict.get("states_9d"))
+                if lifted:
+                    _states_3d = lifted
+
         if is_d3il_style and _states_3d and len(_states_3d) >= 2:
             try:
                 out_dir = self._get_output_path(level, seed)
@@ -454,6 +479,68 @@ class ExperimentRunner:
                 )
             except Exception:
                 pass
+
+        # 8b1.6. D3IL: top-5 exec 3D GIFs (rank 1 = best already above; add rank2..rank5)
+        exec_candidate_states = result.get('exec_candidate_states') or []
+        exec_candidate_states_9d = result.get('exec_candidate_states_9d') or []
+        cand_costs = result.get('candidate_costs')
+        if isinstance(cand_costs, np.ndarray):
+            costs_arr = np.asarray(cand_costs, dtype=np.float64).ravel()
+        else:
+            costs_arr = np.array(cand_costs or [], dtype=np.float64)
+        exec_success = result.get('exec_success_per_mode') or []
+        exec_collision = result.get('exec_collision_per_mode') or []
+        n_modes = len(exec_candidate_states)
+        if (
+            is_d3il_style
+            and n_modes >= 2
+            and len(costs_arr) >= n_modes
+            and len(exec_success) >= n_modes
+            and len(exec_collision) >= n_modes
+        ):
+            valid = [c for c in range(n_modes) if exec_success[c] and not exec_collision[c]]
+            invalid = [c for c in range(n_modes) if c not in valid]
+            valid_sorted = [valid[i] for i in np.argsort(costs_arr[valid])] if valid else []
+            invalid_sorted = [invalid[i] for i in np.argsort(costs_arr[invalid])] if invalid else []
+            top5_indices = (valid_sorted + invalid_sorted)[:5]
+            out_dir = self._get_output_path(level, seed)
+            traj_dir = out_dir / "trajectory"
+            traj_dir.mkdir(parents=True, exist_ok=True)
+            for rank_one_based in range(2, 6):
+                if rank_one_based - 1 >= len(top5_indices):
+                    break
+                idx = top5_indices[rank_one_based - 1]
+                states_rank = list(exec_candidate_states[idx]) if idx < len(exec_candidate_states) else []
+                if len(states_rank) < 2:
+                    continue
+                states_9d_rank = None
+                if idx < len(exec_candidate_states_9d) and exec_candidate_states_9d[idx] is not None:
+                    states_9d_rank = exec_candidate_states_9d[idx]
+                if states_9d_rank and len(states_9d_rank) >= 2:
+                    _states_3d_rank = [np.asarray(s, dtype=np.float32) for s in states_9d_rank]
+                else:
+                    try:
+                        s0 = np.asarray(states_rank[0], dtype=np.float32).reshape(-1)
+                        if s0.size >= 9:
+                            _states_3d_rank = [np.asarray(s, dtype=np.float32) for s in states_rank]
+                        else:
+                            _states_3d_rank = None
+                    except Exception:
+                        _states_3d_rank = None
+                if _states_3d_rank is None or len(_states_3d_rank) < 2:
+                    continue
+                try:
+                    self._render_d3il_exec_3d_gif(
+                        env,
+                        {'result': {'states': _states_3d_rank}, 'seed': seed},
+                        traj_dir,
+                        seed,
+                        use_current_scene=True,
+                        n_interp=2,
+                        filename_suffix=f"rank{rank_one_based}",
+                    )
+                except Exception:
+                    pass
 
         # 8c. Multirun: re-run single plan with best key to get exact best trajectory planning_time
         if result.get('mode_strategy', '').lower() == 'multirun' and 'multirun_keys' in result:
@@ -589,6 +676,13 @@ class ExperimentRunner:
         Returns:
             Start position array (may be full state vector with velocities)
         """
+        # d3il_avoiding (4D): use the env reset observation directly.
+        # The generic 2D sampler (x in [-1,0], y in [-2,-1.5]) is for toy 2D environments and
+        # produces out-of-map starts for D3IL.
+        if self.config.env_name == "d3il_avoiding":
+            obs, _info = env.reset(seed=seed)
+            return np.asarray(obs, dtype=np.float32)
+
         # d3il_avoiding_9d: fixed center start (0.5, -0.28) - center x, below first obstacle row
         if self.config.env_name == "d3il_avoiding_9d":
             state_dim = env_plugin.get_state_dim()
@@ -781,10 +875,11 @@ class ExperimentRunner:
         return Trajectory(states=states_list, actions=actions_list, info=None)
 
     def _is_d3il_experiment(self, result: Dict[str, Any]) -> bool:
-        """True if this experiment uses d3il_unified (so we emit plan/exec split trajectory files)."""
+        """True if this experiment is a D3IL env (emit plan/exec split trajectory files)."""
         cfg = result.get('config_snapshot') or {}
         method = cfg.get('method') if isinstance(cfg, dict) else getattr(cfg, 'method', None)
-        return method == 'd3il_unified'
+        env_name = cfg.get('env_name', '') if isinstance(cfg, dict) else getattr(cfg, 'env_name', '')
+        return (method == 'd3il_unified') or ("d3il" in str(env_name))
 
     def _render_d3il_exec_3d_gif(
         self,
@@ -797,11 +892,13 @@ class ExperimentRunner:
         duration_ms: float = 80.0,
         use_current_scene: bool = False,
         n_interp: int = 1,
+        filename_suffix: Optional[str] = None,
     ) -> None:
         """
         Render 3D GIF by setting the sim to each *recorded* state (pose from states), then capture.
         use_current_scene=True: do not reset; scene is from main run. Call before 8b2.
         n_interp: number of linear interpolated poses between consecutive states (1 = no interp).
+        filename_suffix: if set (e.g. "rank2"), output is trajectory_best_exec_3d_rank2.gif; else trajectory_best_exec_3d.gif.
         """
         try:
             inner = getattr(getattr(env, "_task_env", None), "_env", None)
@@ -842,19 +939,33 @@ class ExperimentRunner:
                 rng = backend.create_rng(seed)
                 env.reset(rng=rng)
             frames_rgb = []
+            last_ok_frame = None
             for q in poses:
                 try:
                     q_ = np.asarray(q, dtype=np.float64, order='C').reshape(7)
                     robot.set_q(q_)
                     rgb = cam._get_img_data(width=width, height=height, depth=False)
                     if rgb is not None:
-                        frames_rgb.append(np.asarray(rgb, dtype=np.uint8))
+                        frame = np.asarray(rgb, dtype=np.uint8)
+                        frames_rgb.append(frame)
+                        last_ok_frame = frame
+                    elif last_ok_frame is not None:
+                        frames_rgb.append(np.asarray(last_ok_frame, dtype=np.uint8))
                 except Exception:
-                    break
+                    # Do not break: keep rendering so we get full trajectory including goal.
+                    # Use last successful frame for this pose (e.g. near-goal poses can fail in level 1/2).
+                    if last_ok_frame is not None:
+                        frames_rgb.append(np.asarray(last_ok_frame, dtype=np.uint8))
+            if len(frames_rgb) == 1:
+                frames_rgb.append(np.asarray(frames_rgb[0], dtype=np.uint8))
             if len(frames_rgb) >= 2:
                 import imageio
-                out_path = trajectory_dir / "trajectory_best_exec_3d.gif"
-                imageio.v3.imwrite(out_path, frames_rgb, duration=duration_ms, loop=0)
+                basename = "trajectory_best_exec_3d"
+                if filename_suffix:
+                    basename = f"{basename}_{filename_suffix}"
+                out_path = trajectory_dir / f"{basename}.gif"
+                # Play once to avoid visual jump from last frame back to first frame.
+                imageio.v3.imwrite(out_path, frames_rgb, duration=duration_ms, loop=1)
         except Exception:
             pass
 
@@ -1015,11 +1126,17 @@ class ExperimentRunner:
         env_plugin: Any,
         robot_radius: float,
         success_margin: float,
+        *,
+        use_target_line: bool = False,
+        num_targets: int = 4,
+        num_modes: int = 0,
     ) -> Dict[str, Any]:
         """Compute modes-based metrics: ssr, length, smoothness, geometric_smoothness."""
         n_modes = len(candidate_states_list)
         if n_modes == 0:
             return {}
+        if num_modes <= 0:
+            num_modes = n_modes
 
         def extract_pos_2d(s: np.ndarray) -> np.ndarray:
             if env_plugin is not None and hasattr(env_plugin, "extract_position"):
@@ -1036,8 +1153,12 @@ class ExperimentRunner:
 
         target = np.asarray(env.target, dtype=np.float32)
         target_pos = extract_pos_2d(target)
+        target_line = None
+        if use_target_line and env_plugin is not None and getattr(env_plugin, "name", None) == "d3il_avoiding_9d":
+            from enerdynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
+            target_line = get_d3il_target_line_positions(num_targets)
 
-        for states in candidate_states_list:
+        for i, states in enumerate(candidate_states_list):
             states_arr = [np.asarray(s, dtype=np.float32) for s in states]
             if len(states_arr) == 0:
                 continue
@@ -1058,8 +1179,10 @@ class ExperimentRunner:
 
             # Task success
             final_pos = extract_pos_2d(states_arr[-1])
-            # d3il_avoiding_9d: line target (y >= target_y), x can be anywhere in box
-            if env_plugin is not None and getattr(env_plugin, "name", None) == "d3il_avoiding_9d":
+            # d3il_avoiding (4D) or d3il_avoiding_9d: line target (y >= target_y), "过了线就可以了"
+            # NOTE: For 9D, even with use_target_line enabled, reaching one of the discrete x targets
+            # within a small margin is often too strict; the task is naturally a target *line*.
+            if env_plugin is not None and getattr(env_plugin, "name", None) in ("d3il_avoiding_9d", "d3il_avoiding"):
                 target_y = float(target_pos[1])
                 task_success = bool(final_pos[1] >= target_y - success_margin)
             else:
@@ -1163,9 +1286,15 @@ class ExperimentRunner:
                         pass
 
         if candidate_states_list:
+            method_params = getattr(self.config, "method_params", None) or {}
+            use_target_line = bool(method_params.get("use_target_line", False))
+            num_targets = int(method_params.get("num_targets", 4))
             modes_metrics = self._compute_modes_metrics(
                 candidate_states_list, env, obstacles, constraints, env_plugin,
                 robot_radius, success_margin,
+                use_target_line=use_target_line,
+                num_targets=num_targets,
+                num_modes=len(candidate_states_list),
             )
             if 'ssr' in modes_metrics:
                 metrics_result['ssr'] = modes_metrics['ssr']
@@ -1265,6 +1394,22 @@ class ExperimentRunner:
                     exec_violation_rates.append(vr)
                 metrics_result['execution_ssr']['violation_rate_mean'] = float(np.mean(exec_violation_rates)) if exec_violation_rates else 0.0
                 metrics_result['execution_ssr']['violation_rate_std'] = float(np.std(exec_violation_rates)) if len(exec_violation_rates) > 1 else 0.0
+                # Execution SSR only counts runs that are success & no collision & (effectively) zero violation
+                exec_success_pm = planning_result.get('exec_success_per_mode')
+                exec_collision_pm = planning_result.get('exec_collision_per_mode')
+                if (
+                    exec_success_pm is not None and exec_collision_pm is not None
+                    and len(exec_success_pm) == len(exec_states_list)
+                    and len(exec_violation_rates) == len(exec_states_list)
+                ):
+                    violation_threshold = 1e-9
+                    exec_ssr_count = sum(
+                        1 for i in range(len(exec_states_list))
+                        if exec_success_pm[i] and not exec_collision_pm[i] and exec_violation_rates[i] < violation_threshold
+                    )
+                    n_exec_total = len(exec_states_list)
+                    metrics_result['execution_ssr']['execution_ssr'] = float(exec_ssr_count) / max(1, n_exec_total)
+                    metrics_result['execution_ssr']['execution_ssr_count'] = int(exec_ssr_count)
         return metrics_result
 
     def _generate_visualizations(self, result: Dict[str, Any], env: Any, 
@@ -2147,6 +2292,10 @@ class ExperimentRunner:
                 'best_idx': best_idx,
                 'candidate_states': convert_to_json_serializable(candidate_states),
             }
+            # Optional per-mode goal assignment metadata (useful for multi-target debugging).
+            for k in ("candidate_goals_xy", "candidate_goals_idx", "use_target_line", "num_targets"):
+                if k in planning_result and planning_result.get(k) is not None:
+                    trajectory_json[k] = convert_to_json_serializable(planning_result.get(k))
             if candidate_actions:
                 trajectory_json['candidate_actions'] = convert_to_json_serializable(candidate_actions)
             if len(candidate_costs) > 0:
@@ -2157,6 +2306,30 @@ class ExperimentRunner:
             trajectory_dir.mkdir(parents=True, exist_ok=True)
             with open(trajectory_dir / "trajectory.json", 'w') as f:
                 json.dump(trajectory_json, f, indent=2)
+
+        # Save lifted 9D trajectory for 4D D3IL runs when available.
+        if isinstance(planning_result, dict) and (
+            "states_9d" in planning_result or ("info" in planning_result and isinstance(planning_result.get("info"), dict) and "states_9d" in planning_result.get("info", {}))
+        ):
+            info_dict = planning_result.get("info", {}) if isinstance(planning_result.get("info"), dict) else {}
+            states_9d = planning_result.get("states_9d", info_dict.get("states_9d", []))
+            actions_9d = planning_result.get("actions_9d", info_dict.get("actions_9d", []))
+            if states_9d:
+                trajectory_dir = output_path / "trajectory"
+                trajectory_dir.mkdir(parents=True, exist_ok=True)
+                lifted_json = {
+                    "state_layout": "[x, y, q1..q7]",
+                    "action_layout": "[qdot1..qdot7]",
+                    "states": convert_to_json_serializable(states_9d),
+                    "actions": convert_to_json_serializable(actions_9d),
+                    # Backward-compatible aliases.
+                    "state_layout_9d": "[x, y, q1..q7]",
+                    "action_layout_9d": "[qdot1..qdot7]",
+                    "states_9d": convert_to_json_serializable(states_9d),
+                    "actions_9d": convert_to_json_serializable(actions_9d),
+                }
+                with open(trajectory_dir / "trajectory_9d.json", "w") as f:
+                    json.dump(lifted_json, f, indent=2)
 
         # Multirun diagnostics (architecture performance visibility)
         # These keys are produced by the solver when using the minimal-batch multirun path.
@@ -2253,6 +2426,13 @@ class ExperimentRunner:
                         'geometric_smoothness': float(np.mean(gs_b)),
                         'geometric_smoothness_std': float(np.std(gs_b)) if n_b > 1 else 0.0,
                     }
+                    # Per-level aggregate over all seeds (same as best when one best per seed; explicit for clarity)
+                    summary['length'] = float(np.mean(len_b))
+                    summary['length_std'] = float(np.std(len_b)) if n_b > 1 else 0.0
+                    summary['smoothness'] = float(np.mean(sm_b))
+                    summary['smoothness_std'] = float(np.std(sm_b)) if n_b > 1 else 0.0
+                    summary['geometric_smoothness'] = float(np.mean(gs_b))
+                    summary['geometric_smoothness_std'] = float(np.std(gs_b)) if n_b > 1 else 0.0
                 
                 level_summaries[f'level_{level}'] = summary
                 
@@ -2295,4 +2475,3 @@ class ExperimentRunner:
         # Save overall summary
         with open(self.config.output_dir / "overall_summary.json", 'w') as f:
             json.dump(overall_summary, f, indent=2)
-

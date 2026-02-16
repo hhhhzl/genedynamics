@@ -26,6 +26,9 @@ class D3ILAvoidingConfig:
     # The D3IL avoiding controller expects a 7D action:
     # [x_des, y_des, z_fixed, quat_wxyz(4)]
     quat_wxyz: Tuple[float, float, float, float] = (0.0, 1.0, 0.0, 0.0)
+    obstacle_level: Optional[int] = None
+    obstacle_radius_by_level: Optional[Dict[int, list]] = None
+    obstacles: Any = None
 
 
 class D3ILAvoidingEnv:
@@ -51,6 +54,9 @@ class D3ILAvoidingEnv:
         spec_cfg = D3ILAvoidingSpecConfig(
             render=bool(self.config.render),
             quat_wxyz=self.config.quat_wxyz,
+            obstacle_level=self.config.obstacle_level,
+            obstacle_radius_by_level=self.config.obstacle_radius_by_level,
+            obstacles=self.config.obstacles,
         )
         self._task_env = D3ILTaskEnv(D3ILAvoidingSpec(spec_cfg))
 
@@ -115,3 +121,24 @@ class D3ILAvoidingEnv:
             raise AttributeError("Underlying D3IL env has no robot_state")
         return inner_env.robot_state()
 
+    def robot_state_9d(self) -> Optional[np.ndarray]:
+        """
+        Return 9D state [x, y, q1..q7] for 3D visualization (trajectory_best_exec_3d.gif).
+        Uses current_c_pos[:2] and current_j_pos from the underlying sim robot.
+        """
+        self._task_env._lazy_init()
+        inner_env = getattr(self._task_env, "_env", None)
+        if inner_env is None or not hasattr(inner_env, "robot"):
+            return None
+        robot = getattr(inner_env, "robot", None)
+        if robot is None:
+            return None
+        c_pos = getattr(robot, "current_c_pos", None)
+        j_pos = getattr(robot, "current_j_pos", None)
+        if c_pos is None or j_pos is None:
+            return None
+        c_pos = np.asarray(c_pos, dtype=np.float32).reshape(-1)
+        j_pos = np.asarray(j_pos, dtype=np.float32).reshape(-1)
+        if c_pos.size < 2 or j_pos.size < 7:
+            return None
+        return np.concatenate([c_pos[:2], j_pos[:7]], axis=0).astype(np.float32)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import copy
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Iterable, Tuple
 
 import numpy as np
 
@@ -57,11 +57,28 @@ class AvoidingDPCCAdapter:
         trajectory_dim: int,
         action_dim: int,
         act_obs_indices: Dict[str, int],
+        runtime_obstacles=None,
+        runtime_obstacle_config: Dict[str, Any] | None = None,
+        align_with_framework: bool = True,
+        disable_halfspace_when_aligned: bool = True,
     ):
-        constraint_types = self._resolve_config("constraint_types", exp=exp, robot_name=robot_name, default=[])
+        constraint_types = list(
+            self._resolve_config("constraint_types", exp=exp, robot_name=robot_name, default=[])
+        )
         polytopic_constraints, obstacle_constraints = self._select_avoiding_constraints(
             exp=exp, halfspace_variant=halfspace_variant
         )
+        runtime_constraints = []
+        if align_with_framework:
+            runtime_constraints = self._runtime_obstacle_constraints(
+                runtime_obstacles, runtime_obstacle_config
+            )
+            if runtime_constraints:
+                obstacle_constraints = runtime_constraints
+                if "obstacles" not in constraint_types:
+                    constraint_types.append("obstacles")
+                if disable_halfspace_when_aligned and "halfspace" in constraint_types:
+                    constraint_types = [c for c in constraint_types if c != "halfspace"]
         bounds = self._resolve_config("bounds", exp=exp, robot_name=robot_name, default=[])
         enlarge_constraints = self._resolve_config(
             "enlarge_constraints", exp=exp, robot_name=robot_name, default=0.0
@@ -152,6 +169,7 @@ class AvoidingDPCCAdapter:
             "lower_bound": lower_bound,
             "upper_bound": upper_bound,
             "obstacle_constraints": obstacle_constraints,
+            "obstacle_constraints_source": "framework" if runtime_constraints else "dpcc_config",
             "enlarge_constraints": enlarge_constraints,
             "polytopic_constraints": polytopic_constraints,
             "halfspace_variant": halfspace_variant,
@@ -167,19 +185,34 @@ class AvoidingDPCCAdapter:
             # - most other entries are keyed by exp (e.g. "avoiding-d3il")
             if key in {"dt", "enlarge_constraints"}:
                 return value.get(robot_name, default)
-            return value.get(exp, default)
+            for exp_key in self._exp_candidates(exp):
+                if exp_key in value:
+                    return value[exp_key]
+            return default
         return value
+
+    def _exp_candidates(self, exp: str):
+        candidates = [exp]
+        if exp.endswith("-9d"):
+            candidates.append(exp[:-3])  # fallback: avoiding-d3il-9d -> avoiding-d3il
+        return candidates
 
     def _get_halfspace_list(self, exp: str):
         all_constraints = self.config.get("halfspace_constraints", {})
         if isinstance(all_constraints, dict):
-            return all_constraints.get(exp, [])
+            for exp_key in self._exp_candidates(exp):
+                if exp_key in all_constraints:
+                    return all_constraints[exp_key]
+            return []
         return all_constraints or []
 
     def _get_obstacle_list(self, exp: str):
         all_constraints = self.config.get("obstacle_constraints", {})
         if isinstance(all_constraints, dict):
-            return all_constraints.get(exp, [])
+            for exp_key in self._exp_candidates(exp):
+                if exp_key in all_constraints:
+                    return all_constraints[exp_key]
+            return []
         return all_constraints or []
 
     def _select_avoiding_constraints(
@@ -207,3 +240,40 @@ class AvoidingDPCCAdapter:
 
         # Default: no special slicing
         return polytopic_all, obstacles_all
+
+    def _runtime_obstacle_constraints(self, obstacles, obstacle_config: Dict[str, Any] | None) -> list:
+        """
+        Convert framework obstacles to DPCC sphere constraints.
+        """
+        if obstacles is None:
+            return []
+        robot_radius = 0.0
+        if isinstance(obstacle_config, dict):
+            robot_radius = float(obstacle_config.get("robot_radius", 0.0) or 0.0)
+
+        obstacle_list = self._iter_obstacles(obstacles)
+        runtime_constraints = []
+        for obs in obstacle_list:
+            center = getattr(obs, "center", None)
+            radius = getattr(obs, "radius", None)
+            if center is None or radius is None:
+                continue
+            center_arr = np.asarray(center, dtype=np.float32).reshape(-1)
+            if center_arr.size < 2:
+                continue
+            runtime_constraints.append(
+                {
+                    "type": "sphere_outside",
+                    "dimensions": ["x", "y"],
+                    "center": [float(center_arr[0]), float(center_arr[1])],
+                    "radius": float(radius) + robot_radius,
+                }
+            )
+        return runtime_constraints
+
+    def _iter_obstacles(self, obstacles) -> Iterable:
+        if hasattr(obstacles, "obstacles"):
+            return getattr(obstacles, "obstacles") or []
+        if isinstance(obstacles, (list, tuple)):
+            return obstacles
+        return []

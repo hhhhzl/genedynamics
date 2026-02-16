@@ -106,6 +106,8 @@ class CFSMBDSolver(SamplingSolver):
                 diversity_eta=float(diversity_eta),
                 diversity_topK_cand=int(diversity_topK_cand) if diversity_topK_cand is not None else None,
                 diversity_use_state=bool(diversity_use_state),
+                use_target_line=bool(kwargs.get("use_target_line", False)),
+                num_targets=int(kwargs.get("num_targets", 4)),
             )
         )
 

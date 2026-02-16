@@ -2,6 +2,7 @@
 write_to_file: False
 exps: [
   'avoiding-d3il',
+  'avoiding-d3il-9d',
   ]
 seeds: [5, 1, 2, 3, 4]
 avoiding_halfspace_variants: [
@@ -13,13 +14,18 @@ n_trials: 2
 
 dt: {
   'avoiding': 1,    # Since a = [delta_x, delta_y] and not [vx, vy]
+  'avoiding_9d': 0.035,  # 9D: qdot integration step (s)
 }
 observation_indices: {
   'avoiding': {'x_des': 0, 'y_des': 1, 'x': 2, 'y': 3},
+  # 9D with target: [x_des, y_des, x, y, q1..q7] (11D, goal-conditioned like 4D)
+  'avoiding_9d': {'x_des': 0, 'y_des': 1, 'x': 2, 'y': 3, 'q1': 4, 'q2': 5, 'q3': 6, 'q4': 7, 'q5': 8, 'q6': 9, 'q7': 10},
 }
 
 action_indices: {
   'avoiding': {'vx': 0, 'vy': 1},
+  # 9D action ordering: [qdot1..qdot7]
+  'avoiding_9d': {'qdot1': 0, 'qdot2': 1, 'qdot3': 2, 'qdot4': 3, 'qdot5': 4, 'qdot6': 5, 'qdot7': 6},
 }
 
 # Policy
@@ -67,6 +73,12 @@ halfspace_constraints: {
     [[0.8, -0.3], [0.575, 0.5], 'below'],   # easier (\ shape)
     [[0.2, -0.3], [0.425, 0.5], 'below'],   # easier (/ shape)
     ],
+  'avoiding-d3il-9d': [
+    [[0.8, -0.5], [0.4, 0.5], 'below'],
+    [[0.2, -0.5], [0.6, 0.5], 'below'],
+    [[0.8, -0.3], [0.575, 0.5], 'below'],
+    [[0.2, -0.3], [0.425, 0.5], 'below'],
+    ],
 }
 obstacle_constraints: {
   'avoiding-d3il': [
@@ -77,6 +89,14 @@ obstacle_constraints: {
     {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.4, 0.08], 'radius': 0.08},  # second row, left obstacle larger
     {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.6, 0.08], 'radius': 0.08},  # second row, right obstacle larger
     {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.09], 'radius': 0.08},  # first row obstacle larger
+  ],
+  'avoiding-d3il-9d': [
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.4, 0.08], 'radius': 0.06},
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.6, 0.08], 'radius': 0.06},
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.1], 'radius': 0.06},
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.4, 0.08], 'radius': 0.08},
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.6, 0.08], 'radius': 0.08},
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.09], 'radius': 0.08},
   ]
 }
 bounds: {   # need to be within the limits of the dataset due to the normalization
@@ -85,6 +105,10 @@ bounds: {   # need to be within the limits of the dataset due to the normalizati
     {'type': 'upper', 'dimensions': ['vx', 'vy'], 'values': [0.01, 0.01]},
     {'type': 'lower', 'dimensions': ['vx', 'vy'], 'values': [-0.012, 0]},
     {'type': 'upper', 'dimensions': ['vx', 'vy'], 'values': [0.012, 0.012]},
+  ],
+  'avoiding-d3il-9d': [
+    {'type': 'lower', 'dimensions': ['qdot1', 'qdot2', 'qdot3', 'qdot4', 'qdot5', 'qdot6', 'qdot7'], 'values': [-1.5, -1.5, -1.5, -1.5, -1.5, -1.5, -1.5]},
+    {'type': 'upper', 'dimensions': ['qdot1', 'qdot2', 'qdot3', 'qdot4', 'qdot5', 'qdot6', 'qdot7'], 'values': [1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5]},
   ],
 }
 
