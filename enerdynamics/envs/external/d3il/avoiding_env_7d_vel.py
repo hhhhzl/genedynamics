@@ -328,14 +328,17 @@ class D3ILAvoiding7dVelSpec(D3ILTaskSpec):
                 extra["collision"] = bool(env.check_failure()) if hasattr(env, "check_failure") else False
             except Exception:
                 extra["collision"] = False
-        # Only treat as success/done when within success_distance_threshold (e.g. 2*robot_radius)
+        # Success: (1) within point threshold, or (2) D3IL line task: y >= target_y - margin (over the line)
         dist_to_target = float(np.linalg.norm(np.asarray(next_state[:2], dtype=np.float64) - np.asarray(self.target, dtype=np.float64)))
-        if dist_to_target > self.success_distance_threshold:
-            done = False
-            extra["success"] = False
-        else:
+        target_y = float(np.asarray(self.target, dtype=np.float64).reshape(-1)[1])
+        line_margin = 0.02
+        over_line = float(next_state[1]) >= target_y - line_margin
+        if dist_to_target <= self.success_distance_threshold or over_line:
             done = True
             extra["success"] = True
+        else:
+            done = False
+            extra["success"] = False
         info = {"obs_xy": next_state[:2], **extra}
         return next_state, cost, bool(done), ctx, info
 
@@ -434,6 +437,32 @@ class D3ILAvoiding7dVelEnv:
                 x = self._task_env.transition(x, u)
             traj.append(np.asarray(x, dtype=np.float32))
         return np.stack(traj, axis=0)
+
+    def forward_kinematics_xy(self, q: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Return tcp (x,y) from joint positions q (7D) using the underlying robot FK.
+
+        This is used to make planned 9D trajectories kinematically consistent:
+        tcp_xy := FK(q) rather than the diffusion/projection observation's tcp_xy.
+        """
+        try:
+            self._task_env._lazy_init()
+            inner = getattr(self._task_env, "_env", None)
+            if inner is None or not hasattr(inner, "robot"):
+                return None
+            robot = inner.robot
+            if not hasattr(robot, "getForwardKinematics"):
+                return None
+            q = np.asarray(q, dtype=np.float32).reshape(-1)
+            if q.size != 7:
+                return None
+            pos, _quat = robot.getForwardKinematics(q)
+            pos = np.asarray(pos, dtype=np.float32).reshape(-1)
+            if pos.size < 2:
+                return None
+            return pos[:2].copy()
+        except Exception:
+            return None
 
     def get_jacobian_xy(self, state: np.ndarray) -> Optional[np.ndarray]:
         """

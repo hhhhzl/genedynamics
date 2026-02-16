@@ -1,7 +1,7 @@
 # CFS-MBD full trajectory QP with ALM adaptive constraint scheduling
 # Same as cfsmbd_full but uses alm_adaptive scheduler (residual-driven lambda/rho + QP effort).
-name: single2d_cfsmbd_full_adaptive
-output_dir: results/single2d/cfsmbd_full_adaptive
+name: single2d_mdcoas
+output_dir: results/single2d/mdcoas
 
 env_name: single_integrator_box_2d
 env_params:
@@ -137,7 +137,7 @@ scheduler_config:
       M_k: 64
       T_k: 5e-1
       Ndiffuse: 100
-      beta0: 1.0e-5
+      beta0: 1e-5
       betaT: 1e-2
   constraint_merge_strategy: merge
   diffusion_merge_strategy: merge
