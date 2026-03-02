@@ -13,14 +13,16 @@ different task objectives and constraints.
 
 from genedynamics.core.energy.base import EnergyFunctional
 from genedynamics.core.energy.legacy import (
-    LegacyEnergyFunctional,
     EnergyTerm,
+    EnergyToLegacyAdapter,
+    LegacyEnergyFunctional,
     trajectory_energy_from_legacy,
 )
 
 __all__ = [
     "EnergyFunctional",
-    "LegacyEnergyFunctional",
     "EnergyTerm",
+    "EnergyToLegacyAdapter",
+    "LegacyEnergyFunctional",
     "trajectory_energy_from_legacy",
 ]

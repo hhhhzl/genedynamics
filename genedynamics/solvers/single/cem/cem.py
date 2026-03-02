@@ -20,7 +20,7 @@ from genedynamics.core.energy import EnergyFunctional, LegacyEnergyFunctional
 from genedynamics.core.backends import Backend
 from genedynamics.core.backends.runtime import RuntimeBackendManager
 from genedynamics.core.types import State, Trajectory
-from genedynamics.solvers.single.edoc import EnergyToLegacyAdapter
+from genedynamics.core.energy import EnergyToLegacyAdapter
 
 # Optional solver registry (mirrors EDOC style)
 try:

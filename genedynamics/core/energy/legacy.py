@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, Iterable, Tuple
 
 import numpy as np
 
+from genedynamics.core.dynamics.base import DynamicsModel
 from genedynamics.core.energy.base import EnergyFunctional
 from genedynamics.core.types import Trajectory
 
@@ -91,5 +92,28 @@ def trajectory_energy_from_legacy(legacy_energy: LegacyEnergyFunctional) -> Ener
             # This is a simple wrapper - more sophisticated decomposition
             # would require refactoring the legacy energy terms
             return 0.0
-    
+
     return WrappedEnergy()
+
+
+class EnergyToLegacyAdapter:
+    """
+    Converts a trajectory-based EnergyFunctional to point-wise LegacyEnergyFunctional.
+
+    Used by MBD, EB-MBD, MPPI, MDOC, CEM, CFSMBD solvers whose backends expect
+    the legacy (x, u) -> scalar interface.
+    """
+
+    def __init__(self, energy: EnergyFunctional, dynamics: DynamicsModel):
+        self._energy = energy
+        self._dynamics = dynamics
+        self.legacy_energy = self._build_legacy()
+
+    def _build_legacy(self) -> LegacyEnergyFunctional:
+        def step_energy(x: Array, u: Array, info: Dict[str, Any] | None) -> Array:
+            info = info or {}
+            x_next = self._dynamics.step(x, u)
+            traj = Trajectory(states=[x, x_next], actions=[u], info=info)
+            return float(self._energy.total_energy(traj))
+
+        return LegacyEnergyFunctional({"total": EnergyTerm(step_energy, 1.0)})
