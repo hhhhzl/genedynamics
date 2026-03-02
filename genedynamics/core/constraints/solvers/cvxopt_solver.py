@@ -288,14 +288,14 @@ class CVXOPTSolver(QPSolver):
         w = float(max(0.0, smoothness_weight))
         
         # Build Hessian: P = I + w * (D2^T D2) kron I_dim
-        # Use scipy.sparse (aligned with legacy NumPy implementation)
+        # Use scipy.sparse for consistent NumPy behavior
         if not SCIPY_AVAILABLE:
             raise RuntimeError("scipy.sparse not available. Install scipy to use CVXOPTSolver with smoothness.")
         
         P = sp.eye(n, format="csc", dtype=np.float64)
         if w > 0.0 and T >= 3:
             # Build second-difference operator D2: (T-2) x T
-            # Pattern: [1, -2, 1] per row (aligned with legacy)
+            # Pattern: [1, -2, 1] per row
             r = []
             c = []
             d = []
@@ -313,7 +313,7 @@ class CVXOPTSolver(QPSolver):
         q = -x_nom.astype(np.float64)
         
         # Build equality constraints for fixing initial state (if enabled)
-        # Align with legacy implementation: A_eq x = b_eq where A_eq = [I_dim, 0, 0, ...]
+        # Equality constraint: A_eq x = b_eq where A_eq = [I_dim, 0, 0, ...]
         A_eq_np = None
         b_eq_np = None
         if fix_initial_state and initial_state is not None:
@@ -409,7 +409,7 @@ class CVXOPTSolver(QPSolver):
     def _coo_to_cvx_spmatrix(
         data: np.ndarray, row: np.ndarray, col: np.ndarray, shape: Tuple[int, int]
     ):
-        """Convert scipy sparse COO matrix to cvxopt sparse matrix (aligned with legacy)."""
+        """Convert scipy sparse COO matrix to cvxopt sparse matrix."""
         if cvxopt is None:
             raise RuntimeError("cvxopt is not available")
         try:

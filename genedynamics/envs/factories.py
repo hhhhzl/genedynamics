@@ -54,10 +54,10 @@ def make_env(name: str, **kwargs):
         if env_class is not None:
             return registry.create(name, **kwargs)
     except (ImportError, AttributeError):
-        # Registry not available, fall back to legacy hardcoded logic
+        # Registry not available, fall back to hardcoded logic
         pass
     
-    # Fallback to legacy hardcoded logic for backward compatibility
+    # Fallback to hardcoded logic for backward compatibility
     if name == "double_integrator_box":
         from genedynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
         return DoubleIntegratorBoxEnv(**kwargs)
@@ -145,13 +145,13 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
             # Use registry.create which handles factories automatically
             return registry.create(env_name)
     except (ImportError, AttributeError, TypeError):
-        # Registry not available or error, fall back to legacy hardcoded logic
+        # Registry not available or error, fall back to hardcoded logic
         pass
     except ValueError:
-        # Not found in registry, fall back to legacy
+        # Not found in registry, fall back to hardcoded defaults
         pass
     
-    # Fallback to legacy hardcoded logic for backward compatibility
+    # Fallback to hardcoded logic for backward compatibility
     if env_name == "double_integrator_box":
         def task_energy(x, u, ctx):
             pos = x[0]

@@ -78,10 +78,6 @@ constraints/
 │   ├── osqp_solver.py       # OSQP solver (NumPy)
 │   └── closed_form.py       # Closed-form solver
 │
-└── legacy/                  # Legacy code (backward compatibility)
-    ├── action_filters/      # Legacy CBF action filters
-    ├── projections/         # Legacy CFS projections
-    └── MIGRATION_GUIDE.md   # Migration guide from legacy to new architecture
 ```
 
 ## Quick Start
@@ -217,29 +213,9 @@ pipeline = HighPerformanceConstraintPipeline(
 
 Priority order: JAX > NumPy > PyTorch > Rust
 
-## Migration from Legacy
+## Legacy Removal
 
-See `legacy/MIGRATION_GUIDE.md` for detailed migration instructions.
-
-### Quick Migration
-
-1. **Replace `ConstraintManager`** with `HighPerformanceConstraintPipeline`
-2. **Replace `CFSProjection`** with `CFSConvexifier` + `PerStepQPFilter`
-3. **Replace `CBFDoubleIntegrator2DActionFilter`** with `CBFConvexifier` + `PerStepQPFilter`
-4. **Replace `ConstraintScheduleManager`** with `CosineAnnealScheduler`
-
-### Legacy Components
-
-Legacy components are still available for backward compatibility:
-
-```python
-# Legacy imports (still work, but deprecated)
-from genedynamics.core.constraints.legacy import (
-    CFSProjection,
-    CBFDoubleIntegrator2DActionFilter,
-    ConstraintScheduleManager
-)
-```
+Legacy constraint components have been removed. Use the pipeline APIs in this document.
 
 ## Testing
 

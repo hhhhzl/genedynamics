@@ -50,7 +50,6 @@ class SafeDiffuserSolver(SamplingSolver):
         goal_xy: Optional[np.ndarray] = None,
         device: str = "cuda",
         seed: int = 0,
-        constraint_manager: Any = None,
         constraint_pipeline: Any = None,
         **kwargs: Any,
     ):
@@ -62,7 +61,6 @@ class SafeDiffuserSolver(SamplingSolver):
         self.goal_xy = goal_xy
         self.device = device
         self.seed = int(seed)
-        self.constraint_manager = constraint_manager
         self.constraint_pipeline = constraint_pipeline
 
         self._backend_impl: SafeDiffuserBackendTorch | None = None
@@ -82,7 +80,6 @@ class SafeDiffuserSolver(SamplingSolver):
                 device=str(self.device),
                 seed=self.seed,
                 goal_xy=self.goal_xy,
-                constraint_manager=self.constraint_manager,
                 constraint_pipeline=self.constraint_pipeline,
             )
         return self._backend_impl

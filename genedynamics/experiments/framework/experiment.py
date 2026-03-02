@@ -26,7 +26,7 @@ from genedynamics.core.backends.runtime import RuntimeBackendManager
 
 from .config import ExperimentConfig
 from .registry import PluginRegistry
-from ..common.constraints import create_constraint_manager, create_constraint_pipeline
+from ..common.constraints import create_constraint_pipeline
 
 
 def convert_to_json_serializable(obj: Any) -> Any:
@@ -205,14 +205,7 @@ class ExperimentRunner:
             method_params=self.config.method_params,
         )
         
-        # Also create legacy constraint_manager for backward compatibility
-        # (only if explicitly requested or if pipeline is None)
-        constraint_manager = None
-        if constraint_config.get('use_legacy', False) or constraint_pipeline is None:
-            constraint_manager = create_constraint_manager(
-                obstacles, level, env, constraint_config, self.config.backend,
-                obstacle_config=self.config.obstacle_config,
-            )
+        # Legacy constraint_manager removed; rely on pipeline only.
         
         # 7. Create scheduler (if configured)
         scheduler = None
@@ -230,7 +223,6 @@ class ExperimentRunner:
         method_plugin = self.registry.get_plugin('method', self.config.method)
         method_config = {
             **self.config.method_params,
-            'constraint_manager': constraint_manager,  # Legacy (for backward compatibility)
             'constraint_pipeline': constraint_pipeline,  # New architecture (preferred)
             'scheduler': scheduler,  # New scheduler system
             'obstacles': obstacles,  # Provide obstacles to methods that can use fast SDF (e.g., EB-MBD)
@@ -271,14 +263,7 @@ class ExperimentRunner:
                 if planner._backend_impl.use_jit:
                     needs_warmup = True
             
-            # Also check if constraint manager uses JIT
-            if not needs_warmup and constraint_manager is not None:
-                if hasattr(constraint_manager, 'feasibility_operator'):
-                    feas_op = constraint_manager.feasibility_operator
-                    if feas_op is not None:
-                        if hasattr(feas_op, '_backend_impl') and hasattr(feas_op._backend_impl, 'use_jit'):
-                            if feas_op._backend_impl.use_jit:
-                                needs_warmup = True
+            # Constraint pipeline warmup is handled by planner/backends if needed.
         
         if needs_warmup:
             try:
@@ -324,7 +309,7 @@ class ExperimentRunner:
                         act_arr = np.asarray(acts, dtype=np.float32)
                         result['executed_actions'] = [act_arr[i] for i in range(act_arr.shape[0])] if act_arr.ndim >= 2 else [act_arr]
                 best_idx = self._compute_best_idx_from_candidates(
-                    list(cand_states), np.asarray(cand_costs), env, obstacles, constraint_manager,
+                    list(cand_states), np.asarray(cand_costs), env, obstacles,
                     env_plugin, robot_radius, success_margin,
                 )
                 result['best_idx'] = best_idx
@@ -586,7 +571,7 @@ class ExperimentRunner:
 
         # 10. Compute metrics
         metrics = self._compute_metrics(
-            trajectory, env, obstacles, constraint_manager, level,
+            trajectory, env, obstacles, constraint_pipeline, level,
             env_plugin=env_plugin, planning_result=result, planning_time=planning_time,
         )
         
@@ -605,9 +590,7 @@ class ExperimentRunner:
                     num_primitives_total += 1
         
         # Check if CFS is enabled
-        cfs_enabled = False
-        if constraint_manager and constraint_manager.feasibility_operator is not None:
-            cfs_enabled = True
+        cfs_enabled = bool(constraint_pipeline is not None)
         
         experiment_result = {
             'level': level,
@@ -975,7 +958,6 @@ class ExperimentRunner:
         candidate_costs: np.ndarray,
         env: Any,
         obstacles: Any,
-        constraints: Any,
         env_plugin: Any,
         robot_radius: float,
         success_margin: float,
@@ -1968,7 +1950,7 @@ class ExperimentRunner:
                     candidate_states_for_cost.append([np.asarray(s, dtype=np.float32) for s in states])
                 if len(candidate_states_for_cost) == M_rows:
                     best_idx = self._compute_best_idx_from_candidates(
-                        candidate_states_for_cost, final_costs, env, obstacles, None,
+                        candidate_states_for_cost, final_costs, env, obstacles,
                         env_plugin, robot_radius, success_margin,
                     )
                 else:

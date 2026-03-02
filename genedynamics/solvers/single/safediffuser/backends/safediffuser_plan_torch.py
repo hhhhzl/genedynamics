@@ -32,7 +32,6 @@ class SafeDiffuserBackendTorch:
         device: str = "cuda",
         seed: int = 0,
         goal_xy: Optional[np.ndarray] = None,
-        constraint_manager: Any = None,
         constraint_pipeline: Any = None,
     ):
         self.env = env
@@ -42,7 +41,6 @@ class SafeDiffuserBackendTorch:
         self.device = device
         self.seed = int(seed)
         self.goal_xy = None if goal_xy is None else np.asarray(goal_xy, dtype=np.float32).reshape(2)
-        self.constraint_manager = constraint_manager
         self.constraint_pipeline = constraint_pipeline
         self.native_9d: bool = bool(self.plan_config.get("native_9d", False))
 
@@ -75,7 +73,7 @@ class SafeDiffuserBackendTorch:
         if not self.use_framework_constraints:
             return states_list, actions_list, {"framework_constraint_impl": "disabled"}
 
-        if self.constraint_pipeline is None and self.constraint_manager is None:
+        if self.constraint_pipeline is None:
             return states_list, actions_list, {"framework_constraint_impl": "none"}
 
         if len(states_list) < 2 or len(actions_list) < 1:
@@ -95,30 +93,17 @@ class SafeDiffuserBackendTorch:
             repaired = nominal
             out_info: Dict[str, Any] = {}
 
-            if self.constraint_pipeline is not None:
-                from genedynamics.core.constraints.core.types import ScheduleState
+            from genedynamics.core.constraints.core.types import ScheduleState
 
-                repaired, pipe_info = self.constraint_pipeline.apply(
-                    nominal=nominal,
-                    ref=nominal,
-                    state=ScheduleState(k=0, K=1),
-                )
-                out_info["framework_constraint_impl"] = "constraint_pipeline"
-                out_info["framework_constraint_info_keys"] = (
-                    list(pipe_info.keys()) if isinstance(pipe_info, dict) else []
-                )
-            elif (
-                self.constraint_manager is not None
-                and hasattr(self.constraint_manager, "has_hard")
-                and self.constraint_manager.has_hard()
-            ):
-                repaired = self.constraint_manager.project_hard(
-                    nominal, step=0, total_steps=1
-                )
-                out_info["framework_constraint_impl"] = "constraint_manager_hard"
-            else:
-                out_info["framework_constraint_impl"] = "none_active"
-                return states_list, actions_list, out_info
+            repaired, pipe_info = self.constraint_pipeline.apply(
+                nominal=nominal,
+                ref=nominal,
+                state=ScheduleState(k=0, K=1),
+            )
+            out_info["framework_constraint_impl"] = "constraint_pipeline"
+            out_info["framework_constraint_info_keys"] = (
+                list(pipe_info.keys()) if isinstance(pipe_info, dict) else []
+            )
 
             repaired_states = [np.asarray(s, dtype=np.float32) for s in repaired.states]
             repaired_actions = [np.asarray(a, dtype=np.float32) for a in repaired.actions]

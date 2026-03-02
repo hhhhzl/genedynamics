@@ -201,7 +201,7 @@ class CFSJAXConvexifier(CFSConvexifier):
                 grad_fn = jax.vmap(jax.grad(sdf_fn_np))
                 grads_jax = grad_fn(positions)  # (H+1, 2)
         
-        # Build constraints like legacy: for each position, find all obstacles
+        # Build constraints: for each position, find all obstacles
         # and build constraints for obstacles within threshold
         clearance = params.margin  # This is the clearance (minimum distance)
         threshold = clearance + self.constraint_margin  # Threshold for selecting active obstacles

@@ -391,7 +391,7 @@ class HighPerformanceConstraintPipeline:
         params = self._get_params(state)
         
         # Check if we need iterative refinement (for CFS with TrajQPFilter)
-        # This matches legacy CFSProjection behavior
+        # Match prior CFS projection behavior
         needs_iteration = (
             hasattr(self.convexifier, '__class__') and 
             'cfs' in str(type(self.convexifier)).lower() and
@@ -400,7 +400,7 @@ class HighPerformanceConstraintPipeline:
         )
         
         if needs_iteration:
-            # Iterative refinement (like legacy CFSProjection)
+            # Iterative refinement (CFS-style)
             max_iterations = getattr(self.operator, 'max_iterations', 30)
             convergence_tol = getattr(self.operator, 'convergence_tol', 1e-6)
             
@@ -415,7 +415,7 @@ class HighPerformanceConstraintPipeline:
                 repaired, info = self.operator.apply(current, constraints, params, state)
                 all_info.append(info)
                 
-                # Check convergence (align with legacy: max_step < convergence_tol)
+                # Check convergence (max_step < convergence_tol)
                 if iteration > 0:
                     # Compute change in trajectory (max step size)
                     prev_positions = np.stack([np.asarray(s[:2], dtype=np.float32) for s in current.states])
@@ -423,7 +423,7 @@ class HighPerformanceConstraintPipeline:
                     max_step = float(np.max(np.linalg.norm(curr_positions - prev_positions, axis=1)))
                     
                     if max_step < convergence_tol:
-                        # Final feasibility check (align with legacy)
+                        # Final feasibility check
                         # Check if all points satisfy clearance requirement
                         if hasattr(self.convexifier, 'obstacles') and self.convexifier.obstacles is not None:
                             from genedynamics.core.constraints.core.types import ScheduleParams

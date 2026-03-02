@@ -847,7 +847,7 @@ class JAXOPTOsqpSolver(QPSolver):
         q = -x_nom_jax
         
         # Build equality constraints for fixing initial state (if enabled)
-        # Align with legacy implementation: A_eq x = b_eq where A_eq = [I_dim, 0, 0, ...]
+        # Use equality constraint: A_eq x = b_eq where A_eq = [I_dim, 0, 0, ...]
         A_eq = None
         b_eq = None
         if fix_initial_state and initial_state is not None:

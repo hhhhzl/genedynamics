@@ -113,7 +113,6 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
             goal_xy=goal_xy,
             device=device,
             seed=seed,
-            constraint_manager=config.get("constraint_manager"),
             constraint_pipeline=config.get("constraint_pipeline"),
         )
 

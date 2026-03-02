@@ -80,7 +80,7 @@ class TrajQPFilter(Operator):
             solver_class = registry.get("solver", "osqp", "numpy")
         else:
             # For numpy backend, try different solvers in order of preference
-            # Try cvxopt first (if available) - this matches legacy implementation
+            # Try cvxopt first (if available) for stable NumPy behavior
             solver_class = registry.get("solver", "cvxopt", "numpy")
             # If not available, try osqp
             if solver_class is None:
@@ -113,7 +113,7 @@ class TrajQPFilter(Operator):
                     print(f"Warning: Failed to import OSQPSolver: {e}")
                     self.solver = None
             else:
-                # For numpy backend, try cvxopt first (matches legacy implementation)
+                # For numpy backend, try cvxopt first for stability
                 try:
                     from genedynamics.core.constraints.solvers.cvxopt_solver import CVXOPTSolver
                     self.solver = CVXOPTSolver(**kwargs)
@@ -221,7 +221,7 @@ class TrajQPFilter(Operator):
             elif A.shape[1] == num_states * state_dim:
                 # A is (m, num_states*state_dim) - full trajectory state constraints
                 # For CFS, constraints are on positions (first pos_dim elements of each state)
-                # We should optimize positions directly, not actions (like legacy implementation)
+                # We should optimize positions directly, not actions (state-space constraints)
                 constraints_on_positions = True
                 optimize_positions = True
                 
@@ -238,7 +238,7 @@ class TrajQPFilter(Operator):
             elif A.shape[1] == H * state_dim:
                 # A is (m, H*state_dim) - state constraints (one per state, not including initial)
                 # This is the case for CFS constraints
-                # We should optimize positions directly, not actions (like legacy implementation)
+                # We should optimize positions directly, not actions (state-space constraints)
                 constraints_on_positions = True
                 optimize_positions = True
                 
@@ -277,7 +277,7 @@ class TrajQPFilter(Operator):
         u_star_flat = None  # Initialize for violation computation
         
         if optimize_positions:
-            # Optimize positions directly (like legacy implementation)
+            # Optimize positions directly for state-space constraints
             # x0 is flattened positions from states
             if A.shape[1] == num_states * pos_dim:
                 # Constraints on all states' positions (num_states * pos_dim)
@@ -307,7 +307,7 @@ class TrajQPFilter(Operator):
             else:
                 T = H
             
-            # Extract initial state for equality constraint (align with legacy)
+            # Extract initial state for equality constraint
             # Get initial position from nominal trajectory (not from current positions)
             # This ensures we fix the initial state to the original starting point
             initial_pos = None
@@ -322,7 +322,7 @@ class TrajQPFilter(Operator):
             pos_star_flat, info = self.solver.solve_traj_qp_with_smoothness(
                 pos_nom_flat, A_full, b, params.rho if self.use_slack else None,
                 T, pos_dim, self.smoothness_weight, self.use_slack,
-                fix_initial_state=True,  # Align with legacy: fix_initial_state=True
+                fix_initial_state=True,
                 initial_state=initial_pos,  # Pass initial state position
                 **self.kwargs
             )

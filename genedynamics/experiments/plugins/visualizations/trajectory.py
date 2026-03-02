@@ -133,7 +133,7 @@ class TrajectoryVisualizationPlugin(VisualizationPlugin):
                 )
                 ax.add_patch(robot_circle)
         else:
-            # Static or legacy partial
+            # Static or partial trajectory
             states_to_use = trajectory.states
             if partial_until_step is not None and not gif_style:
                 end_idx = min(partial_until_step + 1, len(trajectory.states))

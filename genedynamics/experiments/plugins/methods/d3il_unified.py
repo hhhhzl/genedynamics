@@ -12,7 +12,7 @@ from genedynamics.core.dynamics.adapters import EnvDynamicsAdapter
 
 
 class _ScaledStageEnergy:
-    """Wraps a legacy energy to scale stage (intermediate) cost by a constant."""
+    """Wraps an energy to scale stage (intermediate) cost by a constant."""
 
     def __init__(self, energy: Any, scale: float):
         self._energy = energy
