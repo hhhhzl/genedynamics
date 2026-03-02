@@ -11,7 +11,7 @@ Tests cover:
 import pytest
 import numpy as np
 
-from enerdynamics.envs.obstacles.convex import BoxObstacle, SphereObstacle
+from genedynamics.envs.obstacles.convex import BoxObstacle, SphereObstacle
 
 
 @pytest.mark.unit
@@ -23,7 +23,7 @@ class TestGymnasiumAdapter:
         """Test GymnasiumEnvAdapter creation."""
         try:
             import gymnasium as gym
-            from enerdynamics.envs.adapters.gymnasium_adapter import GymnasiumEnvAdapter
+            from genedynamics.envs.adapters.gymnasium_adapter import GymnasiumEnvAdapter
             
             # Create a simple Gymnasium environment
             gym_env = gym.make("CartPole-v1")
@@ -39,7 +39,7 @@ class TestGymnasiumAdapter:
         """Test GymnasiumEnvAdapter reset and step."""
         try:
             import gymnasium as gym
-            from enerdynamics.envs.adapters.gymnasium_adapter import GymnasiumEnvAdapter
+            from genedynamics.envs.adapters.gymnasium_adapter import GymnasiumEnvAdapter
             
             gym_env = gym.make("CartPole-v1")
             adapter = GymnasiumEnvAdapter(gym_env)
@@ -58,7 +58,7 @@ class TestGymnasiumAdapter:
         """Test GymnasiumEnvAdapter with obstacles."""
         try:
             import gymnasium as gym
-            from enerdynamics.envs.adapters.gymnasium_adapter import GymnasiumEnvAdapter
+            from genedynamics.envs.adapters.gymnasium_adapter import GymnasiumEnvAdapter
             
             gym_env = gym.make("CartPole-v1")
             obstacles = [
@@ -83,7 +83,7 @@ class TestBraxAdapter:
         """Test BraxEnvAdapter creation."""
         try:
             import brax
-            from enerdynamics.envs.adapters.brax_adapter import BraxEnvAdapter
+            from genedynamics.envs.adapters.brax_adapter import BraxEnvAdapter
             
             # Create a simple Brax environment
             brax_env = brax.envs.create("ant")
@@ -100,7 +100,7 @@ class TestBraxAdapter:
         try:
             import brax
             import jax
-            from enerdynamics.envs.adapters.brax_adapter import BraxEnvAdapter
+            from genedynamics.envs.adapters.brax_adapter import BraxEnvAdapter
             
             brax_env = brax.envs.create("ant")
             adapter = BraxEnvAdapter(brax_env)
@@ -124,10 +124,10 @@ class TestUnifiedAdapter:
     def test_unified_adapter_detection(self):
         """Test UnifiedEnvAdapter automatic detection."""
         try:
-            from enerdynamics.envs.adapters.unified_adapter import UnifiedEnvAdapter
+            from genedynamics.envs.adapters.unified_adapter import UnifiedEnvAdapter
             
             # Test with native environment
-            from enerdynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
+            from genedynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
             
             native_env = DoubleIntegratorBoxEnv()
             adapter = UnifiedEnvAdapter(native_env)
@@ -143,8 +143,8 @@ class TestUnifiedAdapter:
     def test_unified_adapter_obstacles(self):
         """Test UnifiedEnvAdapter with obstacles."""
         try:
-            from enerdynamics.envs.adapters.unified_adapter import UnifiedEnvAdapter
-            from enerdynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
+            from genedynamics.envs.adapters.unified_adapter import UnifiedEnvAdapter
+            from genedynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
             
             # Use 2D obstacles for 2D environment
             obstacles = [

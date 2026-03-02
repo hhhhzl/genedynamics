@@ -17,7 +17,7 @@ class TestComputationalBackends:
     
     def test_numpy_backend(self):
         """Test NumPy backend."""
-        from enerdynamics.core.backends import NumpyBackend
+        from genedynamics.core.backends import NumpyBackend
         
         backend = NumpyBackend()
         assert backend.name == "numpy"
@@ -34,7 +34,7 @@ class TestComputationalBackends:
     def test_jax_backend(self):
         """Test JAX backend."""
         try:
-            from enerdynamics.core.backends import JaxBackend
+            from genedynamics.core.backends import JaxBackend
             import jax.numpy as jnp
             
             backend = JaxBackend()
@@ -60,7 +60,7 @@ class TestPhysicsBackends:
     
     def test_dummy_physics_backend(self):
         """Test DummyPhysicsBackend."""
-        from enerdynamics.core.backends.physics import DummyPhysicsBackend
+        from genedynamics.core.backends.physics import DummyPhysicsBackend
         
         backend = DummyPhysicsBackend()
         assert backend.name == "dummy"
@@ -85,7 +85,7 @@ class TestPhysicsBackends:
     def test_mujoco_physics_backend(self):
         """Test MujocoPhysicsBackend."""
         try:
-            from enerdynamics.core.backends.adapters.mujoco_adapter import MujocoPhysicsBackend
+            from genedynamics.core.backends.adapters.mujoco_adapter import MujocoPhysicsBackend
             
             # Create simple model
             model_xml = """
@@ -115,7 +115,7 @@ class TestPhysicsBackends:
     def test_isaac_physics_backend(self):
         """Test IsaacSimBackend."""
         try:
-            from enerdynamics.core.backends.adapters.isaac_adapter import IsaacSimBackend
+            from genedynamics.core.backends.adapters.isaac_adapter import IsaacSimBackend
             
             # Note: Isaac Sim requires proper USD stage initialization
             # This test is a placeholder and may not work without proper setup
@@ -148,7 +148,7 @@ class TestRenderBackends:
     
     def test_null_renderer(self):
         """Test NullRenderer."""
-        from enerdynamics.core.backends.render_impl import NullRenderer
+        from genedynamics.core.backends.render_impl import NullRenderer
         
         renderer = NullRenderer()
         assert renderer.name == "null"
@@ -162,7 +162,7 @@ class TestRenderBackends:
     def test_matplotlib_renderer(self):
         """Test MatplotlibRenderer."""
         try:
-            from enerdynamics.core.backends.render_impl import MatplotlibRenderer
+            from genedynamics.core.backends.render_impl import MatplotlibRenderer
             
             renderer = MatplotlibRenderer()
             assert renderer.name == "matplotlib"
@@ -183,7 +183,7 @@ class TestRenderBackends:
         """Test GymnasiumRenderer."""
         try:
             import gymnasium as gym
-            from enerdynamics.core.backends.render_impl import GymnasiumRenderer
+            from genedynamics.core.backends.render_impl import GymnasiumRenderer
             
             gym_env = gym.make("CartPole-v1")
             gym_env.reset()  # Required before rendering
@@ -200,7 +200,7 @@ class TestRenderBackends:
     def test_isaac_renderer(self):
         """Test IsaacSimRenderer."""
         try:
-            from enerdynamics.core.backends.render_impl import IsaacSimRenderer
+            from genedynamics.core.backends.render_impl import IsaacSimRenderer
             
             # Note: Isaac Sim renderer requires proper Omniverse setup
             # This test is a placeholder and may not work without proper setup

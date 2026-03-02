@@ -32,12 +32,12 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
 
 def _build_env(env_name: str, render: bool):
     if env_name == "d3il_avoiding_9d":
-        from enerdynamics.experiments.plugins.environments.d3il_avoiding_9d import D3ILAvoiding9DPlugin
+        from genedynamics.experiments.plugins.environments.d3il_avoiding_9d import D3ILAvoiding9DPlugin
 
         return D3ILAvoiding9DPlugin().create_env({"render": render})
 
     if env_name == "d3il_avoiding":
-        from enerdynamics.experiments.plugins.environments.d3il_avoiding import D3ILAvoidingPlugin
+        from genedynamics.experiments.plugins.environments.d3il_avoiding import D3ILAvoidingPlugin
 
         return D3ILAvoidingPlugin().create_env({"render": render})
 
@@ -124,7 +124,7 @@ def main() -> None:
     parser.add_argument(
         "--dpcc-config-path",
         type=str,
-        default="enerdynamics/solvers/single/dpcc/config/projection_eval.yaml",
+        default="genedynamics/solvers/single/dpcc/config/projection_eval.yaml",
     )
     parser.add_argument("--save-json", type=str, default=None)
 
@@ -138,7 +138,7 @@ def main() -> None:
 
     try:
         import diffuser.utils as dpcc_utils
-        from enerdynamics.solvers.single.dpcc.backends.dpcc_plan_torch import DPCCBackendTorch
+        from genedynamics.solvers.single.dpcc.backends.dpcc_plan_torch import DPCCBackendTorch
 
         epoch: Any = args.epoch
         if args.epoch.isdigit():

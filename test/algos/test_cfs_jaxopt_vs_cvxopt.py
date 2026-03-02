@@ -9,11 +9,11 @@ import time
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from enerdynamics.core.constraints import CFSProjection
-from enerdynamics.core.backends.runtime import RuntimeBackendManager
-from enerdynamics.envs.obstacles.base import ObstacleManager
-from enerdynamics.envs.obstacles.convex import BoxObstacle
-from enerdynamics.core.types import Trajectory
+from genedynamics.core.constraints import CFSProjection
+from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.envs.obstacles.base import ObstacleManager
+from genedynamics.envs.obstacles.convex import BoxObstacle
+from genedynamics.core.types import Trajectory
 
 
 def test_cfs_with_solver(solver_name: str, use_jit: bool = False):

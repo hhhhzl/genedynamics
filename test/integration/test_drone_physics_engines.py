@@ -11,9 +11,9 @@ from pathlib import Path
 import tempfile
 import os
 
-from enerdynamics.envs.factories import make_env
-from enerdynamics.envs.obstacles.base import ObstacleManager
-from enerdynamics.envs.obstacles.convex import SphereObstacle, BoxObstacle
+from genedynamics.envs.factories import make_env
+from genedynamics.envs.obstacles.base import ObstacleManager
+from genedynamics.envs.obstacles.convex import SphereObstacle, BoxObstacle
 
 
 @pytest.mark.requires_mujoco
@@ -152,7 +152,7 @@ class TestModelGenerators:
     def test_mujoco_model_generator(self):
         """Test MuJoCo model generation."""
         try:
-            from enerdynamics.envs.utils.mujoco_model_generator import (
+            from genedynamics.envs.utils.mujoco_model_generator import (
                 create_base_quadrotor_xml,
                 generate_mujoco_xml_with_obstacles,
             )
@@ -190,7 +190,7 @@ class TestModelGenerators:
     def test_isaac_usd_generator(self):
         """Test Isaac Sim USD generation."""
         try:
-            from enerdynamics.envs.utils.isaac_usd_generator import (
+            from genedynamics.envs.utils.isaac_usd_generator import (
                 create_quadrotor_usd_with_obstacles,
             )
             
@@ -220,7 +220,7 @@ class TestStateConversion:
     
     def test_state_12d_to_mujoco(self):
         """Test 12D to MuJoCo state conversion."""
-        from enerdynamics.envs.utils.state_converter import (
+        from genedynamics.envs.utils.state_converter import (
             state_12d_to_mujoco,
             mujoco_to_state_12d,
         )
@@ -239,7 +239,7 @@ class TestStateConversion:
     
     def test_state_12d_to_isaac(self):
         """Test 12D to Isaac Sim state conversion."""
-        from enerdynamics.envs.utils.state_converter import (
+        from genedynamics.envs.utils.state_converter import (
             state_12d_to_isaac,
             isaac_to_state_12d,
         )
@@ -263,7 +263,7 @@ class TestJAXDynamics:
     def test_jax_quadrotor_step(self):
         """Test JAX quadrotor dynamics step."""
         try:
-            from enerdynamics.envs.utils.jax_dynamics import jax_quadrotor_step
+            from genedynamics.envs.utils.jax_dynamics import jax_quadrotor_step
             import jax.numpy as jnp
             
             state = jnp.zeros(12, dtype=jnp.float32)
@@ -284,7 +284,7 @@ class TestJAXDynamics:
     def test_jax_batch_computation(self):
         """Test batched JAX computation."""
         try:
-            from enerdynamics.envs.utils.jax_dynamics import jax_quadrotor_step_batch
+            from genedynamics.envs.utils.jax_dynamics import jax_quadrotor_step_batch
             import jax.numpy as jnp
             
             batch_size = 10

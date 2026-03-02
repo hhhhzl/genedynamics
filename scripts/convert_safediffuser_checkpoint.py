@@ -117,7 +117,7 @@ def _extract_model_kind(config_obj: Any) -> str:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Convert SafeDiffuser logdir to enerdynamics safediffuser checkpoint")
+    ap = argparse.ArgumentParser(description="Convert SafeDiffuser logdir to genedynamics safediffuser checkpoint")
     ap.add_argument("--input-dir", type=str, required=True, help="SafeDiffuser logdir containing *_config.pkl and state_*.pt")
     ap.add_argument("--output-dir", type=str, required=True, help="Output directory for converted checkpoint")
 

@@ -10,7 +10,7 @@ Each solver config file exports an Args dataclass with default parameters.
 Usage:
     from configs.double_integrator_box.edoc import EDOCArgs
     args = EDOCArgs(seed=42, horizon=100)
-    from enerdynamics.solvers.single.edoc import run_edoc
+    from genedynamics.solvers.single.edoc import run_edoc
     result = run_edoc(args)
 """
 

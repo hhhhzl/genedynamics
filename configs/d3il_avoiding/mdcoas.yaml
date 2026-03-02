@@ -150,4 +150,4 @@ visualizations:
 
 metadata:
   description: "MDCOAS traj QP on D3IL avoiding (joint-lift 7D qdot)"
-  author: "enerdynamics"
+  author: "genedynamics"

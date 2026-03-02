@@ -10,17 +10,17 @@ import time
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from enerdynamics.core.constraints.core import HighPerformanceConstraintPipeline, PipelineConfig
-from enerdynamics.core.constraints.convexify import CFSConvexifier
-from enerdynamics.core.constraints.operators.qp import TrajQPFilter
-from enerdynamics.core.constraints.schedulers import CosineAnnealScheduler
+from genedynamics.core.constraints.core import HighPerformanceConstraintPipeline, PipelineConfig
+from genedynamics.core.constraints.convexify import CFSConvexifier
+from genedynamics.core.constraints.operators.qp import TrajQPFilter
+from genedynamics.core.constraints.schedulers import CosineAnnealScheduler
 # Import solvers to ensure they are registered
-from enerdynamics.core.constraints.solvers import JAXOPTOsqpSolver, OSQPSolver, CVXOPTSolver
-from enerdynamics.core.backends.runtime import RuntimeBackendManager
-from enerdynamics.envs.obstacles.base import ObstacleManager
-from enerdynamics.envs.obstacles.convex import BoxObstacle
-from enerdynamics.core.types import Trajectory
-from enerdynamics.core.constraints.core.types import ScheduleState
+from genedynamics.core.constraints.solvers import JAXOPTOsqpSolver, OSQPSolver, CVXOPTSolver
+from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.envs.obstacles.base import ObstacleManager
+from genedynamics.envs.obstacles.convex import BoxObstacle
+from genedynamics.core.types import Trajectory
+from genedynamics.core.constraints.core.types import ScheduleState
 
 
 def test_cfs_pipeline_with_solver(solver_name: str, use_jit: bool = False):

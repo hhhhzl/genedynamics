@@ -3,18 +3,18 @@ Test script to verify CFS optimization improvements and compare numerical differ
 """
 import numpy as np
 import time
-from enerdynamics.solvers.single.edoc import EDOCPlanner
-from enerdynamics.envs.factories import make_env, make_energy
-from enerdynamics.core.constraints import (
+from genedynamics.solvers.single.edoc import EDOCPlanner
+from genedynamics.envs.factories import make_env, make_energy
+from genedynamics.core.constraints import (
     ConstraintManager,
     ObstacleSoftConstraint,
     ObstacleHardConstraint,
     CFSProjection,
     ConstraintScheduleManager,
 )
-from enerdynamics.core.backends.runtime import RuntimeBackendManager
-from enerdynamics.experiments.common.constraints import SpeedConstraint
-from enerdynamics.experiments.common.obstacle_generation import generate_box2d_obstacles
+from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.experiments.common.constraints import SpeedConstraint
+from genedynamics.experiments.common.obstacle_generation import generate_box2d_obstacles
 
 def analyze_trajectory(obstacles, states, actions, backend_name):
     """Analyze trajectory and return detailed statistics."""

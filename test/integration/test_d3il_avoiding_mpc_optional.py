@@ -19,10 +19,10 @@ def test_d3il_avoiding_edoc_mpc_optional():
 
     import jax
 
-    from enerdynamics.envs.external.d3il import D3ILAvoidingEnv, D3ILAvoidingConfig
-    from enerdynamics.envs.external.d3il.avoiding_plan_env import AvoidingPlanEnv, AvoidingPlanSpec
-    from enerdynamics.solvers.single.edoc import EDOCPlanner
-    from enerdynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
+    from genedynamics.envs.external.d3il import D3ILAvoidingEnv, D3ILAvoidingConfig
+    from genedynamics.envs.external.d3il.avoiding_plan_env import AvoidingPlanEnv, AvoidingPlanSpec
+    from genedynamics.solvers.single.edoc import EDOCPlanner
+    from genedynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
     import jax.numpy as jnp
 
     exec_env = D3ILAvoidingEnv(D3ILAvoidingConfig(render=False))

@@ -18,7 +18,7 @@ class TestRobotModelProtocol:
     
     def test_robot_model_interface(self):
         """Test RobotModel interface."""
-        from enerdynamics.envs.robots.base import RobotModel
+        from genedynamics.envs.robots.base import RobotModel
         
         # Check that protocol is defined
         assert hasattr(RobotModel, '__protocol_methods__') or hasattr(RobotModel, '__abstractmethods__')
@@ -34,7 +34,7 @@ class TestManipulatorModel:
         """Test ManipulatorModel with PyBullet backend."""
         try:
             import pybullet as p
-            from enerdynamics.envs.robots.manipulator import ManipulatorModel
+            from genedynamics.envs.robots.manipulator import ManipulatorModel
             
             # Note: This requires a URDF file
             # For testing, we just check that the class can be instantiated
@@ -50,7 +50,7 @@ class TestManipulatorModel:
         """Test ManipulatorModel with Pinocchio backend."""
         try:
             import pinocchio
-            from enerdynamics.envs.robots.manipulator import ManipulatorModel
+            from genedynamics.envs.robots.manipulator import ManipulatorModel
             
             # Note: This requires a URDF file
             print("⚠ Pinocchio ManipulatorModel test requires URDF file")
@@ -66,7 +66,7 @@ class TestDroneModel:
     def test_drone_model_creation(self):
         """Test DroneModel creation."""
         try:
-            from enerdynamics.envs.robots.drone import DroneModel
+            from genedynamics.envs.robots.drone import DroneModel
             
             drone = DroneModel()
             
@@ -79,7 +79,7 @@ class TestDroneModel:
     def test_drone_model_step(self):
         """Test DroneModel.step()."""
         try:
-            from enerdynamics.envs.robots.drone import DroneModel
+            from genedynamics.envs.robots.drone import DroneModel
             
             drone = DroneModel()
             
