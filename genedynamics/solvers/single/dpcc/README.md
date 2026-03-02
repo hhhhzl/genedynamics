@@ -78,7 +78,7 @@ All commands below are from repository root (`/home/lbw/mbd-project`).
 #### 4.1 Train 4D DPCC diffusion
 
 ```bash
-python scripts/dpcc_train.py \
+python -m genedynamics.solvers.single.dpcc.tools.train \
   --config-file configs/d3il_avoiding/dpcc_diffusion_train.py \
   --dataset avoiding-d3il \
   --device cuda
@@ -89,7 +89,7 @@ Default training config: `dpcc/config/avoiding-d3il.py`.
 #### 4.2 Train 9D DPCC diffusion (state `[x, y, q1..q7]`, action `[qdot1..qdot7]`)
 
 ```bash
-python scripts/dpcc_train_9d.py \
+python -m genedynamics.solvers.single.dpcc.tools.train_9d \
   --config-file configs/d3il_avoiding/dpcc_diffusion_train.py \
   --dataset avoiding-d3il-9d \
   --device cuda
@@ -121,7 +121,7 @@ python genedynamics/experiments/runner.py \
 Use the dedicated test script for 9D checkpoints:
 
 ```bash
-python scripts/dpcc_test_diffusion.py \
+python -m genedynamics.solvers.single.dpcc.tools.test_diffusion \
   --env-name d3il_avoiding_9d \
   --dataset avoiding-d3il-9d \
   --exp avoiding-d3il-9d \
@@ -136,7 +136,7 @@ python scripts/dpcc_test_diffusion.py \
 Optional: save eval summary JSON
 
 ```bash
-python scripts/dpcc_test_diffusion.py \
+python -m genedynamics.solvers.single.dpcc.tools.test_diffusion \
   --env-name d3il_avoiding_9d \
   --dataset avoiding-d3il-9d \
   --exp avoiding-d3il-9d \

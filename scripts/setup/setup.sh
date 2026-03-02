@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-./scripts/third_party/setup_d3il.sh
+./scripts/setup/setup_d3il.sh
 
 pip install -e .
 

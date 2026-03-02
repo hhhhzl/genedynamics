@@ -10,9 +10,9 @@ Requires: matplotlib, and project deps (see requirements.txt). Run from project 
   or with PYTHONPATH including project root.
 
 Usage:
-  python scripts/visualize_env_levels_seeds.py [--config CONFIG] [--outdir OUTDIR]
-  python scripts/visualize_env_levels_seeds.py --levels 0-10 --seeds 0-10   # default
-  python scripts/visualize_env_levels_seeds.py --levels 0,5,10 --seeds 0,1  # subset
+  python scripts/visualizations/visualize_env_levels_seeds.py [--config CONFIG] [--outdir OUTDIR]
+  python scripts/visualizations/visualize_env_levels_seeds.py --levels 0-10 --seeds 0-10   # default
+  python scripts/visualizations/visualize_env_levels_seeds.py --levels 0,5,10 --seeds 0,1  # subset
 """
 
 from pathlib import Path
@@ -20,7 +20,7 @@ import sys
 import argparse
 
 # Project root
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 

@@ -102,8 +102,8 @@ This section documents the current integration status, end-to-end:
   - `third_party/d3il/environments/d3il` (full upstream repo)
   )
 - **Setup helpers**:
-  - `scripts/setup_d3il.sh` (prints export commands)
-  - `scripts/setup.sh` (points to setup_d3il.sh)
+  - `scripts/setup/setup_d3il.sh` (prints export commands)
+  - `scripts/setup/setup.sh` (points to setup_d3il.sh)
 - **Dependencies**:
   - `requirements.txt` includes `gym>=0.26.2` and `gin-config>=0.5.0`
 - **Packaging fix**:
@@ -151,7 +151,7 @@ This section documents the current integration status, end-to-end:
 pip install -r requirements.txt
 
 # show the PYTHONPATH export lines
-./scripts/setup_d3il.sh
+./scripts/setup/setup_d3il.sh
 
 # vendored layout:
 export PYTHONPATH="$(pwd)/third_party:${PYTHONPATH:-}"

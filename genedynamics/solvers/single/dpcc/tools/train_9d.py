@@ -76,6 +76,10 @@ def _attach_stepper(diffusion):
     return stepper
 
 
+def _resolve_project_root() -> Path:
+    return Path(__file__).resolve().parents[5]
+
+
 def train_one_seed(args):
     import diffuser.utils as utils
 
@@ -91,7 +95,6 @@ def train_one_seed(args):
         use_padding=args.use_padding,
         max_path_length=args.max_path_length,
         include_returns=args.include_returns,
-        # Keep DPCC behavior for avoiding: rewards are <= 1 per step.
         returns_scale=args.max_path_length,
         discount=args.discount,
     )
@@ -99,6 +102,12 @@ def train_one_seed(args):
     dataset = dataset_config()
     observation_dim = dataset.observation_dim
     action_dim = dataset.action_dim
+
+    if observation_dim != 11 or action_dim != 7:
+        raise ValueError(
+            f"Expected 11D state (with target) + 7D action, got observation_dim={observation_dim}, action_dim={action_dim}. "
+            "Ensure avoiding-d3il-9d data includes des_c_pos so obs = [x_des, y_des, x, y, q1..q7] in third_party/diffuser/datasets/d4rl.py"
+        )
 
     model_config = utils.Config(
         args.model,
@@ -152,26 +161,32 @@ def train_one_seed(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train DPCC diffusion from genedynamics/scripts.")
+    parser = argparse.ArgumentParser(
+        description="Train DPCC diffusion with 9D avoiding state [tcp_xy, q] and action qdot."
+    )
     parser.add_argument(
         "--config-file",
         type=str,
         default=None,
-        help="Path to DPCC training config python file (default: ../dpcc/config/avoiding-d3il.py).",
+        help="Path to DPCC training config python file (default: configs/d3il_avoiding/dpcc_diffusion_train.py).",
     )
-    parser.add_argument("--dataset", type=str, default="avoiding-d3il")
+    parser.add_argument("--dataset", type=str, default="avoiding-d3il-9d")
     parser.add_argument("--seeds", type=str, default="5,6,7,8,9")
     parser.add_argument("--device", type=str, default=None)
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = _resolve_project_root()
     third_party = project_root / "third_party"
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     if str(third_party) not in sys.path:
         sys.path.insert(0, str(third_party))
 
-    config_file = Path(args.config_file) if args.config_file else (project_root.parent / "dpcc" / "config" / "avoiding-d3il.py")
+    config_file = (
+        Path(args.config_file)
+        if args.config_file
+        else (project_root / "configs" / "d3il_avoiding" / "dpcc_diffusion_train.py")
+    )
     if not config_file.exists():
         raise FileNotFoundError(f"Config file not found: {config_file}")
 
@@ -183,7 +198,7 @@ def main():
     seeds = [int(s.strip()) for s in args.seeds.split(",") if s.strip()]
     for seed in seeds:
         seed_args = _prepare_args(diffusion_params, args.dataset, seed, args.device)
-        print(f"[dpcc_train] seed={seed} savepath={seed_args.savepath}")
+        print(f"[dpcc_train_9d] seed={seed} savepath={seed_args.savepath}")
         train_one_seed(seed_args)
 
 

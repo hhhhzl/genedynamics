@@ -3,8 +3,8 @@ from __future__ import annotations
 """
 Offline preprocessing helpers for SafeDiffuser checkpoint conversion.
 
-This module is used by `scripts/convert_safediffuser_checkpoint.py` to compute
-normalization mins/maxs (LimitsNormalizer) from dataset artifacts:
+This module is used by `genedynamics.solvers.single.safediffuser.tools.convert_checkpoint`
+to compute normalization mins/maxs (LimitsNormalizer) from dataset artifacts:
   - `dataset_config.pkl` (pickled diffuser Config; we unpickle via lightweight shims)
   - offline dataset files under `dataset_data_dir` (e.g., `env_*.pkl`)
 
@@ -177,4 +177,3 @@ def load_limits_from_dataset_artifacts(
         return _infer_avoiding_d3il_limits_from_data_dir(dataset_data_dir)
 
     raise NotImplementedError(f"Dataset-based normalizer rebuild not implemented for env='{env}'")
-
