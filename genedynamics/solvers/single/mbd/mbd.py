@@ -19,6 +19,7 @@ from genedynamics.core.backends import Backend
 from genedynamics.core.backends.runtime import RuntimeBackendManager
 from genedynamics.core.types import State, Trajectory
 from genedynamics.core.energy import EnergyToLegacyAdapter
+from genedynamics.core.task_spec import legacy_extract_position
 
 try:
     from genedynamics.core.registry.solvers import register_solver
@@ -80,6 +81,8 @@ class MBDSolver(SamplingSolver):
         terminal_energy_weight: float = 100.0,
         use_target_line: bool = False,
         num_targets: int = 4,
+        position_extractor=None,
+        position_dim: int = 2,
         **kwargs,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -115,6 +118,8 @@ class MBDSolver(SamplingSolver):
             )
         )
 
+        self.position_extractor = position_extractor or legacy_extract_position
+        self.position_dim = int(position_dim)
         self._env_adapter = DynamicsToEnvAdapter(dynamics, dt)
         if isinstance(energy, LegacyEnergyFunctional):
             self._legacy_energy = energy
@@ -164,6 +169,8 @@ class MBDSolver(SamplingSolver):
                     scheduler=self.config.get("scheduler"),
                     show_tqdm=self.config.get("show_tqdm", False),
                     terminal_energy_weight=self.config.get("terminal_energy_weight", 100.0),
+                    position_extractor=self.position_extractor,
+                    position_dim=self.position_dim,
                 )
         return self._backend_impl
 

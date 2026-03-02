@@ -12,6 +12,7 @@ import numpy as np
 
 from genedynamics.core.dynamics import DynamicsToEnvAdapter
 from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.core.task_spec import get_default_task_spec
 from genedynamics.solvers.single.dpcc import DPCCSolver
 from ...framework.base import MethodPlugin
 
@@ -183,6 +184,9 @@ class DPCCMethodPlugin(MethodPlugin):
         plan_config.setdefault("plan_once_chunks", config.get("plan_once_chunks", 1))
         plan_config.setdefault("use_target_line", config.get("use_target_line", False))
         plan_config.setdefault("num_targets", config.get("num_targets", 4))
+        task_spec = get_default_task_spec(config.get("env_plugin"), config.get("env_name"))
+        plan_config.setdefault("position_extractor", task_spec.extract_position)
+        plan_config.setdefault("position_dim", task_spec.position_dim)
 
         dynamics = DynamicsToEnvAdapter(env, dt=plan_config["dt"])
         backend = RuntimeBackendManager.get_backend()

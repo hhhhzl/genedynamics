@@ -24,6 +24,7 @@ from genedynamics.solvers.single.cfsmbd.backends import _batched_alm_adaptive as
 from genedynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
 
 from genedynamics.core.types import Trajectory, State
+from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.core.constraints.core.types import ScheduleState
 from genedynamics.core.constraints.action_filters import ConstraintFilter, NoOpConstraintFilter
 
@@ -105,6 +106,8 @@ class CFSMBDBackendJax:
             # even when running a single mode (C=1). This makes it easy to later
             # switch to multi-mode without refactoring call sites.
             self.use_batched_alm_adaptive = bool(solver.config.get("use_batched_alm_adaptive", False))
+            self.position_extractor = getattr(solver, "position_extractor", None) or legacy_extract_position
+            self.position_dim = int(getattr(solver, "position_dim", 2))
         else:
             self.num_modes = 1
             self.use_target_line = False
@@ -113,6 +116,8 @@ class CFSMBDBackendJax:
             self.diversity_topK_cand = self.Nsample // 2
             self.diversity_use_state = True
             self.use_batched_alm_adaptive = bool(kwargs.get("use_batched_alm_adaptive", False))
+            self.position_extractor = kwargs.get("position_extractor") or legacy_extract_position
+            self.position_dim = int(kwargs.get("position_dim", 2))
 
         self._build_jax_functions()
 
@@ -315,13 +320,13 @@ class CFSMBDBackendJax:
         def rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho, target):
             """
             Rollout rewards with augmented Lagrangian penalty.
-            target: (2,) goal for terminal reward and ctx.target_xy for stage cost.
+            target: (position_dim,) goal for terminal reward and ctx.target_xy for stage cost.
 
             Returns:
               - total_augmented_reward: scalar
               - v_n: scalar, max_t [g]_+ (used for risk residual r_k and violation stats v_k)
             """
-            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:2]
+            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[: self.position_dim]
 
             def step_fn(carry, action_and_t):
                 next_state, cum_reward, cum_g_plus, cum_g_plus_sq, max_g_plus = carry
@@ -334,7 +339,7 @@ class CFSMBDBackendJax:
                 reward = -self._cost_fn(next_state, action, ctx)
                 
                 # Constraint violation [g]_+
-                pos = next_state[0:2]  # single_2d: state is position
+                pos = next_state[: self.position_dim]
                 g_plus = sdf_fn(pos, clearance)
 
                 return (
@@ -351,7 +356,7 @@ class CFSMBDBackendJax:
             )
             
             # Terminal reward
-            terminal_dist = jnp.linalg.norm(final_state[0:2] - target[0:2])
+            terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
             terminal_reward = -100.0 * terminal_dist  # Fixed terminal weight for now
             
             # Augmented Lagrangian penalty (mean over horizon to avoid H-scale explosion)
@@ -370,7 +375,10 @@ class CFSMBDBackendJax:
 
         def _default_target():
             t = getattr(self.env, "target", None)
-            return jnp.asarray(t, dtype=jnp.float32).reshape(-1)[:2] if t is not None else jnp.zeros(2)
+            if t is None:
+                return jnp.zeros(self.position_dim, dtype=jnp.float32)
+            pos = np.asarray(self.position_extractor(t), dtype=np.float32).reshape(-1)
+            return jnp.asarray(pos[: self.position_dim], dtype=jnp.float32)
 
         def rollout_rewards_with_augmented(state_init, actions, clearance, aug_lambda, aug_rho, target):
             total_aug, _ = rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho, target)
@@ -380,8 +388,8 @@ class CFSMBDBackendJax:
             return rollout_augmented_reward_and_v(state_init, actions, clearance, aug_lambda, aug_rho, target)
 
         def rollout_rewards(state_init, actions, target):
-            """Rollout rewards per step (for visualization). target: (2,) goal."""
-            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:2]
+            """Rollout rewards per step (for visualization). target: (position_dim,) goal."""
+            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[: self.position_dim]
             
             def step_fn(carry, action_and_t):
                 next_state, cum_reward = carry
@@ -398,7 +406,7 @@ class CFSMBDBackendJax:
             )
             
             # Terminal reward
-            terminal_dist = jnp.linalg.norm(final_state[0:2] - target[0:2])
+            terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
             terminal_reward = -100.0 * terminal_dist
             step_rewards = step_rewards.at[-1].add(terminal_reward)
             
@@ -914,7 +922,7 @@ class CFSMBDBackendJax:
                 dtype=jnp.float32,
             )
         else:
-            default_tgt = np.asarray(self._default_target, dtype=np.float32).reshape(-1)[:2]
+            default_tgt = np.asarray(self._default_target, dtype=np.float32).reshape(-1)[: self.position_dim]
             targets_per_mode = jnp.tile(jnp.asarray(default_tgt, dtype=jnp.float32), (C, 1))
         if self._use_jax_adaptive:
             # True JAX batch: vmap over _run_adaptive_diffuse_single (same CFS filter path as plan()).

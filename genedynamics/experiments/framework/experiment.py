@@ -23,6 +23,7 @@ def _accepts_env(fn: Any) -> bool:
 
 from genedynamics.core.types import Trajectory
 from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.core.task_spec import get_default_task_spec
 
 from .config import ExperimentConfig
 from .registry import PluginRegistry
@@ -150,7 +151,7 @@ class ExperimentRunner:
         env_params_with_obstacles = {**self.config.env_params}
         # Add obstacles to env_params if using physics backend that needs them
         physics_backend = env_params_with_obstacles.get('physics_backend', None)
-        if physics_backend in ['mujoco', 'isaac'] and len(obstacles) > 0:
+        if physics_backend in ['mujoco', 'mjx', 'isaac'] and len(obstacles) > 0:
             env_params_with_obstacles['obstacles'] = obstacles
         # For D3IL avoiding envs: pass obstacle info for MuJoCo scene sync.
         if self.config.env_name in ['d3il_avoiding_9d', 'd3il_avoiding']:
@@ -177,7 +178,7 @@ class ExperimentRunner:
                 self.config.env_name in ['drone_box_3d', 'drone', 'drone_full_3d', 'drone_full_3d_physics',
                                          'drone_full_3d_mujoco', 'drone_full_3d_isaac'] or
                 self.config.obstacle_config.get('generator', '') == 'box3d' or
-                physics_backend in ['mujoco', 'isaac']
+                physics_backend in ['mujoco', 'mjx', 'isaac']
             )
             if not is_3d_env:
                 map_bounds = self.config.obstacle_config.get('map_bounds', {})
@@ -228,6 +229,8 @@ class ExperimentRunner:
             'obstacles': obstacles,  # Provide obstacles to methods that can use fast SDF (e.g., EB-MBD)
             'obstacle_config': self.config.obstacle_config,  # Provide robot_radius/map bounds, etc.
             'np_random_seed': seed,  # Pass seed for reproducibility
+            'env_plugin': env_plugin,  # For TaskSpec / position_extractor
+            'env_name': getattr(self.config, 'env_name', None),
         }
         # Merge first diffusion_scheduler's M_k / Ndiffuse / T_k / beta into method_config
         # so method plugins (MDOC, MBD, etc.) use YAML diffusion_schedulers values instead of defaults
@@ -972,15 +975,10 @@ class ExperimentRunner:
         if len(costs) != n_modes:
             return int(np.argmin(costs)) if len(costs) > 0 else 0
 
-        def extract_pos_2d(s: np.ndarray) -> np.ndarray:
-            if env_plugin is not None and hasattr(env_plugin, "extract_position"):
-                p = np.asarray(env_plugin.extract_position(s), dtype=np.float32).reshape(-1)
-                return p[:2]
-            x = np.asarray(s, dtype=np.float32).reshape(-1)
-            return x[:2] if x.size >= 2 else x
+        task_spec = get_default_task_spec(env_plugin, getattr(self.config, "env_name", None))
 
         target = np.asarray(env.target, dtype=np.float32)
-        target_pos = extract_pos_2d(target)
+        target_pos = np.asarray(task_spec.extract_position(target), dtype=np.float32).reshape(-1)
         safe_success_mask = []
         for states in candidate_states_list:
             states_arr = [np.asarray(s, dtype=np.float32) for s in states]
@@ -990,19 +988,16 @@ class ExperimentRunner:
             safe = True
             if obstacles is not None and hasattr(obstacles, '__len__') and len(obstacles) > 0:
                 for s in states_arr:
-                    pos = extract_pos_2d(s)
+                    pos = np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1)
                     sdf = obstacles.sdf(pos)
                     sdf_val = float(np.asarray(sdf).item() if hasattr(sdf, "item") else sdf)
                     if sdf_val < robot_radius or obstacles.contains(pos):
                         safe = False
                         break
-            final_pos = extract_pos_2d(states_arr[-1])
-            # d3il_avoiding_9d: line target (y >= target_y), x can be anywhere in box
-            if env_plugin is not None and getattr(env_plugin, "name", None) == "d3il_avoiding_9d":
-                target_y = float(target_pos[1])
-                task_success = bool(final_pos[1] >= target_y - success_margin)
-            else:
-                task_success = bool(np.linalg.norm(final_pos - target_pos) < success_margin)
+            final_pos = np.asarray(task_spec.extract_position(states_arr[-1]), dtype=np.float32).reshape(-1)
+            task_success = task_spec.success_criterion(
+                final_pos, target_pos, success_margin, env_name=getattr(self.config, "env_name", None)
+            )
             safe_success_mask.append(safe and task_success)
 
         valid_indices = [i for i in range(n_modes) if safe_success_mask[i]]
@@ -1012,17 +1007,12 @@ class ExperimentRunner:
 
     def _compute_trajectory_length_smoothness(self, trajectory: Trajectory, env_plugin: Any) -> tuple:
         """Compute length, smoothness, geometric_smoothness for a single trajectory."""
-        def extract_pos_2d(s: np.ndarray) -> np.ndarray:
-            if env_plugin is not None and hasattr(env_plugin, "extract_position"):
-                p = np.asarray(env_plugin.extract_position(s), dtype=np.float32).reshape(-1)
-                return p[:2]
-            x = np.asarray(s, dtype=np.float32).reshape(-1)
-            return x[:2] if x.size >= 2 else x
+        task_spec = get_default_task_spec(env_plugin, getattr(self.config, "env_name", None))
 
         states_arr = [np.asarray(s, dtype=np.float32) for s in trajectory.states]
         if len(states_arr) < 2:
             return 0.0, 0.0, 0.0
-        positions = np.array([extract_pos_2d(s) for s in states_arr])
+        positions = np.array([np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1) for s in states_arr])
         seg_len = np.linalg.norm(np.diff(positions, axis=0), axis=1)
         length = float(np.sum(seg_len))
         smooth = 0.0
@@ -1120,12 +1110,7 @@ class ExperimentRunner:
         if num_modes <= 0:
             num_modes = n_modes
 
-        def extract_pos_2d(s: np.ndarray) -> np.ndarray:
-            if env_plugin is not None and hasattr(env_plugin, "extract_position"):
-                p = np.asarray(env_plugin.extract_position(s), dtype=np.float32).reshape(-1)
-                return p[:2]
-            x = np.asarray(s, dtype=np.float32).reshape(-1)
-            return x[:2] if x.size >= 2 else x
+        task_spec = get_default_task_spec(env_plugin, getattr(self.config, "env_name", None))
 
         ssr_count = 0
         lengths = []
@@ -1134,7 +1119,7 @@ class ExperimentRunner:
         violation_rates = []
 
         target = np.asarray(env.target, dtype=np.float32)
-        target_pos = extract_pos_2d(target)
+        target_pos = np.asarray(task_spec.extract_position(target), dtype=np.float32).reshape(-1)
         target_line = None
         if use_target_line and env_plugin is not None and getattr(env_plugin, "name", None) == "d3il_avoiding_9d":
             from genedynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
@@ -1149,7 +1134,7 @@ class ExperimentRunner:
             safe = True
             if obstacles is not None and hasattr(obstacles, '__len__') and len(obstacles) > 0:
                 for s in states_arr:
-                    pos = extract_pos_2d(s)
+                    pos = np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1)
                     sdf = obstacles.sdf(pos)
                     sdf_val = float(np.asarray(sdf).item() if hasattr(sdf, "item") else sdf)
                     if sdf_val < robot_radius:
@@ -1159,30 +1144,24 @@ class ExperimentRunner:
                         safe = False
                         break
 
-            # Task success
-            final_pos = extract_pos_2d(states_arr[-1])
-            # d3il_avoiding (4D) or d3il_avoiding_9d: line target (y >= target_y), "过了线就可以了"
-            # NOTE: For 9D, even with use_target_line enabled, reaching one of the discrete x targets
-            # within a small margin is often too strict; the task is naturally a target *line*.
-            if env_plugin is not None and getattr(env_plugin, "name", None) in ("d3il_avoiding_9d", "d3il_avoiding"):
-                target_y = float(target_pos[1])
-                task_success = bool(final_pos[1] >= target_y - success_margin)
-            else:
-                dist = float(np.linalg.norm(final_pos - target_pos))
-                task_success = bool(dist < success_margin)
+            # Task success (TaskSpec handles 2D point target and d3il_avoiding line target)
+            final_pos = np.asarray(task_spec.extract_position(states_arr[-1]), dtype=np.float32).reshape(-1)
+            task_success = task_spec.success_criterion(
+                final_pos, target_pos, success_margin, env_name=getattr(self.config, "env_name", None)
+            )
 
             if safe and task_success:
                 ssr_count += 1
 
             # Length: sum of segment lengths
-            positions = np.array([extract_pos_2d(s) for s in states_arr])
+            positions = np.array([np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1) for s in states_arr])
             seg_len = np.linalg.norm(np.diff(positions, axis=0), axis=1)
             length = float(np.sum(seg_len))
             lengths.append(length)
 
             # Smoothness (acceleration): mean squared ||acc|| per step (normalized by n_steps)
             if len(states_arr) >= 3:
-                pos_arr = np.array([extract_pos_2d(s) for s in states_arr])
+                pos_arr = np.array([np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1) for s in states_arr])
                 vel = np.diff(pos_arr, axis=0)
                 acc = np.diff(vel, axis=0)
                 n_acc = max(1, acc.shape[0])
@@ -1207,7 +1186,10 @@ class ExperimentRunner:
             geom_smoothnesses.append(geom_smooth)
 
             # Violation rate: fraction of trajectory band (width 2*robot_radius) inside obstacles
-            vr = self._violation_rate_band(states, obstacles, robot_radius, extract_pos_2d)
+            def _extract_pos(s):
+                return np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1)
+
+            vr = self._violation_rate_band(states, obstacles, robot_radius, _extract_pos)
             violation_rates.append(vr)
 
         n_valid = len(lengths)
@@ -1333,6 +1315,7 @@ class ExperimentRunner:
                     level=level,
                     obstacle_config=self.config.obstacle_config,
                     env_plugin=env_plugin,
+                    env_name=getattr(self.config, "env_name", None),
                 )
                 val = convert_to_json_serializable(metric_value)
                 if metric_name == 'ssr' and isinstance(val, dict):
@@ -1364,15 +1347,14 @@ class ExperimentRunner:
                 if single_states is not None:
                     exec_states_list = [single_states]
             if exec_states_list and obstacles is not None:
-                def extract_pos_2d(s):
-                    if env_plugin is not None and hasattr(env_plugin, "extract_position"):
-                        p = np.asarray(env_plugin.extract_position(s), dtype=np.float32).reshape(-1)
-                        return p[:2]
-                    x = np.asarray(s, dtype=np.float32).reshape(-1)
-                    return x[:2] if x.size >= 2 else x
+                task_spec = get_default_task_spec(env_plugin, getattr(self.config, "env_name", None))
+
+                def extract_pos(s):
+                    return np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1)
+
                 exec_violation_rates = []
                 for states in exec_states_list:
-                    vr = self._violation_rate_band(states, obstacles, robot_radius, extract_pos_2d)
+                    vr = self._violation_rate_band(states, obstacles, robot_radius, extract_pos)
                     exec_violation_rates.append(vr)
                 metrics_result['execution_ssr']['violation_rate_mean'] = float(np.mean(exec_violation_rates)) if exec_violation_rates else 0.0
                 metrics_result['execution_ssr']['violation_rate_std'] = float(np.std(exec_violation_rates)) if len(exec_violation_rates) > 1 else 0.0
@@ -1810,6 +1792,7 @@ class ExperimentRunner:
     def _compute_cost_for_actions(
         self, env: Any, obstacles: Any, initial_state: np.ndarray, act_seq: np.ndarray,
         violation_weight: float=150, clearance: float=0.0, robot_radius: float=0.05,
+        env_plugin: Any = None,
     ) -> float:
         """Compute task cost (stage+terminal) + violation_weight * sum_t [g]_+ for one action sequence.
         [g]_+ uses effective margin = max(clearance, robot_radius) so penetration (sdf < robot_radius) is penalized.
@@ -1821,7 +1804,8 @@ class ExperimentRunner:
         try:
             states = env.rollout_actions(np.asarray(initial_state, dtype=np.float32), np.asarray(act_seq, dtype=np.float32))
             states = np.asarray(states)
-            positions = states[:, :2].astype(np.float32)  # (N, 2)
+            task_spec = get_default_task_spec(env_plugin, getattr(self.config, "env_name", None))
+            positions = np.array([np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1) for s in states])
 
             for t in range(len(states)):
                 if hasattr(env, 'cost'):
@@ -1847,7 +1831,9 @@ class ExperimentRunner:
 
             if hasattr(env, 'target') and len(states) > 0:
                 target = np.asarray(getattr(env, 'target', (0, 0)))
-                task_cost += 100.0 * float(np.linalg.norm(states[-1, :2] - target[:2]))
+                final_pos = np.asarray(task_spec.extract_position(states[-1]), dtype=np.float64).reshape(-1)
+                target_pos = np.asarray(task_spec.extract_position(target), dtype=np.float64).reshape(-1)
+                task_cost += 100.0 * float(np.linalg.norm(final_pos - target_pos))
         except Exception:
             pass
         return max(0.0, task_cost) + violation_weight * violation
@@ -1907,6 +1893,7 @@ class ExperimentRunner:
                         act_seq = np.asarray(ds_rev[i, m], dtype=np.float32)
                         c = self._compute_cost_for_actions(
                             env, obstacles, initial_state, act_seq, violation_weight, clearance, robot_radius,
+                            env_plugin=env_plugin,
                         )
                         cost_matrix[m, i] = c
             except Exception:
@@ -1925,6 +1912,7 @@ class ExperimentRunner:
                         c = self._compute_cost_for_actions(
                             env, obstacles, initial_state, np.asarray(actions_list[i]),
                             violation_weight, clearance, robot_radius,
+                            env_plugin=env_plugin,
                         )
                         cost_list.append(c)
                     cost_matrix = np.array([cost_list], dtype=np.float64)

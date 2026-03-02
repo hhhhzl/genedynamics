@@ -32,6 +32,7 @@ from .environments import (
     D3ILAvoidingPlugin,
     D3ILAvoiding9DPlugin,
     AvoidingPlanEnvironmentPlugin,
+    SoftZooEnvironmentPlugin,
 )
 
 from .metrics import (
@@ -81,6 +82,7 @@ __all__ = [
     'D3ILAvoidingPlugin',
     'D3ILAvoiding9DPlugin',
     'AvoidingPlanEnvironmentPlugin',
+    'SoftZooEnvironmentPlugin',
     # Metrics
     'SSRMetricsPlugin',
     'ObstacleDensityMetricsPlugin',

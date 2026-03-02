@@ -16,6 +16,7 @@ from genedynamics.core.constraints.core.types import (
 )
 from genedynamics.core.constraints.core.registry import get_registry, register
 from genedynamics.core.types import Trajectory, State
+from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.envs.obstacles.base import ObstacleManager
 
 
@@ -53,7 +54,7 @@ class CFSConvexifier(Convexifier):
             **kwargs: Additional arguments
         """
         self.obstacles = obstacles
-        self.position_extractor = position_extractor or self._default_extract_position
+        self.position_extractor = position_extractor or legacy_extract_position
         self.max_constraints_per_point = max_constraints_per_point
         self.constraint_margin = constraint_margin
         self.backend = backend
@@ -125,25 +126,5 @@ class CFSConvexifier(Convexifier):
             f"Please ensure the backend implementation is properly registered."
         )
     
-    @staticmethod
-    def _default_extract_position(state: State) -> np.ndarray:
-        """
-        Default position extractor.
-        
-        Extracts position from state vector. Assumes:
-        - 2D double integrator: state = [x, y, vx, vy] (len=4) -> position = [x, y]
-        - 2D single integrator: state = [x, y] (len=2) -> position = [x, y]
-        - 1D double integrator: state = [x, vx] (len=2) -> position = [x]
-        - Otherwise: take first 2 elements (or fewer if state is shorter)
-        
-        Note: For len=2, we assume it's 2D position (single integrator) by default.
-        If you need 1D double integrator, provide a custom position_extractor.
-        """
-        state_np = np.asarray(state, dtype=np.float32)
-        if len(state_np) == 4:  # 2D double integrator: [x, y, vx, vy]
-            return state_np[:2]
-        elif len(state_np) == 2:  # Assume 2D single integrator: [x, y]
-            # For single integrator, the entire state is position
-            return state_np[:2]
-        # For other lengths, take first 2 elements (or all if shorter)
-        return state_np[:min(2, len(state_np))]
+    # Position extraction: uses genedynamics.core.task_spec.legacy_extract_position
+    # when no custom position_extractor is given (same behavior as before).

@@ -16,6 +16,7 @@ from genedynamics.core.constraints.core.types import (
 )
 from genedynamics.core.constraints.core.registry import get_registry, register
 from genedynamics.core.types import State
+from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.envs.obstacles.base import ObstacleManager
 
 
@@ -67,7 +68,7 @@ class CBFConvexifier(Convexifier):
         self.k0 = k0
         self.k1 = k1
         self.tau = tau
-        self.position_extractor = position_extractor or self._default_extract_position
+        self.position_extractor = position_extractor or legacy_extract_position
         self.backend = backend
         self.build_traj_qp = bool(build_traj_qp)
         
@@ -218,13 +219,5 @@ class CBFConvexifier(Convexifier):
         
         return grad
     
-    @staticmethod
-    def _default_extract_position(state: State) -> np.ndarray:
-        """Default position extractor."""
-        state_np = np.asarray(state, dtype=np.float32)
-        if len(state_np) == 4:  # 2D double integrator
-            return state_np[:2]
-        elif len(state_np) == 2:  # 1D double integrator
-            return state_np[:1]
-        return state_np[:min(2, len(state_np))]
+    # Uses legacy_extract_position when no custom position_extractor.
 

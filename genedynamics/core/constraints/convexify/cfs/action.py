@@ -38,9 +38,7 @@ def _to_numpy(x: Any) -> np.ndarray:
     return np.asarray(x, dtype=np.float32)
 
 
-def _default_extract_position(state: State) -> np.ndarray:
-    s = np.asarray(state, dtype=np.float32).reshape(-1)
-    return s[:2] if s.shape[0] >= 2 else np.pad(s, (0, 2 - s.shape[0]))
+from genedynamics.core.task_spec import legacy_extract_position
 
 
 def _group_state_halfspaces_by_t(A: np.ndarray, b: np.ndarray, H: int, state_dim: int, pos_dim: int = 2) -> List[Tuple[int, np.ndarray, float]]:
@@ -86,7 +84,7 @@ class CFSActionConvexifier(Convexifier):
         self.obstacles = obstacles
         self.env = env
         self.action_mode = str(action_mode)
-        self.position_extractor = position_extractor or _default_extract_position
+        self.position_extractor = position_extractor or legacy_extract_position
         self.max_constraints_per_point = int(max_constraints_per_point)
         self.constraint_margin = float(constraint_margin)
         self.backend = str(backend)

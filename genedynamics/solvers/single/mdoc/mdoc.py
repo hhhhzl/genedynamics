@@ -20,6 +20,7 @@ from genedynamics.core.backends import Backend
 from genedynamics.core.backends.runtime import RuntimeBackendManager
 from genedynamics.core.types import State, Trajectory
 from genedynamics.core.energy import EnergyToLegacyAdapter
+from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.core.constraints.action_filters import ConstraintFilter, NoOpConstraintFilter
 
 try:
@@ -71,6 +72,8 @@ class MDOCSolver(SamplingSolver):
         diversity_use_state: bool = True,
         use_target_line: bool = False,
         num_targets: int = 4,
+        position_extractor=None,
+        position_dim: int = 2,
         **kwargs: Any,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -112,6 +115,8 @@ class MDOCSolver(SamplingSolver):
         self._backend_impl = None
         self.constraint_filter = constraint_filter or NoOpConstraintFilter()
         self.obstacles = obstacles
+        self.position_extractor = position_extractor or legacy_extract_position
+        self.position_dim = int(position_dim)
         # Store additional CBF params
         self.cbf_params = {
             "cbf_tau": kwargs.get("cbf_tau", 0.005),

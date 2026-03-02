@@ -14,6 +14,7 @@ import jax
 import jax.numpy as jnp
 
 from genedynamics.solvers.single.diffusion_adaptors import diverse_topk_modes
+from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
 
 try:
@@ -84,6 +85,8 @@ class EBMBDBackendJax:
         self.diversity_eta = float(getattr(solver, "diversity_eta", 1.0))
         self.diversity_topK_cand = int(getattr(solver, "diversity_topK_cand", None) or (self.Nsample // 2))
         self.diversity_use_state = bool(getattr(solver, "diversity_use_state", True))
+        self.position_extractor = getattr(solver, "position_extractor", None) or legacy_extract_position
+        self.position_dim = int(getattr(solver, "position_dim", 2))
 
         # Allow constraint scheduler to override barrier params (emerging_barrier)
         if self.scheduler is not None and hasattr(self.scheduler, "constraint_schedulers"):
@@ -266,7 +269,7 @@ class EBMBDBackendJax:
         act_dim = self.env.act_dim
 
         def rollout_total_cost_with_target(state_init, actions, target):
-            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:2]
+            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[: self.position_dim]
             ctx_base = {"target_xy": target}
             H = actions.shape[0]
 
@@ -299,7 +302,7 @@ class EBMBDBackendJax:
 
     def _build_rollout_rewards_with_target_fn(self):
         def rollout_rewards_with_target(state_init, actions, target):
-            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:2]
+            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[: self.position_dim]
             t_idxs = jnp.arange(actions.shape[0], dtype=jnp.int32)
 
             def step_fn(carry, inp):
@@ -379,8 +382,11 @@ class EBMBDBackendJax:
                 dtype=jnp.float32,
             )
         else:
-            default_tgt = getattr(self.env, "target", None)
-            default_tgt = np.asarray(default_tgt, dtype=np.float32).reshape(-1)[:2] if default_tgt is not None else np.zeros(2, dtype=np.float32)
+            t = getattr(self.env, "target", None)
+            if t is None:
+                default_tgt = np.zeros(self.position_dim, dtype=np.float32)
+            else:
+                default_tgt = np.asarray(self.position_extractor(t), dtype=np.float32).reshape(-1)[: self.position_dim]
             targets_per_mode = jnp.tile(jnp.asarray(default_tgt, dtype=jnp.float32), (C, 1))
 
         # Core diffusion function (pure JAX, can be vmapped)

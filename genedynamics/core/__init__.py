@@ -50,6 +50,15 @@ from genedynamics.core.solvers import (
 
 from genedynamics.core.metrics import euclidean_metric_inv
 from genedynamics.core.integrators import langevin_step, euler_step
+from genedynamics.core.task_spec import (
+    TaskSpec,
+    Legacy2DTaskSpec,
+    Legacy3DTaskSpec,
+    SoftZooTaskSpec,
+    EnvPluginTaskSpecAdapter,
+    legacy_extract_position,
+    get_default_task_spec,
+)
 
 __all__ = [
     # Types
@@ -83,5 +92,13 @@ __all__ = [
     "euclidean_metric_inv",
     "langevin_step",
     "euler_step",
+    # TaskSpec
+    "TaskSpec",
+    "Legacy2DTaskSpec",
+    "Legacy3DTaskSpec",
+    "SoftZooTaskSpec",
+    "EnvPluginTaskSpecAdapter",
+    "legacy_extract_position",
+    "get_default_task_spec",
 ]
 
