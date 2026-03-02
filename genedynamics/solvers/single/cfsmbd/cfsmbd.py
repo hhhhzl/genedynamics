@@ -21,6 +21,7 @@ from genedynamics.core.backends import Backend
 from genedynamics.core.backends.runtime import RuntimeBackendManager
 from genedynamics.core.types import State, Trajectory
 from genedynamics.core.energy import EnergyToLegacyAdapter
+from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.core.constraints.action_filters import ConstraintFilter, NoOpConstraintFilter
 
 try:
@@ -76,6 +77,8 @@ class CFSMBDSolver(SamplingSolver):
         diversity_eta: float = 1.0,
         diversity_topK_cand: int = None,
         diversity_use_state: bool = True,
+        position_extractor=None,
+        position_dim: int = 2,
         **kwargs: Any,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -120,6 +123,8 @@ class CFSMBDSolver(SamplingSolver):
         self._backend_impl = None
         self.constraint_filter = constraint_filter or NoOpConstraintFilter()
         self.obstacles = obstacles
+        self.position_extractor = position_extractor or legacy_extract_position
+        self.position_dim = int(position_dim)
 
     def _get_backend_impl(self):
         if self._backend_impl is None:

@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 import numpy as np
 
 from genedynamics.core.types import Trajectory
+from genedynamics.core.task_spec import get_default_task_spec
 from genedynamics.envs.obstacles.base import ObstacleManager
 from ...framework.base import MetricsPlugin
 
@@ -45,20 +46,17 @@ class SSRMetricsPlugin(MetricsPlugin):
             success_margin = 2 * robot_radius  # Robot diameter
         
         env_plugin = kwargs.get("env_plugin", None)
+        env_name = kwargs.get("env_name", None)
+        task_spec = get_default_task_spec(env_plugin, env_name)
 
-        # Helper: extract 2D position
-        def extract_pos_2d(x: np.ndarray) -> np.ndarray:
-            if env_plugin is not None and hasattr(env_plugin, "extract_position"):
-                p = np.asarray(env_plugin.extract_position(x), dtype=np.float32).reshape(-1)
-                return p[:2]
-            x_arr = np.asarray(x, dtype=np.float32).reshape(-1)
-            return x_arr[:2] if x_arr.size >= 2 else x_arr
+        def extract_pos(x: np.ndarray) -> np.ndarray:
+            return np.asarray(task_spec.extract_position(x), dtype=np.float32).reshape(-1)
 
         # Check safety: no collisions (considering robot radius)
         safe = True
         if len(obstacles) > 0:
             for state in trajectory.states:
-                pos_2d = extract_pos_2d(np.asarray(state, dtype=np.float32))
+                pos_2d = extract_pos(np.asarray(state, dtype=np.float32))
                 
                 # Check if robot (with radius) collides with obstacles
                 sdf = obstacles.sdf(pos_2d)
@@ -90,9 +88,9 @@ class SSRMetricsPlugin(MetricsPlugin):
         distance_to_target = float('inf')
         if len(trajectory.states) > 0:
             final_state = np.asarray(trajectory.states[-1], dtype=np.float32)
-            final_pos = extract_pos_2d(final_state)
+            final_pos = extract_pos(final_state)
             target = np.asarray(env.target, dtype=np.float32)
-            target_pos = extract_pos_2d(target)
+            target_pos = extract_pos(target)
             distance_to_target = float(np.linalg.norm(final_pos - target_pos))
             task_success = bool(distance_to_target < success_margin)
         

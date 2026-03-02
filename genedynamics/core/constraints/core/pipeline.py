@@ -34,6 +34,7 @@ except ImportError:
     JAX_AVAILABLE = False
 
 from genedynamics.core.types import Trajectory, State, Action
+from genedynamics.core.task_spec import legacy_extract_position
 from .array_interface import BackendArray, BackendType, ensure_backend
 from .registry import get_registry, UnifiedRegistry
 from .types import ScheduleState, ScheduleParams, ConvexConstraint, OperatorInfo
@@ -406,6 +407,9 @@ class HighPerformanceConstraintPipeline:
             
             current = nominal
             all_info = []
+            position_extractor = getattr(
+                self.convexifier, 'position_extractor', None
+            ) or legacy_extract_position
             
             for iteration in range(max_iterations):
                 # Build constraints based on current trajectory (iterative linearization)
@@ -418,8 +422,14 @@ class HighPerformanceConstraintPipeline:
                 # Check convergence (max_step < convergence_tol)
                 if iteration > 0:
                     # Compute change in trajectory (max step size)
-                    prev_positions = np.stack([np.asarray(s[:2], dtype=np.float32) for s in current.states])
-                    curr_positions = np.stack([np.asarray(s[:2], dtype=np.float32) for s in repaired.states])
+                    prev_positions = np.stack([
+                        np.asarray(position_extractor(s), dtype=np.float32)
+                        for s in current.states
+                    ])
+                    curr_positions = np.stack([
+                        np.asarray(position_extractor(s), dtype=np.float32)
+                        for s in repaired.states
+                    ])
                     max_step = float(np.max(np.linalg.norm(curr_positions - prev_positions, axis=1)))
                     
                     if max_step < convergence_tol:
@@ -433,7 +443,7 @@ class HighPerformanceConstraintPipeline:
                             # Compute SDF for all positions
                             all_feasible = True
                             for s in repaired.states:
-                                pos = np.asarray(s[:2], dtype=np.float32)
+                                pos = np.asarray(position_extractor(s), dtype=np.float32)
                                 sdf = self.convexifier.obstacles.sdf(pos)
                                 sdf_val = float(sdf) if np.isscalar(sdf) else float(sdf[0])
                                 if sdf_val < clearance:

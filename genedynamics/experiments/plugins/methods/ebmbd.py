@@ -8,6 +8,7 @@ import numpy as np
 from genedynamics.solvers.single.ebmbd import EBMBDSolver
 from genedynamics.core.dynamics.adapters import EnvDynamicsAdapter
 from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.core.task_spec import get_default_task_spec
 from ...framework.base import MethodPlugin
 
 
@@ -31,6 +32,7 @@ class EBMBDMethodPlugin(MethodPlugin):
         obstacles = config.get("obstacles", None)
         obstacle_config = config.get("obstacle_config", None)
 
+        task_spec = get_default_task_spec(config.get("env_plugin"), config.get("env_name"))
         solver = EBMBDSolver(
             dynamics=dynamics,
             energy=energy,
@@ -59,6 +61,8 @@ class EBMBDMethodPlugin(MethodPlugin):
             diversity_eta=config.get("diversity_eta", 1.0),  # Diversity weight
             diversity_topK_cand=config.get("diversity_topK_cand", None),  # Pre-filter candidates
             diversity_use_state=config.get("diversity_use_state", True),  # Use state or action features
+            position_extractor=task_spec.extract_position,
+            position_dim=task_spec.position_dim,
         )
         return solver
 

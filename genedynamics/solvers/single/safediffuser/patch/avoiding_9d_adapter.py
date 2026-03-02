@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
+
+from genedynamics.core.task_spec import legacy_extract_position
 
 
 @dataclass
@@ -20,21 +22,28 @@ class Avoiding9DAdapter:
     dt: float = 0.035
     qdot_limit: float = 1.5
     target_xy: Optional[np.ndarray] = None
+    position_extractor: Callable[[Any], np.ndarray] = field(default_factory=lambda: legacy_extract_position)
 
     def _get_target_xy(self) -> np.ndarray:
         if self.target_xy is not None:
-            t = np.asarray(self.target_xy, dtype=np.float32).reshape(-1)
+            t = np.asarray(self.position_extractor(self.target_xy), dtype=np.float32).reshape(-1)
             if t.size >= 2:
                 return t[:2]
-        env_t = np.asarray(getattr(self.env, "target"), dtype=np.float32).reshape(-1)
-        return env_t[:2]
+        env_t = getattr(self.env, "target", None)
+        if env_t is not None:
+            return np.asarray(self.position_extractor(env_t), dtype=np.float32).reshape(-1)[:2]
+        return np.zeros(2, dtype=np.float32)
 
     def obs9d_to_obs4d(self, obs9d: np.ndarray, target_xy: Optional[np.ndarray] = None) -> np.ndarray:
         obs = np.asarray(obs9d, dtype=np.float32).reshape(-1)
         if obs.size < 2:
             raise ValueError(f"obs9d must have at least 2 dims, got shape={obs.shape}")
-        tgt = np.asarray(target_xy, dtype=np.float32).reshape(-1)[:2] if target_xy is not None else self._get_target_xy()
-        return np.array([float(tgt[0]), float(tgt[1]), float(obs[0]), float(obs[1])], dtype=np.float32)
+        if target_xy is not None:
+            tgt = np.asarray(self.position_extractor(target_xy), dtype=np.float32).reshape(-1)[:2]
+        else:
+            tgt = self._get_target_xy()
+        pos = np.asarray(self.position_extractor(obs), dtype=np.float32).reshape(-1)[:2]
+        return np.array([float(tgt[0]), float(tgt[1]), float(pos[0]), float(pos[1])], dtype=np.float32)
 
     def _get_robot(self) -> Any:
         inner = getattr(getattr(self.env, "_task_env", None), "_env", None)

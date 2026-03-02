@@ -99,7 +99,7 @@ class DroneEnvironmentPlugin(EnvironmentPlugin):
     def extract_position(self, state: np.ndarray) -> np.ndarray:
         """
         Extract position coordinates from state.
-        
+
         Args:
             state: Full state vector (x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz)
             
@@ -107,6 +107,14 @@ class DroneEnvironmentPlugin(EnvironmentPlugin):
             Position vector (x, y, z)
         """
         return np.asarray(state, dtype=np.float32)[:3]
+
+    def get_position_dim(self) -> int:
+        """Position dimension (3 for 3D)."""
+        return 3
+
+    def get_position_dim(self) -> int:
+        """Position dimension (3 for 3D)."""
+        return 3
 
 
 class DroneBox3DPlugin(EnvironmentPlugin):
@@ -172,6 +180,10 @@ class DroneBox3DPlugin(EnvironmentPlugin):
             Position vector (x, y, z)
         """
         return np.asarray(state, dtype=np.float32)[:3]
+
+    def get_position_dim(self) -> int:
+        """Position dimension (3 for 3D)."""
+        return 3
 
 
 class DroneFull3DPlugin(EnvironmentPlugin):
@@ -240,6 +252,10 @@ class DroneFull3DPlugin(EnvironmentPlugin):
         """
         return np.asarray(state, dtype=np.float32)[:3]
 
+    def get_position_dim(self) -> int:
+        """Position dimension (3 for 3D)."""
+        return 3
+
 
 class DroneFull3DPhysicsPlugin(EnvironmentPlugin):
     """
@@ -262,7 +278,7 @@ class DroneFull3DPhysicsPlugin(EnvironmentPlugin):
         
         Args:
             config: Environment configuration dictionary with keys:
-                - physics_backend: 'drone_model', 'mujoco', 'isaac', or None
+                - physics_backend: 'drone_model', 'mujoco', 'mjx', 'isaac', or None
                 - renderer: 'matplotlib', 'mujoco', 'isaac', or None
                 - use_jax_dynamics: Use JAX dynamics for planning (default: True)
                 - model_path_mujoco: Path to MuJoCo XML file (optional)
@@ -280,6 +296,8 @@ class DroneFull3DPhysicsPlugin(EnvironmentPlugin):
         
         if physics_backend == 'mujoco':
             env_name = 'drone_full_3d_mujoco'
+        elif physics_backend == 'mjx':
+            env_name = 'drone_full_3d_mjx'
         elif physics_backend == 'isaac':
             env_name = 'drone_full_3d_isaac'
         else:

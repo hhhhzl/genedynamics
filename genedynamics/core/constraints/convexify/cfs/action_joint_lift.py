@@ -18,9 +18,9 @@ from genedynamics.core.constraints.convexify.base import Convexifier
 from genedynamics.core.constraints.convexify.cfs.cfs import CFSConvexifier
 from genedynamics.core.constraints.convexify.cfs.action import (
     _to_numpy,
-    _default_extract_position,
     _group_state_halfspaces_by_t,
 )
+from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.core.constraints.core.types import ScheduleParams, ScheduleState, ConvexConstraint
 from genedynamics.core.constraints.core.registry import register
 from genedynamics.core.types import Trajectory, State
@@ -67,7 +67,7 @@ class CFSActionJointLiftConvexifier(Convexifier):
         self.obstacles = obstacles
         self.env = env
         self.action_mode = str(action_mode)
-        self.position_extractor = position_extractor or _default_extract_position
+        self.position_extractor = position_extractor or legacy_extract_position
         self.max_constraints_per_point = int(max_constraints_per_point)
         self.constraint_margin = float(constraint_margin)
         self.backend = str(backend)

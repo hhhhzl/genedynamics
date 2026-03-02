@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from genedynamics.core.types import Trajectory
+from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.solvers.single.dpcc.patch.avoiding_adapter import AvoidingDPCCAdapter
 from genedynamics.solvers.single.dpcc.patch.projector import Projector
 
@@ -32,7 +33,11 @@ class DPCCBackendTorch:
         self.indices = indices
         self.device = device
         self.seed = seed
-        self.adapter = adapter or AvoidingDPCCAdapter(env, constraint_config, indices)
+        self._position_extractor = plan_config.get("position_extractor") or legacy_extract_position
+        self._position_dim = int(plan_config.get("position_dim", 2))
+        self.adapter = adapter or AvoidingDPCCAdapter(
+            env, constraint_config, indices, position_extractor=self._position_extractor
+        )
 
         self._projector = None
         self._policy = None
@@ -192,7 +197,11 @@ class DPCCBackendTorch:
         x0 = np.asarray(x0, dtype=np.float32).reshape(-1)
         obs = x0.copy()
         if self.diffusion.observation_dim == 11 and obs.size == 9:
-            target_xy = np.asarray(self.adapter.env.target, dtype=np.float32).reshape(-1)[:2]
+            t = getattr(self.adapter.env, "target", None)
+            target_xy = np.asarray(
+                self._position_extractor(t) if t is not None else np.zeros(self._position_dim),
+                dtype=np.float32,
+            ).reshape(-1)[: self._position_dim]
             obs = np.concatenate([target_xy, obs], axis=0)
 
         num_modes = int(self.plan_config.get("num_modes", self.plan_config.get("batch_size", 4)))
@@ -495,7 +504,11 @@ class DPCCBackendTorch:
             for t in range(max_episode_length):
                 # 9D with target: env returns 9D state; policy expects 11D [x_des, y_des, x, y, q1..q7]. Inject target.
                 if self.diffusion.observation_dim == 11 and obs.size == 9:
-                    target_xy = np.asarray(self.adapter.env.target, dtype=np.float32).reshape(-1)[:2]
+                    t = getattr(self.adapter.env, "target", None)
+                    target_xy = np.asarray(
+                        self._position_extractor(t) if t is not None else np.zeros(self._position_dim),
+                        dtype=np.float32,
+                    ).reshape(-1)[: self._position_dim]
                     obs = np.concatenate([target_xy, obs], axis=0)
                 # --- Safety violation checks (match dpcc/scripts/eval.py) ---
                 violated_this_timestep = 0
@@ -647,7 +660,11 @@ class DPCCBackendTorch:
         obs = x0 if x0 is not None else self.adapter.reset(seed=self.seed)[0]
         obs = np.asarray(obs, dtype=np.float32).reshape(-1)
         if self.diffusion.observation_dim == 11 and obs.size == 9:
-            target_xy = np.asarray(self.adapter.env.target, dtype=np.float32).reshape(-1)[:2]
+            t = getattr(self.adapter.env, "target", None)
+            target_xy = np.asarray(
+                self._position_extractor(t) if t is not None else np.zeros(self._position_dim),
+                dtype=np.float32,
+            ).reshape(-1)[: self._position_dim]
             obs = np.concatenate([target_xy, obs], axis=0)
 
         _, samples = self._policy(

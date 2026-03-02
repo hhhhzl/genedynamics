@@ -16,6 +16,7 @@ import numpy as np
 from genedynamics.core.backends import Backend
 from genedynamics.core.backends.runtime import RuntimeBackendManager
 from genedynamics.core.dynamics import DynamicsModel
+from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.core.energy import EnergyFunctional
 from genedynamics.core.solvers import SamplingSolver
 from genedynamics.core.types import State, Trajectory
@@ -223,11 +224,13 @@ class SafeDiffuserSolver(SamplingSolver):
     ) -> Trajectory:
         dt = float(getattr(self.env, "dt", self.plan_config.get("dt", 0.035)))
         qdot_limit = float(getattr(self.env, "control_limit", 1.5))
+        pos_extractor = self.plan_config.get("position_extractor") or legacy_extract_position
         adapter = Avoiding9DAdapter(
             env=self.env,
             dt=dt,
             qdot_limit=qdot_limit,
             target_xy=self.goal_xy,
+            position_extractor=pos_extractor,
         )
 
         max_steps = int(self.plan_config.get("max_episode_length", 200))
@@ -462,11 +465,13 @@ class SafeDiffuserSolver(SamplingSolver):
 
         dt = float(getattr(self.env, "dt", self.plan_config.get("dt", 0.035)))
         qdot_limit = float(self.plan_config.get("lift_qdot_limit", 1.5))
+        pos_extractor = self.plan_config.get("position_extractor") or legacy_extract_position
         adapter = Avoiding9DAdapter(
             env=self.env,
             dt=dt,
             qdot_limit=qdot_limit,
             target_xy=self.goal_xy,
+            position_extractor=pos_extractor,
         )
         q0 = adapter.get_current_q()
         states_9d, actions_9d = adapter.lift_4d_to_9d_trajectory(

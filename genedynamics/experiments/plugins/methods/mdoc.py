@@ -10,6 +10,7 @@ import numpy as np
 from genedynamics.solvers.single.mdoc import MDOCSolver
 from genedynamics.core.dynamics import DynamicsToEnvAdapter
 from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.core.task_spec import get_default_task_spec
 from genedynamics.core.constraints.action_filters import (
     NoOpConstraintFilter,
     ClosedFormCBFFilter,
@@ -55,6 +56,7 @@ class MDOCMethodPlugin(MethodPlugin):
             "guide_weight": float(config.get("guide_weight", 20.0)),
         }
 
+        task_spec = get_default_task_spec(config.get("env_plugin"), config.get("env_name"))
         solver = MDOCSolver(
             dynamics=dynamics,
             energy=energy,
@@ -77,6 +79,8 @@ class MDOCMethodPlugin(MethodPlugin):
             diversity_eta=config.get("diversity_eta", 1.0),  # Diversity weight
             diversity_topK_cand=config.get("diversity_topK_cand", None),  # Pre-filter candidates
             diversity_use_state=config.get("diversity_use_state", True),  # Use state or action features
+            position_extractor=task_spec.extract_position,
+            position_dim=task_spec.position_dim,
             **cbf_params,
         )
         solver.env = env

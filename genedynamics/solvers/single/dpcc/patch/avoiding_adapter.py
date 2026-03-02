@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, Tuple
 
 import numpy as np
 
+from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.solvers.single.dpcc.patch.constraints_helpers import (
     formulate_bounds_constraints,
     formulate_dynamics_constraints,
@@ -17,10 +18,17 @@ class AvoidingDPCCAdapter:
     Adapter for D3IL Avoiding environment to DPCC-style observations/actions.
     """
 
-    def __init__(self, env, config: Dict[str, Any], indices: Dict[str, Dict[str, int]]):
+    def __init__(
+        self,
+        env,
+        config: Dict[str, Any],
+        indices: Dict[str, Dict[str, int]],
+        position_extractor=None,
+    ):
         self.env = env
         self.config = config
         self.indices = indices
+        self._position_extractor = position_extractor or legacy_extract_position
 
     def reset(self, seed: int | None = None):
         reset_out = self.env.reset(rng=None if seed is None else seed)
@@ -31,7 +39,7 @@ class AvoidingDPCCAdapter:
         obs = np.asarray(obs, dtype=np.float32).reshape(-1)
 
         robot_state = np.asarray(self.env.robot_state(), dtype=np.float32).reshape(-1)
-        action = robot_state[:2]
+        action = np.asarray(self._position_extractor(robot_state), dtype=np.float32).reshape(-1)
         fixed_z = robot_state[2:]
         return obs, action, fixed_z
 

@@ -21,6 +21,13 @@ except (ImportError, ModuleNotFoundError):
         "DummyPhysicsBackend",
     ]
 
+# MJX adapter (optional; requires mujoco-mjx)
+try:
+    from genedynamics.core.backends.adapters.mjx_adapter import MjxPhysicsBackend
+    __all__.append("MjxPhysicsBackend")
+except ImportError:
+    pass
+
 # Isaac Sim adapter (optional)
 try:
     from genedynamics.core.backends.adapters.isaac_adapter import IsaacSimBackend

@@ -11,6 +11,7 @@ from genedynamics.solvers.single.cfsmbd import CFSMBDSolver
 from genedynamics.core.dynamics import DynamicsToEnvAdapter
 from genedynamics.core.backends.runtime import RuntimeBackendManager
 from genedynamics.core.constraints.action_filters.cfs_qp_full import CFSQPFullFilter
+from genedynamics.core.task_spec import get_default_task_spec
 from ...framework.base import MethodPlugin
 
 
@@ -26,12 +27,16 @@ class CFSMBDFullMethodPlugin(MethodPlugin):
         backend = RuntimeBackendManager.get_backend()
         dynamics = DynamicsToEnvAdapter(env, dt=dt)
 
+        task_spec = get_default_task_spec(
+            config.get("env_plugin"), config.get("env_name")
+        )
         # Create CFS-based full trajectory QP filter (cfs_action for 2D, cfs_action_joint for 7D)
         constraint_filter = CFSQPFullFilter(
             max_constraints_per_point=int(config.get("max_constraints_per_point", 8)),
             constraint_margin=float(config.get("constraint_margin", 0.25)),
             use_slack=False,
             convexifier_name=str(config.get("cfs_action_convexifier", "cfs_action")),
+            position_extractor=task_spec.extract_position,
         )
 
         solver = CFSMBDSolver(
@@ -60,6 +65,8 @@ class CFSMBDFullMethodPlugin(MethodPlugin):
             diversity_eta=float(config.get("diversity_eta", 1.0)),  # Diversity weight
             diversity_topK_cand=config.get("diversity_topK_cand", None),  # Pre-filter candidates
             diversity_use_state=bool(config.get("diversity_use_state", True)),  # Use state or action features
+            position_extractor=task_spec.extract_position,
+            position_dim=task_spec.position_dim,
         )
         solver.env = env
         return solver

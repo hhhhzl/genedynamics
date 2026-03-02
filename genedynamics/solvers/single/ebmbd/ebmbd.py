@@ -15,6 +15,7 @@ from genedynamics.core.energy import EnergyFunctional, LegacyEnergyFunctional
 from genedynamics.core.backends import Backend
 from genedynamics.core.types import State, Trajectory
 from genedynamics.core.energy import EnergyToLegacyAdapter
+from genedynamics.core.task_spec import legacy_extract_position
 
 # Register backend implementations
 try:
@@ -70,6 +71,8 @@ class EBMBDSolver(SamplingSolver):
         diversity_use_state: bool = True,
         use_target_line: bool = False,
         num_targets: int = 4,
+        position_extractor=None,
+        position_dim: int = 2,
         **kwargs,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -106,6 +109,8 @@ class EBMBDSolver(SamplingSolver):
         self.diversity_use_state = bool(diversity_use_state)  # Use state features (True) or action features (False)
         self.use_target_line = bool(use_target_line)
         self.num_targets = int(num_targets)
+        self.position_extractor = position_extractor or legacy_extract_position
+        self.position_dim = int(position_dim)
         # Optional obstacle manager + config (for fast JAX SDF via texture)
         self._obstacles = obstacles
         self._obstacle_config = obstacle_config or {}

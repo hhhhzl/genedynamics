@@ -41,6 +41,7 @@ from genedynamics.experiments.plugins import (
     D3ILAvoidingPlugin,
     D3ILAvoiding9DPlugin,
     AvoidingPlanEnvironmentPlugin,
+    SoftZooEnvironmentPlugin,
     SSRMetricsPlugin,
     ObstacleDensityMetricsPlugin,
     NonconvexityMetricsPlugin,
@@ -192,6 +193,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(D3ILAvoidingPlugin(), 'environment')
     runner.register_plugin(D3ILAvoiding9DPlugin(), 'environment')
     runner.register_plugin(AvoidingPlanEnvironmentPlugin(), 'environment')
+    runner.register_plugin(SoftZooEnvironmentPlugin(), 'environment')
     
     # Metrics plugins
     runner.register_plugin(SSRMetricsPlugin(), 'metric')

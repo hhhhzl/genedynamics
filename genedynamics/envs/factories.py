@@ -79,9 +79,15 @@ def make_env(name: str, **kwargs):
     elif name == "drone_full_3d_mujoco":
         from genedynamics.envs.drone_full_3d_mujoco import DroneFull3DMujocoEnv
         return DroneFull3DMujocoEnv(**kwargs)
+    elif name == "drone_full_3d_mjx":
+        from genedynamics.envs.drone_full_3d_mjx import DroneFull3DMjxEnv
+        return DroneFull3DMjxEnv(**kwargs)
     elif name == "drone_full_3d_isaac":
         from genedynamics.envs.drone_full_3d_isaac import DroneFull3DIsaacEnv
         return DroneFull3DIsaacEnv(**kwargs)
+    elif name == "softzoo":
+        from genedynamics.experiments.plugins.environments.softzoo import SoftZooEnvironmentPlugin
+        return SoftZooEnvironmentPlugin().create_env(kwargs)
     else:
         available = []
         try:

@@ -12,6 +12,7 @@ except ImportError:
     HAS_TQDM = False
 
 from genedynamics.core.types import Trajectory, State
+from genedynamics.core.task_spec import legacy_extract_position
 
 
 class MBDBackendNumpy:
@@ -34,8 +35,12 @@ class MBDBackendNumpy:
         scheduler: Any = None,
         show_tqdm: bool = False,
         terminal_energy_weight: float = 100.0,
+        position_extractor=None,
+        position_dim: int = 2,
     ):
         self.env = env_adapter
+        self.position_extractor = position_extractor or legacy_extract_position
+        self.position_dim = int(position_dim)
         self.energy = legacy_energy
         self.terminal_energy_weight = float(terminal_energy_weight)
         self.horizon = horizon
@@ -99,11 +104,13 @@ class MBDBackendNumpy:
             ctx = {"t": int(t)}
             rewards[t] = -float(self.energy.compute(s, a, ctx))
         # Terminal cost: -terminal_weight * dist(final_state, target)
-        target = np.asarray(getattr(self.env, "target", (0.0, 0.0)), dtype=np.float32)
-        if hasattr(target, "__len__") and len(target) >= 2:
-            terminal_dist = float(np.linalg.norm(s[:2] - target[:2]))
+        t = getattr(self.env, "target", None)
+        if t is None:
+            target_pos = np.zeros(self.position_dim, dtype=np.float32)
         else:
-            terminal_dist = float(np.linalg.norm(s[:2] - np.zeros(2, dtype=np.float32)))
+            target_pos = np.asarray(self.position_extractor(t), dtype=np.float32).reshape(-1)[: self.position_dim]
+        final_pos = np.asarray(self.position_extractor(s), dtype=np.float32).reshape(-1)[: self.position_dim]
+        terminal_dist = float(np.linalg.norm(final_pos - target_pos))
         terminal_reward = -self.terminal_energy_weight * terminal_dist
         rewards[-1] += terminal_reward
         return rewards

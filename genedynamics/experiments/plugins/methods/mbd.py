@@ -8,6 +8,7 @@ import numpy as np
 from genedynamics.solvers.single.mbd import MBDSolver
 from genedynamics.core.dynamics.adapters import EnvDynamicsAdapter
 from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.core.task_spec import get_default_task_spec
 from ...framework.base import MethodPlugin
 
 
@@ -29,6 +30,7 @@ class MBDMethodPlugin(MethodPlugin):
         horizon = config.get("horizon", getattr(env, "horizon", 80))
         dt = config.get("dt", getattr(env, "dt", 0.1))
 
+        task_spec = get_default_task_spec(config.get("env_plugin"), config.get("env_name"))
         solver = MBDSolver(
             dynamics=dynamics,
             energy=energy,
@@ -51,6 +53,8 @@ class MBDMethodPlugin(MethodPlugin):
             diversity_topK_cand=config.get("diversity_topK_cand", None),  # Pre-filter candidates
             diversity_use_state=config.get("diversity_use_state", True),  # Use state or action features
             terminal_energy_weight=float(config.get("terminal_energy_weight", 100.0)),
+            position_extractor=task_spec.extract_position,
+            position_dim=task_spec.position_dim,
         )
         return solver
 

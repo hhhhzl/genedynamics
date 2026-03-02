@@ -75,11 +75,13 @@ class CFSQPFullFilter(ConstraintFilter):
         constraint_margin: float = 0.25,
         use_slack: bool = True,
         convexifier_name: str = "cfs_action",
+        position_extractor=None,
     ):
         self.max_constraints_per_point = max_constraints_per_point
         self.constraint_margin = constraint_margin
         self.use_slack = use_slack
         self.convexifier_name = str(convexifier_name)
+        self.position_extractor = position_extractor
         self._cfs_action_convexifier = None  # Lazy init
         self._obstacles_list = None  # Cached obstacle list for JAX multi-constraint
         self._num_obstacles = None  # Cached number of obstacles
@@ -105,7 +107,7 @@ class CFSQPFullFilter(ConstraintFilter):
             if impl_class is None:
                 from genedynamics.core.constraints.convexify.cfs.action import CFSActionConvexifier
                 impl_class = CFSActionConvexifier
-            self._cfs_action_convexifier = impl_class(
+            kwargs = dict(
                 obstacles=obstacles,
                 env=env,
                 action_mode="u_traj",
@@ -113,6 +115,9 @@ class CFSQPFullFilter(ConstraintFilter):
                 constraint_margin=self.constraint_margin,
                 backend="numpy",
             )
+            if self.position_extractor is not None:
+                kwargs["position_extractor"] = self.position_extractor
+            self._cfs_action_convexifier = impl_class(**kwargs)
         return self._cfs_action_convexifier
     
     def _get_obstacles_list(self, obstacles):

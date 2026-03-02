@@ -17,6 +17,7 @@ import jax
 import jax.numpy as jnp
 
 from genedynamics.solvers.single.diffusion_adaptors import diverse_topk_modes
+from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
 
 from genedynamics.core.types import Trajectory, State
@@ -90,6 +91,8 @@ class MDOCBackendJax:
             self.diversity_eta = float(solver.config.get("diversity_eta", 1.0))
             self.diversity_topK_cand = int(solver.config.get("diversity_topK_cand", None) or (self.Nsample // 2))
             self.diversity_use_state = bool(solver.config.get("diversity_use_state", True))
+            self.position_extractor = getattr(solver, "position_extractor", None) or legacy_extract_position
+            self.position_dim = int(getattr(solver, "position_dim", 2))
         else:
             self.num_modes = 1
             self.use_target_line = False
@@ -97,6 +100,8 @@ class MDOCBackendJax:
             self.diversity_eta = 1.0
             self.diversity_topK_cand = self.Nsample // 2
             self.diversity_use_state = True
+            self.position_extractor = kwargs.get("position_extractor") or legacy_extract_position
+            self.position_dim = int(kwargs.get("position_dim", 2))
 
         # Extract fixed CBF params from kwargs
         self.cbf_tau = float(kwargs.get("cbf_tau", 0.005))
@@ -175,10 +180,14 @@ class MDOCBackendJax:
         self._cost_fn = jax.jit(cost_fn)
 
         def rollout_rewards(state_init, actions):
-            target_obj = getattr(self.env, "target", None)
-            target = jnp.asarray(target_obj, dtype=jnp.float32) if target_obj is not None else jnp.zeros(2)
+            t = getattr(self.env, "target", None)
+            if t is None:
+                target = jnp.zeros(self.position_dim, dtype=jnp.float32)
+            else:
+                pos = np.asarray(self.position_extractor(t), dtype=np.float32).reshape(-1)[: self.position_dim]
+                target = jnp.asarray(pos, dtype=jnp.float32)
             
-            d0 = jnp.linalg.norm(state_init[0:2] - target[0:2])
+            d0 = jnp.linalg.norm(state_init[: self.position_dim] - target[: self.position_dim])
             t_star = float(self.horizon - 1)
             
             def step_fn(carry, action_and_t):
@@ -193,7 +202,7 @@ class MDOCBackendJax:
                 
                 # Guidance cost (Time smoothness)
                 d_hat = d0 * jnp.maximum(0.0, 1.0 - t / (t_star + 1e-6))
-                dist_to_goal = jnp.linalg.norm(next_state[0:2] - target[0:2])
+                dist_to_goal = jnp.linalg.norm(next_state[: self.position_dim] - target[: self.position_dim])
                 guide_reward = -self.guide_weight * jnp.square(dist_to_goal - d_hat)
                 
                 step_total = reward + guide_reward
@@ -205,7 +214,7 @@ class MDOCBackendJax:
             )
             
             # Terminal reward
-            terminal_dist = jnp.linalg.norm(final_state[0:2] - target[0:2])
+            terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
             terminal_reward = -self.terminal_weight * terminal_dist
             
             # Add terminal reward to the last step for visualization consistency
@@ -213,8 +222,8 @@ class MDOCBackendJax:
             return step_rewards
 
         def rollout_rewards_with_target(state_init, actions, target):
-            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:2]
-            d0 = jnp.linalg.norm(state_init[0:2] - target[0:2])
+            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[: self.position_dim]
+            d0 = jnp.linalg.norm(state_init[: self.position_dim] - target[: self.position_dim])
             t_star = float(self.horizon - 1)
 
             def step_fn(carry, action_and_t):
@@ -224,7 +233,7 @@ class MDOCBackendJax:
                 ctx = {"t": t, "target_xy": target}
                 reward = -self._cost_fn(next_state, action, ctx)
                 d_hat = d0 * jnp.maximum(0.0, 1.0 - t / (t_star + 1e-6))
-                dist_to_goal = jnp.linalg.norm(next_state[0:2] - target[0:2])
+                dist_to_goal = jnp.linalg.norm(next_state[: self.position_dim] - target[: self.position_dim])
                 guide_reward = -self.guide_weight * jnp.square(dist_to_goal - d_hat)
                 step_total = reward + guide_reward
                 return (next_state, cum_reward + step_total), step_total
@@ -233,7 +242,7 @@ class MDOCBackendJax:
             (final_state, _), step_rewards = jax.lax.scan(
                 step_fn, (state_init, 0.0), (actions, t_indices)
             )
-            terminal_dist = jnp.linalg.norm(final_state[0:2] - target[0:2])
+            terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
             terminal_reward = -self.terminal_weight * terminal_dist
             step_rewards = step_rewards.at[-1].add(terminal_reward)
             return step_rewards
@@ -456,8 +465,11 @@ class MDOCBackendJax:
                 dtype=jnp.float32,
             )
         else:
-            default_tgt = getattr(self.env, "target", None)
-            default_tgt = np.asarray(default_tgt, dtype=np.float32).reshape(-1)[:2] if default_tgt is not None else np.zeros(2, dtype=np.float32)
+            t = getattr(self.env, "target", None)
+            if t is None:
+                default_tgt = np.zeros(self.position_dim, dtype=np.float32)
+            else:
+                default_tgt = np.asarray(self.position_extractor(t), dtype=np.float32).reshape(-1)[: self.position_dim]
             targets_per_mode = jnp.tile(jnp.asarray(default_tgt, dtype=jnp.float32), (C, 1))
 
         betas = jnp.linspace(self.beta0, self.betaT, self.Ndiffuse, dtype=jnp.float32)

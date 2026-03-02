@@ -11,6 +11,7 @@ import numpy as np
 
 from genedynamics.core.dynamics import DynamicsToEnvAdapter
 from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.core.task_spec import get_default_task_spec
 from ...framework.base import MethodPlugin
 from genedynamics.solvers.single.safediffuser import SafeDiffuserSolver
 
@@ -95,9 +96,16 @@ class SafeDiffuserMethodPlugin(MethodPlugin):
         # 9D extra action-space safety projection (optional)
         plan_config.setdefault("action_cbf_alpha", float(config.get("action_cbf_alpha", 0.5)))
         plan_config.setdefault("action_cbf_margin", float(config.get("action_cbf_margin", 0.0)))
+        task_spec = get_default_task_spec(config.get("env_plugin"), config.get("env_name"))
+        plan_config.setdefault("position_extractor", task_spec.extract_position)
+        plan_config.setdefault("position_dim", task_spec.position_dim)
 
         # Goal comes from d3il env wrapper by default.
-        goal_xy = np.asarray(config.get("goal_xy", getattr(env, "target", None)), dtype=np.float32) if getattr(env, "target", None) is not None or config.get("goal_xy") is not None else None
+        goal_xy = None
+        if config.get("goal_xy") is not None:
+            goal_xy = np.asarray(task_spec.extract_position(np.asarray(config["goal_xy"])), dtype=np.float32).reshape(-1)[: task_spec.position_dim]
+        elif getattr(env, "target", None) is not None:
+            goal_xy = np.asarray(task_spec.extract_position(getattr(env, "target")), dtype=np.float32).reshape(-1)[: task_spec.position_dim]
 
         dynamics = DynamicsToEnvAdapter(env, dt=float(getattr(env, "dt", 0.1)))
         backend = RuntimeBackendManager.get_backend()
