@@ -2,7 +2,7 @@
 
 ## Overview
 
-The enerdynamics framework provides a unified interface for energy-driven control across multiple environments, backends, and physics engines.
+The genedynamics framework provides a unified interface for energy-driven control across multiple environments, backends, and physics engines.
 
 ## Design Principles
 
@@ -88,7 +88,7 @@ User Code
 ### Adding a New Backend
 
 1. Implement the `Backend` protocol
-2. Register in `enerdynamics/core/backend.py`
+2. Register in `genedynamics/core/backend.py`
 3. Add tests in `test/unit/test_backends.py`
 
 ### Adding a New Environment

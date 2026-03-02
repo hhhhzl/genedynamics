@@ -25,19 +25,19 @@ Configuration files use YAML format and define all parameters needed to run expe
 Run experiments from a configuration file:
 
 ```bash
-python -m enerdynamics.experiments.run_experiment_from_config configs/double_integrator_box_2d/edoc_default.yaml
+python -m genedynamics.experiments.run_experiment_from_config configs/double_integrator_box_2d/edoc_default.yaml
 ```
 
 Or with specific level/seed:
 
 ```bash
-python -m enerdynamics.experiments.run_experiment_from_config configs/double_integrator_box_2d/edoc_default.yaml --level 5 --seed 0
+python -m genedynamics.experiments.run_experiment_from_config configs/double_integrator_box_2d/edoc_default.yaml --level 5 --seed 0
 ```
 
 Validate configuration without running:
 
 ```bash
-python -m enerdynamics.experiments.run_experiment_from_config configs/double_integrator_box_2d/edoc_default.yaml --dry-run
+python -m genedynamics.experiments.run_experiment_from_config configs/double_integrator_box_2d/edoc_default.yaml --dry-run
 ```
 
 ## Creating Custom Configurations
@@ -49,5 +49,5 @@ python -m enerdynamics.experiments.run_experiment_from_config configs/double_int
 
 ## Configuration Schema
 
-See `enerdynamics/experiments/framework/config.py` for the full `ExperimentConfig` dataclass definition.
+See `genedynamics/experiments/framework/config.py` for the full `ExperimentConfig` dataclass definition.
 

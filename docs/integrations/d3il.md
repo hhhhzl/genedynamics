@@ -66,7 +66,7 @@ This keeps task extensions isolated and avoids copy/paste bugs.
 Because D3IL imports are rooted at `environments.*`, the directory **containing** the `environments/` package must be on `sys.path` / `PYTHONPATH`:
 
 - Add `<repo_root>/third_party` to `PYTHONPATH`, or
-- Call `enerdynamics.envs.external.d3il.ensure_d3il_on_path()` early (preferred inside adapters).
+- Call `genedynamics.envs.external.d3il.ensure_d3il_on_path()` early (preferred inside adapters).
 
 ### MuJoCo assets / path resolution
 
@@ -81,7 +81,7 @@ So the two key rules are:
 For reproducibility, replace the vendored copy with a **git submodule** pinned to a specific commit:
 - `third_party/environments/d3il` (or a repo that contains `environments/d3il`)
 
-This keeps `enerdynamics` clean while allowing controlled upgrades.
+This keeps `genedynamics` clean while allowing controlled upgrades.
 
 ## A → E summary (what we changed) and how to run
 
@@ -97,7 +97,7 @@ This section documents the current integration status, end-to-end:
 
 - **Vendored D3IL env stack**: `third_party/environments/d3il/`
 - **`environments.*` package root**: `third_party/environments/__init__.py`
-- **Bootstrap**: `enerdynamics/envs/external/d3il/bootstrap.py` (`ensure_d3il_on_path()` supports:
+- **Bootstrap**: `genedynamics/envs/external/d3il/bootstrap.py` (`ensure_d3il_on_path()` supports:
   - `third_party/environments/d3il` (vendored subtree)
   - `third_party/d3il/environments/d3il` (full upstream repo)
   )
@@ -111,8 +111,8 @@ This section documents the current integration status, end-to-end:
 
 ### B — D3IL Avoiding env integration
 
-- **Wrapper env**: `enerdynamics/envs/external/d3il/avoiding_env.py`
-- **Env plugin**: `enerdynamics/experiments/plugins/environments/d3il_avoiding.py`
+- **Wrapper env**: `genedynamics/envs/external/d3il/avoiding_env.py`
+- **Env plugin**: `genedynamics/experiments/plugins/environments/d3il_avoiding.py`
   - `env_name: d3il_avoiding`
 - **State/action convention (avoiding)**:
   - `state = [x_des, y_des, x, y]`
@@ -120,11 +120,11 @@ This section documents the current integration status, end-to-end:
 
 ### C — EDOC/MBD on D3IL Avoiding (MPC)
 
-- **Planning model**: `enerdynamics/envs/external/d3il/avoiding_plan_env.py` (`AvoidingPlanEnv`)
-- **MPC executor**: `enerdynamics/experiments/common/d3il_mpc.py`
+- **Planning model**: `genedynamics/envs/external/d3il/avoiding_plan_env.py` (`AvoidingPlanEnv`)
+- **MPC executor**: `genedynamics/experiments/common/d3il_mpc.py`
 - **Method plugins**:
-  - `method: edoc_mpc` → `enerdynamics/experiments/plugins/methods/edoc_mpc.py`
-  - `method: mbd_mpc` → `enerdynamics/experiments/plugins/methods/mbd_mpc.py`
+  - `method: edoc_mpc` → `genedynamics/experiments/plugins/methods/edoc_mpc.py`
+  - `method: mbd_mpc` → `genedynamics/experiments/plugins/methods/mbd_mpc.py`
 
 ### D — Standard outputs + minimal metrics/viz
 
@@ -133,14 +133,14 @@ This section documents the current integration status, end-to-end:
   - `success`, `collision`
   - `planning_time_per_step`, `avg_planning_time_per_step`
 - **Metric plugin**:
-  - `metric: episode_outcome` → `enerdynamics/experiments/plugins/metrics/episode_outcome.py`
+  - `metric: episode_outcome` → `genedynamics/experiments/plugins/metrics/episode_outcome.py`
 - **SSR now supports non-standard state layout** via `env_plugin.extract_position(...)`
 
 ### E3 — TaskSpec abstraction (for future multi-task scaling)
 
-- **Spec interface**: `enerdynamics/envs/external/d3il/specs/base.py`
-- **Avoiding spec**: `enerdynamics/envs/external/d3il/specs/avoiding.py`
-- **Generic wrapper**: `enerdynamics/envs/external/d3il/task_env.py` (`D3ILTaskEnv`)
+- **Spec interface**: `genedynamics/envs/external/d3il/specs/base.py`
+- **Avoiding spec**: `genedynamics/envs/external/d3il/specs/avoiding.py`
+- **Generic wrapper**: `genedynamics/envs/external/d3il/task_env.py` (`D3ILTaskEnv`)
 - **Avoiding wrapper is spec-driven** (API unchanged): `D3ILAvoidingEnv` delegates to `D3ILTaskEnv(D3ILAvoidingSpec)`
 
 ## How to run
@@ -174,7 +174,7 @@ Example config:
 Run:
 
 ```bash
-python3 -m enerdynamics.experiments.run_experiment_from_config configs/avoiding_plan/mbd.yaml
+python3 -m genedynamics.experiments.run_experiment_from_config configs/avoiding_plan/mbd.yaml
 ```
 
 ### 2) MPC on real D3IL MuJoCo (plan in JAX model, execute in env)

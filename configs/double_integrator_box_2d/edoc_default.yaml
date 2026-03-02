@@ -76,5 +76,5 @@ constraint_config:
 
 metadata:
   description: "Default EDOC configuration for double integrator 2D environment"
-  author: "enerdynamics"
+  author: "genedynamics"
 

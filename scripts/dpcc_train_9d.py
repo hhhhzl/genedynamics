@@ -64,7 +64,7 @@ def _prepare_args(params: dict, dataset: str, seed: int, device_override: str | 
 
 
 def _attach_stepper(diffusion):
-    from enerdynamics.solvers.single.dpcc.stepper import DPCCTorchStepper
+    from genedynamics.solvers.single.dpcc.stepper import DPCCTorchStepper
 
     stepper = DPCCTorchStepper(diffusion)
     diffusion.p_mean_variance = stepper.p_mean_variance

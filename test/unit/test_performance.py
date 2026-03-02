@@ -12,8 +12,8 @@ import pytest
 import numpy as np
 import time
 
-from enerdynamics.core.types import Trajectory
-from enerdynamics.core.constraints.core import (
+from genedynamics.core.types import Trajectory
+from genedynamics.core.constraints.core import (
     HighPerformanceConstraintPipeline,
     PipelineConfig,
     ScheduleState,
@@ -38,8 +38,8 @@ class TestPerformance:
     
     def test_cache_effectiveness(self):
         """Test that caching improves performance."""
-        from enerdynamics.core.constraints.core import ConstraintCache, CacheKey, ConvexConstraint
-        from enerdynamics.core.constraints.core.types import ScheduleParams
+        from genedynamics.core.constraints.core import ConstraintCache, CacheKey, ConvexConstraint
+        from genedynamics.core.constraints.core.types import ScheduleParams
         
         cache = ConstraintCache(size=100)
         

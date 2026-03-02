@@ -17,7 +17,7 @@ with open(path.join(here, 'requirements.txt'), encoding='utf-8') as f:
 
 
 setup(
-    name='enerdynamics',
+    name='genedynamics',
     version="0.0.1",
     description='',
     author='hector',

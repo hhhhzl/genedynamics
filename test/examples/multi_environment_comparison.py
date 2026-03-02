@@ -18,7 +18,7 @@ def main():
     
     # Example 1: Native environment
     try:
-        from enerdynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
+        from genedynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
         
         native_env = DoubleIntegratorBoxEnv()
         state, info = native_env.reset()
@@ -29,7 +29,7 @@ def main():
     # Example 2: Gymnasium adapter
     try:
         import gymnasium as gym
-        from enerdynamics.envs.adapters.gymnasium_adapter import GymnasiumEnvAdapter
+        from genedynamics.envs.adapters.gymnasium_adapter import GymnasiumEnvAdapter
         
         gym_env = gym.make("CartPole-v1")
         gym_adapter = GymnasiumEnvAdapter(gym_env)
@@ -40,8 +40,8 @@ def main():
     
     # Example 3: Unified adapter
     try:
-        from enerdynamics.envs.adapters.unified_adapter import UnifiedEnvAdapter
-        from enerdynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
+        from genedynamics.envs.adapters.unified_adapter import UnifiedEnvAdapter
+        from genedynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
         
         native_env = DoubleIntegratorBoxEnv()
         unified_adapter = UnifiedEnvAdapter(native_env)

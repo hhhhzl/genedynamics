@@ -26,12 +26,12 @@ import pytest
 if __name__ != "__main__":
     pytest.importorskip("jax")
 
-from enerdynamics.envs.obstacles.base import ObstacleManager
-from enerdynamics.envs.obstacles.convex import SphereObstacle
-from enerdynamics.envs.external.d3il.avoiding_plan_env_9d import AvoidingPlanEnv9D, AvoidingPlanSpec9D
-from enerdynamics.core.dynamics.adapters import EnvDynamicsAdapter
-from enerdynamics.core.constraints.action_filters.cfs_qp_full import CFSQPFullFilter
-from enerdynamics.core.constraints.core.types import ScheduleState
+from genedynamics.envs.obstacles.base import ObstacleManager
+from genedynamics.envs.obstacles.convex import SphereObstacle
+from genedynamics.envs.external.d3il.avoiding_plan_env_9d import AvoidingPlanEnv9D, AvoidingPlanSpec9D
+from genedynamics.core.dynamics.adapters import EnvDynamicsAdapter
+from genedynamics.core.constraints.action_filters.cfs_qp_full import CFSQPFullFilter
+from genedynamics.core.constraints.core.types import ScheduleState
 
 
 # -----------------------------------------------------------------------------

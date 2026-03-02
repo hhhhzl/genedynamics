@@ -20,7 +20,7 @@ def test_d3il_avoiding_import_and_reset_step_optional():
     except Exception:
         pytest.skip("mujoco not installed")
 
-    from enerdynamics.envs.external.d3il import D3ILAvoidingEnv, D3ILAvoidingConfig
+    from genedynamics.envs.external.d3il import D3ILAvoidingEnv, D3ILAvoidingConfig
 
     env = D3ILAvoidingEnv(D3ILAvoidingConfig(render=False))
     s0, info0 = env.reset()
