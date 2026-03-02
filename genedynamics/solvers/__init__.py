@@ -18,11 +18,6 @@ All solvers share the same interface:
 from genedynamics.core.solvers import Solver, SamplingSolver, OptimizationSolver
 
 # Solver implementations
-from genedynamics.solvers.single.edoc import (
-    EDOCSolver,
-    EDOCPlanner,
-    run_edoc,
-)
 from genedynamics.solvers.single.mbd.mbd import MBDSolver, run_mbd
 from genedynamics.solvers.single.mppi.mppi import MPPISolver, run_mppi
 from genedynamics.solvers.single.cem.cem import CEMSolver, run_cem
@@ -32,10 +27,6 @@ __all__ = [
     "Solver",
     "SamplingSolver",
     "OptimizationSolver",
-    # EDOC
-    "EDOCSolver",
-    "EDOCPlanner",
-    "run_edoc",
     # MBD
     "MBDSolver",
     "run_mbd",

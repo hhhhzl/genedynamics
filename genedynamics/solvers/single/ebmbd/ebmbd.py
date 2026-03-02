@@ -14,7 +14,7 @@ from genedynamics.core.dynamics import DynamicsModel, DynamicsToEnvAdapter
 from genedynamics.core.energy import EnergyFunctional, LegacyEnergyFunctional
 from genedynamics.core.backends import Backend
 from genedynamics.core.types import State, Trajectory
-from genedynamics.solvers.single.edoc import EnergyToLegacyAdapter
+from genedynamics.core.energy import EnergyToLegacyAdapter
 
 # Register backend implementations
 try:
