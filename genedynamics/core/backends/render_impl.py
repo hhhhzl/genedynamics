@@ -711,7 +711,7 @@ class MujocoRenderer(RenderBackend):
                 
                 return depth
             except (AttributeError, TypeError):
-                # Fallback to legacy API
+                # Fallback to alternate API
                 if self._scene is None:
                     self._scene = self.mujoco.MjvScene(self.model, maxgeom=10000)
                     self._context = self.mujoco.MjrContext(self.model, self.mujoco.mjtFontScale.mjFONTSCALE_150)

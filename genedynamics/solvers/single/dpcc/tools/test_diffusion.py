@@ -76,7 +76,7 @@ def _build_indices_from_cfg(dpcc_cfg: Dict[str, Any], env_name: str) -> Dict[str
     act = (dpcc_cfg.get("action_indices", {}) or {}).get(robot_name)
 
     if env_name == "d3il_avoiding_9d":
-        # Force 9D semantics to avoid mixing with 4D indices in legacy yaml.
+        # Force 9D semantics to avoid mixing with 4D indices in older configs.
         return _default_indices(env_name)
 
     if isinstance(obs, dict) and isinstance(act, dict):

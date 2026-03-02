@@ -48,10 +48,6 @@ from genedynamics.core.solvers import (
     OptimizationSolver,
 )
 
-# Legacy utilities (for backward compatibility)
-# Note: project_box and soft_box_energy are now in constraints.base for backward compatibility
-# New code should use genedynamics.core.constraints for the full constraint system
-from genedynamics.core.constraints.legacy.base import project_box, soft_box_energy
 from genedynamics.core.metrics import euclidean_metric_inv
 from genedynamics.core.integrators import langevin_step, euler_step
 
@@ -84,9 +80,6 @@ __all__ = [
     "Solver",
     "SamplingSolver",
     "OptimizationSolver",
-    # Legacy utilities
-    "project_box",
-    "soft_box_energy",
     "euclidean_metric_inv",
     "langevin_step",
     "euler_step",

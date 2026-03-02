@@ -71,7 +71,7 @@ class SSRMetricsPlugin(MetricsPlugin):
                     safe = False
                     break
         
-        # Check constraint feasibility
+        # Check constraint feasibility (ConstraintManager-style only)
         feasible = True
         constraint_name = "unknown"
         if constraints is not None and hasattr(constraints, 'hard_constraints'):
@@ -82,6 +82,8 @@ class SSRMetricsPlugin(MetricsPlugin):
                         feasible = False
                         constraint_name = type(hard_constraint).__name__
                         break
+        elif constraints is not None:
+            constraint_name = "pipeline"
         
         # Check task success: reached target within margin
         task_success = False

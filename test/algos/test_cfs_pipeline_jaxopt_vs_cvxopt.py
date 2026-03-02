@@ -2,8 +2,8 @@
 Test script to compare CFS pipeline results using jaxopt.OSQP vs cvxopt.
 
 This script tests the numerical differences between jaxopt.OSQP and cvxopt QP solvers
-when used in the new HighPerformanceConstraintPipeline architecture (CFSConvexifier + Operator),
-to ensure they produce similar results to the legacy CFSProjection.
+when used in the HighPerformanceConstraintPipeline architecture (CFSConvexifier + Operator),
+to ensure they produce similar results across solvers.
 """
 import numpy as np
 import time
@@ -110,9 +110,9 @@ def test_cfs_pipeline_with_solver(solver_name: str, use_jit: bool = False):
     operator_kwargs = {
         'use_slack': True,
         'solver_backend': traj_qp_backend,  # 'jax' or 'numpy'
-        'max_iterations': 30,  # Match legacy: max_iterations=30
-        'convergence_tol': 1e-6,  # Match legacy: convergence_tol=1e-6
-        'smoothness_weight': 1.0,  # Match legacy: smoothness_weight=1.0
+        'max_iterations': 30,  # Match baseline settings
+        'convergence_tol': 1e-6,  # Match baseline settings
+        'smoothness_weight': 1.0,  # Match baseline settings
     }
     
     pipeline = HighPerformanceConstraintPipeline(

@@ -6,9 +6,7 @@ constraint creation, and other common functionality.
 """
 
 from .constraints import (
-    AccelerationConstraint,
-    SpeedConstraint,
-    create_constraint_manager,
+    create_constraint_pipeline,
 )
 from .obstacle_generation import (
     generate_box2d_obstacles,
@@ -20,9 +18,7 @@ from .obstacle_generation import (
 )
 
 __all__ = [
-    "AccelerationConstraint",
-    "SpeedConstraint",
-    "create_constraint_manager",
+    "create_constraint_pipeline",
     "generate_box2d_obstacles",
     "check_obstacle_spacing",
     "get_obstacle_radius",
