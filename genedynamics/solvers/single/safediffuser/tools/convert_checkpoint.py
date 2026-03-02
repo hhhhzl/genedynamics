@@ -11,12 +11,9 @@ from typing import Any, Dict
 import numpy as np
 import yaml
 
-# Ensure `scripts/` is importable regardless of current working directory.
-_SCRIPTS_DIR = Path(__file__).resolve().parent
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-from safediffuser_utils.normalization_value_extractor import load_limits_from_dataset_artifacts
+from genedynamics.solvers.single.safediffuser.tools.utils.normalization_value_extractor import (
+    load_limits_from_dataset_artifacts,
+)
 
 
 def _install_minimal_diffuser_shims() -> Dict[str, types.ModuleType]:
@@ -86,7 +83,6 @@ def _install_minimal_diffuser_shims() -> Dict[str, types.ModuleType]:
     mod_sequence.SequenceDataset = type("SequenceDataset", (), {})  # type: ignore[attr-defined]
 
     return inserted
-
 
 
 def _load_pickle(path: Path) -> Any:
@@ -253,4 +249,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

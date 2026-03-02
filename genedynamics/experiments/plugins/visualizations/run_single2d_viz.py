@@ -6,7 +6,7 @@ Run from project root (with the same env that has genedynamics deps, e.g. jax), 
   python -m genedynamics.experiments.plugins.visualizations.run_single2d_viz --which cost
 
 Outputs go to results/single2d/visualizations/ (cost_vs_step/, best_trajectories/, cfsmbd_adaptive/, ssr_heatmap.png, time_per_level/).
-Use --config CONFIG so best_trajectories obstacles match results/env_preview (same YAML as scripts/visualize_env_levels_seeds.py).
+Use --config CONFIG so best_trajectories obstacles match results/env_preview (same YAML as scripts/visualizations/visualize_env_levels_seeds.py).
 Uncertainty band: SEM × UNCERTAINTY_MULTIPLIER (default 2.0). Transparency: STD_BAND_ALPHA. Algorithm colors: ALGO_COLORS.
 """
 

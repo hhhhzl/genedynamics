@@ -6,8 +6,8 @@ with the same style (no bold for best). Outputs go to results/d3il_avoiding/visu
 like results/single2d/visualizations. Method is passed via CLI (e.g. mdcoas, mdcoas-f).
 
 Usage (from project root):
-  python scripts/visualize_d3il_trajectory_all_seeds.py --method mdcoas
-  python scripts/visualize_d3il_trajectory_all_seeds.py --method mdcoas-f
+  python scripts/visualizations/visualize_d3il_trajectory_all_seeds.py --method mdcoas
+  python scripts/visualizations/visualize_d3il_trajectory_all_seeds.py --method mdcoas-f
 
 Output: results/d3il_avoiding/visualizations/<method>/level_<i>.png
 """
@@ -151,7 +151,7 @@ def main():
     )
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[2]
     if args.config is None:
         config_path = project_root / "configs" / "d3il_avoiding" / f"{args.method}.yaml"
     else:

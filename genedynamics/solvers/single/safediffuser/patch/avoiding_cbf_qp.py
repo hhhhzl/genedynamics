@@ -196,7 +196,7 @@ class AvoidingCBFQPCorrector:
     def _get_limits_np(self, key: str) -> Tuple[np.ndarray, np.ndarray]:
         """
         Extract (mins, maxs) arrays from either:
-        - our `PlanningNormalizer` (safediffuser_utils), or
+        - our `PlanningNormalizer` (safediffuser tools utils), or
         - third_party `diffuser.datasets.normalization.DatasetNormalizer`.
         """
         norms = getattr(self.normalizer, "normalizers", None)

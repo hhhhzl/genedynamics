@@ -10,6 +10,10 @@ from typing import Any, Dict
 import numpy as np
 
 
+def _resolve_project_root() -> Path:
+    return Path(__file__).resolve().parents[5]
+
+
 def _ensure_paths(project_root: Path) -> None:
     third_party = project_root / "third_party"
     if str(project_root) not in sys.path:
@@ -130,7 +134,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = _resolve_project_root()
     _ensure_paths(project_root)
 
     dpcc_cfg = _load_yaml((project_root / args.dpcc_config_path).resolve())
