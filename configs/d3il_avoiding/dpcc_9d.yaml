@@ -11,7 +11,7 @@ env_params:
 method: dpcc
 method_params:
   exp: avoiding-d3il-9d
-  dpcc_config_path: enerdynamics/solvers/single/dpcc/config/projection_eval.yaml
+  dpcc_config_path: genedynamics/solvers/single/dpcc/config/projection_eval.yaml
   loadbase: logs
   dataset: avoiding-d3il-9d
   diffusion_loadpath: diffusion/H8_K20_Dmodels.GaussianDiffusion

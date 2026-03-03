@@ -28,7 +28,7 @@ class TestJAXDynamics:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         
-        from enerdynamics.envs.utils.jax_dynamics import jax_quadrotor_step
+        from genedynamics.envs.utils.jax_dynamics import jax_quadrotor_step
         
         state = jnp.zeros(12, dtype=jnp.float32)
         action = jnp.array([0.5, 0.5, 0.5, 0.5], dtype=jnp.float32)
@@ -48,7 +48,7 @@ class TestJAXDynamics:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         
-        from enerdynamics.envs.utils.jax_dynamics import jax_quadrotor_step_batch
+        from genedynamics.envs.utils.jax_dynamics import jax_quadrotor_step_batch
         
         batch_size = 10
         states = jnp.zeros((batch_size, 12), dtype=jnp.float32)
@@ -69,7 +69,7 @@ class TestJAXDynamics:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         
-        from enerdynamics.envs.utils.jax_dynamics import jax_quadrotor_step
+        from genedynamics.envs.utils.jax_dynamics import jax_quadrotor_step
         
         state = jnp.zeros(12, dtype=jnp.float32)
         action = jnp.array([0.5, 0.5, 0.5, 0.5], dtype=jnp.float32)
@@ -107,7 +107,7 @@ class TestJAXRollout:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         
-        from enerdynamics.envs.utils.jax_rollout import jax_rollout_single
+        from genedynamics.envs.utils.jax_rollout import jax_rollout_single
         
         initial_state = jnp.zeros(12, dtype=jnp.float32)
         horizon = 10
@@ -129,7 +129,7 @@ class TestJAXRollout:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         
-        from enerdynamics.envs.utils.jax_rollout import jax_rollout_batch
+        from genedynamics.envs.utils.jax_rollout import jax_rollout_batch
         
         batch_size = 5
         horizon = 10
@@ -152,7 +152,7 @@ class TestJAXRollout:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         
-        from enerdynamics.envs.utils.jax_rollout import jax_rollout_hybrid
+        from genedynamics.envs.utils.jax_rollout import jax_rollout_hybrid
         
         initial_state = np.zeros(12, dtype=np.float32)
         horizon = 10
@@ -181,7 +181,7 @@ class TestJAXEnvironment:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         
-        from enerdynamics.envs.factories import make_env
+        from genedynamics.envs.factories import make_env
         
         env = make_env(
             "drone_full_3d_physics",
@@ -209,7 +209,7 @@ class TestJAXEnvironment:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         
-        from enerdynamics.envs.factories import make_env
+        from genedynamics.envs.factories import make_env
         
         env = make_env(
             "drone_full_3d_physics",
@@ -232,7 +232,7 @@ class TestJAXEnvironment:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         
-        from enerdynamics.envs.factories import make_env
+        from genedynamics.envs.factories import make_env
         
         env = make_env(
             "drone_full_3d_physics",
@@ -256,7 +256,7 @@ class TestJAXEnvironment:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         
-        from enerdynamics.envs.factories import make_env
+        from genedynamics.envs.factories import make_env
         
         env = make_env(
             "drone_full_3d_physics",
@@ -287,7 +287,7 @@ class TestJAXPerformance:
         if not JAX_AVAILABLE:
             pytest.skip("JAX not available")
         
-        from enerdynamics.envs.utils.jax_dynamics import (
+        from genedynamics.envs.utils.jax_dynamics import (
             jax_quadrotor_step,
             jax_quadrotor_step_batch,
         )

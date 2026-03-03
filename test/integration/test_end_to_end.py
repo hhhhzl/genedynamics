@@ -7,10 +7,10 @@ Tests complete workflows from environment creation to solver execution.
 import pytest
 import numpy as np
 
-from enerdynamics.envs.base_env import BaseEnvMixin
-from enerdynamics.envs.obstacles.convex import BoxObstacle, SphereObstacle
-from enerdynamics.core.backends.physics import DummyPhysicsBackend
-from enerdynamics.core.backends.render_impl import NullRenderer
+from genedynamics.envs.base_env import BaseEnvMixin
+from genedynamics.envs.obstacles.convex import BoxObstacle, SphereObstacle
+from genedynamics.core.backends.physics import DummyPhysicsBackend
+from genedynamics.core.backends.render_impl import NullRenderer
 
 
 @pytest.mark.integration
@@ -228,7 +228,7 @@ class TestPerformanceBenchmarks:
             for i in range(100)
         ]
         
-        from enerdynamics.envs.obstacles.base import ObstacleManager
+        from genedynamics.envs.obstacles.base import ObstacleManager
         manager = ObstacleManager(obstacles)
         
         # Benchmark contains queries
@@ -254,7 +254,7 @@ class TestPerformanceBenchmarks:
             for i in range(10)
         ]
         
-        from enerdynamics.envs.obstacles.base import ObstacleManager
+        from genedynamics.envs.obstacles.base import ObstacleManager
         manager = ObstacleManager(obstacles)
         
         # Benchmark SDF queries

@@ -1,0 +1,130 @@
+"""
+CFS (Convex Feasible Set) convexifier.
+
+Converts non-convex obstacle constraints into local convex corridors
+by linearizing SDF constraints around reference points.
+"""
+
+from typing import Optional, Callable, Any
+import numpy as np
+
+from genedynamics.core.constraints.convexify.base import Convexifier
+from genedynamics.core.constraints.core.types import (
+    ScheduleState,
+    ScheduleParams,
+    ConvexConstraint,
+)
+from genedynamics.core.constraints.core.registry import get_registry, register
+from genedynamics.core.types import Trajectory, State
+from genedynamics.core.task_spec import legacy_extract_position
+from genedynamics.envs.obstacles.base import ObstacleManager
+
+
+class CFSConvexifier(Convexifier):
+    """
+    CFS convexifier: Non-convex obstacles -> local convex corridors.
+    
+    This convexifier linearizes SDF constraints around reference points
+    to create local convex feasible sets (half-spaces).
+    
+    The output is a ConvexConstraint with A and b matrices representing
+    linear inequalities A x >= b.
+    """
+    
+    def __init__(
+        self,
+        obstacles: ObstacleManager,
+        position_extractor: Optional[Callable[[State], np.ndarray]] = None,
+        max_constraints_per_point: int = 8,
+        constraint_margin: float = 0.25,
+        backend: str = "numpy",
+        _skip_backend_lookup: bool = False,
+        **kwargs
+    ):
+        """
+        Initialize CFS convexifier.
+        
+        Args:
+            obstacles: ObstacleManager containing obstacles
+            position_extractor: Function to extract position from state
+            max_constraints_per_point: Maximum constraints per point
+            constraint_margin: Margin for constraint tightening
+            backend: Backend to use ("numpy", "jax", "torch")
+            _skip_backend_lookup: Internal flag to skip backend lookup (prevents recursion)
+            **kwargs: Additional arguments
+        """
+        self.obstacles = obstacles
+        self.position_extractor = position_extractor or legacy_extract_position
+        self.max_constraints_per_point = max_constraints_per_point
+        self.constraint_margin = constraint_margin
+        self.backend = backend
+        
+        # Get backend implementation from registry
+        # Skip if this is already a backend implementation (prevents recursion)
+        # Backend implementations (CFSNumpyConvexifier, CFSJAXConvexifier) should not
+        # try to look up another backend implementation
+        if not _skip_backend_lookup:
+            # Check if this class is registered as a backend implementation
+            # If so, we are already a backend implementation and should not look up another one
+            registry = get_registry()
+            current_class = type(self)
+            is_backend_impl = False
+            
+            # Check if current class is registered as a backend
+            for reg_backend in ["numpy", "jax", "torch"]:
+                reg_class = registry.get("convexifier", "cfs", reg_backend)
+                if reg_class is not None and reg_class == current_class:
+                    is_backend_impl = True
+                    break
+            
+            # Only look up backend if we're not already a backend implementation
+            if not is_backend_impl:
+                impl_class = registry.get("convexifier", "cfs", backend)
+                # Only use backend impl if it's different from this class (prevents recursion)
+                if impl_class is not None and impl_class != CFSConvexifier and impl_class != current_class:
+                    # Pass _skip_backend_lookup=True to prevent recursion
+                    self._backend_impl = impl_class(
+                        obstacles, position_extractor,
+                        max_constraints_per_point=max_constraints_per_point,
+                        constraint_margin=constraint_margin,
+                        backend=backend,
+                        _skip_backend_lookup=True,
+                        **kwargs
+                    )
+                else:
+                    self._backend_impl = None
+            else:
+                # We are already a backend implementation, use ourselves
+                self._backend_impl = None
+        else:
+            self._backend_impl = None
+    
+    def build_constraints(
+        self,
+        ref: Trajectory,
+        params: ScheduleParams,
+        state: ScheduleState
+    ) -> ConvexConstraint:
+        """
+        Build CFS constraints from reference trajectory.
+        
+        Args:
+            ref: Reference trajectory
+            params: Schedule parameters (margin, etc.)
+            state: Schedule state
+            
+        Returns:
+            ConvexConstraint with A and b matrices
+        """
+        if self._backend_impl is not None:
+            return self._backend_impl.build_constraints(ref, params, state)
+        
+        # If no backend implementation is found, raise an error
+        # Backend implementations should be registered and available
+        raise RuntimeError(
+            f"No backend implementation found for CFS convexifier with backend '{self.backend}'. "
+            f"Please ensure the backend implementation is properly registered."
+        )
+    
+    # Position extraction: uses genedynamics.core.task_spec.legacy_extract_position
+    # when no custom position_extractor is given (same behavior as before).

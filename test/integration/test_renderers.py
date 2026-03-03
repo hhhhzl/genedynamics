@@ -33,7 +33,7 @@ class TestMujocoRenderer:
         if not MUJOCO_AVAILABLE:
             pytest.skip("MuJoCo not available")
         
-        from enerdynamics.core.backends.render_impl import MujocoRenderer
+        from genedynamics.core.backends.render_impl import MujocoRenderer
         
         # Create simple MuJoCo model
         xml = """
@@ -61,7 +61,7 @@ class TestMujocoRenderer:
         if not MUJOCO_AVAILABLE:
             pytest.skip("MuJoCo not available")
         
-        from enerdynamics.core.backends.render_impl import MujocoRenderer
+        from genedynamics.core.backends.render_impl import MujocoRenderer
         
         xml = """
         <mujoco>
@@ -92,7 +92,7 @@ class TestMujocoRenderer:
         if not MUJOCO_AVAILABLE:
             pytest.skip("MuJoCo not available")
         
-        from enerdynamics.core.backends.render_impl import MujocoRenderer
+        from genedynamics.core.backends.render_impl import MujocoRenderer
         
         xml = """
         <mujoco>
@@ -133,7 +133,7 @@ class TestIsaacSimRenderer:
         if not ISAAC_AVAILABLE:
             pytest.skip("Isaac Sim not available")
         
-        from enerdynamics.core.backends.render_impl import IsaacSimRenderer
+        from genedynamics.core.backends.render_impl import IsaacSimRenderer
         
         # Create renderer without world (for testing)
         try:
@@ -150,7 +150,7 @@ class TestIsaacSimRenderer:
         if not ISAAC_AVAILABLE:
             pytest.skip("Isaac Sim not available")
         
-        from enerdynamics.core.backends.render_impl import IsaacSimRenderer
+        from genedynamics.core.backends.render_impl import IsaacSimRenderer
         from omni.isaac.core import World
         
         try:
@@ -168,7 +168,7 @@ class TestRendererSelection:
     
     def test_renderer_selection_matplotlib(self):
         """Test selecting matplotlib renderer."""
-        from enerdynamics.envs.factories import make_env
+        from genedynamics.envs.factories import make_env
         
         env = make_env(
             "drone_full_3d_physics",
@@ -188,7 +188,7 @@ class TestRendererSelection:
         if not MUJOCO_AVAILABLE:
             pytest.skip("MuJoCo not available")
         
-        from enerdynamics.envs.factories import make_env
+        from genedynamics.envs.factories import make_env
         
         try:
             env = make_env(
@@ -213,7 +213,7 @@ class TestRendererSelection:
         if not ISAAC_AVAILABLE:
             pytest.skip("Isaac Sim not available")
         
-        from enerdynamics.envs.factories import make_env
+        from genedynamics.envs.factories import make_env
         
         try:
             env = make_env(

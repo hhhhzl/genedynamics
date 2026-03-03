@@ -131,4 +131,4 @@ constraint_config:
 # Metadata
 metadata:
   description: "Unified EDOC configuration for full 3D quadrotor with multiple backend support"
-  author: "enerdynamics"
+  author: "genedynamics"

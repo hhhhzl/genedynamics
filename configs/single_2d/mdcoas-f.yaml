@@ -27,7 +27,7 @@ method_params:
   num_modes: 20
   mode_strategy: multirun
 
-obstacle_levels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+obstacle_levels: [10]
 obstacle_config:
   generator: box2d
   robot_radius: 0.05
@@ -41,7 +41,7 @@ obstacle_config:
   enable_connectivity_check: true
   enable_nonconvexity_check: true
 
-seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+seeds: [1]
 backend: jax
 device: cuda
 

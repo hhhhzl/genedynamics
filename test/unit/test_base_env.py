@@ -11,9 +11,9 @@ Tests cover:
 import pytest
 import numpy as np
 
-from enerdynamics.envs.base_env import BaseEnvMixin
-from enerdynamics.envs.obstacles.convex import BoxObstacle
-from enerdynamics.core.backends.physics import DummyPhysicsBackend
+from genedynamics.envs.base_env import BaseEnvMixin
+from genedynamics.envs.obstacles.convex import BoxObstacle
+from genedynamics.core.backends.physics import DummyPhysicsBackend
 
 
 @pytest.mark.unit
@@ -76,7 +76,7 @@ class TestBaseEnvIntegration:
     
     def test_env_with_render_backend(self):
         """Test environment with render backend."""
-        from enerdynamics.core.backends.render_impl import NullRenderer
+        from genedynamics.core.backends.render_impl import NullRenderer
         
         render_backend = NullRenderer()
         env = BaseEnvMixin(render_backend=render_backend)
@@ -88,7 +88,7 @@ class TestBaseEnvIntegration:
     
     def test_env_full_integration(self):
         """Test full environment integration."""
-        from enerdynamics.core.backends.render_impl import NullRenderer
+        from genedynamics.core.backends.render_impl import NullRenderer
         
         physics_backend = DummyPhysicsBackend()
         render_backend = NullRenderer()

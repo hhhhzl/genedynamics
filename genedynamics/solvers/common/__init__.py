@@ -1,0 +1,4 @@
+"""
+Shared solver components.
+"""
+

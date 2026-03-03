@@ -1,19 +1,21 @@
 """
-Test script to compare CFS projection results using jaxopt.OSQP vs cvxopt.
+Test script to compare CFS pipeline results using jaxopt.OSQP vs cvxopt.
 
 This script tests the numerical differences between jaxopt.OSQP and cvxopt QP solvers
-when used for CFS projection, to ensure they produce similar results.
+when used in the CFS pipeline, to ensure they produce similar results.
 """
 import numpy as np
 import time
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from enerdynamics.core.constraints import CFSProjection
-from enerdynamics.core.backends.runtime import RuntimeBackendManager
-from enerdynamics.envs.obstacles.base import ObstacleManager
-from enerdynamics.envs.obstacles.convex import BoxObstacle
-from enerdynamics.core.types import Trajectory
+from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.envs.obstacles.base import ObstacleManager
+from genedynamics.envs.obstacles.convex import BoxObstacle
+from genedynamics.core.types import Trajectory
+from genedynamics.core.constraints.core.types import ScheduleState
+from genedynamics.experiments.common.constraints import create_constraint_pipeline
+from genedynamics.envs.single_integrator_box_2d import SingleIntegratorBox2DEnv
 
 
 def test_cfs_with_solver(solver_name: str, use_jit: bool = False):
@@ -64,48 +66,42 @@ def test_cfs_with_solver(solver_name: str, use_jit: bool = False):
         force_rebuild=True,
     )
     
-    # Create CFS projection with fixed clearance schedule
-    clearance_value = 0.1
-    clearance_schedule = lambda step, total_steps: clearance_value
-    
-    if solver_name == 'jaxopt' or solver_name == 'qpax':  # Support both names
-        # Force non-JIT mode for jaxopt.OSQP to compare with cvxopt
-        # We need to ensure obstacles don't all have jax_sdf to force non-JIT mode
-        # Or we can manually set use_jit after creation
-        feasibility_op = CFSProjection(
-            obstacles=obstacles,
-            clearance_schedule=clearance_schedule,
-            robot_radius=0.05,
-            max_iterations=30,
-            smoothness_weight=1.0,
-            convergence_tol=1e-6,
-            max_constraints_per_point=8,
-            constraint_margin=0.25,
-            use_trajectory_qp=True,
-            force_python_backend=False,  # Use JAX backend
-            fix_initial_state=True,
-            monitor_objective=True,
-        )
-        # Force non-JIT mode by setting it after backend creation
-        if hasattr(feasibility_op, '_backend_impl') and feasibility_op._backend_impl is not None:
-            feasibility_op._backend_impl.use_jit = use_jit
-            print(f"[CFS] Forced use_jit={use_jit} for comparison (using jaxopt.OSQP)")
-    else:
-        # NumPy backend uses cvxopt
-        feasibility_op = CFSProjection(
-            obstacles=obstacles,
-            clearance_schedule=clearance_schedule,
-            smoothness_weight=1.0,
-            robot_radius=0.05,
-            max_iterations=30,
-            convergence_tol=1e-6,
-            max_constraints_per_point=8,
-            constraint_margin=0.25,
-            use_trajectory_qp=True,
-            force_python_backend=True,  # Use NumPy backend
-            fix_initial_state=True,
-            monitor_objective=True,
-        )
+    # Create constraint pipeline (traj_qp) for comparison
+    env = SingleIntegratorBox2DEnv()
+    obstacle_config = {"robot_radius": 0.05}
+    constraint_config = {
+        "cfs": {
+            "enabled": True,
+            "use_trajectory_qp": True,
+            "max_iterations": 30,
+            "constraint_margin": 0.25,
+            "max_constraints_per_point": 8,
+        },
+        "schedule": {
+            "enabled": True,
+            "type": "soft_to_hard",
+            "hard_clearance_start": 0.1,
+            "hard_clearance_end": 0.1,
+            "rho_start": 1.0,
+            "rho_end": 1.0,
+        },
+    }
+    method_params = {
+        "cfs_qp_mode": "state_traj",
+        "cfs_use_trajectory_qp": True,
+        "cfs_use_jit": bool(use_jit),
+    }
+    pipeline = create_constraint_pipeline(
+        obstacles=obstacles,
+        level=1,
+        env=env,
+        config=constraint_config,
+        backend_name=backend_name,
+        obstacle_config=obstacle_config,
+        method_params=method_params,
+    )
+    if pipeline is None:
+        raise RuntimeError("Failed to create constraint pipeline for comparison.")
     
     # Create a test trajectory (straight line through obstacles)
     num_points = 50
@@ -122,9 +118,13 @@ def test_cfs_with_solver(solver_name: str, use_jit: bool = False):
     actions = [np.zeros(2) for _ in range(len(states) - 1)]  # Dummy actions
     trajectory = Trajectory(states=states, actions=actions)
     
-    # Run CFS projection
+    # Run constraint pipeline
     start_time = time.time()
-    projected_trajectory = feasibility_op.project(trajectory)
+    projected_trajectory, _ = pipeline.apply(
+        nominal=trajectory,
+        ref=trajectory,
+        state=ScheduleState(k=0, K=1),
+    )
     elapsed_time = time.time() - start_time
     
     # Extract positions

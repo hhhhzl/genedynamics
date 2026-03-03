@@ -14,13 +14,13 @@ import pytest
 import numpy as np
 from typing import List
 
-from enerdynamics.envs.obstacles.convex import (
+from genedynamics.envs.obstacles.convex import (
     BoxObstacle,
     SphereObstacle,
     CylinderObstacle,
     CapsuleObstacle,
 )
-from enerdynamics.envs.obstacles.base import ObstacleManager
+from genedynamics.envs.obstacles.base import ObstacleManager
 
 
 @pytest.mark.unit
@@ -129,7 +129,7 @@ class TestNonConvexObstacles:
     def test_mesh_obstacle(self):
         """Test MeshObstacle (requires trimesh)."""
         try:
-            from enerdynamics.envs.obstacles.nonconvex import MeshObstacle
+            from genedynamics.envs.obstacles.nonconvex import MeshObstacle
             import trimesh
             
             # Create simple mesh
@@ -147,7 +147,7 @@ class TestNonConvexObstacles:
     
     def test_union_obstacle(self):
         """Test UnionObstacle."""
-        from enerdynamics.envs.obstacles.nonconvex import UnionObstacle
+        from genedynamics.envs.obstacles.nonconvex import UnionObstacle
         
         box1 = BoxObstacle(np.array([1.0, 0.0, 0.0], dtype=np.float32), np.array([0.2, 0.2, 0.2], dtype=np.float32))
         box2 = BoxObstacle(np.array([-1.0, 0.0, 0.0], dtype=np.float32), np.array([0.2, 0.2, 0.2], dtype=np.float32))
@@ -166,7 +166,7 @@ class TestNonConvexObstacles:
     
     def test_difference_obstacle(self):
         """Test DifferenceObstacle."""
-        from enerdynamics.envs.obstacles.nonconvex import DifferenceObstacle
+        from genedynamics.envs.obstacles.nonconvex import DifferenceObstacle
         
         large_box = BoxObstacle(np.array([0.0, 0.0, 0.0], dtype=np.float32), np.array([1.0, 1.0, 1.0], dtype=np.float32))
         small_sphere = SphereObstacle(np.array([0.0, 0.0, 0.0], dtype=np.float32), 0.3)
@@ -182,7 +182,7 @@ class TestNonConvexObstacles:
     
     def test_intersection_obstacle(self):
         """Test IntersectionObstacle."""
-        from enerdynamics.envs.obstacles.nonconvex import IntersectionObstacle
+        from genedynamics.envs.obstacles.nonconvex import IntersectionObstacle
         
         box = BoxObstacle(np.array([0.0, 0.0, 0.0], dtype=np.float32), np.array([0.5, 0.5, 0.5], dtype=np.float32))
         sphere = SphereObstacle(np.array([0.0, 0.0, 0.0], dtype=np.float32), 0.4)
@@ -265,7 +265,7 @@ class TestSpatialIndexing:
     def test_spatial_index(self):
         """Test SpatialIndex."""
         try:
-            from enerdynamics.envs.obstacles.spatial_index import SpatialIndex
+            from genedynamics.envs.obstacles.spatial_index import SpatialIndex
             
             obstacles = [
                 BoxObstacle(np.array([i, 0.0, 0.0], dtype=np.float32), np.array([0.1, 0.1, 0.1], dtype=np.float32))

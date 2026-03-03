@@ -1,5 +1,5 @@
 """
-Test suite for enerdynamics framework.
+Test suite for genedynamics framework.
 
 This package contains comprehensive tests organized by functionality:
 - unit/: Unit tests for individual components

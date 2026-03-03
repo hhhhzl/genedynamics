@@ -1,10 +1,10 @@
 # Migration Guide
 
-This guide helps you migrate from existing environment implementations to the enerdynamics framework.
+This guide helps you migrate from existing environment implementations to the genedynamics framework.
 
 ## Overview
 
-The enerdynamics framework provides a unified interface for working with different environments, backends, and physics engines. If you're currently using:
+The genedynamics framework provides a unified interface for working with different environments, backends, and physics engines. If you're currently using:
 
 - Gymnasium environments
 - Brax environments
@@ -12,7 +12,7 @@ The enerdynamics framework provides a unified interface for working with differe
 - MuJoCo directly
 - Isaac Sim directly
 
-This guide will help you migrate to enerdynamics.
+This guide will help you migrate to genedynamics.
 
 ## Migration from Gymnasium
 
@@ -31,7 +31,7 @@ next_state, reward, done, truncated, info = env.step(action)
 
 ```python
 import gymnasium as gym
-from enerdynamics.envs.adapters.gymnasium_adapter import GymnasiumEnvAdapter
+from genedynamics.envs.adapters.gymnasium_adapter import GymnasiumEnvAdapter
 
 gym_env = gym.make("CartPole-v1")
 env = GymnasiumEnvAdapter(gym_env)
@@ -67,7 +67,7 @@ next_state = env.step(state, action)
 ```python
 import brax
 import jax
-from enerdynamics.envs.adapters.brax_adapter import BraxEnvAdapter
+from genedynamics.envs.adapters.brax_adapter import BraxEnvAdapter
 
 brax_env = brax.envs.create("ant")
 env = BraxEnvAdapter(brax_env)
@@ -108,7 +108,7 @@ class MyEnv:
 ### After
 
 ```python
-from enerdynamics.envs.base_env import BaseEnvMixin
+from genedynamics.envs.base_env import BaseEnvMixin
 import numpy as np
 
 class MyEnv(BaseEnvMixin):
@@ -158,7 +158,7 @@ mujoco.mj_step(model, data)
 ### After
 
 ```python
-from enerdynamics.core.backends.adapters.mujoco_adapter import MujocoPhysicsBackend
+from genedynamics.core.backends.adapters.mujoco_adapter import MujocoPhysicsBackend
 
 backend = MujocoPhysicsBackend(model_path="robot.xml", dt=0.01)
 state = backend.get_state()  # {'qpos': ..., 'qvel': ...}
@@ -186,7 +186,7 @@ world.step()
 ### After
 
 ```python
-from enerdynamics.core.backends.adapters.isaac_adapter import IsaacSimBackend
+from genedynamics.core.backends.adapters.isaac_adapter import IsaacSimBackend
 
 backend = IsaacSimBackend(model_path="robot.usd", dt=0.01, use_gpu=True)
 state = backend.get_state()
@@ -204,7 +204,7 @@ next_state = backend.step(action)
 Once migrated, you can easily add obstacles:
 
 ```python
-from enerdynamics.envs.obstacles.convex import BoxObstacle, SphereObstacle
+from genedynamics.envs.obstacles.convex import BoxObstacle, SphereObstacle
 
 obstacles = [
     BoxObstacle(center=[1.0, 0.0, 0.0], half_extents=[0.2, 0.2, 0.2]),
@@ -218,7 +218,7 @@ collision = env.check_collision(state)
 ## Adding Physics Backends
 
 ```python
-from enerdynamics.core.backends.adapters import MujocoPhysicsBackend
+from genedynamics.core.backends.adapters import MujocoPhysicsBackend
 
 physics_backend = MujocoPhysicsBackend(model_path="robot.xml", dt=0.01)
 env = MyEnv(physics_backend=physics_backend)
