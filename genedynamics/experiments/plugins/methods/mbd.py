@@ -10,6 +10,7 @@ from genedynamics.core.dynamics.adapters import EnvDynamicsAdapter
 from genedynamics.core.backends.runtime import RuntimeBackendManager
 from genedynamics.core.task_spec import get_default_task_spec
 from ...framework.base import MethodPlugin
+from ._result_utils import normalize_result_from_trajectory
 
 
 class MBDMethodPlugin(MethodPlugin):
@@ -63,9 +64,5 @@ class MBDMethodPlugin(MethodPlugin):
         Execute MBD planning and return result dict.
         """
         traj = planner.solve(initial_state, horizon=planner.horizon, rng_key=rng)
-        result = traj.info if hasattr(traj, "info") else {}
-        result.setdefault("states", traj.states)
-        result.setdefault("actions", traj.actions)
-        result.setdefault("initial_state", traj.states[0] if traj.states else initial_state)
-        return result
+        return normalize_result_from_trajectory(traj, initial_state=initial_state, preserve_info=True)
 

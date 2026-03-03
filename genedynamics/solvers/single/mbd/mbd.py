@@ -12,7 +12,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from genedynamics.core.solvers import SamplingSolver
+from genedynamics.solvers.common.model_based_diffusion import BaseModelBasedDiffusionSolver
 from genedynamics.core.dynamics import DynamicsModel, DynamicsToEnvAdapter
 from genedynamics.core.energy import EnergyFunctional, LegacyEnergyFunctional
 from genedynamics.core.backends import Backend
@@ -20,6 +20,7 @@ from genedynamics.core.backends.runtime import RuntimeBackendManager
 from genedynamics.core.types import State, Trajectory
 from genedynamics.core.energy import EnergyToLegacyAdapter
 from genedynamics.core.task_spec import legacy_extract_position
+from genedynamics.solvers.single.mbd.backend_impl import to_unified_backend
 
 try:
     from genedynamics.core.registry.solvers import register_solver
@@ -52,7 +53,7 @@ def _get_mbd_backend(backend_name: str):
 # MBD Solver (wrapper)
 # ============================================================================
 
-class MBDSolver(SamplingSolver):
+class MBDSolver(BaseModelBasedDiffusionSolver):
     """Solver wrapper that mirrors EDOC structure but runs MBD diffusion."""
 
     def __init__(
@@ -172,99 +173,8 @@ class MBDSolver(SamplingSolver):
                     position_extractor=self.position_extractor,
                     position_dim=self.position_dim,
                 )
+            self._backend_impl = to_unified_backend(self._backend_impl)
         return self._backend_impl
-
-    def sample_trajectories(
-        self,
-        x0: State,
-        horizon: int,
-        n_samples: int,
-        **kwargs,
-    ) -> List[Trajectory]:
-        if horizon != self.horizon:
-            self.horizon = horizon
-            self._planner = None
-        planner = self._get_backend_impl()
-        x0_data = np.asarray(x0, dtype=np.float32) if not isinstance(x0, jnp.ndarray) else x0
-        rng_key = kwargs.get("rng_key", jax.random.PRNGKey(self.seed))
-        return planner.sample_trajectories(x0_data, n_samples, rng_key=rng_key)
-
-    def solve(
-        self,
-        x0: State,
-        horizon: int,
-        **kwargs,
-    ) -> Trajectory:
-        if horizon != self.horizon:
-            self.horizon = horizon
-            self._planner = None
-        planner = self._get_backend_impl()
-        x0_data = np.asarray(x0, dtype=np.float32) if not isinstance(x0, jnp.ndarray) else x0
-        rng_key = kwargs.get("rng_key", jax.random.PRNGKey(self.seed))
-        # Multi-mode strategy: run C independent solves and take best-of-each-run
-        C = int(self.config.get("num_modes", 1))
-        mode_strategy = str(self.config.get("mode_strategy", "multirun")).lower()
-        if C > 1 and mode_strategy == "multirun":
-            backend = RuntimeBackendManager.get_backend()
-            if backend.name == "jax":
-                # Ensure rng_key is a JAX PRNG key (convert if needed)
-                if not isinstance(rng_key, jnp.ndarray) or rng_key.shape != (2,):
-                    # If not a JAX key, create one from seed or convert
-                    if isinstance(rng_key, (int, np.integer)):
-                        rng_key = jax.random.PRNGKey(int(rng_key))
-                    else:
-                        # Try to extract seed or use default
-                        rng_key = jax.random.PRNGKey(self.seed)
-                keys = jax.random.split(rng_key, C)
-            else:
-                # NumPy backend: convert to integer seeds
-                if isinstance(rng_key, jnp.ndarray) and rng_key.shape == (2,):
-                    # Convert JAX key to integer seed (use hash of key values)
-                    base_seed = int(rng_key[0]) ^ int(rng_key[1])
-                elif isinstance(rng_key, (int, np.integer)):
-                    base_seed = int(rng_key)
-                else:
-                    base_seed = self.seed
-                # Generate C different seeds
-                keys = [base_seed + i for i in range(C)]
-            
-            planner_num_modes_orig = int(getattr(planner, "num_modes", 1))
-            planner.num_modes = 1
-            try:
-                # Use batch version for parallel execution
-                if hasattr(planner, "plan_batch"):
-                    results = planner.plan_batch(x0_data, keys)
-                else:
-                    # Fallback to sequential if batch not available
-                    results = [planner.plan(x0_data, k) for k in keys]
-            finally:
-                planner.num_modes = planner_num_modes_orig
-
-            candidate_states_list = [np.asarray(r["states"], dtype=np.float32) for r in results]
-            candidate_actions_list = [np.asarray(r["actions"], dtype=np.float32) for r in results]
-            candidate_costs = np.asarray(
-                [float(np.asarray(r.get("candidate_costs", [np.nan]))[int(r.get("best_idx", 0))]) for r in results],
-                dtype=np.float32,
-            )
-            best_idx = int(np.nanargmin(candidate_costs))
-            best_result = dict(results[best_idx])
-            best_result["candidate_states"] = candidate_states_list
-            best_result["candidate_actions"] = candidate_actions_list
-            best_result["candidate_costs"] = candidate_costs
-            best_result["best_idx"] = best_idx
-            best_result["mode_strategy"] = "multirun"
-            best_result["multirun_keys"] = keys
-            best_result["multirun_diffusion_data"] = [
-                {"diffusion_actions_traj": r.get("diffusion_actions_traj"), "diffusion_sampled_actions": r.get("diffusion_sampled_actions")}
-                for r in results
-            ]
-            result = best_result
-        else:
-            result = planner.plan(x0_data, rng_key)
-        states_list = [np.asarray(s, dtype=np.float32) for s in result["states"]]
-        actions_list = [np.asarray(a, dtype=np.float32) for a in result["actions"]]
-        return Trajectory(states=states_list, actions=actions_list, info=result)
-
 
 if register_solver is not None:
     try:
