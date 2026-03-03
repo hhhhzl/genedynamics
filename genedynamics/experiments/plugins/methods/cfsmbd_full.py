@@ -13,6 +13,7 @@ from genedynamics.core.backends.runtime import RuntimeBackendManager
 from genedynamics.core.constraints.action_filters.cfs_qp_full import CFSQPFullFilter
 from genedynamics.core.task_spec import get_default_task_spec
 from ...framework.base import MethodPlugin
+from ._result_utils import normalize_result_from_trajectory
 
 
 class CFSMBDFullMethodPlugin(MethodPlugin):
@@ -74,16 +75,4 @@ class CFSMBDFullMethodPlugin(MethodPlugin):
     def plan(self, planner: Any, initial_state: np.ndarray, rng: Any) -> Dict[str, Any]:
         rng_key = rng
         result_traj = planner.solve(initial_state, horizon=getattr(planner, "horizon", 64), rng_key=rng_key)
-        
-        # CRITICAL: result_traj.info MUST be returned directly to preserve all keys (including diffusion_*)
-        if hasattr(result_traj, "info") and isinstance(result_traj.info, dict):
-            # Also ensure states/actions exist for common metric extraction
-            out = result_traj.info
-            out["states"] = np.stack(result_traj.states, axis=0)
-            out["actions"] = np.stack(result_traj.actions, axis=0)
-            return out
-            
-        return {
-            "actions": np.stack(result_traj.actions, axis=0),
-            "states": np.stack(result_traj.states, axis=0),
-        }
+        return normalize_result_from_trajectory(result_traj, initial_state=initial_state, preserve_info=True)

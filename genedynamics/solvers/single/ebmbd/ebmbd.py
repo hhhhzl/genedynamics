@@ -9,13 +9,14 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from genedynamics.core.solvers import SamplingSolver
+from genedynamics.solvers.common.model_based_diffusion import BaseModelBasedDiffusionSolver
 from genedynamics.core.dynamics import DynamicsModel, DynamicsToEnvAdapter
 from genedynamics.core.energy import EnergyFunctional, LegacyEnergyFunctional
 from genedynamics.core.backends import Backend
 from genedynamics.core.types import State, Trajectory
 from genedynamics.core.energy import EnergyToLegacyAdapter
 from genedynamics.core.task_spec import legacy_extract_position
+from genedynamics.solvers.single.ebmbd.backend_impl import to_unified_backend
 
 # Register backend implementations
 try:
@@ -30,7 +31,7 @@ except Exception:
     register_solver = None
 
 
-class EBMBDSolver(SamplingSolver):
+class EBMBDSolver(BaseModelBasedDiffusionSolver):
     """
     EB-MBD solver using emerging barriers in reverse diffusion (action space).
 
@@ -109,6 +110,15 @@ class EBMBDSolver(SamplingSolver):
         self.diversity_use_state = bool(diversity_use_state)  # Use state features (True) or action features (False)
         self.use_target_line = bool(use_target_line)
         self.num_targets = int(num_targets)
+        self.config.update(
+            dict(
+                num_modes=self.num_modes,
+                mode_strategy=self.mode_strategy,
+                diversity_eta=self.diversity_eta,
+                diversity_topK_cand=self.diversity_topK_cand,
+                diversity_use_state=self.diversity_use_state,
+            )
+        )
         self.position_extractor = position_extractor or legacy_extract_position
         self.position_dim = int(position_dim)
         # Optional obstacle manager + config (for fast JAX SDF via texture)
@@ -137,87 +147,10 @@ class EBMBDSolver(SamplingSolver):
         if backend_class is None:
             raise ValueError("EB-MBD backend implementation not found in registry.")
 
-        self._backend_impl = backend_class(self)
+        self._backend_impl = to_unified_backend(backend_class(self))
 
-    # ------------------------------------------------------------------ #
-    # Public API
-    # ------------------------------------------------------------------ #
-    def solve(self, x0: State, horizon: int, **kwargs) -> Trajectory:
-        """Solve for optimal trajectory using EB-MBD diffusion."""
-        if horizon != self.horizon:
-            self.horizon = horizon
-
-        x0_data = np.asarray(x0, dtype=np.float32) if not isinstance(x0, jnp.ndarray) else x0
-        rng = kwargs.get("rng_key", jax.random.PRNGKey(self.seed))
-
-        # Multi-mode strategy: run C independent solves (like emerging_barrier_mbd's vmap over seeds)
-        if self.num_modes > 1 and self.mode_strategy.lower() == "multirun":
-            # Check backend type to determine how to handle rng
-            backend_name = getattr(self.backend, 'name', 'jax') if hasattr(self, 'backend') else 'jax'
-            if backend_name == "jax":
-                # Ensure rng is a JAX PRNG key (convert if needed)
-                if not isinstance(rng, jnp.ndarray) or rng.shape != (2,):
-                    # If not a JAX key, create one from seed or convert
-                    if isinstance(rng, (int, np.integer)):
-                        rng = jax.random.PRNGKey(int(rng))
-                    else:
-                        # Try to extract seed or use default
-                        rng = jax.random.PRNGKey(self.seed)
-                keys = jax.random.split(rng, self.num_modes)
-            else:
-                # NumPy backend: convert to integer seeds
-                if isinstance(rng, jnp.ndarray) and rng.shape == (2,):
-                    # Convert JAX key to integer seed (use hash of key values)
-                    base_seed = int(rng[0]) ^ int(rng[1])
-                elif isinstance(rng, (int, np.integer)):
-                    base_seed = int(rng)
-                else:
-                    base_seed = self.seed
-                # Generate C different seeds
-                keys = [base_seed + i for i in range(self.num_modes)]
-            backend_num_modes_orig = int(getattr(self._backend_impl, "num_modes", 1))
-            # Disable backend's within-run multi-mode selection; we aggregate runs here.
-            self._backend_impl.num_modes = 1
-            try:
-                # Use batch version for parallel execution
-                if hasattr(self._backend_impl, "reverse_diffuse_batch"):
-                    results = self._backend_impl.reverse_diffuse_batch(keys, x0_data)
-                else:
-                    # Fallback to sequential if batch not available
-                    results = [self._backend_impl.reverse_diffuse(k, x0_data) for k in keys]
-            finally:
-                self._backend_impl.num_modes = backend_num_modes_orig
-
-            candidate_states_list = [np.asarray(r["states"], dtype=np.float32) for r in results]
-            candidate_actions_list = [np.asarray(r["actions"], dtype=np.float32) for r in results]
-            candidate_costs = np.asarray(
-                [float(np.asarray(r.get("candidate_costs", [np.nan]))[int(r.get("best_idx", 0))]) for r in results],
-                dtype=np.float32,
-            )
-            best_idx = int(np.nanargmin(candidate_costs))
-            best_result = dict(results[best_idx])
-            best_result["candidate_states"] = candidate_states_list
-            best_result["candidate_actions"] = candidate_actions_list
-            best_result["candidate_costs"] = candidate_costs
-            best_result["best_idx"] = best_idx
-            best_result["mode_strategy"] = "multirun"
-            best_result["multirun_keys"] = keys
-            best_result["multirun_diffusion_data"] = [
-                {"diffusion_actions_traj": r.get("diffusion_actions_traj"), "diffusion_sampled_actions": r.get("diffusion_sampled_actions")}
-                for r in results
-            ]
-            result = best_result
-        else:
-            # Single-run (backend handles either 1 mode or diverse_topk selection)
-            result = self._backend_impl.reverse_diffuse(rng, x0_data)
-
-        # Convert to Trajectory
-        states = result["states"]
-        actions = result["actions"]
-        states_list = [np.asarray(s, dtype=np.float32) for s in states]
-        actions_list = [np.asarray(a, dtype=np.float32) for a in actions]
-
-        return Trajectory(states=states_list, actions=actions_list, info=result)
+    def _get_backend_impl(self):
+        return self._backend_impl
 
     def sample_trajectories(
         self,

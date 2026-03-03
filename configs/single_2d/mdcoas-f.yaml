@@ -41,7 +41,7 @@ obstacle_config:
   enable_connectivity_check: true
   enable_nonconvexity_check: true
 
-seeds: [0]
+seeds: [1]
 backend: jax
 device: cuda
 

@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover
     jnp = None
 
 from genedynamics.core.types import Trajectory
+from genedynamics.solvers.common.model_based_diffusion.backend_protocol import ensure_unified_backend
 
 
 class EBMBDBackend(Protocol):
@@ -79,4 +80,9 @@ class EBMBDBackendBase:
         if jnp is not None and isinstance(x, jnp.ndarray):
             return np.asarray(x)
         return np.asarray(x)
+
+
+def to_unified_backend(backend_impl: Any) -> Any:
+    """Phase-3 bridge: expose a unified plan/plan_batch backend interface."""
+    return ensure_unified_backend(backend_impl)
 

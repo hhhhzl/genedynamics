@@ -19,6 +19,9 @@ from genedynamics.core.solvers import Solver, SamplingSolver, OptimizationSolver
 
 # Solver implementations
 from genedynamics.solvers.single.mbd.mbd import MBDSolver, run_mbd
+from genedynamics.solvers.single.ebmbd.ebmbd import EBMBDSolver
+from genedynamics.solvers.single.mdoc.mdoc import MDOCSolver
+from genedynamics.solvers.single.cfsmbd.cfsmbd import CFSMBDSolver
 from genedynamics.solvers.single.mppi.mppi import MPPISolver, run_mppi
 from genedynamics.solvers.single.cem.cem import CEMSolver, run_cem
 
@@ -29,6 +32,9 @@ __all__ = [
     "OptimizationSolver",
     # MBD
     "MBDSolver",
+    "EBMBDSolver",
+    "MDOCSolver",
+    "CFSMBDSolver",
     "run_mbd",
     # MPPI
     "MPPISolver",
