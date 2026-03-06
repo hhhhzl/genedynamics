@@ -55,6 +55,7 @@ class ExperimentConfig:
     # Metrics and visualization
     metrics: List[str] = field(default_factory=lambda: ["ssr", "obstacle_density", "nonconvexity"])
     visualizations: List[str] = field(default_factory=lambda: ["trajectory", "diffusion", "energy_reward"])
+    auto_report: bool = True  # Generate report after run_all
     
     # Advanced configurations
     constraint_config: Optional[Dict[str, Any]] = None

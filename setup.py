@@ -24,4 +24,12 @@ setup(
     author_email='hectorh@cmu.edu',
     packages=find_packages(),
     install_requires=requires_list,
+    entry_points={
+        "console_scripts": [
+            "genedynamics-deploy=genedynamics.deploy.cli:main",
+            "genedynamics-deploy-sim=genedynamics.deploy.sim_plan.sim_process:main",
+            "genedynamics-deploy-plan=genedynamics.deploy.sim_plan.plan_process:main",
+            "genedynamics-deploy-sim2sim=genedynamics.deploy.sim_plan.sim2sim_launcher:main",
+        ],
+    },
 )

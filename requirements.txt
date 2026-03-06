@@ -13,6 +13,9 @@ einops>=0.8.2
 diffusers>=0.36.0
 minari>=0.5.3
 
+# Reports (industrial-grade pipeline)
+jinja2>=3.1.0
+
 # Visualization
 matplotlib>=3.8.0
 seaborn>=0.13.0

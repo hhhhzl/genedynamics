@@ -1,0 +1,32 @@
+# Quadruped rough_terrain MBD deploy quick (Ant, reduced samples)
+# Run: genedynamics-deploy --config configs/quadruped/rough_terrain/mbd_deploy_quick.yaml
+
+name: quadruped_rough_terrain_quick
+output_dir: results/deploy/quadruped_rough_terrain
+
+start_mode: random
+
+method: mbd
+env_name: quadruped_flat_mjx
+env_params:
+  dt: 0.05
+  horizon: 48
+  target: [2.0, 0.0, 0.5]
+  control_limit: 1.0
+  model: ant
+
+method_params:
+  Nsample: 128
+  Ndiffuse: 30
+
+task:
+  task_type: rough_terrain
+  terrain:
+    type: rough
+    friction_randomize: false
+
+execution_mode: sim_only
+control_rate_hz: 20.0
+plan_rate_hz: 10.0
+record: true
+horizon: 48

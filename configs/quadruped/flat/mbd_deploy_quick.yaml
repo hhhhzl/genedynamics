@@ -1,0 +1,30 @@
+# Quadruped flat MBD deploy quick (Ant, reduced samples)
+# Run: genedynamics-deploy --config configs/quadruped/flat/mbd_deploy_quick.yaml
+
+name: quadruped_flat_mbd_deploy
+output_dir: results/deploy/quadruped_go2_mbd_sim
+
+start_mode: near_target
+start_min_dist: 1.2
+start_max_dist: 1.8
+start_min_z: 0.45
+
+method: mbd
+env_name: quadruped_flat_mjx
+env_params:
+  dt: 0.05
+  horizon: 48
+  target: [2.0, 0.0, 0.5]
+  control_limit: 1.0
+  model: flat
+
+Nsample: 128
+Ndiffuse: 30
+terminal_energy_weight: 1500.0
+
+execution_mode: sim_only
+control_rate_hz: 20.0
+plan_rate_hz: 10.0
+record: true
+horizon: 48
+action_smooth_alpha: 0.55

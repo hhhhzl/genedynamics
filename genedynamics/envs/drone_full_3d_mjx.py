@@ -120,7 +120,8 @@ class DroneFull3DMjxEnv(DroneFull3DPhysicsEnv):
             return super().transition(state, action)
         state = np.asarray(state, dtype=np.float32)
         action = np.asarray(action, dtype=np.float32)
-        motor_thrusts = np.clip(action, 0.0, self.control_limit)
+        # MBD/2go output [-limit, limit]; map to [0, limit] for thrust
+        motor_thrusts = (np.clip(action, -self.control_limit, self.control_limit) + self.control_limit) / 2.0
         mujoco_state = self._state_to_mujoco(state)
         self._physics_backend_instance.set_state(mujoco_state)
         next_mujoco_state = self._physics_backend_instance.step(
@@ -134,7 +135,7 @@ class DroneFull3DMjxEnv(DroneFull3DPhysicsEnv):
             return super().model_transition(state, action)
         state = np.asarray(state, dtype=np.float32)
         action = np.asarray(action, dtype=np.float32)
-        motor_thrusts = np.clip(action, 0.0, self.control_limit)
+        motor_thrusts = (np.clip(action, -self.control_limit, self.control_limit) + self.control_limit) / 2.0
         mujoco_state = self._state_to_mujoco(state)
         self._physics_backend_instance.set_state(mujoco_state)
         next_mujoco_state = self._physics_backend_instance.step(

@@ -8,6 +8,7 @@ from .d3il_unified import D3ILUnifiedMethodPlugin
 from .mdoc import MDOCMethodPlugin
 from .cfsmbd import CFSMBDMethodPlugin
 from .cfsmbd_full import CFSMBDFullMethodPlugin
+from .twogo import TwoGOMethodPlugin
 try:
     from .dpcc import DPCCMethodPlugin
 except Exception as e:
@@ -24,6 +25,7 @@ __all__ = [
     'MDOCMethodPlugin',
     'CFSMBDMethodPlugin',
     'CFSMBDFullMethodPlugin',
+    'TwoGOMethodPlugin',
     'DPCCMethodPlugin',
     'SafeDiffuserMethodPlugin',
 ]

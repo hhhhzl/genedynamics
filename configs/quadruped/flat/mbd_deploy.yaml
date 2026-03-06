@@ -1,0 +1,36 @@
+# Quadruped flat MBD deploy (Go2)
+# Run: genedynamics-deploy --config configs/quadruped/flat/mbd_deploy.yaml
+
+name: quadruped_flat_mbd_deploy
+output_dir: results/deploy/quadruped_go2_mbd_sim
+
+start_mode: near_target
+start_min_dist: 1.5
+start_max_dist: 2.5
+
+env_name: quadruped_go2_mjx
+env_params:
+  dt: 0.05
+  horizon: 64
+  target: [2.0, 0.0, 0.5]
+  control_limit: 1.0
+  model: go2
+
+method: mbd
+method_params:
+  Nsample: 1024
+  Ndiffuse: 100
+  temp_sample: 0.1
+  terminal_energy_weight: 1500.0
+  show_tqdm: false
+
+Nsample: 1024
+Ndiffuse: 100
+terminal_energy_weight: 1500.0
+
+execution_mode: sim_only
+control_rate_hz: 20.0
+plan_rate_hz: 10.0
+record: true
+horizon: 64
+action_smooth_alpha: 0.3

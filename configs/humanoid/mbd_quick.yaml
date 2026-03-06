@@ -1,0 +1,17 @@
+# Quick humanoid MBD deploy
+env_name: humanoid_simplified_mjx
+horizon: 32
+control_rate_hz: 20.0
+plan_rate_hz: 10.0
+record: false
+execution_mode: sim_only
+
+env_params:
+  dt: 0.05
+  horizon: 32
+  target: [3.0, 0.0, 1.0]
+  control_limit: 0.4
+
+Nsample: 32
+Ndiffuse: 10
+terminal_energy_weight: 100.0

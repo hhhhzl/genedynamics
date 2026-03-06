@@ -228,6 +228,26 @@ class ObstacleManager:
     def get_sdf_texture_2d(self) -> Optional[SDFTexture2D]:
         return self._sdf_texture_2d
 
+    def jax_sdf(self, pos: Any) -> Any:
+        """
+        JAX SDF for 3D obstacles (union: min over all obstacles).
+        pos: (..., 3) positions. Returns min distance to obstacles.
+        Used by MJX envs (quadruped, humanoid) for obstacle avoidance.
+        """
+        if jnp is None:
+            raise RuntimeError("JAX required for jax_sdf")
+        if not self.obstacles:
+            shape = pos.shape[:-1] if hasattr(pos, "shape") and len(pos.shape) > 1 else ()
+            return jnp.ones(shape, dtype=jnp.float32) * 1e5
+        prims = [p for p in self.obstacles if hasattr(p, "jax_sdf")]
+        if not prims:
+            shape = pos.shape[:-1] if hasattr(pos, "shape") and len(pos.shape) > 1 else ()
+            return jnp.ones(shape, dtype=jnp.float32) * 1e5
+        sdfs = [p.jax_sdf(pos) for p in prims]
+        if len(sdfs) == 1:
+            return sdfs[0]
+        return jnp.min(jnp.stack(sdfs, axis=0), axis=0)
+
     def sample_sdf_and_grad_2d(
         self,
         points: Union[np.ndarray, "torch.Tensor", "jax.Array"],

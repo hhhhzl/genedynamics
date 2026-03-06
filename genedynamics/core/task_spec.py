@@ -207,6 +207,14 @@ def get_default_task_spec(
     # SoftZoo: high-dim soft robot, use 2D centroid by default
     if "softzoo" in env_name_lower:
         return SoftZooTaskSpec(position_dim=2)
+    # Quadruped: ant, go2 (flat [qpos; qvel], position = state[:3])
+    if "quadruped" in env_name_lower:
+        from genedynamics.tasks.quadruped.spec import QuadrupedTaskSpec
+        return QuadrupedTaskSpec()
+    # Humanoid: humanoid, g1 (flat [qpos; qvel], position = state[:3])
+    if "humanoid" in env_name_lower:
+        from genedynamics.tasks.humanoid.spec import HumanoidTaskSpec
+        return HumanoidTaskSpec()
     # 3D env names: drone_full_3d, drone_box_3d, etc.
     is_3d = "drone_full_3d" in env_name_lower or "drone_box_3d" in env_name_lower or "3d" in env_name_lower
     if env_plugin is not None and hasattr(env_plugin, "extract_position"):

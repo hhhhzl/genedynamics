@@ -1,0 +1,43 @@
+# Quadruped flat MD-COAS deploy quick (Ant, level 0, reduced samples)
+# Run: genedynamics-deploy --config configs/quadruped/flat/mdcoas_deploy_quick.yaml
+
+name: quadruped_flat_mdcoas_deploy
+output_dir: results/deploy/quadruped_mdcoas_sim
+
+start_mode: near_target
+start_min_dist: 1.2
+start_max_dist: 1.8
+start_min_z: 0.45
+
+method: cfsmbd_full
+env_name: quadruped_flat_mjx
+env_params:
+  dt: 0.05
+  horizon: 48
+  target: [2.0, 0.0, 0.5]
+  control_limit: 1.0
+  model: flat
+
+method_params:
+  Nsample: 128
+  Ndiffuse: 30
+  temp_sample: 0.3
+  max_constraints_per_point: 8
+  constraint_margin: 0.25
+  cfs_action_convexifier: cfs_action
+  aug_lambda: 0.0
+  show_tqdm: false
+
+task:
+  task_type: obstacle_avoid
+  obstacles:
+    level: 0
+    robot_radius: 0.15
+    generator: box3d
+
+execution_mode: sim_only
+control_rate_hz: 20.0
+plan_rate_hz: 10.0
+record: true
+horizon: 48
+action_smooth_alpha: 0.55

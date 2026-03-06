@@ -40,11 +40,11 @@ def convert_to_json_serializable(obj: Any) -> Any:
     Returns:
         JSON-serializable object
     """
-    if isinstance(obj, (np.integer, np.int_, np.intc, np.intp, np.int8,
+    if isinstance(obj, (np.integer, np.intc, np.intp, np.int8,
                         np.int16, np.int32, np.int64, np.uint8, np.uint16,
                         np.uint32, np.uint64)):
         return int(obj)
-    elif isinstance(obj, (np.floating, np.float_, np.float16, np.float32, np.float64)):
+    elif isinstance(obj, (np.floating, np.float16, np.float32, np.float64)):
         return float(obj)
     elif isinstance(obj, (np.bool_, bool)):
         return bool(obj)
@@ -176,7 +176,9 @@ class ExperimentRunner:
             physics_backend = self.config.env_params.get('physics_backend', None)
             is_3d_env = (
                 self.config.env_name in ['drone_box_3d', 'drone', 'drone_full_3d', 'drone_full_3d_physics',
-                                         'drone_full_3d_mujoco', 'drone_full_3d_isaac'] or
+                                         'drone_full_3d_mujoco', 'drone_full_3d_isaac',
+                                         'quadruped_flat_mjx', 'quadruped_go2_mjx',
+                                         'humanoid_simplified_mjx', 'humanoid_g1_mjx'] or
                 self.config.obstacle_config.get('generator', '') == 'box3d' or
                 physics_backend in ['mujoco', 'mjx', 'isaac']
             )
@@ -643,7 +645,31 @@ class ExperimentRunner:
                     traceback.print_exc()
         
         self._save_summary(all_results)
+
+        if getattr(self.config, "auto_report", True):
+            self._generate_report()
+
         return all_results
+
+    def _generate_report(self) -> None:
+        """Generate unified report from results (industrial-grade pipeline)."""
+        try:
+            from genedynamics.reports import generate_report
+            results_root = self.config.output_dir
+            for _ in range(3):
+                if (results_root / "deploy").exists():
+                    break
+                results_root = results_root.parent
+                if results_root == results_root.parent:
+                    break
+            report_dir = results_root.parent / "reports"
+            out = generate_report(results_root, report_dir, formats=["html"])
+            if out:
+                print(f"\n[report] Generated: {list(out.values())[0]}")
+        except ImportError as e:
+            print(f"\n[report] Skip (jinja2 required): {e}")
+        except Exception as e:
+            print(f"\n[report] Error: {e}")
     
     def _generate_start_position(self, level: int, seed: int, env: Any, env_plugin: Any) -> np.ndarray:
         """
@@ -675,6 +701,39 @@ class ExperimentRunner:
             start_xy = np.array([0.5, -0.28], dtype=np.float32)
             start_full = np.concatenate([start_xy, np.zeros(state_dim - 2, dtype=np.float32)])
             return start_full.astype(np.float32)
+
+        # Quadruped/Humanoid MJX: need valid [qpos; qvel] from reset, then override base xyz
+        env_name_lower = (self.config.env_name or "").lower()
+        if ("quadruped" in env_name_lower or "humanoid" in env_name_lower) and "mjx" in env_name_lower:
+            state_full, _ = env.reset(seed=seed)
+            state_full = np.asarray(state_full, dtype=np.float32).copy()
+            # Sample 3D start position (same logic as 3D below)
+            np.random.seed(seed)
+            target_pos = np.asarray(env.target, dtype=np.float32).flatten()[:3]
+            map_bounds = (getattr(self.config, 'obstacle_config', None) or {}).get('map_bounds', {})
+            x_min = float(map_bounds.get('x_min', -2.0))
+            x_max = float(map_bounds.get('x_max', 2.0))
+            y_min = float(map_bounds.get('y_min', -2.0))
+            y_max = float(map_bounds.get('y_max', 2.0))
+            z_min = float(map_bounds.get('z_min', 0.0))
+            z_max = float(map_bounds.get('z_max', 2.0))
+            max_distance = 2.0 * np.sqrt(3.0)
+            min_dist = 0.5 + (level / 10.0) * 1.0
+            max_dist = 1.0 + (level / 10.0) * (max_distance - 1.0)
+            distance = np.random.uniform(min_dist, max_dist)
+            theta = np.random.uniform(0, 2 * np.pi)
+            phi = np.random.uniform(0, np.pi)
+            direction = np.array([
+                np.sin(phi) * np.cos(theta),
+                np.sin(phi) * np.sin(theta),
+                np.cos(phi)
+            ], dtype=np.float32)
+            start_xyz = target_pos + distance * direction
+            start_xyz[0] = np.clip(start_xyz[0], x_min + 0.1, x_max - 0.1)
+            start_xyz[1] = np.clip(start_xyz[1], y_min + 0.1, y_max - 0.1)
+            start_xyz[2] = np.clip(start_xyz[2], z_min + 0.05, z_max - 0.1)
+            state_full[:3] = start_xyz
+            return state_full.astype(np.float32)
 
         np.random.seed(seed)
         target_pos = np.asarray(env.target, dtype=np.float32)
@@ -2156,6 +2215,31 @@ class ExperimentRunner:
         }
         with open(adaptive_dir / "metrics.json", 'w') as f:
             json.dump(metrics_json, f, indent=2)
+
+        # Optional runtime diagnostics for profiling TwoGO-style compute paths.
+        diag_keys = [
+            "qp_call_hist",
+            "qp_call_minibatch_hist",
+            "qp_call_geom_hist",
+            "qp_call_retract_hist",
+            "rollout_eval_calls_hist",
+            "m_k_hist",
+            "p_hist",
+            "I_QP_hist",
+            "v_rate_hist",
+            "v_mean_hist",
+            "cvar_hist",
+        ]
+        diag_payload: Dict[str, Any] = {"best_idx": best_idx}
+        for key in diag_keys:
+            all_key = "all_" + key
+            if all_key in planning_result:
+                diag_payload[all_key] = _nan_to_none(convert_to_json_serializable(planning_result[all_key]))
+            elif key in planning_result:
+                diag_payload[key] = _nan_to_none(convert_to_json_serializable(planning_result[key]))
+        if len(diag_payload) > 1:
+            with open(adaptive_dir / "diagnostics.json", 'w') as f:
+                json.dump(diag_payload, f, indent=2)
 
     def _get_output_path(self, level: int, seed: int) -> Path:
         """

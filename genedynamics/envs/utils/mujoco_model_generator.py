@@ -228,6 +228,185 @@ def create_base_quadrotor_xml(
     return xml_template
 
 
+def create_render_xml_with_trajectory(
+    output_path: str,
+    trajectory_positions: list,
+    drone_scale: float = 3.0,
+    line_radius: float = 0.008,
+    line_rgba: str = "0.2 0.6 1.0 0.7",
+) -> str:
+    """
+    Create quadrotor XML with trajectory line for rendering.
+
+    Args:
+        output_path: Path to save XML
+        trajectory_positions: List of (x,y,z) positions, shape (N,3)
+        drone_scale: Scale drone geometry for visibility
+        line_radius: Trajectory line cylinder radius (m)
+        line_rgba: Trajectory color "r g b a"
+
+    Returns:
+        XML string
+    """
+    create_base_quadrotor_xml(
+        output_path,
+        mass=0.5,
+        arm_length=0.17 * drone_scale,
+        body_size=0.05 * drone_scale,
+        motor_size=0.02 * drone_scale,
+    )
+    with open(output_path) as f:
+        xml = f.read()
+
+    # Build trajectory line geoms (cylinder segments between consecutive points)
+    # MuJoCo requires fromto points to be sufficiently far apart (min ~1e-4)
+    MIN_SEG_LEN = 1e-4
+    traj_lines = []
+    positions = np.asarray(trajectory_positions, dtype=np.float64)
+    if len(positions) < 2:
+        traj_xml = ""
+    else:
+        seg_idx = 0
+        for i in range(len(positions) - 1):
+            p1, p2 = positions[i], positions[i + 1]
+            dist = np.linalg.norm(p2 - p1)
+            if dist < MIN_SEG_LEN:
+                continue
+            fromto = f"{p1[0]:.6f} {p1[1]:.6f} {p1[2]:.6f} {p2[0]:.6f} {p2[1]:.6f} {p2[2]:.6f}"
+            traj_lines.append(
+                f'      <geom name="traj_seg_{seg_idx}" type="cylinder" fromto="{fromto}" '
+                f'size="{line_radius}" rgba="{line_rgba}" contype="0" conaffinity="0"/>'
+            )
+            seg_idx += 1
+        if traj_lines:
+            traj_xml = (
+                '\n    <!-- Trajectory line -->\n    <body name="trajectory" pos="0 0 0">\n'
+                + "\n".join(traj_lines)
+                + "\n    </body>\n"
+            )
+        else:
+            traj_xml = ""
+
+    insert_pos = xml.rfind("</worldbody>")
+    if insert_pos != -1 and traj_xml:
+        xml = xml[:insert_pos] + traj_xml + xml[insert_pos:]
+
+    with open(output_path, "w") as f:
+        f.write(xml)
+    return xml
+
+
+def create_go2_render_xml_with_trajectory(
+    output_path: str,
+    trajectory_positions: list,
+    go2_xml_path: Optional[str] = None,
+    line_radius: float = 0.015,
+    line_rgba: str = "0.2 0.6 1.0 0.7",
+) -> str:
+    """
+    Create Go2 XML with trajectory line for rendering.
+    Reads base Go2 from mujoco_menagerie, injects trajectory geoms.
+    """
+    if go2_xml_path is None:
+        try:
+            from genedynamics.robots.registry import _get_go2_path
+            go2_xml_path = _get_go2_path()
+        except Exception:
+            go2_xml_path = None
+    if not go2_xml_path or not Path(go2_xml_path).exists():
+        raise FileNotFoundError(
+            "Go2 model not found. Set MUJOCO_MENAGERIE_PATH or install mujoco-menagerie."
+        )
+
+    xml_content = Path(go2_xml_path).read_text()
+    MIN_SEG_LEN = 1e-4
+    line_radius = max(float(line_radius), 1e-6)
+    traj_lines = []
+    positions = np.asarray(trajectory_positions, dtype=np.float64)
+    if len(positions) >= 2:
+        seg_idx = 0
+        for i in range(len(positions) - 1):
+            p1, p2 = np.asarray(positions[i]), np.asarray(positions[i + 1])
+            if np.any(~np.isfinite(p1)) or np.any(~np.isfinite(p2)):
+                continue
+            if np.linalg.norm(p2 - p1) < MIN_SEG_LEN:
+                continue
+            fromto = f"{p1[0]:.6f} {p1[1]:.6f} {p1[2]:.6f} {p2[0]:.6f} {p2[1]:.6f} {p2[2]:.6f}"
+            traj_lines.append(
+                f'      <geom name="traj_seg_{seg_idx}" type="cylinder" fromto="{fromto}" '
+                f'size="{line_radius:.6f}" rgba="{line_rgba}" contype="0" conaffinity="0"/>'
+            )
+            seg_idx += 1
+
+    traj_xml = ""
+    if traj_lines:
+        traj_xml = (
+            '\n    <!-- Trajectory line -->\n    <body name="trajectory" pos="0 0 0">\n'
+            + "\n".join(traj_lines)
+            + "\n    </body>\n"
+        )
+
+    insert_pos = xml_content.rfind("</worldbody>")
+    if insert_pos != -1 and traj_xml:
+        xml_content = xml_content[:insert_pos] + traj_xml + xml_content[insert_pos:]
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(output_path).write_text(xml_content)
+    return xml_content
+
+
+def create_ant_render_xml_with_trajectory(
+    output_path: str,
+    trajectory_positions: list,
+    ant_xml_path: Optional[str] = None,
+    line_radius: float = 0.015,
+    line_rgba: str = "0.2 0.6 1.0 0.7",
+) -> str:
+    """Create ant XML with trajectory line for rendering (fallback when Go2 not available)."""
+    if ant_xml_path is None:
+        try:
+            from genedynamics.robots.registry import _get_ant_path
+            ant_xml_path = _get_ant_path()
+        except Exception:
+            ant_xml_path = None
+    if not ant_xml_path or not Path(ant_xml_path).exists():
+        raise FileNotFoundError("Ant model not found. Install gymnasium: pip install gymnasium")
+
+    xml_content = Path(ant_xml_path).read_text()
+    MIN_SEG_LEN = 1e-4
+    line_radius = max(float(line_radius), 1e-6)
+    traj_lines = []
+    positions = np.asarray(trajectory_positions, dtype=np.float64)
+    if len(positions) >= 2:
+        seg_idx = 0
+        for i in range(len(positions) - 1):
+            p1, p2 = np.asarray(positions[i]), np.asarray(positions[i + 1])
+            if np.any(~np.isfinite(p1)) or np.any(~np.isfinite(p2)):
+                continue
+            if np.linalg.norm(p2 - p1) < MIN_SEG_LEN:
+                continue
+            fromto = f"{p1[0]:.6f} {p1[1]:.6f} {p1[2]:.6f} {p2[0]:.6f} {p2[1]:.6f} {p2[2]:.6f}"
+            traj_lines.append(
+                f'      <geom name="traj_seg_{seg_idx}" type="cylinder" fromto="{fromto}" '
+                f'size="{line_radius:.6f}" rgba="{line_rgba}" contype="0" conaffinity="0"/>'
+            )
+            seg_idx += 1
+
+    traj_xml = ""
+    if traj_lines:
+        traj_xml = (
+            '\n    <!-- Trajectory line -->\n    <body name="trajectory" pos="0 0 0">\n'
+            + "\n".join(traj_lines)
+            + "\n    </body>\n"
+        )
+
+    insert_pos = xml_content.rfind("</worldbody>")
+    if insert_pos != -1 and traj_xml:
+        xml_content = xml_content[:insert_pos] + traj_xml + xml_content[insert_pos:]
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(output_path).write_text(xml_content)
+    return xml_content
 
 
 

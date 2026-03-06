@@ -1,0 +1,134 @@
+name: single2d_2go_phase1
+output_dir: results/single2d/2go
+
+env_name: single_integrator_box_2d
+env_params:
+  dt: 0.05
+  horizon: 64
+  p_max: 2.0
+  control_limit: 1.0
+
+method: 2go
+method_params:
+  show_tqdm: true
+  action_extra_sigma: 0.3
+
+  # CFS parameters
+  max_constraints_per_point: 10
+  constraint_margin: 0.25
+
+  # Augmented Lagrangian parameters
+  aug_lambda: 300.0
+  aug_rho: 500.0
+
+  # Multi-mode
+  num_modes: 20
+  mode_strategy: multirun
+
+  # 2GO gating/schedule knobs (Phase-1 diagnostics/proxy coupling)
+  twogo_sigma_max: 0.25
+  twogo_gate_vrate_threshold: 0.01
+  twogo_sigma_q: 1.0
+  twogo_sigma_q_lambda: 1.0
+  twogo_delta0: 0.02
+  twogo_delta_r: 1.0
+  twogo_delta_r_lambda: 1.0
+  twogo_lambda0: 1.0
+  twogo_theta_start: 0.6
+  twogo_theta_end: 0.2
+  twogo_cvar_alpha: 0.9
+  twogo_window_size: 16
+  twogo_window_stride: 8
+  twogo_tail_ratio: 0.3
+  twogo_active_topk: 8
+  twogo_agp_eta: 0.08
+  twogo_cfs_gain: 0.35
+  twogo_multi_scale: 0.25
+  twogo_enable_agp_refine: false
+  twogo_enable_local_gating: true
+  twogo_enable_sample_tail: true
+  twogo_enable_agp_batch: false
+  twogo_use_jax_scan_core: true
+  twogo_retract_qp_boost: true
+  twogo_stability_eps: 1e-6
+  twogo_gamma_init: 1.0
+  twogo_tail_mix_ratio: 0.5
+  twogo_tail_pool_ratio: 0.25
+  twogo_m_eff_min: 24
+  twogo_force_retract_from: 1.0
+  twogo_reval_every: 8
+  twogo_geom_retract_every: 16
+  twogo_reval_by_cvar: false
+  twogo_retract_qp_every: 4
+  twogo_retract_qp_cvar_scale: 2.0
+
+obstacle_levels: [5, 10]
+obstacle_config:
+  generator: box2d
+  robot_radius: 0.05
+  obstacle_radius_scale: 1.0
+  p_max: 2.0
+  map_bounds:
+    x_min: -1.5
+    x_max: 1.0
+    y_min: -2.0
+    y_max: 0.5
+  enable_connectivity_check: true
+  enable_nonconvexity_check: true
+
+seeds: [0]
+backend: jax
+device: cuda
+
+metrics:
+  - ssr
+  - obstacle_density
+  - nonconvexity
+
+visualizations:
+  - trajectory_modes
+  - trajectory
+  - diffusion
+  - cost
+  - adaptive
+
+scheduler_config:
+  type: composite
+  constraint_schedulers:
+    - type: twogo
+      margin: 0.05
+      lam_start: 50.0
+      lam_end: 500.0
+      lam_power: 1.0
+      kappa0: 1.0
+      kappa_gain: 0.01
+      delta0: 0.02
+      delta_power: 1.0
+      delta_lambda_power: 1.0
+      lambda0: 1.0
+      cvar_alpha: 0.9
+      qp_prob_min: 0.5
+      qp_prob_max: 1.0
+      topK_min: 2
+      topK_max: 8
+      I_QP_min: 3
+      I_QP_max: 5
+      eps_min: 1e-5
+      eps_max: 1e-3
+  diffusion_schedulers:
+    - type: twogo
+      M_k: 64
+      T_k: 5e-1
+      sigma_max: 0.25
+      theta_start: 0.6
+      theta_end: 0.2
+      q: 1.0
+      q_lambda: 1.0
+      lambda0: 1.0
+      lam_start: 50.0
+      lam_end: 500.0
+      lam_power: 1.0
+      gate_every: 1
+  constraint_merge_strategy: merge
+  diffusion_merge_strategy: merge
+

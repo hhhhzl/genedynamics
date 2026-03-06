@@ -27,19 +27,39 @@ from genedynamics.core.types import Trajectory, State
 from genedynamics.envs.obstacles.base import ObstacleManager
 
 
-def _get_jacobian_xy(env: Any, state: np.ndarray) -> Optional[np.ndarray]:
-    """Return (2, 7) J_xy at state, or None if not available."""
-    get_j = getattr(env, "get_jacobian_xy", None)
-    if get_j is None:
-        return None
+def _get_jacobian_pos_action(
+    env: Any,
+    state: np.ndarray,
+    pos_dim: int,
+    act_dim: int,
+) -> Optional[np.ndarray]:
+    """
+    Return (pos_dim, act_dim) Jacobian at state, or None if not available.
+
+    Prefers env.get_jacobian_pos_action(state) -> (pos_dim, act_dim).
+    Fallback: env.get_jacobian_xy(state) -> (2, 7) for backward compatibility.
+    """
     s = np.asarray(state, dtype=np.float32).reshape(-1)
-    if s.size < 9:
-        return None
-    jxy = get_j(s)
-    if jxy is None:
-        return None
-    jxy = np.asarray(jxy, dtype=np.float32)
-    return jxy if jxy.shape == (2, 7) else None
+    get_jpa = getattr(env, "get_jacobian_pos_action", None)
+    if get_jpa is not None:
+        j = get_jpa(s)
+        if j is not None:
+            j = np.asarray(j, dtype=np.float32)
+            if j.ndim == 2 and j.shape[0] == pos_dim and j.shape[1] >= act_dim:
+                return j[:, :act_dim]
+            if j.ndim == 2 and j.shape[0] > 0 and j.shape[1] > 0:
+                return j[:pos_dim, :act_dim]
+    get_jxy = getattr(env, "get_jacobian_xy", None)
+    if get_jxy is not None and pos_dim == 2 and s.size >= 9:
+        jxy = get_jxy(s)
+        if jxy is not None:
+            jxy = np.asarray(jxy, dtype=np.float32)
+            if jxy.ndim == 2 and jxy.shape[0] == 2:
+                ncol = min(act_dim, jxy.shape[1])
+                out = np.zeros((pos_dim, act_dim), dtype=np.float32)
+                out[:2, :ncol] = jxy[:, :ncol]
+                return out
+    return None
 
 
 @register("convexifier", "cfs_action_joint", "numpy")
@@ -59,6 +79,7 @@ class CFSActionJointLiftConvexifier(Convexifier):
         env: Any,
         action_mode: str = "u_traj",
         position_extractor: Optional[Callable[[State], np.ndarray]] = None,
+        position_dim: Optional[int] = None,
         max_constraints_per_point: int = 8,
         constraint_margin: float = 0.25,
         backend: str = "numpy",
@@ -68,6 +89,7 @@ class CFSActionJointLiftConvexifier(Convexifier):
         self.env = env
         self.action_mode = str(action_mode)
         self.position_extractor = position_extractor or legacy_extract_position
+        self.position_dim = position_dim  # None => infer from position_extractor output
         self.max_constraints_per_point = int(max_constraints_per_point)
         self.constraint_margin = float(constraint_margin)
         self.backend = str(backend)
@@ -93,7 +115,10 @@ class CFSActionJointLiftConvexifier(Convexifier):
                 meta={"type": "cfs_action_joint", "per_step": False},
             )
         state_dim = len(np.asarray(ref.states[0], dtype=np.float32).reshape(-1))
-        pos_dim = 2
+        pos_dim = self.position_dim
+        if pos_dim is None:
+            pos_vec = np.asarray(self.position_extractor(ref.states[0]), dtype=np.float32).reshape(-1)
+            pos_dim = int(len(pos_vec))
 
         if A_state.size == 0:
             act_dim = len(np.asarray(ref.actions[0], dtype=np.float32).reshape(-1)) if ref.actions else 7
@@ -129,11 +154,11 @@ class CFSActionJointLiftConvexifier(Convexifier):
                 row = np.zeros((H_u * act_dim,), dtype=np.float32)
                 t_max = min(t_s, H_u)
                 for k in range(t_max):
-                    J_xy = _get_jacobian_xy(self.env, ref_states_np[k])
-                    if J_xy is None:
+                    J = _get_jacobian_pos_action(self.env, ref_states_np[k], pos_dim, act_dim)
+                    if J is None:
                         row[k * act_dim : k * act_dim + pos_dim] = dt * g
                     else:
-                        A_k = np.dot(J_xy.T, g)
+                        A_k = np.dot(J.T, g)
                         n = min(act_dim, A_k.size)
                         row[k * act_dim : k * act_dim + n] = dt * A_k[:n]
                 if np.linalg.norm(row) < 1e-10:
@@ -165,11 +190,11 @@ class CFSActionJointLiftConvexifier(Convexifier):
                 idx = int(counts[t_a])
                 if idx >= max_k:
                     continue
-                J_xy = _get_jacobian_xy(self.env, ref_states_np[t_a])
-                if J_xy is None:
+                J = _get_jacobian_pos_action(self.env, ref_states_np[t_a], pos_dim, act_dim)
+                if J is None:
                     A_ps[t_a, idx, :pos_dim] = dt * g
                 else:
-                    A_action = np.dot(J_xy.T, g)
+                    A_action = np.dot(J.T, g)
                     n = min(act_dim, A_action.size)
                     A_ps[t_a, idx, :n] = dt * A_action[:n]
                 b_ps[t_a, idx] = float(b_val - float(np.dot(g, ref_pos[t_a])))

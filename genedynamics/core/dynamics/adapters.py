@@ -149,13 +149,12 @@ class DynamicsToEnvAdapter:
         2. A DynamicsModel that needs to be called via step()
         """
         # Case 1: If dynamics is an environment object (most common case in run_diffusion)
-        # Directly use its JAX transition methods - these are already JAX-compatible
-        if hasattr(self.dynamics, 'jax_model_transition'):
-            # Use jax_model_transition if available (preferred for model-based planning)
-            return self.dynamics.jax_model_transition(state, action)
-        elif hasattr(self.dynamics, 'jax_transition'):
-            # Fall back to jax_transition
+        # Use jax_transition (with state projection) so planning matches deploy rollout.
+        # jax_model_transition has no projection and causes plan/deploy divergence (SSR!=1).
+        if hasattr(self.dynamics, 'jax_transition'):
             return self.dynamics.jax_transition(state, action)
+        elif hasattr(self.dynamics, 'jax_model_transition'):
+            return self.dynamics.jax_model_transition(state, action)
         
         # Case 2: If dynamics is a DynamicsModel, we need to call step()
         # This assumes step() can handle JAX arrays and return JAX arrays
