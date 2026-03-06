@@ -85,6 +85,36 @@ def make_env(name: str, **kwargs):
     elif name == "drone_full_3d_isaac":
         from genedynamics.envs.drone_full_3d_isaac import DroneFull3DIsaacEnv
         return DroneFull3DIsaacEnv(**kwargs)
+    elif name == "quadruped_flat_physics":
+        from genedynamics.envs.quadruped_base_physics import QuadrupedFlatPhysicsEnv
+        return QuadrupedFlatPhysicsEnv(**kwargs)
+    elif name == "quadruped_rough_physics":
+        from genedynamics.envs.quadruped_base_physics import QuadrupedRoughPhysicsEnv
+        return QuadrupedRoughPhysicsEnv(**kwargs)
+    elif name == "quadruped_push_physics":
+        from genedynamics.envs.quadruped_base_physics import QuadrupedPushPhysicsEnv
+        return QuadrupedPushPhysicsEnv(**kwargs)
+    elif name == "quadruped_go2_physics":
+        from genedynamics.envs.quadruped_base_physics import QuadrupedGo2PhysicsEnv
+        return QuadrupedGo2PhysicsEnv(**kwargs)
+    elif name == "quadruped_flat_mjx":
+        from genedynamics.envs.quadruped_mjx import QuadrupedAntMjxEnv
+        return QuadrupedAntMjxEnv(**kwargs)
+    elif name == "quadruped_go2_mjx":
+        from genedynamics.envs.quadruped_mjx import QuadrupedGo2MjxEnv
+        return QuadrupedGo2MjxEnv(**kwargs)
+    elif name == "humanoid_simplified_physics":
+        from genedynamics.envs.humanoid_base_physics import HumanoidBasePhysicsEnv
+        return HumanoidBasePhysicsEnv(**kwargs)
+    elif name == "humanoid_g1_physics":
+        from genedynamics.envs.humanoid_base_physics import HumanoidG1PhysicsEnv
+        return HumanoidG1PhysicsEnv(**kwargs)
+    elif name == "humanoid_simplified_mjx":
+        from genedynamics.envs.humanoid_mjx import HumanoidSimplifiedMjxEnv
+        return HumanoidSimplifiedMjxEnv(**kwargs)
+    elif name == "humanoid_g1_mjx":
+        from genedynamics.envs.humanoid_mjx import HumanoidG1MjxEnv
+        return HumanoidG1MjxEnv(**kwargs)
     elif name == "softzoo":
         from genedynamics.experiments.plugins.environments.softzoo import SoftZooEnvironmentPlugin
         return SoftZooEnvironmentPlugin().create_env(kwargs)
@@ -249,16 +279,25 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
             "box": EnergyTerm(box_energy, 1.0),
         })
     elif env_name == "drone_full_3d_physics":
-        # Same energy functional as drone_full_3d
+        # Position error + strong overshoot penalty (discourage looping) + velocity + control
         def task_energy(x, u, ctx):
             pos = x[:3]
             vel = x[3:6]
             euler = x[6:9]
-            target = jnp.array([0.0, 0.0, 1.0], dtype=jnp.float32)
+            target = ctx.get("target_xy") if ctx else None
+            if target is None:
+                target = jnp.array([0.0, 0.0, 1.0], dtype=jnp.float32)
+            else:
+                target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:3]
             pos_err = jnp.sum((pos - target) ** 2)
+            # Strong overshoot: z > target_z, or |x|,|y| beyond target region (avoid "绕一圈")
+            z_overshoot = jnp.maximum(0.0, pos[2] - target[2] - 0.15) ** 2
+            xy_overshoot = jnp.maximum(0.0, jnp.abs(pos[0]) - 0.4) ** 2 + jnp.maximum(0.0, jnp.abs(pos[1]) - 0.4) ** 2
+            dist = jnp.sqrt(pos_err + 1e-8)
             vel_err = jnp.sum(vel ** 2)
             orientation_err = jnp.sum(euler ** 2)
-            return pos_err + 0.1 * vel_err + 0.1 * orientation_err
+            vel_weight = 0.4 + 4.0 / (dist + 0.15)
+            return pos_err + 15.0 * z_overshoot + 8.0 * xy_overshoot + vel_weight * vel_err + 1.5 * orientation_err + 0.12 * jnp.sum(u ** 2)
 
         def box_energy(x, u, ctx):
             p_max, v_max = 2.0, 2.0
@@ -272,6 +311,61 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
         return LegacyEnergyFunctional({
             "task": EnergyTerm(task_energy, 2.0),
             "box": EnergyTerm(box_energy, 1.0),
+        })
+    elif env_name in (
+        "quadruped_flat_physics", "quadruped_flat_mjx", "quadruped_go2_mjx",
+        "humanoid_simplified_physics", "humanoid_simplified_mjx", "humanoid_g1_mjx",
+    ):
+        # Quadruped: base position error + velocity penalty + control regularization
+        # Target from ctx["target_xy"] or default (2.0, 0.0, 0.5)
+        # nq: ant=15, go2=19, humanoid=24, g1=36; infer from state size
+        def _nq_from_state(x):
+            s = jnp.asarray(x).ravel()
+            if s.size >= 72:
+                return 36
+            if s.size >= 47:
+                return 24
+            if s.size >= 37:
+                return 19
+            return 15
+
+        def task_energy(x, u, ctx):
+            pos = x[:3]
+            nq = _nq_from_state(x)
+            vel = x[nq : nq + 3] if jnp.size(x) > nq + 3 else jnp.zeros(3, dtype=jnp.float32)
+            target = ctx.get("target_xy") if ctx else None
+            if target is None:
+                target = jnp.array([2.0, 0.0, 0.5], dtype=jnp.float32)
+            else:
+                target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:3]
+            pos_err = jnp.sum((pos - target) ** 2)
+            # Overshoot penalty: discourage looping past target (same as drone)
+            z_overshoot = jnp.maximum(0.0, pos[2] - target[2] - 0.2) ** 2
+            xy_overshoot = jnp.maximum(0.0, jnp.abs(pos[0] - target[0]) - 0.5) ** 2 + jnp.maximum(0.0, jnp.abs(pos[1] - target[1]) - 0.5) ** 2
+            dist = jnp.sqrt(pos_err + 1e-8)
+            vel_weight = 0.3 + 2.0 / (dist + 0.2)
+            vel_err = vel_weight * jnp.sum(vel ** 2)
+            # Joint velocity penalty: discourage erratic leg motion
+            joint_vel = x[nq + 6 :] if jnp.size(x) > nq + 6 else jnp.zeros(0, dtype=jnp.float32)
+            joint_vel_err = 0.06 * jnp.sum(joint_vel ** 2)
+            return pos_err + 8.0 * z_overshoot + 5.0 * xy_overshoot + vel_err + joint_vel_err
+
+        def control_energy(x, u, ctx):
+            return 0.12 * jnp.sum(u ** 2)  # Stronger penalty for smoother actions
+
+        def box_energy(x, u, ctx):
+            p_max, v_max = 5.0, 3.0
+            pos = x[:3]
+            nq = _nq_from_state(x)
+            vel = x[nq : nq + 3] if jnp.size(x) > nq + 3 else jnp.zeros(3)
+            pos_violate = jnp.maximum(0.0, jnp.abs(pos) - p_max)
+            vel_violate = jnp.maximum(0.0, jnp.abs(vel) - v_max)
+            return jnp.sum(pos_violate ** 2 + vel_violate ** 2)
+
+        return LegacyEnergyFunctional({
+            "task": EnergyTerm(task_energy, 1.0),
+            "control": EnergyTerm(control_energy, 1.0),
+            "box": EnergyTerm(box_energy, 0.1),
         })
     else:
         raise ValueError(f"Unknown environment name: {env_name}")

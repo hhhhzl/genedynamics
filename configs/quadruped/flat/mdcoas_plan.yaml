@@ -1,0 +1,47 @@
+# Quadruped flat MD-COAS (cfsmbd_full) pure plan
+# Run: python -m genedynamics.experiments.runner configs/quadruped/flat/mdcoas_plan.yaml
+
+name: quadruped_flat_mdcoas_plan
+output_dir: results/quadruped/flat/mdcoas_plan
+
+env_name: quadruped_flat_mjx
+env_params:
+  dt: 0.05
+  horizon: 48
+  target: [2.0, 0.0, 0.5]
+  control_limit: 1.0
+  physics_backend: mjx
+
+method: cfsmbd_full
+method_params:
+  Nsample: 256
+  Ndiffuse: 60
+  temp_sample: 0.2
+  max_constraints_per_point: 8
+  constraint_margin: 0.25
+  cfs_action_convexifier: cfs_action
+  aug_lambda: 0.0
+  show_tqdm: true
+
+obstacle_levels: [0, 1, 2]
+obstacle_config:
+  generator: box3d
+  robot_radius: 0.15
+  success_margin: 0.7
+  obstacle_radius_scale: 1.2
+  p_max: 2.0
+  obstacle_type: sphere
+  map_bounds:
+    x_min: -1.5
+    x_max: 2.5
+    y_min: -1.5
+    y_max: 1.5
+    z_min: 0.0
+    z_max: 1.0
+
+seeds: [0]
+backend: jax
+device: cpu
+
+metrics: [ssr, obstacle_density]
+visualizations: [trajectory_3d]

@@ -4,6 +4,8 @@ Environment plugin implementations.
 
 from .single_integrator_2d import SingleIntegrator2DPlugin
 from .double_integrator_2d import DoubleIntegrator2DPlugin
+from .quadruped import QuadrupedFlatMjxPlugin, QuadrupedGo2MjxPlugin
+from .humanoid import HumanoidSimplifiedMjxPlugin, HumanoidG1MjxPlugin
 from .drone import (
     DroneEnvironmentPlugin,
     DroneBox3DPlugin,
@@ -19,6 +21,10 @@ from .softzoo import SoftZooEnvironmentPlugin
 __all__ = [
     'SingleIntegrator2DPlugin',
     'DoubleIntegrator2DPlugin',
+    'QuadrupedFlatMjxPlugin',
+    'QuadrupedGo2MjxPlugin',
+    'HumanoidSimplifiedMjxPlugin',
+    'HumanoidG1MjxPlugin',
     'DroneEnvironmentPlugin',
     'DroneBox3DPlugin',
     'DroneFull3DPlugin',

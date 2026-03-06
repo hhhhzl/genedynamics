@@ -14,9 +14,11 @@ import sys
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-# Headless/CI: use OSMesa (software) so no DISPLAY/EGL/GPU is needed; set MUJOCO_GL=egl if you have EGL
+# Headless/CI: Linux use egl; Darwin/Windows use default (cgl/glfw)
 if "MUJOCO_GL" not in os.environ:
-    os.environ.setdefault("MUJOCO_GL", "osmesa")
+    import platform
+    if platform.system() == "Linux":
+        os.environ.setdefault("MUJOCO_GL", "egl")
 
 # Suppress GLFW DISPLAY/init warnings when using headless (MUJOCO_GL=egl/osmesa)
 warnings.filterwarnings("ignore", message=".*[Dd]isplay|GLFW.*", module="glfw")
@@ -29,10 +31,15 @@ from genedynamics.experiments.plugins import (
     D3ILUnifiedMethodPlugin,
     CFSMBDMethodPlugin,
     CFSMBDFullMethodPlugin,
+    TwoGOMethodPlugin,
     DPCCMethodPlugin,
     SafeDiffuserMethodPlugin,
     SingleIntegrator2DPlugin,
     DoubleIntegrator2DPlugin,
+    QuadrupedFlatMjxPlugin,
+    QuadrupedGo2MjxPlugin,
+    HumanoidSimplifiedMjxPlugin,
+    HumanoidG1MjxPlugin,
     DroneEnvironmentPlugin,
     DroneBox3DPlugin,
     DroneFull3DPlugin,
@@ -177,6 +184,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(D3ILUnifiedMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDFullMethodPlugin(), 'method')
+    runner.register_plugin(TwoGOMethodPlugin(), 'method')
     if DPCCMethodPlugin is not None:
         runner.register_plugin(DPCCMethodPlugin(), 'method')
     if SafeDiffuserMethodPlugin is not None:
@@ -185,6 +193,10 @@ def register_all_plugins(runner: ExperimentRunner):
     # Environment plugins
     runner.register_plugin(SingleIntegrator2DPlugin(), 'environment')
     runner.register_plugin(DoubleIntegrator2DPlugin(), 'environment')
+    runner.register_plugin(QuadrupedFlatMjxPlugin(), 'environment')
+    runner.register_plugin(QuadrupedGo2MjxPlugin(), 'environment')
+    runner.register_plugin(HumanoidSimplifiedMjxPlugin(), 'environment')
+    runner.register_plugin(HumanoidG1MjxPlugin(), 'environment')
     runner.register_plugin(DroneEnvironmentPlugin(), 'environment')
     runner.register_plugin(DroneBox3DPlugin(), 'environment')
     runner.register_plugin(DroneFull3DPlugin(), 'environment')

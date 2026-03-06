@@ -76,6 +76,7 @@ class CFSActionConvexifier(Convexifier):
         env: Any,
         action_mode: str = "u_traj",  # "u_traj" | "u_perstep"
         position_extractor: Optional[Callable[[State], np.ndarray]] = None,
+        position_dim: Optional[int] = None,
         max_constraints_per_point: int = 8,
         constraint_margin: float = 0.25,
         backend: str = "numpy",
@@ -85,6 +86,7 @@ class CFSActionConvexifier(Convexifier):
         self.env = env
         self.action_mode = str(action_mode)
         self.position_extractor = position_extractor or legacy_extract_position
+        self.position_dim = position_dim  # None => infer from position_extractor output
         self.max_constraints_per_point = int(max_constraints_per_point)
         self.constraint_margin = float(constraint_margin)
         self.backend = str(backend)
@@ -108,7 +110,10 @@ class CFSActionConvexifier(Convexifier):
         if H_states == 0:
             return ConvexConstraint(A=np.zeros((0, 0), dtype=np.float32), b=np.zeros((0,), dtype=np.float32), meta={"type": "cfs_action", "per_step": False})
         state_dim = len(np.asarray(ref.states[0], dtype=np.float32).reshape(-1))
-        pos_dim = 2
+        pos_dim = self.position_dim
+        if pos_dim is None:
+            pos_vec = np.asarray(self.position_extractor(ref.states[0]), dtype=np.float32).reshape(-1)
+            pos_dim = int(len(pos_vec))
 
         # If no constraints, return empty in appropriate shape
         if A_state.size == 0:
