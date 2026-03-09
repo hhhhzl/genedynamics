@@ -9,6 +9,8 @@ log
 **/__pycache__/
 /results
 
+/data
+
 /cache
 /save
 /reports
