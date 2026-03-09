@@ -28,6 +28,8 @@ from genedynamics.experiments.plugins import (
     MDOCMethodPlugin,
     EBMBDMethodPlugin,
     MBDMethodPlugin,
+    MBD3DMethodPlugin,
+    MRMFMBDMethodPlugin,
     D3ILUnifiedMethodPlugin,
     CFSMBDMethodPlugin,
     CFSMBDFullMethodPlugin,
@@ -49,6 +51,8 @@ from genedynamics.experiments.plugins import (
     D3ILAvoiding9DPlugin,
     AvoidingPlanEnvironmentPlugin,
     SoftZooEnvironmentPlugin,
+    MujocoSceneMappingPlugin,
+    NerfSynthetic3DGSPlugin,
     SSRMetricsPlugin,
     ObstacleDensityMetricsPlugin,
     NonconvexityMetricsPlugin,
@@ -181,6 +185,8 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(MDOCMethodPlugin(), 'method')
     runner.register_plugin(EBMBDMethodPlugin(), 'method')
     runner.register_plugin(MBDMethodPlugin(), 'method')
+    runner.register_plugin(MBD3DMethodPlugin(), 'method')
+    runner.register_plugin(MRMFMBDMethodPlugin(), 'method')
     runner.register_plugin(D3ILUnifiedMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDFullMethodPlugin(), 'method')
@@ -206,6 +212,8 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(D3ILAvoiding9DPlugin(), 'environment')
     runner.register_plugin(AvoidingPlanEnvironmentPlugin(), 'environment')
     runner.register_plugin(SoftZooEnvironmentPlugin(), 'environment')
+    runner.register_plugin(MujocoSceneMappingPlugin(), 'environment')
+    runner.register_plugin(NerfSynthetic3DGSPlugin(), 'environment')
     
     # Metrics plugins
     runner.register_plugin(SSRMetricsPlugin(), 'metric')

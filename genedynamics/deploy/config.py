@@ -126,6 +126,9 @@ class DeployConfig:
     # Task config (obstacles, terrain, perturbation, velocity, sequence)
     task: Optional[TaskConfig] = None
 
+    # Scheduler config (diffusion_schedulers, constraint_schedulers) - aligns with single_2d
+    scheduler_config: Optional[Dict[str, Any]] = None
+
     # Extra (passthrough for backward compat)
     extra: Dict[str, Any] = field(default_factory=dict)
 
@@ -287,11 +290,15 @@ class DeployConfig:
                 "sequence": data.get("sequence"),
             })
 
+        # scheduler_config (aligns with experiment/single_2d)
+        if "scheduler_config" in data:
+            kwargs["scheduler_config"] = data["scheduler_config"]
+
         kwargs["extra"] = {k: v for k, v in data.items()
                           if k not in kwargs and k not in (
                               "env_params", "method_params", "start", "sim", "real", "replay",
                               "task", "task_config", "obstacles", "terrain", "perturbation",
-                              "velocity", "sequence", "task_type", "task_params")}
+                              "velocity", "sequence", "task_type", "task_params", "scheduler_config")}
 
         return cls(**kwargs)
 
@@ -348,4 +355,6 @@ class DeployConfig:
             }
         if self.task is not None:
             out["task"] = self.task.to_dict()
+        if hasattr(self, "scheduler_config") and self.scheduler_config is not None:
+            out["scheduler_config"] = self.scheduler_config
         return out

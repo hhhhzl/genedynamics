@@ -446,7 +446,8 @@ class ExperimentRunner:
         _states_3d = result.get('executed_states') or result.get('states')
         info_dict = result.get("info", {}) if isinstance(result.get("info"), dict) else {}
         # For 4D DPCC runs, states are 4D; prefer lifted 9D states for robot 3D GIF.
-        if _states_3d:
+        _has_states = _states_3d is not None and (len(_states_3d) if hasattr(_states_3d, '__len__') else 0) > 0
+        if _has_states:
             try:
                 s0 = np.asarray(_states_3d[0], dtype=np.float32).reshape(-1)
                 if s0.size < 9:
@@ -458,7 +459,7 @@ class ExperimentRunner:
                 if lifted:
                     _states_3d = lifted
 
-        if is_d3il_style and _states_3d and len(_states_3d) >= 2:
+        if is_d3il_style and _has_states and len(_states_3d) >= 2:
             try:
                 out_dir = self._get_output_path(level, seed)
                 traj_dir = out_dir / "trajectory"
@@ -2401,6 +2402,12 @@ class ExperimentRunner:
             for k, v in planning_result.items():
                 if isinstance(k, str) and k.startswith("timing_"):
                     serializable_result[k] = convert_to_json_serializable(v)
+
+            # MBD3D / 3DGS: total_log_prob, n_steps for metrics
+            if "total_log_prob" in planning_result:
+                serializable_result["total_log_prob"] = convert_to_json_serializable(planning_result["total_log_prob"])
+            if "n_steps" in planning_result:
+                serializable_result["n_steps"] = convert_to_json_serializable(planning_result["n_steps"])
         
         # Save JSON
         with open(output_path / "results.json", 'w') as f:

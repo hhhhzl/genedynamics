@@ -1,0 +1,31 @@
+# 3DGS Experiment 1: Lego - 3DGS-MAP baseline
+# Run official 3DGS training via scripts/3dgs/run_3dgs_map.sh
+# This config documents the experiment protocol; actual execution uses subprocess.
+
+name: 3dgs_lego_3dgs_map
+output_dir: results/3dgs/lego_3dgs_map
+
+env_name: 3dgs_nerf_synthetic
+env_params:
+  dataset_root: data/nerf_synthetic/lego
+  object: lego
+  split: train
+  max_views: 100
+  resolution_infer: 128
+  resolution_eval: 512
+
+# 3DGS-MAP runs via GaussianSplattingCLIBackend, not mbd3d
+method: mbd3d
+method_params:
+  renderer_backend: gaussian_splatting_cli
+  image_height: 128
+  image_width: 128
+
+obstacle_levels: [0]
+seeds: [0]
+backend: jax
+device: cuda
+
+metadata:
+  description: "3DGS-MAP baseline on NeRF Synthetic lego (run via run_3dgs_map.sh)"
+  author: "genedynamics"

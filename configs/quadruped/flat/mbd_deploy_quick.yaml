@@ -18,9 +18,19 @@ env_params:
   control_limit: 1.0
   model: flat
 
-Nsample: 128
-Ndiffuse: 30
-terminal_energy_weight: 1500.0
+method_params:
+  terminal_energy_weight: 1500.0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 128
+      T_k: 0.1
+      Ndiffuse: 30
+      beta0: 1e-5
+      betaT: 1e-2
+  diffusion_merge_strategy: merge
 
 execution_mode: sim_only
 control_rate_hz: 20.0

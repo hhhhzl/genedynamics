@@ -107,6 +107,28 @@ def _make_quadruped_planner(env: Any, config: Dict[str, Any], **overrides: Any) 
                 target_pos=config.get("env_params", {}).get("target", (2.0, 0.0, 0.5)),
             )
 
+    # Create scheduler from scheduler_config (aligns with single_2d)
+    scheduler = None
+    scheduler_config = config.get("scheduler_config")
+    if scheduler_config:
+        from genedynamics.experiments.common.constraints import create_scheduler_from_config
+        import os
+        backend = "jax" if os.environ.get("GENEDYNAMICS_BACKEND", "jax") == "jax" else "numpy"
+        obstacle_config = {"robot_radius": 0.15}
+        if task is not None:
+            obs = getattr(task, "obstacles", None)
+            if obs is not None and hasattr(obs, "robot_radius"):
+                obstacle_config["robot_radius"] = obs.robot_radius
+            elif isinstance(getattr(task, "obstacles", None), dict):
+                obstacle_config["robot_radius"] = task.obstacles.get("robot_radius", 0.15)
+        scheduler = create_scheduler_from_config(
+            scheduler_config,
+            backend,
+            method_params=params,
+            obstacle_config=obstacle_config,
+        )
+        params["scheduler"] = scheduler
+
     return make_quadruped_planner(
         env=env,
         horizon=horizon,

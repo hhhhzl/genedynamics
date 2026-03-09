@@ -20,6 +20,9 @@ Configuration files use YAML format and define all parameters needed to run expe
 ### Single Integrator 2D
 - `single_integrator_box_2d/edoc_default.yaml`: Default EDOC configuration
 
+### MRMFMBD (Soft-robot S1+S3)
+- `mrmfmbd/softzoo_flat.yaml`: SoftZoo caterpillar on flat terrain
+
 ## Usage
 
 Run experiments from a configuration file:
