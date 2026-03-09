@@ -1,5 +1,8 @@
-# Quadruped flat MBD pure plan
+# Quadruped flat MBD pure plan (Ant)
 # Run: python -m genedynamics.experiments.runner configs/quadruped/flat/mbd_plan.yaml
+#
+# To extend trajectory: increase env_params.horizon (e.g. 64, 80).
+# Trajectory length = horizon * dt (e.g. 48*0.05=2.4s, 64*0.05=3.2s).
 
 name: quadruped_flat_mbd_plan
 output_dir: results/quadruped/flat/mbd_plan
@@ -7,16 +10,14 @@ output_dir: results/quadruped/flat/mbd_plan
 env_name: quadruped_flat_mjx
 env_params:
   dt: 0.05
-  horizon: 48
+  horizon: 48  # Increase for longer trajectory (64, 80, 96)
   target: [2.0, 0.0, 0.5]
   control_limit: 1.0
   physics_backend: mjx
 
 method: mbd
 method_params:
-  Nsample: 256
-  Ndiffuse: 60
-  temp_sample: 0.08
+  action_extra_sigma: 0.2
   terminal_energy_weight: 5000.0
   show_tqdm: true
 
@@ -35,6 +36,17 @@ obstacle_config:
     y_max: 1.5
     z_min: 0.0
     z_max: 1.0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 256
+      T_k: 0.08
+      Ndiffuse: 60
+      beta0: 1e-5
+      betaT: 1e-2
+  diffusion_merge_strategy: merge
 
 seeds: [0]
 backend: jax

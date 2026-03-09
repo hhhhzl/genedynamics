@@ -37,6 +37,12 @@ def _resolve_quadruped_model_path(model: str) -> Optional[str]:
                 return path
         except Exception:
             pass
+        # Fallback: project third_party/mujoco_menagerie
+        proj = Path(__file__).resolve().parents[2]
+        for f in ("go2_mjx.xml", "go2.xml"):
+            p = proj / "third_party" / "mujoco_menagerie" / "unitree_go2" / f
+            if p.exists():
+                return str(p)
     try:
         from genedynamics.robots import get_robot_registry
         reg = get_robot_registry()

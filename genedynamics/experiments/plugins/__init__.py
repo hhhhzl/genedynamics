@@ -13,6 +13,8 @@ This package contains implementations of various plugins:
 from .methods import (
     EBMBDMethodPlugin,
     MBDMethodPlugin,
+    MBD3DMethodPlugin,
+    MRMFMBDMethodPlugin,
     D3ILUnifiedMethodPlugin,
     MDOCMethodPlugin,
     CFSMBDMethodPlugin,
@@ -38,6 +40,8 @@ from .environments import (
     D3ILAvoiding9DPlugin,
     AvoidingPlanEnvironmentPlugin,
     SoftZooEnvironmentPlugin,
+    MujocoSceneMappingPlugin,
+    NerfSynthetic3DGSPlugin,
 )
 
 from .metrics import (
@@ -69,6 +73,8 @@ __all__ = [
     'EDOCMethodPlugin',
     'EBMBDMethodPlugin',
     'MBDMethodPlugin',
+    'MBD3DMethodPlugin',
+    'MRMFMBDMethodPlugin',
     'EDOCMPCMethodPlugin',
     'D3ILUnifiedMethodPlugin',
     'MDOCMethodPlugin',
@@ -93,6 +99,8 @@ __all__ = [
     'D3ILAvoiding9DPlugin',
     'AvoidingPlanEnvironmentPlugin',
     'SoftZooEnvironmentPlugin',
+    'MujocoSceneMappingPlugin',
+    'NerfSynthetic3DGSPlugin',
     # Metrics
     'SSRMetricsPlugin',
     'ObstacleDensityMetricsPlugin',

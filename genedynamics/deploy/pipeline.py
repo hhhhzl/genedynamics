@@ -101,7 +101,7 @@ def _apply_overrides(cfg: DeployConfig, overrides: Dict[str, Any]) -> DeployConf
 
 def _config_to_dict(cfg: DeployConfig) -> Dict[str, Any]:
     """Convert config to dict for profile factories."""
-    return {
+    out = {
         "robot_type": cfg.robot_type,
         "model_id": cfg.model_id,
         "mode": cfg.mode,
@@ -125,6 +125,10 @@ def _config_to_dict(cfg: DeployConfig) -> Dict[str, Any]:
         "task": cfg.task,
         "extra": cfg.extra,
     }
+    sc = getattr(cfg, "scheduler_config", None)
+    if sc is not None:
+        out["scheduler_config"] = sc
+    return out
 
 
 def _setup_environment(cfg: DeployConfig) -> None:
