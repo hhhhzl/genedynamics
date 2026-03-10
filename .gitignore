@@ -184,6 +184,3 @@ third_party/environments/dataset/
 
 
 /results/*.json
-
-# Legacy package (removed, use genedynamics)
-enerdynamics/
