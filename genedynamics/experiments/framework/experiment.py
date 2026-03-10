@@ -958,6 +958,19 @@ class ExperimentRunner:
                 return
             plan_result = result.get("result", {})
             states = plan_result.get("states")
+            # Fallback: methods that keep lifted 9D trajectory in info (e.g., SafeDiffuser 4D->9D lift)
+            if (
+                (not states or len(states) == 0)
+                and isinstance(plan_result.get("info"), dict)
+                and plan_result["info"].get("states_9d") is not None
+            ):
+                states = plan_result["info"].get("states_9d")
+            if states and len(states) > 0:
+                s0 = np.asarray(states[0], dtype=np.float64).reshape(-1)
+                if s0.size < 9 and isinstance(plan_result.get("info"), dict):
+                    states_9d = plan_result["info"].get("states_9d")
+                    if states_9d is not None and len(states_9d) > 0:
+                        states = states_9d
             if not states:
                 return
             states = [np.asarray(s, dtype=np.float64).reshape(-1).copy() for s in states]

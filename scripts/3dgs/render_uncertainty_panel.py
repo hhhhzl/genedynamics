@@ -32,8 +32,6 @@ def _enhance_low_contrast_rgb(img: np.ndarray, min_span: float = 0.15) -> np.nda
     return np.clip((img - vmin) / max(vmax - vmin, 1e-8), 0.0, 1.0)
 
 
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--result-dir", type=str, required=True, help="Result directory with npy artifacts")
