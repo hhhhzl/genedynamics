@@ -10,8 +10,8 @@ from typing import List, Optional, Dict, Any
 import numpy as np
 from pathlib import Path
 
-from enerdynamics.envs.obstacles.base import ObstacleManager
-from enerdynamics.envs.obstacles.convex import SphereObstacle, BoxObstacle
+from genedynamics.envs.obstacles.base import ObstacleManager
+from genedynamics.envs.obstacles.convex import SphereObstacle, BoxObstacle
 
 
 def generate_obstacle_xml(obstacles: ObstacleManager, start_index: int = 0) -> str:

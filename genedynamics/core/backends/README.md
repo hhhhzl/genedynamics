@@ -89,7 +89,7 @@ constraints/
 ### Basic Usage
 
 ```python
-from enerdynamics.core.constraints.core import (
+from genedynamics.core.constraints.core import (
     HighPerformanceConstraintPipeline,
     PipelineConfig,
     ScheduleState
@@ -122,7 +122,7 @@ repaired_list, info = pipeline.apply_batch(nominals, refs, state)
 ### Performance Profiling
 
 ```python
-from enerdynamics.core.constraints.core import PerformanceProfiler
+from genedynamics.core.constraints.core import PerformanceProfiler
 
 profiler = PerformanceProfiler()
 with profiler.time("operation"):
@@ -234,7 +234,7 @@ Legacy components are still available for backward compatibility:
 
 ```python
 # Legacy imports (still work, but deprecated)
-from enerdynamics.core.constraints.legacy import (
+from genedynamics.core.constraints.legacy import (
     CFSProjection,
     CBFDoubleIntegrator2DActionFilter,
     ConstraintScheduleManager

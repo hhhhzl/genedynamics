@@ -1,3 +1,0 @@
-"""
-CFS-MBD backend implementations.
-"""

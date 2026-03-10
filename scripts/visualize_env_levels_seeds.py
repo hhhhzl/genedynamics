@@ -28,14 +28,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
-from enerdynamics.experiments.framework import ExperimentRunner, ExperimentConfig
-from enerdynamics.experiments.plugins import (
+from genedynamics.experiments.framework import ExperimentRunner, ExperimentConfig
+from genedynamics.experiments.plugins import (
     SingleIntegrator2DPlugin,
     Box2DObstacleGeneratorPlugin,
     ObstacleDensityMetricsPlugin,
     NonconvexityMetricsPlugin,
 )
-from enerdynamics.experiments.common.visualization import draw_obstacles
+from genedynamics.experiments.common.visualization import draw_obstacles
 
 
 def register_plugins(runner: ExperimentRunner) -> None:

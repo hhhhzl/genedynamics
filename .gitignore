@@ -182,10 +182,8 @@ cython_debug/
 # Trifinger dataset files
 third_party/environments/dataset/
 
-# Debug/analysis exports (do not commit)
-cursor_training_and_testing_results_ana.md
-debug_9d_obstacles.csv
-third_party/environments/dataset.zip
-
 
 /results/*.json
+
+# Legacy package (removed, use genedynamics)
+enerdynamics/

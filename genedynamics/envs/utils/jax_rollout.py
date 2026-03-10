@@ -17,7 +17,7 @@ except ImportError:
     jax = None
     jnp = None
 
-from enerdynamics.envs.utils.jax_dynamics import (
+from genedynamics.envs.utils.jax_dynamics import (
     jax_quadrotor_step,
     jax_project_state,
     jax_quadrotor_step_batch,

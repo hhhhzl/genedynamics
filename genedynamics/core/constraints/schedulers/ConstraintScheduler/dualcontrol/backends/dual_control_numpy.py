@@ -9,11 +9,11 @@ from typing import Dict, Any, Optional
 from collections import deque
 import numpy as np
 
-from enerdynamics.core.constraints.schedulers.ConstraintScheduler.dualcontrol.dual_control import (
+from genedynamics.core.constraints.schedulers.ConstraintScheduler.dualcontrol.dual_control import (
     DualControlConstraintScheduler
 )
-from enerdynamics.core.constraints.core.types import ScheduleState
-from enerdynamics.core.constraints.core.registry import register
+from genedynamics.core.constraints.core.types import ScheduleState
+from genedynamics.core.constraints.core.registry import register
 
 
 @register("scheduler", "dual_control_constraint", "numpy")

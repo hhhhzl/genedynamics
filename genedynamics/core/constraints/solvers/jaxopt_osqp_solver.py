@@ -662,7 +662,7 @@ def solve_slack_qp_prefixsum_jax(
 
 
 try:
-    from enerdynamics.solvers.single.cfsmbd.backends._fast_prefixsum_qp import (
+    from genedynamics.solvers.single.cfsmbd.backends._fast_prefixsum_qp import (
         solve_slack_qp_prefixsum_jax as _fast_solve_slack_qp_prefixsum_jax,
     )
     solve_slack_qp_prefixsum_jax = _fast_solve_slack_qp_prefixsum_jax

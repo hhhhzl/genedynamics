@@ -8,9 +8,9 @@ Useful for fixed sample size and temperature experiments.
 from typing import Optional, Dict, Any
 import numpy as np
 
-from enerdynamics.core.constraints.schedulers.DiffusionScheduler.base import DiffusionScheduler
-from enerdynamics.core.constraints.core.types import ScheduleState
-from enerdynamics.core.constraints.core.registry import get_registry
+from genedynamics.core.constraints.schedulers.DiffusionScheduler.base import DiffusionScheduler
+from genedynamics.core.constraints.core.types import ScheduleState
+from genedynamics.core.constraints.core.registry import get_registry
 
 
 class FixedDiffusionScheduler(DiffusionScheduler):

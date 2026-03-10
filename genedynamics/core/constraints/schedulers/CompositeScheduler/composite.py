@@ -14,11 +14,11 @@ from enum import Enum
 from typing import List, Optional, Dict, Any, Union
 import numpy as np
 
-from enerdynamics.core.constraints.schedulers.base import Scheduler
-from enerdynamics.core.constraints.schedulers.ConstraintScheduler.base import ConstraintScheduler
-from enerdynamics.core.constraints.schedulers.DiffusionScheduler.base import DiffusionScheduler
-from enerdynamics.core.constraints.core.types import ScheduleState, ScheduleParams
-from enerdynamics.core.constraints.core.registry import register
+from genedynamics.core.constraints.schedulers.base import Scheduler
+from genedynamics.core.constraints.schedulers.ConstraintScheduler.base import ConstraintScheduler
+from genedynamics.core.constraints.schedulers.DiffusionScheduler.base import DiffusionScheduler
+from genedynamics.core.constraints.core.types import ScheduleState, ScheduleParams
+from genedynamics.core.constraints.core.registry import register
 
 
 class MergeStrategy(Enum):

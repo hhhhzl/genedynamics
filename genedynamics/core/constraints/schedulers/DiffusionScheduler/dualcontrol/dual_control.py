@@ -8,9 +8,9 @@ using a dual variable λ^diff that tracks target ESS.
 from typing import Optional, Dict, Any, Callable
 import numpy as np
 
-from enerdynamics.core.constraints.schedulers.DiffusionScheduler.base import DiffusionScheduler
-from enerdynamics.core.constraints.core.types import ScheduleState
-from enerdynamics.core.constraints.core.registry import get_registry
+from genedynamics.core.constraints.schedulers.DiffusionScheduler.base import DiffusionScheduler
+from genedynamics.core.constraints.core.types import ScheduleState
+from genedynamics.core.constraints.core.registry import get_registry
 
 
 class DualControlDiffusionScheduler(DiffusionScheduler):
@@ -104,7 +104,7 @@ class DualControlDiffusionScheduler(DiffusionScheduler):
         if diffusion_schedule is not None:
             self.diffusion_schedule = diffusion_schedule
         elif betas is not None:
-            from enerdynamics.core.constraints.schedulers.utils import DiffusionNoiseSchedule
+            from genedynamics.core.constraints.schedulers.utils import DiffusionNoiseSchedule
             self.diffusion_schedule = DiffusionNoiseSchedule.from_betas(betas)
         else:
             raise ValueError("Must provide either diffusion_schedule or betas")

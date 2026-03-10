@@ -82,4 +82,4 @@ visualizations:
 
 metadata:
   description: "CFS-MBD on D3IL avoiding (joint-lift CFS-QP per-step, 7D qdot)"
-  author: "enerdynamics"
+  author: "genedynamics"

@@ -6,9 +6,9 @@ Optimized for performance with pre-computed parameter cache.
 """
 
 from typing import Dict, Any
-from enerdynamics.core.constraints.schedulers.DiffusionScheduler.fixed.fixed import FixedDiffusionScheduler
-from enerdynamics.core.constraints.core.types import ScheduleState
-from enerdynamics.core.constraints.core.registry import register
+from genedynamics.core.constraints.schedulers.DiffusionScheduler.fixed.fixed import FixedDiffusionScheduler
+from genedynamics.core.constraints.core.types import ScheduleState
+from genedynamics.core.constraints.core.registry import register
 
 
 @register("scheduler", "fixed_diffusion", "numpy")

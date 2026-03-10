@@ -20,8 +20,8 @@ except ImportError:
     Gf = None
     UsdPhysics = None
 
-from enerdynamics.envs.obstacles.base import ObstacleManager
-from enerdynamics.envs.obstacles.convex import SphereObstacle, BoxObstacle
+from genedynamics.envs.obstacles.base import ObstacleManager
+from genedynamics.envs.obstacles.convex import SphereObstacle, BoxObstacle
 
 
 def add_obstacle_to_usd(

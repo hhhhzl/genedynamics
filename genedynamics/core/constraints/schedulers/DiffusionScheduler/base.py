@@ -11,8 +11,8 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 import numpy as np
 
-from enerdynamics.core.constraints.schedulers.base import Scheduler
-from enerdynamics.core.constraints.core.types import (
+from genedynamics.core.constraints.schedulers.base import Scheduler
+from genedynamics.core.constraints.core.types import (
     ScheduleState,
     ScheduleParams,
 )
