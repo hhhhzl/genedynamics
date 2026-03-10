@@ -19,6 +19,21 @@ def _safe_norm(x: np.ndarray) -> np.ndarray:
     return np.clip(x / vmax, 0.0, 1.0)
 
 
+def _enhance_low_contrast_rgb(img: np.ndarray, min_span: float = 0.15) -> np.ndarray:
+    """Stretch contrast for low-dynamic-range images without over-amplifying noise.
+    Uses 5th/95th percentiles with a minimum span to avoid color distortion."""
+    img = np.asarray(img, dtype=np.float32)
+    vmin = float(np.percentile(img, 5.0))
+    vmax = float(np.percentile(img, 95.0))
+    span = max(vmax - vmin, min_span)
+    center = (vmin + vmax) * 0.5
+    vmin = center - span * 0.5
+    vmax = center + span * 0.5
+    return np.clip((img - vmin) / max(vmax - vmin, 1e-8), 0.0, 1.0)
+
+
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--result-dir", type=str, required=True, help="Result directory with npy artifacts")
@@ -50,6 +65,7 @@ def main() -> int:
     else:
         var_map = var_pred
     abs_err = np.mean(np.abs(mean_pred[:n_views] - gt_images[:n_views]), axis=-1)
+    has_variance = pred_stack.shape[0] > 1 and np.any(var_map > 1e-10)
 
     try:
         import matplotlib
@@ -68,7 +84,7 @@ def main() -> int:
         axes[0, i].set_title(f"GT view {i}")
         axes[0, i].axis("off")
 
-        axes[1, i].imshow(np.clip(mean_pred[i], 0.0, 1.0))
+        axes[1, i].imshow(_enhance_low_contrast_rgb(mean_pred[i]))
         axes[1, i].set_title(f"Mean pred {i}")
         axes[1, i].axis("off")
 
@@ -76,8 +92,14 @@ def main() -> int:
         axes[2, i].set_title("Abs error")
         axes[2, i].axis("off")
 
-        axes[3, i].imshow(_safe_norm(var_map[i]), cmap="hot")
-        axes[3, i].set_title("Posterior variance")
+        if has_variance:
+            axes[3, i].imshow(_safe_norm(var_map[i]), cmap="hot")
+            axes[3, i].set_title("Posterior variance")
+        else:
+            placeholder = np.full_like(var_map[i], 0.3)
+            axes[3, i].imshow(placeholder, cmap="gray", vmin=0, vmax=1)
+            axes[3, i].text(0.5, 0.5, "N/A (single sample)", ha="center", va="center", fontsize=10, transform=axes[3, i].transAxes)
+            axes[3, i].set_title("Posterior variance")
         axes[3, i].axis("off")
 
     plt.tight_layout()

@@ -40,10 +40,12 @@ python scripts/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_canonical.
 # Step 1: Train gsplat for warm start (128 gaussians, ~20 dB on train views)
 python scripts/3dgs/train_gsplat.py configs/3dgs/main/lego_mbd_canonical.yaml \
   --output results/3dgs/lego_gsplat_warmstart --iters 6000 --n-gaussians 128
-# Step 2: Run MBD with prior-centered init
+# Step 2: Run MBD with prior-centered init (Phase 3+4: best_chain, train/test metrics)
 python scripts/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_quality_recovery_vramfit.yaml \
   --initial-scene-path results/3dgs/lego_gsplat_warmstart/scene_params.npz \
-  --initialization-mode prior_center --init-jitter-scale 0.1
+  --initialization-mode prior_center --init-jitter-scale 0.1 --n-seeds 2 --best-chain
+
+# One-liner: bash scripts/3dgs/run_quality_recovery.sh
 
 # Quality recovery configs (tuned for PSNR)
 python scripts/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_quality_recovery_vramfit.yaml

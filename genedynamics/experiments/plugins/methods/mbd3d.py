@@ -68,10 +68,12 @@ class MBD3DMethodPlugin(MethodPlugin):
 
         n_gaussians = config.get("n_gaussians", 32)
         prior_center = config.get("initial_scene_center", None)
+        prior_bbox = config.get("prior_bbox", None)
         scene_repr = GaussianSplatScene(
             n_gaussians=n_gaussians,
             prior_scale_means=config.get("prior_scale_means", 1.0),
             prior_scale_scales=config.get("prior_scale_scales", 0.1),
+            prior_bbox=prior_bbox,
         )
         if prior_center is not None and hasattr(scene_repr, "set_prior_center"):
             scene_repr.set_prior_center(prior_center)
@@ -121,11 +123,16 @@ class MBD3DMethodPlugin(MethodPlugin):
         eta_start = config.get("bridge_eta", 0.02)
         eta_end = config.get("bridge_eta_end", eta_start * 0.1)
         eta_schedule = np.linspace(float(eta_start), float(eta_end), bridge_K, dtype=np.float32).tolist()
+        sigma_mcsa = config.get("sigma_mcsa", 0.05)
+        sigma_start = config.get("sigma_mcsa_start", sigma_mcsa * 1.6)
+        sigma_end = config.get("sigma_mcsa_end", sigma_mcsa * 0.4)
+        sigma_schedule = np.linspace(float(sigma_start), float(sigma_end), bridge_K, dtype=np.float32).tolist()
         bridge_schedule = create_linear_bridge_schedule(
             K=bridge_K,
             beta0=config.get("bridge_beta0", 0.0),
             betaK=config.get("bridge_betaK", 1.0),
             eta_schedule=eta_schedule,
+            sigma_schedule=sigma_schedule,
         )
 
         solver = MBD3DSolver(

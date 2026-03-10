@@ -301,6 +301,9 @@ class MBD3DBackendJax:
 
         U = None
         eigvals = None
+        prev_ess = None
+        ess_min = float(self.ess_min)
+        ess_adaptive = ess_min > 1.0
         iter_range = range(K)
         if self.show_tqdm:
             try:
@@ -386,6 +389,11 @@ class MBD3DBackendJax:
             sigma = float(self.bridge_schedule.sigma(k))
             eta = float(self.bridge_schedule.eta(k))
             tau = float(self.bridge_schedule.tau(k))
+            if ess_adaptive and prev_ess is not None and ess_min > 0 and prev_ess < ess_min:
+                eta_scale = min(1.0, max(0.3, float(prev_ess) / ess_min))
+                sigma_scale = 1.0 + 0.4 * max(0.0, 1.0 - float(prev_ess) / ess_min)
+                eta = eta * eta_scale
+                sigma = sigma * sigma_scale
             rank_k = _linear_int(self._subspace_rank_start, self._subspace_rank_end, k, K)
             rank_k = int(min(max(1, rank_k), self._theta_dim))
             m_k = _linear_int(self._proposal_count_start, self._proposal_count_end, k, K)
@@ -423,6 +431,7 @@ class MBD3DBackendJax:
                 theta, U, beta, sigma, eta, tau, m_k, rk_active, key_eps, key_noise
             )
             t_prop_ms = (time.perf_counter() - t_prop0) * 1e3
+            prev_ess = float(np.asarray(ess))
 
             t_upd_ms = 0.0
 

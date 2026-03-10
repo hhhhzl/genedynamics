@@ -25,7 +25,8 @@ class GaussianSplatScene:
     Simple 3D Gaussian splatting scene representation.
 
     Prior: independent Gaussian on each component (means, scales, etc.)
-    with configurable scale.
+    with configurable scale. When prior_bbox is set and no prior_center,
+    means are sampled uniformly in bbox for stronger training-free init.
     """
 
     def __init__(
@@ -38,6 +39,7 @@ class GaussianSplatScene:
         prior_scale_colors: float = 1.0,
         use_spherical_harmonics: bool = False,
         sh_degree: int = 0,
+        prior_bbox: Optional[Any] = None,
     ):
         self.n_gaussians = n_gaussians
         self.prior_scale_means = prior_scale_means
@@ -53,6 +55,13 @@ class GaussianSplatScene:
             + (n_gaussians * self._sh_dim if self._sh_dim > 0 else 0)
         )
         self._prior_center: Optional[SceneParams] = None
+        self._prior_bbox: Optional[np.ndarray] = None
+        if prior_bbox is not None:
+            b = np.asarray(prior_bbox, dtype=np.float32).ravel()
+            if b.size >= 6:
+                lo = np.array([b[0], b[2], b[4]], dtype=np.float32)
+                hi = np.array([b[1], b[3], b[5]], dtype=np.float32)
+                self._prior_bbox = np.stack([lo, hi], axis=0)
 
     def flatten(self, params: SceneParams) -> Any:
         return params.flatten()
@@ -80,7 +89,34 @@ class GaussianSplatScene:
                 return -0.5 * jnp.sum(jnp.square(xc)) / var - 0.5 * jnp.size(x) * jnp.log(var)
             return float(-0.5 * np.sum(np.square(np.asarray(xc))) / var - 0.5 * np.size(x) * np.log(var))
 
-        logp = _gaussian_log_prob(params.means, self.prior_scale_means, None if center is None else center.means)
+        if center is None and self._prior_bbox is not None:
+            lo, hi = self._prior_bbox[0], self._prior_bbox[1]
+            n_pts = int(params.means.shape[0])
+            # Soft box prior: finite everywhere to avoid bridge NaNs.
+            if use_jax:
+                lo_j = jnp.asarray(lo, dtype=jnp.float32)
+                hi_j = jnp.asarray(hi, dtype=jnp.float32)
+                box_size = jnp.maximum(hi_j - lo_j, 1e-6)
+                box_center = 0.5 * (lo_j + hi_j)
+                half = 0.5 * box_size
+                vol = jnp.prod(box_size)
+                delta = (params.means - box_center) / half
+                outside = jnp.maximum(jnp.abs(delta) - 1.0, 0.0)
+                soft_penalty = jnp.sum(jnp.square(outside))
+                logp = -n_pts * jnp.log(vol) - 0.5 * 10.0 * soft_penalty
+            else:
+                lo_n = np.asarray(lo, dtype=np.float32)
+                hi_n = np.asarray(hi, dtype=np.float32)
+                box_size = np.maximum(hi_n - lo_n, 1e-6)
+                box_center = 0.5 * (lo_n + hi_n)
+                half = 0.5 * box_size
+                vol = float(np.prod(box_size))
+                delta = (np.asarray(params.means) - box_center) / half
+                outside = np.maximum(np.abs(delta) - 1.0, 0.0)
+                soft_penalty = float(np.sum(np.square(outside)))
+                logp = float(-n_pts * np.log(vol) - 0.5 * 10.0 * soft_penalty)
+        else:
+            logp = _gaussian_log_prob(params.means, self.prior_scale_means, None if center is None else center.means)
         logp = logp + _gaussian_log_prob(params.scales, self.prior_scale_scales, None if center is None else center.scales)
         logp = logp + _gaussian_log_prob(params.quats, self.prior_scale_quats, None if center is None else center.quats)
         logp = logp + _gaussian_log_prob(
@@ -118,9 +154,25 @@ class GaussianSplatScene:
             gen = np.random.default_rng(int(rng) if isinstance(rng, (int, np.integer)) else 0)
             return np.asarray(c0) + s * gen.normal(size=shape)
 
+        def _sample_uniform_bbox(shape: tuple, key: Any) -> Any:
+            lo, hi = self._prior_bbox[0], self._prior_bbox[1]
+            if JAX_AVAILABLE and hasattr(key, "block_until_ready"):
+                u = jax.random.uniform(key, shape)
+                return lo + u * (hi - lo)
+            if hasattr(rng, "random"):
+                u = rng.random(size=shape)
+            else:
+                gen = np.random.default_rng(int(rng) if isinstance(rng, (int, np.integer)) else 0)
+                u = gen.random(size=shape)
+            return np.asarray(lo) + np.asarray(u) * (np.asarray(hi) - np.asarray(lo))
+
+        use_bbox_means = cparams is None and self._prior_bbox is not None
         if JAX_AVAILABLE:
             keys = jax.random.split(rng, 6)
-            means = _sample((n, 3), self.prior_scale_means, keys[0], None if cparams is None else cparams.means)
+            if use_bbox_means:
+                means = _sample_uniform_bbox((n, 3), keys[0])
+            else:
+                means = _sample((n, 3), self.prior_scale_means, keys[0], None if cparams is None else cparams.means)
             scales = _sample((n, 3), self.prior_scale_scales, keys[1], None if cparams is None else cparams.scales)
             quats = _sample((n, 4), self.prior_scale_quats, keys[2], None if cparams is None else cparams.quats)
             quats = quats / (jnp.linalg.norm(quats, axis=-1, keepdims=True) + 1e-8)
@@ -132,7 +184,10 @@ class GaussianSplatScene:
                 (n, self._sh_dim), 1.0, keys[5], None if cparams is None else cparams.spherical_harmonics
             ) if self._sh_dim > 0 else None
         else:
-            means = _sample((n, 3), self.prior_scale_means, rng, None if cparams is None else cparams.means)
+            if use_bbox_means:
+                means = _sample_uniform_bbox((n, 3), rng)
+            else:
+                means = _sample((n, 3), self.prior_scale_means, rng, None if cparams is None else cparams.means)
             scales = _sample((n, 3), self.prior_scale_scales, rng, None if cparams is None else cparams.scales)
             quats = _sample((n, 4), self.prior_scale_quats, rng, None if cparams is None else cparams.quats)
             quats = quats / (np.linalg.norm(quats, axis=-1, keepdims=True) + 1e-8)

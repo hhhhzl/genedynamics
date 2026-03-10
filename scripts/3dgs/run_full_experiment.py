@@ -124,6 +124,7 @@ def main() -> int:
     parser.add_argument("--initial-scene-path", type=str, default=None, help="Optional scene npz for prior-centered initialization")
     parser.add_argument("--initialization-mode", type=str, default="prior_center", choices=["prior_center", "direct", "random"])
     parser.add_argument("--init-jitter-scale", type=float, default=1.0)
+    parser.add_argument("--best-chain", action="store_true", help="When n_seeds>1, use scene from chain with highest total_log_prob")
     args = parser.parse_args()
 
     from genedynamics.experiments.framework import ExperimentConfig, ExperimentRunner
@@ -178,30 +179,48 @@ def main() -> int:
         print("No scene_params found in results.")
         return 1
 
+    use_best_chain = getattr(args, "best_chain", False) and len(seeds) > 1 and total_log_probs
+    if use_best_chain:
+        best_idx = int(np.argmax(total_log_probs))
+        scene_params_list = [scene_params_list[best_idx]]
+        total_log_probs = [total_log_probs[best_idx]]
+        bridge_histories = [bridge_histories[best_idx]] if bridge_histories else []
+
     ep = config.env_params
+    train_split = ep.get("split", "train")
     eval_split = ep.get("eval_split", "test")
     eval_resolution = ep.get("eval_resolution") or ep.get("resolution_eval", 512)
     root = Path(ep.get("dataset_root", "")).expanduser()
     if not root.is_absolute():
         root = ROOT / root
-    adapter = NerfSyntheticDataAdapter(NerfSyntheticConfig(
-        dataset_root=str(root),
-        object=ep.get("object"),
-        split=eval_split,
-        image_height=eval_resolution,
-        image_width=eval_resolution,
-        resolution_infer=ep.get("resolution_infer", 128),
-        resolution_eval=eval_resolution,
-        composite_background=ep.get("composite_background", "white"),
-        pose_convention=ep.get("pose_convention", "opencv"),
-        max_views=None,
-        view_stride=1,
-        shuffle_seed=None,
-    ))
-    eval_ds = adapter.load_split(split=eval_split, resolution="eval")
+
+    def _make_adapter(split: str) -> "NerfSyntheticDataAdapter":
+        return NerfSyntheticDataAdapter(NerfSyntheticConfig(
+            dataset_root=str(root),
+            object=ep.get("object"),
+            split=split,
+            image_height=eval_resolution,
+            image_width=eval_resolution,
+            resolution_infer=ep.get("resolution_infer", 128),
+            resolution_eval=eval_resolution,
+            composite_background=ep.get("composite_background", "white"),
+            pose_convention=ep.get("pose_convention", "opencv"),
+            max_views=ep.get("max_views"),
+            view_stride=ep.get("view_stride", 1),
+            shuffle_seed=ep.get("shuffle_seed"),
+        ))
+
+    adapter_eval = _make_adapter(eval_split)
+    eval_ds = adapter_eval.load_split(split=eval_split, resolution="eval")
     gt_images = np.asarray(eval_ds.images, dtype=np.float32)
     camera_poses = np.asarray(eval_ds.camera_poses, dtype=np.float32)
     intrinsics = np.asarray(eval_ds.intrinsics, dtype=np.float32)
+
+    adapter_train = _make_adapter(train_split)
+    train_ds = adapter_train.load_split(split=train_split, resolution="eval")
+    train_gt = np.asarray(train_ds.images, dtype=np.float32)
+    train_poses = np.asarray(train_ds.camera_poses, dtype=np.float32)
+    train_intrinsics = np.asarray(train_ds.intrinsics, dtype=np.float32)
 
     method_plugin = runner.registry.get_plugin("method", config.method)
     env_plugin = runner.registry.get_plugin("environment", config.env_name)
@@ -212,6 +231,19 @@ def main() -> int:
     if renderer is None:
         print("Renderer unavailable from planner.")
         return 1
+
+    render_h = getattr(renderer, "image_height", gt_images.shape[1])
+    render_w = getattr(renderer, "image_width", gt_images.shape[2])
+    orig_h, orig_w = int(gt_images.shape[1]), int(gt_images.shape[2])
+    if (render_h, render_w) != (orig_h, orig_w):
+        from genedynamics.solvers.single.mbd3d.data.camera_utils import resize_intrinsics
+        def _scale_K(K, oh, ow, nh, nw):
+            if K.ndim == 3:
+                return np.stack([resize_intrinsics(K[i], oh, ow, nh, nw) for i in range(K.shape[0])], axis=0)
+            return resize_intrinsics(K, oh, ow, nh, nw)
+        intrinsics = _scale_K(intrinsics, orig_h, orig_w, render_h, render_w)
+        if (train_gt.shape[1], train_gt.shape[2]) == (orig_h, orig_w):
+            train_intrinsics = _scale_K(train_intrinsics, orig_h, orig_w, render_h, render_w)
 
     pred_stack = np.stack(
         [np.asarray(renderer.render(sp, camera_poses, intrinsics), dtype=np.float32) for sp in scene_params_list],
@@ -224,18 +256,55 @@ def main() -> int:
     if gt_images.shape[1:3] != mean_pred.shape[1:3]:
         gt_images = _resize_images_to(gt_images, int(mean_pred.shape[1]), int(mean_pred.shape[2]))
 
+    train_pred_stack = np.stack(
+        [np.asarray(renderer.render(sp, train_poses, train_intrinsics), dtype=np.float32) for sp in scene_params_list],
+        axis=0,
+    )
+    train_mean_pred = np.mean(train_pred_stack, axis=0)
+    if train_gt.shape[1:3] != train_mean_pred.shape[1:3]:
+        train_gt = _resize_images_to(train_gt, int(train_mean_pred.shape[1]), int(train_mean_pred.shape[2]))
+
+    test_psnr = _psnr(mean_pred, gt_images)
+    test_mse = float(np.mean((np.asarray(mean_pred) - np.asarray(gt_images)) ** 2))
+    train_psnr = _psnr(train_mean_pred, train_gt)
+    train_mse = float(np.mean((np.asarray(train_mean_pred) - np.asarray(train_gt)) ** 2))
+    train_log_posterior = float(np.mean(total_log_probs)) if total_log_probs else None
+
     metrics = {
-        "psnr": _psnr(mean_pred, gt_images),
+        "test_psnr": test_psnr,
+        "test_mse": test_mse,
+        "test_lpips": _lpips(mean_pred, gt_images),
+        "train_psnr": train_psnr,
+        "train_mse": train_mse,
+        "train_log_posterior": train_log_posterior,
+        "psnr": test_psnr,
         "lpips": _lpips(mean_pred, gt_images),
-        "nll": -float(np.mean(total_log_probs)) if total_log_probs else None,
+        "nll": -train_log_posterior if train_log_posterior is not None else None,
         "n_seeds": len(seeds),
-        "n_views": int(gt_images.shape[0]),
+        "n_views_test": int(gt_images.shape[0]),
+        "n_views_train": int(train_gt.shape[0]),
         "eval_split": eval_split,
+        "train_split": train_split,
         "eval_resolution": int(eval_resolution),
         "initialization_mode": args.initialization_mode,
+        "best_chain": bool(use_best_chain),
     }
+    def _json_safe(obj):
+        if isinstance(obj, bool):
+            return obj
+        if isinstance(obj, (int, np.integer)):
+            return int(obj)
+        if isinstance(obj, (float, np.floating)):
+            f = float(obj)
+            return None if (f != f or np.isinf(f)) else f
+        if isinstance(obj, (list, tuple)):
+            return [_json_safe(x) for x in obj]
+        if isinstance(obj, dict):
+            return {k: _json_safe(v) for k, v in obj.items()}
+        return obj
+
     with open(output_dir / "metrics.json", "w") as f:
-        json.dump(metrics, f, indent=2)
+        json.dump(_json_safe(metrics), f, indent=2)
     _save_uncertainty_artifacts(output_dir, pred_stack, mean_pred, var_pred, gt_images)
     _render_uncertainty_panel(output_dir, n_show=4)
     if bridge_histories:
