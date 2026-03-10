@@ -2,16 +2,30 @@
 Reference implementations for MBD3D protocols.
 
 - GaussianSplatScene: simple 3DGS scene representation
-- MockRenderer: placeholder renderer for testing (replace with diff-gaussian-splatting)
 - GaussianObservationLikelihood: L2 / low-rank noise likelihood
 """
 
 from .scene import GaussianSplatScene
-from .renderer import MockRenderer
 from .likelihood import GaussianObservationLikelihood
+
+try:
+    from .jax_splat_renderer import JaxSplatRenderer
+    JAX_SPLAT_AVAILABLE = True
+except ImportError:
+    JaxSplatRenderer = None
+    JAX_SPLAT_AVAILABLE = False
+
+try:
+    from .gsplat_renderer import GsplatRenderer, GSPLAT_AVAILABLE
+except ImportError:
+    GsplatRenderer = None
+    GSPLAT_AVAILABLE = False
 
 __all__ = [
     "GaussianSplatScene",
-    "MockRenderer",
+    "JaxSplatRenderer",
+    "JAX_SPLAT_AVAILABLE",
+    "GsplatRenderer",
+    "GSPLAT_AVAILABLE",
     "GaussianObservationLikelihood",
 ]

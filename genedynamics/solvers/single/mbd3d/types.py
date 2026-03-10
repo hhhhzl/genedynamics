@@ -67,7 +67,9 @@ class SceneParams:
         sh_dim: int = 0,
     ) -> "SceneParams":
         """Reconstruct from flattened vector."""
-        use_jax = JAX_AVAILABLE and hasattr(flat, "block_until_ready")
+        use_jax = JAX_AVAILABLE and (
+            hasattr(flat, "block_until_ready") or getattr(flat, "aval", None) is not None
+        )
         flat = jnp.asarray(flat) if use_jax else np.asarray(flat)
         n = n_gaussians
         idx = 0
@@ -125,6 +127,7 @@ class ObservationBundle:
     intrinsics: Optional[Array] = None
     masks: Optional[Array] = None
     timestamps: Optional[Array] = None
+    initial_scene: Optional[Any] = None  # SceneParams for MBD warm start
 
     @property
     def num_views(self) -> int:

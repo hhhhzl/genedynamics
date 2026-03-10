@@ -12,8 +12,11 @@ from genedynamics.solvers.single.mbd3d import MBD3DSolver
 from genedynamics.solvers.single.mbd3d.types import ObservationBundle
 from genedynamics.solvers.single.mbd3d.implementations import (
     GaussianSplatScene,
-    MockRenderer,
     GaussianObservationLikelihood,
+    JaxSplatRenderer,
+    JAX_SPLAT_AVAILABLE,
+    GsplatRenderer,
+    GSPLAT_AVAILABLE,
 )
 from genedynamics.core.dynamics.adapters import EnvDynamicsAdapter
 from genedynamics.core.backends.runtime import RuntimeBackendManager
@@ -25,7 +28,12 @@ from ._result_utils import normalize_result_from_trajectory
 def _make_observation_bundle(env: Any, config: Dict[str, Any]) -> ObservationBundle:
     """Build ObservationBundle from env or config or synthetic."""
     if hasattr(env, "get_observations") and callable(getattr(env, "get_observations")):
-        return env.get_observations()
+        obs = env.get_observations()
+        if config.get("initial_scene") is not None:
+            obs.initial_scene = config["initial_scene"]
+        if config.get("initial_scene_center") is not None:
+            obs.initial_scene = config["initial_scene_center"]
+        return obs
     obs = config.get("observations")
     if obs is not None and isinstance(obs, ObservationBundle):
         return obs
@@ -59,34 +67,65 @@ class MBD3DMethodPlugin(MethodPlugin):
         dt = config.get("dt", 0.1)
 
         n_gaussians = config.get("n_gaussians", 32)
+        prior_center = config.get("initial_scene_center", None)
         scene_repr = GaussianSplatScene(
             n_gaussians=n_gaussians,
             prior_scale_means=config.get("prior_scale_means", 1.0),
             prior_scale_scales=config.get("prior_scale_scales", 0.1),
         )
+        if prior_center is not None and hasattr(scene_repr, "set_prior_center"):
+            scene_repr.set_prior_center(prior_center)
 
         img_h = config.get("image_height", 64)
         img_w = config.get("image_width", 64)
         img_c = config.get("image_channels", 3)
-        renderer = MockRenderer(
-            image_height=img_h,
-            image_width=img_w,
-            image_channels=img_c,
-            surrogate_type=config.get("renderer_surrogate_type", "linear"),
-        )
+        use_real_splat = config.get("use_real_splat", True)
+        enable_subspace = bool(config.get("enable_subspace", True))
+        prefer_jax_renderer = bool(config.get("prefer_jax_renderer", enable_subspace))
+
+        if prefer_jax_renderer and JAX_SPLAT_AVAILABLE and JaxSplatRenderer is not None:
+            renderer = JaxSplatRenderer(
+                image_height=img_h,
+                image_width=img_w,
+                image_channels=img_c,
+            )
+        elif use_real_splat and GSPLAT_AVAILABLE and GsplatRenderer is not None:
+            renderer = GsplatRenderer(
+                image_height=img_h,
+                image_width=img_w,
+                image_channels=img_c,
+            )
+        elif use_real_splat and JAX_SPLAT_AVAILABLE and JaxSplatRenderer is not None:
+            renderer = JaxSplatRenderer(
+                image_height=img_h,
+                image_width=img_w,
+                image_channels=img_c,
+            )
+        else:
+            raise RuntimeError(
+                "No production renderer available. Install gsplat or enable JAX renderer."
+            )
 
         likelihood = GaussianObservationLikelihood(
             renderer=renderer,
             sigma2=config.get("observation_sigma2", 0.01),
             use_lowrank=config.get("use_lowrank_noise", False),
             backend="jax",
+            lowrank_view_rank=config.get("lowrank_view_rank", 4),
+            lowrank_spatial_rank=config.get("lowrank_spatial_rank", 2),
+            lowrank_color_rank=config.get("lowrank_color_rank", 3),
+            lowrank_max_rank=config.get("lowrank_max_rank", 16),
         )
 
         bridge_K = config.get("bridge_K", 50)
+        eta_start = config.get("bridge_eta", 0.02)
+        eta_end = config.get("bridge_eta_end", eta_start * 0.1)
+        eta_schedule = np.linspace(float(eta_start), float(eta_end), bridge_K, dtype=np.float32).tolist()
         bridge_schedule = create_linear_bridge_schedule(
             K=bridge_K,
             beta0=config.get("bridge_beta0", 0.0),
             betaK=config.get("bridge_betaK", 1.0),
+            eta_schedule=eta_schedule,
         )
 
         solver = MBD3DSolver(
@@ -104,6 +143,27 @@ class MBD3DMethodPlugin(MethodPlugin):
             ess_min=config.get("ess_min", 1.0),
             seed=config.get("np_random_seed", 0),
             show_tqdm=config.get("show_tqdm", False),
+            fix_cameras=config.get("fix_cameras", True),
+            initialization_mode=config.get("initialization_mode", "prior_center"),
+            init_jitter_scale=config.get("init_jitter_scale", 1.0),
+            enable_subspace=enable_subspace,
+            subspace_rank=config.get("subspace_rank", 64),
+            subspace_rank_start=config.get("subspace_rank_start", config.get("subspace_rank", 64)),
+            subspace_rank_end=config.get("subspace_rank_end", config.get("subspace_rank", 64)),
+            subspace_power_iters=config.get("subspace_power_iters", 2),
+            subspace_refresh_every=config.get("subspace_refresh_every", 1),
+            subspace_refresh_every_start=config.get(
+                "subspace_refresh_every_start", config.get("subspace_refresh_every", 1)
+            ),
+            subspace_refresh_every_end=config.get(
+                "subspace_refresh_every_end", config.get("subspace_refresh_every", 1)
+            ),
+            proposal_count_start=config.get("proposal_count_start", config.get("M", 16)),
+            proposal_count_end=config.get("proposal_count_end", config.get("M", 16)),
+            profiling=config.get("profiling", True),
+            subspace_oversample=config.get("subspace_oversample", 2),
+            compile_stable_shapes=config.get("compile_stable_shapes", True),
+            fidelity_ladder=config.get("fidelity_ladder"),
         )
         return solver
 

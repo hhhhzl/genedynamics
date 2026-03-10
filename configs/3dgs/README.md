@@ -1,66 +1,74 @@
-# 3DGS NeRF Synthetic Experiments (Experiment 1: Small object 3D reconstruction)
+# 3DGS Config Layout (Phase 0 Cleanup)
 
-Aligned with 3DGS setting for motivation experiment.
+This folder is now organized by experiment role instead of historical file names.
 
-## Configurations
+## Structure
 
-| File | Method | Object |
-|------|--------|--------|
-| `_template.yaml` | 模板（复制后修改） | - |
-| `_base_nerf_synth.yaml` | Base (override in children) | - |
-| `lego_mbd_iid.yaml` | Ours-MBD (iid) | lego |
-| `lego_mbd_corr.yaml` | Ours-MBD (corr) | lego |
-| `lego_3dgs_map.yaml` | 3DGS-MAP baseline | lego |
-| `chair_mbd_iid.yaml` | Ours-MBD (iid) | chair |
-| `chair_mbd_corr.yaml` | Ours-MBD (corr) | chair |
+- `main/`: canonical method runs (paper/mainline behavior)
+- `ablations/`: controlled switches (iid vs corr, warm-start, etc.)
+- `baselines/`: non-method baselines (gsplat training, 3DGS-MAP protocol)
+- `_template.yaml`: template for creating new configs
+- `_base_nerf_synth.yaml`: shared reference defaults
 
-## 新增配置
+## Current configs
 
-复制 `_template.yaml` 为 `<object>_mbd_<iid|corr>.yaml`，修改 `name`、`output_dir`、`env_params.dataset_root`、`env_params.object`、`method_params.use_lowrank_noise`。
+### Main
 
-## Data
+- `main/lego_mbd_canonical.yaml`
 
-- **Dataset**: NeRF Synthetic (transforms_train/val/test.json)
-- **Objects**: lego, chair, drums, ficus, hotdog, materials, ship
-- **Views**: 50–100 (max_views)
-- **Resolution**: infer 128x128, eval 512x512
+### Ablations
 
-## Dataset layout
+- `ablations/lego_mbd_iid_ablation.yaml`
+- `ablations/lego_mbd_corr_ablation.yaml`
+- `ablations/lego_mbd_warmstart_ablation.yaml`
+- `ablations/chair_mbd_iid_ablation.yaml`
+- `ablations/chair_mbd_corr_ablation.yaml`
 
-```
-data/nerf_synthetic/
-  lego/
-    transforms_train.json
-    transforms_val.json
-    transforms_test.json
-    train/
-      r_*.png
-    val/
-    test/
-  chair/
-    ...
-```
+### Baselines
 
-Download from [NeRF Synthetic](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1).
+- `baselines/lego_gsplat_baseline.yaml`
+- `baselines/lego_gsplat_densify_baseline.yaml`
+- `baselines/lego_3dgs_map_baseline.yaml`
 
-## Run
+## Run examples
 
 ```bash
-# Ours-MBD (iid) on lego
-python -m genedynamics.experiments.runner configs/3dgs/lego_mbd_iid.yaml
+# Canonical MBD run (no warm start, ~5 dB PSNR)
+python scripts/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_canonical.yaml
 
-# 3DGS-MAP baseline (requires official 3DGS repo)
-./scripts/3dgs/run_3dgs_map.sh data/nerf_synthetic/lego results/3dgs/lego_3dgs_map
+# PSNR-focused: warm start from gsplat (~10 dB PSNR)
+# Step 1: Train gsplat for warm start (128 gaussians, ~20 dB on train views)
+python scripts/3dgs/train_gsplat.py configs/3dgs/main/lego_mbd_canonical.yaml \
+  --output results/3dgs/lego_gsplat_warmstart --iters 6000 --n-gaussians 128
+# Step 2: Run MBD with prior-centered init
+python scripts/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_quality_recovery_vramfit.yaml \
+  --initial-scene-path results/3dgs/lego_gsplat_warmstart/scene_params.npz \
+  --initialization-mode prior_center --init-jitter-scale 0.1
+
+# Quality recovery configs (tuned for PSNR)
+python scripts/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_quality_recovery_vramfit.yaml
+python scripts/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_psnr_improved.yaml  # 192 gaussians, may OOM on smaller GPUs
+
+# Likelihood ablation
+python scripts/3dgs/run_full_experiment.py configs/3dgs/ablations/lego_mbd_iid_ablation.yaml
+python scripts/3dgs/run_full_experiment.py configs/3dgs/ablations/lego_mbd_corr_ablation.yaml
+
+# Baseline (pure gsplat training path)
+python scripts/3dgs/run_baseline_experiment.py configs/3dgs/baselines/lego_gsplat_baseline.yaml --iters 30000
+python scripts/3dgs/run_baseline_experiment.py configs/3dgs/baselines/lego_gsplat_densify_baseline.yaml --iters 30000 --densify --max-gaussians 30000
 ```
 
-## Metrics
+## PSNR improvement
 
-- held-out PSNR / LPIPS
-- NLL (corr only)
-- Inference budget (render passes to reach PSNR)
+| Setup | PSNR | LPIPS |
+|-------|------|-------|
+| Canonical (random init) | ~5.4 dB | ~0.98 |
+| Quality recovery vramfit | ~5.4 dB | ~0.97 |
+| **Warm start** (gsplat 6k iters → MBD prior_center) | **~10.3 dB** | **~0.76** |
 
-## PSNR expectations
+Warm start: train gsplat 6k iters with 128 gaussians (~20 dB on train), then run MBD with `--initial-scene-path` and `--init-jitter-scale 0.1`.
 
-- **MockRenderer** (default on CPU/Mac): surrogate renderer for optimization; PSNR ~9 dB (not meaningful).
-- **GsplatRenderer** (CUDA): real 3DGS rendering for evaluation. On CUDA machines, `run_full_experiment.py` auto-uses GsplatRenderer when available for realistic PSNR (typically 25–35 dB on NeRF Synthetic).
-- For ideal PSNR, run on a CUDA machine with `pip install gsplat`.
+## Notes
+
+- The `gsplat` baselines are intentionally separated from `main` to avoid mixing method and baseline semantics.
+- Warm-start behavior is treated as an ablation, not the canonical method definition.
