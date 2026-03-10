@@ -85,6 +85,26 @@ class MBD3DSolver(BaseModelBasedDiffusionSolver):
                 ess_min=ess_min,
                 show_tqdm=bool(show_tqdm),
                 fidelity_ladder=fidelity_ladder,
+                fix_cameras=kwargs.get("fix_cameras", True),
+                initialization_mode=kwargs.get("initialization_mode", "prior_center"),
+                init_jitter_scale=kwargs.get("init_jitter_scale", 1.0),
+                enable_subspace=kwargs.get("enable_subspace", True),
+                subspace_rank=kwargs.get("subspace_rank", 64),
+                subspace_rank_start=kwargs.get("subspace_rank_start", kwargs.get("subspace_rank", 64)),
+                subspace_rank_end=kwargs.get("subspace_rank_end", kwargs.get("subspace_rank", 64)),
+                subspace_power_iters=kwargs.get("subspace_power_iters", 2),
+                subspace_refresh_every=kwargs.get("subspace_refresh_every", 1),
+                subspace_refresh_every_start=kwargs.get(
+                    "subspace_refresh_every_start", kwargs.get("subspace_refresh_every", 1)
+                ),
+                subspace_refresh_every_end=kwargs.get(
+                    "subspace_refresh_every_end", kwargs.get("subspace_refresh_every", 1)
+                ),
+                proposal_count_start=kwargs.get("proposal_count_start", M),
+                proposal_count_end=kwargs.get("proposal_count_end", M),
+                profiling=kwargs.get("profiling", True),
+                subspace_oversample=kwargs.get("subspace_oversample", 2),
+                compile_stable_shapes=kwargs.get("compile_stable_shapes", True),
             )
         )
 
@@ -111,6 +131,30 @@ class MBD3DSolver(BaseModelBasedDiffusionSolver):
                 seed=self.seed,
                 show_tqdm=self.config.get("show_tqdm", False),
                 fidelity_ladder=self.config.get("fidelity_ladder"),
+                fix_cameras=self.config.get("fix_cameras", True),
+                initialization_mode=self.config.get("initialization_mode", "prior_center"),
+                init_jitter_scale=self.config.get("init_jitter_scale", 1.0),
+                enable_subspace=self.config.get("enable_subspace", True),
+                subspace_rank=self.config.get("subspace_rank", 64),
+                subspace_rank_start=self.config.get(
+                    "subspace_rank_start", self.config.get("subspace_rank", 64)
+                ),
+                subspace_rank_end=self.config.get(
+                    "subspace_rank_end", self.config.get("subspace_rank", 64)
+                ),
+                subspace_power_iters=self.config.get("subspace_power_iters", 2),
+                subspace_refresh_every=self.config.get("subspace_refresh_every", 1),
+                subspace_refresh_every_start=self.config.get(
+                    "subspace_refresh_every_start", self.config.get("subspace_refresh_every", 1)
+                ),
+                subspace_refresh_every_end=self.config.get(
+                    "subspace_refresh_every_end", self.config.get("subspace_refresh_every", 1)
+                ),
+                proposal_count_start=self.config.get("proposal_count_start", self.config["M"]),
+                proposal_count_end=self.config.get("proposal_count_end", self.config["M"]),
+                profiling=self.config.get("profiling", True),
+                subspace_oversample=self.config.get("subspace_oversample", 2),
+                compile_stable_shapes=self.config.get("compile_stable_shapes", True),
             )
             self._backend_impl = _MBD3DObservationAdapter(raw, self)
             self._backend_impl = to_unified_backend(self._backend_impl)

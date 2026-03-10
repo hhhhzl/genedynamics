@@ -23,9 +23,13 @@ pandas>=2.2.0
 
 torch==2.10.0
 
+# 3DGS evaluation (PSNR/LPIPS)
+gsplat
+lpips
+
 # Optional autodiff (JAX)
 jax[cuda12]
-# jax==0.6.2
+jax==0.6.2
 
 # Optional environments
 gym>=0.26.2
@@ -48,3 +52,7 @@ qpth
 pytest>=9.0.2
 black>=24.3.0
 flake8>=7.0.0
+
+# 3DGS
+gsplat
+lpips

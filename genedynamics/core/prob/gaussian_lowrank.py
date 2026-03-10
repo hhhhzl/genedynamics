@@ -96,13 +96,13 @@ def _woodbury_solve_numpy(A: np.ndarray, sigma2: float, v: np.ndarray) -> np.nda
 
 
 def _woodbury_solve_jax(A: Any, sigma2: float, v: Any) -> Any:
-    A = jnp.asarray(A, dtype=jnp.float64)
-    v = jnp.asarray(v, dtype=jnp.float64)
+    A = jnp.asarray(A, dtype=jnp.float32)
+    v = jnp.asarray(v, dtype=jnp.float32)
     p, r = A.shape
     inv_sigma2 = 1.0 / sigma2
 
     AtA = jnp.dot(A.T, A)
-    M = jnp.eye(r, dtype=jnp.float64) + inv_sigma2 * AtA
+    M = jnp.eye(r, dtype=jnp.float32) + inv_sigma2 * AtA
     Minv = jnp.linalg.inv(M)
 
     Atv = jnp.dot(A.T, v)
@@ -151,11 +151,11 @@ def _lowrank_logdet_numpy(A: np.ndarray, sigma2: float, p: int) -> float:
 
 
 def _lowrank_logdet_jax(A: Any, sigma2: float, p: int) -> Any:
-    A = jnp.asarray(A, dtype=jnp.float64)
+    A = jnp.asarray(A, dtype=jnp.float32)
     r = A.shape[1]
     inv_sigma2 = 1.0 / sigma2
     AtA = jnp.dot(A.T, A)
-    M = jnp.eye(r, dtype=jnp.float64) + inv_sigma2 * AtA
+    M = jnp.eye(r, dtype=jnp.float32) + inv_sigma2 * AtA
     logdet_M = jnp.linalg.slogdet(M)[1]
     return p * jnp.log(sigma2) + logdet_M
 
@@ -232,12 +232,12 @@ class LowRankCovariance:
     def _ensure_Minv(self) -> None:
         if self._Minv is not None:
             return
-        A = np.asarray(self.A, dtype=np.float64) if not JAX_AVAILABLE else jnp.asarray(self.A, dtype=jnp.float64)
+        A = np.asarray(self.A, dtype=np.float32) if not JAX_AVAILABLE else jnp.asarray(self.A, dtype=jnp.float32)
         r = A.shape[1]
         inv_sigma2 = 1.0 / self.sigma2
         if JAX_AVAILABLE and hasattr(A, "block_until_ready"):
             AtA = jnp.dot(A.T, A)
-            M = jnp.eye(r, dtype=jnp.float64) + inv_sigma2 * AtA
+            M = jnp.eye(r, dtype=jnp.float32) + inv_sigma2 * AtA
             self._Minv = jnp.linalg.inv(M)
         else:
             A = np.asarray(A)
@@ -253,11 +253,11 @@ class LowRankCovariance:
         inv_sigma2 = 1.0 / sigma2
 
         if JAX_AVAILABLE and hasattr(A, "block_until_ready"):
-            v = jnp.asarray(v, dtype=jnp.float64)
+            v = jnp.asarray(v, dtype=jnp.float32)
             Atv = jnp.dot(A.T, v)
             x = inv_sigma2 * v - (inv_sigma2 ** 2) * jnp.dot(A, jnp.dot(Minv, Atv))
             return jnp.asarray(x, dtype=jnp.float32)
-        v = np.asarray(v, dtype=np.float64)
+        v = np.asarray(v, dtype=np.float32)
         Atv = A.T @ v
         x = inv_sigma2 * v - (inv_sigma2 ** 2) * (A @ (Minv @ Atv))
         return x.astype(np.float32)

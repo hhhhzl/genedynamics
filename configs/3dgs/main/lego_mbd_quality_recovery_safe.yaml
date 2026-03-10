@@ -1,0 +1,84 @@
+name: 3dgs_lego_mbd_quality_recovery_safe
+output_dir: results/3dgs/main/lego_mbd_quality_recovery_safe
+
+env_name: 3dgs_nerf_synthetic
+env_params:
+  dataset_root: data/nerf_synthetic/lego
+  object: lego
+  use_stub_when_unavailable: false
+  split: train
+  eval_split: test
+  max_views: 24
+  view_stride: 1
+  shuffle_seed: 0
+  resolution_infer: 144
+  resolution_eval: 512
+  eval_resolution: 512
+  composite_background: white
+  pose_convention: opencv
+
+method: mbd3d
+method_params:
+  horizon: 12
+  n_gaussians: 192
+  bridge_K: 300
+  bridge_beta0: 0.0
+  bridge_betaK: 1.0
+  bridge_eta: 0.015
+  bridge_eta_end: 0.004
+  M: 10
+  sigma_mcsa: 0.045
+  ess_min: 1.0
+  observation_sigma2: 0.004
+  image_height: 144
+  image_width: 144
+  image_channels: 3
+  use_lowrank_noise: true
+  lowrank_view_rank: 4
+  lowrank_spatial_rank: 2
+  lowrank_color_rank: 3
+  lowrank_max_rank: 20
+  use_real_splat: true
+  prefer_jax_renderer: true
+  fix_cameras: true
+  initialization_mode: prior_center
+  init_jitter_scale: 0.2
+  enable_subspace: true
+  subspace_rank: 6
+  subspace_rank_start: 3
+  subspace_rank_end: 6
+  subspace_power_iters: 1
+  subspace_refresh_every: 2
+  subspace_refresh_every_start: 1
+  subspace_refresh_every_end: 6
+  subspace_oversample: 1
+  proposal_count_start: 8
+  proposal_count_end: 10
+  compile_stable_shapes: true
+  profiling: true
+  fidelity_ladder:
+    - end_frac: 0.50
+      downsample: 4
+    - end_frac: 0.85
+      downsample: 2
+    - end_frac: 1.0
+      downsample: 1
+  prior_scale_means: 2.0
+  prior_scale_scales: 0.5
+  show_tqdm: true
+
+obstacle_levels: [0]
+obstacle_config:
+  generator: box2d
+  robot_radius: 0.05
+
+seeds: [0]
+backend: jax
+device: cuda
+
+metrics: []
+visualizations: []
+
+metadata:
+  description: "P3 safe quality-recovery run under constrained VRAM."
+  author: "genedynamics"

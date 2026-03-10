@@ -1,0 +1,35 @@
+name: 3dgs_lego_gsplat_baseline
+output_dir: results/3dgs/baselines/lego_gsplat
+
+env_name: 3dgs_nerf_synthetic
+env_params:
+  dataset_root: data/nerf_synthetic/lego
+  object: lego
+  use_stub_when_unavailable: false
+  split: train
+  eval_split: test
+  eval_resolution: 800
+  max_views: 100
+  view_stride: 1
+  shuffle_seed: 0
+  resolution_infer: 256
+  resolution_eval: 800
+  composite_background: white
+  pose_convention: opencv
+
+method: mbd3d
+method_params:
+  n_gaussians: 8000
+
+obstacle_levels: [0]
+obstacle_config:
+  generator: box2d
+  robot_radius: 0.05
+
+seeds: [0]
+backend: jax
+device: cuda
+
+metadata:
+  description: "Baseline config for pure gsplat training (--gsplat-train)."
+  author: "genedynamics"
