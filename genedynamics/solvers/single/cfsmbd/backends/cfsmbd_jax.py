@@ -283,17 +283,32 @@ class CFSMBDBackendJax:
         self._cost_fn = jax.jit(cost_fn)
 
         # Build SDF function for constraint evaluation (JAX-compatible)
+        # Match origin/main: origin/main's ObstacleManager has no jax_sdf, so sdf_fn uses
+        # sample_sdf_and_grad_2d (texture). Genedynamics added jax_sdf for MJX; prefer texture
+        # when available to preserve origin/main behavior (jax_sdf returns 1e5 for UnionObstacles).
+        _use_sdf_texture = (
+            self.obstacles is not None
+            and hasattr(self.obstacles, "get_sdf_texture_2d")
+            and self.obstacles.get_sdf_texture_2d() is not None
+        )
+
         def sdf_fn(pos, clearance):
             """Compute SDF and constraint violation [g]_+."""
             if self.obstacles is None:
                 return jnp.asarray(0.0, dtype=jnp.float32)
             
-            # Try to use JAX-compatible SDF
+            # Prefer texture-based SDF for 2D (box2d level 7-10 use UnionObstacles without jax_sdf)
             try:
-                if hasattr(self.obstacles, "jax_sdf"):
+                if _use_sdf_texture and hasattr(self.obstacles, "sample_sdf_and_grad_2d"):
+                    sdf_result, _ = self.obstacles.sample_sdf_and_grad_2d(
+                        pos[None, :], backend="jax"
+                    )
+                    sdf_val = sdf_result[0] if isinstance(sdf_result, (list, tuple)) else sdf_result
+                    if isinstance(sdf_val, np.ndarray):
+                        sdf_val = jnp.asarray(sdf_val)
+                elif hasattr(self.obstacles, "jax_sdf"):
                     sdf_val = self.obstacles.jax_sdf(pos)
                 elif hasattr(self.obstacles, "sample_sdf_and_grad_2d"):
-                    # Use texture-based SDF (faster)
                     sdf_result, _ = self.obstacles.sample_sdf_and_grad_2d(
                         pos[None, :], backend="jax"
                     )
@@ -565,8 +580,14 @@ class CFSMBDBackendJax:
 
             Y0s_f = jax.lax.cond(do_qp, apply_filter, lambda ys: ys, Y0s)
 
-            rews, r_p, v_k_rate, v_k_mean = self._augmented_rewards_and_rp_batch_jit(
+            # Rewards from filtered trajectories (for diffusion weights)
+            rews, _, _, _ = self._augmented_rewards_and_rp_batch_jit(
                 x0_jnp, Y0s_f, margin, aug_lam, aug_rho, target
+            )
+            # Violation feedback from UNfiltered trajectories (drives adaptive scheduler)
+            # Using Y0s ensures we see actual violation; Y0s_f would be ~0 after CFS projection
+            _, r_p, v_k_rate, v_k_mean = self._augmented_rewards_and_rp_batch_jit(
+                x0_jnp, Y0s, margin, aug_lam, aug_rho, target
             )
             proj = jnp.mean(jnp.linalg.norm(Y0s_f - Y0s, axis=(1, 2)))
             feedback = {
