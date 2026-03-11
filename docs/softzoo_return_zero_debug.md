@@ -28,6 +28,6 @@ Phase A/B 实验 `return_` 全为 0，`mean_reward` 全为 0。
 
 ### 5. 建议
 1. 在 Linux + CUDA 环境重跑 Phase A/B
-2. 用 `scripts/debug_softzoo_reward.py` 单步打印 reward（需先解决 segfault）
+2. 用 `scripts/debug/debug_softzoo_reward.py` 单步打印 reward（需先解决 segfault）
 3. 检查 `design_space` 是否加载 Caterpillar.pcd
 4. 尝试更高 fidelity（如 level 2）以增加 max_steps

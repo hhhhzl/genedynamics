@@ -34,30 +34,30 @@ This folder is now organized by experiment role instead of historical file names
 
 ```bash
 # Canonical MBD run (no warm start, ~5 dB PSNR)
-python scripts/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_canonical.yaml
+python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_canonical.yaml
 
 # PSNR-focused: warm start from gsplat (~10 dB PSNR)
 # Step 1: Train gsplat for warm start (128 gaussians, ~20 dB on train views)
-python scripts/3dgs/train_gsplat.py configs/3dgs/main/lego_mbd_canonical.yaml \
+python scripts/tasks/3dgs/train_gsplat.py configs/3dgs/main/lego_mbd_canonical.yaml \
   --output results/3dgs/lego_gsplat_warmstart --iters 6000 --n-gaussians 128
 # Step 2: Run MBD with prior-centered init (Phase 3+4: best_chain, train/test metrics)
-python scripts/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_quality_recovery_vramfit.yaml \
+python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_quality_recovery_vramfit.yaml \
   --initial-scene-path results/3dgs/lego_gsplat_warmstart/scene_params.npz \
   --initialization-mode prior_center --init-jitter-scale 0.1 --n-seeds 2 --best-chain
 
-# One-liner: bash scripts/3dgs/run_quality_recovery.sh
+# One-liner: bash scripts/tasks/3dgs/run_quality_recovery.sh
 
 # Quality recovery configs (tuned for PSNR)
-python scripts/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_quality_recovery_vramfit.yaml
-python scripts/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_psnr_improved.yaml  # 192 gaussians, may OOM on smaller GPUs
+python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_quality_recovery_vramfit.yaml
+python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_psnr_improved.yaml  # 192 gaussians, may OOM on smaller GPUs
 
 # Likelihood ablation
-python scripts/3dgs/run_full_experiment.py configs/3dgs/ablations/lego_mbd_iid_ablation.yaml
-python scripts/3dgs/run_full_experiment.py configs/3dgs/ablations/lego_mbd_corr_ablation.yaml
+python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/ablations/lego_mbd_iid_ablation.yaml
+python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/ablations/lego_mbd_corr_ablation.yaml
 
 # Baseline (pure gsplat training path)
-python scripts/3dgs/run_baseline_experiment.py configs/3dgs/baselines/lego_gsplat_baseline.yaml --iters 30000
-python scripts/3dgs/run_baseline_experiment.py configs/3dgs/baselines/lego_gsplat_densify_baseline.yaml --iters 30000 --densify --max-gaussians 30000
+python scripts/tasks/3dgs/run_baseline_experiment.py configs/3dgs/baselines/lego_gsplat_baseline.yaml --iters 30000
+python scripts/tasks/3dgs/run_baseline_experiment.py configs/3dgs/baselines/lego_gsplat_densify_baseline.yaml --iters 30000 --densify --max-gaussians 30000
 ```
 
 ## PSNR improvement

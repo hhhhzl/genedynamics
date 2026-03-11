@@ -34,7 +34,7 @@ Output: `results/quadruped/flat/mbd_plan_go2/level_*/seed_0/trajectory_3d.png`
 
 Render as MuJoCo GIF (when episode data available):
 ```bash
-python scripts/render_deploy_quadruped_gif.py results/... --model go2
+python scripts/visualizations/render_deploy_quadruped_gif.py results/... --model go2
 ```
 
 ## Usage

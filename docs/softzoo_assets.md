@@ -22,7 +22,7 @@ data/softzoo/assets/
 ## Setup Script
 
 ```bash
-./scripts/third_party/setup_softzoo_assets.sh
+./scripts/setup/setup_softzoo.sh
 ```
 
 This creates the directory structure and copies vendor assets (textures, stl) from `third_party/environments/softzoo/softzoo/assets/`.

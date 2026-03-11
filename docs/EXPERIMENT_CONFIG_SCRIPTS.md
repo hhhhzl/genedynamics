@@ -89,28 +89,28 @@ python -m genedynamics.experiments.runner <config.yaml> [--level N] [--seed S] [
 
 | 脚本 | 用途 | 调用的配置 |
 |------|------|-------------|
-| `scripts/run_mrmfmbd.sh` | MRMFMBD SoftZoo 实验 | `configs/mrmfmbd/softzoo_flat.yaml` |
-| `scripts/run_quadruped_plan.sh` | Quadruped MBD + MD-COAS + Go2 | `configs/quadruped/flat/mbd_plan.yaml` 等 |
-| `scripts/experiments/run_mdcoas.sh` | MD-COAS 实验 | 见脚本内容 |
-| `scripts/run_phase4_validation.sh` | Phase 4 验证 | - |
-| `scripts/run_acceptance.sh` | 验收测试 | - |
-| **scripts/3dgs/run_all.sh** | 批量运行 lego+chair iid/corr | - |
-| **scripts/3dgs/run_3dgs_map.sh** | 3DGS-MAP baseline | 官方 3DGS 训练 |
-| **scripts/3dgs/run_mbd3d_iid.sh** | Ours-MBD (iid) | `configs/3dgs/<object>_mbd_iid.yaml` |
-| **scripts/3dgs/run_mbd3d_corr.sh** | Ours-MBD (corr) | `configs/3dgs/<object>_mbd_corr.yaml` |
-| **scripts/3dgs/eval_3dgs_metrics.py** | PSNR/LPIPS/NLL 评估 | - |
-| **scripts/3dgs/export_3dgs_figures.py** | 对比图、不确定性热图 | - |
+| `scripts/tasks/soft_robot/run_mrmfmbd.sh` | MRMFMBD SoftZoo 实验 | `configs/mrmfmbd/softzoo_flat.yaml` |
+| `scripts/tasks/robot/run_quadruped_plan.sh` | Quadruped MBD + MD-COAS + Go2 | `configs/quadruped/flat/mbd_plan.yaml` 等 |
+| `scripts/tasks/mdcoas/run_mdcoas.sh` | MD-COAS 实验 | 见脚本内容 |
+| `scripts/tasks/robot/run_phase4_validation.sh` | Phase 4 验证 | - |
+| `scripts/tasks/robot/run_acceptance.sh` | 验收测试 | - |
+| **scripts/tasks/3dgs/run_all.sh** | 批量运行 lego+chair iid/corr | - |
+| **scripts/tasks/3dgs/run_3dgs_map.sh** | 3DGS-MAP baseline | 官方 3DGS 训练 |
+| **scripts/tasks/3dgs/run_mbd3d_iid.sh** | Ours-MBD (iid) | `configs/3dgs/<object>_mbd_iid.yaml` |
+| **scripts/tasks/3dgs/run_mbd3d_corr.sh** | Ours-MBD (corr) | `configs/3dgs/<object>_mbd_corr.yaml` |
+| **scripts/tasks/3dgs/eval_3dgs_metrics.py** | PSNR/LPIPS/NLL 评估 | - |
+| **scripts/tasks/3dgs/export_3dgs_figures.py** | 对比图、不确定性热图 | - |
 
-### 2.2b 3DGS 脚本详情 (scripts/3dgs/)
+### 2.2b 3DGS 脚本详情 (scripts/tasks/3dgs/)
 
-详见 `scripts/3dgs/README.md`。
+详见 `scripts/tasks/3dgs/README.md`。
 
 ### 2.3 run_mrmfmbd.sh
 
 ```bash
 #!/bin/bash
 # Run MRMFMBD (Soft-robot S1+S3) experiments
-./scripts/run_mrmfmbd.sh
+./scripts/tasks/soft_robot/run_mrmfmbd.sh
 ```
 
 输出目录: `results/mrmfmbd/softzoo_flat/`

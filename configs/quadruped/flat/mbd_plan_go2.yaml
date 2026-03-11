@@ -2,7 +2,7 @@
 # Run: python -m genedynamics.experiments.runner configs/quadruped/flat/mbd_plan_go2.yaml
 #
 # Requires: MUJOCO_MENAGERIE_PATH or mujoco-menagerie (Unitree Go2 MJCF).
-# Render: python scripts/render_deploy_quadruped_gif.py results/quadruped/flat/mbd_plan_go2/... --model go2
+# Render: python scripts/visualizations/render_deploy_quadruped_gif.py results/quadruped/flat/mbd_plan_go2/... --model go2
 # Or use trajectory_3d visualization (experiment runner outputs trajectory_3d.png).
 
 name: quadruped_flat_mbd_plan_go2

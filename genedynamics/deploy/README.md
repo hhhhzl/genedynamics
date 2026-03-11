@@ -58,15 +58,15 @@ genedynamics-deploy --config configs/quadruped/push_recovery/mbd_deploy.yaml
 
 ```bash
 # Full validation (MBD, MD-COAS, obstacle_avoid, rough_terrain, push_recovery)
-python scripts/run_phase4_validation.py
+python scripts/tasks/soft_robot/run_phase4_validation.py
 
-# Or: bash scripts/run_phase4_validation.sh
+# Or: bash scripts/tasks/robot/run_phase4_validation.sh
 
 # Fair comparison only (MBD vs MD-COAS, same env)
-bash scripts/run_phase4_fair_comparison.sh
+bash scripts/tasks/soft_robot/run_phase4_fair_comparison.sh
 
 # Custom venv (e.g. conda fedguide)
-VENV=conda_run_fedguide python scripts/run_phase4_validation.py
+VENV=conda_run_fedguide python scripts/tasks/soft_robot/run_phase4_validation.py
 ```
 
 ## Report Generation (Phase 4)
@@ -97,31 +97,31 @@ genedynamics-deploy --replay-dir 'results/deploy/uav3d_sim/episodes/ep_0001_*' -
 
 ### 2. Analyze episodes (distance to target, crash detection)
 ```bash
-python scripts/analyze_deploy.py results/deploy/uav3d_sim --robot uav3d
-python scripts/analyze_deploy.py results/deploy/quadruped_sim --robot quadruped
-python scripts/analyze_deploy.py results/deploy/uav3d_sim/episodes/ep_0001_20260303-144543
+python scripts/visualizations/analyze_deploy.py results/deploy/uav3d_sim --robot uav3d
+python scripts/visualizations/analyze_deploy.py results/deploy/quadruped_sim --robot quadruped
+python scripts/visualizations/analyze_deploy.py results/deploy/uav3d_sim/episodes/ep_0001_20260303-144543
 ```
 
 ### 3. Visualize deploy simulation (3D trajectory)
 ```bash
 # Interactive plot
-python scripts/plot_deploy_episode.py results/deploy/uav3d_sim/episodes/ep_0001_20260303-144543
+python scripts/visualizations/plot_deploy_episode.py results/deploy/uav3d_sim/episodes/ep_0001_20260303-144543
 
 # Save trajectory_3d.png to episode dir
-python scripts/plot_deploy_episode.py results/deploy/uav3d_mbd_sim/episodes/ep_0001_* --save --no-show
+python scripts/visualizations/plot_deploy_episode.py results/deploy/uav3d_mbd_sim/episodes/ep_0001_* --save --no-show
 ```
 
 ### 4. MuJoCo GIF (true 3D simulation render)
 ```bash
 # UAV: Render episode as MuJoCo simulation GIF
-python scripts/render_deploy_mujoco_gif.py results/deploy/uav3d_mbd_sim/episodes/ep_0001_*
+python scripts/visualizations/render_deploy_mujoco_gif.py results/deploy/uav3d_mbd_sim/episodes/ep_0001_*
 # Output: trajectory_mujoco.gif in episode dir
 
 # Quadruped: Render with auto model (Ant for flat, Go2 when available)
-python scripts/render_deploy_quadruped_gif.py results/deploy/quadruped_go2_mbd_sim --episodes 3 --model auto
+python scripts/visualizations/render_deploy_quadruped_gif.py results/deploy/quadruped_go2_mbd_sim --episodes 3 --model auto
 
 # Quick one-shot: deploy + render (uses mbd_deploy_quick.yaml with flat/Ant)
-python scripts/run_quadruped_quick.py
+python scripts/tasks/robot/run_quadruped_quick.py
 ```
 
 ### 5. Generate unified report

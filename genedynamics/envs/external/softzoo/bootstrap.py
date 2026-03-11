@@ -247,7 +247,7 @@ def validate_softzoo_environment(
     if require_assets and not paths.assets_root.exists():
         messages.append(
             f"Assets root missing: {paths.assets_root}. "
-            "Create data/softzoo/assets and download assets. See scripts/third_party/setup_softzoo_assets.sh"
+            "Create data/softzoo/assets and download assets. See scripts/setup/setup_softzoo.sh"
         )
         ok = False
     elif paths.assets_root.exists():
