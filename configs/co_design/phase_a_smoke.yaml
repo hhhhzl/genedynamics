@@ -1,0 +1,17 @@
+# Phase A: 系统打通
+# crawling only, single mode, single fidelity
+# Goal: evaluator + solver + logging 都通
+# Output: 1 repeatable config, 1 seed, wall-clock profiling
+
+baseline_name: mrmfmbd
+task_id: crawling_ground
+seeds: [0]
+output_dir: results/phase_a/smoke
+checkpoint_dir: results/phase_a/checkpoints
+
+baseline_params:
+  K: 8
+  M: 3
+  num_modes: 1
+  num_fidelity_levels: 1
+  show_tqdm: true

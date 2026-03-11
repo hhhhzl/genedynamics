@@ -2,7 +2,7 @@
 Common utilities for experiments.
 
 This package provides shared utilities for obstacle generation,
-constraint creation, and other common functionality.
+constraint creation, engineering (checkpointing, logging), and more.
 """
 
 from .constraints import (
@@ -16,6 +16,13 @@ from .obstacle_generation import (
     has_free_space_path,
     compute_nonconvexity_score_sdf,
 )
+from .engineering import (
+    CheckpointManager,
+    CheckpointState,
+    ExperimentLogger,
+    config_hash_dict,
+    set_seed,
+)
 
 __all__ = [
     "create_constraint_pipeline",
@@ -25,5 +32,10 @@ __all__ = [
     "check_start_target_clearance",
     "has_free_space_path",
     "compute_nonconvexity_score_sdf",
+    "CheckpointManager",
+    "CheckpointState",
+    "ExperimentLogger",
+    "config_hash_dict",
+    "set_seed",
 ]
 

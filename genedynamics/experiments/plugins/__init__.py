@@ -7,7 +7,19 @@ This package contains implementations of various plugins:
 - metrics: Metrics computation plugins (SSR, obstacle density, etc.)
 - visualizations: Visualization plugins
 - obstacles: Obstacle generation plugins
+- baselines: Baseline algorithms for comparison (mrmfmbd, etc.)
+- task_domains: Task domain providers (softzoo, etc.)
 """
+
+# Import to trigger task domain and baseline registration
+try:
+    from . import task_domains  # noqa: F401
+except ImportError:
+    pass
+try:
+    from . import baselines  # noqa: F401
+except ImportError:
+    pass
 
 # Import and export all plugins for convenient access
 from .methods import (
