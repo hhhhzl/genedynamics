@@ -1,23 +1,21 @@
-# Quadruped flat MBD pure plan (Ant)
-# Run: MUJOCO_GL=osmesa python -m genedynamics.experiments.runner configs/quadruped/flat/mbd_plan.yaml
-#
-# Long-run ant point-target plan (closer to trot-like travel distance).
-# Trajectory length ~= horizon * dt (here: 90 * 0.05 = 4.5s).
+# Quadruped flat MBD locomotion plan (Ant, forward-x task)
+# Run: MUJOCO_GL=osmesa python -m genedynamics.experiments.runner configs/quadruped/flat/mbd_locomotion_plan.yaml
 
-name: quadruped_flat_mbd_plan
-output_dir: results/quadruped/flat/mbd_plan
+name: quadruped_flat_mbd_locomotion_plan
+output_dir: results/quadruped/flat/mbd_locomotion_plan
 
 env_name: quadruped_flat_mjx
 env_params:
   dt: 0.05
-  horizon: 90
-  target: [4.5, 0.0, 0.5]
-  control_limit: 0.6
+  horizon: 96
+  target: [4.5, 0.0, 0.75]
+  desired_velocity: [0.9, 0.0, 0.0]
+  control_limit: 0.9
   physics_backend: mjx
 
 method: mbd
 method_params:
-  action_extra_sigma: 0.08
+  action_extra_sigma: 0.06
   terminal_energy_weight: 2500.0
   show_tqdm: true
 
@@ -41,17 +39,17 @@ scheduler_config:
   type: composite
   diffusion_schedulers:
     - type: fixed
-      M_k: 224
+      M_k: 128
       T_k: 0.06
-      Ndiffuse: 45
+      Ndiffuse: 24
       beta0: 1e-5
       betaT: 1e-2
   diffusion_merge_strategy: merge
 
 metadata:
-  # Enforce longer start-target separation for visible locomotion distance.
-  start_min_dist: 2.4
-  start_max_dist: 3.8
+  start_strategy: behind_target_x
+  start_min_dist: 3.8
+  start_max_dist: 4.2
   start_dist_level_scale: 0.3
 
 seeds: [0]

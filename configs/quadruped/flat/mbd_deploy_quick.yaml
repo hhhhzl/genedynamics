@@ -1,5 +1,6 @@
 # Quadruped flat MBD deploy quick (Ant, reduced samples)
-# Run: genedynamics-deploy --config configs/quadruped/flat/mbd_deploy_quick.yaml
+# Run: MUJOCO_GL=osmesa genedynamics-deploy --config configs/quadruped/flat/mbd_deploy_quick.yaml
+# Headless: export MUJOCO_GL=osmesa (required when no display)
 
 name: quadruped_flat_mbd_deploy
 output_dir: results/deploy/quadruped_go2_mbd_sim

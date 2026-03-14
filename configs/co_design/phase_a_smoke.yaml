@@ -1,17 +1,16 @@
-# Phase A: 系统打通
-# crawling only, single mode, single fidelity
-# Goal: evaluator + solver + logging 都通
-# Output: 1 repeatable config, 1 seed, wall-clock profiling
-
 baseline_name: mrmfmbd
+softzoo_ti_arch: cuda
+ti_device_memory_fraction: 0.25
 task_id: crawling_ground
 seeds: [0]
 output_dir: results/phase_a/smoke
 checkpoint_dir: results/phase_a/checkpoints
+save_gif: true
 
 baseline_params:
-  K: 8
-  M: 3
+  K: 2
+  M: 2
   num_modes: 1
   num_fidelity_levels: 1
+  fine_fidelity_level: 0
   show_tqdm: true

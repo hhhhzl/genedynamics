@@ -138,8 +138,7 @@ class BraxEnvAdapter:
         done = self.brax_env.done(next_state)
         
         cost = -float(reward)  # Convert reward to cost
-        
-        # Check obstacle collision (convert to numpy for checking)
+        collision = False
         if self.obstacle_manager and len(self.obstacle_manager) > 0:
             obs_np = np.asarray(obs)
             collision = self.obstacle_manager.collision_check(obs_np)
@@ -173,27 +172,19 @@ class BraxEnvAdapter:
     
     def jax_transition(self, state: Any, action: Any) -> Any:
         """
-        JAX-compatible transition (from observation to observation).
-        
-        Note: This requires state to be observation, not Brax state PyTree.
-        For full Brax integration, use transition() with state PyTree.
-        
-        Args:
-            state: Current observation (JAX array)
-            action: Action to take (JAX array)
-            
-        Returns:
-            Next observation (JAX array)
+        JAX-compatible transition: flat [qpos; qvel] -> step -> flat next state.
+        Converts flat obs to Brax State, steps, returns next obs.
         """
-        # This is a simplified version that assumes state is observation
-        # For full Brax support, you'd need to convert obs -> state -> step -> obs
-        # For now, we'll use a placeholder
-        import warnings
-        warnings.warn(
-            "jax_transition() for Brax requires state PyTree. "
-            "Use transition() with Brax state instead."
-        )
-        return state  # Placeholder
+        if jax is None or jnp is None:
+            raise RuntimeError("JAX is required for BraxEnvAdapter")
+        from brax.envs.base import State
+        nq = self.brax_env.sys.q_size()
+        qpos = state[:nq]
+        qvel = state[nq:]
+        pipeline_state = self.brax_env.pipeline_init(qpos, qvel)
+        brax_state = State(pipeline_state, state, 0.0, False, {})
+        next_brax_state = self.brax_env.step(brax_state, action)
+        return next_brax_state.obs
     
     def rollout_batch(
         self,

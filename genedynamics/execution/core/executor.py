@@ -197,10 +197,18 @@ class Executor:
         if self.telemetry.enabled:
             result["telemetry"] = self.telemetry.flush_episode()
             if self.episode_writer and self.config.record:
+                extra = getattr(self.config, "extra", {}) or {}
+                env_params = extra.get("env_params", {}) if isinstance(extra, dict) else {}
+                env_name = (env_params.get("env_name") or extra.get("env_name") if isinstance(extra, dict) else None)
+                if not env_name and hasattr(env, "model"):
+                    env_name = "quadruped_go2_brax" if str(env.model) == "go2" else "humanoid_run_brax"
+                meta = {"plan_mode": plan_mode, "max_steps": max_steps}
+                if env_name:
+                    meta["env_name"] = env_name
                 ep_path = self.episode_writer.write_episode(
                     np.stack(states),
                     np.stack(actions) if actions else np.zeros((0, getattr(env, "act_dim", getattr(self.control_publisher, "act_dim", 4)))),
-                    meta={"plan_mode": plan_mode, "max_steps": max_steps},
+                    meta=meta,
                     telemetry=result.get("telemetry"),
                 )
                 result["episode_path"] = str(ep_path)

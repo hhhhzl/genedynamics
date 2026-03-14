@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
+from genedynamics.viz.motion_episode import MotionEpisode
+from genedynamics.viz.motion_renderer import MotionRenderer
 
 
 class WebVizService:
@@ -33,6 +35,7 @@ class WebVizService:
         self.port = port
         self.host = host
         self._html_path: Optional[Path] = None
+        self._motion_renderer = MotionRenderer(self.output_dir)
 
     def render_episode(
         self,
@@ -59,9 +62,18 @@ class WebVizService:
         out_path = self.output_dir / out_name
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        use_brax = format == "brax_html"
+        if format == "auto" and (ep_dir / "meta.json").exists():
+            import json
+            try:
+                with open(ep_dir / "meta.json") as f:
+                    meta = json.load(f)
+                use_brax = "brax" in str(meta.get("env_name", "")).lower()
+            except Exception:
+                pass
         if format == "html_gif":
             self._render_mujoco_html(ep_dir, out_path, robot_type, model_id, width, height, fps)
-        elif format == "brax_html":
+        elif use_brax:
             self._render_brax_html(ep_dir, out_path)
         else:
             self._render_mujoco_html(ep_dir, out_path, robot_type, model_id, width, height, fps)
@@ -113,51 +125,97 @@ class WebVizService:
     ) -> None:
         """Generate GIF using deploy viz renderer."""
         try:
-            from genedynamics.execution.logging.episode_writer import EpisodeWriter
             from genedynamics.deploy.viz.mujoco_render import render_episode_to_gif
-            writer = EpisodeWriter(str(ep_dir.parent))
-            data = writer.load_episode(ep_dir)
-            states = data.get("states")
-            if states is None:
-                return
-            states = np.asarray(states, dtype=np.float64)
-            if states.size == 0:
+
+            episode = MotionEpisode.from_deploy_episode_dir(ep_dir, fps=fps)
+            if episode.states.size == 0:
                 return
             render_episode_to_gif(
                 ep_dir,
-                states,
-                actions=data.get("actions"),
+                episode.states,
+                actions=episode.actions,
                 output_path=gif_path,
                 model=model_id if model_id in ("go2", "ant") else "go2",
                 width=width,
                 height=height,
-                fps=fps,
+                fps=float(episode.fps),
             )
         except Exception:
             pass
 
+    def render_motion_episode(
+        self,
+        episode: MotionEpisode,
+        *,
+        name: str = "motion",
+        width: int = 640,
+        height: int = 480,
+        fps: Optional[float] = None,
+    ) -> Path:
+        """
+        Render an in-memory motion episode to HTML.
+
+        This is a shared entry-point that can be used by non-deploy workflows
+        (e.g. experiments) without writing deploy episode artifacts first.
+        """
+        out_path = self._motion_renderer.render_html(
+            episode,
+            name=name,
+            width=width,
+            height=height,
+            fps=fps,
+        )
+        self._html_path = out_path
+        return out_path
+
     def _render_brax_html(self, ep_dir: Path, out_path: Path) -> None:
-        """Render Brax trajectory to interactive HTML (when Brax rollout available)."""
+        """Render Brax trajectory to interactive HTML. Converts flat states to pipeline_states."""
         try:
-            import jax.numpy as jnp
             from brax import io
             states_path = ep_dir / "states.npy"
+            meta_path = ep_dir / "meta.json"
             if not states_path.exists():
+                self._render_mujoco_html(ep_dir, out_path, "quadruped", "go2", 640, 480, 20.0)
                 return
             states = np.load(states_path)
+            if states.ndim == 1:
+                states = states.reshape(1, -1)
             if states.size == 0:
+                self._render_mujoco_html(ep_dir, out_path, "quadruped", "go2", 640, 480, 20.0)
                 return
-            sys_path = getattr(self, "_brax_sys", None)
-            if sys_path is None:
+            state_dim = int(states.shape[-1])
+            env_name = None
+            if meta_path.exists():
+                import json
+                with open(meta_path) as f:
+                    meta = json.load(f)
+                env_name = meta.get("env_name")
+            if not env_name:
+                env_name = "quadruped_go2_brax" if state_dim >= 35 else "humanoid_run_brax"
+            env = self._load_brax_env_for_render(env_name)
+            if env is None:
+                self._render_mujoco_html(ep_dir, out_path, "quadruped", "go2", 640, 480, 20.0)
                 return
-            from brax.io import mjcf
-            sys = mjcf.load(sys_path)
-            trajectory = [jnp.array(s) for s in states]
-            html = io.html.render(sys, trajectory, 1080, True)
+            sys = env._env.sys
+            trajectory = [env._env.pipeline_init(s[: env._nq], s[env._nq :]) for s in states]
+            html_str = io.html.render(sys, trajectory)
             with open(out_path, "w") as f:
-                f.write(html)
+                f.write(html_str)
         except Exception:
             self._render_mujoco_html(ep_dir, out_path, "quadruped", "go2", 640, 480, 20.0)
+
+    def _load_brax_env_for_render(self, env_name: str):
+        """Load Brax env for HTML render. Returns BraxFlatEnv or None."""
+        try:
+            if "go2" in env_name.lower():
+                from genedynamics.envs.brax_env import make_brax_go2
+                return make_brax_go2()
+            if "humanoid" in env_name.lower():
+                from genedynamics.envs.brax_env import make_brax_humanoid_run
+                return make_brax_humanoid_run()
+        except Exception:
+            pass
+        return None
 
     def serve(self, block: bool = True) -> None:
         """Start Flask server to serve HTML. block=True runs until Ctrl+C."""

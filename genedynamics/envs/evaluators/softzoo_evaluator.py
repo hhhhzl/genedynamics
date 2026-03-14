@@ -61,6 +61,7 @@ def _run_single_rollout(
     num_repeats: int,
     record: bool,
     project_root: Optional[str],
+    runtime_config_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Tuple[float, bool, int, float, Optional[str], Optional[Dict[str, np.ndarray]]]:
     """
     Run a single rollout in a subprocess (for true parallelism).
@@ -97,8 +98,18 @@ def _run_single_rollout(
         encode_controller,
     )
     from genedynamics.envs.external.softzoo.task_registry import get_task_spec
+    from genedynamics.envs.external.softzoo.config import SoftZooRuntimeConfig
 
     ensure_softzoo_on_path(project_root)
+
+    runtime_config = None
+    if runtime_config_kwargs:
+        from pathlib import Path
+        kw = {k: v for k, v in runtime_config_kwargs.items() if k in ("ti_arch", "device", "ti_device_memory_fraction")}
+        runtime_config = SoftZooRuntimeConfig(
+            project_root=Path(project_root) if project_root else None,
+            **kw,
+        )
 
     task_spec = get_task_spec(task_id)
     modes = task_spec.modes
@@ -123,7 +134,7 @@ def _run_single_rollout(
             task_spec=task_spec,
             fidelity_spec=fid_spec,
             mode_spec=mode_spec,
-            runtime_config=None,
+            runtime_config=runtime_config,
         )
         controller = encode_controller(phi, task_spec, env)
         design = encode_morphology(x, task_spec, env=env)
@@ -205,10 +216,12 @@ class SoftZooRolloutEvaluator:
         *,
         config: Optional[SoftZooEvaluatorConfig] = None,
         project_root: Optional[str] = None,
+        runtime_config: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ):
         self.config = config or SoftZooEvaluatorConfig(**kwargs)
         self._project_root = project_root
+        self._runtime_config = runtime_config or self.config.extra.get("runtime_config") or {}
         self._cache = _ResultCache(self.config.cache_size)
 
     def evaluate_batch(
@@ -283,6 +296,7 @@ class SoftZooRolloutEvaluator:
                 num_repeats=req.num_repeats,
                 record=req.record,
                 project_root=self._project_root,
+                runtime_config_kwargs=self._runtime_config if self._runtime_config else None,
             )
             std_ret = 0.0  # Would need multiple repeats to compute
             if failure_code and self.config.raise_on_failure:
@@ -327,6 +341,7 @@ class SoftZooRolloutEvaluator:
                     req.num_repeats,
                     req.record,
                     self._project_root,
+                    self._runtime_config if self._runtime_config else None,
                 )
                 futures[fut] = (pos, idx)
 

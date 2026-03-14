@@ -150,9 +150,11 @@ class DeployConfig:
         return str(Path(self.output_dir) / "episodes")
 
     def get_session_config_extra(self) -> Dict[str, Any]:
-        """Extra dict for SessionConfig (action_smooth_alpha, etc.)."""
+        """Extra dict for SessionConfig (action_smooth_alpha, env_params, etc.)."""
         out = dict(self.extra)
         out.update(self.method_params)
+        out["env_params"] = dict(getattr(self, "env_params", {}))
+        out["env_name"] = out["env_params"].get("env_name")
         return out
 
     @classmethod

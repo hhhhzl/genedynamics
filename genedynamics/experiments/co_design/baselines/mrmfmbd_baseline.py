@@ -65,13 +65,14 @@ class MRMFMBDBaseline(BaselineProtocol):
             K=K, num_levels=num_fidelity_levels, ladder_type="geometric", step_ratio=1.5
         )
 
+        fine_fidelity = extra.get("fine_fidelity_level", max(0, num_fidelity_levels - 1))
         backend = MRMFMBDPosteriorBackendJax(
             evaluator=evaluator,
             theta_param=theta_param,
             theta_prior=theta_prior,
             mode_marginalizer=mode_marginalizer,
             fidelity_ladder=fidelity_ladder,
-            config=PosteriorBridgeConfig(K=K, M=M),
+            config=PosteriorBridgeConfig(K=K, M=M, fine_fidelity_level=fine_fidelity),
             task_id=config.task_id,
             num_modes=num_modes,
             seed=config.seed,
@@ -80,8 +81,12 @@ class MRMFMBDBaseline(BaselineProtocol):
 
         result = backend.plan()
         theta_star = np.asarray(result["theta"], dtype=np.float32).ravel()
-        x_star = theta_star[:x_dim]
+        x_star = theta_star[:x_dim].copy()
         phi_star = theta_star[x_dim:]
+
+        # Clamp geometry (x[0]) to avoid zero-density particles (p_rho_lower_bound_mul=0.1)
+        if x_dim >= 1 and x_star[0] < 0.1:
+            x_star[0] = 0.1
 
         # Re-evaluate best theta to report a real rollout return (not bridge proxy).
         from genedynamics.envs.evaluators import RolloutBatchRequest, RolloutRequest

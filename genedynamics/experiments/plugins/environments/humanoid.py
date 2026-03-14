@@ -62,3 +62,27 @@ class HumanoidG1MjxPlugin(EnvironmentPlugin):
 
     def get_position_dim(self) -> int:
         return 3
+
+
+class HumanoidRunBraxPlugin(EnvironmentPlugin):
+    """Plugin for humanoid run with Brax positional physics (MBD-style)."""
+
+    @property
+    def name(self) -> str:
+        return "humanoid_run_brax"
+
+    def create_env(self, config: Dict[str, Any]) -> Any:
+        env_kw = {k: v for k, v in config.items() if k != 'physics_backend'}
+        return make_env(self.name, **env_kw)
+
+    def create_energy(self) -> Any:
+        return make_energy(self.name)
+
+    def get_state_dim(self) -> int:
+        return 47
+
+    def extract_position(self, state: np.ndarray) -> np.ndarray:
+        return np.asarray(state, dtype=np.float32)[:3]
+
+    def get_position_dim(self) -> int:
+        return 3

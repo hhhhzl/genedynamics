@@ -45,6 +45,11 @@ def main() -> int:
     if args.seed is not None:
         data["seeds"] = [args.seed]
 
+    evaluator_runtime = data.get("evaluator_runtime", {})
+    if data.get("softzoo_ti_arch"):
+        evaluator_runtime = dict(evaluator_runtime, ti_arch=data["softzoo_ti_arch"])
+    if data.get("ti_device_memory_fraction") is not None:
+        evaluator_runtime = dict(evaluator_runtime, ti_device_memory_fraction=float(data["ti_device_memory_fraction"]))
     config = CoDesignExperimentConfig(
         baseline_name=data.get("baseline_name", "mrmfmbd"),
         task_id=data.get("task_id", "crawling_ground"),
@@ -52,6 +57,8 @@ def main() -> int:
         output_dir=data.get("output_dir", "results/co_design"),
         checkpoint_dir=data.get("checkpoint_dir"),
         baseline_params=data.get("baseline_params", {}),
+        evaluator_runtime=evaluator_runtime,
+        save_gif=data.get("save_gif", False),
     )
 
     if config.baseline_name not in list_baselines():

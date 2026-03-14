@@ -40,7 +40,9 @@ from genedynamics.experiments.plugins import (
     DoubleIntegrator2DPlugin,
     QuadrupedFlatMjxPlugin,
     QuadrupedGo2MjxPlugin,
+    QuadrupedGo2BraxPlugin,
     HumanoidSimplifiedMjxPlugin,
+    HumanoidRunBraxPlugin,
     HumanoidG1MjxPlugin,
     DroneEnvironmentPlugin,
     DroneBox3DPlugin,
@@ -201,7 +203,9 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(DoubleIntegrator2DPlugin(), 'environment')
     runner.register_plugin(QuadrupedFlatMjxPlugin(), 'environment')
     runner.register_plugin(QuadrupedGo2MjxPlugin(), 'environment')
+    runner.register_plugin(QuadrupedGo2BraxPlugin(), 'environment')
     runner.register_plugin(HumanoidSimplifiedMjxPlugin(), 'environment')
+    runner.register_plugin(HumanoidRunBraxPlugin(), 'environment')
     runner.register_plugin(HumanoidG1MjxPlugin(), 'environment')
     runner.register_plugin(DroneEnvironmentPlugin(), 'environment')
     runner.register_plugin(DroneBox3DPlugin(), 'environment')

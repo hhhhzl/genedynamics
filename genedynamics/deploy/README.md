@@ -124,6 +124,19 @@ python scripts/visualizations/render_deploy_quadruped_gif.py results/deploy/quad
 python scripts/tasks/robot/run_quadruped_quick.py
 ```
 
+### 4.1 Unified motion replay (shared by deploy + experiments)
+```bash
+# From deploy episode dir -> GIF + HTML
+python scripts/visualizations/render_motion_web.py \
+  --episode-dir results/deploy/quadruped_go2_mbd_sim/episodes/ep_0001_* \
+  --name quadruped_deploy
+
+# From experiments seed dir (uses trajectory/trajectory.json best_idx) -> GIF + HTML
+python scripts/visualizations/render_motion_web.py \
+  --seed-dir results/quadruped/flat/mbd_plan/level_0/seed_0 \
+  --name quadruped_plan
+```
+
 ### 5. Generate unified report
 ```bash
 python -m genedynamics.reports --input results --output reports

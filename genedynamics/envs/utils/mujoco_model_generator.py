@@ -313,10 +313,33 @@ def create_go2_render_xml_with_trajectory(
             go2_xml_path = _get_go2_path()
         except Exception:
             go2_xml_path = None
+    if go2_xml_path is None:
+        import os
+        menagerie = os.environ.get("MUJOCO_MENAGERIE_PATH")
+        if menagerie:
+            candidate = Path(menagerie) / "unitree_go2" / "go2.xml"
+            if candidate.exists():
+                go2_xml_path = str(candidate)
+    if go2_xml_path is None:
+        proj = Path(__file__).resolve().parents[3]
+        for d in (proj / "third_party" / "mujoco_menagerie", proj / "mujoco_menagerie"):
+            candidate = d / "unitree_go2" / "go2.xml"
+            if candidate.exists():
+                go2_xml_path = str(candidate)
+                break
     if not go2_xml_path or not Path(go2_xml_path).exists():
         raise FileNotFoundError(
             "Go2 model not found. Set MUJOCO_MENAGERIE_PATH or install mujoco-menagerie."
         )
+    go2_xml_path = str(Path(go2_xml_path))
+    # Prefer scene XML for rendering (has floor/lights/cameras), fallback to bare go2.xml.
+    go2_path_obj = Path(go2_xml_path)
+    if go2_path_obj.name in ("go2.xml", "go2_mjx.xml"):
+        for scene_name in ("scene.xml", "scene_mjx.xml"):
+            scene_candidate = go2_path_obj.parent / scene_name
+            if scene_candidate.exists():
+                go2_xml_path = str(scene_candidate)
+                break
 
     xml_content = Path(go2_xml_path).read_text()
     MIN_SEG_LEN = 1e-4

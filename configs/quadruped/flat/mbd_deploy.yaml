@@ -1,5 +1,6 @@
 # Quadruped flat MBD deploy (Go2)
-# Run: genedynamics-deploy --config configs/quadruped/flat/mbd_deploy.yaml
+# Run: MUJOCO_GL=osmesa genedynamics-deploy --config configs/quadruped/flat/mbd_deploy.yaml
+# Headless: export MUJOCO_GL=osmesa. Go2: needs third_party/mujoco_menagerie or MUJOCO_MENAGERIE_PATH
 
 name: quadruped_flat_mbd_deploy
 output_dir: results/deploy/quadruped_go2_mbd_sim

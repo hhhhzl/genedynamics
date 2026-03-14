@@ -74,6 +74,11 @@ def render_episode_to_gif(
         mj_model = mujoco.MjModel.from_xml_path(tmp_xml)
         mj_data = mujoco.MjData(mj_model)
         renderer = mujoco.Renderer(mj_model, height=height, width=width)
+        follow_cam = mujoco.MjvCamera()
+        follow_cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+        follow_cam.distance = 2.8 if model == "go2" else 3.5
+        follow_cam.azimuth = 130.0
+        follow_cam.elevation = -18.0
 
         if output_path is None:
             output_path = Path(episode_dir) / "trajectory_mujoco.gif"
@@ -84,7 +89,9 @@ def render_episode_to_gif(
             mj_data.qpos[:] = states[i, : mj_model.nq]
             mj_data.qvel[:] = states[i, mj_model.nq : mj_model.nq + mj_model.nv] if states.shape[1] > mj_model.nq else 0
             mujoco.mj_forward(mj_model, mj_data)
-            renderer.update_scene(mj_data)
+            if mj_model.nq >= 3:
+                follow_cam.lookat[:] = mj_data.qpos[:3]
+            renderer.update_scene(mj_data, camera=follow_cam)
             pixels = renderer.render()
             frames.append(pixels)
 
@@ -111,6 +118,16 @@ def _get_model_dir(model: str) -> Optional[Path]:
             return Path(p).parent if p else None
         except Exception:
             pass
+        menagerie = os.environ.get("MUJOCO_MENAGERIE_PATH")
+        if menagerie:
+            p = Path(menagerie) / "unitree_go2" / "go2.xml"
+            if p.exists():
+                return p.parent
+        proj = Path(__file__).resolve().parents[3]
+        for d in (proj / "third_party" / "mujoco_menagerie", proj / "mujoco_menagerie"):
+            p = d / "unitree_go2" / "go2.xml"
+            if p.exists():
+                return p.parent
     else:
         try:
             from genedynamics.robots.registry import _get_ant_path

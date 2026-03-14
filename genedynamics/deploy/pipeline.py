@@ -43,6 +43,10 @@ def run_pipeline(
     config_dict["env_params"] = dict(cfg.env_params)
     config_dict["env_params"]["model"] = cfg.model_id
     config_dict["env_params"]["use_mjx"] = use_mjx
+    if config_dict["env_params"].get("physics_backend") == "brax" and "env_name" not in config_dict["env_params"]:
+        brax_env_name = "quadruped_go2_brax" if cfg.model_id == "go2" else "humanoid_run_brax"
+        config_dict["env_params"]["env_name"] = brax_env_name
+        cfg.env_params["env_name"] = brax_env_name
 
     env = profile.make_env(config_dict)
 

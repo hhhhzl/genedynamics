@@ -45,7 +45,14 @@ def convert_to_json_serializable(obj: Any) -> Any:
                         np.uint32, np.uint64)):
         return int(obj)
     elif isinstance(obj, (np.floating, np.float16, np.float32, np.float64)):
-        return float(obj)
+        v = float(obj)
+        if not np.isfinite(v):
+            return None
+        return v
+    elif isinstance(obj, float):
+        if not np.isfinite(obj):
+            return None
+        return obj
     elif isinstance(obj, (np.bool_, bool)):
         return bool(obj)
     elif isinstance(obj, np.ndarray):
@@ -56,6 +63,16 @@ def convert_to_json_serializable(obj: Any) -> Any:
         return {key: convert_to_json_serializable(value) for key, value in obj.items()}
     else:
         return obj
+
+
+def _has_items(obj: Any) -> bool:
+    """Robust non-empty check for list/tuple/ndarray-like containers."""
+    if obj is None:
+        return False
+    try:
+        return len(obj) > 0  # works for list/tuple/ndarray
+    except Exception:
+        return bool(obj)
 
 
 class ExperimentRunner:
@@ -112,6 +129,12 @@ class ExperimentRunner:
         np.random.seed(seed)
         
         # 1. Setup backend
+        env_name = getattr(self.config, "env_name", "") or ""
+        if "brax" in env_name.lower() and self.config.backend != "jax":
+            raise ValueError(
+                f"Brax env '{env_name}' requires JAX backend. "
+                f"Set backend: jax in config (got: {self.config.backend})."
+            )
         RuntimeBackendManager.set_backend(self.config.backend, device=self.config.device)
         backend = RuntimeBackendManager.get_backend()
         
@@ -151,7 +174,7 @@ class ExperimentRunner:
         env_params_with_obstacles = {**self.config.env_params}
         # Add obstacles to env_params if using physics backend that needs them
         physics_backend = env_params_with_obstacles.get('physics_backend', None)
-        if physics_backend in ['mujoco', 'mjx', 'isaac'] and len(obstacles) > 0:
+        if physics_backend in ['mujoco', 'mjx', 'isaac', 'brax'] and len(obstacles) > 0:
             env_params_with_obstacles['obstacles'] = obstacles
         # For D3IL avoiding envs: pass obstacle info for MuJoCo scene sync.
         if self.config.env_name in ['d3il_avoiding_9d', 'd3il_avoiding']:
@@ -178,6 +201,7 @@ class ExperimentRunner:
                 self.config.env_name in ['drone_box_3d', 'drone', 'drone_full_3d', 'drone_full_3d_physics',
                                          'drone_full_3d_mujoco', 'drone_full_3d_isaac',
                                          'quadruped_flat_mjx', 'quadruped_go2_mjx',
+                                         'quadruped_go2_brax', 'humanoid_run_brax',
                                          'humanoid_simplified_mjx', 'humanoid_g1_mjx'] or
                 self.config.obstacle_config.get('generator', '') == 'box3d' or
                 physics_backend in ['mujoco', 'mjx', 'isaac']
@@ -267,7 +291,13 @@ class ExperimentRunner:
             if hasattr(planner, '_backend_impl') and hasattr(planner._backend_impl, 'use_jit'):
                 if planner._backend_impl.use_jit:
                     needs_warmup = True
-            
+            # Quadruped MJX has heavy JIT traces; always warmup to exclude compile from planning_time
+            if getattr(self.config, "env_name", "") in (
+                "quadruped_go2_mjx", "quadruped_flat_mjx",
+                "quadruped_go2_brax", "humanoid_run_brax",
+            ):
+                needs_warmup = True
+
             # Constraint pipeline warmup is handled by planner/backends if needed.
         
         if needs_warmup:
@@ -297,11 +327,13 @@ class ExperimentRunner:
         cand_states = result.get('candidate_states', [])
         cand_actions = result.get('candidate_actions', [])
         cand_costs = result.get('candidate_costs', None)
+        has_cand_states = _has_items(cand_states)
+        has_cand_actions = _has_items(cand_actions)
         is_d3il_style = (
             getattr(self.config, 'method', None) == 'd3il_unified'
             or 'd3il' in str(getattr(self.config, 'env_name', ''))
         )
-        if cand_states and cand_actions and cand_costs is not None:
+        if has_cand_states and has_cand_actions and cand_costs is not None:
             if not is_d3il_style:
                 # Non-D3IL: plan-based best selection and overwrite now
                 if result.get('states') is not None:
@@ -332,7 +364,7 @@ class ExperimentRunner:
                         result['diffusion_sampled_actions'] = dd['diffusion_sampled_actions']
 
         # 8b2. D3IL: run execution for every candidate; then set best_idx by execution (success & no collision, lowest cost)
-        if is_d3il_style and cand_states and len(cand_states) > 0 and cand_costs is not None:
+        if is_d3il_style and has_cand_states and cand_costs is not None:
             from genedynamics.experiments.common.d3il_mpc import run_plan_once_episode
             method_params = getattr(self.config, 'method_params', None) or {}
             if not isinstance(method_params, dict):
@@ -351,7 +383,7 @@ class ExperimentRunner:
             costs_arr = np.asarray(cand_costs, dtype=np.float64).ravel()
             for c in range(len(cand_states)):
                 states_c = cand_states[c]
-                actions_c = cand_actions[c] if (cand_actions and c < len(cand_actions)) else None
+                actions_c = cand_actions[c] if (has_cand_actions and c < len(cand_actions)) else None
                 if actions_c is None:
                     act_dim = getattr(env, 'act_dim', 7)
                     actions_c = [np.zeros(act_dim, dtype=np.float32) for _ in range(max(0, len(states_c) - 1))]
@@ -400,7 +432,7 @@ class ExperimentRunner:
             else:
                 best_idx = int(np.argmin(costs_arr))
             result['best_idx'] = best_idx
-            if exec_candidate_states_9d and best_idx < len(exec_candidate_states_9d):
+            if _has_items(exec_candidate_states_9d) and best_idx < len(exec_candidate_states_9d):
                 best_9d = exec_candidate_states_9d[best_idx]
                 if best_9d is not None and len(best_9d) >= 2:
                     result['states_9d'] = [np.asarray(s, dtype=np.float32) for s in best_9d]
@@ -705,12 +737,15 @@ class ExperimentRunner:
 
         # Quadruped/Humanoid MJX: need valid [qpos; qvel] from reset, then override base xyz
         env_name_lower = (self.config.env_name or "").lower()
-        if ("quadruped" in env_name_lower or "humanoid" in env_name_lower) and "mjx" in env_name_lower:
+        if ("quadruped" in env_name_lower or "humanoid" in env_name_lower) and (
+            "mjx" in env_name_lower or "brax" in env_name_lower
+        ):
             state_full, _ = env.reset(seed=seed)
             state_full = np.asarray(state_full, dtype=np.float32).copy()
             # Sample 3D start position (same logic as 3D below)
             np.random.seed(seed)
             target_pos = np.asarray(env.target, dtype=np.float32).flatten()[:3]
+            metadata = getattr(self.config, "metadata", {}) or {}
             map_bounds = (getattr(self.config, 'obstacle_config', None) or {}).get('map_bounds', {})
             x_min = float(map_bounds.get('x_min', -2.0))
             x_max = float(map_bounds.get('x_max', 2.0))
@@ -718,21 +753,40 @@ class ExperimentRunner:
             y_max = float(map_bounds.get('y_max', 2.0))
             z_min = float(map_bounds.get('z_min', 0.0))
             z_max = float(map_bounds.get('z_max', 2.0))
-            max_distance = 2.0 * np.sqrt(3.0)
-            min_dist = 0.5 + (level / 10.0) * 1.0
-            max_dist = 1.0 + (level / 10.0) * (max_distance - 1.0)
+            # Allow task-specific start distance overrides without changing config schema.
+            max_distance = float(np.linalg.norm(np.array([x_max - x_min, y_max - y_min, max(0.5, z_max - z_min)])))
+            level_scale = float(metadata.get("start_dist_level_scale", 0.0))
+            if "start_min_dist" in metadata:
+                min_dist = float(metadata.get("start_min_dist", 0.5)) + (level / 10.0) * level_scale
+            else:
+                min_dist = 0.5 + (level / 10.0) * 1.0
+            if "start_max_dist" in metadata:
+                max_dist = float(metadata.get("start_max_dist", 1.0)) + (level / 10.0) * level_scale
+            else:
+                max_dist = 1.0 + (level / 10.0) * (max_distance - 1.0)
+            max_dist = min(max_dist, max_distance * 0.9)
+            min_dist = max(0.1, min(min_dist, max_dist - 1e-3))
             distance = np.random.uniform(min_dist, max_dist)
             theta = np.random.uniform(0, 2 * np.pi)
-            phi = np.random.uniform(0, np.pi)
-            direction = np.array([
-                np.sin(phi) * np.cos(theta),
-                np.sin(phi) * np.sin(theta),
-                np.cos(phi)
-            ], dtype=np.float32)
-            start_xyz = target_pos + distance * direction
+            # For legged locomotion on flat terrain, sample start in XY plane only.
+            direction_xy = np.array([np.cos(theta), np.sin(theta)], dtype=np.float32)
+            start_strategy = str(metadata.get("start_strategy", "")).strip().lower()
+            if start_strategy == "behind_target_x":
+                # Force starts mostly behind target on x-axis for clear forward locomotion videos.
+                direction_xy = np.array([-1.0, 0.0], dtype=np.float32)
+            start_xyz = target_pos.copy()
+            start_xyz[:2] = target_pos[:2] + distance * direction_xy
             start_xyz[0] = np.clip(start_xyz[0], x_min + 0.1, x_max - 0.1)
             start_xyz[1] = np.clip(start_xyz[1], y_min + 0.1, y_max - 0.1)
-            start_xyz[2] = np.clip(start_xyz[2], z_min + 0.05, z_max - 0.1)
+            # Keep nominal standing height from env.reset(), with optional override.
+            z_nominal = float(state_full[2])
+            z_nominal = float(metadata.get("start_nominal_z", z_nominal))
+            z_lo = max(z_min + 0.05, z_nominal - 0.05)
+            z_hi = min(z_max - 0.1, z_nominal + 0.05)
+            if z_hi < z_lo:
+                z_mid = float(np.clip(z_nominal, z_min + 0.02, z_max - 0.02))
+                z_lo, z_hi = z_mid, z_mid
+            start_xyz[2] = np.clip(z_nominal, z_lo, z_hi)
             state_full[:3] = start_xyz
             return state_full.astype(np.float32)
 
@@ -877,12 +931,12 @@ class ExperimentRunner:
         else:
             fallback = result.get('actions', [])
             act_dim = getattr(env, 'act_dim', 2)
-            if fallback and len(fallback) >= n_act:
+            if _has_items(fallback) and len(fallback) >= n_act:
                 actions_list = [np.asarray(fallback[i], dtype=np.float32) for i in range(n_act)]
             else:
                 actions_list = []
                 for i in range(n_act):
-                    if fallback and i < len(fallback):
+                    if _has_items(fallback) and i < len(fallback):
                         actions_list.append(np.asarray(fallback[i], dtype=np.float32))
                     else:
                         actions_list.append(np.zeros(act_dim, dtype=np.float32))
@@ -904,10 +958,10 @@ class ExperimentRunner:
         cand_states = result.get('candidate_states', [])
         cand_actions = result.get('candidate_actions', [])
         best_idx = int(result.get('best_idx', 0))
-        if not cand_states or best_idx < 0 or best_idx >= len(cand_states):
+        if (not _has_items(cand_states)) or best_idx < 0 or best_idx >= len(cand_states):
             return None
         states_list = [np.asarray(s, dtype=np.float32) for s in cand_states[best_idx]]
-        if cand_actions and best_idx < len(cand_actions):
+        if _has_items(cand_actions) and best_idx < len(cand_actions):
             act = cand_actions[best_idx]
             act = np.asarray(act, dtype=np.float32)
             actions_list = [act[i] for i in range(act.shape[0])] if act.ndim >= 2 else [act]
@@ -1086,8 +1140,12 @@ class ExperimentRunner:
         if len(states_arr) < 2:
             return 0.0, 0.0, 0.0
         positions = np.array([np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1) for s in states_arr])
+        if np.any(np.isnan(positions)) or np.any(np.isinf(positions)):
+            return 0.0, 0.0, 0.0
         seg_len = np.linalg.norm(np.diff(positions, axis=0), axis=1)
         length = float(np.sum(seg_len))
+        if not (np.isfinite(length) and length >= 0):
+            return 0.0, 0.0, 0.0
         smooth = 0.0
         if len(states_arr) >= 3:
             vel = np.diff(positions, axis=0)
@@ -1226,10 +1284,14 @@ class ExperimentRunner:
             if safe and task_success:
                 ssr_count += 1
 
-            # Length: sum of segment lengths
+            # Length: sum of segment lengths (skip if trajectory has NaN - e.g. Go2 rollout instability)
             positions = np.array([np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1) for s in states_arr])
+            if np.any(np.isnan(positions)) or np.any(np.isinf(positions)):
+                continue
             seg_len = np.linalg.norm(np.diff(positions, axis=0), axis=1)
             length = float(np.sum(seg_len))
+            if not (np.isfinite(length) and length >= 0):
+                continue
             lengths.append(length)
 
             # Smoothness (acceleration): mean squared ||acc|| per step (normalized by n_steps)
@@ -1310,9 +1372,9 @@ class ExperimentRunner:
             cand_states = planning_result.get('candidate_states', [])
             cand_actions = planning_result.get('candidate_actions', [])
             initial_state = planning_result.get('initial_state', None)
-            if cand_states and len(cand_states) > 0:
+            if _has_items(cand_states):
                 candidate_states_list = list(cand_states)
-            elif cand_actions and initial_state is not None and hasattr(env, 'rollout_actions'):
+            elif _has_items(cand_actions) and initial_state is not None and hasattr(env, 'rollout_actions'):
                 initial = np.asarray(initial_state, dtype=np.float32)
                 for acts in cand_actions:
                     acts_arr = np.asarray(acts, dtype=np.float32)
@@ -1322,7 +1384,7 @@ class ExperimentRunner:
                     except Exception:
                         pass
 
-        if candidate_states_list:
+        if _has_items(candidate_states_list):
             method_params = getattr(self.config, "method_params", None) or {}
             use_target_line = bool(method_params.get("use_target_line", False))
             num_targets = int(method_params.get("num_targets", 4))
@@ -1463,6 +1525,16 @@ class ExperimentRunner:
         viz_config = self.config.visualization_config or {}
         
         for viz_name in self.config.visualizations:
+            # Shared robot motion replay (GIF + HTML)
+            if viz_name == 'motion_replay':
+                try:
+                    self._generate_motion_replay_visualization(result, env)
+                except Exception as e:
+                    print(f"Warning: Failed to generate visualization 'motion_replay': {e}")
+                    import traceback
+                    traceback.print_exc()
+                continue
+
             # Cost visualization is generated inline (no plugin)
             if viz_name == 'cost':
                 try:
@@ -1656,7 +1728,7 @@ class ExperimentRunner:
                                         pass
                         # Exec: all candidates' executions (exec_candidate_states) or fallback to single run
                         exec_candidate_states = planning_result.get('exec_candidate_states')
-                        if exec_candidate_states and len(exec_candidate_states) > 0:
+                        if _has_items(exec_candidate_states):
                             result_exec = {
                                 'candidate_states': exec_candidate_states,
                                 'candidate_actions': planning_result.get('candidate_actions'),
@@ -1861,6 +1933,59 @@ class ExperimentRunner:
                 print(f"Warning: Failed to generate visualization '{viz_name}': {e}")
                 import traceback
                 traceback.print_exc()
+
+    def _generate_motion_replay_visualization(self, result: Dict[str, Any], env: Any) -> None:
+        """
+        Generate unified robot motion replay assets for experiments.
+
+        Outputs:
+        - motion_replay/motion_replay_*.gif
+        - motion_replay/motion_replay_*.html
+        """
+        from genedynamics.viz.motion_episode import MotionEpisode
+        from genedynamics.viz.motion_renderer import MotionRenderer
+
+        trajectory = result.get("trajectory")
+        if trajectory is None or not getattr(trajectory, "states", None):
+            raise ValueError("No trajectory states for motion replay.")
+
+        states = np.asarray([np.asarray(s, dtype=np.float64) for s in trajectory.states], dtype=np.float64)
+        actions = None
+        if getattr(trajectory, "actions", None):
+            actions = np.asarray([np.asarray(a, dtype=np.float64) for a in trajectory.actions], dtype=np.float64)
+
+        env_name = str(getattr(self.config, "env_name", "")).lower()
+        if "humanoid" in env_name:
+            robot_type = "humanoid"
+        elif "quadruped" in env_name:
+            robot_type = "quadruped"
+        else:
+            robot_type = "unknown"
+
+        model_id = "auto"
+        if hasattr(env, "model") and getattr(env, "model", None):
+            model_id = str(getattr(env, "model"))
+
+        output_path = self._get_output_path(result["level"], result["seed"])
+        replay_dir = output_path / "motion_replay"
+        replay_dir.mkdir(parents=True, exist_ok=True)
+
+        episode = MotionEpisode(
+            states=states,
+            actions=actions,
+            robot_type=robot_type,
+            model_id=model_id,
+            fps=20.0,
+            metadata={
+                "source": "experiments",
+                "env_name": getattr(self.config, "env_name", ""),
+                "level": int(result.get("level", 0)),
+                "seed": int(result.get("seed", 0)),
+            },
+        )
+        renderer = MotionRenderer(replay_dir)
+        name = f"motion_replay_l{int(result.get('level', 0))}_s{int(result.get('seed', 0))}"
+        renderer.render_html(episode, name=name)
 
     def _compute_cost_for_actions(
         self, env: Any, obstacles: Any, initial_state: np.ndarray, act_seq: np.ndarray,
@@ -2297,7 +2422,7 @@ class ExperimentRunner:
 
         planning_result = result.get('result', {})
         cand_states = planning_result.get('candidate_states', []) if isinstance(planning_result, dict) else []
-        num_modes = len(cand_states) if cand_states else 1
+        num_modes = len(cand_states) if _has_items(cand_states) else 1
         if num_modes == 1 and isinstance(result.get('config_snapshot'), dict):
             method_params = result['config_snapshot'].get('method_params', {})
             if isinstance(method_params, dict) and 'num_modes' in method_params:

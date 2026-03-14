@@ -97,7 +97,7 @@ def make_quadruped_env(
             fn = reg.get_env_factory_name("quadruped", model or "flat")
             env_name = fn or "quadruped_flat_physics"
 
-    if use_mjx and "mjx" not in env_name:
+    if use_mjx and "mjx" not in env_name and "brax" not in env_name:
         if (model or "ant") in ("go2",):
             env_name = "quadruped_go2_mjx"
         else:
@@ -354,12 +354,15 @@ def make_quadruped_planner(
                 target=tuple(getattr(env, "target", (2.0, 0.0, 0.5))),
                 env_name="quadruped_flat_mjx",
             )
+        env_name = "quadruped_flat_mjx" if use_mjx or "mjx" in str(type(env).__name__).lower() else "quadruped_flat_physics"
+        if "brax" in str(type(env).__name__).lower():
+            env_name = "quadruped_go2_brax" if getattr(env, "model", "") == "go2" else "humanoid_run_brax"
         return make_mbd_planner(
             env=env,
             energy=energy,
             horizon=horizon,
             dt=getattr(env, "dt", 0.05),
-            env_name="quadruped_flat_mjx" if use_mjx or "mjx" in str(type(env).__name__).lower() else "quadruped_flat_physics",
+            env_name=env_name,
             **kwargs,
         )
     if planner_type == "cfsmbd_full":

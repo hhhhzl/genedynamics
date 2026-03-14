@@ -21,6 +21,9 @@ def _make_quadruped_env(config: Dict[str, Any], **overrides: Any) -> Any:
     model = params.pop("model", config.get("model_id", "flat"))
     use_mjx = params.pop("use_mjx", False)
     env_name = params.pop("env_name", None)
+    use_brax = "brax" in (env_name or "").lower() or params.get("physics_backend") == "brax"
+    if use_brax and not env_name:
+        env_name = "quadruped_go2_brax" if model == "go2" else "humanoid_run_brax"
     task = config.get("task")
     target = tuple(params.get("target", (2.0, 0.0, 0.5)))
 
@@ -48,7 +51,7 @@ def _make_quadruped_env(config: Dict[str, Any], **overrides: Any) -> Any:
     env = make_quadruped_env(
         model=model,
         env_name=env_name,
-        use_mjx=use_mjx,
+        use_mjx=use_mjx or use_brax,
         **params,
     )
 
@@ -80,6 +83,8 @@ def _make_quadruped_energy(config: Dict[str, Any], env: Any = None) -> Any:
     env_name = "quadruped_flat_mjx" if (env and "mjx" in str(type(env).__name__).lower()) else "quadruped_flat_physics"
     if env and "go2" in str(getattr(env, "model", "")).lower():
         env_name = "quadruped_go2_mjx" if "mjx" in str(type(env).__name__).lower() else "quadruped_go2_physics"
+    if env and "brax" in str(type(env).__name__).lower():
+        env_name = "quadruped_go2_brax"
     return make_quadruped_energy(target=target, env_name=env_name)
 
 
@@ -89,7 +94,7 @@ def _make_quadruped_planner(env: Any, config: Dict[str, Any], **overrides: Any) 
 
     planner = config.get("planner", "stand")
     horizon = config.get("horizon", 64)
-    use_mjx = "mjx" in str(type(env).__name__).lower()
+    use_mjx = "mjx" in str(type(env).__name__).lower() or "brax" in str(type(env).__name__).lower()
     params = dict(config.get("method_params", {}))
     params.update(overrides)
     task = config.get("task")

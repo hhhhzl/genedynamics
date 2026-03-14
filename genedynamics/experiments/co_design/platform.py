@@ -41,6 +41,8 @@ class CoDesignExperimentConfig:
     output_dir: str = "results/co_design"
     checkpoint_dir: Optional[str] = None
     baseline_params: Dict[str, Any] = field(default_factory=dict)
+    evaluator_runtime: Dict[str, Any] = field(default_factory=dict)
+    save_gif: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -50,6 +52,7 @@ class CoDesignExperimentConfig:
             "output_dir": self.output_dir,
             "checkpoint_dir": self.checkpoint_dir,
             "baseline_params": self.baseline_params,
+            "evaluator_runtime": self.evaluator_runtime,
         }
 
     def config_hash(self) -> str:
@@ -95,9 +98,11 @@ class CoDesignExperimentPlatform:
             self._logger.log("run_start", seed=seed, config_hash=self.config.config_hash())
 
         task_spec = get_task_spec(self.config.task_id)
+        runtime_config = dict(self.config.evaluator_runtime) if self.config.evaluator_runtime else {}
         evaluator = SoftZooRolloutEvaluator(
             config=SoftZooEvaluatorConfig(max_workers=0, cache_size=64),
             project_root=str(self._project_root),
+            runtime_config=runtime_config,
         )
 
         baseline = get_baseline(self.config.baseline_name)
@@ -142,7 +147,30 @@ class CoDesignExperimentPlatform:
                 f,
                 indent=2,
             )
+
+        # Generate GIF if requested
+        if self.config.save_gif and results:
+            self._generate_gif(results)
+
         return results
+
+    def _generate_gif(self, results: List[Dict[str, Any]]) -> None:
+        """Run SoftZoo render script to produce motion_replay.gif."""
+        import subprocess
+        import sys
+        script = self._project_root / "scripts" / "visualizations" / "render_co_design_softzoo_gif.py"
+        if not script.exists():
+            return
+        try:
+            subprocess.run(
+                [sys.executable, str(script), str(self._output_dir)],
+                cwd=str(self._project_root),
+                check=False,
+                capture_output=True,
+                timeout=120,
+            )
+        except Exception:
+            pass
 
     def _serialize_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Convert results to JSON-serializable form."""

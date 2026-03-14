@@ -103,6 +103,12 @@ def make_env(name: str, **kwargs):
     elif name == "quadruped_go2_mjx":
         from genedynamics.envs.quadruped_mjx import QuadrupedGo2MjxEnv
         return QuadrupedGo2MjxEnv(**kwargs)
+    elif name == "quadruped_go2_brax":
+        from genedynamics.envs.brax_env import make_brax_go2
+        return make_brax_go2(**kwargs)
+    elif name == "humanoid_run_brax":
+        from genedynamics.envs.brax_env import make_brax_humanoid_run
+        return make_brax_humanoid_run(**kwargs)
     elif name == "humanoid_simplified_physics":
         from genedynamics.envs.humanoid_base_physics import HumanoidBasePhysicsEnv
         return HumanoidBasePhysicsEnv(**kwargs)
@@ -314,6 +320,7 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
         })
     elif env_name in (
         "quadruped_flat_physics", "quadruped_flat_mjx", "quadruped_go2_mjx",
+        "quadruped_go2_brax", "humanoid_run_brax",
         "humanoid_simplified_physics", "humanoid_simplified_mjx", "humanoid_g1_mjx",
     ):
         # Quadruped: base position error + velocity penalty + control regularization
@@ -333,22 +340,91 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
             pos = x[:3]
             nq = _nq_from_state(x)
             vel = x[nq : nq + 3] if jnp.size(x) > nq + 3 else jnp.zeros(3, dtype=jnp.float32)
+            ang_vel = x[nq + 3 : nq + 6] if jnp.size(x) > nq + 6 else jnp.zeros(3, dtype=jnp.float32)
             target = ctx.get("target_xy") if ctx else None
             if target is None:
                 target = jnp.array([2.0, 0.0, 0.5], dtype=jnp.float32)
             else:
                 target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:3]
+            desired_v = ctx.get("desired_velocity") if ctx else None
+            if desired_v is None:
+                desired_v = jnp.zeros(3, dtype=jnp.float32)
+            else:
+                desired_v = jnp.asarray(desired_v, dtype=jnp.float32).reshape(-1)[:3]
+            loc_active = jnp.linalg.norm(desired_v[:2]) >= 1e-4
             pos_err = jnp.sum((pos - target) ** 2)
             # Overshoot penalty: discourage looping past target (same as drone)
             z_overshoot = jnp.maximum(0.0, pos[2] - target[2] - 0.2) ** 2
             xy_overshoot = jnp.maximum(0.0, jnp.abs(pos[0] - target[0]) - 0.5) ** 2 + jnp.maximum(0.0, jnp.abs(pos[1] - target[1]) - 0.5) ** 2
             dist = jnp.sqrt(pos_err + 1e-8)
-            vel_weight = 0.3 + 2.0 / (dist + 0.2)
+            vel_weight_nominal = 0.3 + 2.0 / (dist + 0.2)
+            vel_weight = jnp.where(loc_active, jnp.asarray(0.08, dtype=jnp.float32), vel_weight_nominal)
             vel_err = vel_weight * jnp.sum(vel ** 2)
+            # Dial-MPC-style directional shaping: for now prioritize forward x progress and suppress lateral drift.
+            lateral_err = (pos[1] - target[1]) ** 2
+            # Lightweight progress shaping for point-target:
+            # encourage forward motion along target direction and discourage moving away.
+            delta_xy = target[:2] - pos[:2]
+            dist_xy = jnp.maximum(jnp.linalg.norm(delta_xy), 1e-6)
+            dir_xy = delta_xy / dist_xy
+            toward_speed = jnp.dot(vel[:2], dir_xy)
+            away_penalty = jnp.maximum(0.0, -toward_speed) ** 2
+            # Locomotion speed tracking (dial-mpc style idea): encourage steady forward speed.
+            desired_speed = 0.90 if nq <= 15 else 0.60
+            speed_track_err = (toward_speed - desired_speed) ** 2
+            vel_track_err = jnp.sum((vel[:2] - desired_v[:2]) ** 2)
+            # Stability terms to avoid "flying"/tumbling trajectories.
+            # MuJoCo free-joint quaternion is [w, x, y, z] at qpos[3:7].
+            if jnp.size(x) >= 7:
+                quat = jnp.asarray(x[3:7], dtype=jnp.float32)
+                quat = quat / jnp.maximum(jnp.linalg.norm(quat), 1e-6)
+                # Penalize roll/pitch tilt; keep yaw relatively unconstrained.
+                upright_err = quat[1] ** 2 + quat[2] ** 2
+                # Mild yaw heading regularization for straighter gaits.
+                qw, qx, qy, qz = quat[0], quat[1], quat[2], quat[3]
+                yaw = jnp.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+                yaw_err = yaw ** 2
+            else:
+                upright_err = jnp.asarray(0.0, dtype=jnp.float32)
+                yaw_err = jnp.asarray(0.0, dtype=jnp.float32)
+            height_err = (pos[2] - target[2]) ** 2
+            vz_err = vel[2] ** 2
+            ang_vel_err = jnp.sum(ang_vel ** 2)
             # Joint velocity penalty: discourage erratic leg motion
             joint_vel = x[nq + 6 :] if jnp.size(x) > nq + 6 else jnp.zeros(0, dtype=jnp.float32)
             joint_vel_err = 0.06 * jnp.sum(joint_vel ** 2)
-            return pos_err + 8.0 * z_overshoot + 5.0 * xy_overshoot + vel_err + joint_vel_err
+            # Harder penalty once joint speeds exceed a cap (reduces "leg flailing").
+            joint_vel_cap = 6.5 if nq == 19 else 8.0
+            joint_vel_over = jnp.maximum(0.0, jnp.abs(joint_vel) - joint_vel_cap)
+            joint_vel_cap_err = jnp.sum(joint_vel_over ** 2)
+            # Ant needs stronger attitude regularization than larger robots.
+            upright_w = 5.0 if nq <= 15 else 2.8
+            yaw_w = 0.3 if nq <= 15 else 1.4
+            lateral_w = 0.8 if nq <= 15 else 3.5
+            ang_vel_w = 0.2 if nq <= 15 else 0.35
+            joint_cap_w = 0.1 if nq <= 15 else 0.35
+            speed_track_w = 0.6 if nq <= 15 else 1.5
+            vel_track_w = 0.4 if nq <= 15 else 2.0
+            # In locomotion mode (desired velocity provided), weaken point-target attraction.
+            pos_w_loc = 0.2 if nq <= 15 else 0.02
+            pos_w = jnp.where(loc_active, jnp.asarray(pos_w_loc, dtype=jnp.float32), jnp.asarray(1.0, dtype=jnp.float32))
+            return (
+                pos_w * pos_err
+                + 8.0 * z_overshoot
+                + 5.0 * xy_overshoot
+                + vel_err
+                + lateral_w * lateral_err
+                + 2.0 * height_err
+                + upright_w * upright_err
+                + yaw_w * yaw_err
+                + 1.0 * vz_err
+                + ang_vel_w * ang_vel_err
+                + 0.08 * away_penalty
+                + speed_track_w * speed_track_err
+                + vel_track_w * vel_track_err
+                + joint_vel_err
+                + joint_cap_w * joint_vel_cap_err
+            )
 
         def control_energy(x, u, ctx):
             return 0.12 * jnp.sum(u ** 2)  # Stronger penalty for smoother actions

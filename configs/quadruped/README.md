@@ -37,17 +37,29 @@ Render as MuJoCo GIF (when episode data available):
 python scripts/visualizations/render_deploy_quadruped_gif.py results/... --model go2
 ```
 
+## Setup (headless / RunPod / Docker)
+
+```bash
+pip install -e . mujoco-mjx
+export MUJOCO_GL=osmesa   # Required when no display
+# For Go2: git clone https://github.com/google-deepmind/mujoco_menagerie.git third_party/mujoco_menagerie
+```
+
 ## Usage
 
 ```bash
+# Run all four flat MBD configs
+./scripts/run_quadruped_flat.sh
+
+# Or individually (with MUJOCO_GL=osmesa for headless):
 # Plan (experiment runner)
-python -m genedynamics.experiments.runner configs/quadruped/flat/mbd_plan.yaml
-python -m genedynamics.experiments.runner configs/quadruped/flat/mdcoas_plan.yaml
-python -m genedynamics.experiments.runner configs/quadruped/flat/mbd_plan_go2.yaml
+MUJOCO_GL=osmesa python -m genedynamics.experiments.runner configs/quadruped/flat/mbd_plan.yaml
+MUJOCO_GL=osmesa python -m genedynamics.experiments.runner configs/quadruped/flat/mdcoas_plan.yaml
+MUJOCO_GL=osmesa python -m genedynamics.experiments.runner configs/quadruped/flat/mbd_plan_go2.yaml
 
 # Deploy
-genedynamics-deploy --config configs/quadruped/flat/mbd_deploy.yaml
-genedynamics-deploy --config configs/quadruped/flat/mbd_deploy_quick.yaml
+MUJOCO_GL=osmesa genedynamics-deploy --config configs/quadruped/flat/mbd_deploy.yaml
+MUJOCO_GL=osmesa genedynamics-deploy --config configs/quadruped/flat/mbd_deploy_quick.yaml
 genedynamics-deploy --config configs/quadruped/flat/mdcoas_deploy_quick.yaml
 genedynamics-deploy --config configs/quadruped/obstacle_avoid/mdcoas_deploy_quick.yaml
 genedynamics-deploy --config configs/quadruped/rough_terrain/mbd_deploy_quick.yaml

@@ -89,7 +89,11 @@ class LandEnvironment(BaseEnv):
         if self.cfg.ENVIRONMENT.CUSTOM.has_matter_on_ground:
             max_surface_height += self.cfg.ENVIRONMENT.CUSTOM.matter_thickness
         robot_x = self.design_space.get_x(reset_s)
-        offset = self.sim.device.tensor([0., max_surface_height + self.design_space.initial_position[1] - robot_x.min(0)[0][1], 0.])
+        if robot_x.shape[0] > 0:
+            robot_min_y = robot_x.min(0)[0][1]
+        else:
+            robot_min_y = self.design_space.initial_position[1]
+        offset = self.sim.device.tensor([0., max_surface_height + self.design_space.initial_position[1] - robot_min_y, 0.])
         self.design_space.transform_x(reset_s, offset)
 
         # Reset objective

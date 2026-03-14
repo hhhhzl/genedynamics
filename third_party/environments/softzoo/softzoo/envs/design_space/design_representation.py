@@ -170,6 +170,17 @@ class DesignRepresentation:
         x, mask = self.get_x(s, keep_mask=True)
         mask = mask.to(bool)
         masked_x = x[mask]
+        if masked_x.shape[0] == 0:
+            if not hasattr(self, 'orientation_data'):
+                self.orientation_data = dict()
+                self.orientation_data['orientation'] = ti.Vector.field(self.sim.solver.dim, dtype=F_DTYPE, shape=(), needs_grad=self.sim.solver.needs_grad)
+            import numpy as np
+            ipt = np.array(self.initial_principle_direction, dtype=np.float32)
+            ipt = ipt / (np.linalg.norm(ipt) + 1e-8)
+            self.orientation_data['orientation'][None] = ti.Vector(ipt)
+            self.orientation_data['min_p'] = self.p_start
+            self.orientation_data['max_p'] = self.p_end - 1
+            return
         if self.initial_principle_direction is None:
             masked_x_np = masked_x.data.cpu().numpy()
             pca = PCA(n_components=self.sim.solver.dim)
@@ -213,6 +224,8 @@ class DesignRepresentation:
         v, mask = self.get_v(s, keep_mask=True)
         mask = mask.to(bool)
         v = v[mask]
+        if v.shape[0] == 0:
+            return self.sim.device.tensor([0., 0., 0.])
         if mode == 0:
             v_avg = v.mean(0)
         elif mode == 1:

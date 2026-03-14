@@ -64,5 +64,35 @@ class MBDMethodPlugin(MethodPlugin):
         Execute MBD planning and return result dict.
         """
         traj = planner.solve(initial_state, horizon=planner.horizon, rng_key=rng)
-        return normalize_result_from_trajectory(traj, initial_state=initial_state, preserve_info=True)
+        result = normalize_result_from_trajectory(traj, initial_state=initial_state, preserve_info=True)
+        env = getattr(getattr(planner, "dynamics", None), "env", None)
+        if env is None:
+            return result
+
+        def _rollout(actions_arr: np.ndarray) -> np.ndarray:
+            s = np.asarray(initial_state, dtype=np.float32).copy()
+            states = [s.copy()]
+            for a in np.asarray(actions_arr, dtype=np.float32):
+                s = np.asarray(env.transition(s, a), dtype=np.float32)
+                states.append(s.copy())
+            return np.asarray(states, dtype=np.float32)
+
+        actions = result.get("actions")
+        if actions is not None:
+            try:
+                result["states"] = _rollout(np.asarray(actions, dtype=np.float32))
+            except Exception:
+                pass
+
+        candidate_actions = result.get("candidate_actions")
+        if candidate_actions is not None:
+            try:
+                ca = np.asarray(candidate_actions, dtype=np.float32)
+                if ca.ndim == 2:
+                    ca = ca[None, ...]
+                candidate_states = [_rollout(ca[i]) for i in range(ca.shape[0])]
+                result["candidate_states"] = np.asarray(candidate_states, dtype=np.float32)
+            except Exception:
+                pass
+        return result
 

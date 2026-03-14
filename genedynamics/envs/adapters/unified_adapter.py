@@ -162,6 +162,14 @@ class UnifiedEnvAdapter:
     def transition(self, state: State, action: Action) -> np.ndarray:
         """Compute next state from current state and action."""
         return self.adapter.transition(state, action)
+
+    def jax_transition(self, state: Any, action: Any) -> Any:
+        """JAX transition (flat state -> flat next state). Forwards to adapter."""
+        if hasattr(self.adapter, "jax_transition"):
+            return self.adapter.jax_transition(state, action)
+        raise AttributeError(
+            f"Adapter {type(self.adapter).__name__} has no jax_transition"
+        )
     
     def cost(self, state: State) -> float:
         """Compute cost for a given state."""
