@@ -1702,11 +1702,12 @@ class ExperimentRunner:
                         viz_plugin.visualize(fig, ax, data_plan, viz_cfg)
                         viz_plugin.save(trajectory_dir / "trajectory_modes_plan.png", fig, dpi=150, bbox_inches='tight')
                         plt.close(fig)
-                        cand_states_plan = planning_result.get('candidate_states') or []
-                        if not cand_states_plan and planning_result.get('states'):
+                        cand_states_plan = planning_result.get('candidate_states')
+                        cand_states_plan = [] if cand_states_plan is None else cand_states_plan
+                        if not _has_items(cand_states_plan) and planning_result.get('states'):
                             cand_states_plan = [planning_result['states']]
                         max_steps_plan = max((max(0, len(c) - 1) for c in cand_states_plan), default=0)
-                        if max_steps_plan >= 0 and cand_states_plan:
+                        if max_steps_plan >= 0 and _has_items(cand_states_plan):
                             import imageio
                             temp_frames = []
                             try:
@@ -1795,15 +1796,16 @@ class ExperimentRunner:
                         viz_plugin.save(trajectory_dir / "trajectory_modes.png", fig, dpi=150, bbox_inches='tight')
                         plt.close(fig)
                         planning_result = result.get('result', {})
-                        candidate_states = planning_result.get('candidate_states') or []
-                        if not candidate_states:
+                        candidate_states = planning_result.get('candidate_states')
+                        candidate_states = [] if candidate_states is None else candidate_states
+                        if not _has_items(candidate_states):
                             states_list = planning_result.get('states', [])
                             if states_list:
                                 candidate_states = [states_list]
                         max_steps = 0
                         for states_c in candidate_states:
                             max_steps = max(max_steps, max(0, len(states_c) - 1))
-                        if max_steps >= 0 and candidate_states:
+                        if max_steps >= 0 and _has_items(candidate_states):
                             import imageio
                             temp_frames = []
                             try:
