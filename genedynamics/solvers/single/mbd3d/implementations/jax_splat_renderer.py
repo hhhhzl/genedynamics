@@ -78,7 +78,7 @@ def _cov3d_to_cov2d(means: Any, scales: Any, quats: Any, w2c: Any, K: Any) -> An
     J = J.at[:, 1, 2].set(-fy * y / (z * z))
 
     cov2d = jnp.einsum("nij,njk,nlk->nil", J, cov3d, J)
-    eps = 0.3
+    eps = 1e-4
     cov2d = cov2d + eps * jnp.eye(2)[None, :, :]
     return cov2d
 
@@ -98,7 +98,7 @@ def _soft_splat_one_view(
     means: Any, scales: Any, quats: Any, opacities: Any, colors: Any,
     w2c: Any, K: Any, H: int, W: int,
 ) -> Any:
-    """Render one view with soft 2D Gaussian splatting + depth weighting (batched)."""
+    """Render one view with soft 2D Gaussian splatting + alpha compositing."""
     means_2d, z_depth = _project_means(means, w2c, K)
     cov2d = _cov3d_to_cov2d(means, scales, quats, w2c, K)
 
@@ -107,7 +107,6 @@ def _soft_splat_one_view(
 
     inv_cov = jnp.linalg.inv(cov2d)
     z = jnp.squeeze(z_depth)
-    depth_w = jnp.exp(-z / (jnp.mean(z) + 1.0))
 
     y_coords = jnp.arange(H, dtype=jnp.float32)
     x_coords = jnp.arange(W, dtype=jnp.float32)
@@ -116,10 +115,30 @@ def _soft_splat_one_view(
 
     d = pixels[:, :, None, :] - means_2d[None, None, :, :]
     quad = jnp.einsum("hwnd,ndf,hwnf->hwn", d, inv_cov, d)
-    gauss_w = opa[None, None, :] * jnp.exp(-0.5 * jnp.clip(quad, 0.0, 50.0))
-    weights = gauss_w * depth_w[None, None, :]
-    w_sum = jnp.sum(weights, axis=-1, keepdims=True) + 1e-8
-    rgb = jnp.sum(weights[:, :, :, None] * col[None, None, :, :], axis=2) / w_sum
+    alpha = opa[None, None, :] * jnp.exp(-0.5 * jnp.clip(quad, 0.0, 50.0))
+
+    # Cull splats behind camera and clamp alpha for numerical stability.
+    alpha = alpha * (z[None, None, :] > 1e-4).astype(alpha.dtype)
+    alpha = jnp.clip(alpha, 0.0, 0.995)
+
+    # Approximate gsplat front-to-back compositing using global depth order.
+    order = jax.lax.stop_gradient(jnp.argsort(z))
+    alpha_s = alpha[:, :, order]
+    col_s = col[order]
+
+    one_minus_alpha = 1.0 - alpha_s
+    trans = jnp.cumprod(
+        jnp.concatenate(
+            [
+                jnp.ones((*alpha_s.shape[:2], 1), dtype=alpha_s.dtype),
+                one_minus_alpha + 1e-8,
+            ],
+            axis=-1,
+        ),
+        axis=-1,
+    )[:, :, :-1]
+    weights = trans * alpha_s
+    rgb = jnp.sum(weights[:, :, :, None] * col_s[None, None, :, :], axis=2)
     return rgb
 
 

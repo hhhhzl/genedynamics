@@ -278,8 +278,8 @@ def main():
             strategy.step_pre_backward(params, optimizers, strategy_state, it, info)
             diff2 = (rgb - gt) ** 2
             if masks_t is not None:
-                w = masks_t.clamp(0.1, 1.0)
-                loss = (diff2 * w).sum() / (w.sum() + 1e-8)
+                weights = masks_t.clamp(0.1, 1.0)
+                loss = (diff2 * weights).sum() / (weights.sum() + 1e-8)
             else:
                 loss = diff2.mean()
             loss.backward()
@@ -308,8 +308,8 @@ def main():
             )
             diff2 = (rgb - gt) ** 2
             if masks_t is not None:
-                w = masks_t.clamp(0.1, 1.0)
-                loss = (diff2 * w).sum() / (w.sum() + 1e-8)
+                weights = masks_t.clamp(0.1, 1.0)
+                loss = (diff2 * weights).sum() / (weights.sum() + 1e-8)
             else:
                 loss = diff2.mean()
             loss.backward()
@@ -339,7 +339,82 @@ def main():
         )
         mse = ((rgb - gt) ** 2).mean().item()
         psnr = 10.0 * np.log10(1.0 / (mse + 1e-10))
-    print(f"Final PSNR: {psnr:.2f} dB, {n} Gaussians")
+    print(f"Final train PSNR: {psnr:.2f} dB, {n} Gaussians")
+
+    # Evaluate on test split (gsplat renderer)
+    eval_split = ep.get("eval_split", "test")
+    eval_res = ep.get("eval_resolution") or ep.get("resolution_eval", 512)
+    test_out = _load_nerf_synthetic(
+        dataset_root,
+        split=eval_split,
+        max_views=None,
+        view_stride=1,
+        shuffle_seed=None,
+        h=eval_res,
+        w=eval_res,
+        return_masks=False,
+    )
+    test_images, test_poses, test_K = test_out[:3]
+    test_viewmats = np.stack([pose_to_w2c(test_poses[i]) for i in range(len(test_poses))], axis=0)
+    if test_K.ndim == 2:
+        test_K = np.tile(test_K[None, :, :], (len(test_poses), 1, 1))
+    test_gt = torch.from_numpy(test_images).float().to(device)
+    test_viewmats_t = torch.from_numpy(test_viewmats).float().to(device)
+    test_Ks_t = torch.from_numpy(test_K).float().to(device)
+    n_test = len(test_images)
+    batch_size = min(16, n_test)
+    with torch.no_grad():
+        scales_pos = torch.exp(torch.clamp(scales, -10, 10))
+        opa = torch.sigmoid(torch.clamp(opacities, -50, 50)).squeeze(-1)
+        col = torch.clamp(colors, 0, 1)
+        preds = []
+        for i in range(0, n_test, batch_size):
+            end = min(i + batch_size, n_test)
+            rgb_b, _, _ = gsplat.rasterization(
+                means, quats, scales_pos, opa, col,
+                test_viewmats_t[i:end], test_Ks_t[i:end], eval_res, eval_res,
+            )
+            preds.append(rgb_b)
+        test_rgb = torch.cat(preds, dim=0)
+        test_mse = ((test_rgb - test_gt) ** 2).mean().item()
+        test_psnr = 10.0 * np.log10(1.0 / (test_mse + 1e-10))
+    print(f"Test PSNR ({eval_split}, {eval_res}x{eval_res}): {test_psnr:.2f} dB")
+
+    train_at_eval_psnr_save = None
+    # Sanity: eval on train at eval_res (should be high if rendering is correct)
+    if eval_split != "train":
+        train_eval_out = _load_nerf_synthetic(
+            dataset_root,
+            split="train",
+            max_views=max_views,
+            view_stride=ep.get("view_stride", 1),
+            shuffle_seed=ep.get("shuffle_seed", 0),
+            h=eval_res,
+            w=eval_res,
+            return_masks=False,
+        )
+        te_imgs, te_poses, te_K = train_eval_out[:3]
+        te_viewmats = np.stack([pose_to_w2c(te_poses[i]) for i in range(len(te_poses))], axis=0)
+        if te_K.ndim == 2:
+            te_K = np.tile(te_K[None, :, :], (len(te_poses), 1, 1))
+        te_gt = torch.from_numpy(te_imgs).float().to(device)
+        te_vm = torch.from_numpy(te_viewmats).float().to(device)
+        te_kk = torch.from_numpy(te_K).float().to(device)
+        n_te = len(te_imgs)
+        bs = min(16, n_te)
+        with torch.no_grad():
+            te_preds = []
+            for i in range(0, n_te, bs):
+                end = min(i + bs, n_te)
+                rgb_b, _, _ = gsplat.rasterization(
+                    means, quats, scales_pos, opa, col,
+                    te_vm[i:end], te_kk[i:end], eval_res, eval_res,
+                )
+                te_preds.append(rgb_b)
+            te_rgb = torch.cat(te_preds, dim=0)
+            train_at_eval_psnr = 10.0 * np.log10(1.0 / (((te_rgb - te_gt) ** 2).mean().item() + 1e-10))
+        print(f"Train PSNR at {eval_res}x{eval_res} (sanity): {train_at_eval_psnr:.2f} dB")
+        train_at_eval_psnr_save = train_at_eval_psnr
 
     out_dir = Path(args.output or str(ROOT / "results/3dgs/lego_gsplat"))
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -358,8 +433,19 @@ def main():
         intrinsics=K,
         gt_images=images,
     )
+    metrics_out = {
+        "psnr": psnr,
+        "train_psnr": psnr,
+        "test_psnr": test_psnr,
+        "n_gaussians": int(n),
+        "n_views": n_views,
+        "eval_split": eval_split,
+        "eval_resolution": eval_res,
+    }
+    if train_at_eval_psnr_save is not None:
+        metrics_out["train_psnr_at_eval_res"] = train_at_eval_psnr_save
     with open(out_dir / "metrics.json", "w") as f:
-        json.dump({"psnr": psnr, "n_gaussians": int(n), "n_views": n_views}, f, indent=2)
+        json.dump(metrics_out, f, indent=2)
     print(f"Saved to {out_dir}")
     return 0
 

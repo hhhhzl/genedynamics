@@ -88,10 +88,13 @@ class MBDMethodPlugin(MethodPlugin):
         if candidate_actions is not None:
             try:
                 ca = np.asarray(candidate_actions, dtype=np.float32)
+                # Replace NaN with 0 so rollout and saved JSON have valid values
+                ca = np.nan_to_num(ca, nan=0.0, posinf=0.0, neginf=0.0)
                 if ca.ndim == 2:
                     ca = ca[None, ...]
                 candidate_states = [_rollout(ca[i]) for i in range(ca.shape[0])]
                 result["candidate_states"] = np.asarray(candidate_states, dtype=np.float32)
+                result["candidate_actions"] = [ca[i] for i in range(ca.shape[0])]
             except Exception:
                 pass
         return result

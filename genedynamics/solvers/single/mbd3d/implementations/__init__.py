@@ -16,6 +16,12 @@ except ImportError:
     JAX_SPLAT_AVAILABLE = False
 
 try:
+    from .jaxsplat_renderer import JaxsplatRenderer, JAXSPLAT_AVAILABLE
+except ImportError:
+    JaxsplatRenderer = None
+    JAXSPLAT_AVAILABLE = False
+
+try:
     from .gsplat_renderer import GsplatRenderer, GSPLAT_AVAILABLE
 except ImportError:
     GsplatRenderer = None
@@ -25,6 +31,8 @@ __all__ = [
     "GaussianSplatScene",
     "JaxSplatRenderer",
     "JAX_SPLAT_AVAILABLE",
+    "JaxsplatRenderer",
+    "JAXSPLAT_AVAILABLE",
     "GsplatRenderer",
     "GSPLAT_AVAILABLE",
     "GaussianObservationLikelihood",

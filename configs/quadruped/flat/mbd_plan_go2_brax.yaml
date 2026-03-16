@@ -47,4 +47,4 @@ backend: jax
 device: cuda
 
 metrics: [ssr]
-visualizations: [trajectory_3d]
+visualizations: [trajectory_3d, motion_replay]

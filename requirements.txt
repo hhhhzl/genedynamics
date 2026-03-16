@@ -31,6 +31,11 @@ lpips
 jax[cuda12]
 # jax==0.6.2
 brax==0.14.1
+pybind11>=3.0.0
+
+# Optional external JAX Gaussian splatting kernels
+# Note: install from source repo (no PyPI package yet).
+jaxsplat @ git+https://github.com/yklcs/jaxsplat
 
 # Optional environments
 gym>=0.26.2

@@ -282,9 +282,21 @@ class MBD3DBackendJax:
             return _log_pi
 
         log_pi_fns: Dict[int, Any] = {ds: _make_log_pi(model_fns[ds][2]) for ds in fidelity_levels}
-        log_pi_batched_fns: Dict[int, Any] = {
-            ds: jax.jit(jax.vmap(log_pi_fns[ds], in_axes=(0, None))) for ds in fidelity_levels
-        }
+        use_lax_map_logpi = bool(getattr(self.renderer, "requires_non_batched_logpi", False))
+        if use_lax_map_logpi:
+            def _make_mapped_log_pi(log_pi_single: Any):
+                @jax.jit
+                def _mapped(theta_batch: jnp.ndarray, beta_val: float) -> jnp.ndarray:
+                    return jax.lax.map(lambda th: log_pi_single(th, beta_val), theta_batch)
+                return _mapped
+
+            log_pi_batched_fns: Dict[int, Any] = {
+                ds: _make_mapped_log_pi(log_pi_fns[ds]) for ds in fidelity_levels
+            }
+        else:
+            log_pi_batched_fns: Dict[int, Any] = {
+                ds: jax.jit(jax.vmap(log_pi_fns[ds], in_axes=(0, None))) for ds in fidelity_levels
+            }
         theta = jnp.asarray(theta_init, dtype=jnp.float32)
         history: Dict[str, List[float]] = {
             "ess": [], "score_norm": [], "log_pi": [], "beta": [],

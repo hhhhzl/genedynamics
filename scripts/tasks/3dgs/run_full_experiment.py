@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +27,29 @@ def _load_scene_from_npz(path: Path):
         quats=np.asarray(data["quats"], dtype=np.float32),
         opacities=np.asarray(data["opacities"], dtype=np.float32),
         colors=np.asarray(data["colors"], dtype=np.float32),
+    )
+
+
+def _cap_scene_gaussians(scene, max_gaussians: int):
+    max_n = int(max_gaussians)
+    n = int(np.asarray(scene.means).shape[0])
+    if max_n <= 0 or n <= max_n:
+        return scene
+    # Keep the most opaque Gaussians when warm-start checkpoint is too large for MBD bridge memory.
+    opa = np.asarray(scene.opacities, dtype=np.float32).reshape(-1)
+    if opa.size != n:
+        return scene
+    scores = 1.0 / (1.0 + np.exp(-opa))
+    keep = np.argsort(-scores)[:max_n]
+    keep = np.sort(keep)
+    from genedynamics.solvers.single.mbd3d.types import SceneParams
+
+    return SceneParams(
+        means=np.asarray(scene.means)[keep],
+        scales=np.asarray(scene.scales)[keep],
+        quats=np.asarray(scene.quats)[keep],
+        opacities=np.asarray(scene.opacities)[keep],
+        colors=np.asarray(scene.colors)[keep],
     )
 
 
@@ -116,16 +140,76 @@ def _render_uncertainty_panel(output_dir: Path, n_show: int = 4) -> None:
         return
 
 
+def _configure_jax_memory(
+    *,
+    preallocate: str,
+    allocator: str,
+    mem_fraction: float | None,
+    cuda_malloc_async: bool,
+) -> None:
+    prealloc = str(preallocate).lower().strip()
+    if prealloc in {"true", "1", "yes", "y"}:
+        os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
+    else:
+        os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+    alloc = str(allocator).lower().strip()
+    if alloc in {"platform", "bfc"}:
+        os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = alloc
+    if mem_fraction is not None:
+        frac = float(mem_fraction)
+        if frac > 0.0:
+            os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(frac)
+    if bool(cuda_malloc_async):
+        os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("config", type=str, help="Path to config YAML")
     parser.add_argument("--n-seeds", type=int, default=8, help="Number of posterior seeds")
     parser.add_argument("--output", type=str, default=None, help="Output directory override")
     parser.add_argument("--initial-scene-path", type=str, default=None, help="Optional scene npz for prior-centered initialization")
+    parser.add_argument(
+        "--max-initial-gaussians",
+        type=int,
+        default=None,
+        help="Optional cap on warm-start Gaussians for VRAM fit; keeps top opacities.",
+    )
+    parser.add_argument(
+        "--jax-preallocate",
+        type=str,
+        default="false",
+        choices=["true", "false"],
+        help="Whether JAX preallocates GPU memory. false enables on-demand allocation.",
+    )
+    parser.add_argument(
+        "--jax-allocator",
+        type=str,
+        default="platform",
+        choices=["platform", "bfc"],
+        help="JAX allocator backend. platform is more memory-friendly; bfc can be faster.",
+    )
+    parser.add_argument(
+        "--jax-mem-fraction",
+        type=float,
+        default=None,
+        help="Optional JAX memory fraction cap (e.g., 0.5). Ignored when unset.",
+    )
+    parser.add_argument(
+        "--cuda-malloc-async",
+        action="store_true",
+        help="Enable cuda_malloc_async allocator for improved fragmentation behavior.",
+    )
     parser.add_argument("--initialization-mode", type=str, default="prior_center", choices=["prior_center", "direct", "random"])
     parser.add_argument("--init-jitter-scale", type=float, default=1.0)
     parser.add_argument("--best-chain", action="store_true", help="When n_seeds>1, use scene from chain with highest total_log_prob")
     args = parser.parse_args()
+    _configure_jax_memory(
+        preallocate=args.jax_preallocate,
+        allocator=args.jax_allocator,
+        mem_fraction=args.jax_mem_fraction,
+        cuda_malloc_async=args.cuda_malloc_async,
+    )
 
     from genedynamics.experiments.framework import ExperimentConfig, ExperimentRunner
     from genedynamics.experiments.runner import register_all_plugins
@@ -157,6 +241,8 @@ def main() -> int:
             print(f"Initial scene not found: {ckpt}")
             return 1
         scene_center = _load_scene_from_npz(ckpt)
+        if args.max_initial_gaussians is not None and int(args.max_initial_gaussians) > 0:
+            scene_center = _cap_scene_gaussians(scene_center, int(args.max_initial_gaussians))
         config.method_params["initial_scene_center"] = scene_center
         config.method_params["n_gaussians"] = int(scene_center.means.shape[0])
 

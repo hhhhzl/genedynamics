@@ -8,7 +8,7 @@ env_params:
   use_stub_when_unavailable: false
   split: train
   eval_split: test
-  max_views: 20
+  max_views: 100
   view_stride: 1
   shuffle_seed: 0
   resolution_infer: 128
@@ -19,19 +19,21 @@ env_params:
 
 method: mbd3d
 method_params:
-  horizon: 10
-  n_gaussians: 128
-  bridge_K: 260
+  horizon: 19
+  n_gaussians: 4096
+  bridge_K: 500
   bridge_beta0: 0.0
   bridge_betaK: 1.0
-  bridge_eta: 0.015
-  bridge_eta_end: 0.003
-  M: 10
-  sigma_mcsa: 0.05
-  sigma_mcsa_start: 0.08
-  sigma_mcsa_end: 0.02
+  bridge_eta: 0.0002
+  bridge_eta_end: 0.00005
+  bridge_tau: 0.00008
+  bridge_tau_end: 0.00001
+  M: 16
+  sigma_mcsa: 0.003
+  sigma_mcsa_start: 0.0045
+  sigma_mcsa_end: 0.0015
   ess_min: 2.0
-  observation_sigma2: 0.003
+  observation_sigma2: 0.002
   image_height: 128
   image_width: 128
   image_channels: 3
@@ -42,32 +44,29 @@ method_params:
   lowrank_max_rank: 16
   use_real_splat: true
   prefer_jax_renderer: true
+  prefer_external_jaxsplat: true
   fix_cameras: true
-  initialization_mode: prior_center
-  init_jitter_scale: 0.2
-  enable_subspace: true
-  subspace_rank: 6
+  initialization_mode: direct
+  init_jitter_scale: 0.0
+  enable_subspace: false
+  subspace_rank: 4
   subspace_rank_start: 2
-  subspace_rank_end: 6
+  subspace_rank_end: 4
   subspace_power_iters: 1
   subspace_refresh_every: 2
   subspace_refresh_every_start: 1
   subspace_refresh_every_end: 5
   subspace_oversample: 1
-  proposal_count_start: 6
-  proposal_count_end: 10
+  proposal_count_start: 8
+  proposal_count_end: 16
   compile_stable_shapes: true
   profiling: true
   fidelity_ladder:
-    - end_frac: 0.30
-      downsample: 4
-    - end_frac: 0.70
-      downsample: 2
     - end_frac: 1.0
-      downsample: 1
+      downsample: 4
   prior_scale_means: 2.0
   prior_scale_scales: 0.5
-  prior_bbox: [-0.8, 0.8, -0.8, 0.8, -0.8, 0.8]
+  prior_bbox: [-0.6, 0.6, -0.6, 0.6, -0.6, 0.6]
   show_tqdm: true
 
 obstacle_levels: [0]
@@ -83,5 +82,5 @@ metrics: []
 visualizations: []
 
 metadata:
-  description: "Best warmup MBD (~10 dB). Use with --initial-scene-path and --init-jitter-scale 0.1"
+  description: "Optimal warmup: 100 views for gsplat, jaxsplat, K=500 M=16, prior_bbox, subspace off."
   author: "genedynamics"

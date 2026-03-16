@@ -15,6 +15,8 @@ from genedynamics.solvers.single.mbd3d.implementations import (
     GaussianObservationLikelihood,
     JaxSplatRenderer,
     JAX_SPLAT_AVAILABLE,
+    JaxsplatRenderer,
+    JAXSPLAT_AVAILABLE,
     GsplatRenderer,
     GSPLAT_AVAILABLE,
 )
@@ -84,8 +86,20 @@ class MBD3DMethodPlugin(MethodPlugin):
         use_real_splat = config.get("use_real_splat", True)
         enable_subspace = bool(config.get("enable_subspace", True))
         prefer_jax_renderer = bool(config.get("prefer_jax_renderer", enable_subspace))
+        prefer_external_jaxsplat = bool(config.get("prefer_external_jaxsplat", True))
 
-        if prefer_jax_renderer and JAX_SPLAT_AVAILABLE and JaxSplatRenderer is not None:
+        if (
+            prefer_jax_renderer
+            and prefer_external_jaxsplat
+            and JAXSPLAT_AVAILABLE
+            and JaxsplatRenderer is not None
+        ):
+            renderer = JaxsplatRenderer(
+                image_height=img_h,
+                image_width=img_w,
+                image_channels=img_c,
+            )
+        elif prefer_jax_renderer and JAX_SPLAT_AVAILABLE and JaxSplatRenderer is not None:
             renderer = JaxSplatRenderer(
                 image_height=img_h,
                 image_width=img_w,
@@ -118,11 +132,17 @@ class MBD3DMethodPlugin(MethodPlugin):
             lowrank_color_rank=config.get("lowrank_color_rank", 3),
             lowrank_max_rank=config.get("lowrank_max_rank", 16),
         )
+        solver_enable_subspace = bool(enable_subspace)
+        if bool(getattr(renderer, "requires_no_jvp", False)):
+            solver_enable_subspace = False
 
         bridge_K = config.get("bridge_K", 50)
         eta_start = config.get("bridge_eta", 0.02)
         eta_end = config.get("bridge_eta_end", eta_start * 0.1)
         eta_schedule = np.linspace(float(eta_start), float(eta_end), bridge_K, dtype=np.float32).tolist()
+        tau_start = config.get("bridge_tau", 0.01)
+        tau_end = config.get("bridge_tau_end", 0.001)
+        tau_schedule = np.linspace(float(tau_start), float(tau_end), bridge_K, dtype=np.float32).tolist()
         sigma_mcsa = config.get("sigma_mcsa", 0.05)
         sigma_start = config.get("sigma_mcsa_start", sigma_mcsa * 1.6)
         sigma_end = config.get("sigma_mcsa_end", sigma_mcsa * 0.4)
@@ -133,6 +153,7 @@ class MBD3DMethodPlugin(MethodPlugin):
             betaK=config.get("bridge_betaK", 1.0),
             eta_schedule=eta_schedule,
             sigma_schedule=sigma_schedule,
+            tau_schedule=tau_schedule,
         )
 
         solver = MBD3DSolver(
@@ -153,7 +174,7 @@ class MBD3DMethodPlugin(MethodPlugin):
             fix_cameras=config.get("fix_cameras", True),
             initialization_mode=config.get("initialization_mode", "prior_center"),
             init_jitter_scale=config.get("init_jitter_scale", 1.0),
-            enable_subspace=enable_subspace,
+            enable_subspace=solver_enable_subspace,
             subspace_rank=config.get("subspace_rank", 64),
             subspace_rank_start=config.get("subspace_rank_start", config.get("subspace_rank", 64)),
             subspace_rank_end=config.get("subspace_rank_end", config.get("subspace_rank", 64)),

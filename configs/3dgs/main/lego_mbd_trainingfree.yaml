@@ -19,19 +19,21 @@ env_params:
 
 method: mbd3d
 method_params:
-  horizon: 10
-  n_gaussians: 128
-  bridge_K: 320
+  horizon: 19
+  n_gaussians: 4096
+  bridge_K: 1000
   bridge_beta0: 0.0
   bridge_betaK: 1.0
-  bridge_eta: 0.008
-  bridge_eta_end: 0.0015
-  M: 10
-  sigma_mcsa: 0.05
-  sigma_mcsa_start: 0.15
-  sigma_mcsa_end: 0.04
+  bridge_eta: 0.0002
+  bridge_eta_end: 0.00005
+  bridge_tau: 0.00008
+  bridge_tau_end: 0.00001
+  M: 20
+  sigma_mcsa: 0.0035
+  sigma_mcsa_start: 0.005
+  sigma_mcsa_end: 0.0018
   ess_min: 1.5
-  observation_sigma2: 0.006
+  observation_sigma2: 0.0025
   image_height: 128
   image_width: 128
   image_channels: 3
@@ -42,29 +44,26 @@ method_params:
   lowrank_max_rank: 16
   use_real_splat: true
   prefer_jax_renderer: true
+  prefer_external_jaxsplat: true
   fix_cameras: true
-  initialization_mode: prior_center
-  init_jitter_scale: 0.08
-  enable_subspace: true
-  subspace_rank: 6
+  initialization_mode: direct
+  init_jitter_scale: 0.0
+  enable_subspace: false
+  subspace_rank: 5
   subspace_rank_start: 2
-  subspace_rank_end: 6
+  subspace_rank_end: 5
   subspace_power_iters: 1
   subspace_refresh_every: 2
   subspace_refresh_every_start: 1
   subspace_refresh_every_end: 5
   subspace_oversample: 1
   proposal_count_start: 8
-  proposal_count_end: 12
+  proposal_count_end: 20
   compile_stable_shapes: true
   profiling: true
   fidelity_ladder:
-    - end_frac: 0.40
-      downsample: 4
-    - end_frac: 0.80
-      downsample: 2
     - end_frac: 1.0
-      downsample: 1
+      downsample: 4
   prior_scale_means: 2.0
   prior_scale_scales: 0.5
   prior_bbox: [-0.6, 0.6, -0.6, 0.6, -0.6, 0.6]
@@ -83,5 +82,5 @@ metrics: []
 visualizations: []
 
 metadata:
-  description: "Best training-free MBD (~6 dB). prior_bbox, longer bridge, exploration annealing."
+  description: "Optimal trainingfree: 20 views, jaxsplat, K=1000 M=20, prior_bbox, subspace off."
   author: "genedynamics"

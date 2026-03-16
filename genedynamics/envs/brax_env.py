@@ -8,7 +8,6 @@ State format: flat [qpos; qvel], same as Brax obs.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Optional, Tuple
 
 import numpy as np
@@ -24,24 +23,6 @@ except ImportError:
     jnp = None
     PipelineEnv = None
     State = None
-
-
-def _load_mbd_env(name: str) -> Any:
-    """Load MBD env from third_party. Returns Brax PipelineEnv."""
-    if not BRAX_AVAILABLE:
-        raise ImportError("brax and jax required. pip install brax jax jaxlib")
-    root = Path(__file__).resolve().parents[2]
-    mbd_root = root / "third_party" / "model-based-diffusion"
-    if not mbd_root.exists():
-        raise FileNotFoundError(
-            f"MBD envs not found at {mbd_root}. "
-            "Ensure third_party/model-based-diffusion is available."
-        )
-    import sys
-    if str(mbd_root) not in sys.path:
-        sys.path.insert(0, str(mbd_root))
-    from mbd.envs import get_env
-    return get_env(name)
 
 
 class BraxFlatEnv:
@@ -80,12 +61,16 @@ class BraxFlatEnv:
 
     def jax_transition(self, state: Any, action: Any) -> Any:
         """Flat state -> step -> flat next state. JAX-compatible."""
+        # Sanitize: NaN action -> pipeline explosion -> NaN cascade in diffusion; replace with 0
+        action = jnp.nan_to_num(action, nan=0.0, posinf=0.0, neginf=0.0)
         qpos = state[: self._nq]
         qvel = state[self._nq :]
         pipeline_state = self._env.pipeline_init(qpos, qvel)
         brax_state = State(pipeline_state, state, 0.0, False, {})
         next_brax_state = self._env.step(brax_state, action)
-        return next_brax_state.obs
+        out = next_brax_state.obs
+        # Replace NaN with previous state to prevent propagation (Brax can explode on invalid poses)
+        return jnp.where(jnp.any(jnp.isnan(out)), state, out)
 
     def jax_model_transition(self, state: Any, action: Any) -> Any:
         """Same as jax_transition (no projection)."""
@@ -113,14 +98,16 @@ class BraxFlatEnv:
 
 
 def make_brax_go2(**kwargs) -> BraxFlatEnv:
-    """Quadruped Go2 with Brax positional physics."""
-    env = _load_mbd_env("go2run")
+    """Quadruped Go2 with Brax positional physics (self-contained, no third_party)."""
+    from genedynamics.envs.quadruped_brax import QuadrupedGo2BraxEnv
+    env = QuadrupedGo2BraxEnv()
     brax_kw = {k: v for k, v in kwargs.items() if k in ("target", "horizon")}
     return BraxFlatEnv(env, **brax_kw)
 
 
 def make_brax_humanoid_run(**kwargs) -> BraxFlatEnv:
-    """Humanoid run with Brax positional physics."""
-    env = _load_mbd_env("humanoidrun")
+    """Humanoid run with Brax positional physics (self-contained, no third_party)."""
+    from genedynamics.envs.humanoid_brax import HumanoidRunBraxEnv
+    env = HumanoidRunBraxEnv()
     brax_kw = {k: v for k, v in kwargs.items() if k in ("target", "horizon")}
     return BraxFlatEnv(env, **brax_kw)
