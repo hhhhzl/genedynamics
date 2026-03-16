@@ -799,9 +799,11 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         best_idx = int(result.get('best_idx', 0))
         best_plan_states = None
         best_plan_actions = None
-        if candidate_states and 0 <= best_idx < len(candidate_states):
+        if (candidate_states is not None and len(candidate_states) > 0
+                and 0 <= best_idx < len(candidate_states)):
             best_plan_states = candidate_states[best_idx]
-            if candidate_actions and best_idx < len(candidate_actions):
+            if (candidate_actions is not None and len(candidate_actions) > 0
+                    and best_idx < len(candidate_actions)):
                 act = candidate_actions[best_idx]
                 act = np.asarray(act, dtype=np.float32)
                 best_plan_actions = act if act.ndim >= 2 else (act.reshape(1, -1) if act.size > 0 else None)

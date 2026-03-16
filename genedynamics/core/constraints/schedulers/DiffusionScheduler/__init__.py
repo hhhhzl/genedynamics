@@ -10,15 +10,18 @@ Diffusion schedulers are responsible for diffusion-related parameters:
 # Import to trigger registration
 from . import base  
 from . import fixed  
-from . import dualcontrol  
+from . import dualcontrol
+from . import twogo
 
 from .base import DiffusionScheduler
 from .fixed import FixedDiffusionScheduler
 from .dualcontrol import DualControlDiffusionScheduler
+from .twogo import TwoGODiffusionScheduler
 
 __all__ = [
     "DiffusionScheduler",
     "FixedDiffusionScheduler",
     "DualControlDiffusionScheduler",
+    "TwoGODiffusionScheduler",
 ]
 

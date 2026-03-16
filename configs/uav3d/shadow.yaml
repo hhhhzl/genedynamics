@@ -1,0 +1,28 @@
+name: uav3d_shadow
+output_dir: results/deploy/uav3d_shadow
+
+env_name: drone_full_3d_mjx
+env_params:
+  dt: 0.05
+  horizon: 64
+  target: [0.0, 0.0, 1.0]
+  control_limit: 1.0
+  physics_backend: mjx
+
+method: 2go
+method_params:
+  Nsample: 256
+  Ndiffuse: 100
+  temp_sample: 0.3
+  max_constraints_per_point: 8
+  constraint_margin: 0.25
+
+execution_mode: shadow
+control_rate_hz: 20.0
+plan_rate_hz: 10.0
+real_time_factor: 1.0
+sync_mode: true
+record: true
+horizon: 64
+tags:
+  mode: shadow

@@ -1,0 +1,62 @@
+# Quadruped flat MBD pure plan (Ant)
+# Run: MUJOCO_GL=osmesa python -m genedynamics.experiments.runner configs/quadruped/flat/mbd_plan.yaml
+#
+# Long-run ant point-target plan (closer to trot-like travel distance).
+# Trajectory length ~= horizon * dt (here: 90 * 0.05 = 4.5s).
+
+name: quadruped_flat_mbd_plan
+output_dir: results/quadruped/flat/mbd_plan
+
+env_name: quadruped_flat_mjx
+env_params:
+  dt: 0.05
+  horizon: 90
+  target: [4.5, 0.0, 0.5]
+  control_limit: 0.6
+  physics_backend: mjx
+
+method: mbd
+method_params:
+  action_extra_sigma: 0.08
+  terminal_energy_weight: 2500.0
+  show_tqdm: true
+
+obstacle_levels: [0, 1, 2]
+obstacle_config:
+  generator: box3d
+  robot_radius: 0.15
+  success_margin: 0.8
+  obstacle_radius_scale: 1.2
+  p_max: 8.0
+  obstacle_type: sphere
+  map_bounds:
+    x_min: -2.0
+    x_max: 8.0
+    y_min: -3.0
+    y_max: 3.0
+    z_min: 0.0
+    z_max: 1.2
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 224
+      T_k: 0.06
+      Ndiffuse: 45
+      beta0: 1e-5
+      betaT: 1e-2
+  diffusion_merge_strategy: merge
+
+metadata:
+  # Enforce longer start-target separation for visible locomotion distance.
+  start_min_dist: 2.4
+  start_max_dist: 3.8
+  start_dist_level_scale: 0.3
+
+seeds: [0]
+backend: jax
+device: cuda
+
+metrics: [ssr, obstacle_density]
+visualizations: [trajectory_3d, motion_replay]

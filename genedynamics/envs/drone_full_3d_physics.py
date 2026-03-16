@@ -79,6 +79,8 @@ class DroneFull3DPhysicsEnv:
     horizon: int = 80
     p_max: float = 2.0
     v_max: float = 2.0
+    euler_max: float = 0.5
+    ang_vel_max: float = 1.5
     act_dim: int = 4  # 4 motor thrusts
     target: Tuple[float, float, float] = (0.0, 0.0, 1.0)
     vel_weight: float = 0.1
@@ -91,13 +93,14 @@ class DroneFull3DPhysicsEnv:
     Iyy: float = 0.0023
     Izz: float = 0.0046
     arm_length: float = 0.17
-    kf: float = 3.16e-10
+    kf: float = 3.16e-10  # Legacy; overridden in __post_init__ for normalized [0,1] thrust
     km: float = 7.94e-12
     gravity: float = 9.81
     
     # Backend configuration
     physics_backend: Optional[str] = None  # 'drone_model', 'mujoco', 'isaac', None
     use_physics_backend: bool = True
+    use_jax_for_transition: bool = False  # If True, use jax_transition for step (matches MBD planning)
     use_jax_dynamics: bool = True  # Use JAX dynamics for planning
     jax_jit: bool = True  # Enable JIT compilation for JAX functions
     jax_batch_size: int = 256  # Batch size for parallel JAX computation (for future use)
@@ -114,6 +117,11 @@ class DroneFull3DPhysicsEnv:
         # Compute inertia tensor
         self.I = np.array([self.Ixx, self.Iyy, self.Izz], dtype=np.float32)
         self.I_inv = 1.0 / self.I
+        
+        # For normalized thrust [0,1]: kf = m*g gives hover when sum(motor_thrusts)=1
+        # (e.g. 0.25 per motor). Legacy kf=3.16e-10 yields negligible thrust.
+        if self.kf < 1e-6:
+            self.kf = float(self.mass * self.gravity)
         
         # Initialize physics backend if specified
         self._physics_backend_instance = None
@@ -160,11 +168,11 @@ class DroneFull3DPhysicsEnv:
             
             # Warm up state projection
             if jax_project_state is not None:
-                _ = jax_project_state(dummy_state, self.p_max, self.v_max)
+                _ = jax_project_state(dummy_state, self.p_max, self.v_max, self.euler_max, self.ang_vel_max)
             
             # Warm up batched state projection
             if jax_project_state_batch is not None:
-                _ = jax_project_state_batch(dummy_states, self.p_max, self.v_max)
+                _ = jax_project_state_batch(dummy_states, self.p_max, self.v_max, self.euler_max, self.ang_vel_max)
     
     def reset(self, rng: Optional["jax.Array"] = None) -> Tuple[Array, dict]:
         """
@@ -177,8 +185,12 @@ class DroneFull3DPhysicsEnv:
             Tuple of (initial_state, info_dict)
         """
         if rng is None:
-            # Position
-            p0 = np.random.uniform(-self.p_max, self.p_max, size=3)
+            # Position: xy in [-p_max, p_max], z in [0.2, 1.2] (above ground)
+            p0 = np.array([
+                np.random.uniform(-self.p_max, self.p_max),
+                np.random.uniform(-self.p_max, self.p_max),
+                np.random.uniform(0.2, 1.2),
+            ], dtype=np.float32)
             # Velocity
             v0 = np.random.uniform(-self.v_max, self.v_max, size=3)
             # Orientation (small random angles)
@@ -189,10 +201,17 @@ class DroneFull3DPhysicsEnv:
             if not JAX_AVAILABLE:
                 raise RuntimeError("JAX is required to call reset with rng.")
             rng_p, rng_v, rng_e, rng_w = jax.random.split(rng, 4)
-            p0 = np.array(
-                jax.random.uniform(rng_p, (3,), minval=-self.p_max, maxval=self.p_max),
+            rng_xy, rng_z = jax.random.split(rng_p, 2)
+            xy = np.array(
+                jax.random.uniform(rng_xy, (2,), minval=-self.p_max, maxval=self.p_max),
                 dtype=np.float32,
             )
+            # z in [0.2, 1.2] so drone starts above ground
+            z0 = np.array(
+                jax.random.uniform(rng_z, (), minval=0.2, maxval=1.2),
+                dtype=np.float32,
+            )
+            p0 = np.concatenate([xy, z0[None]])
             v0 = np.array(
                 jax.random.uniform(rng_v, (3,), minval=-self.v_max, maxval=self.v_max),
                 dtype=np.float32,
@@ -221,15 +240,17 @@ class DroneFull3DPhysicsEnv:
             Projected state
         """
         x_proj = np.asarray(x_next, dtype=np.float32).copy()
-        # Position bounds
-        x_proj[0:3] = np.clip(x_proj[0:3], -self.p_max, self.p_max)
+        # Position bounds: xy in [-p_max, p_max], z in [0, p_max] (above ground)
+        x_proj[0] = np.clip(x_proj[0], -self.p_max, self.p_max)
+        x_proj[1] = np.clip(x_proj[1], -self.p_max, self.p_max)
+        x_proj[2] = np.clip(x_proj[2], 0.0, self.p_max)
         # Velocity bounds
         x_proj[3:6] = np.clip(x_proj[3:6], -self.v_max, self.v_max)
-        # Orientation bounds (Euler angles)
-        x_proj[6:9] = np.clip(x_proj[6:9], -np.pi, np.pi)
-        x_proj[8] = np.clip(x_proj[8], -np.pi/2, np.pi/2)  # Pitch
+        # Orientation bounds (Euler angles) - tight for smooth flight
+        x_proj[6:9] = np.clip(x_proj[6:9], -self.euler_max, self.euler_max)
+        x_proj[8] = np.clip(x_proj[8], -self.euler_max, self.euler_max)  # Pitch
         # Angular velocity bounds
-        x_proj[9:12] = np.clip(x_proj[9:12], -5.0, 5.0)
+        x_proj[9:12] = np.clip(x_proj[9:12], -self.ang_vel_max, self.ang_vel_max)
         return x_proj
     
     def cost(self, state: Array) -> float:
@@ -323,8 +344,13 @@ class DroneFull3DPhysicsEnv:
         state = np.asarray(state, dtype=np.float32)
         action = np.asarray(action, dtype=np.float32)
         
-        # Clip motor thrusts to [0, 1]
-        motor_thrusts = np.clip(action, 0.0, self.control_limit)
+        # Use JAX dynamics when requested (matches MBD/experiment planning for deploy SSR=1)
+        if getattr(self, "use_jax_for_transition", False) and JAX_AVAILABLE and jax_quadrotor_step is not None:
+            next_s = self.jax_transition(state, action)
+            return np.asarray(next_s, dtype=np.float32)
+        
+        # MBD/solvers output [-limit, limit]. Map to [0, limit] for thrust control.
+        motor_thrusts = (np.clip(action, -self.control_limit, self.control_limit) + self.control_limit) / 2.0
         
         # Use physics backend if available
         if self._physics_backend_instance is not None:
@@ -371,7 +397,7 @@ class DroneFull3DPhysicsEnv:
         """
         state = np.asarray(state, dtype=np.float32)
         action = np.asarray(action, dtype=np.float32)
-        motor_thrusts = np.clip(action, 0.0, self.control_limit)
+        motor_thrusts = (np.clip(action, -self.control_limit, self.control_limit) + self.control_limit) / 2.0
         
         if self._physics_backend_instance is not None:
             return self._physics_backend_instance.step(state, motor_thrusts, dt=self.dt)
@@ -415,8 +441,9 @@ class DroneFull3DPhysicsEnv:
         state = jnp.asarray(state, dtype=jnp.float32)
         action = jnp.asarray(action, dtype=jnp.float32)
         
-        # Clip motor thrusts
-        motor_thrusts = jnp.clip(action, 0.0, self.control_limit)
+        # MBD/solvers output actions in [-limit, limit]. For thrust control, map to [0, limit].
+        # Without this, negative actions clip to 0 -> insufficient thrust -> drone falls.
+        motor_thrusts = (jnp.clip(action, -self.control_limit, self.control_limit) + self.control_limit) / 2.0
         
         # Compute next state using JAX dynamics
         if state.ndim > 1:
@@ -449,16 +476,16 @@ class DroneFull3DPhysicsEnv:
         # Project state to bounds
         if state.ndim > 1:
             if jax_project_state_batch is not None:
-                next_state = jax_project_state_batch(next_state, self.p_max, self.v_max)
+                next_state = jax_project_state_batch(next_state, self.p_max, self.v_max, self.euler_max, self.ang_vel_max)
             else:
                 # Fallback: process batch sequentially
                 projected = []
                 for ns in next_state:
-                    pns = jax_project_state(ns, self.p_max, self.v_max)
+                    pns = jax_project_state(ns, self.p_max, self.v_max, self.euler_max, self.ang_vel_max)
                     projected.append(pns)
                 next_state = jnp.stack(projected)
         else:
-            next_state = jax_project_state(next_state, self.p_max, self.v_max)
+            next_state = jax_project_state(next_state, self.p_max, self.v_max, self.euler_max, self.ang_vel_max)
         
         return next_state
     
@@ -493,7 +520,7 @@ class DroneFull3DPhysicsEnv:
         # Use pure JAX dynamics without projection
         state = jnp.asarray(state, dtype=jnp.float32)
         action = jnp.asarray(action, dtype=jnp.float32)
-        motor_thrusts = jnp.clip(action, 0.0, self.control_limit)
+        motor_thrusts = (jnp.clip(action, -self.control_limit, self.control_limit) + self.control_limit) / 2.0
         
         if state.ndim > 1:
             if jax_quadrotor_step_batch is not None:

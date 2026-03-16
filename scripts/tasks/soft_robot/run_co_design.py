@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""
+Run co-design experiment from YAML config.
+
+Uses CoDesignExperimentPlatform. Any registered baseline can be used.
+Example: python scripts/tasks/soft_robot/run_co_design.py configs/co_design/mrmfmbd_crawling.yaml
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import yaml
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run co-design experiment")
+    parser.add_argument("config", type=str, help="Path to YAML config")
+    parser.add_argument("--seed", type=int, default=None, help="Override: run single seed")
+    parser.add_argument("--dry-run", action="store_true", help="Validate config only")
+    args = parser.parse_args()
+
+    root = Path(__file__).resolve().parents[3]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+
+    config_path = Path(args.config)
+    if not config_path.is_absolute():
+        config_path = (root / config_path).resolve()
+    if not config_path.exists():
+        print(f"Error: Config not found: {config_path}")
+        return 1
+
+    with open(config_path) as f:
+        data = yaml.safe_load(f) or {}
+
+    from genedynamics.experiments.co_design import (
+        CoDesignExperimentPlatform,
+        CoDesignExperimentConfig,
+        list_baselines,
+    )
+
+    if args.seed is not None:
+        data["seeds"] = [args.seed]
+
+    evaluator_runtime = data.get("evaluator_runtime", {})
+    if data.get("softzoo_ti_arch"):
+        evaluator_runtime = dict(evaluator_runtime, ti_arch=data["softzoo_ti_arch"])
+    if data.get("ti_device_memory_fraction") is not None:
+        evaluator_runtime = dict(evaluator_runtime, ti_device_memory_fraction=float(data["ti_device_memory_fraction"]))
+    config = CoDesignExperimentConfig(
+        baseline_name=data.get("baseline_name", "mrmfmbd"),
+        task_id=data.get("task_id", "crawling_ground"),
+        seeds=data.get("seeds", [0]),
+        output_dir=data.get("output_dir", "results/co_design"),
+        checkpoint_dir=data.get("checkpoint_dir"),
+        baseline_params=data.get("baseline_params", {}),
+        evaluator_runtime=evaluator_runtime,
+        save_gif=data.get("save_gif", False),
+    )
+
+    if config.baseline_name not in list_baselines():
+        print(f"Error: Baseline '{config.baseline_name}' not found.")
+        print(f"Available: {list_baselines()}")
+        return 1
+
+    if args.dry_run:
+        print("Config valid (dry run)")
+        print(f"  baseline: {config.baseline_name}")
+        print(f"  task_id: {config.task_id}")
+        print(f"  seeds: {config.seeds}")
+        print(f"  output_dir: {config.output_dir}")
+        return 0
+
+    platform = CoDesignExperimentPlatform(config, project_root=root)
+    print(f"Running {config.baseline_name} on {config.task_id}")
+    print(f"Seeds: {config.seeds}")
+    results = platform.run_all()
+    print(f"Completed {len(results)} runs. Results: {platform._output_dir / 'results.json'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

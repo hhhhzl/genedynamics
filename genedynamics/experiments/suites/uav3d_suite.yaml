@@ -1,0 +1,45 @@
+# UAV 3D experiment suite - Phase 0/1
+# Run with: python -m genedynamics.experiments.runner configs/uav3d/suite.yaml
+
+name: uav3d_suite
+output_dir: results/uav3d/suite
+
+env_name: drone_full_3d_physics
+env_params:
+  dt: 0.05
+  horizon: 64
+  target: [0.0, 0.0, 1.0]
+  control_limit: 1.0
+  physics_backend: mjx
+
+method: 2go
+method_params:
+  Nsample: 256
+  Ndiffuse: 100
+  temp_sample: 0.3
+  max_constraints_per_point: 8
+  constraint_margin: 0.25
+
+obstacle_levels: [0, 3, 5]
+obstacle_config:
+  generator: box3d
+  robot_radius: 0.1
+  map_bounds:
+    x_min: -1.5
+    x_max: 1.5
+    y_min: -1.5
+    y_max: 1.5
+    z_min: 0.0
+    z_max: 2.0
+
+seeds: [0, 1]
+backend: jax
+device: cpu
+
+metrics:
+  - ssr
+  - obstacle_density
+
+visualizations:
+  - trajectory
+  - cost

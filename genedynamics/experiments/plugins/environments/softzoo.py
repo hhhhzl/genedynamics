@@ -43,6 +43,9 @@ class SoftZooEnvironmentPlugin(EnvironmentPlugin):
 
     def create_env(self, config: Dict[str, Any]) -> Any:
         if not SOFTZOO_AVAILABLE:
+            if config.get("use_stub_when_unavailable", False):
+                config_stub = {**config, "act_dim": config.get("act_dim", 16), "state_dim": config.get("state_dim", 128)}
+                return _SoftZooEnvStub(config_stub)
             raise ImportError(
                 "SoftZoo is not installed. Install with: "
                 "pip install git+https://github.com/mitibmwatsonailab/softzoo.git"
@@ -54,7 +57,8 @@ class SoftZooEnvironmentPlugin(EnvironmentPlugin):
             env = get_env(robot_type=robot_type, terrain=terrain, **config)
         except (ImportError, AttributeError) as e:
             # SoftZoo API may vary; provide stub for development
-            env = _SoftZooEnvStub(config)
+            config_stub = {**config, "act_dim": 16, "state_dim": 128}
+            env = _SoftZooEnvStub(config_stub)
             env._softzoo_import_error = str(e)
         if not hasattr(env, "_softzoo_position_mode"):
             env._softzoo_position_mode = config.get("position_mode", "centroid")
@@ -93,16 +97,45 @@ class SoftZooEnvironmentPlugin(EnvironmentPlugin):
 class _SoftZooEnvStub:
     """
     Minimal stub when SoftZoo API is unavailable.
-    Allows plugin to load; create_env will raise if actually used.
+    Provides jax_transition for MRMFMBD development/testing.
     """
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.dt = config.get("dt", 0.01)
         self.horizon = config.get("horizon", 500)
+        self.target = np.zeros(2, dtype=np.float32)
+        self.act_dim = config.get("act_dim", 16)
+        self.state_dim = config.get("state_dim", 128)
+        self._rng = np.random.default_rng(config.get("seed", 0))
 
-    def reset(self):
-        raise NotImplementedError("SoftZoo not properly installed")
+    def reset(self, rng=None):
+        if rng is not None and hasattr(rng, "split"):
+            import jax
+            return jax.random.normal(rng, (self.state_dim,)) * 0.1, {}
+        return self._rng.standard_normal(self.state_dim).astype(np.float32) * 0.1, {}
 
     def step(self, action):
         raise NotImplementedError("SoftZoo not properly installed")
+
+    def jax_transition(self, state, action):
+        """Minimal JAX transition for MRMFMBD: state + dt * action (broadcast)."""
+        try:
+            import jax.numpy as jnp
+            s = jnp.asarray(state, dtype=jnp.float32).reshape(-1)
+            a = jnp.asarray(action, dtype=jnp.float32).reshape(-1)
+            n = min(s.size, a.size)
+            out = s.at[:n].add(self.dt * a[:n])
+            return out
+        except ImportError:
+            import numpy as np
+            s = np.asarray(state, dtype=np.float32).reshape(-1)
+            a = np.asarray(action, dtype=np.float32).reshape(-1)
+            n = min(s.size, a.size)
+            s = s.copy()
+            s[:n] += self.dt * a[:n]
+            return s
+
+    def jax_transition_fidelity(self, state, action, fidelity_level: int):
+        """Same as jax_transition when fidelity not supported."""
+        return self.jax_transition(state, action)

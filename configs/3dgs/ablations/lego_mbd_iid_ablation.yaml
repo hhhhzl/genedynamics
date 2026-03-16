@@ -1,0 +1,61 @@
+name: 3dgs_lego_mbd_iid_ablation
+output_dir: results/3dgs/ablations/lego_mbd_iid
+
+env_name: 3dgs_nerf_synthetic
+env_params:
+  dataset_root: data/nerf_synthetic/lego
+  object: lego
+  use_stub_when_unavailable: false
+  split: train
+  eval_split: test
+  max_views: 100
+  view_stride: 1
+  shuffle_seed: 0
+  resolution_infer: 128
+  resolution_eval: 512
+  eval_resolution: 512
+  composite_background: white
+  pose_convention: opencv
+
+method: mbd3d
+method_params:
+  horizon: 10
+  n_gaussians: 512
+  bridge_K: 1200
+  bridge_beta0: 0.0
+  bridge_betaK: 1.0
+  bridge_eta: 0.015
+  bridge_eta_end: 0.005
+  M: 16
+  sigma_mcsa: 0.05
+  ess_min: 1.0
+  observation_sigma2: 0.005
+  image_height: 128
+  image_width: 128
+  image_channels: 3
+  use_lowrank_noise: false
+  lowrank_view_rank: 4
+  lowrank_spatial_rank: 2
+  lowrank_color_rank: 3
+  lowrank_max_rank: 16
+  use_real_splat: true
+  prefer_jax_renderer: true
+  fix_cameras: true
+  enable_subspace: true
+  subspace_rank: 64
+  subspace_power_iters: 2
+  subspace_refresh_every: 1
+  show_tqdm: true
+
+obstacle_levels: [0]
+obstacle_config:
+  generator: box2d
+  robot_radius: 0.05
+
+seeds: [0]
+backend: jax
+device: cuda
+
+metadata:
+  description: "Ablation: iid likelihood."
+  author: "genedynamics"

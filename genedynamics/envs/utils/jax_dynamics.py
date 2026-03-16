@@ -236,36 +236,20 @@ if JAX_AVAILABLE:
     def jax_project_state(
         state: jnp.ndarray,
         p_max: float,
-        v_max: float
+        v_max: float,
+        euler_max: float = 0.5,
+        ang_vel_max: float = 2.0,
     ) -> jnp.ndarray:
         """
         Project state to valid bounds using JAX operations.
-        
-        High-performance JAX implementation with support for batched inputs.
-        
-        Args:
-            state: State vector [x, y, z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz], shape (..., 12)
-            p_max: Maximum position magnitude
-            v_max: Maximum velocity magnitude
-            
-        Returns:
-            Projected state, shape (..., 12)
+        euler_max: Max |roll|,|pitch|,|yaw| in rad (default 0.5 ~29° for smooth flight)
+        ang_vel_max: Max |wx|,|wy|,|wz| in rad/s (default 2.0)
         """
-        # Position bounds
         state = state.at[..., 0:3].set(jnp.clip(state[..., 0:3], -p_max, p_max))
-        
-        # Velocity bounds
         state = state.at[..., 3:6].set(jnp.clip(state[..., 3:6], -v_max, v_max))
-        
-        # Orientation bounds (Euler angles)
-        state = state.at[..., 6:9].set(jnp.clip(state[..., 6:9], -jnp.pi, jnp.pi))
-        
-        # Pitch bounds (special case: -pi/2 to pi/2)
-        state = state.at[..., 8].set(jnp.clip(state[..., 8], -jnp.pi/2, jnp.pi/2))
-        
-        # Angular velocity bounds
-        state = state.at[..., 9:12].set(jnp.clip(state[..., 9:12], -5.0, 5.0))
-        
+        state = state.at[..., 6:9].set(jnp.clip(state[..., 6:9], -euler_max, euler_max))
+        state = state.at[..., 8].set(jnp.clip(state[..., 8], -euler_max, euler_max))  # pitch
+        state = state.at[..., 9:12].set(jnp.clip(state[..., 9:12], -ang_vel_max, ang_vel_max))
         return state
 
 
@@ -284,7 +268,7 @@ if JAX_AVAILABLE:
     # Create batched version of state projection (already JIT-compiled via decorator)
     jax_project_state_batch = jax.vmap(
         jax_project_state,
-        in_axes=(0, None, None),
+        in_axes=(0, None, None, None, None),
         out_axes=0
     )
     # JIT-compile the batched version

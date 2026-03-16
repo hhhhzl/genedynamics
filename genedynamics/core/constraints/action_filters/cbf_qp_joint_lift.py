@@ -59,23 +59,50 @@ def _get_jacobian_xy_batch(env: Any, states: np.ndarray) -> np.ndarray:
 
 def _get_jacobian_xy_single(env: Any, state: np.ndarray) -> np.ndarray:
     """(state_dim,) -> (2, 7). Returns zeros when env has no J_xy. Fallback: pseudo-identity so 2D grad lifts to [gx,gy,0..]."""
+    return _get_jacobian_pos_action_single(env, state, pos_dim=2, act_dim=7)
+
+
+def _get_jacobian_pos_action_single(
+    env: Any,
+    state: np.ndarray,
+    pos_dim: int = 2,
+    act_dim: int = 7,
+) -> np.ndarray:
+    """
+    (state_dim,) -> (pos_dim, act_dim). Generalized Jacobian for position->action lift.
+
+    Prefers env.get_jacobian_pos_action(state) -> (pos_dim, act_dim).
+    Fallback: env.get_jacobian_xy(state) -> (2, 7) when pos_dim=2.
+    Fallback: pseudo-identity so grad lifts to [gx, gy, (gz), 0..].
+    """
     state = np.asarray(state, dtype=np.float32).reshape(-1)
-    get_j = getattr(env, "get_jacobian_xy", None)
-    act_dim = 7
-    fallback_j = np.zeros((2, act_dim), dtype=np.float32)
-    fallback_j[0, 0] = 1.0
-    fallback_j[1, 1] = 1.0
-    if get_j is None or state.size < 9:
-        return fallback_j
-    jxy = get_j(state)
-    if jxy is None:
-        return fallback_j
-    jxy = np.asarray(jxy, dtype=np.float32)
-    if jxy.shape != (2, act_dim):
-        return fallback_j
-    if np.max(np.abs(jxy)) < 1e-9:
-        return fallback_j
-    return jxy
+    fallback_j = np.zeros((pos_dim, act_dim), dtype=np.float32)
+    for d in range(min(pos_dim, act_dim)):
+        fallback_j[d, d] = 1.0
+    get_jpa = getattr(env, "get_jacobian_pos_action", None)
+    if get_jpa is not None:
+        j = get_jpa(state)
+        if j is not None:
+            j = np.asarray(j, dtype=np.float32)
+            if j.ndim == 2 and j.shape[0] >= pos_dim and j.shape[1] >= act_dim:
+                return j[:pos_dim, :act_dim].copy()
+            if j.ndim == 2 and j.shape[0] > 0 and j.shape[1] > 0:
+                out = fallback_j.copy()
+                r, c = min(pos_dim, j.shape[0]), min(act_dim, j.shape[1])
+                out[:r, :c] = j[:r, :c]
+                return out
+    get_jxy = getattr(env, "get_jacobian_xy", None)
+    if get_jxy is not None and pos_dim == 2 and state.size >= 9:
+        jxy = get_jxy(state)
+        if jxy is not None:
+            jxy = np.asarray(jxy, dtype=np.float32)
+            if jxy.ndim == 2 and jxy.shape[0] == 2:
+                out = fallback_j.copy()
+                ncol = min(act_dim, jxy.shape[1])
+                out[:2, :ncol] = jxy[:, :ncol]
+                if np.max(np.abs(out)) >= 1e-9:
+                    return out
+    return fallback_j
 
 
 class QPBasedCBFFilterJointLift(ConstraintFilter):

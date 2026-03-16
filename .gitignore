@@ -9,8 +9,11 @@ log
 **/__pycache__/
 /results
 
+/data
+
 /cache
 /save
+/reports
 
 .vscode/
 build

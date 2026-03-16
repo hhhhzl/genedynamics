@@ -1,0 +1,50 @@
+# Base configuration for 3DGS NeRF Synthetic experiments (Experiment 1: Small object 3D reconstruction)
+# Inherited by lego_*, chair_* configs. Override dataset.object and method-specific params.
+
+name: 3dgs_nerf_synth_base
+output_dir: results/3dgs/nerf_synth
+
+env_name: 3dgs_nerf_synthetic
+env_params:
+  dataset_root: null  # Override: path to NeRF Synthetic (e.g. data/nerf_synthetic/lego)
+  object: lego       # Override: lego | chair | drums | ficus | hotdog | materials | ship
+  split: train
+  max_views: 100
+  view_stride: 1
+  shuffle_seed: 0
+  resolution_infer: 128
+  resolution_eval: 512
+  composite_background: white
+  pose_convention: opencv
+
+method: mbd3d
+method_params:
+  horizon: 10
+  n_gaussians: 32
+  bridge_K: 50
+  bridge_beta0: 0.0
+  bridge_betaK: 1.0
+  M: 16
+  sigma_mcsa: 0.05
+  ess_min: 1.0
+  observation_sigma2: 0.01
+  image_height: 128
+  image_width: 128
+  image_channels: 3
+  show_tqdm: true
+
+obstacle_levels: [0]
+obstacle_config:
+  generator: box2d
+  robot_radius: 0.05
+
+seeds: [0]
+backend: jax
+device: cuda
+
+metrics: []
+visualizations: []
+
+metadata:
+  description: "3DGS alignment experiment - NeRF Synthetic small object reconstruction"
+  author: "genedynamics"

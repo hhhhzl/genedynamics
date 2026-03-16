@@ -1,0 +1,86 @@
+name: 3dgs_lego_mbd_trainingfree
+output_dir: results/3dgs/main/lego_mbd_trainingfree
+
+env_name: 3dgs_nerf_synthetic
+env_params:
+  dataset_root: data/nerf_synthetic/lego
+  object: lego
+  use_stub_when_unavailable: false
+  split: train
+  eval_split: test
+  max_views: 20
+  view_stride: 1
+  shuffle_seed: 0
+  resolution_infer: 128
+  resolution_eval: 512
+  eval_resolution: 512
+  composite_background: white
+  pose_convention: opencv
+
+method: mbd3d
+method_params:
+  horizon: 19
+  n_gaussians: 4096
+  bridge_K: 1000
+  bridge_beta0: 0.0
+  bridge_betaK: 1.0
+  bridge_eta: 0.0002
+  bridge_eta_end: 0.00005
+  bridge_tau: 0.00008
+  bridge_tau_end: 0.00001
+  M: 20
+  sigma_mcsa: 0.0035
+  sigma_mcsa_start: 0.005
+  sigma_mcsa_end: 0.0018
+  ess_min: 1.5
+  observation_sigma2: 0.0025
+  image_height: 128
+  image_width: 128
+  image_channels: 3
+  use_lowrank_noise: true
+  lowrank_view_rank: 3
+  lowrank_spatial_rank: 1
+  lowrank_color_rank: 3
+  lowrank_max_rank: 16
+  use_real_splat: true
+  prefer_jax_renderer: true
+  prefer_external_jaxsplat: true
+  fix_cameras: true
+  initialization_mode: direct
+  init_jitter_scale: 0.0
+  enable_subspace: false
+  subspace_rank: 5
+  subspace_rank_start: 2
+  subspace_rank_end: 5
+  subspace_power_iters: 1
+  subspace_refresh_every: 2
+  subspace_refresh_every_start: 1
+  subspace_refresh_every_end: 5
+  subspace_oversample: 1
+  proposal_count_start: 8
+  proposal_count_end: 20
+  compile_stable_shapes: true
+  profiling: true
+  fidelity_ladder:
+    - end_frac: 1.0
+      downsample: 4
+  prior_scale_means: 2.0
+  prior_scale_scales: 0.5
+  prior_bbox: [-0.6, 0.6, -0.6, 0.6, -0.6, 0.6]
+  show_tqdm: true
+
+obstacle_levels: [0]
+obstacle_config:
+  generator: box2d
+  robot_radius: 0.05
+
+seeds: [0]
+backend: jax
+device: cuda
+
+metrics: []
+visualizations: []
+
+metadata:
+  description: "Optimal trainingfree: 20 views, jaxsplat, K=1000 M=20, prior_bbox, subspace off."
+  author: "genedynamics"

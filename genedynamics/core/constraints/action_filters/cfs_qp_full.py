@@ -18,23 +18,22 @@ except ImportError:
     jnp = None
 
 from genedynamics.core.constraints.action_filters.base import ConstraintFilter
-from genedynamics.core.constraints.action_filters.cbf_qp_joint_lift import _get_jacobian_xy_single
+from genedynamics.core.constraints.action_filters.cbf_qp_joint_lift import _get_jacobian_pos_action_single
 from genedynamics.core.types import Trajectory
 
 
 def _lift_grad_sel_to_action_numpy(env: Any, states: np.ndarray, grad_sel: np.ndarray, act_dim: int) -> np.ndarray:
-    """(H, state_dim), (H, k, 2) -> (H, k, act_dim). A[t,k] = J_xy(state_t)^T @ grad_sel[t,k]."""
+    """(H, state_dim), (H, k, pos_dim) -> (H, k, act_dim). A[t,k] = J_pos(state_t)^T @ grad_sel[t,k]."""
     states = np.asarray(states, dtype=np.float32)
     grad_sel = np.asarray(grad_sel, dtype=np.float32)
     H, k = grad_sel.shape[0], grad_sel.shape[1]
+    pos_dim = int(grad_sel.shape[2]) if grad_sel.ndim >= 3 else 2
     out = np.zeros((H, k, act_dim), dtype=np.float32)
-    if act_dim <= 2:
-        out[..., :2] = grad_sel
+    if act_dim <= pos_dim:
+        out[..., :act_dim] = grad_sel[..., :act_dim]
         return out
     for t in range(H):
-        J = _get_jacobian_xy_single(env, states[t])
-        if J.shape[1] != act_dim:
-            J = np.pad(J, ((0, 0), (0, max(0, act_dim - J.shape[1]))))
+        J = _get_jacobian_pos_action_single(env, states[t], pos_dim=pos_dim, act_dim=act_dim)
         J = J[:, :act_dim]
         for ki in range(k):
             out[t, ki] = J.T @ grad_sel[t, ki]
@@ -42,17 +41,16 @@ def _lift_grad_sel_to_action_numpy(env: Any, states: np.ndarray, grad_sel: np.nd
 
 
 def _lift_grad_array_to_action_numpy(env: Any, state: np.ndarray, grad_array: np.ndarray, act_dim: int) -> np.ndarray:
-    """(state_dim,), (k, 2) -> (k, act_dim). A[i] = J_xy(state)^T @ grad_array[i]."""
+    """(state_dim,), (k, pos_dim) -> (k, act_dim). A[i] = J_pos(state)^T @ grad_array[i]."""
     state = np.asarray(state, dtype=np.float32).reshape(-1)
     grad_array = np.asarray(grad_array, dtype=np.float32)
     k = grad_array.shape[0]
+    pos_dim = int(grad_array.shape[1]) if grad_array.ndim >= 2 else 2
     out = np.zeros((k, act_dim), dtype=np.float32)
-    if act_dim <= 2:
-        out[:, :2] = grad_array
+    if act_dim <= pos_dim:
+        out[:, :act_dim] = grad_array[:, :act_dim]
         return out
-    J = _get_jacobian_xy_single(env, state)
-    if J.shape[1] != act_dim:
-        J = np.pad(J, ((0, 0), (0, max(0, act_dim - J.shape[1]))))
+    J = _get_jacobian_pos_action_single(env, state, pos_dim=pos_dim, act_dim=act_dim)
     J = J[:, :act_dim]
     for i in range(k):
         out[i] = J.T @ grad_array[i]
@@ -76,12 +74,14 @@ class CFSQPFullFilter(ConstraintFilter):
         use_slack: bool = True,
         convexifier_name: str = "cfs_action",
         position_extractor=None,
+        position_dim: Optional[int] = None,
     ):
         self.max_constraints_per_point = max_constraints_per_point
         self.constraint_margin = constraint_margin
         self.use_slack = use_slack
         self.convexifier_name = str(convexifier_name)
         self.position_extractor = position_extractor
+        self.position_dim = position_dim
         self._cfs_action_convexifier = None  # Lazy init
         self._obstacles_list = None  # Cached obstacle list for JAX multi-constraint
         self._num_obstacles = None  # Cached number of obstacles
@@ -117,6 +117,8 @@ class CFSQPFullFilter(ConstraintFilter):
             )
             if self.position_extractor is not None:
                 kwargs["position_extractor"] = self.position_extractor
+            if self.position_dim is not None:
+                kwargs["position_dim"] = self.position_dim
             self._cfs_action_convexifier = impl_class(**kwargs)
         return self._cfs_action_convexifier
     

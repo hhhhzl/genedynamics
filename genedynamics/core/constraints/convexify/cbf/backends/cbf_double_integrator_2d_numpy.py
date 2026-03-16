@@ -37,5 +37,3 @@ class CBFNumpyConvexifier(CBFConvexifier):
         uses NumPy, so we just call the parent.
         """
         return super().build_constraints(ref, params, state)
-
-
