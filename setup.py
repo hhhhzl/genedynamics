@@ -17,11 +17,19 @@ with open(path.join(here, 'requirements.txt'), encoding='utf-8') as f:
 
 
 setup(
-    name='enerdynamics',
+    name='genedynamics',
     version="0.0.1",
     description='',
     author='hector',
     author_email='hectorh@cmu.edu',
     packages=find_packages(),
     install_requires=requires_list,
+    entry_points={
+        "console_scripts": [
+            "genedynamics-deploy=genedynamics.deploy.cli:main",
+            "genedynamics-deploy-sim=genedynamics.deploy.sim_plan.sim_process:main",
+            "genedynamics-deploy-plan=genedynamics.deploy.sim_plan.plan_process:main",
+            "genedynamics-deploy-sim2sim=genedynamics.deploy.sim_plan.sim2sim_launcher:main",
+        ],
+    },
 )

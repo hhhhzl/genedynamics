@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        :root { --bg: #0f0f12; --fg: #e8e8e8; --accent: #3b82f6; --muted: #6b7280; --card: #1a1a1f; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--fg); margin: 0; padding: 2rem; line-height: 1.6; }
+        h1 { font-size: 1.75rem; font-weight: 600; margin-bottom: 0.5rem; }
+        h2 { font-size: 1.25rem; font-weight: 600; margin: 2rem 0 1rem; color: var(--accent); }
+        h3 { font-size: 1rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+        .meta { color: var(--muted); font-size: 0.875rem; margin-bottom: 2rem; }
+        section { margin-bottom: 2.5rem; }
+        .card { background: var(--card); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        th { color: var(--muted); font-weight: 500; }
+        .num { font-variant-numeric: tabular-nums; text-align: right; }
+        .empty { color: var(--muted); font-style: italic; }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; background: rgba(59,130,246,0.2); }
+    </style>
+</head>
+<body>
+    <h1>{{ title }}</h1>
+    <p class="meta">Generated {{ generated_at }} | Project: {{ project_root }}</p>
+
+    {% if experiment_sections or deploy_sections %}
+    <section>
+        <h2>Executive Summary</h2>
+        <div class="card">
+            <p><strong>Experiments:</strong> {{ experiment_sections | length }} section(s)
+            {% for s in experiment_sections %}
+                | {{ s.env_name }}/{{ s.method }}: {{ s.total_experiments }} runs
+            {% endfor %}
+            </p>
+            <p><strong>Deploy:</strong> {{ deploy_sections | length }} section(s)
+            {% for s in deploy_sections %}
+                | {{ s.robot }}_{{ s.mode }}: {{ s.total_episodes }} episodes, {{ s.total_steps }} steps
+            {% endfor %}
+            </p>
+        </div>
+    </section>
+    {% endif %}
+
+    {% for sec in experiment_sections %}
+    <section>
+        <h2>Experiment: {{ sec.env_name }} / {{ sec.method }}</h2>
+        <div class="card">
+            <p>Output: <code>{{ sec.output_dir }}</code> | Total: {{ sec.total_experiments }} experiments</p>
+            {% if sec.overall_summary %}
+            <table>
+                <tr><th>Metric</th><th class="num">Value</th></tr>
+                <tr><td>Avg planning time (s)</td><td class="num">{{ "%.3f" | format(sec.overall_summary.get('avg_planning_time', 0)) }}</td></tr>
+                {% if sec.overall_summary.get('best') %}
+                <tr><td>Best length</td><td class="num">{{ "%.4f" | format(sec.overall_summary['best'].get('length', 0)) }}</td></tr>
+                <tr><td>Best smoothness</td><td class="num">{{ "%.4f" | format(sec.overall_summary['best'].get('smoothness', 0)) }}</td></tr>
+                {% endif %}
+            </table>
+            {% endif %}
+        </div>
+        {% if sec.level_summaries %}
+        <h3>Per-level</h3>
+        <table>
+            <tr><th>Level</th><th class="num">N</th><th class="num">Avg time (s)</th><th class="num">Std</th></tr>
+            {% for ls in sec.level_summaries %}
+            <tr>
+                <td>{{ ls.level }}</td>
+                <td class="num">{{ ls.num_experiments }}</td>
+                <td class="num">{{ "%.3f" | format(ls.avg_planning_time) }}</td>
+                <td class="num">{{ "%.3f" | format(ls.std_planning_time) }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% endif %}
+    </section>
+    {% endfor %}
+
+    {% for sec in deploy_sections %}
+    <section>
+        <h2>Deploy: {{ sec.robot }}_{{ sec.mode }}</h2>
+        <div class="card">
+            <p>Output: <code>{{ sec.output_dir }}</code> | Episodes: {{ sec.total_episodes }} | Total steps: {{ sec.total_steps }}</p>
+        </div>
+        {% if sec.episodes %}
+        <table>
+            <tr><th>Episode</th><th class="num">Steps</th><th class="num">Plan time (ms)</th></tr>
+            {% for ep in sec.episodes[:20] %}
+            <tr>
+                <td><span class="badge">{{ ep.episode_id }}</span></td>
+                <td class="num">{{ ep.steps }}</td>
+                <td class="num">{% if ep.plan_times_ms %}{{ "%.1f" | format(ep.plan_times_ms[0] if ep.plan_times_ms else 0) }}{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% if sec.episodes | length > 20 %}
+        <p class="meta">... and {{ sec.episodes | length - 20 }} more episodes</p>
+        {% endif %}
+        {% endif %}
+    </section>
+    {% endfor %}
+
+    {% if not experiment_sections and not deploy_sections %}
+    <section>
+        <p class="empty">No experiment or deploy data found. Run experiments or deploy scripts first.</p>
+    </section>
+    {% endif %}
+</body>
+</html>

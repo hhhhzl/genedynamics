@@ -1,0 +1,41 @@
+# Quadruped flat MBD deploy quick (Ant, reduced samples)
+# Run: MUJOCO_GL=osmesa genedynamics-deploy --config configs/quadruped/flat/mbd_deploy_quick.yaml
+# Headless: export MUJOCO_GL=osmesa (required when no display)
+
+name: quadruped_flat_mbd_deploy
+output_dir: results/deploy/quadruped_go2_mbd_sim
+
+start_mode: near_target
+start_min_dist: 1.2
+start_max_dist: 1.8
+start_min_z: 0.45
+
+method: mbd
+env_name: quadruped_flat_mjx
+env_params:
+  dt: 0.05
+  horizon: 48
+  target: [2.0, 0.0, 0.5]
+  control_limit: 1.0
+  model: flat
+
+method_params:
+  terminal_energy_weight: 1500.0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 128
+      T_k: 0.1
+      Ndiffuse: 30
+      beta0: 1e-5
+      betaT: 1e-2
+  diffusion_merge_strategy: merge
+
+execution_mode: sim_only
+control_rate_hz: 20.0
+plan_rate_hz: 10.0
+record: true
+horizon: 48
+action_smooth_alpha: 0.55

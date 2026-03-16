@@ -1,0 +1,26 @@
+# SoftZoo dependencies (install after base requirements)
+# For Phase B+ MRMFMBD experiments with SoftZoo evaluator
+
+# Core (from main requirements)
+numpy>=1.26.0
+scipy>=1.13.0
+pyyaml>=6.0.1
+tqdm>=4.65.0
+jax
+trimesh
+
+# SoftZoo / physics
+yacs
+taichi
+torch
+open3d
+plyfile
+scikit-image
+scikit-video
+noise
+gym
+attrdict
+tensorboard
+
+# Optional: use gymnasium instead of gym for NumPy 2.0
+# gymnasium>=0.29.0

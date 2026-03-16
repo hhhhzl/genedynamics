@@ -1,0 +1,132 @@
+Ground-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'MultiInputPolicy'
+  policy_kwargs: "dict(
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Ice-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'MultiInputPolicy'
+  policy_kwargs: "dict(
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Mud-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'MultiInputPolicy'
+  policy_kwargs: "dict(
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Plasticine-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'MultiInputPolicy'
+  policy_kwargs: "dict(
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Sand-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'MultiInputPolicy'
+  policy_kwargs: "dict(
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Snow-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'MultiInputPolicy'
+  policy_kwargs: "dict(
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Elastic-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'MultiInputPolicy'
+  policy_kwargs: "dict(
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"

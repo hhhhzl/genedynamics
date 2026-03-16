@@ -1,11 +1,12 @@
 import pytest
 
 
+@pytest.mark.skip(reason="EDOC removed; use MBD or other planner for D3IL MPC tests")
 def test_d3il_avoiding_edoc_mpc_optional():
     """
     Optional smoke test: create d3il_avoiding env + run a couple MPC steps with EDOC.
 
-    Skips unless classic gym + mujoco are installed and D3IL is available.
+    EDOC has been removed. This test is skipped. Use MBD or other planner instead.
     """
     try:
         import gym  # noqa: F401
@@ -19,10 +20,10 @@ def test_d3il_avoiding_edoc_mpc_optional():
 
     import jax
 
-    from enerdynamics.envs.external.d3il import D3ILAvoidingEnv, D3ILAvoidingConfig
-    from enerdynamics.envs.external.d3il.avoiding_plan_env import AvoidingPlanEnv, AvoidingPlanSpec
-    from enerdynamics.solvers.single.edoc import EDOCPlanner
-    from enerdynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
+    from genedynamics.envs.external.d3il import D3ILAvoidingEnv, D3ILAvoidingConfig
+    from genedynamics.envs.external.d3il.avoiding_plan_env import AvoidingPlanEnv, AvoidingPlanSpec
+    from genedynamics.solvers.single.edoc import EDOCPlanner  # noqa: F401 - EDOC removed
+    from genedynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
     import jax.numpy as jnp
 
     exec_env = D3ILAvoidingEnv(D3ILAvoidingConfig(render=False))

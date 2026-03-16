@@ -3,18 +3,12 @@ Test script to verify CFS optimization improvements and compare numerical differ
 """
 import numpy as np
 import time
-from enerdynamics.solvers.single.edoc import EDOCPlanner
-from enerdynamics.envs.factories import make_env, make_energy
-from enerdynamics.core.constraints import (
-    ConstraintManager,
-    ObstacleSoftConstraint,
-    ObstacleHardConstraint,
-    CFSProjection,
-    ConstraintScheduleManager,
-)
-from enerdynamics.core.backends.runtime import RuntimeBackendManager
-from enerdynamics.experiments.common.constraints import SpeedConstraint
-from enerdynamics.experiments.common.obstacle_generation import generate_box2d_obstacles
+from genedynamics.envs.factories import make_env
+from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.core.types import Trajectory
+from genedynamics.core.constraints.core.types import ScheduleState
+from genedynamics.experiments.common.constraints import create_constraint_pipeline
+from genedynamics.experiments.common.obstacle_generation import generate_box2d_obstacles
 
 def analyze_trajectory(obstacles, states, actions, backend_name):
     """Analyze trajectory and return detailed statistics."""
@@ -208,8 +202,6 @@ def test_cfs_performance():
         env.horizon = 64
         env.control_limit = 1.0
         
-        energy = make_energy("single_integrator_box_2d")
-        
         # Generate obstacles
         start_pos = np.array([-0.2, -1.5], dtype=np.float32)
         target_pos = np.array([0.0, 0.0], dtype=np.float32)
@@ -247,111 +239,89 @@ def test_cfs_performance():
                 force_rebuild=True,
             )
         
-        # Create constraints
-        soft_constraint = ObstacleSoftConstraint(
+        # Build constraint pipeline (new architecture)
+        constraint_config = {
+            "cfs": {
+                "enabled": True,
+                "use_trajectory_qp": False,
+                "max_iterations": 5,
+                "constraint_margin": 0.25,
+            },
+            "schedule": {
+                "enabled": True,
+                "type": "soft_to_hard",
+                "hard_clearance_start": 0.5,
+                "hard_clearance_end": 0.1,
+                "rho_start": 0.1,
+                "rho_end": 10.0,
+            },
+        }
+        method_params = {
+            "cfs_qp_mode": "state_traj",
+            "cfs_use_trajectory_qp": False,
+        }
+        pipeline = create_constraint_pipeline(
             obstacles=obstacles,
-            alpha=1.0,
-            beta=10.0,
-        )
-        
-        hard_constraint = ObstacleHardConstraint(
-            obstacles=obstacles,
-            clearance=0.1,
-        )
-        
-        speed_constraint = SpeedConstraint(u_max=1.0)
-        
-        schedule_manager = ConstraintScheduleManager.create_soft_to_hard(
-            soft_alpha_start=1.0,
-            soft_alpha_end=0.0,
-            hard_clearance_start=0.5,
-            hard_clearance_end=0.1,
-            schedule_type="linear",
-            reverse_mode=True,
-        )
-        
-        feasibility_op = CFSProjection(
-            obstacles=obstacles,
-            schedule_manager=schedule_manager,
-            use_late_stage_only=True,
-            late_stage_ratio=0.2,
-            use_trajectory_qp=False,
-            smoothness_weight=0.0,
-            reconstruct_velocity=False,
-            velocity_dt=None,
-            max_iterations=5,
-            robot_radius=obstacle_config.get('robot_radius', 0.05),  # Pass robot_radius
-        )
-        
-        # Check if JAX projector was created
-        if backend_name == "jax":
-            jax_projector = feasibility_op.make_jax_projector()
-            print(f"  JAX projector created: {jax_projector is not None}")
-            if jax_projector is not None:
-                print(f"  Projector type: {type(jax_projector).__name__}")
-        
-        constraint_manager = ConstraintManager(
-            soft_constraints=[soft_constraint],
-            hard_constraints=[hard_constraint, speed_constraint],
-            feasibility_operator=feasibility_op,
-            schedule_manager=schedule_manager,
-        )
-        
-        # Create planner
-        planner = EDOCPlanner(
+            level=6,
             env=env,
-            energy=energy,
-            horizon=64,
-            dt=0.05,
-            action_diffuse_steps=100,
-            action_nsample=64,
-            action_score_mode="energy",
-            constraint_manager=constraint_manager,
-            terminal_energy_weight=50.0,
+            config=constraint_config,
+            backend_name=backend_name,
+            obstacle_config=obstacle_config,
+            method_params=method_params,
         )
-        
-        # Check backend
-        print(f"  Planner backend: {type(planner._backend_impl).__name__}")
-        if hasattr(planner._backend_impl, '_jax_cfs_projector'):
-            cfs_proj = planner._backend_impl._jax_cfs_projector
-            print(f"  CFS projector in backend: {cfs_proj is not None}")
-        
-        # Run planning with timing
-        rng = 42
-        print(f"\n  Running planning...")
+        if pipeline is None:
+            print("  ✗ Pipeline not created (no constraints).")
+            continue
+
+        # Build a nominal straight-line trajectory to project.
+        num_steps = int(env.horizon)
+        t = np.linspace(0.0, 1.0, num_steps + 1, dtype=np.float32)
+        start = np.asarray(start_pos, dtype=np.float32).reshape(1, -1)
+        goal = np.asarray(target_pos, dtype=np.float32).reshape(1, -1)
+        nominal_states = start + t[:, None] * (goal - start)
+        nominal_actions = np.diff(nominal_states, axis=0) / float(env.dt)
+        nominal_actions = np.clip(nominal_actions, -env.control_limit, env.control_limit)
+        nominal = Trajectory(
+            states=[np.asarray(s, dtype=np.float32) for s in nominal_states],
+            actions=[np.asarray(a, dtype=np.float32) for a in nominal_actions],
+            info={},
+        )
+
+        # Apply constraint pipeline
+        print(f"\n  Applying constraint pipeline...")
         start_time = time.time()
-        
         try:
-            result = planner.plan(rng)
+            repaired, pipe_info = pipeline.apply(
+                nominal=nominal,
+                ref=nominal,
+                state=ScheduleState(k=0, K=1),
+            )
             planning_time = time.time() - start_time
-            
-            print(f"  ✓ Planning completed in {planning_time:.2f} seconds")
-            
-            # Analyze trajectory
-            states = result.get("states", [])
-            actions = result.get("actions", [])
-            
+            print(f"  ✓ Pipeline applied in {planning_time:.2f} seconds")
+
+            states = repaired.states
+            actions = repaired.actions
             if len(states) > 0:
                 stats = analyze_trajectory(obstacles, states, actions, backend_name)
                 results[backend_name] = {
                     'stats': stats,
                     'planning_time': planning_time,
-                    'result': result,
+                    'pipeline_info': pipe_info,
                 }
-                
+
                 # Print summary
                 print(f"  Final distance to target: {stats['final_distance_to_target']:.4f}")
                 print(f"  Minimum SDF: {stats['min_sdf']:.4f}")
                 print(f"  Mean SDF: {stats['mean_sdf']:.4f}")
                 print(f"  Trajectory length: {stats['trajectory_length']:.4f}")
-                
+
                 if stats['num_violations'] > 0:
                     print(f"  ⚠ Warning: {stats['num_violations']} states violate clearance (SDF < 0.05)")
                     print(f"    Violation indices: {stats['violation_indices'][:10]}{'...' if len(stats['violation_indices']) > 10 else ''}")
                 else:
                     print(f"  ✓ Trajectory maintains safe clearance")
         except Exception as e:
-            print(f"  ✗ Planning failed: {e}")
+            print(f"  ✗ Pipeline failed: {e}")
             import traceback
             traceback.print_exc()
     

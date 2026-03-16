@@ -8,9 +8,9 @@ This example demonstrates:
 """
 
 import numpy as np
-from enerdynamics.envs.obstacles.convex import BoxObstacle, SphereObstacle, CylinderObstacle
-from enerdynamics.envs.obstacles.nonconvex import UnionObstacle, DifferenceObstacle, IntersectionObstacle
-from enerdynamics.envs.obstacles.base import ObstacleManager
+from genedynamics.envs.obstacles.convex import BoxObstacle, SphereObstacle, CylinderObstacle
+from genedynamics.envs.obstacles.nonconvex import UnionObstacle, DifferenceObstacle, IntersectionObstacle
+from genedynamics.envs.obstacles.base import ObstacleManager
 
 
 def main():

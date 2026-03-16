@@ -1,4 +1,4 @@
-# EnerDynamics Framework
+# GeneDynamics Framework
 
 A unified framework for energy-driven control across multiple environments, backends, and physics engines.
 
@@ -20,8 +20,8 @@ pip install -r requirements.txt
 ## Quick Start
 
 ```python
-from enerdynamics.envs.base_env import BaseEnvMixin
-from enerdynamics.envs.obstacles.convex import BoxObstacle
+from genedynamics.envs.base_env import BaseEnvMixin
+from genedynamics.envs.obstacles.convex import BoxObstacle
 
 # Create environment with obstacles
 obstacles = [

@@ -1,0 +1,63 @@
+# =============================================================================
+# 3DGS 实验配置模板 (Experiment 1: Small object 3D reconstruction)
+# 复制此文件并修改 name/output_dir/env_params/method_params 即可
+# =============================================================================
+
+name: 3dgs_<object>_<method>  # 如 3dgs_lego_mbd_iid
+output_dir: results/3dgs/<object>_<method>
+
+# -----------------------------------------------------------------------------
+# 环境
+# -----------------------------------------------------------------------------
+env_name: 3dgs_nerf_synthetic
+env_params:
+  dataset_root: data/nerf_synthetic/<object>  # 或绝对路径
+  object: lego  # lego | chair | drums | ficus | hotdog | materials | ship
+  use_stub_when_unavailable: true  # 无数据时用随机观测
+  split: train
+  max_views: 50  # 50-100 视角，需与 horizon+1 对齐
+  view_stride: 1
+  shuffle_seed: 0
+  resolution_infer: 128
+  resolution_eval: 512
+  composite_background: white
+  pose_convention: opencv
+
+# -----------------------------------------------------------------------------
+# 方法
+# -----------------------------------------------------------------------------
+method: mbd3d
+method_params:
+  horizon: 10  # 由 n_views 自动覆盖，此处为占位
+  n_gaussians: 32
+  bridge_K: 50
+  bridge_beta0: 0.0
+  bridge_betaK: 1.0
+  M: 16
+  sigma_mcsa: 0.05
+  ess_min: 1.0
+  observation_sigma2: 0.01
+  image_height: 128
+  image_width: 128
+  image_channels: 3
+  use_lowrank_noise: false  # true = corr, false = iid
+  show_tqdm: true
+
+# -----------------------------------------------------------------------------
+# 实验执行
+# -----------------------------------------------------------------------------
+obstacle_levels: [0]
+obstacle_config:
+  generator: box2d
+  robot_radius: 0.05
+
+seeds: [0]
+backend: jax
+device: cuda
+
+metrics: []
+visualizations: []
+
+metadata:
+  description: ""
+  author: "genedynamics"

@@ -8,8 +8,8 @@ This example demonstrates:
 """
 
 import numpy as np
-from enerdynamics.envs.base_env import BaseEnvMixin
-from enerdynamics.envs.obstacles.convex import BoxObstacle, SphereObstacle
+from genedynamics.envs.base_env import BaseEnvMixin
+from genedynamics.envs.obstacles.convex import BoxObstacle, SphereObstacle
 
 
 class SimpleEnv(BaseEnvMixin):

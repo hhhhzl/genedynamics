@@ -1,6 +1,6 @@
 # API Documentation
 
-This directory contains API documentation for the enerdynamics framework.
+This directory contains API documentation for the genedynamics framework.
 
 ## Structure
 

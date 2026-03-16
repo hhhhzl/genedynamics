@@ -30,7 +30,7 @@ jobs:
     
     - name: Run unit tests
       run: |
-        pytest test/unit -v --cov=enerdynamics --cov-report=xml --cov-report=term-missing
+        pytest test/unit -v --cov=genedynamics --cov-report=xml --cov-report=term-missing
     
     - name: Run integration tests
       run: |

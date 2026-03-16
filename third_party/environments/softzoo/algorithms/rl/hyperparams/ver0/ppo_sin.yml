@@ -1,0 +1,643 @@
+Ground-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Ice-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Mud-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Plasticine-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Sand-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Snow-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Elastic-Caterpillar-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Ground-Panda3-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Ground-Marmot-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Ground-BabySeal-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Ground-fish5_2-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Ground-Walrus-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Ground-KoalaBear-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Mud-Panda3-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Mud-Marmot-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Mud-BabySeal-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Mud-fish5_2-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Mud-Walrus-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Mud-KoalaBear-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Sand-Panda3-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Sand-Marmot-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Sand-BabySeal-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Sand-fish5_2-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Sand-Walrus-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Sand-KoalaBear-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Ground-Marmot2-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Mud-Marmot2-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"
+
+Sand-Marmot2-MovementSpeed-v0:
+  n_envs: 1 # >1 n_envs needs subproc vec_env
+  n_timesteps: !!float 1e6
+  n_steps: 2048
+  batch_size: 32
+  gae_lambda: 0.95
+  gamma: 0.98
+  n_epochs: 20
+  ent_coef: 0.0
+  learning_rate: 0.0001
+  clip_range: 0.2
+  policy: 'CustomActorCriticPolicy'
+  policy_kwargs: "dict(
+                    custom_config=dict(
+                      act_dist_type='sin_wave_basis',
+                      actuation_omega=[20., 100., 500.],
+                    ),
+                    log_std_init=-2,
+                    ortho_init=False,
+                    activation_fn=nn.ReLU,
+                    net_arch=[dict(pi=[32, 32], vf=[32, 32])]
+                  )"

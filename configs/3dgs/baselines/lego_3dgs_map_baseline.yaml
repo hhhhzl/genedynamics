@@ -1,0 +1,28 @@
+name: 3dgs_lego_3dgs_map_baseline
+output_dir: results/3dgs/baselines/lego_3dgs_map
+
+env_name: 3dgs_nerf_synthetic
+env_params:
+  dataset_root: data/nerf_synthetic/lego
+  object: lego
+  use_stub_when_unavailable: false
+  split: train
+  eval_split: test
+  max_views: 100
+  resolution_infer: 128
+  resolution_eval: 512
+
+method: mbd3d
+method_params:
+  renderer_backend: gaussian_splatting_cli
+  image_height: 128
+  image_width: 128
+
+obstacle_levels: [0]
+seeds: [0]
+backend: jax
+device: cuda
+
+metadata:
+  description: "Protocol config for 3DGS-MAP CLI baseline."
+  author: "genedynamics"

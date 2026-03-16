@@ -13,6 +13,9 @@ einops>=0.8.2
 diffusers>=0.36.0
 minari>=0.5.3
 
+# Reports (industrial-grade pipeline)
+jinja2>=3.1.0
+
 # Visualization
 matplotlib>=3.8.0
 seaborn>=0.13.0
@@ -20,14 +23,25 @@ pandas>=2.2.0
 
 torch==2.10.0
 
+# 3DGS evaluation (PSNR/LPIPS)
+gsplat
+lpips
+
 # Optional autodiff (JAX)
 jax[cuda12]
 # jax==0.6.2
+brax==0.14.1
+pybind11>=3.0.0
+
+# Optional external JAX Gaussian splatting kernels
+# Note: install from source repo (no PyPI package yet).
+jaxsplat @ git+https://github.com/yklcs/jaxsplat
 
 # Optional environments
 gym>=0.26.2
 gymnasium>=0.29.1
 mujoco>=3.1.3
+mujoco-mjx  # JAX-based MuJoCo for quadruped MJX envs (quadruped_flat_mjx, quadruped_go2_mjx)
 dm-control>=1.0.14
 robosuite>=1.4.1
 
@@ -44,3 +58,7 @@ qpth
 pytest>=9.0.2
 black>=24.3.0
 flake8>=7.0.0
+
+# 3DGS
+gsplat
+lpips

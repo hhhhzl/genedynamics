@@ -25,7 +25,7 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from enerdynamics.core.constraints.core import (
+from genedynamics.core.constraints.core import (
     BackendArray,
     BackendType,
     ensure_backend,
