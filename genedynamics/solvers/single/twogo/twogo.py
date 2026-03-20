@@ -78,15 +78,14 @@ class TwoGOSolver(CFSMBDSolver):
                 twogo_retract_qp_boost=bool(kwargs.get("twogo_retract_qp_boost", True)),
                 twogo_stability_eps=float(kwargs.get("twogo_stability_eps", 1e-6)),
                 twogo_gamma_init=float(kwargs.get("twogo_gamma_init", 1.0)),
-                twogo_tail_mix_ratio=float(kwargs.get("twogo_tail_mix_ratio", 0.5)),
-                twogo_tail_pool_ratio=float(kwargs.get("twogo_tail_pool_ratio", 0.25)),
-                twogo_m_eff_min=int(kwargs.get("twogo_m_eff_min", 16)),
-                twogo_force_retract_from=float(kwargs.get("twogo_force_retract_from", 0.8)),
-                twogo_geom_retract_every=int(kwargs.get("twogo_geom_retract_every", 4)),
-                twogo_reval_every=int(kwargs.get("twogo_reval_every", 2)),
-                twogo_reval_by_cvar=bool(kwargs.get("twogo_reval_by_cvar", False)),
-                twogo_retract_qp_every=int(kwargs.get("twogo_retract_qp_every", 4)),
-                twogo_retract_qp_cvar_scale=float(kwargs.get("twogo_retract_qp_cvar_scale", 2.0)),
+                twogo_retract_qp_every=int(kwargs.get("twogo_retract_qp_every", 2)),
+                twogo_probe_enable=bool(kwargs.get("twogo_probe_enable", True)),
+                twogo_probe_tail_mix=float(kwargs.get("twogo_probe_tail_mix", 0.5)),
+                twogo_probe_tail_pool_ratio=float(kwargs.get("twogo_probe_tail_pool_ratio", 0.25)),
+                twogo_probe_geom_alpha=float(kwargs.get("twogo_probe_geom_alpha", 0.25)),
+                twogo_probe_frac=float(kwargs.get("twogo_probe_frac", 0.5)),
+                twogo_probe_b=kwargs.get("twogo_probe_b", None),
+                twogo_probe_m_cap=kwargs.get("twogo_probe_m_cap", None),
             )
         )
 

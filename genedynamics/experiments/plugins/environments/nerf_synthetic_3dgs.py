@@ -14,7 +14,7 @@ from ...framework.base import EnvironmentPlugin
 from genedynamics.solvers.single.mbd3d.types import ObservationBundle
 from genedynamics.solvers.single.mbd3d.data import (
     NerfSyntheticDataAdapter,
-    NerfSyntheticConfig,
+    nerf_synthetic_config_from_env_params,
 )
 
 
@@ -78,19 +78,12 @@ class _NerfSynthetic3DGSEnv:
                         if cand.exists():
                             root = cand
                             break
-                adapter_config = NerfSyntheticConfig(
-                    dataset_root=str(root),
-                    object=config.get("object"),
-                    split=config.get("split", "train"),
-                    image_height=config.get("resolution_infer", config.get("image_height", 128)),
-                    image_width=config.get("resolution_infer", config.get("image_width", 128)),
-                    resolution_infer=config.get("resolution_infer"),
-                    resolution_eval=config.get("resolution_eval"),
-                    composite_background=config.get("composite_background", "white"),
-                    pose_convention=config.get("pose_convention", "opencv"),
-                    max_views=config.get("max_views"),
-                    view_stride=config.get("view_stride", 1),
-                    shuffle_seed=config.get("shuffle_seed"),
+                infer = int(config.get("resolution_infer", config.get("image_height", 128)))
+                adapter_config = nerf_synthetic_config_from_env_params(
+                    config,
+                    adapter_default_split=str(config.get("split", "train")),
+                    image_height=infer,
+                    image_width=infer,
                 )
                 self._adapter = NerfSyntheticDataAdapter(adapter_config)
             except FileNotFoundError as e:

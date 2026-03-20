@@ -93,10 +93,14 @@ class TwoGOMethodPlugin(MethodPlugin):
             twogo_retract_qp_boost=bool(config.get("twogo_retract_qp_boost", True)),
             twogo_stability_eps=float(config.get("twogo_stability_eps", 1e-6)),
             twogo_gamma_init=float(config.get("twogo_gamma_init", 1.0)),
-            twogo_tail_mix_ratio=float(config.get("twogo_tail_mix_ratio", 0.5)),
-            twogo_tail_pool_ratio=float(config.get("twogo_tail_pool_ratio", 0.25)),
-            twogo_m_eff_min=int(config.get("twogo_m_eff_min", 16)),
-            twogo_force_retract_from=float(config.get("twogo_force_retract_from", 0.8)),
+            twogo_retract_qp_every=int(config.get("twogo_retract_qp_every", 2)),
+            twogo_probe_enable=bool(config.get("twogo_probe_enable", True)),
+            twogo_probe_tail_mix=float(config.get("twogo_probe_tail_mix", 0.5)),
+            twogo_probe_tail_pool_ratio=float(config.get("twogo_probe_tail_pool_ratio", 0.25)),
+            twogo_probe_geom_alpha=float(config.get("twogo_probe_geom_alpha", 0.25)),
+            twogo_probe_frac=float(config.get("twogo_probe_frac", 0.5)),
+            twogo_probe_b=config.get("twogo_probe_b", None),
+            twogo_probe_m_cap=config.get("twogo_probe_m_cap", None),
         )
         solver.env = env
         return solver
