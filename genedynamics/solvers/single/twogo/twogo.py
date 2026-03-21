@@ -52,16 +52,7 @@ class TwoGOSolver(CFSMBDSolver):
         # 2GO-specific scheduling/gating knobs (Phase-1 proxy diagnostics).
         self.config.update(
             dict(
-                twogo_sigma_max=float(kwargs.get("twogo_sigma_max", 0.25)),
                 twogo_gate_vrate_threshold=float(kwargs.get("twogo_gate_vrate_threshold", 0.01)),
-                twogo_sigma_q=float(kwargs.get("twogo_sigma_q", 1.0)),
-                twogo_sigma_q_lambda=float(kwargs.get("twogo_sigma_q_lambda", 1.0)),
-                twogo_delta0=float(kwargs.get("twogo_delta0", 0.02)),
-                twogo_delta_r=float(kwargs.get("twogo_delta_r", 1.0)),
-                twogo_delta_r_lambda=float(kwargs.get("twogo_delta_r_lambda", 1.0)),
-                twogo_lambda0=float(kwargs.get("twogo_lambda0", 1.0)),
-                twogo_theta_start=float(kwargs.get("twogo_theta_start", 0.6)),
-                twogo_theta_end=float(kwargs.get("twogo_theta_end", 0.2)),
                 twogo_cvar_alpha=float(kwargs.get("twogo_cvar_alpha", 0.9)),
                 twogo_window_size=int(kwargs.get("twogo_window_size", 16)),
                 twogo_window_stride=int(kwargs.get("twogo_window_stride", 8)),
@@ -86,6 +77,7 @@ class TwoGOSolver(CFSMBDSolver):
                 twogo_probe_frac=float(kwargs.get("twogo_probe_frac", 0.5)),
                 twogo_probe_b=kwargs.get("twogo_probe_b", None),
                 twogo_probe_m_cap=kwargs.get("twogo_probe_m_cap", None),
+                twogo_overlay=kwargs.get("twogo_overlay", None),
             )
         )
 

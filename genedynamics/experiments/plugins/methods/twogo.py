@@ -66,17 +66,7 @@ class TwoGOMethodPlugin(MethodPlugin):
             diversity_use_state=bool(config.get("diversity_use_state", True)),
             position_extractor=task_spec.extract_position,
             position_dim=task_spec.position_dim,
-            # 2GO knobs
-            twogo_sigma_max=float(config.get("twogo_sigma_max", 0.25)),
             twogo_gate_vrate_threshold=float(config.get("twogo_gate_vrate_threshold", 0.01)),
-            twogo_sigma_q=float(config.get("twogo_sigma_q", 1.0)),
-            twogo_sigma_q_lambda=float(config.get("twogo_sigma_q_lambda", 1.0)),
-            twogo_delta0=float(config.get("twogo_delta0", 0.02)),
-            twogo_delta_r=float(config.get("twogo_delta_r", 1.0)),
-            twogo_delta_r_lambda=float(config.get("twogo_delta_r_lambda", 1.0)),
-            twogo_lambda0=float(config.get("twogo_lambda0", 1.0)),
-            twogo_theta_start=float(config.get("twogo_theta_start", 0.6)),
-            twogo_theta_end=float(config.get("twogo_theta_end", 0.2)),
             twogo_cvar_alpha=float(config.get("twogo_cvar_alpha", 0.9)),
             twogo_window_size=int(config.get("twogo_window_size", 16)),
             twogo_window_stride=int(config.get("twogo_window_stride", 8)),
@@ -101,6 +91,7 @@ class TwoGOMethodPlugin(MethodPlugin):
             twogo_probe_frac=float(config.get("twogo_probe_frac", 0.5)),
             twogo_probe_b=config.get("twogo_probe_b", None),
             twogo_probe_m_cap=config.get("twogo_probe_m_cap", None),
+            twogo_overlay=config.get("twogo_overlay", None),
         )
         solver.env = env
         return solver
