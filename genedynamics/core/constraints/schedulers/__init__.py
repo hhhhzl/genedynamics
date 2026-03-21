@@ -25,7 +25,6 @@ from .ConstraintScheduler import (
     FixedConstraintScheduler,
     EmergingBarrierConstraintScheduler,
     ALMAdaptiveConstraintScheduler,
-    TwoGOConstraintScheduler,
 )
 
 # New diffusion schedulers (import to trigger registration)
@@ -34,7 +33,6 @@ from .DiffusionScheduler import (
     DiffusionScheduler as DiffusionSchedulerBase,
     FixedDiffusionScheduler,
     DualControlDiffusionScheduler,
-    TwoGODiffusionScheduler,
 )
 
 # Composite scheduler (import to trigger registration)
@@ -67,13 +65,11 @@ __all__ = [
     "ConstraintSchedulerBase",
     "FixedConstraintScheduler",
     "DualControlConstraintScheduler",
-    "TwoGOConstraintScheduler",
     
     # New diffusion schedulers
     "DiffusionSchedulerBase",
     "FixedDiffusionScheduler",
     "DualControlDiffusionScheduler",
-    "TwoGODiffusionScheduler",
     
     # Composite scheduler
     "CompositeScheduler",

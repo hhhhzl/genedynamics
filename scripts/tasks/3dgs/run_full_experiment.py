@@ -213,7 +213,10 @@ def main() -> int:
 
     from genedynamics.experiments.framework import ExperimentConfig, ExperimentRunner
     from genedynamics.experiments.runner import register_all_plugins
-    from genedynamics.solvers.single.mbd3d.data import NerfSyntheticConfig, NerfSyntheticDataAdapter
+    from genedynamics.solvers.single.mbd3d.data import (
+        NerfSyntheticDataAdapter,
+        nerf_synthetic_config_from_env_params,
+    )
 
     config_path = Path(args.config)
     if not config_path.is_absolute():
@@ -281,20 +284,13 @@ def main() -> int:
         root = ROOT / root
 
     def _make_adapter(split: str) -> "NerfSyntheticDataAdapter":
-        return NerfSyntheticDataAdapter(NerfSyntheticConfig(
-            dataset_root=str(root),
-            object=ep.get("object"),
-            split=split,
-            image_height=eval_resolution,
-            image_width=eval_resolution,
-            resolution_infer=ep.get("resolution_infer", 128),
-            resolution_eval=eval_resolution,
-            composite_background=ep.get("composite_background", "white"),
-            pose_convention=ep.get("pose_convention", "opencv"),
-            max_views=ep.get("max_views"),
-            view_stride=ep.get("view_stride", 1),
-            shuffle_seed=ep.get("shuffle_seed"),
-        ))
+        cfg = nerf_synthetic_config_from_env_params(
+            ep,
+            adapter_default_split=split,
+            image_height=int(eval_resolution),
+            image_width=int(eval_resolution),
+        )
+        return NerfSyntheticDataAdapter(cfg)
 
     adapter_eval = _make_adapter(eval_split)
     eval_ds = adapter_eval.load_split(split=eval_split, resolution="eval")
@@ -374,6 +370,12 @@ def main() -> int:
         "eval_resolution": int(eval_resolution),
         "initialization_mode": args.initialization_mode,
         "best_chain": bool(use_best_chain),
+        "perturb_target_split": ep.get("perturb_target_split", ep.get("split", "train")),
+        "pose_bias_rotation_deg": float(ep.get("pose_bias_rotation_deg", 0.0)),
+        "pose_bias_translation_m": float(ep.get("pose_bias_translation_m", 0.0)),
+        "pose_bias_seed": int(ep.get("pose_bias_seed", 0)),
+        "exposure_drift_mode": ep.get("exposure_drift_mode"),
+        "exposure_drift_strength": float(ep.get("exposure_drift_strength", 0.0)),
     }
     def _json_safe(obj):
         if isinstance(obj, bool):

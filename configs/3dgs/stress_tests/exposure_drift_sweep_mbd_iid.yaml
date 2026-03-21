@@ -1,0 +1,13 @@
+base_config: configs/3dgs/exp1_sanity/lego_sanity_mbd_iid.yaml
+output_root: results/3dgs/stress_tests/exposure_drift_mbd_iid
+runs:
+  - name: clean
+    env_params: {}
+  - name: exposure_linear_mild
+    env_params:
+      exposure_drift_mode: linear_gain
+      exposure_drift_strength: 0.08
+  - name: exposure_bias_mild
+    env_params:
+      exposure_drift_mode: constant_add
+      exposure_drift_strength: 0.04

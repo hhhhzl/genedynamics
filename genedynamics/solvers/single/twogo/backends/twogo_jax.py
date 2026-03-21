@@ -1,10 +1,10 @@
 """
 JAX backend for 2GO.
 
-Design goal:
-- Keep high-performance CFS-MBD JAX core path (including plan_batch).
-- Add 2GO geometry-aware refinement with AGP + gating + local mini-batch CFS
-  as a post-core refinement stage (no edits to cfsmbd backend code).
+- Scan core (predictor–corrector geometry): Geo₀ from mean SDF normals; optional tail-mixture
+  B-probe (gather → vmap CFS, I_QP=1) refines geometry to Geo₁; MCSA weights use probed
+  trajectories where selected; tangent move uses (G₁,P₁); mean CFS retraction on τ̃.
+- Optional NumPy `_refine_candidates` remains for window-local SDF refine.
 """
 
 from __future__ import annotations
@@ -19,6 +19,15 @@ from genedynamics.solvers.single.cfsmbd.backends.cfsmbd_jax import CFSMBDBackend
 from genedynamics.solvers.common.manifold import build_active_rows, project_complement_batch
 from genedynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
 from genedynamics.core.constraints.core.types import ScheduleState
+from genedynamics.solvers.single.twogo.schedule_contract import (
+    constraint_overlay_jax,
+    constraint_overlay_numpy,
+    diffusion_overlay_jax,
+    diffusion_overlay_numpy,
+    hardness_from_rho_jax,
+    hardness_from_rho_numpy,
+    resolve_twogo_overlay_config,
+)
 
 
 class TwoGOBackendJax:
@@ -28,16 +37,7 @@ class TwoGOBackendJax:
         # 2GO knobs (Phase3-5)
         solver = kwargs.get("solver", None)
         cfg = getattr(solver, "config", {}) if solver is not None else {}
-        self.twogo_sigma_max = float(cfg.get("twogo_sigma_max", 0.25))
         self.twogo_gate_vrate_threshold = float(cfg.get("twogo_gate_vrate_threshold", 0.01))  # fallback
-        self.twogo_sigma_q = float(cfg.get("twogo_sigma_q", 1.0))
-        self.twogo_sigma_q_lambda = float(cfg.get("twogo_sigma_q_lambda", 1.0))
-        self.twogo_delta0 = float(cfg.get("twogo_delta0", 0.02))
-        self.twogo_delta_r = float(cfg.get("twogo_delta_r", 1.0))
-        self.twogo_delta_r_lambda = float(cfg.get("twogo_delta_r_lambda", 1.0))
-        self.twogo_lambda0 = float(cfg.get("twogo_lambda0", 1.0))
-        self.twogo_theta_start = float(cfg.get("twogo_theta_start", 0.6))
-        self.twogo_theta_end = float(cfg.get("twogo_theta_end", 0.2))
         self.twogo_cvar_alpha = float(cfg.get("twogo_cvar_alpha", 0.9))
         self.twogo_window_size = int(cfg.get("twogo_window_size", 16))
         self.twogo_window_stride = int(cfg.get("twogo_window_stride", 8))
@@ -54,21 +54,28 @@ class TwoGOBackendJax:
         self.twogo_retract_qp_boost = bool(cfg.get("twogo_retract_qp_boost", True))
         self.twogo_stability_eps = float(cfg.get("twogo_stability_eps", 1e-6))
         self.twogo_gamma_init = float(cfg.get("twogo_gamma_init", 1.0))
-        self.twogo_tail_mix_ratio = float(cfg.get("twogo_tail_mix_ratio", 0.5))
-        self.twogo_tail_pool_ratio = float(cfg.get("twogo_tail_pool_ratio", 0.25))
-        self.twogo_m_eff_min = int(cfg.get("twogo_m_eff_min", 16))
-        self.twogo_force_retract_from = float(cfg.get("twogo_force_retract_from", 0.8))
-        self.twogo_geom_retract_every = int(max(1, cfg.get("twogo_geom_retract_every", 4)))
-        self.twogo_reval_every = int(max(1, cfg.get("twogo_reval_every", 2)))
-        self.twogo_reval_by_cvar = bool(cfg.get("twogo_reval_by_cvar", False))
-        self.twogo_retract_qp_every = int(max(1, cfg.get("twogo_retract_qp_every", 4)))
-        self.twogo_retract_qp_cvar_scale = float(cfg.get("twogo_retract_qp_cvar_scale", 2.0))
+        self.twogo_retract_qp_every = int(max(1, cfg.get("twogo_retract_qp_every", 2)))
+        self.twogo_probe_enable = bool(cfg.get("twogo_probe_enable", True))
+        self.twogo_probe_tail_mix = float(np.clip(float(cfg.get("twogo_probe_tail_mix", 0.5)), 0.0, 1.0))
+        self.twogo_probe_tail_pool_ratio = float(np.clip(float(cfg.get("twogo_probe_tail_pool_ratio", 0.25)), 1e-6, 1.0))
+        self.twogo_probe_geom_alpha = float(cfg.get("twogo_probe_geom_alpha", 0.25))
+        self.twogo_probe_frac = float(np.clip(float(cfg.get("twogo_probe_frac", 0.5)), 0.0, 1.0))
+        self.twogo_probe_b = cfg.get("twogo_probe_b", None)
+        self.twogo_probe_m_cap = cfg.get("twogo_probe_m_cap", None)
+        rho_ref_default = float(getattr(getattr(self._inner, "_cs", None), "rho_max", 500.0))
+        self.twogo_overlay = resolve_twogo_overlay_config(cfg.get("twogo_overlay", None), rho_ref_default=rho_ref_default)
         self._rng = np.random.default_rng(int(getattr(self._inner, "seed", 0)))
         self._twogo_single_jit = None
         self._twogo_batch_jit = None
         self._M_k_arr = None
         self._gate_every_arr = None
+        self._probe_b_int = 0
         self._prepare_twogo_diffusion_arrays()
+        _ns = int(self._inner.Nsample)
+        if self.twogo_probe_b is not None:
+            self._probe_b_int = int(max(0, min(int(self.twogo_probe_b), _ns)))
+        else:
+            self._probe_b_int = int(max(0, min(_ns, int(round(float(self.twogo_probe_frac) * _ns)))))
         if self.twogo_use_jax_scan_core:
             self._build_twogo_scan_kernels()
 
@@ -86,8 +93,8 @@ class TwoGOBackendJax:
     def _prepare_twogo_diffusion_arrays(self) -> None:
         inner = self._inner
         Ndiffuse = int(inner.Ndiffuse)
-        M_default = int(max(1, min(inner.Nsample, inner.Nsample)))
-        gate_default = 1
+        gate_default = int(self.twogo_overlay["gate_every"])
+        M_default = int(inner.Nsample)
         M_list = [M_default] * Ndiffuse
         gate_list = [gate_default] * Ndiffuse
         try:
@@ -100,7 +107,7 @@ class TwoGOBackendJax:
                         d = ds.diffusion_params(st) if hasattr(ds, "diffusion_params") else {}
                         if d is None:
                             d = {}
-                        M_list[k] = int(max(1, min(int(d.get("M_k", M_default)), inner.Nsample)))
+                        M_list[k] = int(max(1, int(d.get("M_k", M_default))))
                         gate_list[k] = int(max(1, int(d.get("gate_every", gate_default))))
         except Exception:
             pass
@@ -128,13 +135,13 @@ class TwoGOBackendJax:
         window_stride = int(max(1, self.twogo_window_stride))
         tail_alpha = float(np.clip(1.0 - self.twogo_cvar_alpha, 0.0, 1.0))
         n_tail_cvar = int(max(1, int(np.ceil(tail_alpha * Nsample))))
-        n_tail_sample = int(max(1, int(np.ceil(float(self.twogo_tail_ratio) * Nsample))))
         topk_active = int(max(1, min(self.twogo_active_topk, horizon)))
         eps_stab = float(max(self.twogo_stability_eps, 1e-8))
-        tail_mix_ratio = float(np.clip(self.twogo_tail_mix_ratio, 0.0, 1.0))
-        tail_pool_size = int(max(1, min(Nsample, int(np.ceil(float(self.twogo_tail_pool_ratio) * Nsample)))))
-        m_eff_min = int(max(1, min(Nsample, self.twogo_m_eff_min)))
-        force_retract_step = int(np.clip(np.floor(self.twogo_force_retract_from * max(1, Ndiffuse - 1)), 0, Ndiffuse - 1))
+        agp_eta = float(self.twogo_agp_eta)
+        enable_local_gating = bool(self.twogo_enable_local_gating)
+        retract_boost = bool(self.twogo_retract_qp_boost)
+        retract_every_static = int(max(1, self.twogo_retract_qp_every))
+        multi_scale = float(max(self.twogo_multi_scale, 1e-6))
 
         margin_arr = inner._margin_arr
         rho_arr = inner._rho_arr
@@ -148,8 +155,29 @@ class TwoGOBackendJax:
         topK_default = jnp.asarray(inner._topK if inner._topK >= 0 else 8, dtype=jnp.int32)
         aug_lambda_const = jnp.asarray(inner.aug_lambda, dtype=jnp.float32)
         aug_rho_const = jnp.asarray(inner.aug_rho, dtype=jnp.float32)
+        overlay_cfg = self.twogo_overlay
+        rho_ref = float(overlay_cfg["rho_ref"])
+        cs = getattr(inner, "_cs", None)
+        use_jax_adaptive = bool(
+            getattr(inner, "_use_jax_adaptive", False)
+            and cs is not None
+            and hasattr(cs, "jax_init_carry")
+            and hasattr(cs, "jax_compute_params")
+            and hasattr(cs, "jax_update")
+        )
 
-        def _sched_lookup(step_k: jnp.ndarray):
+        _B = int(max(0, min(int(self._probe_b_int), Nsample)))
+        _B_vm = _B if _B > 0 else 1
+        if self.twogo_probe_m_cap is not None:
+            _B_vm = min(_B_vm, int(self.twogo_probe_m_cap))
+        M_max = int(max(1, min(Nsample, _B_vm)))
+        probe_b_jnp = jnp.asarray(_B, dtype=jnp.int32)
+        k_pool_i = int(min(Nsample, max(1, int(np.ceil(float(self.twogo_probe_tail_pool_ratio) * Nsample)))))
+        tail_mix_f = float(self.twogo_probe_tail_mix)
+        probe_alpha = float(self.twogo_probe_geom_alpha)
+        probe_enable = bool(self.twogo_probe_enable)
+
+        def _sched_lookup_fixed(step_k: jnp.ndarray):
             if margin_arr is not None:
                 kk = jnp.clip(step_k, 0, margin_arr.shape[0] - 1)
                 margin = margin_arr[kk]
@@ -165,50 +193,148 @@ class TwoGOBackendJax:
                 qp_prob = jnp.asarray(1.0, dtype=jnp.float32)
                 I_qp = jnp.asarray(1, dtype=jnp.int32)
                 eps = jnp.asarray(1e-4, dtype=jnp.float32)
-            return margin, rho, qp_gate, qp_prob, I_qp, eps
-
-        def _twogo_sched(step_k: jnp.ndarray, rho_k: jnp.ndarray):
-            t = step_k.astype(jnp.float32) / jnp.maximum(float(Ndiffuse - 1), 1.0)
-            lam = jnp.maximum(rho_k.astype(jnp.float32), 0.0)
-            lam_factor = self.twogo_lambda0 / (lam + self.twogo_lambda0 + eps_stab)
-            sigma = self.twogo_sigma_max * ((1.0 - t) ** self.twogo_sigma_q) * (lam_factor ** self.twogo_sigma_q_lambda)
-            delta = self.twogo_delta0 * ((1.0 - t) ** self.twogo_delta_r) * (lam_factor ** self.twogo_delta_r_lambda)
-            theta = self.twogo_theta_start + (self.twogo_theta_end - self.twogo_theta_start) * t
-            kappa = 1.0 + 0.01 * lam
-            return sigma.astype(jnp.float32), delta.astype(jnp.float32), theta.astype(jnp.float32), kappa.astype(jnp.float32)
+            topK = topK_default
+            compute_cost_hat = qp_prob.astype(jnp.float32) * topK.astype(jnp.float32) * I_qp.astype(jnp.float32)
+            return {
+                "margin": margin,
+                "rho": rho,
+                "qp_gate": qp_gate,
+                "qp_prob": qp_prob,
+                "I_QP": I_qp,
+                "eps": eps,
+                "topK": topK,
+                "aug_lambda": aug_lambda_const,
+                "aug_rho": aug_rho_const,
+                "nu": jnp.asarray(0.0, dtype=jnp.float32),
+                "compute_cost_hat": compute_cost_hat,
+                "compute_budget_B_eff": jnp.asarray(0.0, dtype=jnp.float32),
+            }
 
         def _cvar_topk(v: jnp.ndarray) -> jnp.ndarray:
             top_vals, _ = jax.lax.top_k(v, n_tail_cvar)
             return jnp.mean(top_vals)
 
         def _run_single(x0_jnp: jnp.ndarray, rng_key: jnp.ndarray, target: jnp.ndarray):
-            rng, _ = jax.random.split(rng_key)
+            rng, rng_sched_seed = jax.random.split(rng_key)
             Ybar_init = jnp.zeros((horizon, act_dim), dtype=jnp.float32)
             gamma_init = jnp.asarray(np.clip(self.twogo_gamma_init, 0.0, 1.0), dtype=jnp.float32)
+            carry_sched_init = cs.jax_init_carry(rng_sched_seed) if use_jax_adaptive else None
+
+            def run_probe_pack(
+                Y0s_l,
+                v_batch_l,
+                M_eff_l,
+                rng_tail_l,
+                rng_rand_l,
+                rng_vmap_parent,
+                margin_l,
+                rho_l,
+                eps_l,
+                topK_l,
+                sched_state_l,
+                x0_loc,
+            ):
+                tail_n_l = jnp.clip(
+                    jnp.round(M_eff_l.astype(jnp.float32) * jnp.asarray(tail_mix_f, dtype=jnp.float32)).astype(
+                        jnp.int32
+                    ),
+                    0,
+                    M_eff_l,
+                )
+                _, idx_hi_l = jax.lax.top_k(v_batch_l, k_pool_i)
+                perm_pool_l = jax.random.permutation(rng_tail_l, k_pool_i)
+                shuffled_hi_l = idx_hi_l[perm_pool_l]
+                perm_full_l = jax.random.permutation(rng_rand_l, Nsample)
+                i_l = jnp.arange(M_max, dtype=jnp.int32)
+                valid_l = i_l < M_eff_l
+                tail_n_mx = jnp.minimum(tail_n_l, M_max)
+                cand_tail_l = shuffled_hi_l[jnp.minimum(i_l, k_pool_i - 1)]
+                j_rand_l = i_l - tail_n_mx
+                cand_rand_l = perm_full_l[jnp.minimum(jnp.maximum(j_rand_l, 0), Nsample - 1)]
+                idx_m_l = jnp.where(i_l < tail_n_mx, cand_tail_l, cand_rand_l)
+                Y_g_l = Y0s_l[idx_m_l]
+                probe_keys_l = jax.random.split(rng_vmap_parent, M_max)
+                I_probe_l = jnp.asarray(1, dtype=jnp.int32)
+
+                def probe_one_l(y, keyp):
+                    sp_l = {
+                        "margin": margin_l,
+                        "rho": rho_l,
+                        "qp_gate": jnp.asarray(True, dtype=jnp.bool_),
+                        "qp_prob": jnp.asarray(1.0, dtype=jnp.float32),
+                        "I_QP": I_probe_l,
+                        "eps": eps_l,
+                        "topK": topK_l,
+                        "rng_key": keyp,
+                    }
+                    return inner._filter_actions_single_jit(x0_loc, y, sched_state_l, sp_l)
+
+                y_f_l = jax.vmap(probe_one_l)(Y_g_l, probe_keys_l)
+                valid3_l = valid_l[:, None, None]
+                y_out_l = jnp.where(valid3_l, y_f_l, Y_g_l)
+                resid_l = y_out_l - Y_g_l
+                wsum_l = jnp.maximum(jnp.sum(valid_l.astype(jnp.float32)), jnp.asarray(1.0, dtype=jnp.float32))
+                a_probe_l = jnp.sum(resid_l * valid3_l, axis=0) / wsum_l
+
+                def scatter_step_l(ii, carry_l):
+                    Y_c, bm_c = carry_l
+                    Y_n = jnp.where(valid_l[ii], Y_c.at[idx_m_l[ii]].set(y_out_l[ii]), Y_c)
+                    bm_n = jnp.where(
+                        valid_l[ii],
+                        bm_c.at[idx_m_l[ii]].set(jnp.asarray(1.0, dtype=jnp.float32)),
+                        bm_c,
+                    )
+                    return (Y_n, bm_n)
+
+                Y_fix_l, _bm_l = jax.lax.fori_loop(
+                    0, M_max, scatter_step_l, (Y0s_l, jnp.zeros((Nsample,), dtype=jnp.float32))
+                )
+                return Y_fix_l, a_probe_l
 
             def body(carry, idx):
-                rng_curr, Ybar_curr, gamma_prev = carry
-                rng_curr, noise_key, extra_key, filter_key = jax.random.split(rng_curr, 4)
+                if use_jax_adaptive:
+                    rng_curr, Ybar_curr, gamma_prev, carry_sched = carry
+                else:
+                    rng_curr, Ybar_curr, gamma_prev = carry
+                    carry_sched = None
+                rng_curr, noise_key, extra_key, key_sched = jax.random.split(rng_curr, 4)
+                k_sched, rng_tail, rng_rand, rng_vmap_parent = jax.random.split(key_sched, 4)
                 step_k = jnp.asarray(Ndiffuse - 1, dtype=jnp.int32) - idx
                 sched_state = {"k": step_k, "K": total_steps_jnp}
 
-                eps_noise = jax.random.normal(noise_key, (Nsample, horizon, act_dim), dtype=jnp.float32)
-                Y0s = jnp.clip(eps_noise * sigmas[idx] + Ybar_curr, -action_limit, action_limit)
-                margin, rho_k, qp_gate, qp_prob, I_qp, eps_k = _sched_lookup(step_k)
-                sigma_k, delta_k, theta_k, kappa_k = _twogo_sched(step_k, rho_k)
+                if use_jax_adaptive:
+                    params, rng_sched_next = cs.jax_compute_params(carry_sched, step_k, Ndiffuse)
+                else:
+                    params = _sched_lookup_fixed(step_k)
+                    rng_sched_next = k_sched
+                margin = params["margin"]
+                rho_k = params["rho"]
+                qp_gate = params["qp_gate"]
+                qp_prob = params["qp_prob"]
+                I_qp = params["I_QP"]
+                eps_k = params["eps"]
+                topK_k = params["topK"]
+                aug_lam = params["aug_lambda"]
+                aug_rho = params["aug_rho"]
+                hardness_k = hardness_from_rho_jax(rho_k, rho_ref)
+                kappa_k, delta_k = constraint_overlay_jax(margin, rho_k, overlay_cfg)
+                sigma_k, theta_k, eta_j = diffusion_overlay_jax(hardness_k, agp_eta, overlay_cfg)
                 M_k = M_k_arr[jnp.clip(step_k, 0, M_k_arr.shape[0] - 1)] if M_k_arr is not None else jnp.asarray(Nsample, dtype=jnp.int32)
                 M_k = jnp.clip(M_k, 1, Nsample)
                 gate_every_k = gate_every_arr[jnp.clip(step_k, 0, gate_every_arr.shape[0] - 1)] if gate_every_arr is not None else jnp.asarray(1, dtype=jnp.int32)
                 gate_every_k = jnp.maximum(gate_every_k, 1)
                 gate_pass = jnp.equal(jnp.mod(step_k, gate_every_k), 0)
                 qp_gate_eff = jnp.logical_and(qp_gate, gate_pass)
-                # Fold qp_prob into effective mini-batch size (faster + deterministic budget control).
-                M_eff_raw = jnp.clip(jnp.round(M_k.astype(jnp.float32) * qp_prob).astype(jnp.int32), 0, Nsample)
-                M_eff = jax.lax.cond(
+
+                # Probe mini-batch B: independent of M_k and qp_prob (see twogo_probe_b / twogo_probe_frac).
+                M_eff = jnp.where(
                     qp_gate_eff,
-                    lambda _: jnp.clip(jnp.maximum(M_eff_raw, jnp.asarray(m_eff_min, dtype=jnp.int32)), 1, Nsample),
-                    lambda _: jnp.asarray(0, dtype=jnp.int32),
-                    operand=None,
+                    jnp.minimum(probe_b_jnp, jnp.asarray(Nsample, dtype=jnp.int32)),
+                    jnp.asarray(0, dtype=jnp.int32),
+                )
+                do_probe = jnp.logical_and(
+                    jnp.asarray(probe_enable, dtype=jnp.bool_),
+                    jnp.logical_and(qp_gate_eff, M_eff > 0),
                 )
 
                 sched_params = {
@@ -218,165 +344,141 @@ class TwoGOBackendJax:
                     "qp_prob": qp_prob,
                     "I_QP": I_qp,
                     "eps": eps_k,
-                    "topK": topK_default,
-                    "rng_key": filter_key,
+                    "topK": topK_k,
+                    "rng_key": k_sched,
                 }
 
-                # Mini-batch CFS: rank by pre-filter violation, then only selected samples run full-traj CFS-QP.
-                rews_pre, v_pre = inner._augmented_and_v_batch_jit(x0_jnp, Y0s, margin, aug_lambda_const, aug_rho_const, target)
-                _, idx_sorted = jax.lax.top_k(v_pre, Nsample)
-                # stochastic + tail-mixture selection
-                rng_sel, rng_all, rng_tail, rng_filter = jax.random.split(filter_key, 4)
-                tail_n = jnp.clip(jnp.round(M_eff.astype(jnp.float32) * tail_mix_ratio).astype(jnp.int32), 0, M_eff)
-                rand_n = M_eff - tail_n
+                idxs = jnp.arange(horizon, dtype=jnp.int32)
+                w_start = (step_k * window_stride) % horizon
+                wmask = (((idxs - w_start) % horizon) < window_size).astype(jnp.float32)
 
-                perm_all = jax.random.permutation(rng_all, Nsample)
-                all_rank = jnp.arange(Nsample, dtype=jnp.int32)
-                sel_all_sorted = all_rank < rand_n
-                rand_mask = jnp.zeros((Nsample,), dtype=jnp.bool_).at[perm_all].set(sel_all_sorted)
+                a_geom = inner._constraint_geometry_time_jit(x0_jnp, Ybar_curr, margin)
+                a_geom0 = a_geom * wmask[:, None]
 
-                tail_pool = idx_sorted[:tail_pool_size]
-                perm_tail_local = jax.random.permutation(rng_tail, tail_pool_size)
-                tail_candidates = tail_pool[perm_tail_local]
-                tail_rank = jnp.arange(tail_pool_size, dtype=jnp.int32)
-                sel_tail_sorted = tail_rank < tail_n
-                tail_mask = jnp.zeros((Nsample,), dtype=jnp.bool_).at[tail_candidates].set(sel_tail_sorted)
-
-                select_mask = jnp.logical_and(jnp.logical_or(rand_mask, tail_mask), M_eff > 0)
-                filter_keys = jax.random.split(rng_filter, Nsample)
-
-                def _filter_minibatch(_):
-                    def _filter_one(y_i, key_i, sel_i):
-                        sp_i = {
-                            "margin": margin,
-                            "rho": rho_k,
-                            "qp_gate": jnp.asarray(True, dtype=jnp.bool_),
-                            "qp_prob": jnp.asarray(1.0, dtype=jnp.float32),
-                            "I_QP": I_qp,
-                            "eps": eps_k,
-                            "topK": topK_default,
-                            "rng_key": key_i,
-                        }
-                        return jax.lax.cond(
-                            sel_i,
-                            lambda __: inner._filter_actions_single_jit(x0_jnp, y_i, sched_state, sp_i),
-                            lambda __: y_i,
-                            operand=None,
-                        )
-
-                    ys_try = jax.vmap(_filter_one, in_axes=(0, 0, 0))(Y0s, filter_keys, select_mask)
-                    return jnp.where(select_mask[:, None, None], ys_try, Y0s)
-
-                do_minibatch_qp = jnp.logical_and(qp_gate_eff, M_eff > 0)
-                Y0s_f = jax.lax.cond(do_minibatch_qp, _filter_minibatch, lambda _: Y0s, operand=None)
-
-                cvar_pre = _cvar_topk(jnp.maximum(v_pre, 0.0))
-                reval_pass = jnp.equal(jnp.mod(step_k, jnp.asarray(self.twogo_reval_every, dtype=jnp.int32)), 0)
-                if self.twogo_reval_by_cvar:
-                    need_reval = jnp.logical_and(do_minibatch_qp, jnp.logical_or(reval_pass, cvar_pre > delta_k))
-                else:
-                    need_reval = jnp.logical_and(do_minibatch_qp, reval_pass)
-                rews, v_batch = jax.lax.cond(
-                    need_reval,
-                    lambda _: inner._augmented_and_v_batch_jit(x0_jnp, Y0s_f, margin, aug_lambda_const, aug_rho_const, target),
-                    lambda _: (rews_pre, v_pre),
-                    operand=None,
+                eps_noise = jax.random.normal(noise_key, (Nsample, horizon, act_dim), dtype=jnp.float32)
+                Y0s = jnp.clip(eps_noise * sigmas[idx] + Ybar_curr, -action_limit, action_limit)
+                rews, v_batch = inner._augmented_and_v_batch_jit(
+                    x0_jnp, Y0s, margin, aug_lam, aug_rho, target
                 )
                 r_p = _cvar_topk(v_batch)
                 v_rate = jnp.mean(v_batch > 0.0)
                 v_mean = jnp.mean(v_batch)
                 cvar = _cvar_topk(jnp.maximum(v_batch, 0.0))
-
-                rew_mean = jnp.mean(rews)
-                rew_std = jnp.where(jnp.std(rews) < 1e-4, 1.0, jnp.std(rews))
-                T_k = T_k_arr[jnp.clip(step_k, 0, T_k_arr.shape[0] - 1)] if T_k_arr is not None else inner.temp_sample
-                logp0 = (rews - rew_mean) / (rew_std * T_k)
-                weights = jax.nn.softmax(logp0)
-                Ybar_weighted = jnp.einsum("n,nij->ij", weights, Y0s_f)
-
-                idxs = jnp.arange(horizon, dtype=jnp.int32)
-                w_start = (step_k * window_stride) % horizon
-                wmask = (((idxs - w_start) % horizon) < window_size).astype(jnp.float32)
-                # Multimodality gate should use pre-retraction sample spread (noise-on gate).
-                spread = jnp.mean(jnp.std(Y0s, axis=0) * wmask[:, None])
-                pi_multi = spread / max(self.twogo_multi_scale, 1e-6)
-                gamma_raw = (pi_multi > theta_k).astype(jnp.float32)
-                # flow/diffusion semantic convergence: gamma only controls noise-on state.
-                gamma = jax.lax.cond(gate_pass, lambda _: gamma_raw, lambda _: gamma_prev, operand=None)
-
-                if self.twogo_enable_sample_tail:
-                    top_vals, _ = jax.lax.top_k(v_batch, n_tail_sample)
-                    v_th = top_vals[-1]
-                    smask = (v_batch >= v_th).astype(jnp.float32)
+                if use_jax_adaptive:
+                    feedback = {
+                        "r_p": r_p,
+                        "v_k_rate": v_rate,
+                        "v_k_mean": v_mean,
+                        "compute_cost_hat": params["compute_cost_hat"],
+                        "compute_budget_B_eff": params["compute_budget_B_eff"],
+                    }
+                    carry_sched_new = cs.jax_update(carry_sched, feedback, rng_sched_next)
                 else:
-                    smask = jnp.ones((Nsample,), dtype=jnp.float32)
-                smask3 = smask[:, None, None]
-                wmask3 = wmask[None, :, None]
+                    carry_sched_new = carry_sched
 
-                do_retract = jnp.logical_or(cvar > delta_k, step_k >= jnp.asarray(force_retract_step, dtype=jnp.int32))
-                retract_qp_pass = jnp.equal(jnp.mod(step_k, jnp.asarray(self.twogo_retract_qp_every, dtype=jnp.int32)), 0)
-                retract_qp_highrisk = cvar > (jnp.asarray(self.twogo_retract_qp_cvar_scale, dtype=jnp.float32) * delta_k)
-                do_retract_qp = jnp.logical_and(do_retract, jnp.logical_or(retract_qp_pass, retract_qp_highrisk))
+                Y_fix, a_probe = jax.lax.cond(
+                    do_probe,
+                    lambda _: run_probe_pack(
+                        Y0s,
+                        v_batch,
+                        M_eff,
+                        rng_tail,
+                        rng_rand,
+                        rng_vmap_parent,
+                        margin,
+                        rho_k,
+                        eps_k,
+                        topK_k,
+                        sched_state,
+                        x0_jnp,
+                    ),
+                    lambda _: (
+                        Y0s,
+                        jnp.zeros((horizon, act_dim), dtype=jnp.float32),
+                    ),
+                    operand=None,
+                )
+                bmask = (jnp.linalg.norm(Y_fix - Y0s, axis=(1, 2)) > jnp.asarray(1e-12, dtype=jnp.float32)).astype(
+                    jnp.float32
+                )
+                bmask3 = bmask[:, None, None]
+                Y_eff = jnp.where(bmask3 > 0.5, Y_fix, Y0s)
 
-                # Build active-set geometry from mini-batch retraction residuals (no extra geometry-QP).
-                resid = Y0s_f - Y0s
-                resid_w = resid * smask3 * wmask3
-                a_time = jnp.mean(resid_w, axis=0)  # (H, act_dim) active normal proxies
-                A_rows, topu, _idx_top, _active_mask_t, score_base_raw = build_active_rows(a_time, topk_active, eps_stab)
-                score_base = kappa_k * score_base_raw  # geometry-guided drift seed
-
-                # Active normal basis (K x act_dim)
+                a_geom1 = a_geom0 + jnp.asarray(probe_alpha, dtype=jnp.float32) * (a_probe * wmask[:, None])
+                A_rows, topu, _idx_top, _active_mask_t, _sb = build_active_rows(a_geom1, topk_active, eps_stab)
                 K_active = jnp.sum((topu > eps_stab).astype(jnp.float32))
-                geom_valid = K_active >= 2.0
-
-                # Metric shaping: u_G = (I + A^T A)^-1 * score_base (Woodbury form).
+                geom_valid = K_active >= 1.0
                 AAT = A_rows @ jnp.transpose(A_rows)
                 I_k = jnp.eye(topk_active, dtype=jnp.float32)
                 metric_sys = I_k + AAT + eps_stab * I_k
-                u_agp_proj = project_complement_batch(score_base, A_rows, metric_sys)
-                # Safety fallback: weak geometry -> no projection (identity map).
-                u_agp = jax.lax.cond(geom_valid, lambda _: u_agp_proj, lambda _: score_base, operand=None)
-                Ybar_next = Ybar_weighted + self.twogo_agp_eta * u_agp
-
-                # Tangent noise: P xi, P = I - A^T (A A^T)^-1 A
-                noise_extra = jax.random.normal(extra_key, (horizon, act_dim), dtype=jnp.float32)
                 tan_sys = AAT + eps_stab * I_k
+
+                rew_mean = jnp.mean(rews)
+                rew_std = jnp.where(jnp.std(rews) < 1e-4, 1.0, jnp.std(rews))
+                T_k = T_k_arr[jnp.clip(step_k, 0, T_k_arr.shape[0] - 1)] if T_k_arr is not None else jnp.asarray(inner.temp_sample, dtype=jnp.float32)
+                logp0 = (rews - rew_mean) / (rew_std * T_k)
+                weights = jax.nn.softmax(logp0)
+                Ybar_weighted = jnp.einsum("n,nij->ij", weights, Y_eff)
+
+                sigma_scale = jnp.maximum(sigmas[idx], jnp.asarray(1e-6, dtype=jnp.float32))
+                spread = jnp.mean(jnp.std(Y0s - Ybar_curr, axis=0) * wmask[:, None])
+                pi_multi = spread / jnp.maximum(jnp.asarray(multi_scale, dtype=jnp.float32) * sigma_scale, jnp.asarray(1e-6, dtype=jnp.float32))
+                gamma_geo = (pi_multi > theta_k).astype(jnp.float32)
+                gamma_raw = jax.lax.cond(
+                    jnp.asarray(enable_local_gating),
+                    lambda _: gamma_geo,
+                    lambda _: jnp.asarray(1.0, dtype=jnp.float32),
+                    operand=None,
+                )
+                gamma = jax.lax.cond(gate_pass, lambda _: gamma_raw, lambda _: gamma_prev, operand=None)
+
+                score_base = kappa_k * (Ybar_weighted - Ybar_curr)
+                u_agp_proj = project_complement_batch(score_base, A_rows, metric_sys)
+                u_agp = jax.lax.cond(geom_valid, lambda _: u_agp_proj, lambda _: score_base, operand=None)
+
+                noise_extra = jax.random.normal(extra_key, (horizon, act_dim), dtype=jnp.float32)
                 p_noise_proj = project_complement_batch(noise_extra, A_rows, tan_sys)
                 p_noise = jax.lax.cond(geom_valid, lambda _: p_noise_proj, lambda _: noise_extra, operand=None)
                 sigma_eff = gamma * (sigma_k + extra_sigmas[idx])
-                Ybar_next = Ybar_next + sigma_eff * p_noise
+                Ybar_tilde = Ybar_weighted + eta_j * u_agp + sigma_eff * p_noise
 
-                if self.twogo_retract_qp_boost:
-                    sched_params_retract = dict(sched_params)
-                    sched_params_retract["qp_gate"] = jnp.asarray(True, dtype=jnp.bool_)
-                    sched_params_retract["qp_prob"] = jnp.asarray(1.0, dtype=jnp.float32)
-                    Ybar_next = jax.lax.cond(
-                        do_retract_qp,
-                        lambda y: inner._filter_actions_single_jit(x0_jnp, y + self.twogo_cfs_gain * u_agp, sched_state, sched_params_retract),
-                        lambda y: y,
-                        Ybar_next,
-                    )
-                else:
-                    Ybar_next = Ybar_next + do_retract.astype(jnp.float32) * self.twogo_cfs_gain * u_agp
+                retract_every = jnp.asarray(retract_every_static, dtype=jnp.int32)
+                retract_pass = jnp.equal(jnp.mod(step_k, retract_every), 0)
+                retract_highrisk = cvar > delta_k
+                boost_j = jnp.asarray(retract_boost, dtype=jnp.bool_)
+                do_retract_qp = jnp.logical_and(boost_j, jnp.logical_and(qp_gate_eff, jnp.logical_or(retract_pass, retract_highrisk)))
+
+                sched_params_retract = dict(sched_params)
+                sched_params_retract["qp_gate"] = jnp.asarray(True, dtype=jnp.bool_)
+                sched_params_retract["qp_prob"] = jnp.asarray(1.0, dtype=jnp.float32)
+                Ybar_next = jax.lax.cond(
+                    do_retract_qp,
+                    lambda y: inner._filter_actions_single_jit(x0_jnp, y, sched_state, sched_params_retract),
+                    lambda y: y,
+                    Ybar_tilde,
+                )
                 Ybar_next = jnp.clip(Ybar_next, -action_limit, action_limit)
 
-                rews_plain = inner._rollout_rewards_batch_fn(x0_jnp, Y0s_f, target)
-                reward_stage_terminal = jnp.mean(jnp.sum(rews_plain, axis=-1))
-                qp_call_minibatch = do_minibatch_qp.astype(jnp.float32) * (M_eff.astype(jnp.float32) / max(float(Nsample), 1.0))
-                qp_call_retract = do_retract_qp.astype(jnp.float32) * (1.0 if self.twogo_retract_qp_boost else 0.0)
+                reward_stage_terminal = jnp.mean(rews)
+                m_eff_f = M_eff.astype(jnp.float32)
+                qp_call_minibatch = do_probe.astype(jnp.float32) * (m_eff_f / jnp.maximum(jnp.asarray(float(Nsample), dtype=jnp.float32), 1.0))
+                qp_call_retract = do_retract_qp.astype(jnp.float32) * jnp.asarray(1.0 if retract_boost else 0.0, dtype=jnp.float32)
                 qp_call_geom = jnp.asarray(0.0, dtype=jnp.float32)
-                qp_call = qp_call_minibatch + qp_call_retract + qp_call_geom
-                rollout_eval_calls = 1.0 + need_reval.astype(jnp.float32)
-                return (rng_curr, Ybar_next, gamma), (
+                qp_call = qp_call_minibatch + qp_call_retract
+                rollout_eval_calls = jnp.asarray(1.0, dtype=jnp.float32)
+                outputs = (
                     reward_stage_terminal,
                     Ybar_next,
-                    Y0s_f,
+                    Y_eff,
+                    margin,
                     r_p,
                     v_rate,
                     v_mean,
                     gamma,
                     sigma_eff,
                     delta_k,
+                    theta_k,
+                    eta_j,
                     cvar,
                     qp_call,
                     qp_call_minibatch,
@@ -385,14 +487,95 @@ class TwoGOBackendJax:
                     rollout_eval_calls,
                     K_active.astype(jnp.float32),
                     rho_k.astype(jnp.float32),
+                    aug_lam.astype(jnp.float32),
                     qp_prob.astype(jnp.float32),
+                    topK_k.astype(jnp.float32),
                     I_qp.astype(jnp.float32),
                     eps_k.astype(jnp.float32),
-                    M_eff.astype(jnp.float32),
+                    m_eff_f,
+                    M_k.astype(jnp.float32),
+                    params["compute_cost_hat"].astype(jnp.float32),
+                    params["nu"].astype(jnp.float32),
                 )
+                if use_jax_adaptive:
+                    return (rng_curr, Ybar_next, gamma, carry_sched_new), outputs
+                return (rng_curr, Ybar_next, gamma), outputs
 
-            (_rng_out, Ybar_final, _gamma_final), scan_out = jax.lax.scan(body, (rng, Ybar_init, gamma_init), diffusion_indices)
-            return (Ybar_final,) + tuple(x[::-1] for x in scan_out)
+            if use_jax_adaptive:
+                (_rng_out, Ybar_final, _gamma_final, _carry_final), scan_out = jax.lax.scan(
+                    body,
+                    (rng, Ybar_init, gamma_init, carry_sched_init),
+                    diffusion_indices,
+                )
+            else:
+                (_rng_out, Ybar_final, _gamma_final), scan_out = jax.lax.scan(
+                    body,
+                    (rng, Ybar_init, gamma_init),
+                    diffusion_indices,
+                )
+            (
+                reward_hist,
+                Ybar_hist,
+                Y_eff_hist,
+                margin_hist,
+                r_hist,
+                v_rate_hist,
+                v_mean_hist,
+                gamma_hist,
+                sigma_hist,
+                delta_hist,
+                theta_hist,
+                eta_hist,
+                cvar_hist,
+                qp_call_hist,
+                qp_call_minibatch_hist,
+                qp_call_geom_hist,
+                qp_call_retract_hist,
+                rollout_eval_calls_hist,
+                activeK_hist,
+                rho_hist,
+                lambda_hist,
+                p_hist,
+                topK_hist,
+                I_QP_hist,
+                eps_hist,
+                probe_b_hist,
+                m_k_hist,
+                compute_cost_hist,
+                nu_hist,
+            ) = scan_out
+            return (
+                Ybar_final,
+                reward_hist[::-1],
+                Ybar_hist[::-1],
+                Y_eff_hist[::-1],
+                margin_hist,
+                r_hist,
+                v_rate_hist,
+                v_mean_hist,
+                gamma_hist,
+                sigma_hist,
+                delta_hist,
+                theta_hist,
+                eta_hist,
+                cvar_hist,
+                qp_call_hist,
+                qp_call_minibatch_hist,
+                qp_call_geom_hist,
+                qp_call_retract_hist,
+                rollout_eval_calls_hist,
+                activeK_hist,
+                rho_hist,
+                lambda_hist,
+                p_hist,
+                topK_hist,
+                I_QP_hist,
+                eps_hist,
+                probe_b_hist,
+                m_k_hist,
+                compute_cost_hist,
+                nu_hist,
+            )
 
         self._twogo_single_jit = jax.jit(_run_single)
         self._twogo_batch_jit = jax.jit(jax.vmap(_run_single, in_axes=(None, 0, 0)))
@@ -411,15 +594,25 @@ class TwoGOBackendJax:
             return lam
         return np.full(K, float(getattr(self._inner, "aug_lambda", 0.0)), dtype=np.float32)
 
-    def _compute_schedule_series(self, out: Dict[str, Any], K: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        t = np.linspace(0.0, 1.0, K, dtype=np.float32)
-        lam = self._lambda_hist(out, K)
-        lam_factor = (self.twogo_lambda0 / (lam + self.twogo_lambda0 + 1e-8)).astype(np.float32)
-        s_sigma = ((1.0 - t) ** self.twogo_sigma_q) * (lam_factor ** self.twogo_sigma_q_lambda)
-        sigma_hist = self.twogo_sigma_max * s_sigma
-        delta_hist = self.twogo_delta0 * ((1.0 - t) ** self.twogo_delta_r) * (lam_factor ** self.twogo_delta_r_lambda)
-        theta_hist = self.twogo_theta_start + (self.twogo_theta_end - self.twogo_theta_start) * t
-        return sigma_hist.astype(np.float32), delta_hist.astype(np.float32), theta_hist.astype(np.float32)
+    def _margin_hist(self, out: Dict[str, Any], K: int) -> np.ndarray:
+        margin = np.asarray(out.get("margin_hist", []), dtype=np.float32).ravel()
+        if margin.size == K:
+            return margin
+        return np.full(K, 0.05, dtype=np.float32)
+
+    def _rho_hist(self, out: Dict[str, Any], K: int) -> np.ndarray:
+        rho = np.asarray(out.get("rho_hist", []), dtype=np.float32).ravel()
+        if rho.size == K:
+            return rho
+        return np.full(K, float(getattr(self._inner, "aug_rho", 1.0)), dtype=np.float32)
+
+    def _compute_schedule_series(self, out: Dict[str, Any], K: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        margin_hist = self._margin_hist(out, K)
+        rho_hist = self._rho_hist(out, K)
+        hardness = hardness_from_rho_numpy(rho_hist, self.twogo_overlay["rho_ref"])
+        kappa_hist, delta_hist = constraint_overlay_numpy(margin_hist, rho_hist, self.twogo_overlay)
+        sigma_hist, theta_hist, eta_hist = diffusion_overlay_numpy(hardness, self.twogo_agp_eta, self.twogo_overlay)
+        return sigma_hist, delta_hist, theta_hist, eta_hist, kappa_hist
 
     def _sample_sdf_grad(self, positions: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         pos = np.asarray(positions, dtype=np.float32)
@@ -506,6 +699,7 @@ class TwoGOBackendJax:
         window: Tuple[int, int],
         sigma_w: float,
         kappa_w: float,
+        eta_w: float,
     ) -> np.ndarray:
         H, U = actions.shape
         d = H * U
@@ -544,7 +738,8 @@ class TwoGOBackendJax:
         z = np.linalg.solve(AA, A @ xi)
         p_xi = xi - A.T @ z
 
-        x_new = x + float(self.twogo_agp_eta) * ginv_u + np.sqrt(max(self.twogo_agp_eta, 1e-8)) * float(sigma_w) * p_xi
+        eta_f = float(max(eta_w, 1e-8))
+        x_new = x + eta_f * ginv_u + np.sqrt(eta_f) * float(sigma_w) * p_xi
         act_new = x_new.reshape(H, U).astype(np.float32)
         act_new = np.clip(act_new, -self._inner.action_limit, self._inner.action_limit)
         return act_new
@@ -585,9 +780,7 @@ class TwoGOBackendJax:
         H = int(cand_actions[0].shape[0])
         windows = self._window_slices(H)
         K = max(1, len(out.get("r_hist", [])))
-        sigma_hist, delta_hist, theta_hist = self._compute_schedule_series(out, K)
-        lam_hist = self._lambda_hist(out, K)
-        kappa_hist = 1.0 + 0.01 * lam_hist
+        sigma_hist, delta_hist, theta_hist, eta_hist, kappa_hist = self._compute_schedule_series(out, K)
 
         # sample-level gating on tail violations
         viol_tot = []
@@ -617,6 +810,7 @@ class TwoGOBackendJax:
             delta_w = float(delta_hist[sched_idx])
             kappa_w = float(kappa_hist[sched_idx])
             theta_w = float(theta_hist[sched_idx])
+            eta_w = float(eta_hist[sched_idx])
 
             pi_multi = self._window_multimodality(cand_states, a, b) if self.twogo_enable_local_gating else 1.0
             gamma_w = 1.0 if pi_multi > theta_w else 0.0
@@ -636,7 +830,7 @@ class TwoGOBackendJax:
                 if cvar_w <= delta_w:
                     continue
                 act0 = cand_actions[int(ci)]
-                act1 = self._agp_step(act0, g, grad, w, sigma_w=sigma_w, kappa_w=kappa_w)
+                act1 = self._agp_step(act0, g, grad, w, sigma_w=sigma_w, kappa_w=kappa_w, eta_w=eta_w)
                 act2 = self._mini_batch_cfs_local(act1, g, grad, w)
                 st2 = self._rollout_states_np(x0, act2)
                 cost2 = self._rollout_cost_np(x0, act2)
@@ -674,19 +868,20 @@ class TwoGOBackendJax:
         v_rate_hist = np.asarray(out.get("v_rate_hist", []), dtype=np.float32).ravel()
         p_hist = np.asarray(out.get("p_hist", []), dtype=np.float32).ravel()
         topK_hist = np.asarray(out.get("topK_hist", []), dtype=np.float32).ravel()
-        lambda_hist = np.asarray(out.get("lambda_hist", []), dtype=np.float32).ravel()
 
         K = int(r_hist.shape[0])
         if K <= 0:
             out.setdefault("gamma_hist", np.asarray([], dtype=np.float32))
             out.setdefault("sigma_hist", np.asarray([], dtype=np.float32))
             out.setdefault("delta_hist", np.asarray([], dtype=np.float32))
+            out.setdefault("theta_hist", np.asarray([], dtype=np.float32))
+            out.setdefault("eta_hist", np.asarray([], dtype=np.float32))
             out.setdefault("cvar_hist", np.asarray([], dtype=np.float32))
             out.setdefault("qp_call_hist", np.asarray([], dtype=np.float32))
             out.setdefault("activeK_hist", np.asarray([], dtype=np.float32))
             return out
 
-        sigma_base, delta_hist, _theta_hist = self._compute_schedule_series(out, K)
+        sigma_base, delta_hist, theta_hist, eta_hist, _kappa_hist = self._compute_schedule_series(out, K)
         gamma = (v_rate_hist > self.twogo_gate_vrate_threshold).astype(np.float32)
         sigma_hist = gamma * sigma_base
 
@@ -704,6 +899,8 @@ class TwoGOBackendJax:
         out["gamma_hist"] = gamma
         out["sigma_hist"] = sigma_hist.astype(np.float32)
         out["delta_hist"] = delta_hist.astype(np.float32)
+        out["theta_hist"] = theta_hist.astype(np.float32)
+        out["eta_hist"] = eta_hist.astype(np.float32)
         out["cvar_hist"] = cvar_hist
         out["qp_call_hist"] = qp_call_hist
         out["activeK_hist"] = activeK_hist
@@ -725,12 +922,15 @@ class TwoGOBackendJax:
             reward_hist,
             actions_traj,
             sampled_traj,
+            margin_hist,
             r_hist,
             v_rate_hist,
             v_mean_hist,
             gamma_hist,
             sigma_hist,
             delta_hist,
+            theta_hist,
+            eta_hist,
             cvar_hist,
             qp_call_hist,
             qp_call_minibatch_hist,
@@ -739,10 +939,15 @@ class TwoGOBackendJax:
             rollout_eval_calls_hist,
             activeK_hist,
             rho_hist,
+            lambda_hist,
             p_hist,
+            topK_hist,
             I_QP_hist,
             eps_hist,
+            probe_b_hist,
             m_k_hist,
+            compute_cost_hist,
+            nu_hist,
         ) = self._twogo_single_jit(x0_jnp, rng_key, target)
 
         final_actions = jnp.clip(Ybar_final, -self._inner.action_limit, self._inner.action_limit)
@@ -762,12 +967,15 @@ class TwoGOBackendJax:
             "diffusion_rewards": np.asarray(reward_hist, dtype=np.float32),
             "diffusion_actions_traj": np.asarray(actions_traj, dtype=np.float32),
             "diffusion_sampled_actions": np.asarray(sampled_traj, dtype=np.float32),
+            "margin_hist": np.asarray(margin_hist, dtype=np.float32),
             "r_hist": np.asarray(r_hist, dtype=np.float32),
             "v_rate_hist": np.asarray(v_rate_hist, dtype=np.float32),
             "v_mean_hist": np.asarray(v_mean_hist, dtype=np.float32),
             "gamma_hist": np.asarray(gamma_hist, dtype=np.float32),
             "sigma_hist": np.asarray(sigma_hist, dtype=np.float32),
             "delta_hist": np.asarray(delta_hist, dtype=np.float32),
+            "theta_hist": np.asarray(theta_hist, dtype=np.float32),
+            "eta_hist": np.asarray(eta_hist, dtype=np.float32),
             "cvar_hist": np.asarray(cvar_hist, dtype=np.float32),
             "qp_call_hist": np.asarray(qp_call_hist, dtype=np.float32),
             "qp_call_minibatch_hist": np.asarray(qp_call_minibatch_hist, dtype=np.float32),
@@ -776,14 +984,15 @@ class TwoGOBackendJax:
             "rollout_eval_calls_hist": np.asarray(rollout_eval_calls_hist, dtype=np.float32),
             "activeK_hist": np.asarray(activeK_hist, dtype=np.float32),
             "rho_hist": np.asarray(rho_hist, dtype=np.float32),
-            "topK_hist": np.asarray(activeK_hist, dtype=np.float32),
+            "topK_hist": np.asarray(topK_hist, dtype=np.float32),
             "I_QP_hist": np.asarray(I_QP_hist, dtype=np.float32),
             "eps_hist": np.asarray(eps_hist, dtype=np.float32),
             "m_k_hist": np.asarray(m_k_hist, dtype=np.float32),
-            "lambda_hist": np.asarray(rho_hist, dtype=np.float32),
+            "probe_b_hist": np.asarray(probe_b_hist, dtype=np.float32),
+            "lambda_hist": np.asarray(lambda_hist, dtype=np.float32),
             "p_hist": np.asarray(p_hist, dtype=np.float32),
-            "nu_hist": np.zeros_like(np.asarray(rho_hist, dtype=np.float32)),
-            "compute_cost_hist": (np.asarray(qp_call_hist, dtype=np.float32) * np.asarray(activeK_hist, dtype=np.float32) * np.asarray(I_QP_hist, dtype=np.float32)).astype(np.float32),
+            "nu_hist": np.asarray(nu_hist, dtype=np.float32),
+            "compute_cost_hist": np.asarray(compute_cost_hist, dtype=np.float32),
             "candidate_states": [states_np],
             "candidate_actions": [actions_np],
             "candidate_costs": np.asarray([total_cost], dtype=np.float32),
@@ -808,12 +1017,15 @@ class TwoGOBackendJax:
             reward_hists,
             actions_trajs,
             sampled_trajs,
+            margin_hists,
             r_hists,
             v_rate_hists,
             v_mean_hists,
             gamma_hists,
             sigma_hists,
             delta_hists,
+            theta_hists,
+            eta_hists,
             cvar_hists,
             qp_call_hists,
             qp_call_minibatch_hists,
@@ -822,10 +1034,15 @@ class TwoGOBackendJax:
             rollout_eval_calls_hists,
             activeK_hists,
             rho_hists,
+            lambda_hists,
             p_hists,
+            topK_hists,
             I_QP_hists,
             eps_hists,
+            probe_b_hists,
             m_k_hists,
+            compute_cost_hists,
+            nu_hists,
         ) = self._twogo_batch_jit(x0_jnp, rng_keys, targets)
 
         final_actions_batch = jnp.clip(Ybar_finals, -self._inner.action_limit, self._inner.action_limit)
@@ -849,12 +1066,15 @@ class TwoGOBackendJax:
                     "diffusion_rewards": np.asarray(reward_hists[i], dtype=np.float32),
                     "diffusion_actions_traj": np.asarray(actions_trajs[i], dtype=np.float32),
                     "diffusion_sampled_actions": np.asarray(sampled_trajs[i], dtype=np.float32),
+                    "margin_hist": np.asarray(margin_hists[i], dtype=np.float32),
                     "r_hist": np.asarray(r_hists[i], dtype=np.float32),
                     "v_rate_hist": np.asarray(v_rate_hists[i], dtype=np.float32),
                     "v_mean_hist": np.asarray(v_mean_hists[i], dtype=np.float32),
                     "gamma_hist": np.asarray(gamma_hists[i], dtype=np.float32),
                     "sigma_hist": np.asarray(sigma_hists[i], dtype=np.float32),
                     "delta_hist": np.asarray(delta_hists[i], dtype=np.float32),
+                    "theta_hist": np.asarray(theta_hists[i], dtype=np.float32),
+                    "eta_hist": np.asarray(eta_hists[i], dtype=np.float32),
                     "cvar_hist": np.asarray(cvar_hists[i], dtype=np.float32),
                     "qp_call_hist": np.asarray(qp_call_hists[i], dtype=np.float32),
                     "qp_call_minibatch_hist": np.asarray(qp_call_minibatch_hists[i], dtype=np.float32),
@@ -863,14 +1083,15 @@ class TwoGOBackendJax:
                     "rollout_eval_calls_hist": np.asarray(rollout_eval_calls_hists[i], dtype=np.float32),
                     "activeK_hist": np.asarray(activeK_hists[i], dtype=np.float32),
                     "rho_hist": np.asarray(rho_hists[i], dtype=np.float32),
-                    "topK_hist": np.asarray(activeK_hists[i], dtype=np.float32),
+                    "topK_hist": np.asarray(topK_hists[i], dtype=np.float32),
                     "I_QP_hist": np.asarray(I_QP_hists[i], dtype=np.float32),
                     "eps_hist": np.asarray(eps_hists[i], dtype=np.float32),
                     "m_k_hist": np.asarray(m_k_hists[i], dtype=np.float32),
-                    "lambda_hist": np.asarray(rho_hists[i], dtype=np.float32),
+                    "probe_b_hist": np.asarray(probe_b_hists[i], dtype=np.float32),
+                    "lambda_hist": np.asarray(lambda_hists[i], dtype=np.float32),
                     "p_hist": np.asarray(p_hists[i], dtype=np.float32),
-                    "nu_hist": np.zeros_like(np.asarray(rho_hists[i], dtype=np.float32)),
-                    "compute_cost_hist": (np.asarray(qp_call_hists[i], dtype=np.float32) * np.asarray(activeK_hists[i], dtype=np.float32) * np.asarray(I_QP_hists[i], dtype=np.float32)).astype(np.float32),
+                    "nu_hist": np.asarray(nu_hists[i], dtype=np.float32),
+                    "compute_cost_hist": np.asarray(compute_cost_hists[i], dtype=np.float32),
                     "candidate_states": [states_np[i]],
                     "candidate_actions": [actions_np[i]],
                     "candidate_costs": np.asarray([float(costs[i])], dtype=np.float32),

@@ -17,98 +17,64 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import imageio.v2 as imageio
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 
-def _load_nerf_synthetic(
-    dataset_root: Path,
-    split: str = "train",
-    max_views: int = 50,
-    view_stride: int = 1,
-    shuffle_seed: int = 0,
-    h: int = 128,
-    w: int = 128,
-    return_masks: bool = False,
+def _load_nerf_synthetic_via_adapter(
+    ep: dict,
+    project_root: Path,
+    *,
+    split: str,
+    h: int,
+    w: int,
+    max_views: int | None,
+    view_stride: int,
+    shuffle_seed: int | None,
+    return_masks: bool,
 ) -> tuple:
-    """Load NeRF Synthetic images, poses, intrinsics (no genedynamics deps)."""
-    tf_path = dataset_root / f"transforms_{split}.json"
-    with open(tf_path) as f:
-        meta = json.load(f)
-    frames = meta["frames"]
-    angle_x = meta["camera_angle_x"]
+    """Load NeRF Synthetic via NerfSyntheticDataAdapter (matches MBD stress protocol)."""
+    from genedynamics.solvers.single.mbd3d.data import (
+        NerfSyntheticDataAdapter,
+        nerf_synthetic_config_from_env_params,
+    )
 
-    stride = max(1, view_stride)
-    idx = np.arange(0, len(frames), stride, dtype=np.int32)
-    if shuffle_seed is not None:
-        rng = np.random.default_rng(int(shuffle_seed))
-        rng.shuffle(idx)
-    if max_views and idx.size > max_views:
-        idx = idx[:max_views]
-    idx = np.sort(idx)
+    m_ep = dict(ep)
+    m_ep["max_views"] = max_views
+    m_ep["view_stride"] = view_stride
+    m_ep["shuffle_seed"] = shuffle_seed
 
-    fx = 0.5 * w / np.tan(0.5 * angle_x)
-    K = np.array([[fx, 0, w / 2], [0, fx, h / 2], [0, 0, 1]], dtype=np.float32)
-    opengl_to_cv = np.diag([1.0, -1.0, -1.0, 1.0]).astype(np.float32)
-
-    def _to_pose(c2w):
-        c2w = np.asarray(c2w) @ opengl_to_cv
-        t = c2w[:3, 3]
-        R = c2w[:3, :3]
-        tr = float(np.trace(R))
-        if tr > 0:
-            s = np.sqrt(tr + 1) * 2
-            qw, qx = 0.25 * s, (R[2, 1] - R[1, 2]) / s
-            qy, qz = (R[0, 2] - R[2, 0]) / s, (R[1, 0] - R[0, 1]) / s
-        elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
-            s = np.sqrt(1 + R[0, 0] - R[1, 1] - R[2, 2]) * 2
-            qw, qx = (R[2, 1] - R[1, 2]) / s, 0.25 * s
-            qy, qz = (R[0, 1] + R[1, 0]) / s, (R[0, 2] + R[2, 0]) / s
-        elif R[1, 1] > R[2, 2]:
-            s = np.sqrt(1 + R[1, 1] - R[0, 0] - R[2, 2]) * 2
-            qw, qx = (R[0, 2] - R[2, 0]) / s, (R[0, 1] + R[1, 0]) / s
-            qy, qz = 0.25 * s, (R[1, 2] + R[2, 1]) / s
+    dataset_root = Path(m_ep.get("dataset_root", "data/nerf_synthetic/lego"))
+    if not dataset_root.is_absolute():
+        dataset_root = project_root / dataset_root
+    if not dataset_root.exists():
+        fallback = project_root / "data" / "nerf_synthetic" / "lego"
+        if fallback.exists():
+            dataset_root = fallback
         else:
-            s = np.sqrt(1 + R[2, 2] - R[0, 0] - R[1, 1]) * 2
-            qw, qx = (R[1, 0] - R[0, 1]) / s, (R[0, 2] + R[2, 0]) / s
-            qy, qz = (R[1, 2] + R[2, 1]) / s, 0.25 * s
-        q = np.array([qw, qx, qy, qz], dtype=np.float32)
-        return np.concatenate([t, q / (np.linalg.norm(q) + 1e-8)])
+            alt = project_root / "data" / "lego"
+            if alt.exists():
+                dataset_root = alt
+    m_ep["dataset_root"] = str(dataset_root)
 
-    images, poses, Ks = [], [], []
-    masks_list = [] if return_masks else None
-    for i in idx:
-        fr = frames[int(i)]
-        fp = fr.get("file_path", "").replace("\\", "/").lstrip("./")
-        path = dataset_root / fp
-        for suf in ("", ".png", ".jpg"):
-            p = path.with_suffix(suf) if suf else path
-            if p.exists():
-                path = p
-                break
-        img = np.asarray(imageio.imread(path), dtype=np.float32) / 255.0
-        mask = None
-        if img.shape[-1] == 4:
-            mask = img[..., 3:4].copy()
-            bg = np.ones_like(img[..., :1])
-            img = img[..., :3] * img[..., 3:4] + bg * (1 - img[..., 3:4])
-        if img.shape[:2] != (h, w):
-            from PIL import Image
-            img = np.array(Image.fromarray((img * 255).astype(np.uint8)).resize((w, h))) / 255.0
-            if mask is not None:
-                m = (mask.squeeze() * 255).astype(np.uint8)
-                mask = np.array(Image.fromarray(m).resize((w, h))).astype(np.float32)[..., None] / 255.0
-        images.append(img.astype(np.float32))
-        if return_masks:
-            masks_list.append(mask.astype(np.float32) if mask is not None else np.ones((h, w, 1), dtype=np.float32))
-        poses.append(_to_pose(fr["transform_matrix"]))
-        Ks.append(K.copy())
-
-    if return_masks and masks_list:
-        return np.stack(images), np.stack(poses), np.stack(Ks), np.stack(masks_list)
-    return np.stack(images), np.stack(poses), np.stack(Ks)
+    cfg = nerf_synthetic_config_from_env_params(
+        m_ep,
+        adapter_default_split=split,
+        image_height=h,
+        image_width=w,
+        return_view_masks=return_masks,
+    )
+    ds = NerfSyntheticDataAdapter(cfg).load_split(split=split)
+    images = ds.images
+    poses = ds.camera_poses
+    K = ds.intrinsics
+    if return_masks and ds.masks is not None:
+        return images, poses, K, ds.masks
+    if return_masks:
+        masks = np.ones((images.shape[0], h, w, 1), dtype=np.float32)
+        return images, poses, K, masks
+    return images, poses, K
 
 
 def main():
@@ -136,25 +102,18 @@ def main():
         cfg = yaml.safe_load(f)
 
     ep = cfg.get("env_params", {})
-    dataset_root = Path(ep.get("dataset_root", "data/nerf_synthetic/lego"))
-    if not dataset_root.is_absolute():
-        dataset_root = ROOT / dataset_root
-    if not dataset_root.exists():
-        dataset_root = ROOT / "data" / "nerf_synthetic" / "lego"
-    if not dataset_root.exists():
-        dataset_root = ROOT / "data" / "lego"
-
     max_views = ep.get("max_views", 50)
     res = ep.get("resolution_infer", 128)
     use_mask_loss = args.mask_loss
-    out = _load_nerf_synthetic(
-        dataset_root,
+    out = _load_nerf_synthetic_via_adapter(
+        ep,
+        ROOT,
         split=ep.get("split", "train"),
-        max_views=max_views,
-        view_stride=ep.get("view_stride", 1),
-        shuffle_seed=ep.get("shuffle_seed", 0),
         h=res,
         w=res,
+        max_views=max_views,
+        view_stride=int(ep.get("view_stride", 1)),
+        shuffle_seed=ep.get("shuffle_seed", 0),
         return_masks=use_mask_loss,
     )
     if use_mask_loss and len(out) == 4:
@@ -344,14 +303,15 @@ def main():
     # Evaluate on test split (gsplat renderer)
     eval_split = ep.get("eval_split", "test")
     eval_res = ep.get("eval_resolution") or ep.get("resolution_eval", 512)
-    test_out = _load_nerf_synthetic(
-        dataset_root,
+    test_out = _load_nerf_synthetic_via_adapter(
+        ep,
+        ROOT,
         split=eval_split,
+        h=eval_res,
+        w=eval_res,
         max_views=None,
         view_stride=1,
         shuffle_seed=None,
-        h=eval_res,
-        w=eval_res,
         return_masks=False,
     )
     test_images, test_poses, test_K = test_out[:3]
@@ -383,14 +343,15 @@ def main():
     train_at_eval_psnr_save = None
     # Sanity: eval on train at eval_res (should be high if rendering is correct)
     if eval_split != "train":
-        train_eval_out = _load_nerf_synthetic(
-            dataset_root,
+        train_eval_out = _load_nerf_synthetic_via_adapter(
+            ep,
+            ROOT,
             split="train",
-            max_views=max_views,
-            view_stride=ep.get("view_stride", 1),
-            shuffle_seed=ep.get("shuffle_seed", 0),
             h=eval_res,
             w=eval_res,
+            max_views=max_views,
+            view_stride=int(ep.get("view_stride", 1)),
+            shuffle_seed=ep.get("shuffle_seed", 0),
             return_masks=False,
         )
         te_imgs, te_poses, te_K = train_eval_out[:3]

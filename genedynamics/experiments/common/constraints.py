@@ -20,8 +20,6 @@ from genedynamics.core.constraints.schedulers import (
     FixedDiffusionScheduler,
     EmergingBarrierConstraintScheduler,
     ALMAdaptiveConstraintScheduler,
-    TwoGOConstraintScheduler,
-    TwoGODiffusionScheduler,
 )
 
 # Import to trigger registration of all components
@@ -422,30 +420,6 @@ def create_scheduler_from_config(
                     backend='jax',
                 )
                 constraint_schedulers.append(scheduler)
-            elif cs_type == 'twogo':
-                scheduler = TwoGOConstraintScheduler(
-                    margin=float(cs_config.get('margin', 0.05)),
-                    lam_start=float(cs_config.get('lam_start', 0.0)),
-                    lam_end=float(cs_config.get('lam_end', 500.0)),
-                    lam_power=float(cs_config.get('lam_power', 1.0)),
-                    kappa0=float(cs_config.get('kappa0', 1.0)),
-                    kappa_gain=float(cs_config.get('kappa_gain', 0.01)),
-                    delta0=float(cs_config.get('delta0', 0.02)),
-                    delta_power=float(cs_config.get('delta_power', 1.0)),
-                    delta_lambda_power=float(cs_config.get('delta_lambda_power', 1.0)),
-                    lambda0=float(cs_config.get('lambda0', 1.0)),
-                    cvar_alpha=float(cs_config.get('cvar_alpha', 0.9)),
-                    qp_prob_min=float(cs_config.get('qp_prob_min', 0.2)),
-                    qp_prob_max=float(cs_config.get('qp_prob_max', 1.0)),
-                    topK_min=int(cs_config.get('topK_min', 2)),
-                    topK_max=int(cs_config.get('topK_max', 8)),
-                    I_QP_min=int(cs_config.get('I_QP_min', 1)),
-                    I_QP_max=int(cs_config.get('I_QP_max', 2)),
-                    eps_min=float(cs_config.get('eps_min', 1e-5)),
-                    eps_max=float(cs_config.get('eps_max', 1e-3)),
-                    backend=backend_name,
-                )
-                constraint_schedulers.append(scheduler)
             else:
                 raise ValueError(f"Unknown constraint scheduler type: {cs_type}")
         
@@ -462,23 +436,6 @@ def create_scheduler_from_config(
                     beta0=ds_config.get('beta0'),
                     betaT=ds_config.get('betaT'),
                     Ndiffuse=ds_config.get('Ndiffuse'),
-                    backend=backend_name,
-                )
-                diffusion_schedulers.append(scheduler)
-            elif ds_type == 'twogo':
-                scheduler = TwoGODiffusionScheduler(
-                    M_k=int(ds_config.get('M_k', 64)),
-                    T_k=float(ds_config.get('T_k', 0.5)),
-                    sigma_max=float(ds_config.get('sigma_max', 0.25)),
-                    theta_start=float(ds_config.get('theta_start', 0.6)),
-                    theta_end=float(ds_config.get('theta_end', 0.2)),
-                    q=float(ds_config.get('q', 1.0)),
-                    q_lambda=float(ds_config.get('q_lambda', 1.0)),
-                    lambda0=float(ds_config.get('lambda0', 1.0)),
-                    lam_start=float(ds_config.get('lam_start', 0.0)),
-                    lam_end=float(ds_config.get('lam_end', 500.0)),
-                    lam_power=float(ds_config.get('lam_power', 1.0)),
-                    gate_every=int(ds_config.get('gate_every', 1)),
                     backend=backend_name,
                 )
                 diffusion_schedulers.append(scheduler)

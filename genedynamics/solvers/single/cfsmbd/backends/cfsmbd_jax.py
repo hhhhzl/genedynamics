@@ -505,6 +505,41 @@ class CFSMBDBackendJax:
 
         self._rollout_states_fn = jax.jit(rollout_states)
 
+        # Constraint normals in action space from SDF geometry (texture / jax sampler),
+        # aligned with numpy 2GO refine: a_t[:, :pdim] = dt * (-∇sdf/||∇sdf||) on violated steps.
+        pdim_geom = int(self.position_dim)
+        H_geom = int(self.horizon)
+        adim_geom = int(self.act_dim)
+        dt_geom = float(self.dt)
+
+        if self.obstacles is None:
+
+            def constraint_geometry_time_single(x0_in, actions, clearance):
+                del x0_in, actions, clearance
+                return jnp.zeros((H_geom, adim_geom), dtype=jnp.float32)
+        else:
+
+            def constraint_geometry_time_single(x0_in, actions, clearance):
+                states = rollout_states(x0_in, actions)
+                pos = states[1:, :pdim_geom]
+                sdf, grad = self.obstacles.sample_sdf_and_grad_2d(pos, backend="jax")
+                sdf = jnp.asarray(sdf, dtype=jnp.float32).reshape(H_geom)
+                grad = jnp.asarray(grad, dtype=jnp.float32)
+                gdim = grad.shape[-1]
+                grad = grad.reshape(H_geom, gdim)
+                grad_p = grad[:, :pdim_geom]
+                norms = jnp.linalg.norm(grad_p, axis=-1, keepdims=True) + jnp.asarray(1e-8, dtype=jnp.float32)
+                n_unit = -grad_p / norms
+                clr = jnp.asarray(clearance, dtype=jnp.float32)
+                g_plus = jnp.maximum(jnp.asarray(0.0, dtype=jnp.float32), clr - sdf)
+                mask = (g_plus > jnp.asarray(1e-7, dtype=jnp.float32)).astype(jnp.float32)
+                a_slice = (jnp.asarray(dt_geom, dtype=jnp.float32) * n_unit) * mask[:, None]
+                a_time = jnp.zeros((H_geom, adim_geom), dtype=jnp.float32)
+                a_time = a_time.at[:, :pdim_geom].set(a_slice)
+                return a_time
+
+        self._constraint_geometry_time_jit = jax.jit(constraint_geometry_time_single)
+
         # Batch rollouts (used by multi-mode candidate extraction in `plan()`).
         def rollout_states_batch(state_init, actions_batch):
             return jax.vmap(lambda a: rollout_states(state_init, a), in_axes=0)(actions_batch)

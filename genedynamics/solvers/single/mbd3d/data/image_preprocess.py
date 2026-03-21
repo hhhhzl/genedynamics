@@ -7,7 +7,7 @@ RGBA compositing and normalization.
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 import numpy as np
 
@@ -103,6 +103,44 @@ def prepare_for_inference(
     img = composite_rgba(img, composite_background)
     img = resize_image(img, infer_height, infer_width)
     return img.astype(np.float32)
+
+
+ExposureDriftMode = Union[Literal["constant_add", "linear_gain"], None]
+
+
+def apply_exposure_drift(
+    img: np.ndarray,
+    *,
+    view_index: int,
+    n_views: int,
+    mode: ExposureDriftMode,
+    strength: float,
+) -> np.ndarray:
+    """
+    Simulated shared exposure / gain trajectory across views (post-normalize RGB in [0,1]).
+
+    Args:
+        img: (H, W, 3) float32 in [0, 1]
+        view_index: 0 .. n_views-1 (order matches load_split iteration order, not raw frame id)
+        n_views: number of views in this bundle (for normalizing linear_gain ramp)
+        mode: "constant_add" -> I' = clip(I + strength); "linear_gain" -> I' = clip(I * (1 + s * t))
+              with t in [0, 1] across views. None or unknown -> unchanged.
+        strength: scale for the chosen mode (e.g. 0.05 add; 0.1 gain ramp amplitude)
+    """
+    if mode is None or abs(float(strength)) < 1e-12:
+        return np.asarray(img, dtype=np.float32)
+    img = np.asarray(img, dtype=np.float32)
+    s = float(strength)
+    nv = max(1, int(n_views))
+    ii = int(view_index)
+    if mode == "constant_add":
+        out = img + s
+    elif mode == "linear_gain":
+        t = ii / float(nv - 1) if nv > 1 else 0.0
+        out = img * (1.0 + s * t)
+    else:
+        return img
+    return np.clip(out, 0.0, 1.0).astype(np.float32)
 
 
 def prepare_for_eval(

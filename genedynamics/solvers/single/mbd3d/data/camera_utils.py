@@ -146,6 +146,18 @@ def pose_to_c2w_matrix(pose: np.ndarray) -> np.ndarray:
     return c2w
 
 
+def c2w_to_pose7(c2w: np.ndarray) -> np.ndarray:
+    """
+    Inverse of pose_to_c2w_matrix: 4x4 c2w -> [px, py, pz, qw, qx, qy, qz].
+    """
+    T = np.asarray(c2w, dtype=np.float32)
+    if T.shape != (4, 4):
+        raise ValueError(f"Expected 4x4 c2w, got {T.shape}")
+    t = T[:3, 3]
+    q = rotation_matrix_to_quaternion_wxyz(T[:3, :3])
+    return np.concatenate([t.astype(np.float32), q.astype(np.float32)], axis=0)
+
+
 def resize_intrinsics(
     K: np.ndarray,
     orig_height: int,
