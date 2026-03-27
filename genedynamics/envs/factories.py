@@ -67,6 +67,9 @@ def make_env(name: str, **kwargs):
     elif name == "single_integrator_box_2d":
         from genedynamics.envs.single_integrator_box_2d import SingleIntegratorBox2DEnv
         return SingleIntegratorBox2DEnv(**kwargs)
+    elif name == "quadruped_stepping_stones_2d":
+        from genedynamics.envs.quadruped_stepping_stones_2d import QuadrupedSteppingStones2DEnv
+        return QuadrupedSteppingStones2DEnv(**kwargs)
     elif name == "drone_box_3d":
         from genedynamics.envs.drone_box_3d import DroneBox3DEnv
         return DroneBox3DEnv(**kwargs)
@@ -443,6 +446,13 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
             "control": EnergyTerm(control_energy, 1.0),
             "box": EnergyTerm(box_energy, 0.1),
         })
+    elif env_name == "quadruped_stepping_stones_2d":
+        from genedynamics.envs.quadruped_stepping_stones_2d import (
+            QuadrupedSteppingStones2DEnv,
+            make_stepping_stones_energy,
+        )
+
+        return make_stepping_stones_energy(QuadrupedSteppingStones2DEnv())
     else:
         raise ValueError(f"Unknown environment name: {env_name}")
 

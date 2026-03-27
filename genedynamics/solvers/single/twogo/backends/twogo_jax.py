@@ -79,6 +79,15 @@ class TwoGOBackendJax:
         if self.twogo_use_jax_scan_core:
             self._build_twogo_scan_kernels()
 
+    def _resolve_stepping_scene(self):
+        env = getattr(self._inner, "env", None)
+        if env is not None and hasattr(env, "scene") and getattr(env, "scene") is not None:
+            return getattr(env, "scene")
+        obs = getattr(self._inner, "obstacles", None)
+        if obs is not None and hasattr(obs, "stepping_scene"):
+            return getattr(obs, "stepping_scene")
+        return None
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
 
@@ -176,6 +185,68 @@ class TwoGOBackendJax:
         tail_mix_f = float(self.twogo_probe_tail_mix)
         probe_alpha = float(self.twogo_probe_geom_alpha)
         probe_enable = bool(self.twogo_probe_enable)
+        stepping_scene = self._resolve_stepping_scene()
+        stepping_enabled = bool(stepping_scene is not None and int(act_dim) >= 4)
+        if stepping_scene is not None:
+            step_centers = jnp.asarray(np.asarray(stepping_scene.stones_centers, dtype=np.float32), dtype=jnp.float32)
+            step_radii = jnp.asarray(np.asarray(stepping_scene.stones_radii, dtype=np.float32), dtype=jnp.float32)
+            step_lmax = jnp.asarray(float(getattr(stepping_scene, "l_max", 0.35)), dtype=jnp.float32)
+        else:
+            step_centers = jnp.zeros((1, 2), dtype=jnp.float32)
+            step_radii = jnp.ones((1,), dtype=jnp.float32)
+            step_lmax = jnp.asarray(0.35, dtype=jnp.float32)
+
+        def _project_to_nearest_stone(point_xy: jnp.ndarray) -> jnp.ndarray:
+            d = jnp.linalg.norm(point_xy[None, :] - step_centers, axis=-1)
+            i = jnp.argmin(d)
+            c = step_centers[i]
+            r = step_radii[i]
+            v = point_xy - c
+            n = jnp.linalg.norm(v)
+            return jnp.where(n <= r, point_xy, c + (r / jnp.maximum(n, 1e-6)) * v)
+
+        def _clip_step(delta_xy: jnp.ndarray, lmax_xy: jnp.ndarray) -> jnp.ndarray:
+            n = jnp.linalg.norm(delta_xy)
+            scale = jnp.where(n > lmax_xy, lmax_xy / jnp.maximum(n, 1e-6), jnp.asarray(1.0, dtype=jnp.float32))
+            return delta_xy * scale
+
+        def _stepping_retract_single(x0_loc: jnp.ndarray, actions_in: jnp.ndarray) -> jnp.ndarray:
+            """
+            Retraction for stepping-stones: nearest-stone projection + step-length clipping.
+            """
+            x0f = jnp.asarray(x0_loc, dtype=jnp.float32).reshape(-1)
+            a_in = jnp.asarray(actions_in, dtype=jnp.float32)
+            H_local = a_in.shape[0]
+
+            p0_l = x0f[:2]
+            p0_r = x0f[2:4]
+
+            def _step(carry, t):
+                p_l, p_r, a_prev = carry
+                u_t = a_in[t]
+                d_l_raw = u_t[:2]
+                d_r_raw = u_t[2:4]
+                p_l_prop = p_l + d_l_raw
+                p_r_prop = p_r + d_r_raw
+                p_l_proj = _project_to_nearest_stone(p_l_prop)
+                p_r_proj = _project_to_nearest_stone(p_r_prop)
+                d_l = _clip_step(p_l_proj - p_l, step_lmax)
+                d_r = _clip_step(p_r_proj - p_r, step_lmax)
+                p_l_n = p_l + d_l
+                p_r_n = p_r + d_r
+                u_new = u_t.at[:2].set(d_l)
+                u_new = u_new.at[2:4].set(d_r)
+                a_next = a_prev.at[t].set(u_new)
+                return (p_l_n, p_r_n, a_next), None
+
+            a0 = a_in
+            (p_l_f, p_r_f, a_out), _ = jax.lax.scan(
+                _step,
+                (p0_l, p0_r, a0),
+                jnp.arange(H_local, dtype=jnp.int32),
+            )
+            _ = (p_l_f, p_r_f)
+            return jnp.clip(a_out, -action_limit, action_limit)
 
         def _sched_lookup_fixed(step_k: jnp.ndarray):
             if margin_arr is not None:
@@ -267,6 +338,8 @@ class TwoGOBackendJax:
                         "topK": topK_l,
                         "rng_key": keyp,
                     }
+                    if stepping_enabled:
+                        return _stepping_retract_single(x0_loc, y)
                     return inner._filter_actions_single_jit(x0_loc, y, sched_state_l, sp_l)
 
                 y_f_l = jax.vmap(probe_one_l)(Y_g_l, probe_keys_l)
@@ -451,9 +524,13 @@ class TwoGOBackendJax:
                 sched_params_retract = dict(sched_params)
                 sched_params_retract["qp_gate"] = jnp.asarray(True, dtype=jnp.bool_)
                 sched_params_retract["qp_prob"] = jnp.asarray(1.0, dtype=jnp.float32)
+                if stepping_enabled:
+                    retract_fn = lambda y: _stepping_retract_single(x0_jnp, y)
+                else:
+                    retract_fn = lambda y: inner._filter_actions_single_jit(x0_jnp, y, sched_state, sched_params_retract)
                 Ybar_next = jax.lax.cond(
                     do_retract_qp,
-                    lambda y: inner._filter_actions_single_jit(x0_jnp, y, sched_state, sched_params_retract),
+                    retract_fn,
                     lambda y: y,
                     Ybar_tilde,
                 )

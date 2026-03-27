@@ -1,0 +1,79 @@
+name: quadruped_stepping_stones_2d_2go_no_gate
+output_dir: results/quadruped/stepping_stones_2d/ablations/2go_no_gate
+
+env_name: quadruped_stepping_stones_2d
+env_params:
+  dt: 1.0
+  horizon: 12
+  l_max: 0.35
+  stance_width: 0.30
+  start_mid: [-1.25, 0.0]
+  goal_mid: [1.25, 0.0]
+  control_limit: 0.45
+
+method: 2go
+method_params:
+  show_tqdm: true
+  action_extra_sigma: 0.02
+  max_constraints_per_point: 12
+  constraint_margin: 0.05
+  aug_lambda: 0.0
+  aug_rho: 1.0
+  num_modes: 8
+  mode_strategy: multirun
+  twogo_gate_vrate_threshold: 1.0
+  twogo_cvar_alpha: 0.9
+  twogo_window_size: 6
+  twogo_window_stride: 3
+  twogo_tail_ratio: 0.35
+  twogo_active_topk: 6
+  twogo_agp_eta: 0.08
+  twogo_cfs_gain: 0.35
+  twogo_multi_scale: 0.25
+  twogo_enable_local_gating: false
+  twogo_enable_sample_tail: true
+  twogo_use_jax_scan_core: true
+  twogo_retract_qp_boost: true
+  twogo_retract_qp_every: 1
+  twogo_probe_enable: true
+  twogo_probe_tail_mix: 0.5
+  twogo_probe_tail_pool_ratio: 0.25
+  twogo_probe_geom_alpha: 0.25
+  twogo_probe_b: 24
+
+obstacle_levels: [1, 3, 5]
+obstacle_config:
+  generator: stepping_stones_2d
+  robot_radius: 0.03
+  success_margin: 0.12
+  l_max: 0.35
+  stance_width: 0.30
+
+seeds: [0, 1, 2, 3, 4]
+backend: jax
+device: cuda
+
+metrics: [stepping_metrics]
+visualizations: [stepping_trajectory, stepping_modes]
+
+scheduler_config:
+  type: composite
+  constraint_schedulers:
+    - type: alm_adaptive
+      margin: 0.05
+      lam0: 0.0
+      rho0: 1.0
+      nu0: 0.0
+      rho_min: 0.5
+      rho_max: 400.0
+      use_stochastic_gate: true
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 128
+      T_k: 0.12
+      Ndiffuse: 64
+      beta0: 1e-5
+      betaT: 1e-2
+  constraint_merge_strategy: merge
+  diffusion_merge_strategy: merge
+

@@ -42,6 +42,7 @@ from .environments import (
     QuadrupedFlatMjxPlugin,
     QuadrupedGo2MjxPlugin,
     QuadrupedGo2BraxPlugin,
+    QuadrupedSteppingStones2DPlugin,
     HumanoidSimplifiedMjxPlugin,
     HumanoidG1MjxPlugin,
     HumanoidRunBraxPlugin,
@@ -63,6 +64,7 @@ from .metrics import (
     ObstacleDensityMetricsPlugin,
     NonconvexityMetricsPlugin,
     EpisodeOutcomeMetricsPlugin,
+    SteppingStonesMetricsPlugin,
 )
 
 from .visualizations import (
@@ -74,12 +76,15 @@ from .visualizations import (
     EnergyRewardVisualizationPlugin,
     StatesVisualizationPlugin,
     SchedulerParamsVisualizationPlugin,
+    SteppingStonesTrajectoryVisualizationPlugin,
+    SteppingStonesModesVisualizationPlugin,
 )
 
 from .obstacles import (
     Box2DObstacleGeneratorPlugin,
     Box3DObstacleGeneratorPlugin,
     D3ILAvoidingFixedGeneratorPlugin,
+    SteppingStones2DObstacleGeneratorPlugin,
 )
 
 __all__ = [
@@ -103,6 +108,7 @@ __all__ = [
     'QuadrupedFlatMjxPlugin',
     'QuadrupedGo2MjxPlugin',
     'QuadrupedGo2BraxPlugin',
+    'QuadrupedSteppingStones2DPlugin',
     'HumanoidSimplifiedMjxPlugin',
     'HumanoidG1MjxPlugin',
     'HumanoidRunBraxPlugin',
@@ -122,6 +128,7 @@ __all__ = [
     'ObstacleDensityMetricsPlugin',
     'NonconvexityMetricsPlugin',
     'EpisodeOutcomeMetricsPlugin',
+    'SteppingStonesMetricsPlugin',
     # Visualizations
     'TrajectoryVisualizationPlugin',
     'Trajectory3DVisualizationPlugin',
@@ -131,9 +138,12 @@ __all__ = [
     'EnergyRewardVisualizationPlugin',
     'StatesVisualizationPlugin',
     'SchedulerParamsVisualizationPlugin',
+    'SteppingStonesTrajectoryVisualizationPlugin',
+    'SteppingStonesModesVisualizationPlugin',
     # Obstacles
     'Box2DObstacleGeneratorPlugin',
     'Box3DObstacleGeneratorPlugin',
     'D3ILAvoidingFixedGeneratorPlugin',
+    'SteppingStones2DObstacleGeneratorPlugin',
 ]
 

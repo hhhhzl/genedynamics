@@ -41,6 +41,7 @@ from genedynamics.experiments.plugins import (
     QuadrupedFlatMjxPlugin,
     QuadrupedGo2MjxPlugin,
     QuadrupedGo2BraxPlugin,
+    QuadrupedSteppingStones2DPlugin,
     HumanoidSimplifiedMjxPlugin,
     HumanoidRunBraxPlugin,
     HumanoidG1MjxPlugin,
@@ -59,6 +60,7 @@ from genedynamics.experiments.plugins import (
     ObstacleDensityMetricsPlugin,
     NonconvexityMetricsPlugin,
     EpisodeOutcomeMetricsPlugin,
+    SteppingStonesMetricsPlugin,
     TrajectoryVisualizationPlugin,
     Trajectory3DVisualizationPlugin,
     TrajectoryModesVisualizationPlugin,
@@ -67,9 +69,12 @@ from genedynamics.experiments.plugins import (
     EnergyRewardVisualizationPlugin,
     StatesVisualizationPlugin,
     SchedulerParamsVisualizationPlugin,
+    SteppingStonesTrajectoryVisualizationPlugin,
+    SteppingStonesModesVisualizationPlugin,
     Box2DObstacleGeneratorPlugin,
     Box3DObstacleGeneratorPlugin,
     D3ILAvoidingFixedGeneratorPlugin,
+    SteppingStones2DObstacleGeneratorPlugin,
 )
 
 
@@ -204,6 +209,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(QuadrupedFlatMjxPlugin(), 'environment')
     runner.register_plugin(QuadrupedGo2MjxPlugin(), 'environment')
     runner.register_plugin(QuadrupedGo2BraxPlugin(), 'environment')
+    runner.register_plugin(QuadrupedSteppingStones2DPlugin(), 'environment')
     runner.register_plugin(HumanoidSimplifiedMjxPlugin(), 'environment')
     runner.register_plugin(HumanoidRunBraxPlugin(), 'environment')
     runner.register_plugin(HumanoidG1MjxPlugin(), 'environment')
@@ -224,6 +230,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(ObstacleDensityMetricsPlugin(), 'metric')
     runner.register_plugin(NonconvexityMetricsPlugin(), 'metric')
     runner.register_plugin(EpisodeOutcomeMetricsPlugin(), 'metric')
+    runner.register_plugin(SteppingStonesMetricsPlugin(), 'metric')
     
     # Visualization plugins
     runner.register_plugin(TrajectoryVisualizationPlugin(), 'visualization')
@@ -234,11 +241,14 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(EnergyRewardVisualizationPlugin(), 'visualization')
     runner.register_plugin(StatesVisualizationPlugin(), 'visualization')
     runner.register_plugin(SchedulerParamsVisualizationPlugin(), 'visualization')
+    runner.register_plugin(SteppingStonesTrajectoryVisualizationPlugin(), 'visualization')
+    runner.register_plugin(SteppingStonesModesVisualizationPlugin(), 'visualization')
     
     # Obstacle generator plugins
     runner.register_plugin(Box2DObstacleGeneratorPlugin(), 'obstacle_generator')
     runner.register_plugin(Box3DObstacleGeneratorPlugin(), 'obstacle_generator')
     runner.register_plugin(D3ILAvoidingFixedGeneratorPlugin(), 'obstacle_generator')
+    runner.register_plugin(SteppingStones2DObstacleGeneratorPlugin(), 'obstacle_generator')
 
 
 if __name__ == "__main__":

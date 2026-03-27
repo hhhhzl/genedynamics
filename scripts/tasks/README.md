@@ -27,6 +27,11 @@ Quadruped, UAV, acceptance tests.
 | Script | Purpose |
 |--------|---------|
 | `run_quadruped_plan.sh` | MBD + MD-COAS + Go2 plans |
+| `run_stepping_stones_baselines.sh` | Stepping-stones baselines (MBD/MDOC/MD-COAS) |
+| `run_stepping_stones_main.sh` | Stepping-stones full main suite (MBD/MDOC/MD-COAS/2GO) |
+| `run_stepping_stones_ablations.sh` | 2GO ablations on stepping-stones |
+| `run_stepping_stones_smoke.sh` | Stepping-stones smoke checks |
+| `summarize_stepping_stones.py` | Aggregate success/CVaR/time from results |
 | `run_quadruped_quick.py` | One-shot deploy + render |
 | `run_acceptance.sh` | Acceptance tests |
 | `run_phase4_validation.sh` | Phase 4 closed-loop validation |
