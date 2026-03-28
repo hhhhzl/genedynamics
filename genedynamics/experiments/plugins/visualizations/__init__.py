@@ -10,6 +10,10 @@ from .diffusion_3d import Diffusion3DVisualizationPlugin
 from .energy_reward import EnergyRewardVisualizationPlugin
 from .states import StatesVisualizationPlugin
 from .scheduler_params import SchedulerParamsVisualizationPlugin
+from .stepping_stones_trajectory import (
+    SteppingStonesTrajectoryVisualizationPlugin,
+    SteppingStonesModesVisualizationPlugin,
+)
 
 __all__ = [
     'TrajectoryVisualizationPlugin',
@@ -20,5 +24,7 @@ __all__ = [
     'EnergyRewardVisualizationPlugin',
     'StatesVisualizationPlugin',
     'SchedulerParamsVisualizationPlugin',
+    'SteppingStonesTrajectoryVisualizationPlugin',
+    'SteppingStonesModesVisualizationPlugin',
 ]
 

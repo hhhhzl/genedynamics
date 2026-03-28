@@ -204,6 +204,8 @@ def get_default_task_spec(
         TaskSpec instance
     """
     env_name_lower = (env_name or "").lower()
+    if "stepping_stones_2d" in env_name_lower and env_plugin is not None and hasattr(env_plugin, "extract_position"):
+        return EnvPluginTaskSpecAdapter(env_plugin, fallback=Legacy2DTaskSpec())
     # SoftZoo: high-dim soft robot, use 2D centroid by default
     if "softzoo" in env_name_lower:
         return SoftZooTaskSpec(position_dim=2)

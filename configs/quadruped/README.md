@@ -9,6 +9,7 @@ Uses `scheduler_config` (diffusion_schedulers, constraint_schedulers) aligned wi
 | Task | Plan | Deploy |
 |------|------|--------|
 | **flat** | mbd, mdcoas, mbd_plan_go2 | mbd, mdcoas (+ _quick) |
+| **stepping_stones_2d** | 2go, mbd, mdoc, mdcoas | - |
 | **obstacle_avoid** | - | mdcoas (+ _quick) |
 | **rough_terrain** | - | mbd (+ _quick) |
 | **push_recovery** | - | mbd (+ _quick) |

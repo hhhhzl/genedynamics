@@ -1,0 +1,49 @@
+name: quadruped_stepping_stones_2d_mdoc_smoke
+output_dir: results/quadruped/stepping_stones_2d/smoke/mdoc
+
+env_name: quadruped_stepping_stones_2d
+env_params:
+  dt: 1.0
+  horizon: 12
+  l_max: 0.35
+  stance_width: 0.30
+  start_mid: [-1.25, 0.0]
+  goal_mid: [1.25, 0.0]
+  control_limit: 0.45
+
+method: mdoc
+method_params:
+  show_tqdm: true
+  action_extra_sigma: 0.02
+  terminal_energy_weight: 120.0
+  num_modes: 4
+  mode_strategy: multirun
+  mdoc_constraint_mode: noop
+
+obstacle_levels: [1]
+obstacle_config:
+  generator: stepping_stones_2d
+  robot_radius: 0.03
+  foothold_margin: 0.05
+  success_margin: 0.12
+  l_max: 0.35
+  stance_width: 0.30
+
+seeds: [0]
+backend: jax
+device: cuda
+
+metrics: [stepping_metrics]
+visualizations: [stepping_trajectory, stepping_modes]
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 64
+      T_k: 0.12
+      Ndiffuse: 24
+      beta0: 1e-5
+      betaT: 1e-2
+  diffusion_merge_strategy: merge
+

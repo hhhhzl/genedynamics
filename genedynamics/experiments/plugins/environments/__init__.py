@@ -9,6 +9,7 @@ from .quadruped import (
     QuadrupedGo2MjxPlugin,
     QuadrupedGo2BraxPlugin,
 )
+from .quadruped_stepping_stones_2d import QuadrupedSteppingStones2DPlugin
 from .humanoid import (
     HumanoidSimplifiedMjxPlugin,
     HumanoidG1MjxPlugin,
@@ -34,6 +35,7 @@ __all__ = [
     'QuadrupedFlatMjxPlugin',
     'QuadrupedGo2MjxPlugin',
     'QuadrupedGo2BraxPlugin',
+    'QuadrupedSteppingStones2DPlugin',
     'HumanoidSimplifiedMjxPlugin',
     'HumanoidG1MjxPlugin',
     'HumanoidRunBraxPlugin',

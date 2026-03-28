@@ -735,6 +735,11 @@ class ExperimentRunner:
             start_full = np.concatenate([start_xy, np.zeros(state_dim - 2, dtype=np.float32)])
             return start_full.astype(np.float32)
 
+        # Stepping-stones: environment reset provides stance-consistent start feet.
+        if self.config.env_name == "quadruped_stepping_stones_2d":
+            obs, _info = env.reset(seed=seed)
+            return np.asarray(obs, dtype=np.float32)
+
         # Quadruped/Humanoid MJX: need valid [qpos; qvel] from reset, then override base xyz
         env_name_lower = (self.config.env_name or "").lower()
         if ("quadruped" in env_name_lower or "humanoid" in env_name_lower) and (
@@ -1451,6 +1456,8 @@ class ExperimentRunner:
                     obstacle_config=self.config.obstacle_config,
                     env_plugin=env_plugin,
                     env_name=getattr(self.config, "env_name", None),
+                    planning_result=planning_result,
+                    planning_time=float(planning_time),
                 )
                 val = convert_to_json_serializable(metric_value)
                 if metric_name == 'ssr' and isinstance(val, dict):
@@ -1566,7 +1573,7 @@ class ExperimentRunner:
                 import matplotlib.pyplot as plt
 
                 # Visualization-specific figure creation
-                if viz_name == 'trajectory':
+                if viz_name in ('trajectory', 'stepping_trajectory'):
                     out_dir = self._get_output_path(result['level'], result['seed'])
                     trajectory_dir = out_dir / "trajectory"
                     trajectory_dir.mkdir(parents=True, exist_ok=True)
@@ -1682,7 +1689,7 @@ class ExperimentRunner:
                     viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
                     plt.close(fig)
                 
-                elif viz_name == 'trajectory_modes':
+                elif viz_name in ('trajectory_modes', 'stepping_modes'):
                     out_dir = self._get_output_path(result['level'], result['seed'])
                     trajectory_dir = out_dir / "trajectory"
                     trajectory_dir.mkdir(parents=True, exist_ok=True)
