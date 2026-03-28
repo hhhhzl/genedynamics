@@ -13,11 +13,16 @@ _target="${1:-d3il}"
 case "$_target" in
   d3il)
     echo "=== Setup D3IL ==="
+    cd "$ROOT"
     "$SCRIPT_DIR/setup_d3il.sh"
+    pip install "pybind11>=3.0.0"
+    export pybind11_DIR="$(python -c 'import pybind11; print(pybind11.get_cmake_dir())')"
     pip install -e .
-    pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cu126 --force-reinstall 2>/dev/null || pip install torch
-    python -c "import jax; print(jax.devices())" 2>/dev/null || true
-    python -c "import torch; print(torch.cuda.is_available())" 2>/dev/null || true
+    pip install torch==2.10.0 torchvision==0.25.0 \
+      --index-url https://download.pytorch.org/whl/cu126 --force-reinstall
+    pip install -U "jax[cuda12]"
+    python -c "import torch; assert torch.cuda.is_available(), 'PyTorch CUDA unavailable (driver/GPU not visible?)'"
+    python -c "import jax; b=jax.default_backend(); assert b == 'gpu', f'JAX expected GPU backend, got {b!r}; devices={jax.devices()}'"
     ;;
   softzoo)
     echo "=== Setup SoftZoo assets ==="
