@@ -4,9 +4,12 @@ output_dir: results/quadruped/stepping_stones_2d/smoke/mdcoas
 env_name: quadruped_stepping_stones_2d
 env_params:
   dt: 1.0
-  horizon: 12
+  horizon: 36
   l_max: 0.35
+  body_shift_limit: 0.24
   stance_width: 0.30
+  terminal_foot_penalty: 0.50
+  terminal_foot_margin: 0.20
   start_mid: [-1.25, 0.0]
   goal_mid: [1.25, 0.0]
   control_limit: 0.45
@@ -20,7 +23,7 @@ method_params:
   cfs_action_convexifier: cfs_action
   aug_lambda: 0.0
   aug_rho: 1.0
-  num_modes: 4
+  num_modes: 8
   mode_strategy: multirun
 
 obstacle_levels: [1]
@@ -29,6 +32,7 @@ obstacle_config:
   robot_radius: 0.03
   foothold_margin: 0.05
   success_margin: 0.12
+  terminal_foot_margin: 0.20
   l_max: 0.35
   stance_width: 0.30
 

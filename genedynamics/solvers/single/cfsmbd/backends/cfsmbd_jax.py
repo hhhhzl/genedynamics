@@ -371,8 +371,12 @@ class CFSMBDBackendJax:
             )
             
             # Terminal reward
-            terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
-            terminal_reward = -100.0 * terminal_dist  # Fixed terminal weight for now
+            if hasattr(self.env, "terminal_distance_jax"):
+                terminal_dist = self.env.terminal_distance_jax(final_state)
+            else:
+                terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
+            terminal_weight = float(getattr(self.env, "terminal_reward_weight", 100.0))
+            terminal_reward = -terminal_weight * terminal_dist
             
             # Augmented Lagrangian penalty (mean over horizon to avoid H-scale explosion)
             # J(τ) + λ mean_t [g]_+ + (ρ/2) mean_t [g]_+^2
@@ -421,8 +425,12 @@ class CFSMBDBackendJax:
             )
             
             # Terminal reward
-            terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
-            terminal_reward = -100.0 * terminal_dist
+            if hasattr(self.env, "terminal_distance_jax"):
+                terminal_dist = self.env.terminal_distance_jax(final_state)
+            else:
+                terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
+            terminal_weight = float(getattr(self.env, "terminal_reward_weight", 100.0))
+            terminal_reward = -terminal_weight * terminal_dist
             step_rewards = step_rewards.at[-1].add(terminal_reward)
             
             return step_rewards

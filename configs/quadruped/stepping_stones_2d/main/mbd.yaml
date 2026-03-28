@@ -4,9 +4,12 @@ output_dir: results/quadruped/stepping_stones_2d/main/mbd
 env_name: quadruped_stepping_stones_2d
 env_params:
   dt: 1.0
-  horizon: 12
+  horizon: 36
   l_max: 0.35
+  body_shift_limit: 0.24
   stance_width: 0.30
+  terminal_foot_penalty: 0.50
+  terminal_foot_margin: 0.20
   start_mid: [-1.25, 0.0]
   goal_mid: [1.25, 0.0]
   control_limit: 0.45
@@ -24,6 +27,7 @@ obstacle_config:
   generator: stepping_stones_2d
   robot_radius: 0.03
   success_margin: 0.12
+  terminal_foot_margin: 0.20
   l_max: 0.35
   stance_width: 0.30
 

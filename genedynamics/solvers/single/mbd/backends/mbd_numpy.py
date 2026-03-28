@@ -109,8 +109,11 @@ class MBDBackendNumpy:
             target_pos = np.zeros(self.position_dim, dtype=np.float32)
         else:
             target_pos = np.asarray(self.position_extractor(t), dtype=np.float32).reshape(-1)[: self.position_dim]
-        final_pos = np.asarray(self.position_extractor(s), dtype=np.float32).reshape(-1)[: self.position_dim]
-        terminal_dist = float(np.linalg.norm(final_pos - target_pos))
+        if hasattr(self.env, "terminal_distance"):
+            terminal_dist = float(self.env.terminal_distance(s))
+        else:
+            final_pos = np.asarray(self.position_extractor(s), dtype=np.float32).reshape(-1)[: self.position_dim]
+            terminal_dist = float(np.linalg.norm(final_pos - target_pos))
         terminal_reward = -self.terminal_energy_weight * terminal_dist
         rewards[-1] += terminal_reward
         return rewards

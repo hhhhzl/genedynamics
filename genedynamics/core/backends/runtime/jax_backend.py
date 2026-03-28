@@ -6,7 +6,17 @@ vectorization using JAX's vmap and jit decorators. Supports CPU and GPU devices.
 """
 
 from typing import Any, Callable, Optional, Tuple
+import os
 import numpy as np
+
+
+def _configure_jax_memory_defaults() -> None:
+    # Respect explicit env overrides while keeping on-demand allocation as default.
+    os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+    os.environ.setdefault("XLA_PYTHON_CLIENT_ALLOCATOR", "platform")
+
+
+_configure_jax_memory_defaults()
 
 try:
     import jax

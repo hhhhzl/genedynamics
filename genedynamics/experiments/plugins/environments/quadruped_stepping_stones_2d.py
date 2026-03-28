@@ -28,12 +28,10 @@ class QuadrupedSteppingStones2DPlugin(EnvironmentPlugin):
         return make_stepping_stones_energy(env_obj)
 
     def get_state_dim(self) -> int:
-        return 4
+        return 12
 
     def extract_position(self, state: np.ndarray) -> np.ndarray:
         s = np.asarray(state, dtype=np.float32).reshape(-1)
-        if s.size >= 4:
-            return np.array([0.5 * (s[0] + s[2]), 0.5 * (s[1] + s[3])], dtype=np.float32)
         if s.size >= 2:
             return s[:2]
         return np.pad(s, (0, max(0, 2 - s.size)), constant_values=0.0)[:2]

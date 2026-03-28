@@ -5,9 +5,10 @@ Shared renderer for robot motion episodes (GIF + HTML wrapper).
 from __future__ import annotations
 
 import base64
+import json
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from genedynamics.viz.motion_episode import MotionEpisode
 
@@ -21,6 +22,19 @@ class MotionRenderer:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+    def _persist_episode_metadata(self, episode: MotionEpisode) -> None:
+        scene = episode.metadata.get("stepping_scene") if isinstance(episode.metadata, dict) else None
+        if not isinstance(scene, dict):
+            return
+        if "stones_centers" not in scene or "stones_radii" not in scene:
+            return
+        path = self.output_dir / "stepping_scene.json"
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(scene, f, indent=2)
+        except OSError:
+            pass
+
     def render_gif(
         self,
         episode: MotionEpisode,
@@ -33,6 +47,7 @@ class MotionRenderer:
     ) -> Path:
         ts = time.strftime("%Y%m%d-%H%M%S")
         gif_path = self.output_dir / f"{name}_{ts}.gif"
+        self._persist_episode_metadata(episode)
         # Lazy import avoids package-level circular import with deploy.viz.web_viz.
         from genedynamics.deploy.viz.mujoco_render import render_episode_to_gif
 
@@ -67,12 +82,19 @@ class MotionRenderer:
             draw_trajectory=draw_trajectory,
         )
         html_path = gif_path.with_suffix(".html")
-        with open(gif_path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
+        # Huge base64 data: URLs hit browser limits and show a blank/black image; keep GIF on disk.
+        gif_src = gif_path.name
+        try:
+            if gif_path.stat().st_size <= 1_500_000:
+                with open(gif_path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode()
+                gif_src = f"data:image/gif;base64,{b64}"
+        except OSError:
+            pass
         html = _HTML_TEMPLATE.format(
             title=f"Motion Replay: {name}",
             subtitle=f"robot={episode.robot_type}, model={episode.model_id}, frames={len(episode.states)}",
-            gif_data=f"data:image/gif;base64,{b64}",
+            gif_src=gif_src,
         )
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html)
@@ -94,7 +116,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 <body>
   <h1>{title}</h1>
   <p>{subtitle}</p>
-  <img src="{gif_data}" alt="Motion replay GIF" />
+  <img src="{gif_src}" alt="Motion replay GIF" />
 </body>
 </html>
 """

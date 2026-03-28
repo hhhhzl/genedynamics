@@ -7,6 +7,7 @@ Supports: MuJoCo trajectory (GIF embed), Brax HTML (when available).
 
 from __future__ import annotations
 
+import base64
 import os
 import time
 from pathlib import Path
@@ -97,12 +98,19 @@ class WebVizService:
             self._generate_gif(ep_dir, gif_path, robot_type, model_id, width, height, fps)
 
         if gif_path.exists():
-            with open(gif_path, "rb") as f:
-                import base64
-                b64 = base64.b64encode(f.read()).decode()
+            gif_src = Path(
+                os.path.relpath(gif_path.resolve(), out_path.parent.resolve())
+            ).as_posix()
+            try:
+                if gif_path.stat().st_size <= 1_500_000:
+                    with open(gif_path, "rb") as f:
+                        b64 = base64.b64encode(f.read()).decode()
+                    gif_src = f"data:image/gif;base64,{b64}"
+            except OSError:
+                pass
             html = _HTML_TEMPLATE_GIF.format(
                 title=f"Deploy Viz: {ep_dir.name}",
-                gif_data=f"data:image/gif;base64,{b64}",
+                gif_src=gif_src,
                 episode_name=ep_dir.name,
             )
         else:
@@ -261,7 +269,7 @@ _HTML_TEMPLATE_GIF = """<!DOCTYPE html>
 </head>
 <body>
   <h1>Deploy Visualization: {episode_name}</h1>
-  <img src="{gif_data}" alt="Trajectory" />
+  <img src="{gif_src}" alt="Trajectory" />
 </body>
 </html>
 """

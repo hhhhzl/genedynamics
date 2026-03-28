@@ -213,6 +213,12 @@ class CFSMBDBackendNumpy:
         # Total reward = sum of step rewards - augmented penalty
         # (since we maximize reward, penalty is subtracted)
         total_reward = float(np.sum(rewards)) - augmented_penalty
+        if hasattr(self.env, "terminal_distance"):
+            try:
+                terminal_weight = float(getattr(self.env, "terminal_reward_weight", 100.0))
+                total_reward -= terminal_weight * float(self.env.terminal_distance(np.asarray(states[-1], dtype=np.float32)))
+            except Exception:
+                pass
         
         return rewards, total_reward
 

@@ -1,0 +1,99 @@
+name: quadruped_stepping_stones_walk_follow_sim
+output_dir: results/quadruped/stepping_stones_2d/deploy/mbd
+
+robot_type: quadruped
+model_id: go2
+mode: sim
+planner: walk_follow
+
+episodes: 1
+seed: 0
+record: true
+
+env_params:
+  # Source stepping-stones plan output (trajectory/trajectory.json).
+  plan_seed_dir: results/quadruped/stepping_stones_2d/smoke/mbd/level_1/seed_0
+  # Scene defaults (used if source dir has no execution_results stepping_scene).
+  l_max: 0.35
+  stance_width: 0.30
+  start_mid: [-1.25, 0.0]
+  goal_mid: [1.25, 0.0]
+
+method_params:
+  # Follower params
+  gait: walk   # walk | trot
+  step_width: 0.30
+  sim_dt: 0.01
+  phase_steps: 44
+  swing_height: 0.050
+  leg_half_length: 0.18
+  kp: 35.0
+  kd: 3.0
+  ik_iters: 8
+  ik_damping: 0.001
+  ik_tol: 0.002
+  control_clip: 10.0
+  settle_steps: 10
+  phase_extend_factor: 4.0
+  stance_contact_min: 2
+  release_contact_steps: 2
+  swing_release_height: 0.12
+  touchdown_contact_steps: 2
+  touchdown_xy_tol: 0.06
+  support_base_blend: 0.75
+  lift_phase_ratio: 0.25
+  advance_phase_ratio: 0.5
+  swing_task_kp_xy: 360.0
+  swing_task_kp_z: 460.0
+  swing_task_kd_xy: 30.0
+  swing_task_kd_z: 34.0
+  stance_task_kp_xy: 170.0
+  stance_task_kp_z: 220.0
+  stance_task_kd_xy: 24.0
+  stance_task_kd_z: 30.0
+  task_torque_clip: 16.0
+  base_height_offset: 0.01
+  min_foot_z: 0.02
+  lock_base_pose: false
+  base_z_min: 0.24
+  use_base_pd: true
+  touchdown_alpha_min: 0.55
+  base_kp_xy: 40.0
+  base_kd_xy: 10.0
+  base_kp_z: 260.0
+  base_kd_z: 35.0
+  base_kp_rp: 140.0
+  base_kd_rp: 18.0
+  base_kp_yaw: 25.0
+  base_kd_yaw: 4.0
+  base_weight_comp: 0.95
+  base_support_contact_min: 2
+  base_force_xy_clip: 80.0
+  base_force_z_clip: 400.0
+  base_torque_clip: 40.0
+  contact_qp_base_pd_blend: 0.25
+  contact_base_kp_scale_x: 2.4
+  contact_base_kd_scale_x: 1.5
+  contact_base_kp_scale_y: 0.55
+  contact_base_kd_scale_y: 0.90
+  contact_base_x_support_blend: 0.55
+  contact_base_y_support_blend: 0.80
+  contact_phase_steps_scale: 1.45
+  contact_swing_height_scale: 0.90
+  contact_touchdown_immediate_relock: true
+  contact_stance_slip_kp_xy: 140.0
+  contact_stance_slip_kd_xy: 42.0
+  contact_stance_slip_kp_z: 55.0
+  contact_stance_slip_kd_z: 14.0
+  contact_stance_anchor_err_clip: 0.025
+  contact_progress_min_support_ratio: 0.75
+  contact_early_switch_on_touchdown: true
+  contact_early_switch_min_phase_ratio: 0.45
+  contact_post_touchdown_stabilize_steps: 6
+  contact_base_vel_kd_scale_x: 0.8
+  contact_base_vel_kd_scale_y: 0.3
+  contact_base_yaw_rate_kd_scale: 0.9
+  # Render params
+  max_render_frames: 140
+  render_width: 960
+  render_height: 720

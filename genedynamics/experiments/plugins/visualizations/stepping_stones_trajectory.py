@@ -9,6 +9,7 @@ from typing import Any, Dict
 import matplotlib.pyplot as plt
 import numpy as np
 
+from genedynamics.tasks.stepping_stones import decode_plan_states
 from ...framework.base import VisualizationPlugin
 
 
@@ -25,20 +26,21 @@ def _draw_scene(ax: Any, scene: Any):
     ax.set_xlim(scene.map_x[0], scene.map_x[1])
     ax.set_ylim(scene.map_y[0], scene.map_y[1])
     ax.set_facecolor("#f7f9fc")
-    rx0, rx1 = scene.river_x
-    ry0, ry1 = scene.map_y
-    ax.add_patch(
-        plt.Rectangle(
-            (rx0, ry0),
-            rx1 - rx0,
-            ry1 - ry0,
-            facecolor="#d9ecff",
-            edgecolor="#7aa6d9",
-            linewidth=1.0,
-            alpha=0.9,
-            zorder=0.5,
+    if bool(getattr(scene, "has_river", True)):
+        rx0, rx1 = scene.river_x
+        ry0, ry1 = scene.map_y
+        ax.add_patch(
+            plt.Rectangle(
+                (rx0, ry0),
+                rx1 - rx0,
+                ry1 - ry0,
+                facecolor="#d9ecff",
+                edgecolor="#7aa6d9",
+                linewidth=1.0,
+                alpha=0.9,
+                zorder=0.5,
+            )
         )
-    )
     for c, r in zip(np.asarray(scene.stones_centers), np.asarray(scene.stones_radii)):
         ax.add_patch(
             plt.Circle(
@@ -64,6 +66,15 @@ def _infer_foot_radius(viz_cfg: Dict[str, Any]) -> float:
     return 0.03
 
 
+def _swing_pair(mode: int):
+    m = int(mode) % 4
+    if m == 0:
+        return ("FR", "RL")
+    if m == 2:
+        return ("FL", "RR")
+    return tuple()
+
+
 class SteppingStonesTrajectoryVisualizationPlugin(VisualizationPlugin):
     @property
     def name(self) -> str:
@@ -81,46 +92,38 @@ class SteppingStonesTrajectoryVisualizationPlugin(VisualizationPlugin):
         _draw_scene(ax, scene)
 
         states = np.asarray([np.asarray(s, dtype=np.float32).reshape(-1) for s in traj.states], dtype=np.float32)
-        if states.ndim == 2 and states.shape[1] >= 4:
-            p_l = states[:, :2]
-            p_r = states[:, 2:4]
-            mid = 0.5 * (p_l + p_r)
-            draw_mid = bool(viz_cfg.get("draw_midfoot", False))
-            draw_virtual_quad = bool(viz_cfg.get("draw_virtual_quadruped", False))
-            half_pair_length = float(viz_cfg.get("virtual_pair_half_length", 0.18))
+        if states.ndim == 2 and states.shape[1] >= 3:
+            body, _yaw, feet, mode = decode_plan_states(
+                states,
+                step_width=float(getattr(env, "step_width", getattr(env, "stance_width", 0.30))),
+                half_pair_length=float(getattr(env, "fore_hind_offset", 0.18)),
+            )
             foot_radius = _infer_foot_radius(viz_cfg)
-
-            # Real task semantics: two optimized trajectories (left/right diagonal pairs).
-            ax.plot(p_l[:, 0], p_l[:, 1], color="#d1495b", linewidth=1.4, alpha=0.90, zorder=3, label="left-pair")
-            ax.plot(p_r[:, 0], p_r[:, 1], color="#00798c", linewidth=1.4, alpha=0.90, zorder=3, label="right-pair")
-
-            if draw_mid:
-                ax.plot(mid[:, 0], mid[:, 1], color="#1664c0", linewidth=1.6, alpha=0.85, zorder=3, label="mid-foot")
-
-            # Optional virtual quadruped overlay (off by default).
-            if draw_virtual_quad:
-                fl = p_l + np.array([half_pair_length, 0.0], dtype=np.float32)
-                hl = p_l - np.array([half_pair_length, 0.0], dtype=np.float32)
-                fr = p_r + np.array([half_pair_length, 0.0], dtype=np.float32)
-                hr = p_r - np.array([half_pair_length, 0.0], dtype=np.float32)
-                tracks = [("FL", fl, "#ff7f0e"), ("FR", fr, "#2ca02c"), ("HL", hl, "#9467bd"), ("HR", hr, "#8c564b")]
-                for _, pts, color in tracks:
-                    ax.plot(pts[:, 0], pts[:, 1], color=color, linewidth=1.1, alpha=0.70, zorder=2.5)
-                    for px, py in pts:
-                        ax.add_patch(
-                            plt.Circle(
-                                (float(px), float(py)),
-                                float(foot_radius),
-                                facecolor=color,
-                                edgecolor=color,
-                                linewidth=0.6,
-                                alpha=0.12,
-                                zorder=2.2,
-                            )
+            tracks = [
+                ("FL", feet["FL"], "#ff7f0e"),
+                ("FR", feet["FR"], "#2ca02c"),
+                ("RL", feet["RL"], "#9467bd"),
+                ("RR", feet["RR"], "#8c564b"),
+            ]
+            ax.plot(body[:, 0], body[:, 1], color="#1664c0", linewidth=1.8, alpha=0.9, zorder=3, label="body")
+            for leg, pts, color in tracks:
+                ax.plot(pts[:, 0], pts[:, 1], color=color, linewidth=1.2, alpha=0.80, zorder=2.7, label=leg)
+                ax.scatter(pts[:, 0], pts[:, 1], s=8, color=color, alpha=0.18, zorder=2.5)
+            for t, mode_idx in enumerate(mode):
+                for swing_leg in _swing_pair(int(mode_idx)):
+                    p = feet[swing_leg][t]
+                    ax.add_patch(
+                        plt.Circle(
+                            (float(p[0]), float(p[1])),
+                            float(1.5 * foot_radius),
+                            facecolor="#f04f88",
+                            edgecolor="none",
+                            alpha=0.08,
+                            zorder=2.1,
                         )
-
-            ax.scatter(mid[0, 0], mid[0, 1], marker="o", s=28, color="white", edgecolor="#1664c0", zorder=5)
-            ax.scatter(mid[-1, 0], mid[-1, 1], marker="*", s=90, color="#f04f88", zorder=5)
+                    )
+            ax.scatter(body[0, 0], body[0, 1], marker="o", s=28, color="white", edgecolor="#1664c0", zorder=5)
+            ax.scatter(body[-1, 0], body[-1, 1], marker="*", s=90, color="#f04f88", zorder=5)
         ax.set_xticks([])
         ax.set_yticks([])
         ax.grid(True, alpha=0.25)
@@ -149,11 +152,16 @@ class SteppingStonesModesVisualizationPlugin(VisualizationPlugin):
             cand_states = [result.get("states", [])]
         best_idx = int(result.get("best_idx", 0))
         colors = ["#6a7fdb"] * len(cand_states)
+        step_width = float(getattr(env, "step_width", getattr(env, "stance_width", 0.30)))
         for i, st in enumerate(cand_states):
             s = np.asarray(st, dtype=np.float32)
-            if s.ndim != 2 or s.shape[1] < 4:
+            if s.ndim != 2 or s.shape[1] < 3:
                 continue
-            mid = 0.5 * (s[:, :2] + s[:, 2:4])
+            mid, _yaw, _feet, _phase = decode_plan_states(
+                s,
+                step_width=step_width,
+                half_pair_length=float(getattr(env, "fore_hind_offset", 0.18)),
+            )
             lw = 2.6 if i == best_idx else 1.1
             a = 0.95 if i == best_idx else 0.35
             ax.plot(mid[:, 0], mid[:, 1], color=colors[i], linewidth=lw, alpha=a, zorder=3)

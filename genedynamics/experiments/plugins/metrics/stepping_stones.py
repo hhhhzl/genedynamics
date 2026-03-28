@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, Tuple
 import numpy as np
 
 from genedynamics.core.types import Trajectory
+from genedynamics.tasks.stepping_stones import decode_plan_states
 from ...framework.base import MetricsPlugin
 
 
@@ -21,14 +22,39 @@ def _cvar(x: Iterable[float], alpha: float = 0.95) -> float:
     return float(np.mean(tail))
 
 
-def _nearest_stone_violation(points: np.ndarray, centers: np.ndarray, radii: np.ndarray) -> np.ndarray:
+def _swing_and_stance(mode: int) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+    m = int(mode) % 4
+    if m == 0:
+        return ("FR", "RL"), ("FL", "RR")
+    if m == 2:
+        return ("FL", "RR"), ("FR", "RL")
+    return tuple(), ("FL", "FR", "RL", "RR")
+
+
+def _support_violation(
+    points: np.ndarray,
+    centers: np.ndarray,
+    radii: np.ndarray,
+    river_x: np.ndarray,
+    *,
+    has_river: bool,
+) -> np.ndarray:
     if points.size == 0:
         return np.zeros((0,), dtype=np.float32)
-    d = np.linalg.norm(points[:, None, :] - centers[None, :, :], axis=-1)
-    i = np.argmin(d, axis=1)
-    nearest = d[np.arange(points.shape[0]), i]
-    nearest_r = radii[i]
-    return np.maximum(0.0, nearest - nearest_r).astype(np.float32)
+    pts = np.asarray(points, dtype=np.float32)
+    out = np.zeros((pts.shape[0],), dtype=np.float32)
+    for i, p in enumerate(pts):
+        d = np.linalg.norm(centers - p[None, :], axis=-1)
+        stone_v = float(np.min(np.maximum(d - radii, 0.0))) if centers.size > 0 else 1.0
+        if has_river:
+            if float(p[0]) <= float(river_x[0]) or float(p[0]) >= float(river_x[1]):
+                out[i] = 0.0
+                continue
+            bank_v = min(abs(float(p[0]) - float(river_x[0])), abs(float(p[0]) - float(river_x[1])))
+            out[i] = float(min(stone_v, bank_v))
+        else:
+            out[i] = stone_v
+    return out
 
 
 class SteppingStonesMetricsPlugin(MetricsPlugin):
@@ -65,48 +91,79 @@ class SteppingStonesMetricsPlugin(MetricsPlugin):
 
         centers = np.asarray(scene.stones_centers, dtype=np.float32)
         radii = np.asarray(scene.stones_radii, dtype=np.float32)
+        river_x = np.asarray(scene.river_x, dtype=np.float32)
+        has_river = bool(getattr(scene, "has_river", True))
         lmax = float(scene.l_max)
         target = np.asarray(scene.goal_mid, dtype=np.float32)
+        body_step_limit = float(getattr(env, "body_shift_limit", lmax))
+        swing_step_limit = float(getattr(env, "swing_step_limit", lmax))
 
         states = np.asarray([np.asarray(s, dtype=np.float32).reshape(-1) for s in trajectory.states], dtype=np.float32)
         actions = np.asarray([np.asarray(a, dtype=np.float32).reshape(-1) for a in trajectory.actions], dtype=np.float32)
 
-        if states.ndim != 2 or states.shape[1] < 4:
+        if states.ndim != 2 or states.shape[1] < 3:
             return {
                 "success": False,
                 "reason": "invalid_state_shape",
                 "planning_time": planning_time,
             }
 
-        p_l = states[:, :2]
-        p_r = states[:, 2:4]
-        mid = 0.5 * (p_l + p_r)
-        final_goal_error = float(np.linalg.norm(mid[-1] - target))
+        body, yaw, feet, mode = decode_plan_states(
+            states,
+            step_width=float(getattr(env, "step_width", getattr(env, "stance_width", 0.30))),
+            half_pair_length=float(getattr(env, "fore_hind_offset", 0.18)),
+        )
+        goal_feet = env._nominal_feet(target, float(yaw[-1]))
+        final_goal_error = float(np.linalg.norm(body[-1] - target))
+        terminal_foot_error = np.asarray(
+            [np.linalg.norm(feet[leg][-1] - goal_feet[leg]) for leg in ("FL", "FR", "RL", "RR")],
+            dtype=np.float32,
+        )
 
-        v_l = _nearest_stone_violation(p_l, centers, radii)
-        v_r = _nearest_stone_violation(p_r, centers, radii)
-        foot_v = 0.5 * (v_l + v_r)
+        foot_v_all = []
+        for leg in ("FL", "FR", "RL", "RR"):
+            foot_v_all.append(_support_violation(feet[leg], centers, radii, river_x, has_river=has_river))
+        foot_v = np.mean(np.stack(foot_v_all, axis=0), axis=0).astype(np.float32)
 
-        # Step-bound should be evaluated on executed state deltas, not raw action proposals.
         step_v = np.zeros((0,), dtype=np.float32)
+        stance_drift = np.zeros((0,), dtype=np.float32)
         if states.shape[0] >= 2:
-            dl = np.linalg.norm(states[1:, :2] - states[:-1, :2], axis=1)
-            dr = np.linalg.norm(states[1:, 2:4] - states[:-1, 2:4], axis=1)
-            step_v = np.maximum(0.0, np.maximum(dl, dr) - lmax).astype(np.float32)
+            body_step = np.linalg.norm(body[1:] - body[:-1], axis=1)
+            swing_step = []
+            drift = []
+            for t in range(states.shape[0] - 1):
+                swing_legs, stance_legs = _swing_and_stance(int(mode[t]))
+                if swing_legs:
+                    swing_step.append(
+                        max(np.linalg.norm(feet[leg][t + 1] - feet[leg][t]) for leg in swing_legs)
+                    )
+                else:
+                    swing_step.append(0.0)
+                drift.append(
+                    max(np.linalg.norm(feet[leg][t + 1] - feet[leg][t]) for leg in stance_legs)
+                )
+            step_v = np.maximum(0.0, np.maximum(body_step - body_step_limit, np.asarray(swing_step) - swing_step_limit)).astype(np.float32)
+            stance_drift = np.asarray(drift, dtype=np.float32)
 
-        # Keep action-step diagnostics to expose planner aggressiveness before env clipping.
         action_step_v = np.zeros((0,), dtype=np.float32)
-        if actions.ndim == 2 and actions.shape[1] >= 4:
-            n_l = np.linalg.norm(actions[:, :2], axis=1)
-            n_r = np.linalg.norm(actions[:, 2:4], axis=1)
-            action_step_v = np.maximum(0.0, np.maximum(n_l, n_r) - lmax).astype(np.float32)
+        if actions.ndim == 2 and actions.shape[1] >= 6:
+            body_a = np.linalg.norm(actions[:, :2], axis=1)
+            swing_a = np.linalg.norm(actions[:, 3:5], axis=1)
+            phase_a = np.maximum(0.0, np.maximum(actions[:, 5] - float(getattr(env, "phase_rate_limit", 1.0)), -actions[:, 5]))
+            action_step_v = np.maximum(
+                0.0,
+                np.maximum(np.maximum(body_a - float(getattr(env, "body_acc_limit", body_step_limit)), swing_a - float(getattr(env, "length_rate_limit", swing_step_limit))), phase_a),
+            ).astype(np.float32)
 
         foot_v_max = float(np.max(foot_v)) if foot_v.size > 0 else 0.0
         step_v_max = float(np.max(step_v)) if step_v.size > 0 else 0.0
+        terminal_foot_error_max = float(np.max(terminal_foot_error)) if terminal_foot_error.size > 0 else 0.0
+        terminal_foot_error_mean = float(np.mean(terminal_foot_error)) if terminal_foot_error.size > 0 else 0.0
         success = bool(
             final_goal_error <= success_margin
             and foot_v_max <= foothold_margin
             and step_v_max <= 1e-6
+            and terminal_foot_error_max <= float(getattr(env, "terminal_foot_margin", 0.20))
         )
 
         cand_costs = planning_result.get("candidate_costs", None)
@@ -118,12 +175,16 @@ class SteppingStonesMetricsPlugin(MetricsPlugin):
             "success_goal_margin": success_margin,
             "success_foothold_margin": foothold_margin,
             "final_goal_error": final_goal_error,
+            "terminal_foot_error_mean": terminal_foot_error_mean,
+            "terminal_foot_error_max": terminal_foot_error_max,
             "foothold_violation_mean": float(np.mean(foot_v)) if foot_v.size > 0 else 0.0,
             "foothold_violation_max": foot_v_max,
             "foothold_violation_cvar95": _cvar(foot_v, alpha=0.95),
             "step_violation_mean": float(np.mean(step_v)) if step_v.size > 0 else 0.0,
             "step_violation_max": step_v_max,
             "step_violation_cvar95": _cvar(step_v, alpha=0.95),
+            "stance_drift_mean": float(np.mean(stance_drift)) if stance_drift.size > 0 else 0.0,
+            "stance_drift_max": float(np.max(stance_drift)) if stance_drift.size > 0 else 0.0,
             "action_step_violation_mean": float(np.mean(action_step_v)) if action_step_v.size > 0 else 0.0,
             "action_step_violation_max": float(np.max(action_step_v)) if action_step_v.size > 0 else 0.0,
             "action_step_violation_cvar95": _cvar(action_step_v, alpha=0.95),

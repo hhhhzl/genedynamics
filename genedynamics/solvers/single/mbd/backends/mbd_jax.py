@@ -121,8 +121,10 @@ class MBDBackendJax:
                 return next_state, reward
 
             final_state, rewards = jax.lax.scan(step_fn, state_init, actions)
-            # Terminal cost: -terminal_weight * dist(final_state, target)
-            terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
+            if hasattr(self.env, "terminal_distance_jax"):
+                terminal_dist = self.env.terminal_distance_jax(final_state)
+            else:
+                terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
             terminal_reward = -jnp.asarray(self.terminal_energy_weight, dtype=jnp.float32) * terminal_dist
             rewards = rewards.at[-1].add(terminal_reward)
             return rewards
@@ -137,7 +139,10 @@ class MBDBackendJax:
                 return next_state, reward
 
             final_state, rewards = jax.lax.scan(step_fn, state_init, actions)
-            terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
+            if hasattr(self.env, "terminal_distance_jax"):
+                terminal_dist = self.env.terminal_distance_jax(final_state)
+            else:
+                terminal_dist = jnp.linalg.norm(final_state[: self.position_dim] - target[: self.position_dim])
             terminal_reward = -jnp.asarray(self.terminal_energy_weight, dtype=jnp.float32) * terminal_dist
             rewards = rewards.at[-1].add(terminal_reward)
             return rewards

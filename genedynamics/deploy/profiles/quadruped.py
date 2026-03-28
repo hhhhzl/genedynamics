@@ -18,6 +18,16 @@ def _make_quadruped_env(config: Dict[str, Any], **overrides: Any) -> Any:
 
     params = dict(config.get("env_params", {}))
     params.update(overrides)
+    # Drop offline follower/task-only keys that are not env ctor kwargs.
+    for k in (
+        "plan_seed_dir",
+        "step_width",
+        "stance_width",
+        "l_max",
+        "start_mid",
+        "goal_mid",
+    ):
+        params.pop(k, None)
     model = params.pop("model", config.get("model_id", "flat"))
     use_mjx = params.pop("use_mjx", False)
     env_name = params.pop("env_name", None)

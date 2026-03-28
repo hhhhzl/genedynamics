@@ -11,6 +11,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
+try:
+    import jax
+    import jax.numpy as jnp
+except Exception:
+    jax = None
+    jnp = None
 
 from genedynamics.envs.obstacles.base import Obstacle, ObstacleManager
 from genedynamics.tasks.stepping_stones import SteppingStonesScene
@@ -29,7 +35,7 @@ def _box_sdf(points: np.ndarray, center: np.ndarray, half_extents: np.ndarray) -
 @dataclass
 class SteppingStonesForbiddenRegionObstacle(Obstacle):
     """
-    Unsafe set = (outside all stones) union (inside river strip).
+    Unsafe set = outside all stones, optionally unioned with the river strip.
     """
 
     scene: SteppingStonesScene
@@ -40,6 +46,7 @@ class SteppingStonesForbiddenRegionObstacle(Obstacle):
         self._radii = np.asarray(self.scene.stones_radii, dtype=np.float32)
         rx0, rx1 = self.scene.river_x
         y0, y1 = self.scene.map_y
+        self._has_river = bool(getattr(self.scene, "has_river", True))
         self._river_center = np.array([0.5 * (rx0 + rx1), 0.5 * (y0 + y1)], dtype=np.float32)
         self._river_half_extents = np.array([0.5 * (rx1 - rx0), 0.5 * (y1 - y0)], dtype=np.float32)
         self.center = self._river_center
@@ -68,12 +75,45 @@ class SteppingStonesForbiddenRegionObstacle(Obstacle):
         safe_margin = self._safe_set_signed_margin(pts2)
         sdf_outside_stones = -safe_margin
 
-        # River obstacle: negative inside river strip.
-        sdf_river = _box_sdf(pts2, self._river_center, self._river_half_extents)
-
-        # Union of unsafe regions.
-        sdf_union = np.minimum(sdf_outside_stones, sdf_river)
+        if self._has_river:
+            sdf_river = _box_sdf(pts2, self._river_center, self._river_half_extents)
+            sdf_union = np.minimum(sdf_outside_stones, sdf_river)
+        else:
+            sdf_union = sdf_outside_stones
         return float(sdf_union[0]) if single else sdf_union
+
+    def jax_sdf(self, points):
+        if jnp is None:
+            raise RuntimeError("JAX required for jax_sdf")
+        pts = jnp.asarray(points, dtype=jnp.float32)
+        single = pts.ndim == 1
+        if single:
+            pts = pts[None, :]
+        pts2 = pts[:, :2]
+        centers = jnp.asarray(self._centers, dtype=jnp.float32)
+        radii = jnp.asarray(self._radii, dtype=jnp.float32)
+        diff = pts2[:, None, :] - centers[None, :, :]
+        dists = jnp.linalg.norm(diff, axis=-1)
+        safe_margin = jnp.max(radii[None, :] - dists, axis=-1)
+        sdf_outside_stones = -safe_margin
+        if self._has_river:
+            center = jnp.asarray(self._river_center, dtype=jnp.float32)
+            half = jnp.asarray(self._river_half_extents, dtype=jnp.float32)
+            q = jnp.abs(pts2 - center[None, :]) - half[None, :]
+            outside = jnp.linalg.norm(jnp.maximum(q, 0.0), axis=-1)
+            inside = jnp.minimum(jnp.max(q, axis=-1), 0.0)
+            sdf_river = outside + inside
+            sdf_union = jnp.minimum(sdf_outside_stones, sdf_river)
+        else:
+            sdf_union = sdf_outside_stones
+        return sdf_union[0] if single else sdf_union
+
+    def jax_gradient(self, point):
+        if jax is None or jnp is None:
+            raise RuntimeError("JAX required for jax_gradient")
+        p = jnp.asarray(point, dtype=jnp.float32).reshape(-1)[:2]
+        grad_fn = jax.grad(lambda x: self.jax_sdf(x))
+        return grad_fn(p)
 
     def contains(self, point: np.ndarray) -> bool:
         return bool(float(self.sdf(np.asarray(point, dtype=np.float32)[:2])) < 0.0)
