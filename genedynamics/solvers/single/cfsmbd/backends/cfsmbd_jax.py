@@ -353,9 +353,13 @@ class CFSMBDBackendJax:
                 # Standard running cost
                 reward = -self._cost_fn(next_state, action, ctx)
                 
-                # Constraint violation [g]_+
-                pos = next_state[: self.position_dim]
-                g_plus = sdf_fn(pos, clearance)
+                # Constraint violation [g]_+ (optional env-specific metric, e.g. foot SDF for quadrupeds)
+                hook = getattr(self.env, "jax_cfs_alm_g_plus_from_state", None)
+                if callable(hook):
+                    g_plus = hook(next_state, clearance)
+                else:
+                    pos = next_state[: self.position_dim]
+                    g_plus = sdf_fn(pos, clearance)
 
                 return (
                     next_state,

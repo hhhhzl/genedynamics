@@ -301,9 +301,10 @@ def create_go2_render_xml_with_trajectory(
     output_path: str,
     trajectory_positions: list,
     go2_xml_path: Optional[str] = None,
-    line_radius: float = 0.015,
+    line_radius: float = 0.006,
     line_rgba: str = "0.2 0.6 1.0 0.7",
     stepping_scene: Optional[Dict[str, Any]] = None,
+    swing_trajectories: Optional[Dict[str, np.ndarray]] = None,
 ) -> str:
     """
     Create Go2 XML with trajectory line for rendering.
@@ -413,8 +414,44 @@ def create_go2_render_xml_with_trajectory(
             + "\n    </body>\n"
         )
 
+    swing_xml = ""
+    if isinstance(swing_trajectories, dict) and len(swing_trajectories) > 0:
+        leg_colors = {
+            "FL": "0.90 0.25 0.25 0.85",
+            "FR": "0.25 0.55 0.95 0.85",
+            "RL": "0.25 0.85 0.35 0.85",
+            "RR": "0.90 0.78 0.22 0.85",
+        }
+        sw_lines = []
+        sw_idx = 0
+        sw_radius = max(1e-6, 0.45 * line_radius)
+        for leg in ("FL", "FR", "RL", "RR"):
+            arr = np.asarray(swing_trajectories.get(leg, []), dtype=np.float64)
+            if arr.ndim != 2 or arr.shape[1] < 3 or arr.shape[0] < 2:
+                continue
+            color = leg_colors.get(leg, "1.0 1.0 1.0 0.85")
+            for i in range(arr.shape[0] - 1):
+                p1 = arr[i, :3]
+                p2 = arr[i + 1, :3]
+                if np.any(~np.isfinite(p1)) or np.any(~np.isfinite(p2)):
+                    continue
+                if np.linalg.norm(p2 - p1) < MIN_SEG_LEN:
+                    continue
+                fromto = f"{p1[0]:.6f} {p1[1]:.6f} {p1[2]:.6f} {p2[0]:.6f} {p2[1]:.6f} {p2[2]:.6f}"
+                sw_lines.append(
+                    f'      <geom name="swing_{leg}_{sw_idx}" type="cylinder" fromto="{fromto}" '
+                    f'size="{sw_radius:.6f}" rgba="{color}" contype="0" conaffinity="0"/>'
+                )
+                sw_idx += 1
+        if sw_lines:
+            swing_xml = (
+                '\n    <!-- Swing trajectory lines -->\n    <body name="swing_trajectory_overlay" pos="0 0 0">\n'
+                + "\n".join(sw_lines)
+                + "\n    </body>\n"
+            )
+
     insert_pos = xml_content.rfind("</worldbody>")
-    extras = scene_xml + traj_xml
+    extras = scene_xml + traj_xml + swing_xml
     if insert_pos != -1 and extras:
         xml_content = xml_content[:insert_pos] + extras + xml_content[insert_pos:]
 

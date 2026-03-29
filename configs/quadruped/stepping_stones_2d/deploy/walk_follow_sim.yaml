@@ -25,7 +25,13 @@ method_params:
   step_width: 0.30
   sim_dt: 0.01
   phase_steps: 44
+  uniform_base_speed: true
+  base_speed_mps: 0.42
   swing_height: 0.050
+  swing_stance_phase: 0.55
+  swing_use_stance_gate: true
+  min_swing_clearance: 0.035
+  min_swing_clearance_first_n_intervals: 2
   leg_half_length: 0.18
   kp: 35.0
   kd: 3.0
@@ -40,6 +46,19 @@ method_params:
   swing_release_height: 0.12
   touchdown_contact_steps: 2
   touchdown_xy_tol: 0.06
+  touchdown_force_thresh: 14.0
+  touchdown_force_thresh_stone: 16.0
+  touchdown_force_thresh_bank: 12.0
+  touchdown_force_thresh_river: 9.0
+  strong_touchdown_force_thresh: 22.0
+  strong_touchdown_force_thresh_stone: 25.0
+  strong_touchdown_force_thresh_bank: 18.0
+  strong_touchdown_force_thresh_river: 14.0
+  touchdown_timeout_alpha: 0.90
+  touchdown_timeout_steps: 14
+  force_interval_end_on_touchdown_timeout: true
+  abort_after_consecutive_timeouts: 3
+  support_contact_abort_steps: 120
   support_base_blend: 0.75
   lift_phase_ratio: 0.25
   advance_phase_ratio: 0.5
@@ -58,19 +77,20 @@ method_params:
   base_z_min: 0.24
   use_base_pd: true
   touchdown_alpha_min: 0.55
-  base_kp_xy: 40.0
-  base_kd_xy: 10.0
-  base_kp_z: 260.0
-  base_kd_z: 35.0
-  base_kp_rp: 140.0
-  base_kd_rp: 18.0
+  base_kp_xy: 220.0
+  base_kd_xy: 55.0
+  base_kp_z: 340.0
+  base_kd_z: 46.0
+  base_kp_rp: 170.0
+  base_kd_rp: 24.0
   base_kp_yaw: 25.0
   base_kd_yaw: 4.0
   base_weight_comp: 0.95
   base_support_contact_min: 2
-  base_force_xy_clip: 80.0
-  base_force_z_clip: 400.0
-  base_torque_clip: 40.0
+  base_force_xy_clip: 220.0
+  base_force_z_clip: 560.0
+  base_torque_clip: 70.0
+  stance_plan_blend: 0.35
   contact_qp_base_pd_blend: 0.25
   contact_base_kp_scale_x: 2.4
   contact_base_kd_scale_x: 1.5

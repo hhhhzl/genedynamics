@@ -4,6 +4,15 @@ Stepping-stones kinematics helpers.
 State formats supported:
 - 12D hybrid anchor-length planner:
     [b_x, b_y, psi, v_x, v_y, omega, x_L, x_R, l_L, l_R, mode, tau]
+- 16D corridor residual planner (quadruped_stepping_stones_2d):
+    [s, ey, epsi, v_s, v_y, omega, res(8), mode, tau].
+    Body world position is [s, centerline_y + ey]; nominal template (x_f,x_r,y_L,y_R) comes from
+    env fields or ``decode_plan_states(..., x_f_nominal=..., ...)``.
+- 20D corridor/template planner (template in state; older packed trajectories):
+    [s, ey, epsi, v_s, v_y, omega, res(8), x_f, x_r, y_L, y_R, mode, tau].
+    World body is [s, centerline_y + ey]; set decode_plan_states(..., centerline_y=...).
+- 24D legacy v2 trajectories (sigma + template + residual; sigma ignored for decode):
+    Same foot geometry as 20D; columns 6–9 are unused for visualization.
 - 4D legacy pair planner:
     [pL_x, pL_y, pR_x, pR_y]
 - 3D legacy midline planner:
@@ -12,7 +21,7 @@ State formats supported:
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -75,6 +84,12 @@ def decode_plan_states(
     *,
     step_width: float = 0.30,
     half_pair_length: float = 0.18,
+    centerline_y: float = 0.0,
+    env: Optional[Any] = None,
+    x_f_nominal: Optional[float] = None,
+    x_r_nominal: Optional[float] = None,
+    y_L_nominal: Optional[float] = None,
+    y_R_nominal: Optional[float] = None,
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, np.ndarray], np.ndarray]:
     s = np.asarray(states, dtype=np.float32)
     if s.ndim == 1:
@@ -123,6 +138,110 @@ def decode_plan_states(
 
         feet = {"FL": fl, "FR": fr, "RL": rl, "RR": rr}
         return body, yaw, feet, mode
+
+    if s.shape[1] == 20:
+        cy = float(centerline_y)
+        body = np.stack([s[:, 0], cy + s[:, 1]], axis=-1).astype(np.float32)
+        psi = s[:, 2].astype(np.float32)
+        res = s[:, 6:14].reshape(-1, 4, 2).astype(np.float32)
+        x_f = s[:, 14].astype(np.float32)
+        x_r = s[:, 15].astype(np.float32)
+        y_L = s[:, 16].astype(np.float32)
+        y_R = s[:, 17].astype(np.float32)
+        mode2 = np.mod(np.rint(s[:, 18]).astype(np.int32), 2)
+        c = np.cos(psi).astype(np.float32)
+        sn = np.sin(psi).astype(np.float32)
+        local_fl = np.stack([x_f + res[:, 0, 0], y_L + res[:, 0, 1]], axis=-1)
+        local_fr = np.stack([x_f + res[:, 1, 0], y_R + res[:, 1, 1]], axis=-1)
+        local_rl = np.stack([x_r + res[:, 2, 0], y_L + res[:, 2, 1]], axis=-1)
+        local_rr = np.stack([x_r + res[:, 3, 0], y_R + res[:, 3, 1]], axis=-1)
+        loc = np.stack([local_fl, local_fr, local_rl, local_rr], axis=1)
+        vx = loc[..., 0]
+        vy = loc[..., 1]
+        wx = c[:, None] * vx - sn[:, None] * vy
+        wy = sn[:, None] * vx + c[:, None] * vy
+        world = body[:, None, :] + np.stack([wx, wy], axis=-1)
+        feet = {
+            "FL": world[:, 0].astype(np.float32),
+            "FR": world[:, 1].astype(np.float32),
+            "RL": world[:, 2].astype(np.float32),
+            "RR": world[:, 3].astype(np.float32),
+        }
+        mode_out = np.where(mode2 == 0, MODE_DS_FL_RR, MODE_DS_FR_RL).astype(np.int32)
+        return body, psi, feet, mode_out
+
+    if s.shape[1] == 24:
+        # Legacy packed state: [s,ey,epsi, vel(3), sigma(4) ignored, res(8), x_f,x_r,y_L,y_R, mode, tau]
+        cy = float(centerline_y)
+        body = np.stack([s[:, 0], cy + s[:, 1]], axis=-1).astype(np.float32)
+        psi = s[:, 2].astype(np.float32)
+        res = s[:, 10:18].reshape(-1, 4, 2).astype(np.float32)
+        x_f = s[:, 18].astype(np.float32)
+        x_r = s[:, 19].astype(np.float32)
+        y_L = s[:, 20].astype(np.float32)
+        y_R = s[:, 21].astype(np.float32)
+        mode2 = np.mod(np.rint(s[:, 22]).astype(np.int32), 2)
+        c = np.cos(psi).astype(np.float32)
+        sn = np.sin(psi).astype(np.float32)
+        local_fl = np.stack([x_f + res[:, 0, 0], y_L + res[:, 0, 1]], axis=-1)
+        local_fr = np.stack([x_f + res[:, 1, 0], y_R + res[:, 1, 1]], axis=-1)
+        local_rl = np.stack([x_r + res[:, 2, 0], y_L + res[:, 2, 1]], axis=-1)
+        local_rr = np.stack([x_r + res[:, 3, 0], y_R + res[:, 3, 1]], axis=-1)
+        loc = np.stack([local_fl, local_fr, local_rl, local_rr], axis=1)
+        vx = loc[..., 0]
+        vy = loc[..., 1]
+        wx = c[:, None] * vx - sn[:, None] * vy
+        wy = sn[:, None] * vx + c[:, None] * vy
+        world = body[:, None, :] + np.stack([wx, wy], axis=-1)
+        feet = {
+            "FL": world[:, 0].astype(np.float32),
+            "FR": world[:, 1].astype(np.float32),
+            "RL": world[:, 2].astype(np.float32),
+            "RR": world[:, 3].astype(np.float32),
+        }
+        mode_out = np.where(mode2 == 0, MODE_DS_FL_RR, MODE_DS_FR_RL).astype(np.int32)
+        return body, psi, feet, mode_out
+
+    if s.shape[1] == 16:
+        # Corridor body [s, ey] + fixed nominal template + residual (matches env._decode_feet_np).
+        cy = float(centerline_y)
+        body = np.stack([s[:, 0], cy + s[:, 1]], axis=-1).astype(np.float32)
+        psi = s[:, 2].astype(np.float32)
+        res = s[:, 6:14].reshape(-1, 4, 2).astype(np.float32)
+        mode2 = np.mod(np.rint(s[:, 14]).astype(np.int32), 2)
+
+        def _pick(name: str, kw: Optional[float], default: float) -> float:
+            if kw is not None:
+                return float(kw)
+            if env is not None and hasattr(env, name):
+                return float(getattr(env, name))
+            return float(default)
+
+        x_f = _pick("x_f_nominal", x_f_nominal, 0.18)
+        x_r = _pick("x_r_nominal", x_r_nominal, -0.18)
+        y_L = _pick("y_L_nominal", y_L_nominal, 0.15)
+        y_R = _pick("y_R_nominal", y_R_nominal, -0.15)
+
+        c = np.cos(psi).astype(np.float32)
+        sn = np.sin(psi).astype(np.float32)
+        local_fl = np.stack([x_f + res[:, 0, 0], y_L + res[:, 0, 1]], axis=-1)
+        local_fr = np.stack([x_f + res[:, 1, 0], y_R + res[:, 1, 1]], axis=-1)
+        local_rl = np.stack([x_r + res[:, 2, 0], y_L + res[:, 2, 1]], axis=-1)
+        local_rr = np.stack([x_r + res[:, 3, 0], y_R + res[:, 3, 1]], axis=-1)
+        loc = np.stack([local_fl, local_fr, local_rl, local_rr], axis=1)
+        vx = loc[..., 0]
+        vy = loc[..., 1]
+        wx = c[:, None] * vx - sn[:, None] * vy
+        wy = sn[:, None] * vx + c[:, None] * vy
+        world = body[:, None, :] + np.stack([wx, wy], axis=-1)
+        feet = {
+            "FL": world[:, 0].astype(np.float32),
+            "FR": world[:, 1].astype(np.float32),
+            "RL": world[:, 2].astype(np.float32),
+            "RR": world[:, 3].astype(np.float32),
+        }
+        mode_out = np.where(mode2 == 0, MODE_DS_FL_RR, MODE_DS_FR_RL).astype(np.int32)
+        return body, psi, feet, mode_out
 
     if s.shape[1] >= 4:
         p_l = s[:, :2].astype(np.float32)
@@ -188,6 +307,10 @@ def stepping_scene_to_dict(scene: object) -> Optional[dict]:
             "has_river": bool(getattr(scene, "has_river", True)),
             "stones_centers": np.asarray(getattr(scene, "stones_centers"), dtype=np.float32).tolist(),
             "stones_radii": np.asarray(getattr(scene, "stones_radii"), dtype=np.float32).tolist(),
+            "support_platforms": np.asarray(
+                getattr(scene, "support_platforms", np.zeros((0, 4), dtype=np.float32)),
+                dtype=np.float32,
+            ).tolist(),
         }
     except Exception:
         return None

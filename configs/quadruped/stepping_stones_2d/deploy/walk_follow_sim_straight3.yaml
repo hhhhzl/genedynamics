@@ -1,0 +1,81 @@
+name: quadruped_stepping_stones_walk_follow_sim_straight3
+output_dir: results/quadruped/stepping_stones_2d/deploy/mbd_straight3
+
+robot_type: quadruped
+model_id: go2
+mode: sim
+planner: walk_follow
+
+episodes: 1
+seed: 0
+record: true
+
+env_params:
+  plan_seed_dir: results/quadruped/stepping_stones_2d/smoke/mbd_straight3/level_1/seed_0
+  l_max: 0.35
+  stance_width: 0.30
+  start_mid: [-1.25, 0.0]
+  goal_mid: [1.25, 0.0]
+
+method_params:
+  gait: walk
+  step_width: 0.30
+  sim_dt: 0.01
+  phase_steps: 56
+  uniform_base_speed: false
+  base_speed_mps: 0.16
+  swing_height: 0.120
+  swing_stance_phase: 0.60
+  swing_use_stance_gate: true
+  min_swing_clearance: 0.055
+  min_swing_clearance_first_n_intervals: 2
+  leg_half_length: 0.18
+  task_torque_clip: 65.0
+  settle_steps: 10
+  base_height_offset: 0.01
+  min_foot_z: 0.02
+  base_z_min: 0.24
+  use_base_pd: true
+  base_kp_xy: 100.0
+  base_kd_xy: 20.0
+  base_kp_z: 320.0
+  base_kd_z: 42.0
+  base_kp_rp: 170.0
+  base_kd_rp: 22.0
+  base_kp_yaw: 40.0
+  base_kd_yaw: 8.0
+  base_weight_comp: 0.95
+  base_support_contact_min: 2
+  base_force_xy_clip: 180.0
+  base_force_z_clip: 560.0
+  base_torque_clip: 75.0
+  swing_kp_xy: 500.0
+  swing_kp_z: 520.0
+  swing_kd_xy: 35.0
+  swing_kd_z: 35.0
+  joint_kp: 10.0
+  joint_kd: 1.0
+  joint_torque_clip: 2.0
+  stance_plan_blend: 0.20
+  touchdown_force_thresh: 18.0
+  touchdown_force_thresh_stone: 20.0
+  touchdown_force_thresh_bank: 14.0
+  touchdown_force_thresh_river: 10.0
+  strong_touchdown_force_thresh: 28.0
+  strong_touchdown_force_thresh_stone: 30.0
+  strong_touchdown_force_thresh_bank: 24.0
+  strong_touchdown_force_thresh_river: 18.0
+  touchdown_xy_tol: 0.09
+  touchdown_stable_steps: 2
+  post_touchdown_hold_steps: 12
+  touchdown_timeout_alpha: 0.90
+  touchdown_timeout_steps: 14
+  force_interval_end_on_touchdown_timeout: true
+  abort_after_consecutive_timeouts: 2
+  support_contact_abort_steps: 90
+  max_anchor_error_xy: 0.03
+  max_swing_tracking_error_xy: 0.25
+  allow_early_switch: false
+  max_render_frames: 140
+  render_width: 960
+  render_height: 720

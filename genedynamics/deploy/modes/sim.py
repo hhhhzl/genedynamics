@@ -125,9 +125,9 @@ class SimMode:
         Offline stepping walk follower:
         plan seed dir -> walk IK/PD rollout -> deploy episode + HTML.
         """
-        from genedynamics.deploy.sim_plan.stepping_walk_follower import (
-            SteppingWalkFollower,
-            WalkFollowerConfig,
+        from genedynamics.deploy.sim_plan.stepping_walk_follower_v2 import (
+            SteppingWalkFollowerMinimal,
+            MinimalFollowerConfig,
             load_stepping_plan_from_seed_dir,
         )
         from genedynamics.execution.logging.episode_writer import EpisodeWriter
@@ -154,100 +154,178 @@ class SimMode:
                 env_params.get("step_width", env_params.get("stance_width", 0.30)),
             )
         )
-        follower_cfg = WalkFollowerConfig(
+        centerline_y = float(
+            method_params.get(
+                "centerline_y",
+                env_params.get(
+                    "centerline_y",
+                    0.5 * float(env_params.get("start_mid", (-1.25, 0.0))[1])
+                    + 0.5 * float(env_params.get("goal_mid", (1.25, 0.0))[1]),
+                ),
+            )
+        )
+        follower_cfg = MinimalFollowerConfig(
             gait=str(method_params.get("gait", "walk")),
             sim_dt=float(method_params.get("sim_dt", 0.01)),
-            phase_steps=int(method_params.get("phase_steps", 20)),
-            swing_height=float(method_params.get("swing_height", 0.08)),
-            leg_half_length=float(method_params.get("leg_half_length", 0.18)),
+            phase_steps=int(method_params.get("phase_steps", 36)),
+            settle_steps=int(method_params.get("settle_steps", 20)),
             step_width=step_width,
-            kp=float(method_params.get("kp", 35.0)),
-            kd=float(method_params.get("kd", 1.8)),
-            ik_iters=int(method_params.get("ik_iters", 8)),
-            ik_damping=float(method_params.get("ik_damping", 1e-3)),
-            ik_tol=float(method_params.get("ik_tol", 2e-3)),
-            control_clip=float(method_params.get("control_clip", 3.0)),
-            settle_steps=int(method_params.get("settle_steps", 0)),
-            phase_extend_factor=float(method_params.get("phase_extend_factor", 2.5)),
-            stance_contact_min=int(method_params.get("stance_contact_min", 2)),
-            release_contact_steps=int(method_params.get("release_contact_steps", 2)),
-            swing_release_height=float(method_params.get("swing_release_height", 0.08)),
-            touchdown_contact_steps=int(method_params.get("touchdown_contact_steps", 2)),
-            touchdown_xy_tol=float(method_params.get("touchdown_xy_tol", 0.08)),
-            support_base_blend=float(method_params.get("support_base_blend", 0.85)),
-            lift_phase_ratio=float(method_params.get("lift_phase_ratio", 0.25)),
-            advance_phase_ratio=float(method_params.get("advance_phase_ratio", 0.5)),
-            swing_task_kp_xy=float(method_params.get("swing_task_kp_xy", 220.0)),
-            swing_task_kp_z=float(method_params.get("swing_task_kp_z", 260.0)),
-            swing_task_kd_xy=float(method_params.get("swing_task_kd_xy", 18.0)),
-            swing_task_kd_z=float(method_params.get("swing_task_kd_z", 22.0)),
-            stance_task_kp_xy=float(method_params.get("stance_task_kp_xy", 140.0)),
-            stance_task_kp_z=float(method_params.get("stance_task_kp_z", 180.0)),
-            stance_task_kd_xy=float(method_params.get("stance_task_kd_xy", 20.0)),
-            stance_task_kd_z=float(method_params.get("stance_task_kd_z", 24.0)),
-            task_torque_clip=float(method_params.get("task_torque_clip", 8.0)),
-            base_height_offset=float(method_params.get("base_height_offset", 0.02)),
+            centerline_y=centerline_y,
+            leg_half_length=float(method_params.get("leg_half_length", 0.18)),
+            x_f_nominal=float(method_params.get("x_f_nominal", 0.18)),
+            x_r_nominal=float(method_params.get("x_r_nominal", -0.18)),
+            y_L_nominal=float(method_params.get("y_L_nominal", 0.15)),
+            y_R_nominal=float(method_params.get("y_R_nominal", -0.15)),
+            base_height_offset=float(method_params.get("base_height_offset", 0.01)),
+            base_z_min=float(method_params.get("base_z_min", 0.23)),
             min_foot_z=float(method_params.get("min_foot_z", 0.015)),
-            lock_base_pose=bool(method_params.get("lock_base_pose", False)),
-            base_z_min=float(method_params.get("base_z_min", 0.22)),
+            swing_height=float(method_params.get("swing_height", 0.045)),
+            swing_stance_phase=float(method_params.get("swing_stance_phase", 0.5)),
+            swing_use_stance_gate=bool(method_params.get("swing_use_stance_gate", True)),
+            min_swing_clearance=float(method_params.get("min_swing_clearance", 0.0)),
+            min_swing_clearance_first_n_intervals=int(
+                method_params.get("min_swing_clearance_first_n_intervals", 0)
+            ),
             use_base_pd=bool(method_params.get("use_base_pd", True)),
-            touchdown_alpha_min=float(method_params.get("touchdown_alpha_min", 0.55)),
-            base_kp_xy=float(method_params.get("base_kp_xy", 40.0)),
-            base_kd_xy=float(method_params.get("base_kd_xy", 10.0)),
-            base_kp_z=float(method_params.get("base_kp_z", 220.0)),
-            base_kd_z=float(method_params.get("base_kd_z", 30.0)),
-            base_kp_rp=float(method_params.get("base_kp_rp", 80.0)),
-            base_kd_rp=float(method_params.get("base_kd_rp", 10.0)),
-            base_kp_yaw=float(method_params.get("base_kp_yaw", 25.0)),
-            base_kd_yaw=float(method_params.get("base_kd_yaw", 4.0)),
+            base_kp_xy=float(method_params.get("base_kp_xy", 44.0)),
+            base_kd_xy=float(method_params.get("base_kd_xy", 11.0)),
+            base_kp_z=float(method_params.get("base_kp_z", 260.0)),
+            base_kd_z=float(method_params.get("base_kd_z", 34.0)),
+            base_kp_rp=float(method_params.get("base_kp_rp", 95.0)),
+            base_kd_rp=float(method_params.get("base_kd_rp", 12.0)),
+            base_kp_yaw=float(method_params.get("base_kp_yaw", 35.0)),
+            base_kd_yaw=float(method_params.get("base_kd_yaw", 6.0)),
             base_weight_comp=float(method_params.get("base_weight_comp", 1.0)),
+            base_force_xy_clip=float(method_params.get("base_force_xy_clip", 90.0)),
+            base_force_z_clip=float(method_params.get("base_force_z_clip", 260.0)),
+            base_torque_clip=float(method_params.get("base_torque_clip", 48.0)),
             base_support_contact_min=int(method_params.get("base_support_contact_min", 2)),
-            base_force_xy_clip=float(method_params.get("base_force_xy_clip", 80.0)),
-            base_force_z_clip=float(method_params.get("base_force_z_clip", 200.0)),
-            base_torque_clip=float(method_params.get("base_torque_clip", 40.0)),
-            contact_base_kp_scale_x=float(method_params.get("contact_base_kp_scale_x", 2.2)),
-            contact_base_kd_scale_x=float(method_params.get("contact_base_kd_scale_x", 1.4)),
-            contact_base_kp_scale_y=float(method_params.get("contact_base_kp_scale_y", 0.30)),
-            contact_base_kd_scale_y=float(method_params.get("contact_base_kd_scale_y", 0.60)),
-            contact_phase_steps_scale=float(method_params.get("contact_phase_steps_scale", 1.35)),
-            contact_swing_height_scale=float(method_params.get("contact_swing_height_scale", 0.70)),
-            contact_touchdown_immediate_relock=bool(
-                method_params.get("contact_touchdown_immediate_relock", True)
+            base_support_scale_min=float(method_params.get("base_support_scale_min", 0.0)),
+            use_dynamic_base_z_ref=bool(method_params.get("use_dynamic_base_z_ref", True)),
+            base_target_clearance_from_feet=float(
+                method_params.get("base_target_clearance_from_feet", 0.31)
             ),
-            contact_base_y_support_blend=float(
-                method_params.get("contact_base_y_support_blend", 0.75)
+            use_stance_force_distribution=bool(
+                method_params.get("use_stance_force_distribution", True)
             ),
-            contact_stance_slip_kp_xy=float(method_params.get("contact_stance_slip_kp_xy", 120.0)),
-            contact_stance_slip_kd_xy=float(method_params.get("contact_stance_slip_kd_xy", 35.0)),
-            contact_stance_slip_kp_z=float(method_params.get("contact_stance_slip_kp_z", 40.0)),
-            contact_stance_slip_kd_z=float(method_params.get("contact_stance_slip_kd_z", 12.0)),
-            contact_stance_anchor_err_clip=float(
-                method_params.get("contact_stance_anchor_err_clip", 0.03)
+            use_stance_qp=bool(method_params.get("use_stance_qp", True)),
+            stance_qp_solver_order=tuple(
+                method_params.get("stance_qp_solver_order", ["clarabel", "osqp", "cvxopt"])
             ),
-            contact_progress_min_support_ratio=float(
-                method_params.get("contact_progress_min_support_ratio", 0.60)
+            stance_fd_lambda=float(method_params.get("stance_fd_lambda", 1e-3)),
+            stance_fd_mu=float(method_params.get("stance_fd_mu", 0.6)),
+            stance_fd_fz_min=float(method_params.get("stance_fd_fz_min", 5.0)),
+            stance_fd_fz_max=float(method_params.get("stance_fd_fz_max", 220.0)),
+            stance_fd_torque_blend=float(method_params.get("stance_fd_torque_blend", 0.65)),
+            swing_kp_xy=float(method_params.get("swing_kp_xy", 170.0)),
+            swing_kp_z=float(method_params.get("swing_kp_z", 230.0)),
+            swing_kd_xy=float(method_params.get("swing_kd_xy", 14.0)),
+            swing_kd_z=float(method_params.get("swing_kd_z", 18.0)),
+            use_swing_jointspace_tracking=bool(
+                method_params.get("use_swing_jointspace_tracking", True)
             ),
-            contact_early_switch_on_touchdown=bool(
-                method_params.get("contact_early_switch_on_touchdown", True)
+            swing_ik_kp_pos=float(method_params.get("swing_ik_kp_pos", 18.0)),
+            swing_ik_damping=float(method_params.get("swing_ik_damping", 0.010)),
+            swing_joint_kp=float(method_params.get("swing_joint_kp", 80.0)),
+            swing_joint_kd=float(method_params.get("swing_joint_kd", 5.0)),
+            swing_q_step_clip=float(method_params.get("swing_q_step_clip", 0.22)),
+            swing_qd_ref_clip=float(method_params.get("swing_qd_ref_clip", 8.0)),
+            swing_jointspace_tau_blend=float(
+                method_params.get("swing_jointspace_tau_blend", 0.35)
             ),
-            contact_early_switch_min_phase_ratio=float(
-                method_params.get("contact_early_switch_min_phase_ratio", 0.35)
+            stance_kp_xy=float(method_params.get("stance_kp_xy", 110.0)),
+            stance_kp_z=float(method_params.get("stance_kp_z", 135.0)),
+            stance_kd_xy=float(method_params.get("stance_kd_xy", 24.0)),
+            stance_kd_z=float(method_params.get("stance_kd_z", 16.0)),
+            flat_only_foot_lock=bool(method_params.get("flat_only_foot_lock", False)),
+            flat_lock_stance_kp_xy_scale=float(
+                method_params.get("flat_lock_stance_kp_xy_scale", 1.8)
             ),
-            contact_post_touchdown_stabilize_steps=int(
-                method_params.get("contact_post_touchdown_stabilize_steps", 4)
+            flat_lock_stance_kp_z_scale=float(
+                method_params.get("flat_lock_stance_kp_z_scale", 1.25)
             ),
-            contact_base_vel_kd_scale_x=float(
-                method_params.get("contact_base_vel_kd_scale_x", 1.0)
+            flat_lock_stance_kd_xy_scale=float(
+                method_params.get("flat_lock_stance_kd_xy_scale", 1.35)
             ),
-            contact_base_vel_kd_scale_y=float(
-                method_params.get("contact_base_vel_kd_scale_y", 0.4)
+            flat_lock_stance_kd_z_scale=float(
+                method_params.get("flat_lock_stance_kd_z_scale", 1.20)
             ),
-            contact_base_yaw_rate_kd_scale=float(
-                method_params.get("contact_base_yaw_rate_kd_scale", 1.0)
+            flat_lock_max_anchor_error_xy=float(
+                method_params.get("flat_lock_max_anchor_error_xy", 0.06)
+            ),
+            joint_kp=float(method_params.get("joint_kp", 26.0)),
+            joint_kd=float(method_params.get("joint_kd", 1.4)),
+            joint_torque_clip=float(method_params.get("joint_torque_clip", 3.0)),
+            task_torque_clip=float(method_params.get("task_torque_clip", 12.0)),
+            touchdown_force_thresh=float(method_params.get("touchdown_force_thresh", 12.0)),
+            touchdown_force_thresh_stone=float(
+                method_params.get("touchdown_force_thresh_stone", 12.0)
+            ),
+            touchdown_force_thresh_bank=float(
+                method_params.get("touchdown_force_thresh_bank", 10.0)
+            ),
+            touchdown_force_thresh_river=float(
+                method_params.get("touchdown_force_thresh_river", 8.0)
+            ),
+            touchdown_tangent_speed_thresh=float(
+                method_params.get("touchdown_tangent_speed_thresh", 0.20)
+            ),
+            touchdown_xy_tol=float(method_params.get("touchdown_xy_tol", 0.06)),
+            touchdown_stable_steps=int(method_params.get("touchdown_stable_steps", 2)),
+            post_touchdown_hold_steps=int(method_params.get("post_touchdown_hold_steps", 8)),
+            strong_touchdown_force_thresh=float(
+                method_params.get("strong_touchdown_force_thresh", 28.0)
+            ),
+            strong_touchdown_force_thresh_stone=float(
+                method_params.get("strong_touchdown_force_thresh_stone", 28.0)
+            ),
+            strong_touchdown_force_thresh_bank=float(
+                method_params.get("strong_touchdown_force_thresh_bank", 22.0)
+            ),
+            strong_touchdown_force_thresh_river=float(
+                method_params.get("strong_touchdown_force_thresh_river", 18.0)
+            ),
+            touchdown_counter_decay_on_contact=int(
+                method_params.get("touchdown_counter_decay_on_contact", 1)
+            ),
+            allow_early_switch=bool(method_params.get("allow_early_switch", False)),
+            allow_early_switch_on_contact=bool(
+                method_params.get("allow_early_switch_on_contact", False)
+            ),
+            early_switch_contact_alpha_min=float(
+                method_params.get("early_switch_contact_alpha_min", 0.55)
+            ),
+            roll_pitch_abort_rad=float(method_params.get("roll_pitch_abort_rad", 0.45)),
+            max_anchor_error_xy=float(method_params.get("max_anchor_error_xy", 0.04)),
+            max_swing_tracking_error_xy=float(method_params.get("max_swing_tracking_error_xy", 0.08)),
+            stance_press_z_offset=float(method_params.get("stance_press_z_offset", -0.004)),
+            stance_plan_blend=float(method_params.get("stance_plan_blend", 0.65)),
+            uniform_base_speed=bool(method_params.get("uniform_base_speed", True)),
+            base_speed_mps=float(method_params.get("base_speed_mps", 0.16)),
+            support_contact_abort_steps=int(method_params.get("support_contact_abort_steps", 80)),
+            touchdown_timeout_alpha=float(method_params.get("touchdown_timeout_alpha", 0.90)),
+            touchdown_timeout_steps=int(method_params.get("touchdown_timeout_steps", 16)),
+            force_interval_end_on_touchdown_timeout=bool(
+                method_params.get("force_interval_end_on_touchdown_timeout", True)
+            ),
+            abort_after_consecutive_timeouts=int(
+                method_params.get("abort_after_consecutive_timeouts", 2)
             ),
         )
 
         def _resolve_scene_dict(seed_dir: Path) -> Optional[Dict[str, Any]]:
+            if bool(method_params.get("flat_ground_scene", False)):
+                map_x = tuple(method_params.get("flat_ground_map_x", (-2.0, 2.0)))
+                map_y = tuple(method_params.get("flat_ground_map_y", (-1.0, 1.0)))
+                return {
+                    "map_x": [float(map_x[0]), float(map_x[1])],
+                    "map_y": [float(map_y[0]), float(map_y[1])],
+                    "river_x": [0.0, 0.0],
+                    "has_river": False,
+                    "stones_centers": [],
+                    "stones_radii": [],
+                    "support_platforms": [],
+                }
             scene_dict = None
             ex_path = seed_dir / "execution_results.json"
             if ex_path.exists():
@@ -293,17 +371,21 @@ class SimMode:
                     seed_dir = cand
 
             scene_dict = _resolve_scene_dict(seed_dir)
-            follower = SteppingWalkFollower(cfg=follower_cfg, stepping_scene=scene_dict)
-            plan = load_stepping_plan_from_seed_dir(seed_dir, step_width=step_width)
-            qpos, qvel, ctrl = follower.rollout(
-                mid=plan["mid"],
-                yaw=plan["yaw"],
+            follower = SteppingWalkFollowerMinimal(cfg=follower_cfg, stepping_scene=scene_dict)
+            plan = load_stepping_plan_from_seed_dir(
+                seed_dir,
                 step_width=step_width,
-                leg_half_length=float(follower_cfg.leg_half_length),
-                feet_ref=plan["feet"],
-                mode_ref=plan["mode"],
-                tau_ref=plan["tau"],
+                centerline_y=float(follower_cfg.centerline_y),
+                x_f_nominal=float(follower_cfg.x_f_nominal),
+                x_r_nominal=float(follower_cfg.x_r_nominal),
+                y_L_nominal=float(follower_cfg.y_L_nominal),
+                y_R_nominal=float(follower_cfg.y_R_nominal),
             )
+            roll = follower.rollout(plan_states=plan["states"])
+            qpos = np.asarray(roll.get("qpos", np.zeros((0, int(follower.model.nq)))), dtype=np.float32)
+            qvel = np.asarray(roll.get("qvel", np.zeros((0, int(follower.model.nv)))), dtype=np.float32)
+            ctrl = np.asarray(roll.get("ctrl", np.zeros((0, int(follower.model.nu)))), dtype=np.float32)
+            summary = dict(roll.get("summary", {}))
             states = np.concatenate([qpos, qvel], axis=1)
             ep_path = writer.write_episode(
                 states,
@@ -322,6 +404,16 @@ class SimMode:
             np.save(ep_path / "qpos.npy", qpos.astype(np.float32))
             np.save(ep_path / "qvel.npy", qvel.astype(np.float32))
             np.save(ep_path / "ctrl.npy", ctrl.astype(np.float32))
+            swing_ref = roll.get("swing_ref", {})
+            if isinstance(swing_ref, dict) and len(swing_ref) > 0:
+                np.savez(
+                    ep_path / "swing_ref_targets.npz",
+                    **{str(k): np.asarray(v, dtype=np.float32) for k, v in swing_ref.items()},
+                )
+            with open(ep_path / "rollout_summary.json", "w", encoding="utf-8") as f:
+                json.dump(summary, f, indent=2)
+            with open(ep_path / "rollout_interval_stats.json", "w", encoding="utf-8") as f:
+                json.dump(list(roll.get("interval_stats", [])), f, indent=2)
 
             if scene_dict:
                 with open(ep_path / "stepping_scene.json", "w", encoding="utf-8") as f:
@@ -355,6 +447,10 @@ class SimMode:
                     "frames": int(qpos.shape[0]),
                     "episode_path": str(ep_path),
                     "html_path": str(html_path),
+                    "goal_error_xy": float(summary.get("goal_error_xy", float("nan"))),
+                    "pitch_abs_max": float(summary.get("pitch_abs_max", 0.0)),
+                    "interval_timeout_ratio": float(summary.get("interval_timeout_ratio", 0.0)),
+                    "touchdown_any_ratio": float(summary.get("touchdown_any_ratio", 0.0)),
                 }
             )
             episode_paths.append(str(ep_path))

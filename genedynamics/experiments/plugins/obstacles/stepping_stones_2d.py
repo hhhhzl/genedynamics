@@ -38,13 +38,22 @@ class SteppingStones2DObstacleGeneratorPlugin(ObstacleGeneratorPlugin):
         else:
             goal_mid = (t[:2] if t.size >= 2 else np.array([1.25, 0.0], dtype=np.float32)).tolist()
 
+        lmx = float(config.get("l_max", 0.35))
+        max_lane = config.get("max_lane_center_dx", None)
+        cap = config.get("k_horizon_cap", None)
         scene = sample_stepping_stones_scene(
             level=max(1, int(level)),
             seed=int(seed),
-            l_max=float(config.get("l_max", 0.35)),
+            l_max=lmx,
             stance_width=float(config.get("stance_width", 0.30)),
             start_mid=(float(start_mid[0]), float(start_mid[1])),
             goal_mid=(float(goal_mid[0]), float(goal_mid[1])),
+            fore_hind_offset=float(config.get("fore_hind_offset", 0.18)),
+            max_lane_center_dx=(float(max_lane) if max_lane is not None else None),
+            lane_gap_l_ref=float(config.get("lane_gap_l_ref", 0.35)),
+            lane_gap_scale=float(config.get("lane_gap_scale", 1.0)),
+            lane_tail_margin=int(config.get("lane_tail_margin", 4)),
+            k_horizon_cap=(int(cap) if cap is not None else None),
         )
         return make_stepping_stones_obstacles(scene)
 

@@ -9,6 +9,7 @@ from typing import Any, Dict
 import matplotlib.pyplot as plt
 import numpy as np
 
+from genedynamics.envs.obstacles.stepping_stones import foot_stepping_violation_np
 from genedynamics.tasks.stepping_stones import decode_plan_states
 from ...framework.base import VisualizationPlugin
 
@@ -41,6 +42,20 @@ def _draw_scene(ax: Any, scene: Any):
                 zorder=0.5,
             )
         )
+    for row in np.asarray(getattr(scene, "support_platforms", np.zeros((0, 4))), dtype=np.float32).reshape(-1, 4):
+        xmin, xmax, ymin, ymax = float(row[0]), float(row[1]), float(row[2]), float(row[3])
+        ax.add_patch(
+            plt.Rectangle(
+                (xmin, ymin),
+                xmax - xmin,
+                ymax - ymin,
+                facecolor="#8b949e",
+                edgecolor="#2f3640",
+                linewidth=1.4,
+                alpha=0.88,
+                zorder=0.85,
+            )
+        )
     for c, r in zip(np.asarray(scene.stones_centers), np.asarray(scene.stones_radii)):
         ax.add_patch(
             plt.Circle(
@@ -67,12 +82,9 @@ def _infer_foot_radius(viz_cfg: Dict[str, Any]) -> float:
 
 
 def _swing_pair(mode: int):
-    m = int(mode) % 4
-    if m == 0:
+    if int(mode) % 2 == 0:
         return ("FR", "RL")
-    if m == 2:
-        return ("FL", "RR")
-    return tuple()
+    return ("FL", "RR")
 
 
 class SteppingStonesTrajectoryVisualizationPlugin(VisualizationPlugin):
@@ -97,6 +109,8 @@ class SteppingStonesTrajectoryVisualizationPlugin(VisualizationPlugin):
                 states,
                 step_width=float(getattr(env, "step_width", getattr(env, "stance_width", 0.30))),
                 half_pair_length=float(getattr(env, "fore_hind_offset", 0.18)),
+                centerline_y=float(getattr(env, "centerline_y", 0.0)),
+                env=env,
             )
             foot_radius = _infer_foot_radius(viz_cfg)
             tracks = [
@@ -105,10 +119,28 @@ class SteppingStonesTrajectoryVisualizationPlugin(VisualizationPlugin):
                 ("RL", feet["RL"], "#9467bd"),
                 ("RR", feet["RR"], "#8c564b"),
             ]
+            centers_v = np.asarray(scene.stones_centers, dtype=np.float32)
+            radii_v = np.asarray(scene.stones_radii, dtype=np.float32)
+            plat_v = np.asarray(getattr(scene, "support_platforms", np.zeros((0, 4))), dtype=np.float32)
+            sm_v = float(getattr(env, "stone_margin", 0.032))
             ax.plot(body[:, 0], body[:, 1], color="#1664c0", linewidth=1.8, alpha=0.9, zorder=3, label="body")
             for leg, pts, color in tracks:
                 ax.plot(pts[:, 0], pts[:, 1], color=color, linewidth=1.2, alpha=0.80, zorder=2.7, label=leg)
                 ax.scatter(pts[:, 0], pts[:, 1], s=8, color=color, alpha=0.18, zorder=2.5)
+                # Viz-only: violation can be ~stone_margin right at the shrunk platform edge; ignore that noise.
+                _tol = max(1e-3, 0.5 * float(sm_v))
+                for ti in range(int(pts.shape[0])):
+                    if foot_stepping_violation_np(pts[ti], centers_v, radii_v, plat_v, sm_v) > _tol:
+                        ax.scatter(
+                            float(pts[ti, 0]),
+                            float(pts[ti, 1]),
+                            s=42,
+                            facecolors="#d62728",
+                            edgecolors="#6a0000",
+                            linewidths=0.65,
+                            marker="o",
+                            zorder=4.2,
+                        )
             for t, mode_idx in enumerate(mode):
                 for swing_leg in _swing_pair(int(mode_idx)):
                     p = feet[swing_leg][t]
@@ -161,6 +193,8 @@ class SteppingStonesModesVisualizationPlugin(VisualizationPlugin):
                 s,
                 step_width=step_width,
                 half_pair_length=float(getattr(env, "fore_hind_offset", 0.18)),
+                centerline_y=float(getattr(env, "centerline_y", 0.0)),
+                env=env,
             )
             lw = 2.6 if i == best_idx else 1.1
             a = 0.95 if i == best_idx else 0.35

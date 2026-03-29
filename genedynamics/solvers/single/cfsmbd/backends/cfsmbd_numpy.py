@@ -185,7 +185,13 @@ class CFSMBDBackendNumpy:
             
             # Constraint violation (SDF-based): g_t = clearance - sdf(pos)
             # g_t <= 0 means feasible, so [g_t]_+ = max(0, g_t) is violation
-            if self.obstacles is not None:
+            hook = getattr(self.env, "numpy_cfs_alm_g_plus_from_state", None)
+            if callable(hook):
+                try:
+                    g_plus = float(hook(s, clearance))
+                except Exception:
+                    g_plus = 0.0
+            elif self.obstacles is not None:
                 pos = s[0:2]  # single_2d: state is position [px, py]
                 try:
                     sdf = self.obstacles.sdf(pos)
