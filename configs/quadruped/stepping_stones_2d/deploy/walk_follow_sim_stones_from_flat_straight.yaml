@@ -1,0 +1,119 @@
+name: quadruped_stepping_stones_walk_follow_sim_stones_from_flat_straight
+output_dir: results/quadruped/stepping_stones_2d/deploy/mbd_stones_from_flat_straight
+
+robot_type: quadruped
+model_id: go2
+mode: sim
+planner: walk_follow
+
+episodes: 1
+seed: 0
+record: true
+
+env_params:
+  plan_seed_dir: results/quadruped/stepping_stones_2d/smoke/mbd_flat_straight/level_1/seed_0
+  l_max: 0.35
+  stance_width: 0.30
+  start_mid: [-1.20, 0.0]
+  goal_mid: [0.20, 0.0]
+
+method_params:
+  gait: walk
+  flat_ground_scene: false
+  straight_stones_scene: true
+  straight_stones_pairs: 8
+  straight_stones_radius: 0.055
+  straight_platform_half_length: 0.22
+  straight_platform_half_width: 0.27
+  straight_lane_gap_to_platform: 0.12
+  straight_map_x: [-2.0, 2.0]
+  straight_map_y: [-1.0, 1.0]
+  step_width: 0.30
+  sim_dt: 0.01
+  phase_steps: 50
+  uniform_base_speed: true
+  base_speed_mps: 0.15
+  swing_height: 0.10
+  swing_stance_phase: 0.55
+  swing_use_stance_gate: true
+  min_swing_clearance: 0.04
+  min_swing_clearance_first_n_intervals: 20
+  leg_half_length: 0.18
+  task_torque_clip: 80.0
+  settle_steps: 10
+  base_height_offset: 0.12
+  min_foot_z: 0.02
+  base_z_min: 0.335
+  use_base_pd: true
+  base_kp_xy: 85.0
+  base_kd_xy: 16.0
+  base_kp_z: 620.0
+  base_kd_z: 90.0
+  base_kp_rp: 210.0
+  base_kd_rp: 52.0
+  base_kp_yaw: 42.0
+  base_kd_yaw: 8.0
+  base_weight_comp: 1.06
+  base_support_contact_min: 2
+  base_force_xy_clip: 180.0
+  base_force_z_clip: 760.0
+  base_torque_clip: 85.0
+  base_support_scale_min: 0.20
+  use_dynamic_base_z_ref: false
+  base_target_clearance_from_feet: 0.31
+  use_stance_force_distribution: true
+  use_stance_qp: true
+  stance_qp_solver_order: [clarabel, osqp, cvxopt]
+  stance_fd_lambda: 0.002
+  stance_fd_mu: 0.55
+  stance_fd_fz_min: 8.0
+  stance_fd_fz_max: 260.0
+  stance_fd_torque_blend: 0.03
+  swing_kp_xy: 650.0
+  swing_kp_z: 450.0
+  swing_kd_xy: 45.0
+  swing_kd_z: 32.0
+  use_swing_jointspace_tracking: true
+  swing_ik_kp_pos: 12.0
+  swing_ik_damping: 0.020
+  swing_joint_kp: 65.0
+  swing_joint_kd: 4.0
+  swing_q_step_clip: 0.10
+  swing_qd_ref_clip: 4.0
+  swing_jointspace_tau_blend: 0.36
+  joint_kp: 6.0
+  joint_kd: 1.0
+  joint_torque_clip: 2.0
+  stance_plan_blend: 0.18
+  flat_only_foot_lock: false
+  flat_lock_stance_kp_xy_scale: 2.4
+  flat_lock_stance_kp_z_scale: 1.35
+  flat_lock_stance_kd_xy_scale: 1.4
+  flat_lock_stance_kd_z_scale: 1.25
+  flat_lock_max_anchor_error_xy: 0.07
+  touchdown_force_thresh: 8.0
+  touchdown_force_thresh_stone: 8.0
+  touchdown_force_thresh_bank: 7.0
+  touchdown_force_thresh_river: 10.0
+  strong_touchdown_force_thresh: 12.0
+  strong_touchdown_force_thresh_stone: 12.0
+  strong_touchdown_force_thresh_bank: 10.0
+  strong_touchdown_force_thresh_river: 16.0
+  touchdown_tangent_speed_thresh: 0.60
+  touchdown_xy_tol: 0.18
+  touchdown_stable_steps: 2
+  post_touchdown_hold_steps: 6
+  allow_early_switch_on_contact: false
+  early_switch_contact_alpha_min: 0.55
+  touchdown_timeout_alpha: 0.90
+  touchdown_timeout_steps: 14
+  force_interval_end_on_touchdown_timeout: true
+  abort_after_consecutive_timeouts: 2
+  support_contact_abort_steps: 260
+  roll_pitch_abort_rad: 0.65
+  max_anchor_error_xy: 0.03
+  max_swing_tracking_error_xy: 0.22
+  allow_early_switch: false
+  max_render_frames: 280
+  render_width: 1024
+  render_height: 720

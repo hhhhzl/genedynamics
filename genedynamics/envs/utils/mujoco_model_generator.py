@@ -368,6 +368,7 @@ def create_go2_render_xml_with_trajectory(
     if stepping_scene:
         centers = np.asarray(stepping_scene.get("stones_centers", []), dtype=np.float64)
         radii = np.asarray(stepping_scene.get("stones_radii", []), dtype=np.float64).reshape(-1)
+        support_platforms = np.asarray(stepping_scene.get("support_platforms", []), dtype=np.float64).reshape(-1, 4)
         map_y = stepping_scene.get("map_y", [-0.9, 0.9])
         river_x = stepping_scene.get("river_x", [-0.2, 0.2])
         has_river = bool(stepping_scene.get("has_river", True))
@@ -398,6 +399,18 @@ def create_go2_render_xml_with_trajectory(
             geoms.append(
                 f'      <geom name="stepping_stone_{i}" type="cylinder" pos="{c[0]:.6f} {c[1]:.6f} 0.003000" '
                 f'size="{r:.6f} 0.003000" rgba="0.70 0.72 0.75 0.92" contype="0" conaffinity="0"/>'
+            )
+        for i, rect in enumerate(support_platforms):
+            if rect.size < 4 or not np.isfinite(rect[:4]).all():
+                continue
+            x0, x1, y0p, y1p = [float(v) for v in rect[:4]]
+            hx = max(1e-4, 0.5 * abs(x1 - x0))
+            hy = max(1e-4, 0.5 * abs(y1p - y0p))
+            cx = 0.5 * (x0 + x1)
+            cy = 0.5 * (y0p + y1p)
+            geoms.append(
+                f'      <geom name="support_platform_{i}" type="box" pos="{cx:.6f} {cy:.6f} 0.003000" '
+                f'size="{hx:.6f} {hy:.6f} 0.003000" rgba="0.44 0.49 0.55 0.92" contype="0" conaffinity="0"/>'
             )
         if geoms:
             scene_xml = (
@@ -517,6 +530,7 @@ def create_go2_sim_xml_with_stepping_scene(
 
     centers = np.asarray(stepping_scene.get("stones_centers", []), dtype=np.float64)
     radii = np.asarray(stepping_scene.get("stones_radii", []), dtype=np.float64).reshape(-1)
+    support_platforms = np.asarray(stepping_scene.get("support_platforms", []), dtype=np.float64).reshape(-1, 4)
     map_x = stepping_scene.get("map_x", [-1.6, 1.6])
     map_y = stepping_scene.get("map_y", [-0.9, 0.9])
     river_x = stepping_scene.get("river_x", [-0.2, 0.2])
@@ -589,6 +603,19 @@ def create_go2_sim_xml_with_stepping_scene(
             f'      <geom name="stepping_stone_{i}" type="cylinder" pos="{c[0]:.6f} {c[1]:.6f} '
             f'{stone_top_z_local - stone_half_height_local:.6f}" size="{r:.6f} {stone_half_height_local:.6f}" '
             f'rgba="0.70 0.72 0.75 1.0" contype="1" conaffinity="1"/>'
+        )
+    for i, rect in enumerate(support_platforms):
+        if rect.size < 4 or not np.isfinite(rect[:4]).all():
+            continue
+        x0p, x1p, y0p, y1p = [float(v) for v in rect[:4]]
+        hx = max(1e-4, 0.5 * abs(x1p - x0p))
+        hy = max(1e-4, 0.5 * abs(y1p - y0p))
+        cx = 0.5 * (x0p + x1p)
+        cy = 0.5 * (y0p + y1p)
+        geoms.append(
+            f'      <geom name="support_platform_{i}" type="box" pos="{cx:.6f} {cy:.6f} '
+            f'{stone_top_z_local - stone_half_height_local:.6f}" size="{hx:.6f} {hy:.6f} {stone_half_height_local:.6f}" '
+            f'rgba="0.44 0.49 0.55 1.0" contype="1" conaffinity="1"/>'
         )
 
     scene_xml = (

@@ -314,6 +314,58 @@ class SimMode:
         )
 
         def _resolve_scene_dict(seed_dir: Path) -> Optional[Dict[str, Any]]:
+            if bool(method_params.get("straight_stones_scene", False)):
+                start_mid_v = np.asarray(env_params.get("start_mid", (-1.25, 0.0)), dtype=np.float64)
+                goal_mid_v = np.asarray(env_params.get("goal_mid", (1.25, 0.0)), dtype=np.float64)
+                step_w = float(step_width)
+                half_w = 0.5 * step_w
+                stone_r_req = float(method_params.get("straight_stones_radius", 0.085))
+                n_pairs = int(max(0, method_params.get("straight_stones_pairs", 8)))
+                side_pad = float(method_params.get("straight_stones_side_pad", 0.02))
+                deck_half_len = float(method_params.get("straight_platform_half_length", 0.24))
+                deck_half_w = float(method_params.get("straight_platform_half_width", half_w + stone_r_req + 0.02))
+                lane_gap_to_deck = float(method_params.get("straight_lane_gap_to_platform", 0.10))
+
+                x0 = float(start_mid_v[0])
+                x1 = float(goal_mid_v[0])
+                y0 = float(start_mid_v[1])
+                sign = 1.0 if x1 >= x0 else -1.0
+                lane_x0 = x0 + sign * (deck_half_len + lane_gap_to_deck)
+                lane_x1 = x1 - sign * (deck_half_len + lane_gap_to_deck)
+                if n_pairs > 0:
+                    if sign > 0:
+                        xs = np.linspace(min(lane_x0, lane_x1), max(lane_x0, lane_x1), n_pairs, dtype=np.float64)
+                    else:
+                        xs = np.linspace(max(lane_x0, lane_x1), min(lane_x0, lane_x1), n_pairs, dtype=np.float64)
+                    if n_pairs >= 2:
+                        dx = float(abs(xs[1] - xs[0]))
+                        # Keep visible separation so stones form a clean lane, not overlapped "clusters".
+                        stone_r = float(min(stone_r_req, max(0.015, 0.48 * dx)))
+                    else:
+                        stone_r = float(stone_r_req)
+                    yL = y0 + half_w
+                    yR = y0 - half_w
+                    cL = np.stack([xs, np.full_like(xs, yL)], axis=1)
+                    cR = np.stack([xs, np.full_like(xs, yR)], axis=1)
+                    stones = np.concatenate([cL, cR], axis=0).astype(np.float32)
+                    radii = np.full((2 * n_pairs,), stone_r, dtype=np.float32)
+                else:
+                    stones = np.zeros((0, 2), dtype=np.float32)
+                    radii = np.zeros((0,), dtype=np.float32)
+
+                start_plat = [x0 - deck_half_len, x0 + deck_half_len, y0 - deck_half_w, y0 + deck_half_w]
+                goal_plat = [x1 - deck_half_len, x1 + deck_half_len, y0 - deck_half_w, y0 + deck_half_w]
+                map_x = tuple(method_params.get("straight_map_x", (-2.0, 2.0)))
+                map_y = tuple(method_params.get("straight_map_y", (-1.0, 1.0)))
+                return {
+                    "map_x": [float(map_x[0]), float(map_x[1])],
+                    "map_y": [float(map_y[0]), float(map_y[1])],
+                    "river_x": [0.0, 0.0],
+                    "has_river": False,
+                    "stones_centers": stones.tolist(),
+                    "stones_radii": radii.tolist(),
+                    "support_platforms": [start_plat, goal_plat],
+                }
             if bool(method_params.get("flat_ground_scene", False)):
                 map_x = tuple(method_params.get("flat_ground_map_x", (-2.0, 2.0)))
                 map_y = tuple(method_params.get("flat_ground_map_y", (-1.0, 1.0)))
