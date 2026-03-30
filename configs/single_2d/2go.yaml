@@ -51,7 +51,7 @@ method_params:
   twogo_probe_tail_pool_ratio: 0.25
   twogo_probe_geom_alpha: 0.25
   # B: explicit count, or omit and use twogo_probe_frac * Nsample
-  twogo_probe_b: 32
+  twogo_probe_b: 16
   # twogo_probe_frac: 0.5
   # twogo_probe_m_cap: 64   # optional: cap vmap length
   twogo_overlay:
@@ -87,7 +87,7 @@ obstacle_config:
   enable_connectivity_check: true
   enable_nonconvexity_check: true
 
-seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+seeds: [0]
 backend: jax
 device: cuda
 
