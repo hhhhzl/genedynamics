@@ -1035,6 +1035,7 @@ def make_stepping_stones_energy(env: QuadrupedSteppingStones2DEnv) -> LegacyEner
     if n_sp > 0:
         plat_pad_np[:n_sp] = platforms[:4]
     goal_mid = np.asarray(scene.goal_mid, dtype=np.float32)
+    start_mid = np.asarray(scene.start_mid, dtype=np.float32)
     river_x = np.asarray(scene.river_x, dtype=np.float32)
     has_river = bool(getattr(scene, "has_river", True))
     cy = float(env.centerline_y)
@@ -1072,6 +1073,7 @@ def make_stepping_stones_energy(env: QuadrupedSteppingStones2DEnv) -> LegacyEner
         plat_pad_j = jnp.asarray(plat_pad_np, dtype=jnp.float32)
         n_sp_j = int(n_sp)
         goal_mid_j = jnp.asarray(goal_mid, dtype=jnp.float32)
+        start_mid_j = jnp.asarray(start_mid, dtype=jnp.float32)
         river_x_j = jnp.asarray(river_x, dtype=jnp.float32)
         has_river_j = jnp.asarray(1.0 if has_river else 0.0, dtype=jnp.float32)
         cy_j = jnp.asarray(cy, dtype=jnp.float32)
@@ -1164,8 +1166,10 @@ def make_stepping_stones_energy(env: QuadrupedSteppingStones2DEnv) -> LegacyEner
             info = ctx or {}
             t = info.get("t", 0.0)
             tscalar = jnp.asarray(t, dtype=jnp.float32).reshape(-1)[0]
-            is_term = tscalar >= (Hj - 1.5)
-            w_foot = jnp.where(is_term, w_tf, 0.02)
+            # Phase-dependent foot tracking: ramp weight over the horizon
+            # so swing feet get directional guidance throughout.
+            progress = jnp.clip(tscalar / jnp.maximum(Hj - 1.0, 1.0), 0.0, 1.0)
+            w_foot = 0.02 + (w_tf - 0.02) * (progress ** 2)
             vel_err = (
                 1.20 * ((body[1] - goal_mid_j[1]) ** 2)
                 + 0.80 * (vel[1] ** 2)
@@ -1173,9 +1177,18 @@ def make_stepping_stones_energy(env: QuadrupedSteppingStones2DEnv) -> LegacyEner
                 + 0.25 * (jnp.maximum(0.0, -vel[0]) ** 2)
             )
             pr_cost = jnp.maximum(0.0, -(body[0] - goal_mid_j[0])) * 0.15
+
+            # Time-smooth progress guidance (à la MDOC):
+            # Penalize deviation from expected linear distance decay.
+            d0_j = jnp.linalg.norm(start_mid_j - goal_mid_j)
+            dist_to_goal = jnp.linalg.norm(body - goal_mid_j)
+            expected_dist = d0_j * jnp.maximum(0.0, 1.0 - progress)
+            guide_cost = 0.8 * (dist_to_goal - expected_dist) ** 2
+
             return (
                 jnp.sum((body - goal_mid_j) ** 2)
                 + pr_cost
+                + guide_cost
                 + vel_err
                 + 0.08 * (h_err**2)
                 + 1.05 * jnp.sum((body - support_center) ** 2)

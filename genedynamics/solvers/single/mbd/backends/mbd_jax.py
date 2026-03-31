@@ -114,13 +114,16 @@ class MBDBackendJax:
                 pos = np.asarray(self.position_extractor(t), dtype=np.float32).reshape(-1)[: self.position_dim]
                 target = jnp.asarray(pos, dtype=jnp.float32)
 
-            def step_fn(carry, action):
+            t_indices = jnp.arange(actions.shape[0], dtype=jnp.float32)
+
+            def step_fn(carry, action_and_t):
+                action, t_step = action_and_t
                 next_state = self._transition_fn(carry, action)
-                ctx = {"t": 0, "target_xy": target}
+                ctx = {"t": t_step, "target_xy": target}
                 reward = -self._cost_fn(next_state, action, ctx)
                 return next_state, reward
 
-            final_state, rewards = jax.lax.scan(step_fn, state_init, actions)
+            final_state, rewards = jax.lax.scan(step_fn, state_init, (actions, t_indices))
             if hasattr(self.env, "terminal_distance_jax"):
                 terminal_dist = self.env.terminal_distance_jax(final_state)
             else:
@@ -132,13 +135,16 @@ class MBDBackendJax:
         def rollout_rewards_with_target(state_init, actions, target):
             target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[: self.position_dim]
 
-            def step_fn(carry, action):
+            t_indices = jnp.arange(actions.shape[0], dtype=jnp.float32)
+
+            def step_fn(carry, action_and_t):
+                action, t_step = action_and_t
                 next_state = self._transition_fn(carry, action)
-                ctx = {"t": 0, "target_xy": target}
+                ctx = {"t": t_step, "target_xy": target}
                 reward = -self._cost_fn(next_state, action, ctx)
                 return next_state, reward
 
-            final_state, rewards = jax.lax.scan(step_fn, state_init, actions)
+            final_state, rewards = jax.lax.scan(step_fn, state_init, (actions, t_indices))
             if hasattr(self.env, "terminal_distance_jax"):
                 terminal_dist = self.env.terminal_distance_jax(final_state)
             else:

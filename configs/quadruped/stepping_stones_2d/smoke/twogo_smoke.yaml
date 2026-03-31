@@ -1,4 +1,4 @@
-# Stepping-stones smoke: same env/obstacles as mbd_smoke / mdcoas_smoke, method 2GO with knobs from configs/single_2d/2go.yaml.
+# Stepping-stones smoke: 2GO with CFS retraction, tuned for stepping.
 name: quadruped_stepping_stones_2d_twogo_smoke
 output_dir: results/quadruped/stepping_stones_2d/smoke/twogo
 
@@ -19,8 +19,8 @@ env_params:
 method: 2go
 method_params:
   show_tqdm: true
-  action_extra_sigma: 0.3
-  # Match mdcoas_smoke CFS activation on thin stones
+  # Reduced from 0.3: 12D action space with limit 0.45 needs tighter noise
+  action_extra_sigma: 0.20
   max_constraints_per_point: 12
   constraint_margin: 0.01
   cfs_action_convexifier: cfs_action
@@ -31,8 +31,8 @@ method_params:
 
   twogo_gate_vrate_threshold: 0.01
   twogo_cvar_alpha: 0.9
-  twogo_window_size: 16
-  twogo_window_stride: 8
+  twogo_window_size: 8
+  twogo_window_stride: 4
   twogo_tail_ratio: 0.3
   twogo_active_topk: 8
   twogo_agp_eta: 0.08
@@ -40,18 +40,24 @@ method_params:
   twogo_multi_scale: 0.25
   twogo_enable_agp_refine: false
   twogo_enable_local_gating: true
+  twogo_gate_ema_beta: 0.7
+  twogo_gate_risk_theta: 0.05
+  twogo_task_dir_alpha: 0.0
+  twogo_cluster_reweight_alpha: 0.0
+  twogo_cluster_retract_mu: 0.0
   twogo_enable_sample_tail: true
   twogo_enable_agp_batch: false
   twogo_use_jax_scan_core: true
-  twogo_retract_qp_boost: true
+  twogo_retract_qp_boost: false
   twogo_stability_eps: 1e-6
   twogo_gamma_init: 1.0
-  twogo_retract_qp_every: 1
-  twogo_probe_enable: true
+  twogo_retract_qp_every: 5
+  twogo_probe_enable: false
   twogo_probe_tail_mix: 0.5
   twogo_probe_tail_pool_ratio: 0.25
   twogo_probe_geom_alpha: 0.25
-  twogo_probe_b: 16
+  # Scaled up: 512 samples, 25% probe ratio (2D sweet spot was 50%)
+  twogo_probe_b: 32
   twogo_overlay:
     hardness:
       rho_ref: 500.0
@@ -62,7 +68,8 @@ method_params:
       delta_rho_gain: 0.02
       delta_min: 5e-4
     diffusion:
-      sigma_max: 0.25
+      # Reduced: stepping needs tighter diffusion than 2D navigation
+      sigma_max: 0.10
       sigma_hardness_power: 1.0
       theta_max: 0.6
       theta_min: 0.2
@@ -91,7 +98,6 @@ device: cuda
 metrics: [stepping_metrics]
 visualizations: [stepping_trajectory, stepping_modes, cost, adaptive, diffusion]
 
-# ALM + diffusion aligned with mdcoas_smoke (fair vs cfsmbd_full)
 scheduler_config:
   type: composite
   constraint_schedulers:

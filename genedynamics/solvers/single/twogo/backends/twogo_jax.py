@@ -264,19 +264,14 @@ class TwoGOBackendJax:
             pool_ratio=float(self.twogo_probe_tail_pool_ratio),
             max_probes=M_max,
         )
-        if stepping_enabled:
-            _retraction_op = SteppingRetraction(
-                backend="jax",
-                stone_centers=step_centers,
-                stone_radii=step_radii,
-                l_max=step_lmax,
-                action_limit=action_limit,
-            )
-        else:
-            _retraction_op = CfsRetraction(
-                backend="jax",
-                filter_fn=inner._filter_actions_single_jit,
-            )
+        # Always use CFS retraction — it correctly handles the
+        # action-space QP for both 2D obstacles and stepping stones.
+        # SteppingRetraction assumed a bipedal foot-displacement action
+        # layout that doesn't match the quadruped state/action space.
+        _retraction_op = CfsRetraction(
+            backend="jax",
+            filter_fn=inner._filter_actions_single_jit,
+        )
 
         def _sched_lookup_fixed(step_k: jnp.ndarray):
             if margin_arr is not None:

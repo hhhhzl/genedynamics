@@ -36,9 +36,15 @@ class GoalDirectionJax(TaskDirectionProvider):
         step_k: jnp.ndarray,
         hardness: jnp.ndarray,
     ) -> jnp.ndarray:
+        # Fast path: skip all computation when disabled.
+        if self._alpha_task == 0.0:
+            return jnp.zeros_like(current_actions)
+        # Guard against shape mismatch (e.g. stepping target is 2D
+        # goal point while current_actions is (H, act_dim)).
+        if target_actions.ndim != current_actions.ndim:
+            return jnp.zeros_like(current_actions)
         diff = target_actions - current_actions
         norm = jnp.linalg.norm(diff)
         d = diff / jnp.maximum(norm, jnp.asarray(1e-6, dtype=jnp.float32))
-        # Decay with hardness: strong early, weak late.
         weight = self._alpha_task * (1.0 - hardness)
         return weight * d
