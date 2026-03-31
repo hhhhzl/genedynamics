@@ -37,6 +37,8 @@ method_params:
   twogo_multi_scale: 0.25
   twogo_enable_agp_refine: false
   twogo_enable_local_gating: true
+  twogo_gate_ema_beta: 0.7        # EMA smoothing for route proxy (0=no smooth, 0.9=heavy)
+  twogo_gate_risk_theta: 0.05     # CVaR base threshold for risk gate (scales up with hardness)
   twogo_enable_sample_tail: true
   twogo_enable_agp_batch: false
   twogo_use_jax_scan_core: true
@@ -51,9 +53,12 @@ method_params:
   twogo_probe_tail_pool_ratio: 0.25
   twogo_probe_geom_alpha: 0.25
   # B: explicit count, or omit and use twogo_probe_frac * Nsample
-  twogo_probe_b: 16
+  twogo_probe_b: 32
   # twogo_probe_frac: 0.5
   # twogo_probe_m_cap: 64   # optional: cap vmap length
+  twogo_task_dir_alpha: 0.0   # task direction bias (0 = disabled; stepping may use > 0)
+  twogo_cluster_reweight_alpha: 0.0  # cluster reweight (0=disabled)
+  twogo_cluster_retract_mu: 0.0     # retract blend (0=disabled)
   twogo_overlay:
     hardness:
       rho_ref: 500.0
@@ -102,6 +107,7 @@ visualizations:
   - diffusion
   - cost
   - adaptive
+  - gate_dynamics
 
 scheduler_config:
   type: composite

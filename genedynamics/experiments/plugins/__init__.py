@@ -78,6 +78,7 @@ from .visualizations import (
     SchedulerParamsVisualizationPlugin,
     SteppingStonesTrajectoryVisualizationPlugin,
     SteppingStonesModesVisualizationPlugin,
+    GateDynamicsVisualizationPlugin,
 )
 
 from .obstacles import (
@@ -140,6 +141,7 @@ __all__ = [
     'SchedulerParamsVisualizationPlugin',
     'SteppingStonesTrajectoryVisualizationPlugin',
     'SteppingStonesModesVisualizationPlugin',
+    'GateDynamicsVisualizationPlugin',
     # Obstacles
     'Box2DObstacleGeneratorPlugin',
     'Box3DObstacleGeneratorPlugin',

@@ -401,6 +401,51 @@ class RefinementPipeline(ABC):
 
 
 # ======================================================================
+# Task direction provider
+# ======================================================================
+
+class TaskDirectionProvider(ABC):
+    """Provides a task-aware direction bias for the score update.
+
+    The direction is blended into score_base at each diffusion step,
+    decaying with hardness so that early steps get stronger task
+    guidance while late steps are dominated by constraint geometry.
+
+    Different environments implement this differently:
+    * 2D navigation: direction toward the goal in action space.
+    * Stepping stones: phase-dependent blend of body-progress,
+      swing-target, and support-consistency directions.
+    """
+
+    @abstractmethod
+    def direction(
+        self,
+        current_actions: Any,
+        target_actions: Any,
+        step_k: Any,
+        hardness: Any,
+    ) -> Any:
+        """Return a task direction vector, same shape as actions.
+
+        Parameters
+        ----------
+        current_actions : (H, U)
+            Current mean action sequence.
+        target_actions : (H, U)
+            Target / goal reference actions.
+        step_k : scalar int
+            Current diffusion step index.
+        hardness : scalar float in [0, 1]
+            Schedule hardness; providers should decay the bias as
+            hardness increases.
+
+        Returns
+        -------
+        (H, U) direction vector (not necessarily normalized).
+        """
+
+
+# ======================================================================
 # Schedule overlay
 # ======================================================================
 

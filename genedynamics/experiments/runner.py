@@ -71,6 +71,7 @@ from genedynamics.experiments.plugins import (
     SchedulerParamsVisualizationPlugin,
     SteppingStonesTrajectoryVisualizationPlugin,
     SteppingStonesModesVisualizationPlugin,
+    GateDynamicsVisualizationPlugin,
     Box2DObstacleGeneratorPlugin,
     Box3DObstacleGeneratorPlugin,
     D3ILAvoidingFixedGeneratorPlugin,
@@ -243,6 +244,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(SchedulerParamsVisualizationPlugin(), 'visualization')
     runner.register_plugin(SteppingStonesTrajectoryVisualizationPlugin(), 'visualization')
     runner.register_plugin(SteppingStonesModesVisualizationPlugin(), 'visualization')
+    runner.register_plugin(GateDynamicsVisualizationPlugin(), 'visualization')
     
     # Obstacle generator plugins
     runner.register_plugin(Box2DObstacleGeneratorPlugin(), 'obstacle_generator')
