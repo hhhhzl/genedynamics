@@ -8,7 +8,6 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from genedynamics.solvers.single.diffusion_adaptors import diverse_topk_modes
 from genedynamics.core.task_spec import legacy_extract_position
 from genedynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
 
@@ -63,7 +62,6 @@ class MBDBackendJax:
         self.guide_weight = float(kwargs.get("guide_weight", getattr(solver, "config", {}).get("guide_weight", 0.0) if solver else 0.0))
         self.energy = legacy_energy
         self.horizon = horizon
-        self.dt = dt
         self.Nsample = Nsample
         self.Ndiffuse = Ndiffuse
         self.temp_sample = temp_sample
@@ -74,7 +72,6 @@ class MBDBackendJax:
         self.seed = seed
         self.act_dim = self.env.act_dim
         self.scheduler = scheduler
-        self.show_tqdm = bool(show_tqdm)
         # Multi-mode support: number of candidate trajectories to return
         if solver is not None:
             self.num_modes = int(solver.config.get("num_modes", 1))
@@ -459,100 +456,6 @@ class MBDBackendJax:
             })
         
         return results
-
-        final_actions = jnp.clip(Ybar_final, -self.action_limit, self.action_limit)
-        states = self._rollout_states_fn(x0_jnp, final_actions)
-        rewards = self._rollout_rewards_fn(x0_jnp, final_actions)
-
-        states_np = np.asarray(states)
-        actions_np = np.asarray(final_actions)
-        energy_vals = []
-        for t in range(actions_np.shape[0]):
-            ctx = {"t": int(t)}
-            energy_vals.append(float(self.energy.compute(states_np[t], actions_np[t], ctx)))
-        energies_np = np.asarray(energy_vals, dtype=np.float32)
-        total_cost_final = -float(np.sum(rewards))  # Cost = -reward (lower is better)
-
-        # Multi-mode: collect candidate trajectories from final diffusion step
-        candidate_states_list = []
-        candidate_actions_list = []
-        candidate_costs_list = []
-        
-        if self.num_modes > 1 and len(sampled_traj) > 0:
-            # Strategy: sample from multiple diffusion steps to get diverse candidates
-            num_steps_to_sample = min(3, len(sampled_traj))
-            step_indices = np.linspace(0, len(sampled_traj) - 1, num_steps_to_sample, dtype=int)
-            
-            all_samples_list = []
-            all_states_list = []
-            all_costs_list = []
-            
-            for step_idx in step_indices:
-                step_samples = sampled_traj[step_idx]  # (M, H, act_dim)
-                M = step_samples.shape[0]
-                
-                # Rollout all samples to get rewards
-                states_step = self._rollout_states_batch_fn(x0_jnp, step_samples)  # (M, H+1, state_dim)
-                rewards_step = self._rollout_rewards_batch_fn(x0_jnp, step_samples)  # (M, H)
-                total_rewards_step = np.sum(rewards_step, axis=-1)  # (M,)
-                
-                # Cost = -reward (lower is better)
-                total_costs_step = -total_rewards_step  # (M,)
-                
-                all_samples_list.append(step_samples)
-                all_states_list.append(states_step)
-                all_costs_list.append(total_costs_step)
-            
-            # Concatenate samples from all steps
-            all_samples = np.concatenate(all_samples_list, axis=0)  # (M_total, H, act_dim)
-            all_states = np.concatenate(all_states_list, axis=0)  # (M_total, H+1, state_dim)
-            all_costs = np.concatenate(all_costs_list, axis=0)  # (M_total,)
-            
-            # Use diverse top-K selection
-            selected_indices, selected_costs = diverse_topk_modes(
-                all_samples,
-                all_states,
-                all_costs,
-                C=self.num_modes,
-                topK_cand=self.diversity_topK_cand,
-                eta=self.diversity_eta,
-                use_state_features=self.diversity_use_state,
-                feature_stride=4,
-            )
-            
-            # Extract candidate trajectories
-            # selected_indices are global indices, selected_costs are the corresponding costs
-            for i, idx in enumerate(selected_indices):
-                candidate_states_list.append(np.asarray(all_states[idx], dtype=np.float32))
-                candidate_actions_list.append(np.asarray(all_samples[idx], dtype=np.float32))
-                candidate_costs_list.append(float(selected_costs[i]))  # Use i, not idx, since selected_costs is already indexed
-            
-            # Find best index (lowest cost)
-            best_idx = int(np.argmin(candidate_costs_list))
-        else:
-            # Single mode: just use final trajectory
-            candidate_states_list = [np.asarray(states_np, dtype=np.float32)]
-            candidate_actions_list = [np.asarray(actions_np, dtype=np.float32)]
-            candidate_costs_list = [float(total_cost_final)]
-            best_idx = 0
-
-        return {
-            "actions": actions_np,
-            "states": states_np,
-            "rewards": np.asarray(rewards, dtype=np.float32),
-            "total_reward": float(np.sum(rewards)),
-            "mean_reward": float(np.mean(rewards)) if rewards.size > 0 else 0.0,
-            "initial_state": states_np[0],
-            "energies": energies_np,
-            "reward_history": np.asarray(reward_hist, dtype=np.float32),
-            "diffusion_actions_traj": np.asarray(actions_traj, dtype=np.float32),
-            "diffusion_sampled_actions": np.asarray(sampled_traj, dtype=np.float32),
-            # Multi-mode candidates
-            "candidate_states": candidate_states_list,
-            "candidate_actions": candidate_actions_list,
-            "candidate_costs": np.asarray(candidate_costs_list, dtype=np.float32),
-            "best_idx": best_idx,
-        }
 
     def sample_trajectories(
         self,

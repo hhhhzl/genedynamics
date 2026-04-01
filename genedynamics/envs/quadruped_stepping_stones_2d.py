@@ -317,7 +317,7 @@ class QuadrupedSteppingStones2DEnv:
         for i in range(4):
             if i in (is0, is1):
                 out[i] *= sw_scale
-        else:
+            else:
                 out[i] *= sup_scale
         return out
 

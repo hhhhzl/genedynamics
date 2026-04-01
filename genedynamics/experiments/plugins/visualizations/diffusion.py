@@ -65,39 +65,6 @@ def _is_ebmbd_solver(exp_cfg: Any) -> bool:
             return True
     return False
 
-def _add_cap_rectangle(
-        self, ax: Any, p: np.ndarray, grad: np.ndarray,
-        r: float, b: float, dt: float, scale: float,
-        facecolor: str, edgecolor: str, alpha: float, zorder: float = 4.0
-    ) -> None:
-        """Draw CAP as a rectangle in workspace: depth = dt*(r-b), width = 2*dt*sqrt(r^2-b^2).
-        Center between cutting plane and farthest point: p + g * (scale*dt*(r+b)/2).
-        """
-        if b >= r:
-            return
-        if b <= -r:
-            return
-        g = grad / (np.linalg.norm(grad) + 1e-9)
-        n = np.array([-g[1], g[0]])
-        R = scale * dt * r
-        length = scale * dt * (r - b)
-        width = scale * dt * (2.0 * np.sqrt(max(r * r - b * b, 0)))
-        center = p + g * (scale * dt * (r + b) / 2.0)
-        c1 = center + 0.5 * length * g + 0.5 * width * n
-        c2 = center + 0.5 * length * g - 0.5 * width * n
-        c3 = center - 0.5 * length * g - 0.5 * width * n
-        c4 = center - 0.5 * length * g + 0.5 * width * n
-        poly = Polygon(
-            [c1, c2, c3, c4],
-            closed=True,
-            facecolor=facecolor,
-            edgecolor=edgecolor,
-            linewidth=0.8,
-            alpha=alpha,
-            zorder=zorder,
-        )
-        ax.add_patch(poly)
-
 def _draw_cutting_line(
     ax,
     p: np.ndarray,

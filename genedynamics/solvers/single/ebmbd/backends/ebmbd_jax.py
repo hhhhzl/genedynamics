@@ -77,7 +77,6 @@ class EBMBDBackendJax:
         self.obstacle_config = getattr(solver, "_obstacle_config", {}) or {}
         self.robot_radius = float(self.obstacle_config.get("robot_radius", 0.05))
         self.scheduler = getattr(solver, "scheduler", None)
-        self.show_tqdm = bool(getattr(solver, "show_tqdm", False))
         # Multi-mode support: number of candidate trajectories to return
         self.num_modes = int(getattr(solver, "num_modes", 1))
         self.use_target_line = bool(getattr(solver, "use_target_line", False))
