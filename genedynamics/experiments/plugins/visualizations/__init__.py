@@ -14,6 +14,7 @@ from .stepping_stones_trajectory import (
     SteppingStonesTrajectoryVisualizationPlugin,
     SteppingStonesModesVisualizationPlugin,
 )
+from .gate_dynamics import GateDynamicsVisualizationPlugin
 
 __all__ = [
     'TrajectoryVisualizationPlugin',
@@ -26,5 +27,6 @@ __all__ = [
     'SchedulerParamsVisualizationPlugin',
     'SteppingStonesTrajectoryVisualizationPlugin',
     'SteppingStonesModesVisualizationPlugin',
+    'GateDynamicsVisualizationPlugin',
 ]
 

@@ -1,0 +1,11 @@
+# Path B smoke: plan (stepping stones 2D) + Go2 kinematic lift + qpos/qvel/ctrl npy
+base_output_dir: results/quadruped/stepping_stones_2d/smoke
+render_fps: 50.0
+
+runs:
+  - name: mbd
+    plan_config: configs/quadruped/stepping_stones_2d/smoke/mbd_smoke.yaml
+  - name: mdoc
+    plan_config: configs/quadruped/stepping_stones_2d/smoke/mdoc_smoke.yaml
+  - name: mdcoas
+    plan_config: configs/quadruped/stepping_stones_2d/smoke/mdcoas_smoke.yaml

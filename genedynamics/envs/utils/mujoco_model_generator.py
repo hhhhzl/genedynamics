@@ -6,6 +6,7 @@ with obstacles embedded. Since MuJoCo doesn't support runtime obstacle
 addition, obstacles must be included in the model file at creation time.
 """
 
+import re
 from typing import List, Optional, Dict, Any
 import numpy as np
 from pathlib import Path
@@ -300,8 +301,10 @@ def create_go2_render_xml_with_trajectory(
     output_path: str,
     trajectory_positions: list,
     go2_xml_path: Optional[str] = None,
-    line_radius: float = 0.015,
+    line_radius: float = 0.006,
     line_rgba: str = "0.2 0.6 1.0 0.7",
+    stepping_scene: Optional[Dict[str, Any]] = None,
+    swing_trajectories: Optional[Dict[str, np.ndarray]] = None,
 ) -> str:
     """
     Create Go2 XML with trajectory line for rendering.
@@ -361,6 +364,61 @@ def create_go2_render_xml_with_trajectory(
             )
             seg_idx += 1
 
+    scene_xml = ""
+    if stepping_scene:
+        centers = np.asarray(stepping_scene.get("stones_centers", []), dtype=np.float64)
+        radii = np.asarray(stepping_scene.get("stones_radii", []), dtype=np.float64).reshape(-1)
+        support_platforms = np.asarray(stepping_scene.get("support_platforms", []), dtype=np.float64).reshape(-1, 4)
+        map_y = stepping_scene.get("map_y", [-0.9, 0.9])
+        river_x = stepping_scene.get("river_x", [-0.2, 0.2])
+        has_river = bool(stepping_scene.get("has_river", True))
+        try:
+            y0, y1 = float(map_y[0]), float(map_y[1])
+            rx0, rx1 = float(river_x[0]), float(river_x[1])
+        except Exception:
+            y0, y1 = -0.9, 0.9
+            rx0, rx1 = -0.2, 0.2
+
+        geoms = []
+        if has_river:
+            river_half_x = max(1e-4, 0.5 * abs(rx1 - rx0))
+            river_half_y = max(1e-4, 0.5 * abs(y1 - y0))
+            river_cx = 0.5 * (rx0 + rx1)
+            river_cy = 0.5 * (y0 + y1)
+            geoms.append(
+                f'      <geom name="stepping_river" type="box" pos="{river_cx:.6f} {river_cy:.6f} 0.000200" '
+                f'size="{river_half_x:.6f} {river_half_y:.6f} 0.000200" rgba="0.20 0.52 0.84 0.45" '
+                f'contype="0" conaffinity="0"/>'
+            )
+        n = min(len(centers), len(radii))
+        for i in range(n):
+            c = np.asarray(centers[i], dtype=np.float64).reshape(-1)
+            if c.size < 2 or not np.isfinite(c[:2]).all() or not np.isfinite(radii[i]):
+                continue
+            r = max(1e-4, float(radii[i]))
+            geoms.append(
+                f'      <geom name="stepping_stone_{i}" type="cylinder" pos="{c[0]:.6f} {c[1]:.6f} 0.003000" '
+                f'size="{r:.6f} 0.003000" rgba="0.70 0.72 0.75 0.92" contype="0" conaffinity="0"/>'
+            )
+        for i, rect in enumerate(support_platforms):
+            if rect.size < 4 or not np.isfinite(rect[:4]).all():
+                continue
+            x0, x1, y0p, y1p = [float(v) for v in rect[:4]]
+            hx = max(1e-4, 0.5 * abs(x1 - x0))
+            hy = max(1e-4, 0.5 * abs(y1p - y0p))
+            cx = 0.5 * (x0 + x1)
+            cy = 0.5 * (y0p + y1p)
+            geoms.append(
+                f'      <geom name="support_platform_{i}" type="box" pos="{cx:.6f} {cy:.6f} 0.003000" '
+                f'size="{hx:.6f} {hy:.6f} 0.003000" rgba="0.44 0.49 0.55 0.92" contype="0" conaffinity="0"/>'
+            )
+        if geoms:
+            scene_xml = (
+                '\n    <!-- Stepping-stones scene overlay -->\n    <body name="stepping_scene_overlay" pos="0 0 0">\n'
+                + "\n".join(geoms)
+                + "\n    </body>\n"
+            )
+
     traj_xml = ""
     if traj_lines:
         traj_xml = (
@@ -369,9 +427,205 @@ def create_go2_render_xml_with_trajectory(
             + "\n    </body>\n"
         )
 
+    swing_xml = ""
+    if isinstance(swing_trajectories, dict) and len(swing_trajectories) > 0:
+        leg_colors = {
+            "FL": "0.90 0.25 0.25 0.85",
+            "FR": "0.25 0.55 0.95 0.85",
+            "RL": "0.25 0.85 0.35 0.85",
+            "RR": "0.90 0.78 0.22 0.85",
+        }
+        sw_lines = []
+        sw_idx = 0
+        sw_radius = max(1e-6, 0.45 * line_radius)
+        for leg in ("FL", "FR", "RL", "RR"):
+            arr = np.asarray(swing_trajectories.get(leg, []), dtype=np.float64)
+            if arr.ndim != 2 or arr.shape[1] < 3 or arr.shape[0] < 2:
+                continue
+            color = leg_colors.get(leg, "1.0 1.0 1.0 0.85")
+            for i in range(arr.shape[0] - 1):
+                p1 = arr[i, :3]
+                p2 = arr[i + 1, :3]
+                if np.any(~np.isfinite(p1)) or np.any(~np.isfinite(p2)):
+                    continue
+                if np.linalg.norm(p2 - p1) < MIN_SEG_LEN:
+                    continue
+                fromto = f"{p1[0]:.6f} {p1[1]:.6f} {p1[2]:.6f} {p2[0]:.6f} {p2[1]:.6f} {p2[2]:.6f}"
+                sw_lines.append(
+                    f'      <geom name="swing_{leg}_{sw_idx}" type="cylinder" fromto="{fromto}" '
+                    f'size="{sw_radius:.6f}" rgba="{color}" contype="0" conaffinity="0"/>'
+                )
+                sw_idx += 1
+        if sw_lines:
+            swing_xml = (
+                '\n    <!-- Swing trajectory lines -->\n    <body name="swing_trajectory_overlay" pos="0 0 0">\n'
+                + "\n".join(sw_lines)
+                + "\n    </body>\n"
+            )
+
     insert_pos = xml_content.rfind("</worldbody>")
-    if insert_pos != -1 and traj_xml:
-        xml_content = xml_content[:insert_pos] + traj_xml + xml_content[insert_pos:]
+    extras = scene_xml + traj_xml + swing_xml
+    if insert_pos != -1 and extras:
+        xml_content = xml_content[:insert_pos] + extras + xml_content[insert_pos:]
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(output_path).write_text(xml_content)
+    return xml_content
+
+
+def create_go2_sim_xml_with_stepping_scene(
+    output_path: str,
+    stepping_scene: Dict[str, Any],
+    go2_xml_path: Optional[str] = None,
+    *,
+    bank_top_z: float = 0.0,
+    bank_half_thickness: float = 0.04,
+    river_depth: float = 0.10,
+    river_half_thickness: float = 0.05,
+    stone_top_z: float = 0.035,
+    stone_half_height: float = 0.0175,
+) -> str:
+    """
+    Create a Go2 MuJoCo scene with physical stepping-stone collision geometry.
+
+    This disables the default infinite floor collision and replaces it with:
+    - left/right support banks at z=bank_top_z
+    - a lowered river bottom
+    - stepping-stone cylinders that can be contacted by the feet
+    """
+    if go2_xml_path is None:
+        try:
+            from genedynamics.robots.registry import _get_go2_path
+            go2_xml_path = _get_go2_path()
+        except Exception:
+            go2_xml_path = None
+    if go2_xml_path is None:
+        import os
+        menagerie = os.environ.get("MUJOCO_MENAGERIE_PATH")
+        if menagerie:
+            candidate = Path(menagerie) / "unitree_go2" / "go2.xml"
+            if candidate.exists():
+                go2_xml_path = str(candidate)
+    if go2_xml_path is None:
+        proj = Path(__file__).resolve().parents[3]
+        for d in (proj / "third_party" / "mujoco_menagerie", proj / "mujoco_menagerie"):
+            candidate = d / "unitree_go2" / "go2.xml"
+            if candidate.exists():
+                go2_xml_path = str(candidate)
+                break
+    if not go2_xml_path or not Path(go2_xml_path).exists():
+        raise FileNotFoundError(
+            "Go2 model not found. Set MUJOCO_MENAGERIE_PATH or install mujoco-menagerie."
+        )
+
+    go2_path_obj = Path(str(go2_xml_path))
+    if go2_path_obj.name in ("go2.xml", "go2_mjx.xml"):
+        for scene_name in ("scene.xml", "scene_mjx.xml"):
+            scene_candidate = go2_path_obj.parent / scene_name
+            if scene_candidate.exists():
+                go2_xml_path = str(scene_candidate)
+                break
+
+    xml_content = Path(str(go2_xml_path)).read_text()
+
+    centers = np.asarray(stepping_scene.get("stones_centers", []), dtype=np.float64)
+    radii = np.asarray(stepping_scene.get("stones_radii", []), dtype=np.float64).reshape(-1)
+    support_platforms = np.asarray(stepping_scene.get("support_platforms", []), dtype=np.float64).reshape(-1, 4)
+    map_x = stepping_scene.get("map_x", [-1.6, 1.6])
+    map_y = stepping_scene.get("map_y", [-0.9, 0.9])
+    river_x = stepping_scene.get("river_x", [-0.2, 0.2])
+    has_river = bool(stepping_scene.get("has_river", True))
+    try:
+        x0, x1 = float(map_x[0]), float(map_x[1])
+        y0, y1 = float(map_y[0]), float(map_y[1])
+        rx0, rx1 = float(river_x[0]), float(river_x[1])
+    except Exception:
+        x0, x1 = -1.6, 1.6
+        y0, y1 = -0.9, 0.9
+        rx0, rx1 = -0.2, 0.2
+
+    if has_river:
+        xml_content = re.sub(
+            r'<geom([^>]*name="floor"[^>]*)/>',
+            r'<geom\1 contype="0" conaffinity="0" rgba="0.16 0.20 0.22 1.0"/>',
+            xml_content,
+            count=1,
+        )
+    else:
+        xml_content = re.sub(
+            r'<geom([^>]*name="floor"[^>]*)/>',
+            r'<geom\1 rgba="0.16 0.20 0.22 1.0"/>',
+            xml_content,
+            count=1,
+        )
+
+    geoms = []
+    if has_river:
+        left_half_x = max(1e-4, 0.5 * max(0.0, rx0 - x0))
+        right_half_x = max(1e-4, 0.5 * max(0.0, x1 - rx1))
+        half_y = max(1e-4, 0.5 * abs(y1 - y0))
+        if left_half_x > 1e-4:
+            left_cx = 0.5 * (x0 + rx0)
+            geoms.append(
+                f'      <geom name="bank_left" type="box" pos="{left_cx:.6f} {0.5 * (y0 + y1):.6f} '
+                f'{bank_top_z - bank_half_thickness:.6f}" size="{left_half_x:.6f} {half_y:.6f} '
+                f'{bank_half_thickness:.6f}" rgba="0.26 0.28 0.30 1.0" contype="1" conaffinity="1"/>'
+            )
+        if right_half_x > 1e-4:
+            right_cx = 0.5 * (rx1 + x1)
+            geoms.append(
+                f'      <geom name="bank_right" type="box" pos="{right_cx:.6f} {0.5 * (y0 + y1):.6f} '
+                f'{bank_top_z - bank_half_thickness:.6f}" size="{right_half_x:.6f} {half_y:.6f} '
+                f'{bank_half_thickness:.6f}" rgba="0.26 0.28 0.30 1.0" contype="1" conaffinity="1"/>'
+            )
+
+        river_half_x = max(1e-4, 0.5 * abs(rx1 - rx0))
+        river_half_y = max(1e-4, 0.5 * abs(y1 - y0))
+        river_cx = 0.5 * (rx0 + rx1)
+        river_cy = 0.5 * (y0 + y1)
+        geoms.append(
+            f'      <geom name="river_bottom" type="box" pos="{river_cx:.6f} {river_cy:.6f} '
+            f'{-float(river_depth) - float(river_half_thickness):.6f}" size="{river_half_x:.6f} '
+            f'{river_half_y:.6f} {float(river_half_thickness):.6f}" rgba="0.12 0.34 0.58 0.95" '
+            f'contype="1" conaffinity="1"/>'
+        )
+
+    stone_top_z_local = float(stone_top_z if has_river else min(stone_top_z, 0.006))
+    stone_half_height_local = float(stone_half_height if has_river else min(stone_half_height, 0.003))
+
+    n = min(len(centers), len(radii))
+    for i in range(n):
+        c = np.asarray(centers[i], dtype=np.float64).reshape(-1)
+        if c.size < 2 or not np.isfinite(c[:2]).all() or not np.isfinite(radii[i]):
+            continue
+        r = max(1e-4, float(radii[i]))
+        geoms.append(
+            f'      <geom name="stepping_stone_{i}" type="cylinder" pos="{c[0]:.6f} {c[1]:.6f} '
+            f'{stone_top_z_local - stone_half_height_local:.6f}" size="{r:.6f} {stone_half_height_local:.6f}" '
+            f'rgba="0.70 0.72 0.75 1.0" contype="1" conaffinity="1"/>'
+        )
+    for i, rect in enumerate(support_platforms):
+        if rect.size < 4 or not np.isfinite(rect[:4]).all():
+            continue
+        x0p, x1p, y0p, y1p = [float(v) for v in rect[:4]]
+        hx = max(1e-4, 0.5 * abs(x1p - x0p))
+        hy = max(1e-4, 0.5 * abs(y1p - y0p))
+        cx = 0.5 * (x0p + x1p)
+        cy = 0.5 * (y0p + y1p)
+        geoms.append(
+            f'      <geom name="support_platform_{i}" type="box" pos="{cx:.6f} {cy:.6f} '
+            f'{stone_top_z_local - stone_half_height_local:.6f}" size="{hx:.6f} {hy:.6f} {stone_half_height_local:.6f}" '
+            f'rgba="0.44 0.49 0.55 1.0" contype="1" conaffinity="1"/>'
+        )
+
+    scene_xml = (
+        '\n    <!-- Physical stepping-stones scene -->\n    <body name="stepping_scene_collision" pos="0 0 0">\n'
+        + "\n".join(geoms)
+        + "\n    </body>\n"
+    )
+    insert_pos = xml_content.rfind("</worldbody>")
+    if insert_pos != -1:
+        xml_content = xml_content[:insert_pos] + scene_xml + xml_content[insert_pos:]
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     Path(output_path).write_text(xml_content)

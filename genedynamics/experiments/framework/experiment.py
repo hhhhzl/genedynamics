@@ -1937,7 +1937,25 @@ class ExperimentRunner:
                     plt.tight_layout()
                     viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
                     plt.close(fig)
-                
+
+                elif viz_name == 'gate_dynamics':
+                    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+                    viz_plugin.visualize(
+                        fig, axes,
+                        {
+                            'result': result['result'],
+                            'env': env,
+                        },
+                        {**viz_config.get(viz_name, {}), 'config': self.config}
+                    )
+                    out_dir = self._get_output_path(result['level'], result['seed'])
+                    adaptive_dir = out_dir / "adaptive"
+                    adaptive_dir.mkdir(parents=True, exist_ok=True)
+                    output_path = adaptive_dir / "gate_dynamics.png"
+                    plt.tight_layout()
+                    viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
+                    plt.close(fig)
+
             except Exception as e:
                 print(f"Warning: Failed to generate visualization '{viz_name}': {e}")
                 import traceback

@@ -18,6 +18,7 @@ from genedynamics.core.constraints.action_filters import (
     ClosedFormCBFFilterJointLift,
     QPBasedCBFFilterJointLift,
 )
+from genedynamics.core.constraints.action_filters.task_specific.cbf_stepping import SteppingCBFFilter
 from ...framework.base import MethodPlugin
 from ._result_utils import normalize_result_from_trajectory
 
@@ -44,6 +45,8 @@ class MDOCMethodPlugin(MethodPlugin):
             constraint_filter = ClosedFormCBFFilterJointLift()
         elif mode == "cbf_qp_joint_lift_perstep":
             constraint_filter = QPBasedCBFFilterJointLift()
+        elif mode == "cbf_stepping":
+            constraint_filter = SteppingCBFFilter()
         else:
             constraint_filter = NoOpConstraintFilter()
 

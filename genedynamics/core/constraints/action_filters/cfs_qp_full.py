@@ -7,6 +7,7 @@ then solves a single QP over the entire action sequence to project actions into 
 
 from __future__ import annotations
 from typing import Any, Optional
+import logging
 import numpy as np
 try:
     import jax
@@ -20,6 +21,8 @@ except ImportError:
 from genedynamics.core.constraints.action_filters.base import ConstraintFilter
 from genedynamics.core.constraints.action_filters.cbf_qp_joint_lift import _get_jacobian_pos_action_single
 from genedynamics.core.types import Trajectory
+
+logger = logging.getLogger(__name__)
 
 
 def _lift_grad_sel_to_action_numpy(env: Any, states: np.ndarray, grad_sel: np.ndarray, act_dim: int) -> np.ndarray:
@@ -346,6 +349,7 @@ class CFSQPFullFilter(ConstraintFilter):
                 )
             except Exception as e:
                 if 'tracer' in str(e).lower() or 'jax' in str(e).lower():
+                    logger.warning("CFSQP JAX path fallback to unfiltered actions: %s", e)
                     return actions
                 raise
 
@@ -527,9 +531,20 @@ class CFSQPFullFilter(ConstraintFilter):
             control_limit = float(getattr(env, "control_limit", 1.0))
             constraint_margin_val = float(self.constraint_margin)
             act_dim_from_actions = int(actions.shape[-1])
+            safety_points_fn = getattr(env, "jax_safety_points", None)
+            safety_jac_fn = getattr(env, "jax_jacobian_safety_points_action", None)
+            safety_jac_local_fn = getattr(env, "jax_jacobian_safety_points_action_local", None)
+            safety_point_clearance_weights_fn = getattr(env, "jax_cfs_safety_point_weights", None)
+            safety_custom_constraints_fn = getattr(env, "jax_cfs_custom_safety_constraints", None)
+            cfs_qp_margin_only_clearance = bool(getattr(env, "cfs_qp_safety_clearance_margin_only", False))
+            use_safety_points = bool(
+                getattr(env, "enable_cfs_safety_points_qp", False)
+                and callable(safety_points_fn)
+                and callable(safety_jac_fn)
+            )
             # Pure JAX Jacobian for act_dim > 2: avoid pure_callback in joint-lift path
             J_xy_const = None
-            if act_dim_from_actions > 2:
+            if act_dim_from_actions > 2 and not use_safety_points:
                 jax_jacobian_fn = getattr(env, "jax_jacobian_xy", None)
                 if callable(jax_jacobian_fn):
                     J_xy_const = jax_jacobian_fn()
@@ -551,7 +566,15 @@ class CFSQPFullFilter(ConstraintFilter):
             # IMPORTANT: evaluate SDF against *all* obstacles, then select top-K closest per timestep.
             # If we only build branches for the first K obstacles, we can miss collisions.
             max_k = int(num_obstacles) if num_obstacles > 0 else 0  # number of obstacle branches
-            k_select = int(min(self.max_constraints_per_point, max_k)) if max_k > 0 else 0  # top-K per timestep
+            if use_safety_points:
+                # Compatibility: safety-point scenes may opt in to "per-point" top-K budgeting.
+                # Without this, a single union obstacle + multiple feet would only contribute one
+                # active constraint per timestep, leaving the remaining feet unconstrained.
+                num_safety_points = int(max(1, getattr(env, "cfs_qp_num_safety_points", 1)))
+                max_pairs = int(max_k * num_safety_points) if max_k > 0 else 0
+                k_select = int(min(self.max_constraints_per_point * num_safety_points, max_pairs)) if max_pairs > 0 else 0
+            else:
+                k_select = int(min(self.max_constraints_per_point, max_k)) if max_k > 0 else 0  # top-K per timestep
         
             # Fast path (extreme performance): vectorized analytic SDF+grad for convex primitives.
             # This avoids large lax.switch branch trees over Python objects.
@@ -979,11 +1002,20 @@ class CFSQPFullFilter(ConstraintFilter):
                     # nominal p_{t+1}. This yields action-space constraints with *dynamics coupling*
                     # (non-block-diagonal A_full).
                     p0 = x0[0:2]
+                    p0_pts = safety_points_fn(x0) if use_safety_points else None
 
                     def build_constraints_for_timestep(t):
                         # Constrain the *next* state position p_{t+1} (more consistent than constraining p_t).
+                        state_prev = states_rollout[t]
+                        action_ref = u_seq[t]
                         state_t = states_rollout[t + 1]
                         pos_t = state_t[0:2]
+                        pts_t = safety_points_fn(state_t) if use_safety_points else None
+                        J_pts_t = (
+                            safety_jac_local_fn(state_prev, action_ref)
+                            if use_safety_points and callable(safety_jac_local_fn)
+                            else (safety_jac_fn(state_t) if use_safety_points else None)
+                        )
                     
                         # Stage 1: Compute SDF for all obstacles
                         def compute_obstacle_sdf_only(obs_idx, pos):
@@ -1007,11 +1039,89 @@ class CFSQPFullFilter(ConstraintFilter):
                         sdf_array = jax.vmap(lambda idx: compute_obstacle_sdf_only(idx, pos_t))(cand_idx)
                     
                         # Gate: check if constraints needed
-                        min_sdf = jnp.min(sdf_array)
-                        needs_constraints = min_sdf < threshold
+                        min_sdf = jnp.min(sdf_array) if not use_safety_points else jnp.min(
+                            jax.vmap(lambda pt: jax.vmap(lambda idx: compute_obstacle_sdf_only(idx, pt))(cand_idx))(pts_t)
+                        )
+                        needs_constraints = min_sdf < threshold_s
                     
                         def compute_constraints(_):
-                            cand_mask = sdf_array < threshold
+                            if use_safety_points:
+                                if callable(safety_custom_constraints_fn):
+                                    custom_out = safety_custom_constraints_fn(
+                                        state_prev,
+                                        state_t,
+                                        action_ref,
+                                        pts_t,
+                                        J_pts_t,
+                                        clearance_s,
+                                        act_dim,
+                                        k_select,
+                                    )
+                                    if isinstance(custom_out, tuple) and len(custom_out) == 3:
+                                        A_custom, b_custom, valid_custom = custom_out
+                                        A_custom = jnp.asarray(A_custom, dtype=jnp.float32)
+                                        b_custom = jnp.asarray(b_custom, dtype=jnp.float32)
+                                        valid_custom = jnp.asarray(valid_custom, dtype=jnp.bool_)
+                                        b_custom = jnp.where(valid_custom, b_custom, -jnp.inf)
+                                        return A_custom, b_custom
+                                    if isinstance(custom_out, tuple) and len(custom_out) == 2:
+                                        A_custom, b_custom = custom_out
+                                        return jnp.asarray(A_custom, dtype=jnp.float32), jnp.asarray(b_custom, dtype=jnp.float32)
+                                P_pts = pts_t.shape[0]
+                                w_shape_ones = jnp.ones((P_pts,), dtype=jnp.float32)
+                                if callable(safety_point_clearance_weights_fn):
+                                    wf = jnp.asarray(
+                                        safety_point_clearance_weights_fn(state_t), dtype=jnp.float32
+                                    ).reshape(-1)
+                                    w_pts = jnp.concatenate([wf, w_shape_ones])[:P_pts]
+                                else:
+                                    w_pts = w_shape_ones
+                                sdf_matrix = jax.vmap(
+                                    lambda pt: jax.vmap(lambda idx: compute_obstacle_sdf_only(idx, pt))(cand_idx)
+                                )(pts_t)  # (P, max_k)
+                                flat_sdf = sdf_matrix.reshape(-1)
+                                cand_mask = flat_sdf < threshold_s
+                                sdf_for_sort = jnp.where(cand_mask, flat_sdf, jnp.inf)
+                                neg_sdf = -sdf_for_sort
+                                _, selected_rank = jax.lax.top_k(neg_sdf, k_select)
+                                num_candidates = jnp.sum(cand_mask.astype(jnp.int32))
+                                k = jnp.minimum(
+                                    jnp.asarray(k_select, dtype=jnp.int32),
+                                    jnp.where(num_candidates == 0, k_select, num_candidates),
+                                )
+                                sdf_sel = jnp.take(flat_sdf, selected_rank, axis=0)
+                                point_idx_sel = selected_rank // jnp.asarray(max_k, dtype=jnp.int32)
+                                obs_rank_sel = selected_rank - point_idx_sel * jnp.asarray(max_k, dtype=jnp.int32)
+                                obs_idx_sel = jnp.take(cand_idx, obs_rank_sel, axis=0)
+
+                                def build_constraint_for_pair(idx):
+                                    valid_idx = idx < k
+                                    pt_idx = point_idx_sel[idx]
+                                    obs_idx = obs_idx_sel[idx]
+                                    pt = pts_t[pt_idx]
+                                    obs_idx_clipped = jnp.clip(obs_idx, 0, max_k - 1)
+                                    grad_obs = jax.lax.switch(obs_idx_clipped, obstacle_branches_grad_tuple, pt)
+                                    grad_norm = jnp.linalg.norm(grad_obs)
+                                    J_pt = J_pts_t[pt_idx][:, :act_dim]
+                                    ctrl_norm = jnp.linalg.norm(J_pt)
+                                    valid_grad = jnp.logical_and(valid_idx, jnp.logical_and(grad_norm > 1e-8, ctrl_norm > 1e-8))
+                                    grad_use = jnp.where(valid_grad, grad_obs, jnp.zeros(2, dtype=jnp.float32))
+                                    sdf_obs = jnp.where(valid_idx, sdf_sel[idx], jnp.inf)
+                                    A_row = jnp.where(
+                                        valid_grad,
+                                        jnp.matmul(jnp.transpose(J_pt), grad_use),
+                                        jnp.zeros((act_dim,), dtype=jnp.float32),
+                                    )
+                                    w_sel = jnp.take(w_pts, pt_idx)
+                                    eff_clear = clearance_s * w_sel
+                                    b_val = eff_clear - sdf_obs + jnp.dot(A_row, action_ref)
+                                    b_val = jnp.where(valid_grad, b_val, -jnp.inf)
+                                    return A_row, b_val
+
+                                pair_results = jax.vmap(build_constraint_for_pair)(jnp.arange(k_select))
+                                return pair_results[0], pair_results[1]
+
+                            cand_mask = sdf_array < threshold_s
                             sdf_for_sort = jnp.where(cand_mask, sdf_array, jnp.inf)
                         
                             # Select closest obstacles (smallest sdf). Using neg_sdf makes larger = closer.
@@ -1060,7 +1170,7 @@ class CFSQPFullFilter(ConstraintFilter):
                                 #
                                 # We return (grad, b) for this timestep; A_full is assembled with prefix coupling.
                                 grad_use = jnp.where(valid_grad, grad_obs, jnp.zeros(2))
-                                rhs_state = clearance - sdf_obs + jnp.dot(grad_use, pos_t)
+                                rhs_state = clearance_s - sdf_obs + jnp.dot(grad_use, pos_t)
                                 b_val = rhs_state - jnp.dot(grad_use, p0)
                                 b_val = jnp.where(valid_grad, b_val, -jnp.inf)
                                 return grad_use, b_val, valid_grad
@@ -1074,7 +1184,7 @@ class CFSQPFullFilter(ConstraintFilter):
                             return A_all, b_constraints
                     
                         def skip_constraints(_):
-                            A_empty = jnp.zeros((k_select, 2))
+                            A_empty = jnp.zeros((k_select, act_dim if use_safety_points else 2))
                             b_empty = jnp.full((k_select,), -jnp.inf)
                             return A_empty, b_empty
                     
@@ -1083,11 +1193,13 @@ class CFSQPFullFilter(ConstraintFilter):
                 
                     # Build constraints for all timesteps (t = 0..H-1 constrains p_{t+1})
                     constraint_results = jax.vmap(build_constraints_for_timestep)(jnp.arange(H))
-                    grad_per_step = constraint_results[0]  # (H, K, 2) position-space grad
+                    grad_per_step = constraint_results[0]
                     b_per_step = constraint_results[1]  # (H, K)
                 
                     # Opt 1: Pure JAX lift (H,K,2) -> (H,K,act_dim), no callback
-                    if act_dim == 2:
+                    if use_safety_points:
+                        A_per_step = grad_per_step
+                    elif act_dim == 2:
                         A_per_step = grad_per_step
                     else:
                         A_per_step = jnp.einsum("ji,hkj->hki", J_xy_const[:, :act_dim], grad_per_step)
@@ -1102,8 +1214,11 @@ class CFSQPFullFilter(ConstraintFilter):
 
                     def compute_max_violation(u_curr):
                         u_clip = jnp.clip(u_curr, -control_limit, control_limit)
-                        s = jnp.cumsum(u_clip, axis=0)
-                        lhs = jnp.asarray(dt, dtype=jnp.float32) * jnp.einsum("hkd,hd->hk", A_sel, s)
+                        if use_safety_points:
+                            lhs = jnp.einsum("hkd,hd->hk", A_sel, u_clip)
+                        else:
+                            s = jnp.cumsum(u_clip, axis=0)
+                            lhs = jnp.asarray(dt, dtype=jnp.float32) * jnp.einsum("hkd,hd->hk", A_sel, s)
                         viol = b - lhs
                         viol = jnp.where(jnp.isfinite(b), jnp.maximum(0.0, viol), -jnp.inf)
                         maxv = jnp.max(viol)
@@ -1121,18 +1236,37 @@ class CFSQPFullFilter(ConstraintFilter):
                         maxv, t_idx, k_idx = compute_max_violation(u_curr)
                         g = A_sel[t_idx, k_idx]
                         g2 = jnp.dot(g, g) + 1e-9
-                        denom = (jnp.asarray(t_idx, dtype=jnp.float32) + 1.0) * (jnp.asarray(dt, dtype=jnp.float32) ** 2) * g2
+                        denom = jax.lax.cond(
+                            jnp.asarray(use_safety_points, dtype=jnp.bool_),
+                            lambda _: g2,
+                            lambda _: (jnp.asarray(t_idx, dtype=jnp.float32) + 1.0) * (jnp.asarray(dt, dtype=jnp.float32) ** 2) * g2,
+                            operand=None,
+                        )
                         use_slack_flag = jnp.logical_and(rho_s > 0, jnp.asarray(self.use_slack, dtype=jnp.bool_))
                         denom = jax.lax.cond(
                             use_slack_flag,
-                            lambda d: d + (jnp.asarray(dt, dtype=jnp.float32) ** 2) * (1.0 / (rho_s + 1e-9)),
+                            lambda d: d + jax.lax.cond(
+                                jnp.asarray(use_safety_points, dtype=jnp.bool_),
+                                lambda _: (1.0 / (rho_s + 1e-9)),
+                                lambda _: (jnp.asarray(dt, dtype=jnp.float32) ** 2) * (1.0 / (rho_s + 1e-9)),
+                                operand=None,
+                            ),
                             lambda d: d,
                             denom,
                         )
                         lam = maxv / (denom + 1e-9)
-                        du = (jnp.asarray(dt, dtype=jnp.float32) * lam) * g
-                        prefix_mask = (time_idx <= t_idx).astype(jnp.float32)[:, None]
-                        u_next = u_curr + prefix_mask * du[None, :]
+                        du = jax.lax.cond(
+                            jnp.asarray(use_safety_points, dtype=jnp.bool_),
+                            lambda _: lam * g,
+                            lambda _: (jnp.asarray(dt, dtype=jnp.float32) * lam) * g,
+                            operand=None,
+                        )
+                        u_next = jax.lax.cond(
+                            jnp.asarray(use_safety_points, dtype=jnp.bool_),
+                            lambda uu: uu.at[t_idx].add(du),
+                            lambda uu: uu + (time_idx <= t_idx).astype(jnp.float32)[:, None] * du[None, :],
+                            u_curr,
+                        )
                         u_next = jnp.clip(u_next, -control_limit, control_limit)
                         return (i + 1, u_next, maxv, t_idx, k_idx)
 
@@ -1148,7 +1282,12 @@ class CFSQPFullFilter(ConstraintFilter):
                 margin_s = jnp.asarray(margin_s, dtype=jnp.float32)
                 rho_s = jnp.asarray(rho_s, dtype=jnp.float32)
                 I_QP_i32 = jnp.asarray(I_QP_s, dtype=jnp.int32)
-                clearance_s = margin_s + robot_radius_jax
+                clearance_s = jax.lax.cond(
+                    jnp.asarray(cfs_qp_margin_only_clearance, dtype=jnp.bool_),
+                    lambda _: margin_s,
+                    lambda _: margin_s + robot_radius_jax,
+                    operand=None,
+                )
                 threshold_s = clearance_s + constraint_margin_jax
 
                 def cond_fn(carry):

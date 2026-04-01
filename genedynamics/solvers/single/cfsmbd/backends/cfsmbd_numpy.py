@@ -185,7 +185,13 @@ class CFSMBDBackendNumpy:
             
             # Constraint violation (SDF-based): g_t = clearance - sdf(pos)
             # g_t <= 0 means feasible, so [g_t]_+ = max(0, g_t) is violation
-            if self.obstacles is not None:
+            hook = getattr(self.env, "numpy_cfs_alm_g_plus_from_state", None)
+            if callable(hook):
+                try:
+                    g_plus = float(hook(s, clearance))
+                except Exception:
+                    g_plus = 0.0
+            elif self.obstacles is not None:
                 pos = s[0:2]  # single_2d: state is position [px, py]
                 try:
                     sdf = self.obstacles.sdf(pos)
@@ -213,6 +219,12 @@ class CFSMBDBackendNumpy:
         # Total reward = sum of step rewards - augmented penalty
         # (since we maximize reward, penalty is subtracted)
         total_reward = float(np.sum(rewards)) - augmented_penalty
+        if hasattr(self.env, "terminal_distance"):
+            try:
+                terminal_weight = float(getattr(self.env, "terminal_reward_weight", 100.0))
+                total_reward -= terminal_weight * float(self.env.terminal_distance(np.asarray(states[-1], dtype=np.float32)))
+            except Exception:
+                pass
         
         return rewards, total_reward
 

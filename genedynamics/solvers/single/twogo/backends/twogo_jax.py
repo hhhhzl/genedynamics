@@ -16,18 +16,24 @@ import jax
 import jax.numpy as jnp
 
 from genedynamics.solvers.single.cfsmbd.backends.cfsmbd_jax import CFSMBDBackendJax
-from genedynamics.solvers.common.manifold import build_active_rows, project_complement_batch
+from genedynamics.genemetry import (
+    SdfManifold,
+    MultimodalGate,
+    ProbeModulator,
+    CfsRetraction,
+    SteppingRetraction,
+    SlidingWindow,
+    ProbePipeline,
+    AgpStep,
+    LocalCfsRetraction,
+    WindowRefinement,
+    ScheduleOverlay,
+    OverlayConfig,
+    resolve_overlay_config,
+)
+from genedynamics.genemetry.modulation.goal_direction import GoalDirectionJax
 from genedynamics.experiments.plugins.obstacles.d3il_avoiding_fixed import get_d3il_target_line_positions
 from genedynamics.core.constraints.core.types import ScheduleState
-from genedynamics.solvers.single.twogo.schedule_contract import (
-    constraint_overlay_jax,
-    constraint_overlay_numpy,
-    diffusion_overlay_jax,
-    diffusion_overlay_numpy,
-    hardness_from_rho_jax,
-    hardness_from_rho_numpy,
-    resolve_twogo_overlay_config,
-)
 
 
 class TwoGOBackendJax:
@@ -59,11 +65,22 @@ class TwoGOBackendJax:
         self.twogo_probe_tail_mix = float(np.clip(float(cfg.get("twogo_probe_tail_mix", 0.5)), 0.0, 1.0))
         self.twogo_probe_tail_pool_ratio = float(np.clip(float(cfg.get("twogo_probe_tail_pool_ratio", 0.25)), 1e-6, 1.0))
         self.twogo_probe_geom_alpha = float(cfg.get("twogo_probe_geom_alpha", 0.25))
+        self.twogo_gate_ema_beta = float(np.clip(float(cfg.get("twogo_gate_ema_beta", 0.7)), 0.0, 0.99))
+        self.twogo_gate_risk_theta = float(cfg.get("twogo_gate_risk_theta", 0.05))
+        self.twogo_cluster_reweight_alpha = float(cfg.get("twogo_cluster_reweight_alpha", 1.0))
+        self.twogo_cluster_retract_mu = float(np.clip(float(cfg.get("twogo_cluster_retract_mu", 0.1)), 0.0, 0.5))
+        self.twogo_enable_geometry = bool(cfg.get("twogo_enable_geometry", True))
         self.twogo_probe_frac = float(np.clip(float(cfg.get("twogo_probe_frac", 0.5)), 0.0, 1.0))
         self.twogo_probe_b = cfg.get("twogo_probe_b", None)
         self.twogo_probe_m_cap = cfg.get("twogo_probe_m_cap", None)
+        self.twogo_task_dir_alpha = float(cfg.get("twogo_task_dir_alpha", 0.15))
         rho_ref_default = float(getattr(getattr(self._inner, "_cs", None), "rho_max", 500.0))
-        self.twogo_overlay = resolve_twogo_overlay_config(cfg.get("twogo_overlay", None), rho_ref_default=rho_ref_default)
+        self._overlay_config = resolve_overlay_config(
+            cfg.get("twogo_overlay", None), rho_ref_default=rho_ref_default,
+        )
+        self.twogo_overlay = self._overlay_config.to_dict()  # backward compat
+        self._overlay_jax = ScheduleOverlay(config=self._overlay_config, backend="jax")
+        self._overlay_numpy = ScheduleOverlay(config=self._overlay_config, backend="numpy")
         self._rng = np.random.default_rng(int(getattr(self._inner, "seed", 0)))
         self._twogo_single_jit = None
         self._twogo_batch_jit = None
@@ -78,6 +95,43 @@ class TwoGOBackendJax:
             self._probe_b_int = int(max(0, min(_ns, int(round(float(self.twogo_probe_frac) * _ns)))))
         if self.twogo_use_jax_scan_core:
             self._build_twogo_scan_kernels()
+
+        # -- Phase B genemetry: refinement components ----------------------
+        from genedynamics.genemetry.window.backends.multimodality_numpy import (
+            WindowMultimodalityNumpy,
+        )
+        _position_dim = int(getattr(self._inner, "position_dim", 2))
+        self._refine_window_policy = SlidingWindow(
+            self.twogo_window_size, self.twogo_window_stride,
+        )
+        self._refine_agp_step = AgpStep(
+            backend="numpy",
+            active_topk=self.twogo_active_topk,
+            dt=float(max(getattr(self._inner, "dt", 0.1), 1e-6)),
+            action_limit=float(self._inner.action_limit),
+            rng=self._rng,
+        )
+        self._refine_local_cfs = LocalCfsRetraction(
+            backend="numpy",
+            gain=self.twogo_cfs_gain,
+            dt=float(max(getattr(self._inner, "dt", 0.1), 1e-6)),
+            action_limit=float(self._inner.action_limit),
+        )
+        self._refine_multimodality = WindowMultimodalityNumpy(
+            multi_scale=self.twogo_multi_scale,
+            position_dim=_position_dim,
+        )
+        self._refinement_pipeline = WindowRefinement(
+            backend="numpy",
+            window_policy=self._refine_window_policy,
+            constrained_step=self._refine_agp_step,
+            local_retraction=self._refine_local_cfs,
+            multimodality_evaluator=self._refine_multimodality,
+            cvar_alpha=self.twogo_cvar_alpha,
+            tail_ratio=self.twogo_tail_ratio,
+            enable_sample_tail=self.twogo_enable_sample_tail,
+            enable_local_gating=self.twogo_enable_local_gating,
+        )
 
     def _resolve_stepping_scene(self):
         env = getattr(self._inner, "env", None)
@@ -142,6 +196,7 @@ class TwoGOBackendJax:
         extra_sigmas = inner.action_extra_sigma * (1.0 - progress_inc)
         window_size = int(max(1, min(self.twogo_window_size, horizon)))
         window_stride = int(max(1, self.twogo_window_stride))
+        _window_policy = SlidingWindow(window_size, window_stride)
         tail_alpha = float(np.clip(1.0 - self.twogo_cvar_alpha, 0.0, 1.0))
         n_tail_cvar = int(max(1, int(np.ceil(tail_alpha * Nsample))))
         topk_active = int(max(1, min(self.twogo_active_topk, horizon)))
@@ -164,8 +219,7 @@ class TwoGOBackendJax:
         topK_default = jnp.asarray(inner._topK if inner._topK >= 0 else 8, dtype=jnp.int32)
         aug_lambda_const = jnp.asarray(inner.aug_lambda, dtype=jnp.float32)
         aug_rho_const = jnp.asarray(inner.aug_rho, dtype=jnp.float32)
-        overlay_cfg = self.twogo_overlay
-        rho_ref = float(overlay_cfg["rho_ref"])
+        _schedule_overlay_jax = self._overlay_jax
         cs = getattr(inner, "_cs", None)
         use_jax_adaptive = bool(
             getattr(inner, "_use_jax_adaptive", False)
@@ -196,57 +250,105 @@ class TwoGOBackendJax:
             step_radii = jnp.ones((1,), dtype=jnp.float32)
             step_lmax = jnp.asarray(0.35, dtype=jnp.float32)
 
-        def _project_to_nearest_stone(point_xy: jnp.ndarray) -> jnp.ndarray:
-            d = jnp.linalg.norm(point_xy[None, :] - step_centers, axis=-1)
-            i = jnp.argmin(d)
-            c = step_centers[i]
-            r = step_radii[i]
-            v = point_xy - c
-            n = jnp.linalg.norm(v)
-            return jnp.where(n <= r, point_xy, c + (r / jnp.maximum(n, 1e-6)) * v)
+        geometry_enabled = bool(self.twogo_enable_geometry)
 
-        def _clip_step(delta_xy: jnp.ndarray, lmax_xy: jnp.ndarray) -> jnp.ndarray:
-            n = jnp.linalg.norm(delta_xy)
-            scale = jnp.where(n > lmax_xy, lmax_xy / jnp.maximum(n, 1e-6), jnp.asarray(1.0, dtype=jnp.float32))
-            return delta_xy * scale
+        # -- stepping-specific constraint geometry -------------------------
+        _stepping_env = None
+        if stepping_enabled:
+            # Resolve actual env (unwrap adapters).
+            _e = getattr(inner, "env", None)
+            for attr in ("env", "dynamics", "plan_env"):
+                _inner_e = getattr(_e, attr, None)
+                if _inner_e is not None and hasattr(_inner_e, "jax_safety_points"):
+                    _e = _inner_e
+                    break
+            if hasattr(_e, "jax_safety_points"):
+                _stepping_env = _e
 
-        def _stepping_retract_single(x0_loc: jnp.ndarray, actions_in: jnp.ndarray) -> jnp.ndarray:
-            """
-            Retraction for stepping-stones: nearest-stone projection + step-length clipping.
-            """
-            x0f = jnp.asarray(x0_loc, dtype=jnp.float32).reshape(-1)
-            a_in = jnp.asarray(actions_in, dtype=jnp.float32)
-            H_local = a_in.shape[0]
+        if _stepping_env is not None and geometry_enabled:
+            _st_env = _stepping_env
+            _st_margin = jnp.asarray(float(getattr(_st_env, "stone_margin", 0.03)), dtype=jnp.float32)
+            _st_centers = step_centers
+            _st_radii = step_radii
 
-            p0_l = x0f[:2]
-            p0_r = x0f[2:4]
+            # Per-foot stone SDF (differentiable).
+            def _foot_sdf_stepping(p):
+                d = jnp.sqrt(jnp.sum((p[None, :] - _st_centers) ** 2, axis=-1) + 1e-10)
+                return jnp.min(d - (_st_radii - _st_margin))
 
-            def _step(carry, t):
-                p_l, p_r, a_prev = carry
-                u_t = a_in[t]
-                d_l_raw = u_t[:2]
-                d_r_raw = u_t[2:4]
-                p_l_prop = p_l + d_l_raw
-                p_r_prop = p_r + d_r_raw
-                p_l_proj = _project_to_nearest_stone(p_l_prop)
-                p_r_proj = _project_to_nearest_stone(p_r_prop)
-                d_l = _clip_step(p_l_proj - p_l, step_lmax)
-                d_r = _clip_step(p_r_proj - p_r, step_lmax)
-                p_l_n = p_l + d_l
-                p_r_n = p_r + d_r
-                u_new = u_t.at[:2].set(d_l)
-                u_new = u_new.at[2:4].set(d_r)
-                a_next = a_prev.at[t].set(u_new)
-                return (p_l_n, p_r_n, a_next), None
+            _foot_sdf_grad_raw = jax.grad(_foot_sdf_stepping)
+            def _foot_sdf_grad_stepping(p):
+                g = _foot_sdf_grad_raw(p)
+                return jnp.where(jnp.isnan(g), 0.0, g)
 
-            a0 = a_in
-            (p_l_f, p_r_f, a_out), _ = jax.lax.scan(
-                _step,
-                (p0_l, p0_r, a0),
-                jnp.arange(H_local, dtype=jnp.int32),
-            )
-            _ = (p_l_f, p_r_f)
-            return jnp.clip(a_out, -action_limit, action_limit)
+            # Foot residual offsets in action space: [body(2), yaw(1), FL(2), FR(2), RL(2), RR(2), dtau(1)]
+            _res_offsets = jnp.array([3, 5, 7, 9], dtype=jnp.int32)
+
+            def _stepping_geometry_time(x0_in, actions, clearance):
+                """Per-foot phase-aware geometry for stepping stones.
+
+                Returns (H, act_dim) constraint vectors where each row
+                encodes the most violated foot's barrier gradient lifted
+                to the per-foot residual rate dims, weighted by phase.
+                """
+                clr = jnp.asarray(clearance, dtype=jnp.float32)
+                dt_f = jnp.asarray(float(inner.dt), dtype=jnp.float32)
+
+                def _step_geom(carry, action):
+                    state = carry
+                    next_state = inner._transition_fn(state, action)
+
+                    feet4 = _st_env.jax_safety_points(next_state)  # (4, 2)
+                    w = _st_env.jax_cfs_safety_point_weights(next_state)  # (4,)
+
+                    # Compute per-foot violation + gradient.
+                    def _one_foot(foot_pos, weight, res_off):
+                        sdf = _foot_sdf_stepping(foot_pos)
+                        grad_p = _foot_sdf_grad_stepping(foot_pos)  # (2,)
+                        g_plus = jnp.maximum(0.0, clr - sdf)
+                        # Lift to action space: per-foot residual dims only.
+                        a_foot = jnp.zeros(act_dim, dtype=jnp.float32)
+                        a_foot = a_foot.at[res_off].set(dt_f * (-grad_p[0]))
+                        a_foot = a_foot.at[res_off + 1].set(dt_f * (-grad_p[1]))
+                        # Weight: violation * phase weight * amplifier.
+                        return a_foot * g_plus * weight * 1.0
+
+                    a_all = jax.vmap(_one_foot)( feet4, w, _res_offsets)  # (4, act_dim)
+                    # Sum all feet contributions for this timestep.
+                    a_t = jnp.sum(a_all, axis=0)
+
+                    return next_state, a_t
+
+                _, a_time = jax.lax.scan(_step_geom, x0_in, actions)
+                return a_time  # (H, act_dim)
+
+            _stepping_geometry_time_jit = jax.jit(_stepping_geometry_time)
+        else:
+            _stepping_geometry_time_jit = None
+
+        # -- genemetry components ----------------------------------------
+        _constraint_manifold = SdfManifold(backend="jax")
+        _task_modulator = ProbeModulator()
+        _gate_policy = MultimodalGate(
+            backend="jax",
+            multi_scale=multi_scale,
+            enable_local_gating=enable_local_gating,
+        )
+        _task_direction = GoalDirectionJax(alpha_task=float(self.twogo_task_dir_alpha))
+        _probe_pipeline = ProbePipeline(
+            backend="jax",
+            tail_mix=tail_mix_f,
+            pool_ratio=float(self.twogo_probe_tail_pool_ratio),
+            max_probes=M_max,
+        )
+        # Always use CFS retraction — it correctly handles the
+        # action-space QP for both 2D obstacles and stepping stones.
+        # SteppingRetraction assumed a bipedal foot-displacement action
+        # layout that doesn't match the quadruped state/action space.
+        _retraction_op = CfsRetraction(
+            backend="jax",
+            filter_fn=inner._filter_actions_single_jit,
+        )
 
         def _sched_lookup_fixed(step_k: jnp.ndarray):
             if margin_arr is not None:
@@ -285,90 +387,27 @@ class TwoGOBackendJax:
             top_vals, _ = jax.lax.top_k(v, n_tail_cvar)
             return jnp.mean(top_vals)
 
+        gate_ema_beta = jnp.asarray(float(self.twogo_gate_ema_beta), dtype=jnp.float32)
+        gate_risk_theta = jnp.asarray(float(self.twogo_gate_risk_theta), dtype=jnp.float32)
+        cluster_reweight_alpha = jnp.asarray(float(self.twogo_cluster_reweight_alpha), dtype=jnp.float32)
+        cluster_retract_mu = jnp.asarray(float(self.twogo_cluster_retract_mu), dtype=jnp.float32)
+        # Static flag: only include clustering in trace graph when at
+        # least one of the two features is enabled.  Avoids JIT graph
+        # changes that alter floating-point behaviour when disabled.
+        cluster_enabled = bool(self.twogo_cluster_reweight_alpha > 0 or self.twogo_cluster_retract_mu > 0)
+
         def _run_single(x0_jnp: jnp.ndarray, rng_key: jnp.ndarray, target: jnp.ndarray):
             rng, rng_sched_seed = jax.random.split(rng_key)
             Ybar_init = jnp.zeros((horizon, act_dim), dtype=jnp.float32)
             gamma_init = jnp.asarray(np.clip(self.twogo_gamma_init, 0.0, 1.0), dtype=jnp.float32)
+            pi_ema_init = jnp.asarray(1.0, dtype=jnp.float32)  # start high → diffusion ON
             carry_sched_init = cs.jax_init_carry(rng_sched_seed) if use_jax_adaptive else None
-
-            def run_probe_pack(
-                Y0s_l,
-                v_batch_l,
-                M_eff_l,
-                rng_tail_l,
-                rng_rand_l,
-                rng_vmap_parent,
-                margin_l,
-                rho_l,
-                eps_l,
-                topK_l,
-                sched_state_l,
-                x0_loc,
-            ):
-                tail_n_l = jnp.clip(
-                    jnp.round(M_eff_l.astype(jnp.float32) * jnp.asarray(tail_mix_f, dtype=jnp.float32)).astype(
-                        jnp.int32
-                    ),
-                    0,
-                    M_eff_l,
-                )
-                _, idx_hi_l = jax.lax.top_k(v_batch_l, k_pool_i)
-                perm_pool_l = jax.random.permutation(rng_tail_l, k_pool_i)
-                shuffled_hi_l = idx_hi_l[perm_pool_l]
-                perm_full_l = jax.random.permutation(rng_rand_l, Nsample)
-                i_l = jnp.arange(M_max, dtype=jnp.int32)
-                valid_l = i_l < M_eff_l
-                tail_n_mx = jnp.minimum(tail_n_l, M_max)
-                cand_tail_l = shuffled_hi_l[jnp.minimum(i_l, k_pool_i - 1)]
-                j_rand_l = i_l - tail_n_mx
-                cand_rand_l = perm_full_l[jnp.minimum(jnp.maximum(j_rand_l, 0), Nsample - 1)]
-                idx_m_l = jnp.where(i_l < tail_n_mx, cand_tail_l, cand_rand_l)
-                Y_g_l = Y0s_l[idx_m_l]
-                probe_keys_l = jax.random.split(rng_vmap_parent, M_max)
-                I_probe_l = jnp.asarray(1, dtype=jnp.int32)
-
-                def probe_one_l(y, keyp):
-                    sp_l = {
-                        "margin": margin_l,
-                        "rho": rho_l,
-                        "qp_gate": jnp.asarray(True, dtype=jnp.bool_),
-                        "qp_prob": jnp.asarray(1.0, dtype=jnp.float32),
-                        "I_QP": I_probe_l,
-                        "eps": eps_l,
-                        "topK": topK_l,
-                        "rng_key": keyp,
-                    }
-                    if stepping_enabled:
-                        return _stepping_retract_single(x0_loc, y)
-                    return inner._filter_actions_single_jit(x0_loc, y, sched_state_l, sp_l)
-
-                y_f_l = jax.vmap(probe_one_l)(Y_g_l, probe_keys_l)
-                valid3_l = valid_l[:, None, None]
-                y_out_l = jnp.where(valid3_l, y_f_l, Y_g_l)
-                resid_l = y_out_l - Y_g_l
-                wsum_l = jnp.maximum(jnp.sum(valid_l.astype(jnp.float32)), jnp.asarray(1.0, dtype=jnp.float32))
-                a_probe_l = jnp.sum(resid_l * valid3_l, axis=0) / wsum_l
-
-                def scatter_step_l(ii, carry_l):
-                    Y_c, bm_c = carry_l
-                    Y_n = jnp.where(valid_l[ii], Y_c.at[idx_m_l[ii]].set(y_out_l[ii]), Y_c)
-                    bm_n = jnp.where(
-                        valid_l[ii],
-                        bm_c.at[idx_m_l[ii]].set(jnp.asarray(1.0, dtype=jnp.float32)),
-                        bm_c,
-                    )
-                    return (Y_n, bm_n)
-
-                Y_fix_l, _bm_l = jax.lax.fori_loop(
-                    0, M_max, scatter_step_l, (Y0s_l, jnp.zeros((Nsample,), dtype=jnp.float32))
-                )
-                return Y_fix_l, a_probe_l
 
             def body(carry, idx):
                 if use_jax_adaptive:
-                    rng_curr, Ybar_curr, gamma_prev, carry_sched = carry
+                    rng_curr, Ybar_curr, gamma_prev, pi_ema_prev, carry_sched = carry
                 else:
-                    rng_curr, Ybar_curr, gamma_prev = carry
+                    rng_curr, Ybar_curr, gamma_prev, pi_ema_prev = carry
                     carry_sched = None
                 rng_curr, noise_key, extra_key, key_sched = jax.random.split(rng_curr, 4)
                 k_sched, rng_tail, rng_rand, rng_vmap_parent = jax.random.split(key_sched, 4)
@@ -389,9 +428,13 @@ class TwoGOBackendJax:
                 topK_k = params["topK"]
                 aug_lam = params["aug_lambda"]
                 aug_rho = params["aug_rho"]
-                hardness_k = hardness_from_rho_jax(rho_k, rho_ref)
-                kappa_k, delta_k = constraint_overlay_jax(margin, rho_k, overlay_cfg)
-                sigma_k, theta_k, eta_j = diffusion_overlay_jax(hardness_k, agp_eta, overlay_cfg)
+                _overlay_k = _schedule_overlay_jax.compute(margin, rho_k, agp_eta)
+                hardness_k = _overlay_k.hardness
+                kappa_k = _overlay_k.kappa
+                delta_k = _overlay_k.delta
+                sigma_k = _overlay_k.sigma
+                theta_k = _overlay_k.theta
+                eta_j = _overlay_k.eta
                 M_k = M_k_arr[jnp.clip(step_k, 0, M_k_arr.shape[0] - 1)] if M_k_arr is not None else jnp.asarray(Nsample, dtype=jnp.int32)
                 M_k = jnp.clip(M_k, 1, Nsample)
                 gate_every_k = gate_every_arr[jnp.clip(step_k, 0, gate_every_arr.shape[0] - 1)] if gate_every_arr is not None else jnp.asarray(1, dtype=jnp.int32)
@@ -421,11 +464,12 @@ class TwoGOBackendJax:
                     "rng_key": k_sched,
                 }
 
-                idxs = jnp.arange(horizon, dtype=jnp.int32)
-                w_start = (step_k * window_stride) % horizon
-                wmask = (((idxs - w_start) % horizon) < window_size).astype(jnp.float32)
+                wmask = _window_policy.mask(step_k, horizon)
 
-                a_geom = inner._constraint_geometry_time_jit(x0_jnp, Ybar_curr, margin)
+                if _stepping_geometry_time_jit is not None:
+                    a_geom = _stepping_geometry_time_jit(x0_jnp, Ybar_curr, margin)
+                else:
+                    a_geom = inner._constraint_geometry_time_jit(x0_jnp, Ybar_curr, margin)
                 a_geom0 = a_geom * wmask[:, None]
 
                 eps_noise = jax.random.normal(noise_key, (Nsample, horizon, act_dim), dtype=jnp.float32)
@@ -449,22 +493,34 @@ class TwoGOBackendJax:
                 else:
                     carry_sched_new = carry_sched
 
+                _probe_sched_params = {
+                    "margin": margin,
+                    "rho": rho_k,
+                    "qp_gate": jnp.asarray(True, dtype=jnp.bool_),
+                    "qp_prob": jnp.asarray(1.0, dtype=jnp.float32),
+                    "eps": eps_k,
+                    "topK": topK_k,
+                }
+                _probe_retract_params = {
+                    "M_eff": M_eff,
+                    "sched_state": sched_state,
+                    "sched_params": _probe_sched_params,
+                }
+                _probe_rng_keys = {
+                    "rng_tail": rng_tail,
+                    "rng_rand": rng_rand,
+                    "rng_vmap": rng_vmap_parent,
+                }
+                def _run_probe(_):
+                    pr = _probe_pipeline.sample_and_retract(
+                        Y0s, v_batch, _retraction_op, x0_jnp,
+                        _probe_retract_params, _probe_rng_keys,
+                    )
+                    return pr.fixed_trajectories, pr.residual_geometry
+
                 Y_fix, a_probe = jax.lax.cond(
                     do_probe,
-                    lambda _: run_probe_pack(
-                        Y0s,
-                        v_batch,
-                        M_eff,
-                        rng_tail,
-                        rng_rand,
-                        rng_vmap_parent,
-                        margin,
-                        rho_k,
-                        eps_k,
-                        topK_k,
-                        sched_state,
-                        x0_jnp,
-                    ),
+                    _run_probe,
                     lambda _: (
                         Y0s,
                         jnp.zeros((horizon, act_dim), dtype=jnp.float32),
@@ -477,15 +533,19 @@ class TwoGOBackendJax:
                 bmask3 = bmask[:, None, None]
                 Y_eff = jnp.where(bmask3 > 0.5, Y_fix, Y0s)
 
-                a_geom1 = a_geom0 + jnp.asarray(probe_alpha, dtype=jnp.float32) * (a_probe * wmask[:, None])
-                A_rows, topu, _idx_top, _active_mask_t, _sb = build_active_rows(a_geom1, topk_active, eps_stab)
-                K_active = jnp.sum((topu > eps_stab).astype(jnp.float32))
-                geom_valid = K_active >= 1.0
-                AAT = A_rows @ jnp.transpose(A_rows)
-                I_k = jnp.eye(topk_active, dtype=jnp.float32)
-                metric_sys = I_k + AAT + eps_stab * I_k
-                tan_sys = AAT + eps_stab * I_k
+                a_geom1 = _task_modulator.modulate(
+                    a_geom0,
+                    probe_geometry=a_probe,
+                    window_mask=wmask,
+                    alpha=probe_alpha,
+                )
+                bundle = _constraint_manifold.geometry(
+                    a_geom1, topk_active, eps_stab
+                )
 
+                # Phase B/C: cluster-based reweighting + retract blend.
+                # Guarded behind a static flag so the trace graph is
+                # identical to baseline when both are disabled.
                 rew_mean = jnp.mean(rews)
                 rew_std = jnp.where(jnp.std(rews) < 1e-4, 1.0, jnp.std(rews))
                 T_k = T_k_arr[jnp.clip(step_k, 0, T_k_arr.shape[0] - 1)] if T_k_arr is not None else jnp.asarray(inner.temp_sample, dtype=jnp.float32)
@@ -494,24 +554,43 @@ class TwoGOBackendJax:
                 Ybar_weighted = jnp.einsum("n,nij->ij", weights, Y_eff)
 
                 sigma_scale = jnp.maximum(sigmas[idx], jnp.asarray(1e-6, dtype=jnp.float32))
-                spread = jnp.mean(jnp.std(Y0s - Ybar_curr, axis=0) * wmask[:, None])
-                pi_multi = spread / jnp.maximum(jnp.asarray(multi_scale, dtype=jnp.float32) * sigma_scale, jnp.asarray(1e-6, dtype=jnp.float32))
-                gamma_geo = (pi_multi > theta_k).astype(jnp.float32)
+                gate_decision = _gate_policy.evaluate(
+                    Y0s, Ybar_curr, wmask, sigma_scale, theta_k,
+                )
+                pi_route_raw = gate_decision.meta["pi_multi"]
+
+                # A3: EMA smoothing of route proxy to avoid gate jitter.
+                pi_ema_k = gate_ema_beta * pi_ema_prev + (1.0 - gate_ema_beta) * pi_route_raw
+
+                # A2: Dual gate — route ambiguity OR feasibility risk.
+                # Risk threshold rises with hardness: late stages tolerate
+                # more residual violation without reopening diffusion.
+                risk_thresh_k = gate_risk_theta * (1.0 + 4.0 * hardness_k)
+                route_on = pi_ema_k > theta_k
+                risk_on = cvar > risk_thresh_k
+                gamma_dual = jnp.logical_or(route_on, risk_on).astype(jnp.float32)
+
                 gamma_raw = jax.lax.cond(
                     jnp.asarray(enable_local_gating),
-                    lambda _: gamma_geo,
+                    lambda _: gamma_dual,
                     lambda _: jnp.asarray(1.0, dtype=jnp.float32),
                     operand=None,
                 )
+                pi_multi_k = pi_ema_k
                 gamma = jax.lax.cond(gate_pass, lambda _: gamma_raw, lambda _: gamma_prev, operand=None)
 
-                score_base = kappa_k * (Ybar_weighted - Ybar_curr)
-                u_agp_proj = project_complement_batch(score_base, A_rows, metric_sys)
-                u_agp = jax.lax.cond(geom_valid, lambda _: u_agp_proj, lambda _: score_base, operand=None)
-
+                # Task direction bias: decays with hardness.
+                task_dir = _task_direction.direction(Ybar_curr, target, step_k, hardness_k)
+                score_base = kappa_k * (Ybar_weighted - Ybar_curr) + task_dir
                 noise_extra = jax.random.normal(extra_key, (horizon, act_dim), dtype=jnp.float32)
-                p_noise_proj = project_complement_batch(noise_extra, A_rows, tan_sys)
-                p_noise = jax.lax.cond(geom_valid, lambda _: p_noise_proj, lambda _: noise_extra, operand=None)
+                if geometry_enabled:
+                    u_agp_proj = _constraint_manifold.project(score_base, bundle, mode="metric")
+                    u_agp = jax.lax.cond(bundle.is_valid, lambda _: u_agp_proj, lambda _: score_base, operand=None)
+                    p_noise_proj = _constraint_manifold.project(noise_extra, bundle, mode="tangent")
+                    p_noise = jax.lax.cond(bundle.is_valid, lambda _: p_noise_proj, lambda _: noise_extra, operand=None)
+                else:
+                    u_agp = score_base
+                    p_noise = noise_extra
                 sigma_eff = gamma * (sigma_k + extra_sigmas[idx])
                 Ybar_tilde = Ybar_weighted + eta_j * u_agp + sigma_eff * p_noise
 
@@ -524,10 +603,13 @@ class TwoGOBackendJax:
                 sched_params_retract = dict(sched_params)
                 sched_params_retract["qp_gate"] = jnp.asarray(True, dtype=jnp.bool_)
                 sched_params_retract["qp_prob"] = jnp.asarray(1.0, dtype=jnp.float32)
-                if stepping_enabled:
-                    retract_fn = lambda y: _stepping_retract_single(x0_jnp, y)
-                else:
-                    retract_fn = lambda y: inner._filter_actions_single_jit(x0_jnp, y, sched_state, sched_params_retract)
+                retract_params = {
+                    "sched_state": sched_state,
+                    "sched_params": sched_params_retract,
+                }
+                retract_fn = lambda y: _retraction_op.retract(
+                    x0_jnp, y, retract_params
+                ).trajectory
                 Ybar_next = jax.lax.cond(
                     do_retract_qp,
                     retract_fn,
@@ -562,7 +644,7 @@ class TwoGOBackendJax:
                     qp_call_geom,
                     qp_call_retract,
                     rollout_eval_calls,
-                    K_active.astype(jnp.float32),
+                    bundle.active_count.astype(jnp.float32),
                     rho_k.astype(jnp.float32),
                     aug_lam.astype(jnp.float32),
                     qp_prob.astype(jnp.float32),
@@ -573,21 +655,22 @@ class TwoGOBackendJax:
                     M_k.astype(jnp.float32),
                     params["compute_cost_hat"].astype(jnp.float32),
                     params["nu"].astype(jnp.float32),
+                    pi_multi_k.astype(jnp.float32),
                 )
                 if use_jax_adaptive:
-                    return (rng_curr, Ybar_next, gamma, carry_sched_new), outputs
-                return (rng_curr, Ybar_next, gamma), outputs
+                    return (rng_curr, Ybar_next, gamma, pi_ema_k, carry_sched_new), outputs
+                return (rng_curr, Ybar_next, gamma, pi_ema_k), outputs
 
             if use_jax_adaptive:
-                (_rng_out, Ybar_final, _gamma_final, _carry_final), scan_out = jax.lax.scan(
+                (_rng_out, Ybar_final, _gamma_final, _pi_ema_final, _carry_final), scan_out = jax.lax.scan(
                     body,
-                    (rng, Ybar_init, gamma_init, carry_sched_init),
+                    (rng, Ybar_init, gamma_init, pi_ema_init, carry_sched_init),
                     diffusion_indices,
                 )
             else:
-                (_rng_out, Ybar_final, _gamma_final), scan_out = jax.lax.scan(
+                (_rng_out, Ybar_final, _gamma_final, _pi_ema_final), scan_out = jax.lax.scan(
                     body,
-                    (rng, Ybar_init, gamma_init),
+                    (rng, Ybar_init, gamma_init, pi_ema_init),
                     diffusion_indices,
                 )
             (
@@ -620,6 +703,7 @@ class TwoGOBackendJax:
                 m_k_hist,
                 compute_cost_hist,
                 nu_hist,
+                pi_multi_hist,
             ) = scan_out
             return (
                 Ybar_final,
@@ -652,6 +736,7 @@ class TwoGOBackendJax:
                 m_k_hist,
                 compute_cost_hist,
                 nu_hist,
+                pi_multi_hist,
             )
 
         self._twogo_single_jit = jax.jit(_run_single)
@@ -686,10 +771,8 @@ class TwoGOBackendJax:
     def _compute_schedule_series(self, out: Dict[str, Any], K: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         margin_hist = self._margin_hist(out, K)
         rho_hist = self._rho_hist(out, K)
-        hardness = hardness_from_rho_numpy(rho_hist, self.twogo_overlay["rho_ref"])
-        kappa_hist, delta_hist = constraint_overlay_numpy(margin_hist, rho_hist, self.twogo_overlay)
-        sigma_hist, theta_hist, eta_hist = diffusion_overlay_numpy(hardness, self.twogo_agp_eta, self.twogo_overlay)
-        return sigma_hist, delta_hist, theta_hist, eta_hist, kappa_hist
+        params = self._overlay_numpy.compute_series(margin_hist, rho_hist, self.twogo_agp_eta)
+        return params.sigma, params.delta, params.theta, params.eta, params.kappa
 
     def _sample_sdf_grad(self, positions: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         pos = np.asarray(positions, dtype=np.float32)
@@ -732,117 +815,6 @@ class TwoGOBackendJax:
         g_plus = np.maximum(0.0, float(clearance) - sdf).astype(np.float32)
         return g_plus, grad
 
-    def _cvar(self, x: np.ndarray, alpha: float) -> float:
-        arr = np.asarray(x, dtype=np.float32).ravel()
-        if arr.size == 0:
-            return 0.0
-        n_tail = max(1, int(np.ceil((1.0 - alpha) * arr.size)))
-        part = np.partition(arr, arr.size - n_tail)[arr.size - n_tail :]
-        return float(np.mean(part))
-
-    def _window_slices(self, H: int) -> List[Tuple[int, int]]:
-        W = max(1, min(self.twogo_window_size, H))
-        S = max(1, self.twogo_window_stride)
-        slices: List[Tuple[int, int]] = []
-        i = 0
-        while i < H:
-            j = min(H, i + W)
-            slices.append((i, j))
-            if j == H:
-                break
-            i += S
-        return slices
-
-    def _window_multimodality(self, states_list: List[np.ndarray], a: int, b: int) -> float:
-        # Lightweight proxy: normalized spread of window-end positions.
-        if len(states_list) <= 1:
-            return 0.0
-        idx = max(1, min(b, states_list[0].shape[0] - 1))
-        pts = []
-        for st in states_list:
-            p = np.asarray(st[idx, : self._inner.position_dim], dtype=np.float32).reshape(-1)
-            pts.append(p)
-        P = np.asarray(pts, dtype=np.float32)
-        if P.shape[0] <= 1:
-            return 0.0
-        spread = float(np.mean(np.std(P, axis=0)))
-        return float(np.clip(spread / max(self.twogo_multi_scale, 1e-6), 0.0, 1.0))
-
-    def _agp_step(
-        self,
-        actions: np.ndarray,
-        g_plus: np.ndarray,
-        grad: np.ndarray,
-        window: Tuple[int, int],
-        sigma_w: float,
-        kappa_w: float,
-        eta_w: float,
-    ) -> np.ndarray:
-        H, U = actions.shape
-        d = H * U
-        a, b = window
-        idx_local = np.argsort(g_plus[a:b])[::-1]
-        active_rel = idx_local[: max(1, self.twogo_active_topk)]
-        active_t = [a + int(i) for i in active_rel if g_plus[a + int(i)] > 0]
-        if not active_t:
-            return actions
-
-        K = len(active_t)
-        A = np.zeros((K, d), dtype=np.float32)
-        w = np.zeros((K,), dtype=np.float32)
-        for r, t in enumerate(active_t):
-            n = -np.asarray(grad[t], dtype=np.float32).reshape(-1)[:U]
-            norm = float(np.linalg.norm(n))
-            if norm > 1e-8:
-                n = n / norm
-            start = t * U
-            A[r, start : start + U] = float(self._inner.dt) * n
-            w[r] = float(kappa_w) * float(max(0.0, g_plus[t]))
-
-        x = actions.reshape(-1).astype(np.float32)
-        u_raw = -(A.T @ w)
-
-        # Woodbury solve: (I + A^T W A)^-1 u
-        W_inv = np.diag(1.0 / np.maximum(w, 1e-6))
-        M = W_inv + (A @ A.T)
-        Au = A @ u_raw
-        y = np.linalg.solve(M + 1e-6 * np.eye(K, dtype=np.float32), Au)
-        ginv_u = u_raw - A.T @ y
-
-        # Tangent noise: P xi = xi - A^T (A A^T)^-1 A xi
-        xi = self._rng.normal(size=(d,)).astype(np.float32)
-        AA = A @ A.T + 1e-6 * np.eye(K, dtype=np.float32)
-        z = np.linalg.solve(AA, A @ xi)
-        p_xi = xi - A.T @ z
-
-        eta_f = float(max(eta_w, 1e-8))
-        x_new = x + eta_f * ginv_u + np.sqrt(eta_f) * float(sigma_w) * p_xi
-        act_new = x_new.reshape(H, U).astype(np.float32)
-        act_new = np.clip(act_new, -self._inner.action_limit, self._inner.action_limit)
-        return act_new
-
-    def _mini_batch_cfs_local(
-        self,
-        actions: np.ndarray,
-        g_plus: np.ndarray,
-        grad: np.ndarray,
-        window: Tuple[int, int],
-    ) -> np.ndarray:
-        a, b = window
-        act = np.asarray(actions, dtype=np.float32).copy()
-        U = act.shape[1]
-        dt = max(float(self._inner.dt), 1e-6)
-        for t in range(a, b):
-            if g_plus[t] <= 0:
-                continue
-            n = np.asarray(grad[t], dtype=np.float32).reshape(-1)[:U]
-            norm = float(np.linalg.norm(n))
-            if norm > 1e-8:
-                n = n / norm
-            # local retraction proxy in action space
-            act[t, :U] += float(self.twogo_cfs_gain) * (float(g_plus[t]) / dt) * n
-        return np.clip(act, -self._inner.action_limit, self._inner.action_limit)
-
     def _refine_candidates(self, out: Dict[str, Any], x0: Any) -> Dict[str, Any]:
         if not self.twogo_enable_agp_refine:
             return out
@@ -853,89 +825,48 @@ class TwoGOBackendJax:
             cand_actions = [np.asarray(out["actions"], dtype=np.float32)]
             cand_states = [np.asarray(out["states"], dtype=np.float32)]
 
-        C = len(cand_actions)
-        H = int(cand_actions[0].shape[0])
-        windows = self._window_slices(H)
         K = max(1, len(out.get("r_hist", [])))
         sigma_hist, delta_hist, theta_hist, eta_hist, kappa_hist = self._compute_schedule_series(out, K)
+        clearance = float(
+            np.asarray(out.get("margin_hist", [0.05]), dtype=np.float32).ravel()[-1]
+            if out.get("margin_hist") is not None else 0.05
+        )
 
-        # sample-level gating on tail violations
-        viol_tot = []
-        traces: List[Tuple[np.ndarray, np.ndarray]] = []
-        clearance = float(np.asarray(out.get("margin_hist", [0.05]), dtype=np.float32).ravel()[-1] if out.get("margin_hist") is not None else 0.05)
-        for s in cand_states:
-            g, grad = self._violation_trace(s, clearance=clearance)
-            traces.append((g, grad))
-            viol_tot.append(float(np.sum(g)))
-        viol_tot_arr = np.asarray(viol_tot, dtype=np.float32)
-        if self.twogo_enable_sample_tail:
-            n_tail = max(1, int(np.ceil(self.twogo_tail_ratio * C)))
-            tail_idx = np.argsort(viol_tot_arr)[::-1][:n_tail]
-        else:
-            tail_idx = np.arange(C, dtype=np.int32)
+        # Bind x0 for per-call rollout and cost functions.
+        def _violation_fn(states, clr):
+            return self._violation_trace(states, clearance=clr)
 
-        window_gamma = []
-        window_cvar = []
-        window_delta = []
-        refined_indices = []
+        def _cost_fn(actions):
+            return self._rollout_cost_np(x0, actions)
 
-        for wi, w in enumerate(windows):
-            a, b = w
-            progress = float((b - 1) / max(1, H - 1))
-            sched_idx = int(np.clip(round(progress * (K - 1)), 0, K - 1))
-            sigma_w = float(sigma_hist[sched_idx])
-            delta_w = float(delta_hist[sched_idx])
-            kappa_w = float(kappa_hist[sched_idx])
-            theta_w = float(theta_hist[sched_idx])
-            eta_w = float(eta_hist[sched_idx])
+        def _rollout_fn(actions):
+            return self._rollout_states_np(x0, actions)
 
-            pi_multi = self._window_multimodality(cand_states, a, b) if self.twogo_enable_local_gating else 1.0
-            gamma_w = 1.0 if pi_multi > theta_w else 0.0
+        schedule_params = {
+            "sigma_hist": sigma_hist,
+            "delta_hist": delta_hist,
+            "theta_hist": theta_hist,
+            "eta_hist": eta_hist,
+            "kappa_hist": kappa_hist,
+            "rollout_fn": _rollout_fn,
+        }
 
-            window_gamma.append(gamma_w)
-            window_delta.append(delta_w)
+        result = self._refinement_pipeline.refine(
+            cand_actions, cand_states,
+            _violation_fn, _cost_fn, schedule_params,
+            clearance=clearance,
+        )
 
-            if gamma_w <= 0:
-                window_cvar.append(0.0)
-                continue
-
-            cvars = []
-            for ci in tail_idx:
-                g, grad = traces[int(ci)]
-                cvar_w = self._cvar(g[a:b], self.twogo_cvar_alpha)
-                cvars.append(cvar_w)
-                if cvar_w <= delta_w:
-                    continue
-                act0 = cand_actions[int(ci)]
-                act1 = self._agp_step(act0, g, grad, w, sigma_w=sigma_w, kappa_w=kappa_w, eta_w=eta_w)
-                act2 = self._mini_batch_cfs_local(act1, g, grad, w)
-                st2 = self._rollout_states_np(x0, act2)
-                cost2 = self._rollout_cost_np(x0, act2)
-
-                # accept if improves cost or reduces total violation
-                g2, grad2 = self._violation_trace(st2, clearance=clearance)
-                old_cost = float(out.get("candidate_costs", [np.inf])[int(ci)] if "candidate_costs" in out else np.inf)
-                if (cost2 <= old_cost) or (np.sum(g2) < np.sum(g)):
-                    cand_actions[int(ci)] = act2
-                    cand_states[int(ci)] = st2
-                    traces[int(ci)] = (g2, grad2)
-                    refined_indices.append(int(ci))
-            window_cvar.append(float(np.mean(cvars)) if cvars else 0.0)
-
-        # recompute candidate costs after refinement
-        cand_costs = np.asarray([self._rollout_cost_np(x0, a) for a in cand_actions], dtype=np.float32)
-        best_idx = int(np.argmin(cand_costs))
-
-        out["candidate_actions"] = [np.asarray(a, dtype=np.float32) for a in cand_actions]
-        out["candidate_states"] = [np.asarray(s, dtype=np.float32) for s in cand_states]
-        out["candidate_costs"] = cand_costs
-        out["best_idx"] = best_idx
-        out["actions"] = np.asarray(cand_actions[best_idx], dtype=np.float32)
-        out["states"] = np.asarray(cand_states[best_idx], dtype=np.float32)
-        out["twogo_window_gamma_hist"] = np.asarray(window_gamma, dtype=np.float32)
-        out["twogo_window_cvar_hist"] = np.asarray(window_cvar, dtype=np.float32)
-        out["twogo_window_delta_hist"] = np.asarray(window_delta, dtype=np.float32)
-        out["twogo_refined_candidate_indices"] = np.asarray(sorted(set(refined_indices)), dtype=np.int32)
+        out["candidate_actions"] = [np.asarray(a, dtype=np.float32) for a in result.candidate_actions]
+        out["candidate_states"] = [np.asarray(s, dtype=np.float32) for s in result.candidate_states]
+        out["candidate_costs"] = result.candidate_costs
+        out["best_idx"] = result.best_idx
+        out["actions"] = np.asarray(result.candidate_actions[result.best_idx], dtype=np.float32)
+        out["states"] = np.asarray(result.candidate_states[result.best_idx], dtype=np.float32)
+        out["twogo_window_gamma_hist"] = result.window_gamma_hist
+        out["twogo_window_cvar_hist"] = result.window_cvar_hist
+        out["twogo_window_delta_hist"] = result.window_delta_hist
+        out["twogo_refined_candidate_indices"] = result.refined_indices
         return out
 
     def _inject_twogo_diagnostics(self, result: Dict[str, Any]) -> Dict[str, Any]:
@@ -1025,6 +956,7 @@ class TwoGOBackendJax:
             m_k_hist,
             compute_cost_hist,
             nu_hist,
+            pi_multi_hist,
         ) = self._twogo_single_jit(x0_jnp, rng_key, target)
 
         final_actions = jnp.clip(Ybar_final, -self._inner.action_limit, self._inner.action_limit)
@@ -1070,6 +1002,7 @@ class TwoGOBackendJax:
             "p_hist": np.asarray(p_hist, dtype=np.float32),
             "nu_hist": np.asarray(nu_hist, dtype=np.float32),
             "compute_cost_hist": np.asarray(compute_cost_hist, dtype=np.float32),
+            "pi_multi_hist": np.asarray(pi_multi_hist, dtype=np.float32),
             "candidate_states": [states_np],
             "candidate_actions": [actions_np],
             "candidate_costs": np.asarray([total_cost], dtype=np.float32),
@@ -1120,6 +1053,7 @@ class TwoGOBackendJax:
             m_k_hists,
             compute_cost_hists,
             nu_hists,
+            pi_multi_hists,
         ) = self._twogo_batch_jit(x0_jnp, rng_keys, targets)
 
         final_actions_batch = jnp.clip(Ybar_finals, -self._inner.action_limit, self._inner.action_limit)
@@ -1169,6 +1103,7 @@ class TwoGOBackendJax:
                     "p_hist": np.asarray(p_hists[i], dtype=np.float32),
                     "nu_hist": np.asarray(nu_hists[i], dtype=np.float32),
                     "compute_cost_hist": np.asarray(compute_cost_hists[i], dtype=np.float32),
+                    "pi_multi_hist": np.asarray(pi_multi_hists[i], dtype=np.float32),
                     "candidate_states": [states_np[i]],
                     "candidate_actions": [actions_np[i]],
                     "candidate_costs": np.asarray([float(costs[i])], dtype=np.float32),

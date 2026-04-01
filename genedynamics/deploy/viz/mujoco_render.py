@@ -6,6 +6,7 @@ Generates GIF from episode states. Used by WebVizService.
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -60,9 +61,13 @@ def render_episode_to_gif(
     try:
         if model == "go2":
             from genedynamics.envs.utils.mujoco_model_generator import create_go2_render_xml_with_trajectory
+            stepping_scene = _load_stepping_scene(episode_dir)
+            swing_trajectories = _load_swing_ref_targets(episode_dir)
             create_go2_render_xml_with_trajectory(
                 tmp_xml,
                 trajectory_positions=positions if draw_trajectory else [],
+                stepping_scene=stepping_scene,
+                swing_trajectories=swing_trajectories if draw_trajectory else None,
             )
         else:
             from genedynamics.envs.utils.mujoco_model_generator import create_ant_render_xml_with_trajectory
@@ -73,6 +78,11 @@ def render_episode_to_gif(
 
         mj_model = mujoco.MjModel.from_xml_path(tmp_xml)
         mj_data = mujoco.MjData(mj_model)
+        # Renderer size must not exceed offscreen framebuffer (default often 640x480).
+        gw = int(mj_model.vis.global_.offwidth)
+        gh = int(mj_model.vis.global_.offheight)
+        mj_model.vis.global_.offwidth = max(gw, int(width))
+        mj_model.vis.global_.offheight = max(gh, int(height))
         renderer = mujoco.Renderer(mj_model, height=height, width=width)
         follow_cam = mujoco.MjvCamera()
         follow_cam.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -136,3 +146,47 @@ def _get_model_dir(model: str) -> Optional[Path]:
         except Exception:
             pass
     return None
+
+
+def _load_stepping_scene(episode_dir: Path) -> Optional[Dict[str, Any]]:
+    """
+    Optional Path-B metadata for rendering river/stones in Go2 replay.
+    """
+    candidates = [
+        episode_dir / "stepping_scene.json",
+        episode_dir / "execution_results.json",
+    ]
+    for p in candidates:
+        if not p.exists():
+            continue
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                blob = json.load(f) or {}
+            if p.name == "stepping_scene.json":
+                scene = blob
+            else:
+                scene = blob.get("stepping_scene")
+            if not isinstance(scene, dict):
+                continue
+            if "stones_centers" in scene and "stones_radii" in scene:
+                return scene
+        except Exception:
+            continue
+    return None
+
+
+def _load_swing_ref_targets(episode_dir: Path) -> Optional[Dict[str, np.ndarray]]:
+    p = episode_dir / "swing_ref_targets.npz"
+    if not p.exists():
+        return None
+    try:
+        blob = np.load(p, allow_pickle=False)
+        out: Dict[str, np.ndarray] = {}
+        for leg in ("FL", "FR", "RL", "RR"):
+            if leg in blob.files:
+                arr = np.asarray(blob[leg], dtype=np.float64)
+                if arr.ndim == 2 and arr.shape[1] >= 3:
+                    out[leg] = arr[:, :3]
+        return out if len(out) > 0 else None
+    except Exception:
+        return None

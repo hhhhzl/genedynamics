@@ -9,6 +9,8 @@ from typing import Any, Dict
 import matplotlib.pyplot as plt
 import numpy as np
 
+from genedynamics.envs.obstacles.stepping_stones import foot_stepping_violation_np
+from genedynamics.tasks.stepping_stones import decode_plan_states
 from ...framework.base import VisualizationPlugin
 
 
@@ -25,20 +27,35 @@ def _draw_scene(ax: Any, scene: Any):
     ax.set_xlim(scene.map_x[0], scene.map_x[1])
     ax.set_ylim(scene.map_y[0], scene.map_y[1])
     ax.set_facecolor("#f7f9fc")
-    rx0, rx1 = scene.river_x
-    ry0, ry1 = scene.map_y
-    ax.add_patch(
-        plt.Rectangle(
-            (rx0, ry0),
-            rx1 - rx0,
-            ry1 - ry0,
-            facecolor="#d9ecff",
-            edgecolor="#7aa6d9",
-            linewidth=1.0,
-            alpha=0.9,
-            zorder=0.5,
+    if bool(getattr(scene, "has_river", True)):
+        rx0, rx1 = scene.river_x
+        ry0, ry1 = scene.map_y
+        ax.add_patch(
+            plt.Rectangle(
+                (rx0, ry0),
+                rx1 - rx0,
+                ry1 - ry0,
+                facecolor="#d9ecff",
+                edgecolor="#7aa6d9",
+                linewidth=1.0,
+                alpha=0.9,
+                zorder=0.5,
+            )
         )
-    )
+    for row in np.asarray(getattr(scene, "support_platforms", np.zeros((0, 4))), dtype=np.float32).reshape(-1, 4):
+        xmin, xmax, ymin, ymax = float(row[0]), float(row[1]), float(row[2]), float(row[3])
+        ax.add_patch(
+            plt.Rectangle(
+                (xmin, ymin),
+                xmax - xmin,
+                ymax - ymin,
+                facecolor="#8b949e",
+                edgecolor="#2f3640",
+                linewidth=1.4,
+                alpha=0.88,
+                zorder=0.85,
+            )
+        )
     for c, r in zip(np.asarray(scene.stones_centers), np.asarray(scene.stones_radii)):
         ax.add_patch(
             plt.Circle(
@@ -64,6 +81,29 @@ def _infer_foot_radius(viz_cfg: Dict[str, Any]) -> float:
     return 0.03
 
 
+def _on_platform_raw(p: np.ndarray, platforms: np.ndarray) -> bool:
+    """True if point is inside any support platform (raw bounds, no margin shrink)."""
+    for k in range(platforms.shape[0]):
+        xmin, xmax, ymin, ymax = float(platforms[k, 0]), float(platforms[k, 1]), float(platforms[k, 2]), float(platforms[k, 3])
+        if xmin <= float(p[0]) <= xmax and ymin <= float(p[1]) <= ymax:
+            return True
+    return False
+
+
+def _on_any_stone_raw(p: np.ndarray, centers: np.ndarray, radii: np.ndarray) -> bool:
+    """True if foot center is within any stone disk (raw radius, no margin)."""
+    if centers.shape[0] == 0:
+        return False
+    d = np.linalg.norm(centers - p[None, :], axis=-1)
+    return bool(np.any(d <= radii))
+
+
+def _swing_pair(mode: int):
+    if int(mode) % 2 == 0:
+        return ("FR", "RL")
+    return ("FL", "RR")
+
+
 class SteppingStonesTrajectoryVisualizationPlugin(VisualizationPlugin):
     @property
     def name(self) -> str:
@@ -80,47 +120,91 @@ class SteppingStonesTrajectoryVisualizationPlugin(VisualizationPlugin):
             return
         _draw_scene(ax, scene)
 
+        partial_t = data.get("partial_until_step", None)
+        gif_style = data.get("gif_style", False)
+
         states = np.asarray([np.asarray(s, dtype=np.float32).reshape(-1) for s in traj.states], dtype=np.float32)
-        if states.ndim == 2 and states.shape[1] >= 4:
-            p_l = states[:, :2]
-            p_r = states[:, 2:4]
-            mid = 0.5 * (p_l + p_r)
-            draw_mid = bool(viz_cfg.get("draw_midfoot", False))
-            draw_virtual_quad = bool(viz_cfg.get("draw_virtual_quadruped", False))
-            half_pair_length = float(viz_cfg.get("virtual_pair_half_length", 0.18))
+        if states.ndim == 2 and states.shape[1] >= 3:
+            body, _yaw, feet, mode = decode_plan_states(
+                states,
+                step_width=float(getattr(env, "step_width", getattr(env, "stance_width", 0.30))),
+                half_pair_length=float(getattr(env, "fore_hind_offset", 0.18)),
+                centerline_y=float(getattr(env, "centerline_y", 0.0)),
+                env=env,
+            )
+            # Determine visible range for GIF partial rendering
+            T_all = body.shape[0]
+            if partial_t is not None:
+                T_vis = min(int(partial_t) + 1, T_all)
+            else:
+                T_vis = T_all
+
             foot_radius = _infer_foot_radius(viz_cfg)
+            tracks = [
+                ("FL", feet["FL"], "#ff7f0e"),
+                ("FR", feet["FR"], "#2ca02c"),
+                ("RL", feet["RL"], "#9467bd"),
+                ("RR", feet["RR"], "#8c564b"),
+            ]
+            centers_v = np.asarray(scene.stones_centers, dtype=np.float32)
+            radii_v = np.asarray(scene.stones_radii, dtype=np.float32)
+            plat_v = np.asarray(getattr(scene, "support_platforms", np.zeros((0, 4))), dtype=np.float32)
+            sm_v = float(getattr(env, "stone_margin", 0.032))
 
-            # Real task semantics: two optimized trajectories (left/right diagonal pairs).
-            ax.plot(p_l[:, 0], p_l[:, 1], color="#d1495b", linewidth=1.4, alpha=0.90, zorder=3, label="left-pair")
-            ax.plot(p_r[:, 0], p_r[:, 1], color="#00798c", linewidth=1.4, alpha=0.90, zorder=3, label="right-pair")
+            # GIF mode: draw full path as ghost, then partial as solid
+            if gif_style and partial_t is not None:
+                ax.plot(body[:, 0], body[:, 1], color="#1664c0", linewidth=1.0, alpha=0.20, zorder=2.5)
+                for _leg, pts_full, color in tracks:
+                    ax.plot(pts_full[:, 0], pts_full[:, 1], color=color, linewidth=0.6, alpha=0.12, zorder=2.3)
 
-            if draw_mid:
-                ax.plot(mid[:, 0], mid[:, 1], color="#1664c0", linewidth=1.6, alpha=0.85, zorder=3, label="mid-foot")
-
-            # Optional virtual quadruped overlay (off by default).
-            if draw_virtual_quad:
-                fl = p_l + np.array([half_pair_length, 0.0], dtype=np.float32)
-                hl = p_l - np.array([half_pair_length, 0.0], dtype=np.float32)
-                fr = p_r + np.array([half_pair_length, 0.0], dtype=np.float32)
-                hr = p_r - np.array([half_pair_length, 0.0], dtype=np.float32)
-                tracks = [("FL", fl, "#ff7f0e"), ("FR", fr, "#2ca02c"), ("HL", hl, "#9467bd"), ("HR", hr, "#8c564b")]
-                for _, pts, color in tracks:
-                    ax.plot(pts[:, 0], pts[:, 1], color=color, linewidth=1.1, alpha=0.70, zorder=2.5)
-                    for px, py in pts:
-                        ax.add_patch(
-                            plt.Circle(
-                                (float(px), float(py)),
-                                float(foot_radius),
-                                facecolor=color,
-                                edgecolor=color,
-                                linewidth=0.6,
-                                alpha=0.12,
-                                zorder=2.2,
-                            )
+            ax.plot(body[:T_vis, 0], body[:T_vis, 1], color="#1664c0", linewidth=1.8, alpha=0.9, zorder=3, label="body")
+            for leg, pts_full, color in tracks:
+                pts = pts_full[:T_vis]
+                ax.plot(pts[:, 0], pts[:, 1], color=color, linewidth=1.2, alpha=0.80, zorder=2.7, label=leg)
+                ax.scatter(pts[:, 0], pts[:, 1], s=8, color=color, alpha=0.18, zorder=2.5)
+                # Red-dot criteria: only flag feet whose center is truly
+                # in the gap (unstable).  Skip platform feet and feet whose
+                # center physically sits on a stone surface (within raw radius).
+                for ti in range(int(pts.shape[0])):
+                    pt = pts[ti]
+                    if plat_v.shape[0] > 0 and _on_platform_raw(pt, plat_v):
+                        continue
+                    if _on_any_stone_raw(pt, centers_v, radii_v):
+                        continue
+                    if foot_stepping_violation_np(pt, centers_v, radii_v, plat_v, sm_v) > 1e-3:
+                        ax.scatter(
+                            float(pt[0]),
+                            float(pt[1]),
+                            s=42,
+                            facecolors="#d62728",
+                            edgecolors="#6a0000",
+                            linewidths=0.65,
+                            marker="o",
+                            zorder=4.2,
                         )
-
-            ax.scatter(mid[0, 0], mid[0, 1], marker="o", s=28, color="white", edgecolor="#1664c0", zorder=5)
-            ax.scatter(mid[-1, 0], mid[-1, 1], marker="*", s=90, color="#f04f88", zorder=5)
+            for t in range(T_vis):
+                mode_idx = mode[t]
+                for swing_leg in _swing_pair(int(mode_idx)):
+                    p = feet[swing_leg][t]
+                    ax.add_patch(
+                        plt.Circle(
+                            (float(p[0]), float(p[1])),
+                            float(1.5 * foot_radius),
+                            facecolor="#f04f88",
+                            edgecolor="none",
+                            alpha=0.08,
+                            zorder=2.1,
+                        )
+                    )
+            ax.scatter(body[0, 0], body[0, 1], marker="o", s=28, color="white", edgecolor="#1664c0", zorder=5)
+            if gif_style and partial_t is not None and T_vis > 0:
+                # Moving body marker at current step
+                t_cur = T_vis - 1
+                ax.scatter(body[t_cur, 0], body[t_cur, 1], marker="o", s=50, color="#1664c0", edgecolor="white", linewidths=1.0, zorder=6)
+                for _leg, pts_full, color in tracks:
+                    ax.scatter(pts_full[t_cur, 0], pts_full[t_cur, 1], s=30, color=color, edgecolor="white", linewidths=0.5, zorder=5.5)
+            else:
+                ax.scatter(body[-1, 0], body[-1, 1], marker="*", s=90, color="#f04f88", zorder=5)
         ax.set_xticks([])
         ax.set_yticks([])
         ax.grid(True, alpha=0.25)
@@ -144,19 +228,36 @@ class SteppingStonesModesVisualizationPlugin(VisualizationPlugin):
             return
         _draw_scene(ax, scene)
 
+        partial_t = data.get("partial_until_step", None)
+
         cand_states = result.get("candidate_states", [])
         if cand_states is None or len(cand_states) == 0:
             cand_states = [result.get("states", [])]
         best_idx = int(result.get("best_idx", 0))
         colors = ["#6a7fdb"] * len(cand_states)
+        foot_colors = {"FL": "#ff7f0e", "FR": "#2ca02c", "RL": "#9467bd", "RR": "#8c564b"}
+        step_width = float(getattr(env, "step_width", getattr(env, "stance_width", 0.30)))
         for i, st in enumerate(cand_states):
             s = np.asarray(st, dtype=np.float32)
-            if s.ndim != 2 or s.shape[1] < 4:
+            if s.ndim != 2 or s.shape[1] < 3:
                 continue
-            mid = 0.5 * (s[:, :2] + s[:, 2:4])
-            lw = 2.6 if i == best_idx else 1.1
-            a = 0.95 if i == best_idx else 0.35
-            ax.plot(mid[:, 0], mid[:, 1], color=colors[i], linewidth=lw, alpha=a, zorder=3)
+            mid, _yaw, feet_i, _phase = decode_plan_states(
+                s,
+                step_width=step_width,
+                half_pair_length=float(getattr(env, "fore_hind_offset", 0.18)),
+                centerline_y=float(getattr(env, "centerline_y", 0.0)),
+                env=env,
+            )
+            T_vis = min(int(partial_t) + 1, mid.shape[0]) if partial_t is not None else mid.shape[0]
+            is_best = i == best_idx
+            lw = 2.6 if is_best else 1.1
+            a = 0.95 if is_best else 0.35
+            ax.plot(mid[:T_vis, 0], mid[:T_vis, 1], color=colors[i], linewidth=lw, alpha=a, zorder=3)
+            for leg in ("FL", "FR", "RL", "RR"):
+                fp = feet_i[leg][:T_vis]
+                f_lw = 1.0 if is_best else 0.5
+                f_a = 0.70 if is_best else 0.18
+                ax.plot(fp[:, 0], fp[:, 1], color=foot_colors[leg], linewidth=f_lw, alpha=f_a, zorder=2.7 if is_best else 2.2)
         ax.set_xticks([])
         ax.set_yticks([])
         ax.grid(True, alpha=0.25)
