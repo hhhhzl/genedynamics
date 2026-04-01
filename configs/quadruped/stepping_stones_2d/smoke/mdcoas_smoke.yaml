@@ -1,3 +1,4 @@
+# ── Baseline: MD-COAS (CFS-MBD) + ALM adaptive ──
 name: quadruped_stepping_stones_2d_mdcoas_smoke
 output_dir: results/quadruped/stepping_stones_2d/smoke/mdcoas
 

@@ -22,10 +22,15 @@ from ...common.visualization import (
     D3IL_TARGET_GREEN,
 )
 from .cfs_convexify_overlay import draw_cfs_convexify_overlay
+from .stepping_stones_trajectory import _draw_scene, _get_scene
 
 def _safe_unit(v: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(v) + 1e-9
     return v / n
+
+
+def _is_stepping_env(env: Any) -> bool:
+    return hasattr(env, "scene") and getattr(env, "scene", None) is not None
 
 
 def _get_method_name(exp_cfg: Any) -> Any:
@@ -316,12 +321,20 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                         draw_cfs_fan = False
         
         # Get map bounds
-        obstacle_config = config.get('config', {}).obstacle_config or {}
-        map_bounds = obstacle_config.get('map_bounds', {})
-        x_min = map_bounds.get('x_min', -2.0)
-        x_max = map_bounds.get('x_max', 2.0)
-        y_min = map_bounds.get('y_min', -2.0)
-        y_max = map_bounds.get('y_max', 2.0)
+        is_stepping = _is_stepping_env(env)
+        if is_stepping:
+            scene = _get_scene(env, obstacles)
+            x_min = scene.map_x[0] if scene else -2.0
+            x_max = scene.map_x[1] if scene else 2.0
+            y_min = scene.map_y[0] if scene else -1.0
+            y_max = scene.map_y[1] if scene else 1.0
+        else:
+            obstacle_config = config.get('config', {}).obstacle_config or {}
+            map_bounds = obstacle_config.get('map_bounds', {})
+            x_min = map_bounds.get('x_min', -2.0)
+            x_max = map_bounds.get('x_max', 2.0)
+            y_min = map_bounds.get('y_min', -2.0)
+            y_max = map_bounds.get('y_max', 2.0)
         
         # Get diffusion data
         diffusion_actions = result.get('diffusion_actions_traj', None)
@@ -359,6 +372,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     is_mbd=is_mbd,
                     skip_sample_rollouts=skip_sample_rollouts,
                     draw_cfs_fan=draw_cfs_fan,
+                    is_stepping=is_stepping,
                 )
         else:
             # Fallback: show final trajectory
@@ -377,6 +391,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     is_mbd=is_mbd,
                     skip_sample_rollouts=skip_sample_rollouts,
                     draw_cfs_fan=draw_cfs_fan,
+                    is_stepping=is_stepping,
                 )
     
     def _visualize_single_step(
@@ -397,6 +412,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         show_axis_labels: bool = True,
         show_grid: bool = True,
         states_sequence: Any = None,
+        is_stepping: bool = False,
     ) -> None:
         """Visualize a single diffusion step. If states_sequence is provided (e.g. candidate_states[best_idx]),
         use it for the main trajectory so it matches trajectory_best_plan.png."""
@@ -404,19 +420,20 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
         is_d3il = is_d3il_experiment(exp_cfg)
-        # Background: D3IL -> pale yellow; else EB-MBD -> white; else default
-        if is_d3il:
+        # ── Stepping-stones: draw scene, skip constraint bounds ──
+        if is_stepping:
+            scene = _get_scene(env, obstacles)
+            if scene is not None:
+                _draw_scene(ax, scene)
+        elif is_d3il:
             ax.set_facecolor(D3IL_BG_YELLOW)
-        elif is_ebmbd:
-            ax.set_facecolor('white')
-        # Draw obstacles (D3IL: red; single2d/default: gray)
-        if is_d3il:
             draw_obstacles(ax, obstacles, obstacle_color=D3IL_OBSTACLE_RED, obstacle_alpha=1.0)
         else:
+            if is_ebmbd:
+                ax.set_facecolor('white')
             draw_obstacles(ax, obstacles)
-        # Draw barrier field for EB-MBD (contour circles only, no heatmap; color = MDOC fan orange)
-        if is_ebmbd:
-            self._draw_barrier_field(ax, obstacles, x_min, x_max, y_min, y_max)
+            if is_ebmbd:
+                self._draw_barrier_field(ax, obstacles, x_min, x_max, y_min, y_max)
         
         # Draw sample rollouts (skip only for pure MBD e.g. single_2d; d3il_unified+mbd shows samples)
         if not skip_sample_rollouts and sample_actions is not None and len(sample_actions) > 0:
@@ -430,12 +447,31 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     sample_actions = sample_actions[indices]
             
             light_rgba = mcolors.to_rgba(EDOC_COLOR, alpha=0.15)
+            _foot_colors_light = {"FL": "#ff7f0e", "FR": "#2ca02c", "RL": "#9467bd", "RR": "#8c564b"}
             if hasattr(env, "rollout_actions"):
                 for acts in sample_actions:
                     states = env.rollout_actions(initial_state, acts)
                     if len(states) > 1:
                         positions = np.array([env_plugin.extract_position(s) for s in states])
                         ax.plot(positions[:, 0], positions[:, 1], color=light_rgba, linewidth=0.8)
+                        # Stepping: draw sample foot trajectories in light foot colors
+                        if is_stepping:
+                            try:
+                                from genedynamics.tasks.stepping_stones import decode_plan_states
+                                s_arr = np.asarray([np.asarray(s, dtype=np.float32).reshape(-1) for s in states], dtype=np.float32)
+                                if s_arr.ndim == 2 and s_arr.shape[1] >= 3:
+                                    _, _, feet_s, _ = decode_plan_states(
+                                        s_arr,
+                                        step_width=float(getattr(env, "step_width", getattr(env, "stance_width", 0.30))),
+                                        half_pair_length=float(getattr(env, "fore_hind_offset", 0.18)),
+                                        centerline_y=float(getattr(env, "centerline_y", 0.0)),
+                                        env=env,
+                                    )
+                                    for leg, fc in _foot_colors_light.items():
+                                        ax.plot(feet_s[leg][:, 0], feet_s[leg][:, 1],
+                                                color=mcolors.to_rgba(fc, alpha=0.12), linewidth=0.5)
+                            except Exception:
+                                pass
         
         # Draw main trajectory: prefer states_sequence (same as trajectory_best_plan) when provided
         positions = None
@@ -475,14 +511,34 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                 zorder=6
             )
 
-            # Draw MDOC conservative fan visualization
-            if is_mdoc:
+            # ── Stepping: draw foot trajectories from decoded states ──
+            if is_stepping and states_sequence is not None and len(states_sequence) > 1:
+                try:
+                    from genedynamics.tasks.stepping_stones import decode_plan_states
+                    s_arr = np.asarray([np.asarray(s, dtype=np.float32).reshape(-1) for s in states_sequence], dtype=np.float32)
+                    if s_arr.ndim == 2 and s_arr.shape[1] >= 3:
+                        _body, _yaw, feet_d, _mode = decode_plan_states(
+                            s_arr,
+                            step_width=float(getattr(env, "step_width", getattr(env, "stance_width", 0.30))),
+                            half_pair_length=float(getattr(env, "fore_hind_offset", 0.18)),
+                            centerline_y=float(getattr(env, "centerline_y", 0.0)),
+                            env=env,
+                        )
+                        foot_colors = {"FL": "#ff7f0e", "FR": "#2ca02c", "RL": "#9467bd", "RR": "#8c564b"}
+                        for leg, fc in foot_colors.items():
+                            fp = feet_d[leg]
+                            ax.plot(fp[:, 0], fp[:, 1], color=fc, linewidth=1.0, alpha=0.70, zorder=4.3)
+                            ax.scatter(fp[:, 0], fp[:, 1], s=6, color=fc, alpha=0.25, zorder=4.2)
+                except Exception:
+                    pass
+
+            # Draw MDOC conservative fan visualization (skip for stepping)
+            if is_mdoc and not is_stepping:
                 self._draw_mdoc_fans(ax, env, obstacles, positions, exp_cfg)
 
             # Overlay CFS convexified halfspaces for this diffusion step (if enabled)
-            # For MDOC, we show the specialized Fans instead of full halfspaces.
-            # Skip for MBD (clean plot, no orange fan); skip when qp_gate is False and qp_prob is 0.
-            if exp_cfg is not None and not is_ebmbd and not is_mdoc and not is_mbd and draw_cfs_fan and action_sequence is not None:
+            # Skip for stepping, MBD, EB-MBD, MDOC.
+            if exp_cfg is not None and not is_stepping and not is_ebmbd and not is_mdoc and not is_mbd and draw_cfs_fan and action_sequence is not None:
                 try:
                     draw_cfs_convexify_overlay(
                         ax,
@@ -780,15 +836,24 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     if p_min == 0.0 and p_max == 0.0:
                         draw_cfs_fan = False
 
+        is_stepping = _is_stepping_env(env)
+
         exp_cfg_for_obs = config.get('config', None)
         obstacle_config = (getattr(exp_cfg_for_obs, 'obstacle_config', None) or {}) if exp_cfg_for_obs else {}
         if not isinstance(obstacle_config, dict):
             obstacle_config = {}
         map_bounds = obstacle_config.get('map_bounds', {})
-        x_min = map_bounds.get('x_min', -2.0)
-        x_max = map_bounds.get('x_max', 2.0)
-        y_min = map_bounds.get('y_min', -2.0)
-        y_max = map_bounds.get('y_max', 2.0)
+        if is_stepping:
+            scene = _get_scene(env, obstacles)
+            x_min = scene.map_x[0] if scene else -2.0
+            x_max = scene.map_x[1] if scene else 2.0
+            y_min = scene.map_y[0] if scene else -1.0
+            y_max = scene.map_y[1] if scene else 1.0
+        else:
+            x_min = map_bounds.get('x_min', -2.0)
+            x_max = map_bounds.get('x_max', 2.0)
+            y_min = map_bounds.get('y_min', -2.0)
+            y_max = map_bounds.get('y_max', 2.0)
 
         diffusion_actions = result.get('diffusion_actions_traj', None)
         diffusion_samples = result.get('diffusion_sampled_actions', None)
@@ -850,6 +915,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     show_axis_labels=False,
                     show_grid=False,
                     states_sequence=states_for_viz,
+                    is_stepping=is_stepping,
                 )
                 out_path = output_dir / f"diffusion_steps_{pct}.png"
                 if is_d3il:
@@ -892,6 +958,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                         show_title=True,
                         show_axis_labels=False,
                         show_grid=False,
+                        is_stepping=is_stepping,
                     )
                     tmp_path = output_dir / f"_gif_frame_{step_idx}.png"
                     if is_d3il:
@@ -945,6 +1012,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     show_axis_labels=False,
                     show_grid=False,
                     states_sequence=states_for_viz_fb,
+                    is_stepping=is_stepping,
                 )
                 out_path = output_dir / f"diffusion_steps_{pct}.png"
                 if is_d3il:

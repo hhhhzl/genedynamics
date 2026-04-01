@@ -1,4 +1,5 @@
-# Stepping-stones smoke: 2GO with CFS retraction, tuned for stepping.
+# ── Baseline: 2GO + stepping geometry (best fv, follower-ready) ──
+# retract=off, probe=off, geometry=on; fv_mean≈0.0026, ~2-3 red dots
 name: quadruped_stepping_stones_2d_twogo_smoke
 output_dir: results/quadruped/stepping_stones_2d/smoke/twogo
 
@@ -49,6 +50,7 @@ method_params:
   twogo_enable_agp_batch: false
   twogo_use_jax_scan_core: true
   twogo_retract_qp_boost: false
+  twogo_enable_geometry: true
   twogo_stability_eps: 1e-6
   twogo_gamma_init: 1.0
   twogo_retract_qp_every: 5
@@ -96,7 +98,7 @@ backend: jax
 device: cuda
 
 metrics: [stepping_metrics]
-visualizations: [stepping_trajectory, stepping_modes, cost, adaptive, diffusion]
+visualizations: [stepping_trajectory, stepping_modes, cost, adaptive, diffusion, gate_dynamics]
 
 scheduler_config:
   type: composite

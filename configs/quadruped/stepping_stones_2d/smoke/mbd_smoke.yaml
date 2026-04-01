@@ -1,3 +1,4 @@
+# ── Baseline: MBD + progress guidance ──
 name: quadruped_stepping_stones_2d_mbd_smoke
 output_dir: results/quadruped/stepping_stones_2d/smoke/mbd
 
@@ -21,6 +22,7 @@ method_params:
   show_tqdm: true
   action_extra_sigma: 0.02
   terminal_energy_weight: 120.0
+  guide_weight: 20.0
   num_modes: 8
   mode_strategy: multirun
 

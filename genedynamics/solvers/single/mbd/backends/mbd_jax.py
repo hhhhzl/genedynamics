@@ -60,6 +60,7 @@ class MBDBackendJax:
         
         self.env = env_adapter
         self.terminal_energy_weight = terminal_energy_weight
+        self.guide_weight = float(kwargs.get("guide_weight", getattr(solver, "config", {}).get("guide_weight", 0.0) if solver else 0.0))
         self.energy = legacy_energy
         self.horizon = horizon
         self.dt = dt
@@ -114,6 +115,9 @@ class MBDBackendJax:
                 pos = np.asarray(self.position_extractor(t), dtype=np.float32).reshape(-1)[: self.position_dim]
                 target = jnp.asarray(pos, dtype=jnp.float32)
 
+            d0 = jnp.linalg.norm(state_init[: self.position_dim] - target[: self.position_dim])
+            t_star = float(self.horizon - 1)
+            gw = jnp.asarray(self.guide_weight, dtype=jnp.float32)
             t_indices = jnp.arange(actions.shape[0], dtype=jnp.float32)
 
             def step_fn(carry, action_and_t):
@@ -121,7 +125,11 @@ class MBDBackendJax:
                 next_state = self._transition_fn(carry, action)
                 ctx = {"t": t_step, "target_xy": target}
                 reward = -self._cost_fn(next_state, action, ctx)
-                return next_state, reward
+                # Time-smooth progress guidance (same as MDOC).
+                d_hat = d0 * jnp.maximum(0.0, 1.0 - t_step / (t_star + 1e-6))
+                dist = jnp.linalg.norm(next_state[: self.position_dim] - target[: self.position_dim])
+                guide = -gw * jnp.square(dist - d_hat)
+                return next_state, reward + guide
 
             final_state, rewards = jax.lax.scan(step_fn, state_init, (actions, t_indices))
             if hasattr(self.env, "terminal_distance_jax"):
@@ -135,6 +143,9 @@ class MBDBackendJax:
         def rollout_rewards_with_target(state_init, actions, target):
             target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[: self.position_dim]
 
+            d0 = jnp.linalg.norm(state_init[: self.position_dim] - target[: self.position_dim])
+            t_star = float(self.horizon - 1)
+            gw = jnp.asarray(self.guide_weight, dtype=jnp.float32)
             t_indices = jnp.arange(actions.shape[0], dtype=jnp.float32)
 
             def step_fn(carry, action_and_t):
@@ -142,7 +153,10 @@ class MBDBackendJax:
                 next_state = self._transition_fn(carry, action)
                 ctx = {"t": t_step, "target_xy": target}
                 reward = -self._cost_fn(next_state, action, ctx)
-                return next_state, reward
+                d_hat = d0 * jnp.maximum(0.0, 1.0 - t_step / (t_star + 1e-6))
+                dist = jnp.linalg.norm(next_state[: self.position_dim] - target[: self.position_dim])
+                guide = -gw * jnp.square(dist - d_hat)
+                return next_state, reward + guide
 
             final_state, rewards = jax.lax.scan(step_fn, state_init, (actions, t_indices))
             if hasattr(self.env, "terminal_distance_jax"):

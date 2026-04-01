@@ -1,4 +1,4 @@
-# MDOC smoke: v2 env aligned with mbd_smoke; default noop filter (same as prior mdoc smoke intent).
+# ── Baseline: MDOC + per-foot CBF (res-lift) ──
 name: quadruped_stepping_stones_2d_mdoc_smoke
 output_dir: results/quadruped/stepping_stones_2d/smoke/mdoc
 
@@ -23,7 +23,11 @@ method_params:
   terminal_energy_weight: 120.0
   num_modes: 8
   mode_strategy: multirun
-  mdoc_constraint_mode: noop
+  mdoc_constraint_mode: cbf_stepping
+  cbf_tau: 0.01
+  cbf_eta: 0.1
+  cbf_margin: 0.01
+  base_beta: 0.005
 
 obstacle_levels: [1]
 obstacle_config:

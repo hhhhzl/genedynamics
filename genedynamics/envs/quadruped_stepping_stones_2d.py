@@ -1210,7 +1210,7 @@ def make_stepping_stones_energy(env: QuadrupedSteppingStones2DEnv) -> LegacyEner
             body, psi, _vel, res, _mode, _tau = _decode_j(x)
             feet4 = _feet_j(body[0], body[1] - cy_j, psi, res)
             feet = {"FL": feet4[0], "FR": feet4[1], "RL": feet4[2], "RR": feet4[3]}
-            return 26.0 * sum(_support_violation_j(feet[leg]) for leg in LEG_ORDER)
+            return 40.0 * sum(_support_violation_j(feet[leg]) for leg in LEG_ORDER)
 
         def support_energy(x, u, ctx):
             _ = (u, ctx)

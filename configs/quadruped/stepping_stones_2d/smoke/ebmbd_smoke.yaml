@@ -1,4 +1,4 @@
-# EB-MBD smoke: same env/obstacles as mbd_smoke; EB barrier scheduler from configs/single_2d/ebmbd.yaml (adapted).
+# ── Baseline: EB-MBD (MD-COSA) + emerging barrier + progress guidance ──
 name: quadruped_stepping_stones_2d_ebmbd_smoke
 output_dir: results/quadruped/stepping_stones_2d/smoke/ebmbd
 
@@ -22,6 +22,7 @@ method_params:
   action_limit: 0.45
   action_extra_sigma: 0.02
   terminal_energy_weight: 120.0
+  guide_weight: 20.0
   use_min_over_time: true
   num_modes: 8
   mode_strategy: multirun

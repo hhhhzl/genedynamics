@@ -69,6 +69,7 @@ class TwoGOBackendJax:
         self.twogo_gate_risk_theta = float(cfg.get("twogo_gate_risk_theta", 0.05))
         self.twogo_cluster_reweight_alpha = float(cfg.get("twogo_cluster_reweight_alpha", 1.0))
         self.twogo_cluster_retract_mu = float(np.clip(float(cfg.get("twogo_cluster_retract_mu", 0.1)), 0.0, 0.5))
+        self.twogo_enable_geometry = bool(cfg.get("twogo_enable_geometry", True))
         self.twogo_probe_frac = float(np.clip(float(cfg.get("twogo_probe_frac", 0.5)), 0.0, 1.0))
         self.twogo_probe_b = cfg.get("twogo_probe_b", None)
         self.twogo_probe_m_cap = cfg.get("twogo_probe_m_cap", None)
@@ -249,6 +250,82 @@ class TwoGOBackendJax:
             step_radii = jnp.ones((1,), dtype=jnp.float32)
             step_lmax = jnp.asarray(0.35, dtype=jnp.float32)
 
+        geometry_enabled = bool(self.twogo_enable_geometry)
+
+        # -- stepping-specific constraint geometry -------------------------
+        _stepping_env = None
+        if stepping_enabled:
+            # Resolve actual env (unwrap adapters).
+            _e = getattr(inner, "env", None)
+            for attr in ("env", "dynamics", "plan_env"):
+                _inner_e = getattr(_e, attr, None)
+                if _inner_e is not None and hasattr(_inner_e, "jax_safety_points"):
+                    _e = _inner_e
+                    break
+            if hasattr(_e, "jax_safety_points"):
+                _stepping_env = _e
+
+        if _stepping_env is not None and geometry_enabled:
+            _st_env = _stepping_env
+            _st_margin = jnp.asarray(float(getattr(_st_env, "stone_margin", 0.03)), dtype=jnp.float32)
+            _st_centers = step_centers
+            _st_radii = step_radii
+
+            # Per-foot stone SDF (differentiable).
+            def _foot_sdf_stepping(p):
+                d = jnp.sqrt(jnp.sum((p[None, :] - _st_centers) ** 2, axis=-1) + 1e-10)
+                return jnp.min(d - (_st_radii - _st_margin))
+
+            _foot_sdf_grad_raw = jax.grad(_foot_sdf_stepping)
+            def _foot_sdf_grad_stepping(p):
+                g = _foot_sdf_grad_raw(p)
+                return jnp.where(jnp.isnan(g), 0.0, g)
+
+            # Foot residual offsets in action space: [body(2), yaw(1), FL(2), FR(2), RL(2), RR(2), dtau(1)]
+            _res_offsets = jnp.array([3, 5, 7, 9], dtype=jnp.int32)
+
+            def _stepping_geometry_time(x0_in, actions, clearance):
+                """Per-foot phase-aware geometry for stepping stones.
+
+                Returns (H, act_dim) constraint vectors where each row
+                encodes the most violated foot's barrier gradient lifted
+                to the per-foot residual rate dims, weighted by phase.
+                """
+                clr = jnp.asarray(clearance, dtype=jnp.float32)
+                dt_f = jnp.asarray(float(inner.dt), dtype=jnp.float32)
+
+                def _step_geom(carry, action):
+                    state = carry
+                    next_state = inner._transition_fn(state, action)
+
+                    feet4 = _st_env.jax_safety_points(next_state)  # (4, 2)
+                    w = _st_env.jax_cfs_safety_point_weights(next_state)  # (4,)
+
+                    # Compute per-foot violation + gradient.
+                    def _one_foot(foot_pos, weight, res_off):
+                        sdf = _foot_sdf_stepping(foot_pos)
+                        grad_p = _foot_sdf_grad_stepping(foot_pos)  # (2,)
+                        g_plus = jnp.maximum(0.0, clr - sdf)
+                        # Lift to action space: per-foot residual dims only.
+                        a_foot = jnp.zeros(act_dim, dtype=jnp.float32)
+                        a_foot = a_foot.at[res_off].set(dt_f * (-grad_p[0]))
+                        a_foot = a_foot.at[res_off + 1].set(dt_f * (-grad_p[1]))
+                        # Weight: violation * phase weight * amplifier.
+                        return a_foot * g_plus * weight * 1.0
+
+                    a_all = jax.vmap(_one_foot)( feet4, w, _res_offsets)  # (4, act_dim)
+                    # Sum all feet contributions for this timestep.
+                    a_t = jnp.sum(a_all, axis=0)
+
+                    return next_state, a_t
+
+                _, a_time = jax.lax.scan(_step_geom, x0_in, actions)
+                return a_time  # (H, act_dim)
+
+            _stepping_geometry_time_jit = jax.jit(_stepping_geometry_time)
+        else:
+            _stepping_geometry_time_jit = None
+
         # -- genemetry components ----------------------------------------
         _constraint_manifold = SdfManifold(backend="jax")
         _task_modulator = ProbeModulator()
@@ -389,7 +466,10 @@ class TwoGOBackendJax:
 
                 wmask = _window_policy.mask(step_k, horizon)
 
-                a_geom = inner._constraint_geometry_time_jit(x0_jnp, Ybar_curr, margin)
+                if _stepping_geometry_time_jit is not None:
+                    a_geom = _stepping_geometry_time_jit(x0_jnp, Ybar_curr, margin)
+                else:
+                    a_geom = inner._constraint_geometry_time_jit(x0_jnp, Ybar_curr, margin)
                 a_geom0 = a_geom * wmask[:, None]
 
                 eps_noise = jax.random.normal(noise_key, (Nsample, horizon, act_dim), dtype=jnp.float32)
@@ -502,12 +582,15 @@ class TwoGOBackendJax:
                 # Task direction bias: decays with hardness.
                 task_dir = _task_direction.direction(Ybar_curr, target, step_k, hardness_k)
                 score_base = kappa_k * (Ybar_weighted - Ybar_curr) + task_dir
-                u_agp_proj = _constraint_manifold.project(score_base, bundle, mode="metric")
-                u_agp = jax.lax.cond(bundle.is_valid, lambda _: u_agp_proj, lambda _: score_base, operand=None)
-
                 noise_extra = jax.random.normal(extra_key, (horizon, act_dim), dtype=jnp.float32)
-                p_noise_proj = _constraint_manifold.project(noise_extra, bundle, mode="tangent")
-                p_noise = jax.lax.cond(bundle.is_valid, lambda _: p_noise_proj, lambda _: noise_extra, operand=None)
+                if geometry_enabled:
+                    u_agp_proj = _constraint_manifold.project(score_base, bundle, mode="metric")
+                    u_agp = jax.lax.cond(bundle.is_valid, lambda _: u_agp_proj, lambda _: score_base, operand=None)
+                    p_noise_proj = _constraint_manifold.project(noise_extra, bundle, mode="tangent")
+                    p_noise = jax.lax.cond(bundle.is_valid, lambda _: p_noise_proj, lambda _: noise_extra, operand=None)
+                else:
+                    u_agp = score_base
+                    p_noise = noise_extra
                 sigma_eff = gamma * (sigma_k + extra_sigmas[idx])
                 Ybar_tilde = Ybar_weighted + eta_j * u_agp + sigma_eff * p_noise
 

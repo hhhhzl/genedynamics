@@ -62,6 +62,52 @@ class SteppingStonesMetricsPlugin(MetricsPlugin):
     def name(self) -> str:
         return "stepping_metrics"
 
+    @staticmethod
+    def _follower_metrics(
+        body: np.ndarray, yaw: np.ndarray,
+        feet: Dict[str, np.ndarray], mode: np.ndarray,
+        l_max: float,
+    ) -> Dict[str, float]:
+        """Metrics that predict how easy the trajectory is for a PD follower."""
+        T = body.shape[0]
+        out: Dict[str, float] = {}
+        # 1. Body velocity variance: stop-and-go vs smooth forward progress
+        if T >= 2:
+            body_vel = np.linalg.norm(body[1:] - body[:-1], axis=1)
+            out["body_velocity_mean"] = float(np.mean(body_vel))
+            out["body_velocity_var"] = float(np.var(body_vel))
+        else:
+            out["body_velocity_mean"] = 0.0
+            out["body_velocity_var"] = 0.0
+        # 2. Max foot reach ratio: foot step / l_max (1.0 = at kinematic limit)
+        max_reach = 0.0
+        if T >= 2:
+            for leg in ("FL", "FR", "RL", "RR"):
+                steps = np.linalg.norm(feet[leg][1:] - feet[leg][:-1], axis=1)
+                if steps.size > 0:
+                    max_reach = max(max_reach, float(np.max(steps)))
+        out["foot_reach_ratio_max"] = max_reach / max(l_max, 1e-6)
+        # 3. Yaw rate max
+        if T >= 2:
+            dyaw = np.abs(yaw[1:] - yaw[:-1])
+            out["yaw_rate_max"] = float(np.max(dyaw))
+        else:
+            out["yaw_rate_max"] = 0.0
+        # 4. Max lateral body deviation from start→goal line
+        if T >= 2:
+            direction = body[-1] - body[0]
+            d_norm = np.linalg.norm(direction)
+            if d_norm > 1e-6:
+                d_hat = direction / d_norm
+                lateral = body - body[0]
+                lat_proj = lateral - np.outer(lateral @ d_hat, d_hat)
+                out["lateral_deviation_max"] = float(np.max(np.linalg.norm(lat_proj, axis=1)))
+            else:
+                out["lateral_deviation_max"] = 0.0
+        else:
+            out["lateral_deviation_max"] = 0.0
+        return out
+
     def compute(
         self,
         trajectory: Trajectory,
@@ -278,5 +324,7 @@ class SteppingStonesMetricsPlugin(MetricsPlugin):
             "planning_time": planning_time,
             "n_modes": n_modes,
             "best_idx": best_idx,
+            # ── Follower-friendliness metrics ──
+            **self._follower_metrics(body, yaw, feet, mode, lmax),
         }
 

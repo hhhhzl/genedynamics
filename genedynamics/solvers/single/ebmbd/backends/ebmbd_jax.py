@@ -72,6 +72,7 @@ class EBMBDBackendJax:
         self.bound = solver.bound
         self.use_min_over_time = solver.use_min_over_time
         self.terminal_energy_weight = float(getattr(solver, "terminal_energy_weight", 0.0))
+        self.guide_weight = float(solver.config.get("guide_weight", 0.0) if hasattr(solver, "config") else 0.0)
         self.obstacles = getattr(solver, "_obstacles", None)
         self.obstacle_config = getattr(solver, "_obstacle_config", {}) or {}
         self.robot_radius = float(self.obstacle_config.get("robot_radius", 0.05))
@@ -205,15 +206,29 @@ class EBMBDBackendJax:
         return rollout_states
 
     def _build_rollout_rewards_fn(self):
+        gw = jnp.asarray(self.guide_weight, dtype=jnp.float32)
+        t_star = float(max(self.horizon - 1, 1))
+        pdim = self.position_dim
+
         def rollout_rewards(state_init, actions):
-            t_idxs = jnp.arange(actions.shape[0], dtype=jnp.int32)
+            t_obj = getattr(self.env, "target", None)
+            if t_obj is None:
+                target = jnp.zeros(pdim, dtype=jnp.float32)
+            else:
+                pos = np.asarray(self.position_extractor(t_obj), dtype=np.float32).reshape(-1)[:pdim]
+                target = jnp.asarray(pos, dtype=jnp.float32)
+            d0 = jnp.linalg.norm(state_init[:pdim] - target[:pdim])
+            t_idxs = jnp.arange(actions.shape[0], dtype=jnp.float32)
 
             def step_fn(carry, inp):
                 action, t = inp
                 next_state = self._transition_fn(carry, action)
                 ctx = {"t": t}
                 reward = -self._cost_fn(next_state, action, ctx)
-                return next_state, reward
+                d_hat = d0 * jnp.maximum(0.0, 1.0 - t / (t_star + 1e-6))
+                dist = jnp.linalg.norm(next_state[:pdim] - target[:pdim])
+                guide = -gw * jnp.square(dist - d_hat)
+                return next_state, reward + guide
 
             _, rewards = jax.lax.scan(step_fn, state_init, (actions, t_idxs))
             return rewards
@@ -234,26 +249,27 @@ class EBMBDBackendJax:
             H = actions.shape[0]
 
             def do_stage(_):
-                def step_fn(carry, act):
+                t_idxs = jnp.arange(H - 1, dtype=jnp.float32)
+
+                def step_fn(carry, inp):
+                    act, t = inp
                     nxt = self._transition_fn(carry, act)
-                    c = self._cost_fn(nxt, act, {"t": 0})
+                    c = self._cost_fn(nxt, act, {"t": t})
                     return nxt, c
 
-                terminal_state, costs = jax.lax.scan(step_fn, state_init, actions[:-1])
+                terminal_state, costs = jax.lax.scan(step_fn, state_init, (actions[:-1], t_idxs))
                 total_stage = jnp.sum(costs)
-                # advance once with last action for terminal state
                 terminal_state = self._transition_fn(terminal_state, actions[-1])
                 zero_u = jnp.zeros((act_dim,), dtype=jnp.float32)
-                terminal_c = self._cost_fn(terminal_state, zero_u, {"t": H})
+                terminal_c = self._cost_fn(terminal_state, zero_u, {"t": jnp.asarray(H, dtype=jnp.float32)})
                 total = total_stage + terminal_w * terminal_c
-                # For logging: mean reward over stage steps (avoid div0)
                 rews_mean = -total_stage / jnp.maximum(float(H - 1), 1.0)
                 return total, rews_mean
 
             def only_terminal(_):
                 terminal_state = self._transition_fn(state_init, actions[0])
                 zero_u = jnp.zeros((act_dim,), dtype=jnp.float32)
-                terminal_c = self._cost_fn(terminal_state, zero_u, {"t": 1})
+                terminal_c = self._cost_fn(terminal_state, zero_u, {"t": jnp.asarray(1.0, dtype=jnp.float32)})
                 total = terminal_w * terminal_c
                 rews_mean = jnp.asarray(0.0, dtype=jnp.float32)
                 return total, rews_mean
@@ -274,16 +290,19 @@ class EBMBDBackendJax:
             H = actions.shape[0]
 
             def do_stage(_):
-                def step_fn(carry, act):
+                t_idxs = jnp.arange(H - 1, dtype=jnp.float32)
+
+                def step_fn(carry, inp):
+                    act, t = inp
                     nxt = self._transition_fn(carry, act)
-                    c = self._cost_fn(nxt, act, {**ctx_base, "t": 0})
+                    c = self._cost_fn(nxt, act, {**ctx_base, "t": t})
                     return nxt, c
 
-                terminal_state, costs = jax.lax.scan(step_fn, state_init, actions[:-1])
+                terminal_state, costs = jax.lax.scan(step_fn, state_init, (actions[:-1], t_idxs))
                 total_stage = jnp.sum(costs)
                 terminal_state = self._transition_fn(terminal_state, actions[-1])
                 zero_u = jnp.zeros((act_dim,), dtype=jnp.float32)
-                terminal_c = self._cost_fn(terminal_state, zero_u, {**ctx_base, "t": H})
+                terminal_c = self._cost_fn(terminal_state, zero_u, {**ctx_base, "t": jnp.asarray(H, dtype=jnp.float32)})
                 total = total_stage + terminal_w * terminal_c
                 rews_mean = -total_stage / jnp.maximum(float(H - 1), 1.0)
                 return total, rews_mean
@@ -301,16 +320,24 @@ class EBMBDBackendJax:
         return rollout_total_cost_with_target
 
     def _build_rollout_rewards_with_target_fn(self):
+        gw = jnp.asarray(self.guide_weight, dtype=jnp.float32)
+        t_star = float(max(self.horizon - 1, 1))
+        pdim = self.position_dim
+
         def rollout_rewards_with_target(state_init, actions, target):
-            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[: self.position_dim]
-            t_idxs = jnp.arange(actions.shape[0], dtype=jnp.int32)
+            target = jnp.asarray(target, dtype=jnp.float32).reshape(-1)[:pdim]
+            d0 = jnp.linalg.norm(state_init[:pdim] - target[:pdim])
+            t_idxs = jnp.arange(actions.shape[0], dtype=jnp.float32)
 
             def step_fn(carry, inp):
                 action, t = inp
                 next_state = self._transition_fn(carry, action)
                 ctx = {"t": t, "target_xy": target}
                 reward = -self._cost_fn(next_state, action, ctx)
-                return next_state, reward
+                d_hat = d0 * jnp.maximum(0.0, 1.0 - t / (t_star + 1e-6))
+                dist = jnp.linalg.norm(next_state[:pdim] - target[:pdim])
+                guide = -gw * jnp.square(dist - d_hat)
+                return next_state, reward + guide
 
             _, rewards = jax.lax.scan(step_fn, state_init, (actions, t_idxs))
             return rewards
@@ -744,13 +771,36 @@ class EBMBDBackendJax:
         states_batch: (M, H+1, state_dim)
         returns (M,) min sdf over time or terminal sdf
         """
-        positions = states_batch[..., :2]  # assume first 2 dims are position
+        # Check if env has per-foot safety points (stepping stones).
+        # Unwrap adapter chain to find the actual env.
+        _env = self.env
+        for attr in ("env", "dynamics", "plan_env"):
+            inner = getattr(_env, attr, None)
+            if inner is not None and hasattr(inner, "jax_cfs_alm_g_plus_from_state"):
+                _env = inner
+                break
+        alm_hook = getattr(_env, "jax_cfs_alm_g_plus_from_state", None)
+        if alm_hook is not None:
+            # Per-foot SDF path: compute max foot violation per state,
+            # then convert to min-sdf = clearance - g_plus.
+            clearance = jnp.asarray(self.robot_radius, dtype=jnp.float32)
+            def _g_plus_single(x):
+                return alm_hook(x, clearance)
+            _g_plus_batch = jax.vmap(jax.vmap(_g_plus_single))  # (M, H+1)
+            g_plus = _g_plus_batch(states_batch)
+            # sdf ≈ clearance - g_plus (g_plus=0 → on stone, g_plus>0 → off stone)
+            sdf_vals = clearance - g_plus
+            if self.use_min_over_time:
+                return jnp.min(sdf_vals, axis=-1)
+            return sdf_vals[:, -1]
+
+        # Default: body-position SDF (2D obstacles).
+        positions = states_batch[..., :2]
         sdf_terms = []
         if self._box_sdf_fn is not None:
-            sdf_terms.append(self._box_sdf_fn(positions))  # (M, H+1)
+            sdf_terms.append(self._box_sdf_fn(positions))
         if self._obs_sdf_fn is not None:
-            # obstacle SDF is positive outside obstacle; keep a robot-radius margin
-            sdf_terms.append(self._obs_sdf_fn(positions) - self.robot_radius)  # (M, H+1)
+            sdf_terms.append(self._obs_sdf_fn(positions) - self.robot_radius)
         sdf_vals = sdf_terms[0] if len(sdf_terms) == 1 else jnp.min(jnp.stack(sdf_terms, axis=0), axis=0)
         if self.use_min_over_time:
             return jnp.min(sdf_vals, axis=-1)
