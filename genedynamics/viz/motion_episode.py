@@ -20,7 +20,9 @@ def _as_array(x: Any) -> np.ndarray:
 
 
 def _infer_model_id(state_dim: int) -> str:
-    # Go2 state is typically 37D (nq=19, nv=18), Ant is 29D.
+    # G1 state is typically 71D (nq=36, nv=35), Go2 is 37D, Ant is 29D.
+    if int(state_dim) >= 70:
+        return "g1"
     return "go2" if int(state_dim) >= 35 else "ant"
 
 

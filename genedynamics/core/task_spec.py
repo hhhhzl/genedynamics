@@ -213,6 +213,11 @@ def get_default_task_spec(
     if "quadruped" in env_name_lower:
         from genedynamics.tasks.quadruped.spec import QuadrupedTaskSpec
         return QuadrupedTaskSpec()
+    # Humanoid corridor 2D: planning-level env, position = state[:2]
+    if "humanoid_corridor_2d" in env_name_lower:
+        if env_plugin is not None and hasattr(env_plugin, "extract_position"):
+            return EnvPluginTaskSpecAdapter(env_plugin, fallback=Legacy2DTaskSpec())
+        return Legacy2DTaskSpec()
     # Humanoid: humanoid, g1 (flat [qpos; qvel], position = state[:3])
     if "humanoid" in env_name_lower:
         from genedynamics.tasks.humanoid.spec import HumanoidTaskSpec

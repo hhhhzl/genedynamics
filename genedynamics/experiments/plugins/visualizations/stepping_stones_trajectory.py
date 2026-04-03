@@ -22,7 +22,61 @@ def _get_scene(env: Any, obstacles: Any):
     return None
 
 
+def _is_corridor_scene(scene: Any) -> bool:
+    return hasattr(scene, "corridor_width") and hasattr(scene, "obstacles")
+
+
+def _draw_corridor_scene_shared(ax: Any, scene: Any) -> None:
+    """Draw corridor scene (walls + box/sphere obstacles) for shared viz."""
+    hw = scene.corridor_width / 2.0
+    length = scene.corridor_length
+    ax.set_aspect("equal")
+    ax.set_xlim(-0.3, length + 0.3)
+    ax.set_ylim(-hw - 0.3, hw + 0.3)
+    ax.set_facecolor("#f7f9fc")
+    # Floor
+    ax.add_patch(plt.Rectangle((0, -hw), length, 2 * hw,
+        facecolor="#e2e8f0", edgecolor="none", zorder=0))
+    # Walls
+    for wy in (-hw - 0.08, hw):
+        ax.add_patch(plt.Rectangle((0, wy), length, 0.08,
+            facecolor="#2d3748", edgecolor="#1a202c", linewidth=0.8, zorder=5))
+    # Obstacles
+    _z_color = {"full": ("#4a5568", 0.85), "low": ("#e53e3e", 0.55),
+                "floor": ("#dd6b20", 0.55), "mid": ("#805ad5", 0.55)}
+    for obs in scene.obstacles:
+        zlo, zhi = obs.z_min, obs.z_max
+        if zlo <= 0.05 and zhi >= 1.8:
+            ot = "full"
+        elif zlo > 0.4:
+            ot = "low"
+        elif zhi < 0.5:
+            ot = "floor"
+        else:
+            ot = "mid"
+        fc, alpha = _z_color[ot]
+        if getattr(obs, "shape", "box") == "sphere":
+            ax.add_patch(plt.Circle((obs.cx, obs.cy), obs.radius,
+                facecolor=fc, edgecolor="#1a202c", linewidth=0.6,
+                alpha=alpha, zorder=3))
+        else:
+            ax.add_patch(plt.Rectangle(
+                (obs.x_min, obs.y_min), obs.x_max - obs.x_min, obs.y_max - obs.y_min,
+                facecolor=fc, edgecolor="#1a202c", linewidth=0.6,
+                alpha=alpha, zorder=3))
+    # Start / Goal
+    sx, sy = scene.start_pos
+    gx, gy = scene.goal_pos
+    ax.plot(sx, sy, "o", color="#38a169", markersize=8, zorder=10)
+    ax.plot(gx, gy, "*", color="#e53e3e", markersize=12, zorder=10)
+
+
 def _draw_scene(ax: Any, scene: Any):
+    # Corridor scene dispatch.
+    if _is_corridor_scene(scene):
+        _draw_corridor_scene_shared(ax, scene)
+        return
+
     ax.set_aspect("equal")
     ax.set_xlim(scene.map_x[0], scene.map_x[1])
     ax.set_ylim(scene.map_y[0], scene.map_y[1])

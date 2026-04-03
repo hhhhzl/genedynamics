@@ -136,7 +136,10 @@ class TwoGOBackendJax:
     def _resolve_stepping_scene(self):
         env = getattr(self._inner, "env", None)
         if env is not None and hasattr(env, "scene") and getattr(env, "scene") is not None:
-            return getattr(env, "scene")
+            scene = getattr(env, "scene")
+            # Only return if it's a stepping-stones scene (has stones_centers).
+            if hasattr(scene, "stones_centers"):
+                return scene
         obs = getattr(self._inner, "obstacles", None)
         if obs is not None and hasattr(obs, "stepping_scene"):
             return getattr(obs, "stepping_scene")
@@ -326,6 +329,75 @@ class TwoGOBackendJax:
         else:
             _stepping_geometry_time_jit = None
 
+        # -- corridor-specific constraint geometry -------------------------
+        _corridor_env = None
+        if _stepping_geometry_time_jit is None and geometry_enabled:
+            _e = getattr(inner, "env", None)
+            for attr in ("env", "dynamics", "plan_env"):
+                _inner_e = getattr(_e, attr, None)
+                if _inner_e is not None and hasattr(_inner_e, "_jax_body_min_sdf_vectorised"):
+                    _e = _inner_e
+                    break
+            if hasattr(_e, "_jax_body_min_sdf_vectorised"):
+                _corridor_env = _e
+
+        if _corridor_env is not None:
+            _corr_env = _corridor_env
+
+            def _body_min_sdf_corr(state):
+                return _corr_env._jax_body_min_sdf_vectorised(state)
+
+            _body_sdf_grad_raw = jax.grad(_body_min_sdf_corr)
+
+            def _body_sdf_grad(state):
+                g = _body_sdf_grad_raw(state)
+                return jnp.where(jnp.isnan(g), 0.0, g)
+
+            def _corridor_geometry_time(x0_in, actions, clearance):
+                """Per-body SDF geometry for corridor obstacle avoidance.
+
+                For each timestep, computes the min SDF across torso + arms
+                and all obstacles, then lifts the state-space gradient to
+                action space via the transition Jacobian.
+
+                The forward velocity dim (action[0] = v_x_cmd) is masked out
+                so geometry corrections never fight forward progress.
+
+                Returns (H, act_dim) constraint vectors.
+                """
+                clr = jnp.asarray(clearance, dtype=jnp.float32)
+
+                def _step_geom(carry, action):
+                    state = carry
+                    next_state = inner._transition_fn(state, action)
+
+                    sdf_val = _body_min_sdf_corr(next_state)
+                    g_plus = jnp.maximum(0.0, clr - sdf_val)
+
+                    # Gradient of SDF w.r.t. action (chain rule through transition).
+                    def sdf_of_action(u):
+                        ns = inner._transition_fn(state, u)
+                        return _body_min_sdf_corr(ns)
+
+                    grad_a = jax.grad(sdf_of_action)(action)
+                    grad_a = jnp.where(jnp.isnan(grad_a), 0.0, grad_a)
+
+                    # Preserve forward progress: reduce (not zero) v_x correction.
+                    # Allow geometry to slow down when very close to obstacle.
+                    vx_scale = jnp.where(g_plus > 0.3, 0.5, 0.1)
+                    grad_a = grad_a.at[0].set(grad_a[0] * vx_scale)
+
+                    # Amplify lateral/posture corrections (dims 1-8).
+                    a_t = (-grad_a) * g_plus * 2.0
+                    return next_state, a_t
+
+                _, a_time = jax.lax.scan(_step_geom, x0_in, actions)
+                return a_time  # (H, act_dim)
+
+            _corridor_geometry_time_jit = jax.jit(_corridor_geometry_time)
+        else:
+            _corridor_geometry_time_jit = None
+
         # -- genemetry components ----------------------------------------
         _constraint_manifold = SdfManifold(backend="jax")
         _task_modulator = ProbeModulator()
@@ -399,6 +471,7 @@ class TwoGOBackendJax:
         def _run_single(x0_jnp: jnp.ndarray, rng_key: jnp.ndarray, target: jnp.ndarray):
             rng, rng_sched_seed = jax.random.split(rng_key)
             Ybar_init = jnp.zeros((horizon, act_dim), dtype=jnp.float32)
+            _target_is_lowdim = bool(target.ndim < 2)
             gamma_init = jnp.asarray(np.clip(self.twogo_gamma_init, 0.0, 1.0), dtype=jnp.float32)
             pi_ema_init = jnp.asarray(1.0, dtype=jnp.float32)  # start high → diffusion ON
             carry_sched_init = cs.jax_init_carry(rng_sched_seed) if use_jax_adaptive else None
@@ -468,6 +541,8 @@ class TwoGOBackendJax:
 
                 if _stepping_geometry_time_jit is not None:
                     a_geom = _stepping_geometry_time_jit(x0_jnp, Ybar_curr, margin)
+                elif _corridor_geometry_time_jit is not None:
+                    a_geom = _corridor_geometry_time_jit(x0_jnp, Ybar_curr, margin)
                 else:
                     a_geom = inner._constraint_geometry_time_jit(x0_jnp, Ybar_curr, margin)
                 a_geom0 = a_geom * wmask[:, None]
@@ -580,7 +655,17 @@ class TwoGOBackendJax:
                 gamma = jax.lax.cond(gate_pass, lambda _: gamma_raw, lambda _: gamma_prev, operand=None)
 
                 # Task direction bias: decays with hardness.
-                task_dir = _task_direction.direction(Ybar_curr, target, step_k, hardness_k)
+                # For low-dim targets (goal points), build target_actions from
+                # Ybar_curr with only dim 0 (vx) overridden — this ensures
+                # the direction only pushes forward, not against obstacle-
+                # avoidance actions in other dims.
+                if _target_is_lowdim:
+                    _target_actions = Ybar_curr.at[:, 0].set(
+                        jnp.asarray(action_limit * 0.8, dtype=jnp.float32)
+                    )
+                else:
+                    _target_actions = target
+                task_dir = _task_direction.direction(Ybar_curr, _target_actions, step_k, hardness_k)
                 score_base = kappa_k * (Ybar_weighted - Ybar_curr) + task_dir
                 noise_extra = jax.random.normal(extra_key, (horizon, act_dim), dtype=jnp.float32)
                 if geometry_enabled:

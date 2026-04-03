@@ -21,7 +21,7 @@ def render_episode_to_gif(
     actions: Optional[np.ndarray] = None,
     *,
     output_path: Optional[Path] = None,
-    model: str = "go2",
+    model: str = "auto",
     width: int = 640,
     height: int = 480,
     fps: float = 20.0,
@@ -48,7 +48,15 @@ def render_episode_to_gif(
         raise ValueError("All states have NaN")
 
     state_dim = states.shape[1]
-    model = "go2" if state_dim >= 35 else "ant"
+    if str(model).lower() in {"auto", "", "none"}:
+        if state_dim >= 70:
+            model = "g1"
+        elif state_dim >= 35:
+            model = "go2"
+        else:
+            model = "ant"
+    else:
+        model = str(model).lower()
     positions = states[:, :3]
 
     model_dir = _get_model_dir(model)
@@ -69,6 +77,14 @@ def render_episode_to_gif(
                 stepping_scene=stepping_scene,
                 swing_trajectories=swing_trajectories if draw_trajectory else None,
             )
+        elif model == "g1":
+            from genedynamics.envs.utils.mujoco_model_generator import create_g1_render_xml_with_trajectory
+            corridor_scene = _load_corridor_scene(episode_dir)
+            create_g1_render_xml_with_trajectory(
+                tmp_xml,
+                trajectory_positions=positions if draw_trajectory else [],
+                corridor_scene=corridor_scene,
+            )
         else:
             from genedynamics.envs.utils.mujoco_model_generator import create_ant_render_xml_with_trajectory
             create_ant_render_xml_with_trajectory(
@@ -86,7 +102,7 @@ def render_episode_to_gif(
         renderer = mujoco.Renderer(mj_model, height=height, width=width)
         follow_cam = mujoco.MjvCamera()
         follow_cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-        follow_cam.distance = 2.8 if model == "go2" else 3.5
+        follow_cam.distance = 2.8 if model == "go2" else (3.0 if model == "g1" else 3.5)
         follow_cam.azimuth = 130.0
         follow_cam.elevation = -18.0
 
@@ -136,6 +152,23 @@ def _get_model_dir(model: str) -> Optional[Path]:
         proj = Path(__file__).resolve().parents[3]
         for d in (proj / "third_party" / "mujoco_menagerie", proj / "mujoco_menagerie"):
             p = d / "unitree_go2" / "go2.xml"
+            if p.exists():
+                return p.parent
+    elif model == "g1":
+        try:
+            from genedynamics.robots.registry import _get_g1_path
+            p = _get_g1_path()
+            return Path(p).parent if p else None
+        except Exception:
+            pass
+        menagerie = os.environ.get("MUJOCO_MENAGERIE_PATH")
+        if menagerie:
+            p = Path(menagerie) / "unitree_g1" / "g1.xml"
+            if p.exists():
+                return p.parent
+        proj = Path(__file__).resolve().parents[3]
+        for d in (proj / "third_party" / "mujoco_menagerie", proj / "mujoco_menagerie"):
+            p = d / "unitree_g1" / "g1.xml"
             if p.exists():
                 return p.parent
     else:
@@ -188,5 +221,21 @@ def _load_swing_ref_targets(episode_dir: Path) -> Optional[Dict[str, np.ndarray]
                 if arr.ndim == 2 and arr.shape[1] >= 3:
                     out[leg] = arr[:, :3]
         return out if len(out) > 0 else None
+    except Exception:
+        return None
+
+
+def _load_corridor_scene(episode_dir: Path) -> Optional[Dict[str, Any]]:
+    p = episode_dir / "corridor_scene.json"
+    if not p.exists():
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            blob = json.load(f) or {}
+        if not isinstance(blob, dict):
+            return None
+        if "corridor_width" not in blob or "obstacles" not in blob:
+            return None
+        return blob
     except Exception:
         return None

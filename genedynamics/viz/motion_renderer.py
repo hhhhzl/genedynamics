@@ -25,13 +25,24 @@ class MotionRenderer:
     def _persist_episode_metadata(self, episode: MotionEpisode) -> None:
         scene = episode.metadata.get("stepping_scene") if isinstance(episode.metadata, dict) else None
         if not isinstance(scene, dict):
+            scene = None
+        if isinstance(scene, dict) and "stones_centers" in scene and "stones_radii" in scene:
+            path = self.output_dir / "stepping_scene.json"
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(scene, f, indent=2)
+            except OSError:
+                pass
+
+        corridor_scene = episode.metadata.get("corridor_scene") if isinstance(episode.metadata, dict) else None
+        if not isinstance(corridor_scene, dict):
             return
-        if "stones_centers" not in scene or "stones_radii" not in scene:
+        if "obstacles" not in corridor_scene or "corridor_width" not in corridor_scene:
             return
-        path = self.output_dir / "stepping_scene.json"
+        path = self.output_dir / "corridor_scene.json"
         try:
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(scene, f, indent=2)
+                json.dump(corridor_scene, f, indent=2)
         except OSError:
             pass
 

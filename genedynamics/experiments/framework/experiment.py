@@ -740,6 +740,11 @@ class ExperimentRunner:
             obs, _info = env.reset(seed=seed)
             return np.asarray(obs, dtype=np.float32)
 
+        # Humanoid corridor 2D: planning-level env with built-in start position.
+        if self.config.env_name == "humanoid_corridor_2d":
+            obs, _info = env.reset(seed=seed)
+            return np.asarray(obs, dtype=np.float32)
+
         # Quadruped/Humanoid MJX: need valid [qpos; qvel] from reset, then override base xyz
         env_name_lower = (self.config.env_name or "").lower()
         if ("quadruped" in env_name_lower or "humanoid" in env_name_lower) and (
@@ -1573,7 +1578,7 @@ class ExperimentRunner:
                 import matplotlib.pyplot as plt
 
                 # Visualization-specific figure creation
-                if viz_name in ('trajectory', 'stepping_trajectory'):
+                if viz_name in ('trajectory', 'stepping_trajectory', 'corridor_trajectory'):
                     out_dir = self._get_output_path(result['level'], result['seed'])
                     trajectory_dir = out_dir / "trajectory"
                     trajectory_dir.mkdir(parents=True, exist_ok=True)

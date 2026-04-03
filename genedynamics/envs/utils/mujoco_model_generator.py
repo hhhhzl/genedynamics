@@ -686,6 +686,171 @@ def create_ant_render_xml_with_trajectory(
     return xml_content
 
 
+def create_g1_render_xml_with_trajectory(
+    output_path: str,
+    trajectory_positions: list,
+    g1_xml_path: Optional[str] = None,
+    line_radius: float = 0.008,
+    line_rgba: str = "0.2 0.6 1.0 0.7",
+    corridor_scene: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Create G1 XML with trajectory line for rendering."""
+    if g1_xml_path is None:
+        try:
+            from genedynamics.robots.registry import _get_g1_path
+            g1_xml_path = _get_g1_path()
+        except Exception:
+            g1_xml_path = None
+    if g1_xml_path is None:
+        import os
+        menagerie = os.environ.get("MUJOCO_MENAGERIE_PATH")
+        if menagerie:
+            candidate = Path(menagerie) / "unitree_g1" / "g1.xml"
+            if candidate.exists():
+                g1_xml_path = str(candidate)
+    if g1_xml_path is None:
+        proj = Path(__file__).resolve().parents[3]
+        for d in (proj / "third_party" / "mujoco_menagerie", proj / "mujoco_menagerie"):
+            candidate = d / "unitree_g1" / "g1.xml"
+            if candidate.exists():
+                g1_xml_path = str(candidate)
+                break
+    if not g1_xml_path or not Path(g1_xml_path).exists():
+        raise FileNotFoundError(
+            "G1 model not found. Set MUJOCO_MENAGERIE_PATH or install mujoco-menagerie."
+        )
+
+    g1_path_obj = Path(g1_xml_path)
+    if g1_path_obj.name in ("g1.xml", "g1_mjx.xml"):
+        for scene_name in ("scene.xml", "scene_mjx.xml"):
+            scene_candidate = g1_path_obj.parent / scene_name
+            if scene_candidate.exists():
+                g1_xml_path = str(scene_candidate)
+                break
+
+    xml_content = Path(g1_xml_path).read_text()
+    MIN_SEG_LEN = 1e-4
+    line_radius = max(float(line_radius), 1e-6)
+    traj_lines = []
+    positions = np.asarray(trajectory_positions, dtype=np.float64)
+    if len(positions) >= 2:
+        seg_idx = 0
+        for i in range(len(positions) - 1):
+            p1, p2 = np.asarray(positions[i]), np.asarray(positions[i + 1])
+            if np.any(~np.isfinite(p1)) or np.any(~np.isfinite(p2)):
+                continue
+            if np.linalg.norm(p2 - p1) < MIN_SEG_LEN:
+                continue
+            fromto = f"{p1[0]:.6f} {p1[1]:.6f} {p1[2]:.6f} {p2[0]:.6f} {p2[1]:.6f} {p2[2]:.6f}"
+            traj_lines.append(
+                f'      <geom name="traj_seg_{seg_idx}" type="cylinder" fromto="{fromto}" '
+                f'size="{line_radius:.6f}" rgba="{line_rgba}" contype="0" conaffinity="0"/>'
+            )
+            seg_idx += 1
+
+    traj_xml = ""
+    if traj_lines:
+        traj_xml = (
+            '\n    <!-- Trajectory line -->\n    <body name="trajectory" pos="0 0 0">\n'
+            + "\n".join(traj_lines)
+            + "\n    </body>\n"
+        )
+
+    corridor_xml = _build_corridor_scene_overlay_xml(corridor_scene)
+    insert_pos = xml_content.rfind("</worldbody>")
+    extras = corridor_xml + traj_xml
+    if insert_pos != -1 and extras:
+        xml_content = xml_content[:insert_pos] + extras + xml_content[insert_pos:]
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(output_path).write_text(xml_content)
+    return xml_content
+
+
+def _build_corridor_scene_overlay_xml(corridor_scene: Optional[Dict[str, Any]]) -> str:
+    if not isinstance(corridor_scene, dict):
+        return ""
+
+    try:
+        corridor_width = float(corridor_scene["corridor_width"])
+        corridor_length = float(corridor_scene["corridor_length"])
+    except Exception:
+        return ""
+
+    half_w = max(1e-4, 0.5 * corridor_width)
+    half_l = max(1e-4, 0.5 * corridor_length)
+    wall_y_min = float(corridor_scene.get("wall_y_min", -half_w))
+    wall_y_max = float(corridor_scene.get("wall_y_max", half_w))
+    wall_thickness = 0.025
+    wall_height = 1.10
+    geoms = [
+        f'      <geom name="corridor_floor_patch" type="box" pos="{half_l:.6f} 0.000000 0.000500" '
+        f'size="{half_l:.6f} {half_w:.6f} 0.000500" rgba="0.14 0.16 0.19 0.35" contype="0" conaffinity="0"/>',
+        f'      <geom name="corridor_wall_left" type="box" pos="{half_l:.6f} {wall_y_max + 0.5 * wall_thickness:.6f} {0.5 * wall_height:.6f}" '
+        f'size="{half_l:.6f} {0.5 * wall_thickness:.6f} {0.5 * wall_height:.6f}" rgba="0.72 0.75 0.80 0.28" contype="0" conaffinity="0"/>',
+        f'      <geom name="corridor_wall_right" type="box" pos="{half_l:.6f} {wall_y_min - 0.5 * wall_thickness:.6f} {0.5 * wall_height:.6f}" '
+        f'size="{half_l:.6f} {0.5 * wall_thickness:.6f} {0.5 * wall_height:.6f}" rgba="0.72 0.75 0.80 0.28" contype="0" conaffinity="0"/>',
+    ]
+
+    obstacles = corridor_scene.get("obstacles", [])
+    for i, obs in enumerate(obstacles):
+        if not isinstance(obs, dict):
+            continue
+        shape = str(obs.get("shape", "box")).lower()
+        z_min = float(obs.get("z_min", 0.0))
+        z_max = float(obs.get("z_max", 2.0))
+        z_center = 0.5 * (z_min + z_max)
+        z_half = max(1e-4, 0.5 * abs(z_max - z_min))
+        rgba = "0.86 0.34 0.28 0.45" if shape == "box" else "0.95 0.72 0.24 0.65"
+        if shape == "sphere":
+            try:
+                cx = float(obs["cx"])
+                cy = float(obs["cy"])
+                radius = max(1e-4, float(obs["radius"]))
+            except Exception:
+                continue
+            geoms.append(
+                f'      <geom name="corridor_obstacle_{i}" type="sphere" pos="{cx:.6f} {cy:.6f} {z_center:.6f}" '
+                f'size="{radius:.6f}" rgba="{rgba}" contype="0" conaffinity="0"/>'
+            )
+            continue
+
+        try:
+            x_min = float(obs["x_min"])
+            x_max = float(obs["x_max"])
+            y_min = float(obs["y_min"])
+            y_max = float(obs["y_max"])
+        except Exception:
+            continue
+        x_center = 0.5 * (x_min + x_max)
+        y_center = 0.5 * (y_min + y_max)
+        x_half = max(1e-4, 0.5 * abs(x_max - x_min))
+        y_half = max(1e-4, 0.5 * abs(y_max - y_min))
+        geoms.append(
+            f'      <geom name="corridor_obstacle_{i}" type="box" pos="{x_center:.6f} {y_center:.6f} {z_center:.6f}" '
+            f'size="{x_half:.6f} {y_half:.6f} {z_half:.6f}" rgba="{rgba}" contype="0" conaffinity="0"/>'
+        )
+
+    start_pos = corridor_scene.get("start_pos")
+    goal_pos = corridor_scene.get("goal_pos")
+    if isinstance(start_pos, (list, tuple)) and len(start_pos) >= 2:
+        geoms.append(
+            f'      <geom name="corridor_start_marker" type="cylinder" pos="{float(start_pos[0]):.6f} {float(start_pos[1]):.6f} 0.005000" '
+            f'size="0.100000 0.005000" rgba="0.18 0.78 0.42 0.80" contype="0" conaffinity="0"/>'
+        )
+    if isinstance(goal_pos, (list, tuple)) and len(goal_pos) >= 2:
+        geoms.append(
+            f'      <geom name="corridor_goal_marker" type="cylinder" pos="{float(goal_pos[0]):.6f} {float(goal_pos[1]):.6f} 0.005000" '
+            f'size="0.100000 0.005000" rgba="0.18 0.58 0.96 0.80" contype="0" conaffinity="0"/>'
+        )
+
+    if not geoms:
+        return ""
+    return (
+        '\n    <!-- Corridor scene overlay -->\n    <body name="corridor_scene_overlay" pos="0 0 0">\n'
+        + "\n".join(geoms)
+        + "\n    </body>\n"
+    )
 
 
 
