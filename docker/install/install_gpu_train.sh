@@ -9,6 +9,7 @@ python -m pip install --upgrade pip setuptools wheel
 python -m pip install \
   "numpy>=1.26.0" \
   "scipy>=1.13.0" \
+  "osqp>=0.6.7.post3" \
   "pyyaml>=6.0.1" \
   "tqdm>=4.65.0" \
   "trimesh==4.10.1" \

@@ -117,11 +117,13 @@ class CorridorObstacle:
     z_min: float = 0.0
     z_max: float = 2.0
     name: str = ""
-    shape: str = "box"  # "box" or "sphere"
-    # Sphere-specific fields (used only when shape == "sphere").
+    shape: str = "box"  # "box", "sphere", or "qc"
+    # Sphere / quarter-circle fields (cx, cy, radius shared by both).
     cx: float = 0.0
     cy: float = 0.0
     radius: float = 0.0
+    # Quarter-circle clip direction: +1 = entry (solid at x<=cx), -1 = exit (solid at x>=cx).
+    qc_clip_sign: float = 0.0
 
     @classmethod
     def sphere(cls, cx: float, cy: float, radius: float,
@@ -139,6 +141,30 @@ class CorridorObstacle:
             z_min=z_min, z_max=z_max,
             name=name, shape="sphere",
             cx=cx, cy=cy, radius=radius,
+        )
+
+    @classmethod
+    def quarter_circle(cls, cx: float, cy: float, radius: float,
+                       clip_sign: float,
+                       z_min: float = 0.0, z_max: float = 2.0,
+                       name: str = "") -> "CorridorObstacle":
+        """Quarter-circle obstacle at a wall-block corner.
+
+        SDF = max(circle_sdf, clip_sign * (px - cx)).
+        clip_sign = +1: solid region at x <= cx (entry taper).
+        clip_sign = -1: solid region at x >= cx (exit taper).
+        """
+        x_min = cx - radius if clip_sign > 0 else cx
+        x_max = cx if clip_sign > 0 else cx + radius
+        y_min = cy - radius if cy > 0 else cy
+        y_max = cy if cy > 0 else cy + radius
+        return cls(
+            x_min=x_min, x_max=x_max,
+            y_min=y_min, y_max=y_max,
+            z_min=z_min, z_max=z_max,
+            name=name, shape="qc",
+            cx=cx, cy=cy, radius=radius,
+            qc_clip_sign=float(clip_sign),
         )
 
 
@@ -190,35 +216,34 @@ class CorridorScene:
 
     @classmethod
     def medium(cls) -> "CorridorScene":
-        """4-zone layout: thin wall, low bar, wide squeeze, aerial spheres."""
-        hw = 0.80  # corridor half-width
-        squeeze_inner = 0.28
+        """4-zone layout: thin wall, U-wall, squeeze with qc ends, aerial spheres."""
+        hw = 0.80   # corridor half-width
+        squeeze_inner = 0.35  # half-gap at narrowest → gap = 0.70m
+        # Quarter-circle radius = wall-to-squeeze distance.
+        qr = hw - squeeze_inner  # 0.45m
+        # Zone B U-wall: hangs from top wall, blocks 60% of corridor.
+        # Robot must detour toward bottom wall (U-shape path).
+        u_wall_bottom = -0.16  # extends from top wall (0.80) to -0.16 → blocks 0.96m (60%)
         return cls(
             corridor_width=1.6,
-            corridor_length=10.0,
+            corridor_length=8.0,
             start_pos=(0.5, 0.0),
-            goal_pos=(9.5, 0.0),
+            goal_pos=(7.5, 0.0),
             obstacles=[
-                # Zone A: rotated thin wall (0.3m × 0.1m, centered, both sides passable)
-                CorridorObstacle(1.7, 2.0, -0.05, 0.05, 0.0, 2.0, "lateral_wall"),
-                # Zone B: short bar (crouch to pass, z_min=0.90)
-                # CorridorObstacle(4.0, 4.15, -hw, hw, 0.90, 2.0, "low_bar"),
-                # Zone C: squeeze (gap=0.60m, torso 0.40m fits, arms need tuck)
-                CorridorObstacle(6, 7, squeeze_inner, hw, 0.0, 2.0, "squeeze_L"),
-                CorridorObstacle(6, 7, -hw, -squeeze_inner, 0.0, 2.0, "squeeze_R"),
-                # Entry taper (2 slices per side)
-                CorridorObstacle(5.6, 5.8, 0.55, hw, 0.0, 2.0, "taper_L_entry1"),
-                CorridorObstacle(5.8, 6, squeeze_inner + 0.12, hw, 0.0, 2.0, "taper_L_entry2"),
-                CorridorObstacle(5.6, 5.8, -hw, -0.55, 0.0, 2.0, "taper_R_entry1"),
-                CorridorObstacle(5.8, 6, -hw, -(squeeze_inner + 0.12), 0.0, 2.0, "taper_R_entry2"),
-                # Exit taper (2 slices per side)
-                CorridorObstacle(7, 7.2, squeeze_inner + 0.12, hw, 0.0, 2.0, "taper_L_exit1"),
-                CorridorObstacle(7.2, 7.4, 0.55, hw, 0.0, 2.0, "taper_L_exit2"),
-                CorridorObstacle(7, 7.2, -hw, -(squeeze_inner + 0.12), 0.0, 2.0, "taper_R_exit1"),
-                CorridorObstacle(7.2, 7.4, -hw, -0.55, 0.0, 2.0, "taper_R_exit2"),
+                # Zone A: thin wall (centred, both sides passable)
+                CorridorObstacle(1.9, 2.2, -0.05, 0.05, 0.0, 2.0, "lateral_wall"),
+                # Zone B: U-wall connected to top wall, gap at bottom (0.64m)
+                # CorridorObstacle(2.8, 2.95, u_wall_bottom, hw, 0.0, 2.0, "u_wall"),
+                # Zone C: 1m block + 1/4-circle entry/exit per side.
+                CorridorObstacle(4, 5, squeeze_inner, hw, 0.0, 2.0, "squeeze_L"),
+                CorridorObstacle(4, 5, -hw, -squeeze_inner, 0.0, 2.0, "squeeze_R"),
+                CorridorObstacle.quarter_circle(4.0, hw, qr, +1.0, 0.0, 2.0, "qc_L_entry"),
+                CorridorObstacle.quarter_circle(4.0, -hw, qr, +1.0, 0.0, 2.0, "qc_R_entry"),
+                CorridorObstacle.quarter_circle(5.0, hw, qr, -1.0, 0.0, 2.0, "qc_L_exit"),
+                CorridorObstacle.quarter_circle(5.0, -hw, qr, -1.0, 0.0, 2.0, "qc_R_exit"),
                 # Zone D: 2 small aerial spheres (arm-sized, laterally offset)
-                CorridorObstacle.sphere(8.0, 0.25, 0.06, 0.40, 1.05, "ball_L1"),
-                CorridorObstacle.sphere(8.5, -0.25, 0.06, 0.45, 1.00, "ball_R1"),
+                CorridorObstacle.sphere(6.0, 0.3, 0.05, 0.40, 1.05, "ball_L1"),
+                CorridorObstacle.sphere(7.0, -0.3, 0.05, 0.45, 1.00, "ball_R1"),
             ],
         )
 
@@ -257,13 +282,14 @@ class CorridorScene:
 
     @classmethod
     def zone_b(cls) -> "CorridorScene":
-        """Zone B only: short bar (z_min=0.90, easier to crouch under), 4m corridor."""
+        """Zone B only: U-wall from top wall, blocks 60%, gap at bottom. 4m corridor."""
+        hw = 0.80
+        u_wall_bottom = -0.16  # blocks 0.96m (60%), gap = 0.64m at bottom
         return cls(
             corridor_width=1.6, corridor_length=4.0,
-            start_pos=(0.5, 0.0), goal_pos=(3.5, 0.0),
+            start_pos=(1, 0.1), goal_pos=(3, 0.25),
             obstacles=[
-                # Shortened bar (0.15m in x). z_min=0.90: crouch to h≤0.60 clears it.
-                CorridorObstacle(1.9, 2.05, -0.80, 0.80, 0.90, 2.0, "low_bar"),
+                CorridorObstacle(1.8, 1.95, u_wall_bottom, hw, 0.0, 2.0, "u_wall"),
             ],
         )
 
@@ -462,10 +488,20 @@ def _sphere_sdf_2d(px: float, py: float, cx: float, cy: float, r: float) -> floa
     return float(np.sqrt((px - cx) ** 2 + (py - cy) ** 2 + 1e-12) - r)
 
 
+def _qc_sdf_2d(px: float, py: float, cx: float, cy: float, r: float, clip_sign: float) -> float:
+    """SDF for a quarter-circle obstacle. max(circle, x-clip, y-clip)."""
+    circle_d = float(np.sqrt((px - cx) ** 2 + (py - cy) ** 2 + 1e-12) - r)
+    x_hp = float(clip_sign * (px - cx))
+    y_hp = float(py - cy) if cy > 0 else float(cy - py)
+    return max(circle_d, x_hp, y_hp)
+
+
 def _obs_sdf_2d_np(px: float, py: float, obs: "CorridorObstacle") -> float:
-    """Unified SDF for a single obstacle (box or sphere)."""
+    """Unified SDF for a single obstacle (box, sphere, or quarter-circle)."""
     if obs.shape == "sphere":
         return _sphere_sdf_2d(px, py, obs.cx, obs.cy, obs.radius)
+    if obs.shape == "qc":
+        return _qc_sdf_2d(px, py, obs.cx, obs.cy, obs.radius, obs.qc_clip_sign)
     return _box_sdf_2d(px, py, obs.x_min, obs.x_max, obs.y_min, obs.y_max)
 
 
@@ -541,6 +577,9 @@ class HumanoidCorridor2DEnv:
         self._obs_cx = np.array([o.cx for o in obs], dtype=np.float32) if n else np.zeros(0, dtype=np.float32)
         self._obs_cy = np.array([o.cy for o in obs], dtype=np.float32) if n else np.zeros(0, dtype=np.float32)
         self._obs_radius = np.array([o.radius for o in obs], dtype=np.float32) if n else np.zeros(0, dtype=np.float32)
+        # Quarter-circle flag + clip direction.
+        self._obs_is_qc = np.array([1.0 if o.shape == "qc" else 0.0 for o in obs], dtype=np.float32) if n else np.zeros(0, dtype=np.float32)
+        self._obs_qc_clip_sign = np.array([o.qc_clip_sign for o in obs], dtype=np.float32) if n else np.zeros(0, dtype=np.float32)
 
         # Default initial state
         self._default_state = np.zeros(STATE_DIM, dtype=np.float32)
@@ -592,7 +631,10 @@ class HumanoidCorridor2DEnv:
         ]
 
     def _obs_point_sdf_np(self, px: float, py: float, obs_idx: int) -> float:
-        """SDF from a point to obstacle *obs_idx* (box or sphere)."""
+        """SDF from a point to obstacle *obs_idx* (box, sphere, or qc)."""
+        if self._obs_is_qc[obs_idx] > 0.5:
+            return _qc_sdf_2d(px, py, self._obs_cx[obs_idx], self._obs_cy[obs_idx],
+                              self._obs_radius[obs_idx], self._obs_qc_clip_sign[obs_idx])
         if self._obs_is_sphere[obs_idx] > 0.5:
             return _sphere_sdf_2d(px, py, self._obs_cx[obs_idx], self._obs_cy[obs_idx], self._obs_radius[obs_idx])
         return _box_sdf_2d(px, py, self._obs_xmin[obs_idx], self._obs_xmax[obs_idx],
@@ -922,8 +964,9 @@ class HumanoidCorridor2DEnv:
 
     def _jax_obs_point_sdf(self, px: Any, py: Any, is_sphere: Any,
                            s_cx: Any, s_cy: Any, s_r: Any,
-                           b_cx: Any, b_cy: Any, b_hx: Any, b_hy: Any) -> Any:
-        """Per-obstacle SDF from a point, dispatching box vs sphere (vectorised)."""
+                           b_cx: Any, b_cy: Any, b_hx: Any, b_hy: Any,
+                           is_qc: Any = None, qc_clip: Any = None) -> Any:
+        """Per-obstacle SDF from a point, dispatching box/sphere/qc (vectorised)."""
         # Box SDF
         dx = jnp.abs(px - b_cx) - b_hx
         dy = jnp.abs(py - b_cy) - b_hy
@@ -932,7 +975,15 @@ class HumanoidCorridor2DEnv:
         box_sdf = out_box + in_box
         # Sphere SDF
         sph_sdf = jnp.sqrt((px - s_cx) ** 2 + (py - s_cy) ** 2 + 1e-12) - s_r
-        return jnp.where(is_sphere > 0.5, sph_sdf, box_sdf)
+        base = jnp.where(is_sphere > 0.5, sph_sdf, box_sdf)
+        # Quarter-circle SDF: max(circle, x-clip, y-clip)
+        if is_qc is not None:
+            qc_circle = jnp.sqrt((px - s_cx) ** 2 + (py - s_cy) ** 2 + 1e-12) - s_r
+            qc_x_hp = qc_clip * (px - s_cx)
+            qc_y_hp = jnp.where(s_cy > 0, py - s_cy, s_cy - py)
+            qc_sdf = jnp.maximum(qc_circle, jnp.maximum(qc_x_hp, qc_y_hp))
+            base = jnp.where(is_qc > 0.5, qc_sdf, base)
+        return base
 
     def _jax_body_min_sdf_vectorised(self, x: Any) -> Any:
         """Vectorised SDF over all obstacles using jnp operations."""
@@ -949,6 +1000,8 @@ class HumanoidCorridor2DEnv:
         sph_cx = jnp.asarray(self._obs_cx, dtype=jnp.float32)
         sph_cy = jnp.asarray(self._obs_cy, dtype=jnp.float32)
         sph_r = jnp.asarray(self._obs_radius, dtype=jnp.float32)
+        is_qc = jnp.asarray(self._obs_is_qc, dtype=jnp.float32)
+        qc_clip = jnp.asarray(self._obs_qc_clip_sign, dtype=jnp.float32)
 
         px, py = x[_S_X], x[_S_Y]
         h = x[_S_H]
@@ -972,7 +1025,8 @@ class HumanoidCorridor2DEnv:
 
         # Unified point SDF for torso centre (N,)
         point_sdf_torso = self._jax_obs_point_sdf(
-            px, py, is_sphere, sph_cx, sph_cy, sph_r, obs_cx, obs_cy, obs_hx, obs_hy)
+            px, py, is_sphere, sph_cx, sph_cy, sph_r, obs_cx, obs_cy, obs_hx, obs_hy,
+            is_qc=is_qc, qc_clip=qc_clip)
 
         # Torso ellipse effective radius per obstacle (N,)
         delta_phi = jnp.arctan2(obs_cy - py, obs_cx - px) - heading
@@ -985,7 +1039,8 @@ class HumanoidCorridor2DEnv:
         for side in ("L", "R"):
             ap = self._jax_arm_pos(x, side)
             point_sdf_arm = self._jax_obs_point_sdf(
-                ap[0], ap[1], is_sphere, sph_cx, sph_cy, sph_r, obs_cx, obs_cy, obs_hx, obs_hy)
+                ap[0], ap[1], is_sphere, sph_cx, sph_cy, sph_r, obs_cx, obs_cy, obs_hx, obs_hy,
+                is_qc=is_qc, qc_clip=qc_clip)
             arm_sdf = jnp.where(z_active, (point_sdf_arm - ARM_RADIUS) / z_safe, 1e6)
             arm_sdfs.append(arm_sdf)
 
@@ -1239,8 +1294,11 @@ class HumanoidCorridor2DEnv:
         sph_cx = jnp.asarray(self._obs_cx, dtype=jnp.float32)
         sph_cy = jnp.asarray(self._obs_cy, dtype=jnp.float32)
         sph_r = jnp.asarray(self._obs_radius, dtype=jnp.float32)
+        is_qc = jnp.asarray(self._obs_is_qc, dtype=jnp.float32)
+        qc_clip = jnp.asarray(self._obs_qc_clip_sign, dtype=jnp.float32)
         obs_sdfs = self._jax_obs_point_sdf(
-            p[0], p[1], is_sphere, sph_cx, sph_cy, sph_r, obs_cx, obs_cy, obs_hx, obs_hy)
+            p[0], p[1], is_sphere, sph_cx, sph_cy, sph_r, obs_cx, obs_cy, obs_hx, obs_hy,
+            is_qc=is_qc, qc_clip=qc_clip)
         min_obs_sdf = jnp.min(obs_sdfs)
         w_lo = jnp.asarray(self.scene.wall_y_min, dtype=jnp.float32)
         w_hi = jnp.asarray(self.scene.wall_y_max, dtype=jnp.float32)
@@ -1270,6 +1328,8 @@ class HumanoidCorridor2DEnv:
         sph_cx = jnp.asarray(self._obs_cx, dtype=jnp.float32)
         sph_cy = jnp.asarray(self._obs_cy, dtype=jnp.float32)
         sph_r = jnp.asarray(self._obs_radius, dtype=jnp.float32)
+        is_qc = jnp.asarray(self._obs_is_qc, dtype=jnp.float32)
+        qc_clip = jnp.asarray(self._obs_qc_clip_sign, dtype=jnp.float32)
         obs_cx = 0.5 * (obs_xmin + obs_xmax)
         obs_cy = 0.5 * (obs_ymin + obs_ymax)
         obs_hx = 0.5 * (obs_xmax - obs_xmin)
@@ -1285,7 +1345,8 @@ class HumanoidCorridor2DEnv:
         z_safe = jnp.maximum(z_ov, 1e-6)
 
         point_sdf = self._jax_obs_point_sdf(
-            px, py, is_sphere, sph_cx, sph_cy, sph_r, obs_cx, obs_cy, obs_hx, obs_hy)
+            px, py, is_sphere, sph_cx, sph_cy, sph_r, obs_cx, obs_cy, obs_hx, obs_hy,
+            is_qc=is_qc, qc_clip=qc_clip)
         gated_sdf = jnp.where(z_active, point_sdf / z_safe, 1e6)
         return jnp.minimum(d_min, jnp.min(gated_sdf))
 
@@ -1301,6 +1362,8 @@ class HumanoidCorridor2DEnv:
         sph_cx = jnp.asarray(self._obs_cx, dtype=jnp.float32)
         sph_cy = jnp.asarray(self._obs_cy, dtype=jnp.float32)
         sph_r = jnp.asarray(self._obs_radius, dtype=jnp.float32)
+        is_qc = jnp.asarray(self._obs_is_qc, dtype=jnp.float32)
+        qc_clip = jnp.asarray(self._obs_qc_clip_sign, dtype=jnp.float32)
 
         # z-overlap
         body_lo = h - BODY_HALF_H
@@ -1324,6 +1387,13 @@ class HumanoidCorridor2DEnv:
         # Sphere SDF
         sph_d = jnp.sqrt((px - sph_cx[obs_idx])**2 + (py - sph_cy[obs_idx])**2 + 1e-12) - sph_r[obs_idx]
         point_sdf = jnp.where(is_s > 0.5, sph_d, box_d)
+        # Quarter-circle SDF
+        is_q = is_qc[obs_idx]
+        qc_circle = jnp.sqrt((px - sph_cx[obs_idx])**2 + (py - sph_cy[obs_idx])**2 + 1e-12) - sph_r[obs_idx]
+        qc_x_hp = qc_clip[obs_idx] * (px - sph_cx[obs_idx])
+        qc_y_hp = jnp.where(sph_cy[obs_idx] > 0, py - sph_cy[obs_idx], sph_cy[obs_idx] - py)
+        qc_d = jnp.maximum(qc_circle, jnp.maximum(qc_x_hp, qc_y_hp))
+        point_sdf = jnp.where(is_q > 0.5, qc_d, point_sdf)
 
         return jnp.where(z_active, point_sdf / z_safe, 1e6)
 
@@ -1475,9 +1545,36 @@ def make_corridor_energy(env: HumanoidCorridor2DEnv) -> LegacyEnergyFunctional:
         obs_ymax_j = jnp.asarray(env._obs_ymax, dtype=jnp.float32)
         obs_zmin_j = jnp.asarray(env._obs_zmin, dtype=jnp.float32)
         obs_zmax_j = jnp.asarray(env._obs_zmax, dtype=jnp.float32)
+        is_sphere_j = jnp.asarray(env._obs_is_sphere, dtype=jnp.float32)
+        is_qc_j = jnp.asarray(env._obs_is_qc, dtype=jnp.float32)
+        sph_cx_j = jnp.asarray(env._obs_cx, dtype=jnp.float32)
+        sph_cy_j = jnp.asarray(env._obs_cy, dtype=jnp.float32)
+        sph_r_j = jnp.asarray(env._obs_radius, dtype=jnp.float32)
+        qc_clip_j = jnp.asarray(env._obs_qc_clip_sign, dtype=jnp.float32)
         corridor_length_half_w = env.scene.corridor_width / 2.0
         w_lo_j = jnp.asarray(env.scene.wall_y_min, dtype=jnp.float32)
         w_hi_j = jnp.asarray(env.scene.wall_y_max, dtype=jnp.float32)
+
+        def _point_sdf_energy(px, py):
+            """Dispatched point SDF for box/sphere/qc (energy function)."""
+            obs_cx = 0.5 * (obs_xmin_j + obs_xmax_j)
+            obs_cy = 0.5 * (obs_ymin_j + obs_ymax_j)
+            obs_hx = 0.5 * (obs_xmax_j - obs_xmin_j)
+            obs_hy = 0.5 * (obs_ymax_j - obs_ymin_j)
+            # Box
+            dx = jnp.abs(px - obs_cx) - obs_hx
+            dy = jnp.abs(py - obs_cy) - obs_hy
+            box_d = jnp.sqrt(jnp.maximum(dx, 0.0) ** 2 + jnp.maximum(dy, 0.0) ** 2 + 1e-12) + jnp.minimum(jnp.maximum(dx, dy), 0.0)
+            # Sphere
+            sph_d = jnp.sqrt((px - sph_cx_j) ** 2 + (py - sph_cy_j) ** 2 + 1e-12) - sph_r_j
+            d = jnp.where(is_sphere_j > 0.5, sph_d, box_d)
+            # Quarter-circle
+            qc_circle = jnp.sqrt((px - sph_cx_j) ** 2 + (py - sph_cy_j) ** 2 + 1e-12) - sph_r_j
+            qc_x_hp = qc_clip_j * (px - sph_cx_j)
+            qc_y_hp = jnp.where(sph_cy_j > 0, py - sph_cy_j, sph_cy_j - py)
+            qc_d = jnp.maximum(qc_circle, jnp.maximum(qc_x_hp, qc_y_hp))
+            d = jnp.where(is_qc_j > 0.5, qc_d, d)
+            return d
 
         def _obs_sdf_j(px, py, h, heading):
             """Min SDF from torso + arms to all obstacles + walls (JAX)."""
@@ -1490,21 +1587,14 @@ def make_corridor_energy(env: HumanoidCorridor2DEnv) -> LegacyEnergyFunctional:
             z_act = z_ov > 1e-4
             z_s = jnp.maximum(z_ov, 1e-6)
 
+            # Torso: point SDF via dispatched function
+            point_t = _point_sdf_energy(px, py)
             obs_cx = 0.5 * (obs_xmin_j + obs_xmax_j)
             obs_cy = 0.5 * (obs_ymin_j + obs_ymax_j)
-            obs_hx = 0.5 * (obs_xmax_j - obs_xmin_j)
-            obs_hy = 0.5 * (obs_ymax_j - obs_ymin_j)
-
-            # Torso
-            dx_t = jnp.abs(px - obs_cx) - obs_hx
-            dy_t = jnp.abs(py - obs_cy) - obs_hy
-            out_t = jnp.sqrt(jnp.maximum(dx_t, 0.0) ** 2 + jnp.maximum(dy_t, 0.0) ** 2 + 1e-12)
-            in_t = jnp.minimum(jnp.maximum(dx_t, dy_t), 0.0)
-            box_t = out_t + in_t
             dp = jnp.arctan2(obs_cy - py, obs_cx - px) - heading
             a_e = TORSO_A + TORSO_CROUCH_EXTRA * jnp.maximum(0.0, H_NOMINAL - h)
             r_e = 1.0 / jnp.sqrt((jnp.cos(dp) / a_e) ** 2 + (jnp.sin(dp) / TORSO_B) ** 2 + 1e-12)
-            tsdf = jnp.where(z_act, (box_t - r_e) / z_s, 1e6)
+            tsdf = jnp.where(z_act, (point_t - r_e) / z_s, 1e6)
 
             d = jnp.min(tsdf)
             # Wall SDF for torso
@@ -1537,7 +1627,7 @@ def make_corridor_energy(env: HumanoidCorridor2DEnv) -> LegacyEnergyFunctional:
             # Posture regularisation (very mild — let geometry/CFS drive posture changes).
             arm_err = 0.3 * (st[_S_AL] ** 2 + st[_S_AR] ** 2)
             torso_err = 0.3 * st[_S_PSI_T] ** 2
-            height_err = 2.0 * (st[_S_H] - H_NOMINAL) ** 2
+            height_err = 6.0 * (st[_S_H] - H_NOMINAL) ** 2
 
             # Velocity regularisation.
             vel_err = 0.05 * (st[_S_VX] ** 2 + st[_S_VY] ** 2 + st[_S_OM] ** 2)

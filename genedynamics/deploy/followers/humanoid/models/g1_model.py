@@ -52,6 +52,7 @@ RIGHT_ARM_JOINTS: Tuple[str, ...] = (
 )
 ACTUATED_JOINTS: Tuple[str, ...] = LEFT_LEG_JOINTS + RIGHT_LEG_JOINTS + WAIST_JOINTS + LEFT_ARM_JOINTS + RIGHT_ARM_JOINTS
 FOOT_SITE_NAMES: Tuple[str, str] = ("left_foot", "right_foot")
+FOOT_BODY_NAMES: Tuple[str, str] = ("left_ankle_roll_link", "right_ankle_roll_link")
 IMU_SITE_NAMES: Tuple[str, str] = ("imu_in_pelvis", "imu_in_torso")
 BODY_NAMES: Tuple[str, str] = ("pelvis", "torso_link")
 
@@ -103,12 +104,18 @@ class G1ModelSpec:
     left_arm_joints: Tuple[str, ...] = LEFT_ARM_JOINTS
     right_arm_joints: Tuple[str, ...] = RIGHT_ARM_JOINTS
     foot_site_names: Tuple[str, str] = FOOT_SITE_NAMES
+    foot_body_names: Tuple[str, str] = FOOT_BODY_NAMES
     imu_site_names: Tuple[str, str] = IMU_SITE_NAMES
     joint_qpos_index: Dict[str, int] = field(default_factory=dict)
     joint_dof_index: Dict[str, int] = field(default_factory=dict)
     joint_range: Dict[str, np.ndarray] = field(default_factory=dict)
     site_id: Dict[str, int] = field(default_factory=dict)
     body_id: Dict[str, int] = field(default_factory=dict)
+    actuator_id: Dict[str, int] = field(default_factory=dict)
+    actuator_kp: Dict[str, float] = field(default_factory=dict)
+    actuator_ctrlrange: Dict[str, np.ndarray] = field(default_factory=dict)
+    actuator_forcerange: Dict[str, np.ndarray] = field(default_factory=dict)
+    torque_limit: Dict[str, float] = field(default_factory=dict)
     stand_ctrl: np.ndarray = field(default_factory=lambda: np.zeros(len(ACTUATED_JOINTS), dtype=np.float64))
 
     @classmethod
@@ -133,10 +140,27 @@ class G1ModelSpec:
                 site_id[name] = int(sid)
 
         body_id: Dict[str, int] = {}
-        for name in BODY_NAMES:
+        for name in BODY_NAMES + FOOT_BODY_NAMES:
             bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
             if bid >= 0:
                 body_id[name] = int(bid)
+
+        actuator_id: Dict[str, int] = {}
+        actuator_kp: Dict[str, float] = {}
+        actuator_ctrlrange: Dict[str, np.ndarray] = {}
+        actuator_forcerange: Dict[str, np.ndarray] = {}
+        torque_limit: Dict[str, float] = {}
+        for name in ACTUATED_JOINTS:
+            aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
+            if aid >= 0:
+                actuator_id[name] = int(aid)
+                gain = np.asarray(model.actuator_gainprm[aid], dtype=np.float64).reshape(-1)
+                actuator_kp[name] = float(gain[0]) if gain.size > 0 else 0.0
+                actuator_ctrlrange[name] = np.asarray(model.actuator_ctrlrange[aid], dtype=np.float64).copy()
+                actuator_forcerange[name] = np.asarray(model.actuator_forcerange[aid], dtype=np.float64).copy()
+                torque_limit[name] = float(np.max(np.abs(actuator_forcerange[name])))
+            else:
+                torque_limit[name] = float("inf")
 
         stand_ctrl = np.zeros(len(ACTUATED_JOINTS), dtype=np.float64)
         try:
@@ -153,6 +177,11 @@ class G1ModelSpec:
             joint_range=joint_range,
             site_id=site_id,
             body_id=body_id,
+            actuator_id=actuator_id,
+            actuator_kp=actuator_kp,
+            actuator_ctrlrange=actuator_ctrlrange,
+            actuator_forcerange=actuator_forcerange,
+            torque_limit=torque_limit,
             stand_ctrl=stand_ctrl,
         )
 
@@ -211,3 +240,9 @@ class G1ModelSpec:
             lo, hi = np.asarray(self.joint_range[name], dtype=np.float64)
             vec[i] = float(np.clip(vec[i], lo + margin, hi - margin))
         return vec
+
+    def actuator_kp_vector(self) -> np.ndarray:
+        return np.asarray([self.actuator_kp.get(name, 0.0) for name in self.actuated_joints], dtype=np.float64)
+
+    def torque_limit_vector(self) -> np.ndarray:
+        return np.asarray([self.torque_limit.get(name, np.inf) for name in self.actuated_joints], dtype=np.float64)

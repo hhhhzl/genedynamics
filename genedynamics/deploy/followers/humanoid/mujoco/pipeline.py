@@ -28,6 +28,10 @@ from genedynamics.deploy.followers.humanoid.mujoco.wbc_solver import (
     G1WBCTaskStackConfig,
     G1WholeBodySolverSkeleton,
 )
+from genedynamics.deploy.followers.humanoid.task_spec import (
+    ContactObservations,
+    FootContactObservation,
+)
 from genedynamics.deploy.followers.humanoid.task_builder import (
     HumanoidTaskBuilder,
     HumanoidTaskBuilderConfig,
@@ -57,7 +61,7 @@ class HumanoidMujocoPipeline:
 
     Current execution order:
     plan adapter -> traversal intent -> contact scheduler -> footstep planner
-    -> humanoid task builder -> contact-aware WBC QP -> MuJoCo
+    -> humanoid task builder -> inverse-dynamics WBC -> MuJoCo
     """
 
     def __init__(
@@ -155,6 +159,9 @@ class HumanoidMujocoPipeline:
         qpos_hist = []
         qvel_hist = []
         ctrl_hist = []
+        tau_hist = []
+        lambda_hist = []
+        ddq_hist = []
         state_hist = []
         render_state_hist = []
         plan_states = []
@@ -165,21 +172,36 @@ class HumanoidMujocoPipeline:
 
         for i, frame in enumerate(frames):
             intent = TraversalIntent.from_plan_frame(frame)
-            phase = self.contact_scheduler.advance(frame, step_dt)
-            footsteps = self.footstep_planner.update(intent, phase, dt=step_dt)
+            contact_obs = self.current_contact_observations()
+            phase = self.contact_scheduler.advance(intent, step_dt, contact_obs)
+            footsteps = self.footstep_planner.update(intent, phase, contact_obs, dt=step_dt)
             upper_body = self.upper_body_mapper.map(frame)
             tasks = self.task_builder.build(frame, intent, phase, footsteps, upper_body)
             targets = self.solver.solve(tasks, qpos=self.data.qpos, qvel=self.data.qvel, dt=step_dt)
 
             render_state_hist.append(self._compose_render_state(targets.q_ref, tasks))
+            self.data.qfrc_applied[:] = 0.0
             self.data.ctrl[:] = 0.0
             self.data.ctrl[: targets.q_ref.size] = targets.q_ref
+            if targets.tau_ff is not None:
+                self.data.qfrc_applied[self.model_spec.actuated_dof_indices] = np.asarray(targets.tau_ff, dtype=np.float64)
             for _ in range(sim_steps):
                 self.mujoco.mj_step(self.model, self.data)
 
             qpos_hist.append(self.data.qpos.copy())
             qvel_hist.append(self.data.qvel.copy())
             ctrl_hist.append(targets.q_ref.copy())
+            tau_hist.append(
+                np.zeros((self.model_spec.num_actuated,), dtype=np.float64)
+                if targets.tau_ff is None
+                else np.asarray(targets.tau_ff, dtype=np.float64).copy()
+            )
+            ddq_hist.append(
+                np.zeros((self.model.nv,), dtype=np.float64)
+                if targets.ddq_ref is None
+                else np.asarray(targets.ddq_ref, dtype=np.float64).copy()
+            )
+            lambda_hist.append(self._pad_lambda(targets))
             state_hist.append(np.concatenate([self.data.qpos.copy(), self.data.qvel.copy()], axis=0))
             plan_states.append(frame.raw_state.copy())
             debug.append(
@@ -212,6 +234,9 @@ class HumanoidMujocoPipeline:
             "qpos": np.asarray(qpos_hist, dtype=np.float64),
             "qvel": np.asarray(qvel_hist, dtype=np.float64),
             "ctrl": np.asarray(ctrl_hist, dtype=np.float64),
+            "tau_ff": np.asarray(tau_hist, dtype=np.float64),
+            "lambda": np.asarray(lambda_hist, dtype=np.float64),
+            "ddq": np.asarray(ddq_hist, dtype=np.float64),
             "render_states": np.asarray(render_state_hist, dtype=np.float64),
             "plan_states": np.asarray(plan_states, dtype=np.float64),
             "debug": debug,
@@ -222,7 +247,7 @@ class HumanoidMujocoPipeline:
                 "num_frames": len(frames),
                 "best_idx": int(traj.best_idx),
                 "schema_version": self.cfg.schema.version,
-                "render_state_mode": "wbc_root_preview",
+                "render_state_mode": "wbc_inverse_dynamics_root_preview",
                 "solver": getattr(self.solver, "solver_name", "unknown_solver"),
             },
         }
@@ -236,6 +261,11 @@ class HumanoidMujocoPipeline:
         right = np.asarray(self.data.site_xpos[right_sid], dtype=np.float64).copy()
         return left, right
 
+    def current_contact_observations(self) -> ContactObservations:
+        left = self._foot_contact_observation("left")
+        right = self._foot_contact_observation("right")
+        return ContactObservations(left=left, right=right)
+
     @staticmethod
     def _empty_rollout() -> Dict[str, Any]:
         return {
@@ -243,6 +273,9 @@ class HumanoidMujocoPipeline:
             "qpos": np.zeros((0, 0), dtype=np.float64),
             "qvel": np.zeros((0, 0), dtype=np.float64),
             "ctrl": np.zeros((0, 0), dtype=np.float64),
+            "tau_ff": np.zeros((0, 0), dtype=np.float64),
+            "lambda": np.zeros((0, 0), dtype=np.float64),
+            "ddq": np.zeros((0, 0), dtype=np.float64),
             "render_states": np.zeros((0, 0), dtype=np.float64),
             "plan_states": np.zeros((0, 0), dtype=np.float64),
             "debug": [],
@@ -258,6 +291,59 @@ class HumanoidMujocoPipeline:
         self.data.qpos[3:7] = self._quat_wxyz_from_rpy(0.0, 0.0, float(frame.psi))
         if self.model_spec.stand_ctrl.size == self.model_spec.num_actuated:
             self.data.qpos[self.model_spec.actuated_qpos_indices] = self.model_spec.stand_ctrl.copy()
+
+    def _foot_contact_observation(self, side: str) -> FootContactObservation:
+        site_name = f"{side}_foot"
+        body_name = f"{side}_ankle_roll_link"
+        sid = self.model_spec.site_id.get(site_name)
+        bid = self.model_spec.body_id.get(body_name)
+        if sid is None:
+            raise KeyError(f"Missing foot site: {site_name}")
+        jacp = np.zeros((3, self.model.nv), dtype=np.float64)
+        jacr = np.zeros((3, self.model.nv), dtype=np.float64)
+        self.mujoco.mj_jacSite(self.model, self.data, jacp, jacr, sid)
+        vel = jacp @ self.data.qvel
+        ang_vel = jacr @ self.data.qvel
+        in_contact = False
+        contact_count = 0
+        support_load = 0.0
+        if bid is not None:
+            for ci in range(int(self.data.ncon)):
+                contact = self.data.contact[ci]
+                body1 = int(self.model.geom_bodyid[int(contact.geom1)])
+                body2 = int(self.model.geom_bodyid[int(contact.geom2)])
+                if bid not in (body1, body2):
+                    continue
+                in_contact = True
+                contact_count += 1
+                wrench = np.zeros((6,), dtype=np.float64)
+                self.mujoco.mj_contactForce(self.model, self.data, ci, wrench)
+                support_load += max(float(wrench[0]), 0.0)
+        return FootContactObservation(
+            position_world=np.asarray(self.data.site_xpos[sid], dtype=np.float64).copy(),
+            velocity_world=np.asarray(vel, dtype=np.float64).copy(),
+            rotation_world=np.asarray(self.data.site_xmat[sid], dtype=np.float64).reshape(3, 3).copy(),
+            angular_velocity_world=np.asarray(ang_vel, dtype=np.float64).copy(),
+            in_contact=in_contact,
+            contact_count=contact_count,
+            support_load=support_load,
+        )
+
+    @staticmethod
+    def _pad_lambda(targets: Any) -> np.ndarray:
+        lam = np.zeros((6,), dtype=np.float64)
+        if getattr(targets, "lambda_ref", None) is None:
+            return lam
+        raw = np.asarray(targets.lambda_ref, dtype=np.float64).reshape(-1)
+        meta = getattr(targets, "metadata", {}) or {}
+        contact_feet = list(meta.get("contact_feet", []))
+        for i, name in enumerate(contact_feet):
+            src = raw[3 * i: 3 * (i + 1)]
+            if src.size != 3:
+                continue
+            dst = slice(0, 3) if name == "left_foot" else slice(3, 6)
+            lam[dst] = src
+        return lam
 
     def _infer_root_height_offset(self) -> float:
         key_id = self.mujoco.mj_name2id(self.model, self.mujoco.mjtObj.mjOBJ_KEY, "stand")

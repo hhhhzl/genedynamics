@@ -900,29 +900,7 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                 fig_single.savefig(out_path, dpi=dpi, bbox_inches='tight', facecolor=fig_single.get_facecolor())
                 plt.close(fig_single)
 
-            # Save diffusion data as JSON for analysis.
-            try:
-                import json as _json
-                diffusion_json = {
-                    "Ndiffuse": int(Ndiffuse),
-                    "initial_state": initial_state.tolist() if initial_state is not None else None,
-                }
-                # Save mean trajectory (Ybar) at each diffusion step.
-                diffusion_json["mean_actions"] = diffusion_actions.tolist()
-                # Save sample actions at saved fractions.
-                if diffusion_samples is not None and len(diffusion_samples) > 0:
-                    ds_arr = np.asarray(diffusion_samples, dtype=np.float32)
-                    saved_samples = {}
-                    for frac in diffusion_fractions:
-                        si = int(frac * (Ndiffuse - 1))
-                        si = max(0, min(si, Ndiffuse - 1))
-                        if ds_arr.ndim == 4 and ds_arr.shape[0] > si:
-                            saved_samples[str(round(frac * 100))] = ds_arr[si].tolist()
-                    diffusion_json["sample_actions"] = saved_samples
-                with open(output_dir / "diffusion_data.json", "w") as _f:
-                    _json.dump(diffusion_json, _f)
-            except Exception:
-                pass
+            # diffusion_data.json saving disabled.
 
             # 2. Generate GIF: 100% -> 1% (high noise to low noise)
             # Order: step_idx Ndiffuse-1 (most noisy) -> 0 (least noisy)

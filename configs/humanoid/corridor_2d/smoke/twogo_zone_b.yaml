@@ -21,7 +21,7 @@ method: 2go
 method_params:
   show_tqdm: true
   action_extra_sigma: 0.15
-  max_constraints_per_point: 8
+  max_constraints_per_point: 32
   constraint_margin: 0.01
   cfs_action_convexifier: cfs_action
   aug_lambda: 0.0
@@ -48,16 +48,16 @@ method_params:
   twogo_enable_sample_tail: true
   twogo_enable_agp_batch: false
   twogo_use_jax_scan_core: true
-  twogo_retract_qp_boost: false
+  twogo_retract_qp_boost: true
   twogo_enable_geometry: true
   twogo_stability_eps: 1e-6
   twogo_gamma_init: 1.0
-  twogo_retract_qp_every: 3
+  twogo_retract_qp_every: 1
   twogo_probe_enable: true
   twogo_probe_tail_mix: 0.5
   twogo_probe_tail_pool_ratio: 0.25
   twogo_probe_geom_alpha: 0.3
-  twogo_probe_b: 32
+  twogo_probe_b: 512
   twogo_overlay:
     hardness:
       rho_ref: 500.0
@@ -144,20 +144,20 @@ scheduler_config:
       eta_eps_plus: 0.01
       eta_eps_minus: 0.003
       eta_c_eps: 0.01
-      p_min: 0.0
+      p_min: 0.5
       p_max: 1.0
       eps_min: 1e-5
       eps_max: 1e-2
-      I_min: 1
-      I_max: 10
-      topK_min: 1
-      topK_max: 10
+      I_min: 10
+      I_max: 25
+      topK_min: 10
+      topK_max: 32
       use_stochastic_gate: true
   diffusion_schedulers:
     - type: fixed
       M_k: 1024
       T_k: 0.3
-      Ndiffuse: 100
+      Ndiffuse: 150
       beta0: 1e-5
       betaT: 1e-2
   constraint_merge_strategy: merge

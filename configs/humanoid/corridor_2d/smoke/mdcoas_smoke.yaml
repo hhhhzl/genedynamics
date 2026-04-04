@@ -7,7 +7,7 @@ output_dir: results/humanoid/corridor_2d/smoke/mdcoas
 env_name: humanoid_corridor_2d
 env_params:
   dt: 0.25
-  horizon: 80
+  horizon: 60
   scene_preset: medium
   vx_max: 0.8
   vx_min: -0.3
@@ -22,9 +22,9 @@ env_params:
 method: cfsmbd_full
 method_params:
   show_tqdm: true
-  action_extra_sigma: 0.05
-  max_constraints_per_point: 16
-  constraint_margin: 0.01
+  action_extra_sigma: 0.03
+  max_constraints_per_point: 32
+  constraint_margin: 0.03
   cfs_action_convexifier: cfs_action
   aug_lambda: 0.0
   aug_rho: 1.0
@@ -35,7 +35,7 @@ obstacle_levels: [1]
 obstacle_config:
   generator: corridor_2d
   robot_radius: 0.20
-  collision_margin: 0.03
+  collision_margin: 0.05
   success_margin: 0.20
 
 seeds: [0]
@@ -73,7 +73,7 @@ scheduler_config:
       rho_gamma_down: 3.0
       rho_good_steps: 2
       gamma: 2.0
-      rho_max: 20.0
+      rho_max: 100.0
       kappa: 0.9
       r_tol: 5e-4
       v_signal_mode: mean
@@ -108,7 +108,7 @@ scheduler_config:
       use_stochastic_gate: true
   diffusion_schedulers:
     - type: fixed
-      M_k: 1024
+      M_k: 64
       T_k: 0.3
       Ndiffuse: 100
       beta0: 1e-5

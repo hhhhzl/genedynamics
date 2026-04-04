@@ -1,17 +1,17 @@
-# ── 2GO Zone A+B+C combined: thin wall + high bar + wide squeeze ──
+# ── 2GO Zone A+C+D combined: thin wall + circular squeeze + aerial spheres ──
 name: humanoid_corridor_2d_twogo_medium
 output_dir: results/humanoid/corridor_2d/smoke/twogo_medium
 
 env_name: humanoid_corridor_2d
 env_params:
   dt: 0.25
-  horizon: 80
+  horizon: 60
   scene_preset: medium
   vx_max: 0.8
   vx_min: -0.3
   vy_max: 0.3
   omega_max: 0.5
-  h_dot_max: 0.3
+  h_dot_max: 0.02
   psi_torso_dot_max: 0.4
   arm_tuck_rate_max: 1.0
   arm_posture_rate_max: 1.0
@@ -21,7 +21,7 @@ method: 2go
 method_params:
   show_tqdm: true
   action_extra_sigma: 0.15
-  max_constraints_per_point: 8
+  max_constraints_per_point: 32
   constraint_margin: 0.01
   cfs_action_convexifier: cfs_action
   aug_lambda: 0.0
@@ -48,19 +48,19 @@ method_params:
   twogo_enable_sample_tail: true
   twogo_enable_agp_batch: false
   twogo_use_jax_scan_core: true
-  twogo_retract_qp_boost: false
+  twogo_retract_qp_boost: true
   twogo_enable_geometry: true
   twogo_stability_eps: 1e-6
   twogo_gamma_init: 1.0
-  twogo_retract_qp_every: 3
-  twogo_probe_enable: false
+  twogo_retract_qp_every: 1
+  twogo_probe_enable: true
   twogo_probe_tail_mix: 0.5
   twogo_probe_tail_pool_ratio: 0.25
   twogo_probe_geom_alpha: 0.3
-  twogo_probe_b: 32
+  twogo_probe_b: 64
   twogo_overlay:
     hardness:
-      rho_ref: 500.0
+      rho_ref: 100.0
     constraint:
       kappa0: 1.0
       kappa_rho_gain: 0.01
@@ -96,7 +96,7 @@ scheduler_config:
   type: composite
   constraint_schedulers:
     - type: alm_adaptive
-      margin: 0.02
+      margin: 0.03
       lam0: 0.0
       rho0: 1.0
       nu0: 0.0
@@ -116,11 +116,11 @@ scheduler_config:
       rho_min: 0.5
       rho_tau_hi: 5e-4
       rho_tau_lo: 1e-4
-      rho_gamma_up: 2.0
-      rho_gamma_down: 1.5
-      rho_good_steps: 4
+      rho_gamma_up: 1.5
+      rho_gamma_down: 2.5
+      rho_good_steps: 6
       gamma: 2.0
-      rho_max: 20.0
+      rho_max: 100.0
       kappa: 0.9
       r_tol: 5e-4
       v_signal_mode: mean
@@ -144,20 +144,20 @@ scheduler_config:
       eta_eps_plus: 0.01
       eta_eps_minus: 0.003
       eta_c_eps: 0.01
-      p_min: 0.0
+      p_min: 0.5
       p_max: 1.0
       eps_min: 1e-5
       eps_max: 1e-2
-      I_min: 1
-      I_max: 10
+      I_min: 10
+      I_max: 25
       topK_min: 1
-      topK_max: 10
+      topK_max: 32
       use_stochastic_gate: true
   diffusion_schedulers:
     - type: fixed
-      M_k: 1024
+      M_k: 2048
       T_k: 0.3
-      Ndiffuse: 100
+      Ndiffuse: 150
       beta0: 1e-5
       betaT: 1e-2
   constraint_merge_strategy: merge

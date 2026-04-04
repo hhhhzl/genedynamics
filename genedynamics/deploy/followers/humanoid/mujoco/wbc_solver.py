@@ -1,11 +1,11 @@
 """
-Contact-constrained QP/WBC prototype for humanoid corridor following in MuJoCo.
+Whole-body inverse-dynamics controller for humanoid corridor following in MuJoCo.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -16,53 +16,105 @@ from genedynamics.deploy.followers.humanoid.task_spec import HumanoidTaskSpec
 
 @dataclass
 class G1WBCTaskStackConfig:
-    max_iterations: int = 8
-    damping: float = 1e-4
-    step_size: float = 0.7
-    max_delta_per_step: float = 0.08
-    position_tolerance: float = 5e-3
-    posture_weight: float = 0.03
-    joint_hint_weight: float = 0.30
-    lower_body_hint_weight: float = 0.18
-    waist_hint_weight: float = 0.40
-    arm_hint_weight: float = 0.22
-    velocity_damping_weight: float = 0.08
-    swing_foot_weight: float = 2.0
-    com_task_weight: float = 1.10
-    torso_orientation_weight: float = 0.85
-    contact_slack_weight: float = 250.0
-    contact_slack_regularization: float = 1e-6
+    contact_position_kp: float = 8.0
+    contact_position_kd: float = 6.0
+    contact_position_error_clip: float = 0.01
+    contact_accel_limit: float = 6.0
+    com_kp: float = 45.0
+    com_kd: float = 14.0
+    pelvis_orientation_kp: float = 40.0
+    pelvis_orientation_kd: float = 10.0
+    torso_orientation_kp: float = 36.0
+    torso_orientation_kd: float = 9.0
+    swing_foot_position_kp: float = 20.0
+    swing_foot_position_kd: float = 6.0
+    swing_foot_orientation_kp: float = 8.0
+    swing_foot_orientation_kd: float = 3.0
+    posture_kp: float = 18.0
+    posture_kd: float = 5.0
+    waist_kp: float = 24.0
+    waist_kd: float = 6.0
+    arm_kp: float = 14.0
+    arm_kd: float = 4.0
+    contact_task_weight: float = 80.0
+    com_task_weight: float = 8.0
+    pelvis_task_weight: float = 7.0
+    torso_task_weight: float = 6.0
+    swing_foot_task_weight: float = 8.0
+    swing_foot_orientation_weight: float = 2.5
+    lower_body_posture_weight: float = 2.0
+    waist_posture_weight: float = 1.6
+    arm_posture_weight: float = 1.2
+    posture_weight: float = 0.5
+    lambda_weight: float = 1e-3
+    ddq_weight: float = 1e-4
+    lambda_normal_target: float = 35.0
+    lambda_normal_weight: float = 0.05
+    lambda_tangent_weight: float = 0.02
+    friction_coeff: float = 0.60
+    lambda_min_normal: float = 20.0
+    lambda_max_normal: float = 550.0
+    lambda_max_tangent: float = 220.0
+    through_gap_com_weight_scale: float = 1.35
+    through_gap_pelvis_weight_scale: float = 1.25
+    through_gap_torso_weight_scale: float = 2.20
+    through_gap_swing_weight_scale: float = 0.70
+    through_gap_arm_weight_scale: float = 2.40
+    through_gap_waist_weight_scale: float = 2.00
+    through_gap_lower_body_weight_scale: float = 1.40
+    single_support_com_weight_scale: float = 1.20
+    single_support_pelvis_weight_scale: float = 0.95
+    single_support_torso_weight_scale: float = 0.35
+    single_support_swing_weight_scale: float = 0.12
+    single_support_arm_weight_scale: float = 0.03
+    single_support_waist_weight_scale: float = 0.05
+    single_support_lower_body_weight_scale: float = 0.18
     body_height_nominal: float = 0.75
     body_height_min: float = 0.55
-    com_height_gain: float = 0.45
-    max_com_xy_error: float = 0.08
-    max_com_z_error: float = 0.06
     crouch_hip_pitch_gain: float = 0.35
     crouch_knee_gain: float = 0.95
     crouch_ankle_pitch_gain: float = -0.45
     pelvis_forward_hip_pitch_gain: float = 0.20
     pelvis_lateral_hip_roll_gain: float = 0.50
-    use_contact_constraints: bool = True
-    use_friction_cones: bool = False
-    use_torque_limits: bool = False
-    pelvis_task_weight: float = 1.0
-    swing_foot_task_weight: float = 1.0
-    torso_task_weight: float = 0.5
-    arm_task_weight: float = 0.2
+    max_joint_accel: float = 40.0
+    max_base_accel: float = 20.0
+    max_qd_ref: float = 8.0
+    max_q_step: float = 0.12
+    torque_limit_scale: float = 0.85
+    qp_regularization: float = 1e-8
+    use_osqp: bool = True
+    osqp_maxiter: int = 4000
+    osqp_polish: bool = True
+    osqp_verbose: bool = False
+    osqp_accept_constraint_tol: float = 5e-4
+    use_slsqp: bool = True
+    slsqp_maxiter: int = 120
+    use_trust_constr: bool = False
+    trust_constr_maxiter: int = 80
+    use_trust_constr_repair: bool = True
+    trust_constr_repair_maxiter: int = 40
+    trust_constr_repair_violation_threshold: float = 1e-3
+    single_support_trust_constr_maxiter: int = 160
+    active_set_refine_iters: int = 8
+    projection_repair_iters: int = 40
+    constraint_tol: float = 1e-6
 
 
-class G1WholeBodySolverSkeleton:
+class G1WholeBodyDynamicWBCSolver:
     """
-    Contact-constrained QP/WBC prototype.
+    Contact-aware inverse-dynamics whole-body controller.
 
-    This is still a MuJoCo-native configuration-space controller, not a full
-    torque-level inverse-dynamics stack. The important architectural change is
-    that stance-foot contact enters the solve as an explicit equality
-    constraint with slack, while swing-foot tracking and posture/joint-hint
-    tracking remain weighted objectives.
+    The solver optimizes generalized accelerations and support forces and
+    recovers actuator torques from the floating-base dynamics:
+
+      M(q) ddq + h(q, dq) = S^T tau + J_c(q)^T lambda
+
+    Support-foot translational contacts are enforced as hard equalities, while
+    CoM, pelvis, torso, swing-foot, and posture objectives enter a weighted
+    least-squares solve in acceleration space.
     """
 
-    solver_name = "wbc_qp_contact_com_torso"
+    solver_name = "wbc_inverse_dynamics_qp_hard_contact"
 
     def __init__(
         self,
@@ -78,6 +130,7 @@ class G1WholeBodySolverSkeleton:
         self.data = data
         self.model_spec = model_spec
         self.cfg = cfg or G1WBCTaskStackConfig()
+        self._last_osqp_solution: Optional[np.ndarray] = None
 
     def build_task_stack(self, tasks: HumanoidTaskSpec) -> Dict[str, object]:
         return {
@@ -88,14 +141,6 @@ class G1WholeBodySolverSkeleton:
             "left_arm": tasks.left_arm,
             "right_arm": tasks.right_arm,
             "joint_hints": dict(tasks.joint_hints),
-            "weights": {
-                "pelvis": self.cfg.pelvis_task_weight,
-                "com": self.cfg.com_task_weight,
-                "swing_foot": self.cfg.swing_foot_task_weight,
-                "torso": self.cfg.torso_task_weight,
-                "torso_orientation": self.cfg.torso_orientation_weight,
-                "arms": self.cfg.arm_task_weight,
-            },
         }
 
     def solve(
@@ -108,370 +153,928 @@ class G1WholeBodySolverSkeleton:
     ) -> JointTargets:
         dt = float(max(dt, 1e-6))
         q_full = np.asarray(qpos, dtype=np.float64).reshape(-1)
-        qd_full = None if qvel is None else np.asarray(qvel, dtype=np.float64).reshape(-1)
-        try:
-            q_current = self.model_spec.actuated_qpos_from_full(q_full)
-        except ValueError:
-            q_current = self.model_spec.stand_ctrl.copy()
-        qd_current = self._actuated_qvel_from_full(qd_full)
+        qvel_full = np.zeros((self.model.nv,), dtype=np.float64) if qvel is None else np.asarray(qvel, dtype=np.float64).reshape(-1)
 
-        q_hint = self.model_spec.joint_dict_to_vector(
-            tasks.joint_hints,
-            base=self.model_spec.stand_ctrl,
+        self.data.qpos[:] = q_full
+        self.data.qvel[:] = qvel_full
+        self.mujoco.mj_forward(self.model, self.data)
+
+        q_act = self.model_spec.actuated_qpos_from_full(q_full)
+        qd_act = self._actuated_qvel_from_full(qvel_full)
+        q_hint = self.model_spec.joint_dict_to_vector(tasks.joint_hints, base=self.model_spec.stand_ctrl)
+        lower_body_target, lower_body_meta = self._build_lower_body_posture_target(tasks, q_act)
+
+        M = self._mass_matrix()
+        bias = np.asarray(self.data.qfrc_bias, dtype=np.float64).copy()
+        ddq_full, lambda_ref, task_meta = self._solve_inverse_dynamics(
+            tasks,
+            q_full,
+            qvel_full,
+            q_act,
+            qd_act,
+            q_hint,
+            lower_body_target,
+            M,
+            bias,
         )
-        lower_body_target, lower_body_meta = self._build_lower_body_posture_target(tasks, q_current)
-        q_ref, meta = self._solve_qp(q_current, q_full, tasks, q_hint, lower_body_target, qd_current, dt)
-        meta["lower_body_target"] = lower_body_meta
-        qd_ref = (q_ref - q_current) / dt
+
+        tau_ff = self._recover_actuated_torques(M, bias, ddq_full, task_meta["support_jacobian"], lambda_ref)
+        torque_limit = self.cfg.torque_limit_scale * self.model_spec.torque_limit_vector()
+        torque_bound_violation = np.maximum(np.abs(tau_ff) - torque_limit, 0.0)
+        torque_bound_violation_max = float(np.max(torque_bound_violation)) if tau_ff.size else 0.0
+        if torque_bound_violation_max > 1e-6:
+            tau_clipped = np.clip(tau_ff, -torque_limit, torque_limit)
+            torque_saturation = float(np.max(np.abs(tau_ff - tau_clipped))) if tau_ff.size else 0.0
+            tau_ff = tau_clipped
+        else:
+            torque_saturation = 0.0
+
+        ddq_act = ddq_full[self.model_spec.actuated_dof_indices]
+        qd_ref = np.clip(qd_act + ddq_act * dt, -float(self.cfg.max_qd_ref), float(self.cfg.max_qd_ref))
+        q_ref = q_act + qd_ref * dt
+        q_ref = np.clip(q_ref - q_act, -float(self.cfg.max_q_step), float(self.cfg.max_q_step)) + q_act
+        q_ref = self.model_spec.clip_to_joint_limits(q_ref)
+
+        metadata = {
+            "solver": self.solver_name,
+            "task_errors": task_meta["task_errors"],
+            "contact_feet": task_meta["contact_feet"],
+            "contact_loads": task_meta["contact_loads"],
+            "torque_saturation_max": torque_saturation,
+            "torque_bound_violation_max": torque_bound_violation_max,
+            "lower_body_target": lower_body_meta,
+            "support_jacobian_rows": int(task_meta["support_jacobian"].shape[0]),
+            "support_acc_cmd": task_meta["support_acc_cmd"],
+            "num_ineq_constraints": int(task_meta["num_ineq_constraints"]),
+            "eq_residual_norm": float(task_meta.get("eq_residual_norm", 0.0)),
+            "ineq_violation_max": float(task_meta.get("ineq_violation_max", 0.0)),
+            "qp_method": str(task_meta.get("qp_method", "unknown")),
+            "note": "Inverse-dynamics QP over ddq/lambda with hard floating-base dynamics, support-contact equalities, friction pyramids, and actuator torque bounds.",
+        }
         return JointTargets(
             q_ref=q_ref,
             qd_ref=qd_ref,
-            metadata=meta,
+            ddq_ref=ddq_full,
+            tau_ff=tau_ff,
+            lambda_ref=lambda_ref,
+            metadata=metadata,
         )
 
-    def _solve_qp(
+    def _solve_inverse_dynamics(
         self,
-        q_current: np.ndarray,
-        q_full: np.ndarray,
         tasks: HumanoidTaskSpec,
+        q_full: np.ndarray,
+        qvel_full: np.ndarray,
+        q_act: np.ndarray,
+        qd_act: np.ndarray,
         q_hint: np.ndarray,
         lower_body_target: np.ndarray,
-        qd_current: np.ndarray,
-        dt: float,
-    ) -> tuple[np.ndarray, Dict[str, object]]:
-        q_work = np.asarray(q_current, dtype=np.float64).copy()
-        iterations_used = 0
-        final_foot_errors: Dict[str, float] = {}
-        final_contact_slack: Dict[str, float] = {}
-        final_contact_feet: list[str] = []
-        final_com_error = float("nan")
-        final_torso_orientation_error = float("nan")
+        M: np.ndarray,
+        bias: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, Dict[str, object]]:
+        support_blocks = self._support_contact_blocks(tasks, qvel_full)
+        num_contacts = len(support_blocks)
+        n_lambda = 3 * num_contacts
+        nv = self.model.nv
 
-        for it in range(int(self.cfg.max_iterations)):
-            full_work = self.model_spec.apply_actuated_qpos(q_full, q_work)
-            self.data.qpos[:] = full_work
-            self.mujoco.mj_forward(self.model, self.data)
+        dyn_C = np.zeros((6, nv + n_lambda), dtype=np.float64)
+        dyn_C[:, :nv] = M[:6, :]
+        for i, block in enumerate(support_blocks):
+            lam_slice = slice(nv + 3 * i, nv + 3 * (i + 1))
+            dyn_C[:, lam_slice] = -block["J"][:3, :6].T
+        dyn_d = -bias[:6]
 
-            H, g = self._build_objective(q_work, tasks, q_hint, lower_body_target, qd_current, dt)
-            A_eq, b_eq, contact_meta = self._build_contact_constraints(tasks)
-            dq, slack = self._solve_constrained_step(H, g, A_eq, b_eq)
-            dq = np.clip(dq, -float(self.cfg.max_delta_per_step), float(self.cfg.max_delta_per_step))
+        if support_blocks:
+            contact_C = np.zeros((3 * num_contacts, nv + n_lambda), dtype=np.float64)
+            contact_d = np.zeros((3 * num_contacts,), dtype=np.float64)
+            for i, block in enumerate(support_blocks):
+                row = slice(3 * i, 3 * (i + 1))
+                contact_C[row, :nv] = block["J"]
+                contact_d[row] = block["a_des"]
+            C_eq = np.vstack([dyn_C, contact_C])
+            d_eq = np.concatenate([dyn_d, contact_d], axis=0)
+        else:
+            C_eq = dyn_C
+            d_eq = dyn_d
 
-            q_next = self.model_spec.clip_to_joint_limits(q_work + float(self.cfg.step_size) * dq)
-            iterations_used = it + 1
-            q_work = q_next
+        A_obj, b_obj, task_errors = self._build_objective_system(
+            tasks,
+            q_full,
+            qvel_full,
+            q_act,
+            qd_act,
+            q_hint,
+            lower_body_target,
+            support_blocks,
+        )
+        G_ineq, h_ineq = self._build_inequality_constraints(M, bias, support_blocks, nv, n_lambda)
+        x, qp_meta = self._solve_constrained_qp(
+            C_eq,
+            d_eq,
+            A_obj,
+            b_obj,
+            G_ineq,
+            h_ineq,
+            prefer_trust_constr=(len(support_blocks) == 1),
+        )
 
-            final_foot_errors = self._measure_foot_errors(q_full, q_work, tasks)
-            final_com_error = self._measure_com_error(q_full, q_work, tasks)
-            final_torso_orientation_error = self._measure_torso_orientation_error(q_full, q_work, tasks)
-            final_contact_feet = list(contact_meta["contact_feet"])
-            final_contact_slack = self._slack_dict(contact_meta["row_slices"], slack)
+        ddq_full = np.asarray(x[:nv], dtype=np.float64).copy()
+        lambda_ref = np.asarray(x[nv:], dtype=np.float64).copy() if n_lambda > 0 else np.zeros((0,), dtype=np.float64)
 
-            if self._max_task_error(
-                final_foot_errors,
-                final_contact_slack,
-                final_com_error,
-                final_torso_orientation_error,
-            ) <= float(self.cfg.position_tolerance):
-                break
-
-        q_work = self.model_spec.clip_to_joint_limits(q_work)
-        return q_work, {
-            "solver": self.solver_name,
-            "weights": {
-                "posture": self.cfg.posture_weight,
-                "joint_hint": self.cfg.joint_hint_weight,
-                "lower_body_hint": self.cfg.lower_body_hint_weight,
-                "waist_hint": self.cfg.waist_hint_weight,
-                "arm_hint": self.cfg.arm_hint_weight,
-                "velocity_damping": self.cfg.velocity_damping_weight,
-                "com": self.cfg.com_task_weight,
-                "swing_foot": self.cfg.swing_foot_weight,
-                "contact_slack": self.cfg.contact_slack_weight,
-                "pelvis": self.cfg.pelvis_task_weight,
-                "torso": self.cfg.torso_task_weight,
-                "torso_orientation": self.cfg.torso_orientation_weight,
-                "arms": self.cfg.arm_task_weight,
-            },
-            "joint_hint_names": sorted(tasks.joint_hints.keys()),
-            "iterations": iterations_used,
-            "contact_feet": final_contact_feet,
-            "foot_position_error": final_foot_errors,
-            "com_error": final_com_error,
-            "contact_slack_norm": final_contact_slack,
-            "torso_orientation_error": final_torso_orientation_error,
-            "note": "Support feet enforced as equality constraints with slack; CoM and torso orientation enter the objective alongside swing-foot and posture tasks.",
+        return ddq_full, lambda_ref, {
+            "task_errors": task_errors,
+            "contact_feet": [block["name"] for block in support_blocks],
+            "contact_loads": self._lambda_dict([block["name"] for block in support_blocks], lambda_ref),
+            "support_jacobian": np.vstack([block["J"] for block in support_blocks]) if support_blocks else np.zeros((0, nv), dtype=np.float64),
+            "support_acc_cmd": np.concatenate([block["a_des"] for block in support_blocks], axis=0) if support_blocks else np.zeros((0,), dtype=np.float64),
+            "num_ineq_constraints": int(G_ineq.shape[0]),
+            "eq_residual_norm": float(np.linalg.norm(C_eq @ x - d_eq)) if C_eq.size else 0.0,
+            "ineq_violation_max": float(np.max(np.maximum(G_ineq @ x - h_ineq, 0.0))) if G_ineq.size else 0.0,
+            "qp_method": str(qp_meta.get("method", "unknown")),
         }
 
-    def _build_objective(
+    def _build_objective_system(
         self,
-        q_work: np.ndarray,
         tasks: HumanoidTaskSpec,
+        q_full: np.ndarray,
+        qvel_full: np.ndarray,
+        q_act: np.ndarray,
+        qd_act: np.ndarray,
         q_hint: np.ndarray,
         lower_body_target: np.ndarray,
-        qd_current: np.ndarray,
-        dt: float,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        n = self.model_spec.num_actuated
-        H = float(self.cfg.damping) * np.eye(n, dtype=np.float64)
-        g = np.zeros(n, dtype=np.float64)
+        support_blocks: Sequence[Dict[str, np.ndarray]],
+    ) -> tuple[np.ndarray, np.ndarray, Dict[str, float]]:
+        rows: List[np.ndarray] = []
+        rhs: List[np.ndarray] = []
+        errors: Dict[str, float] = {}
+        nv = self.model.nv
+        n_lambda = 3 * len(support_blocks)
+        narrowness = float(np.clip(tasks.extras.get("narrowness", 0.0), 0.0, 1.0))
+        weight_scales = self._through_gap_weight_scales(tasks)
 
-        J_com, err_com = self._subtree_com_jacobian_and_error(tasks)
-        if J_com is not None and err_com is not None:
-            weight = float(self.cfg.com_task_weight) * float(max(self.cfg.pelvis_task_weight, 1e-6))
-            H += weight * (J_com.T @ J_com)
-            g += -weight * (J_com.T @ err_com)
+        def add_task(weight: float, J: np.ndarray, target: np.ndarray, name: str) -> None:
+            if J.size == 0:
+                return
+            row = np.zeros((J.shape[0], nv + n_lambda), dtype=np.float64)
+            row[:, :nv] = np.sqrt(max(weight, 1e-8)) * J
+            rows.append(row)
+            rhs.append(np.sqrt(max(weight, 1e-8)) * target)
+            errors[name] = float(np.linalg.norm(target))
 
-        J_torso_rot, err_torso_rot = self._torso_orientation_jacobian_and_error(tasks)
-        if J_torso_rot is not None and err_torso_rot is not None:
-            weight = float(self.cfg.torso_orientation_weight) * float(max(self.cfg.torso_task_weight, 1e-6))
-            H += weight * (J_torso_rot.T @ J_torso_rot)
-            g += -weight * (J_torso_rot.T @ err_torso_rot)
+        J_com, a_com = self._com_task(tasks, qvel_full)
+        support_weight_scales = self._support_weight_scales(len(support_blocks))
 
-        for site_name, foot_task in (
-            ("left_foot", tasks.left_foot),
-            ("right_foot", tasks.right_foot),
-        ):
+        add_task(
+            self.cfg.com_task_weight * weight_scales["com"] * support_weight_scales["com"],
+            J_com,
+            a_com,
+            "com",
+        )
+
+        J_pelvis, a_pelvis = self._orientation_task(
+            site_name="imu_in_pelvis",
+            target_rpy=(tasks.pelvis.roll_world, tasks.pelvis.pitch_world, tasks.pelvis.yaw_world),
+            target_angular_velocity=np.asarray(tasks.pelvis.angular_velocity_world, dtype=np.float64),
+            kp=float(self.cfg.pelvis_orientation_kp),
+            kd=float(self.cfg.pelvis_orientation_kd),
+            qvel_full=qvel_full,
+        )
+        add_task(
+            self.cfg.pelvis_task_weight * weight_scales["pelvis"] * support_weight_scales["pelvis"],
+            J_pelvis,
+            a_pelvis,
+            "pelvis_orientation",
+        )
+
+        torso_yaw_world = float(tasks.pelvis.yaw_world + tasks.torso_yaw)
+        J_torso, a_torso = self._orientation_task(
+            site_name="imu_in_torso",
+            target_rpy=(tasks.pelvis.roll_world, tasks.pelvis.pitch_world, torso_yaw_world),
+            target_angular_velocity=np.asarray([0.0, 0.0, tasks.plan_frame.omega + tasks.plan_frame.psi_dot_torso], dtype=np.float64),
+            kp=float(self.cfg.torso_orientation_kp),
+            kd=float(self.cfg.torso_orientation_kd),
+            qvel_full=qvel_full,
+        )
+        add_task(
+            self.cfg.torso_task_weight * weight_scales["torso"] * support_weight_scales["torso"],
+            J_torso,
+            a_torso,
+            "torso_orientation",
+        )
+
+        for foot_name, foot_task in (("left_foot", tasks.left_foot), ("right_foot", tasks.right_foot)):
             if foot_task.in_contact:
                 continue
-            J, err = self._site_jacobian_and_error(site_name, foot_task.position_world)
-            if J is None or err is None:
-                continue
-            weight = float(self.cfg.swing_foot_weight) * float(max(foot_task.weight, 1e-6))
-            H += weight * (J.T @ J)
-            g += -weight * (J.T @ err)
+            J_lin, a_lin = self._site_linear_task(
+                site_name=foot_name,
+                target_position=np.asarray(foot_task.position_world, dtype=np.float64),
+                target_velocity=np.asarray(foot_task.velocity_world, dtype=np.float64),
+                kp=float(self.cfg.swing_foot_position_kp),
+                kd=float(self.cfg.swing_foot_position_kd),
+                qvel_full=qvel_full,
+            )
+            add_task(
+                self.cfg.swing_foot_task_weight * foot_task.weight * weight_scales["swing"] * support_weight_scales["swing"],
+                J_lin,
+                a_lin,
+                f"{foot_name}_swing",
+            )
 
-        delta_hint = q_hint - q_work
-        arm_selector = self._joint_selector(tuple(self.model_spec.left_arm_joints) + tuple(self.model_spec.right_arm_joints))
-        waist_selector = self._joint_selector(tuple(self.model_spec.waist_joints))
-        hinted_joint_names = tuple(name for name in tasks.joint_hints.keys() if name in self.model_spec.actuated_joints)
-        generic_selector = self._joint_selector(
-            tuple(name for name in hinted_joint_names if name not in self.model_spec.waist_joints and name not in self.model_spec.left_arm_joints and name not in self.model_spec.right_arm_joints)
+            J_rot, a_rot = self._orientation_task(
+                site_name=foot_name,
+                target_rpy=(foot_task.roll_world, foot_task.pitch_world, foot_task.yaw_world),
+                target_angular_velocity=np.asarray(foot_task.angular_velocity_world, dtype=np.float64),
+                kp=float(self.cfg.swing_foot_orientation_kp),
+                kd=float(self.cfg.swing_foot_orientation_kd),
+                qvel_full=qvel_full,
+            )
+            add_task(
+                self.cfg.swing_foot_orientation_weight * foot_task.weight * weight_scales["swing"] * support_weight_scales["swing"],
+                J_rot,
+                a_rot,
+                f"{foot_name}_orientation",
+            )
+
+        add_task(
+            self.cfg.lower_body_posture_weight * weight_scales["lower_body"] * support_weight_scales["lower_body"],
+            self._joint_selector(tuple(self.model_spec.left_leg_joints) + tuple(self.model_spec.right_leg_joints), nv),
+            self._joint_accel_command(
+                lower_body_target,
+                q_act,
+                qd_act,
+                self.cfg.posture_kp,
+                self.cfg.posture_kd,
+                joints=self.model_spec.left_leg_joints + self.model_spec.right_leg_joints,
+            ),
+            "lower_body_posture",
+        )
+        add_task(
+            self.cfg.waist_posture_weight * weight_scales["waist"] * support_weight_scales["waist"],
+            self._joint_selector(tuple(self.model_spec.waist_joints), nv),
+            self._joint_accel_command(q_hint, q_act, qd_act, self.cfg.waist_kp, self.cfg.waist_kd, joints=self.model_spec.waist_joints),
+            "waist_posture",
+        )
+        add_task(
+            self.cfg.arm_posture_weight * weight_scales["arm"] * support_weight_scales["arm"],
+            self._joint_selector(tuple(self.model_spec.left_arm_joints) + tuple(self.model_spec.right_arm_joints), nv),
+            self._joint_accel_command(
+                q_hint,
+                q_act,
+                qd_act,
+                self.cfg.arm_kp,
+                self.cfg.arm_kd,
+                joints=self.model_spec.left_arm_joints + self.model_spec.right_arm_joints,
+            ),
+            "arm_posture",
+        )
+        add_task(
+            self.cfg.posture_weight,
+            self._joint_selector(self.model_spec.actuated_joints, nv),
+            self._joint_accel_command(self.model_spec.stand_ctrl, q_act, qd_act, self.cfg.posture_kp, self.cfg.posture_kd),
+            "posture",
         )
 
-        H += float(self.cfg.waist_hint_weight) * waist_selector
-        g += -float(self.cfg.waist_hint_weight) * (waist_selector @ delta_hint)
+        row_ddq = np.zeros((nv, nv + n_lambda), dtype=np.float64)
+        row_ddq[:, :nv] = np.sqrt(float(self.cfg.ddq_weight)) * np.eye(nv, dtype=np.float64)
+        rows.append(row_ddq)
+        rhs.append(np.zeros((nv,), dtype=np.float64))
 
-        H += float(self.cfg.arm_hint_weight) * arm_selector
-        g += -float(self.cfg.arm_hint_weight) * (arm_selector @ delta_hint)
+        if n_lambda > 0:
+            row_lambda = np.zeros((n_lambda, nv + n_lambda), dtype=np.float64)
+            row_lambda[:, nv:] = np.sqrt(float(self.cfg.lambda_weight)) * np.eye(n_lambda, dtype=np.float64)
+            rows.append(row_lambda)
+            rhs.append(np.zeros((n_lambda,), dtype=np.float64))
 
-        H += float(self.cfg.joint_hint_weight) * generic_selector
-        g += -float(self.cfg.joint_hint_weight) * (generic_selector @ delta_hint)
+            lambda_target = np.zeros((n_lambda,), dtype=np.float64)
+            for i in range(len(support_blocks)):
+                lambda_target[3 * i + 2] = float(self.cfg.lambda_normal_target)
+            row_lambda_target = np.zeros((n_lambda, nv + n_lambda), dtype=np.float64)
+            row_lambda_target[:, nv:] = np.diag(
+                [self.cfg.lambda_tangent_weight, self.cfg.lambda_tangent_weight, self.cfg.lambda_normal_weight] * len(support_blocks)
+            )
+            rows.append(row_lambda_target)
+            rhs.append(row_lambda_target[:, nv:] @ lambda_target)
 
-        lower_body_delta = lower_body_target - q_work
-        lower_body_selector = self._lower_body_selector()
-        H += float(self.cfg.lower_body_hint_weight) * lower_body_selector
-        g += -float(self.cfg.lower_body_hint_weight) * (lower_body_selector @ lower_body_delta)
+        A_obj = np.vstack(rows) if rows else np.zeros((0, nv + n_lambda), dtype=np.float64)
+        b_obj = np.concatenate(rhs, axis=0) if rhs else np.zeros((0,), dtype=np.float64)
+        errors["narrowness"] = narrowness
+        errors["gap_severity"] = float(np.clip(tasks.extras.get("gap_severity", narrowness), 0.0, 1.0))
+        return A_obj, b_obj, errors
 
-        delta_posture = self.model_spec.stand_ctrl - q_work
-        H += float(self.cfg.posture_weight) * np.eye(n, dtype=np.float64)
-        g += -float(self.cfg.posture_weight) * delta_posture
-
-        if qd_current.size == n and float(self.cfg.velocity_damping_weight) > 0.0:
-            desired_dq = -qd_current * dt
-            H += float(self.cfg.velocity_damping_weight) * np.eye(n, dtype=np.float64)
-            g += -float(self.cfg.velocity_damping_weight) * desired_dq
-        return H, g
-
-    def _build_contact_constraints(
+    def _support_contact_blocks(
         self,
         tasks: HumanoidTaskSpec,
-    ) -> tuple[np.ndarray, np.ndarray, Dict[str, object]]:
-        rows = []
-        rhs = []
-        row_slices: Dict[str, tuple[int, int]] = {}
-        contact_feet: list[str] = []
-        start = 0
-
-        for site_name, foot_task in (
-            ("left_foot", tasks.left_foot),
-            ("right_foot", tasks.right_foot),
-        ):
-            if not foot_task.in_contact or not bool(self.cfg.use_contact_constraints):
+        qvel_full: np.ndarray,
+    ) -> List[Dict[str, np.ndarray]]:
+        blocks: List[Dict[str, np.ndarray]] = []
+        for site_name, foot_task in (("left_foot", tasks.left_foot), ("right_foot", tasks.right_foot)):
+            if not foot_task.in_contact:
                 continue
-            J, err = self._site_jacobian_and_error(site_name, foot_task.position_world)
-            if J is None or err is None:
+            J, pos_err, vel = self._site_linear_kinematics(site_name, foot_task.position_world, qvel_full)
+            if J is None or pos_err is None or vel is None:
                 continue
-            rows.append(J)
-            rhs.append(err)
-            row_slices[site_name] = (start, start + J.shape[0])
-            start += J.shape[0]
-            contact_feet.append(site_name)
+            pos_err = np.clip(
+                np.asarray(pos_err, dtype=np.float64),
+                -float(self.cfg.contact_position_error_clip),
+                float(self.cfg.contact_position_error_clip),
+            )
+            a_des = float(self.cfg.contact_position_kp) * pos_err + float(self.cfg.contact_position_kd) * (-vel)
+            a_des = np.clip(a_des, -float(self.cfg.contact_accel_limit), float(self.cfg.contact_accel_limit))
+            blocks.append({"name": site_name, "J": J, "a_des": a_des})
+        return blocks
 
-        if not rows:
-            A_eq = np.zeros((0, self.model_spec.num_actuated), dtype=np.float64)
-            b_eq = np.zeros((0,), dtype=np.float64)
-        else:
-            A_eq = np.vstack(rows)
-            b_eq = np.concatenate(rhs)
-        return A_eq, b_eq, {
-            "contact_feet": contact_feet,
-            "row_slices": row_slices,
-        }
+    def _mass_matrix(self) -> np.ndarray:
+        M = np.zeros((self.model.nv, self.model.nv), dtype=np.float64)
+        self.mujoco.mj_fullM(self.model, M, self.data.qM)
+        return M
 
-    def _solve_constrained_step(
+    def _recover_actuated_torques(
         self,
-        H: np.ndarray,
-        g: np.ndarray,
-        A_eq: np.ndarray,
-        b_eq: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        n = H.shape[0]
-        m = A_eq.shape[0]
-        if m == 0:
-            dq = -self._safe_solve(H, g)
-            return dq, np.zeros((0,), dtype=np.float64)
+        M: np.ndarray,
+        bias: np.ndarray,
+        ddq_full: np.ndarray,
+        support_jacobian: np.ndarray,
+        lambda_ref: np.ndarray,
+    ) -> np.ndarray:
+        tau_full = M @ ddq_full + bias
+        if lambda_ref.size > 0 and support_jacobian.size > 0:
+            tau_full -= support_jacobian.T @ lambda_ref
+        return np.asarray(tau_full[self.model_spec.actuated_dof_indices], dtype=np.float64).copy()
 
-        P = np.zeros((n + m, n + m), dtype=np.float64)
-        P[:n, :n] = H
-        P[n:, n:] = (
-            float(self.cfg.contact_slack_weight) + float(self.cfg.contact_slack_regularization)
-        ) * np.eye(m, dtype=np.float64)
-        c = np.zeros(n + m, dtype=np.float64)
-        c[:n] = g
-
-        A = np.zeros((m, n + m), dtype=np.float64)
-        A[:, :n] = A_eq
-        A[:, n:] = -np.eye(m, dtype=np.float64)
-
-        KKT = np.block(
-            [
-                [P, A.T],
-                [A, np.zeros((m, m), dtype=np.float64)],
-            ]
-        )
-        rhs = np.concatenate([-c, b_eq], axis=0)
-        sol = self._safe_solve(KKT, rhs)
-        z = sol[: n + m]
-        dq = z[:n]
-        slack = z[n:]
-        return dq, slack
-
-    def _site_jacobian_and_error(
-        self,
-        site_name: str,
-        target_world: Sequence[float],
-    ) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        sid = self.model_spec.site_id.get(site_name)
-        if sid is None:
-            return None, None
-        jacp = np.zeros((3, self.model.nv), dtype=np.float64)
-        self.mujoco.mj_jacSite(self.model, self.data, jacp, None, sid)
-        J = np.asarray(jacp[:, self.model_spec.actuated_dof_indices], dtype=np.float64)
-        current = np.asarray(self.data.site_xpos[sid], dtype=np.float64).copy()
-        err = np.asarray(target_world, dtype=np.float64).reshape(3) - current
-        return J, err
-
-    def _subtree_com_jacobian_and_error(
-        self,
-        tasks: HumanoidTaskSpec,
-    ) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    def _com_task(self, tasks: HumanoidTaskSpec, qvel_full: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         pelvis_body_id = self.model_spec.body_id.get("pelvis")
         if pelvis_body_id is None:
-            return None, None
+            return np.zeros((0, self.model.nv), dtype=np.float64), np.zeros((0,), dtype=np.float64)
         jacp = np.zeros((3, self.model.nv), dtype=np.float64)
         self.mujoco.mj_jacSubtreeCom(self.model, self.data, jacp, pelvis_body_id)
-        J = np.asarray(jacp[:, self.model_spec.actuated_dof_indices], dtype=np.float64)
         current = np.asarray(self.data.subtree_com[pelvis_body_id], dtype=np.float64).copy()
-        desired = current.copy()
-        desired[:2] = np.asarray(tasks.pelvis.position_world[:2], dtype=np.float64)
-        desired[2] = current[2] + float(self.cfg.com_height_gain) * (
-            float(tasks.pelvis.position_world[2]) - float(self.cfg.body_height_nominal)
-        )
-        err = desired - current
-        err[:2] = np.clip(err[:2], -float(self.cfg.max_com_xy_error), float(self.cfg.max_com_xy_error))
-        err[2] = float(np.clip(err[2], -float(self.cfg.max_com_z_error), float(self.cfg.max_com_z_error)))
-        return J, err
+        vel = jacp @ qvel_full
+        desired = np.asarray(tasks.pelvis.position_world, dtype=np.float64).copy()
+        target_vel = np.asarray(tasks.pelvis.linear_velocity_world, dtype=np.float64).copy()
+        target_vel[2] = float(tasks.plan_frame.h_dot)
+        a_des = float(self.cfg.com_kp) * (desired - current) + float(self.cfg.com_kd) * (target_vel - vel)
+        return jacp, a_des
 
-    def _torso_orientation_jacobian_and_error(
+    def _site_linear_task(
         self,
-        tasks: HumanoidTaskSpec,
-    ) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        sid = self.model_spec.site_id.get("imu_in_torso")
+        site_name: str,
+        target_position: np.ndarray,
+        target_velocity: np.ndarray,
+        kp: float,
+        kd: float,
+        qvel_full: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        J, pos_err, vel = self._site_linear_kinematics(site_name, target_position, qvel_full)
+        if J is None or pos_err is None or vel is None:
+            return np.zeros((0, self.model.nv), dtype=np.float64), np.zeros((0,), dtype=np.float64)
+        a_des = float(kp) * pos_err + float(kd) * (np.asarray(target_velocity, dtype=np.float64) - vel)
+        return J, a_des
+
+    def _site_linear_kinematics(
+        self,
+        site_name: str,
+        target_position: Sequence[float],
+        qvel_full: np.ndarray,
+    ) -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+        sid = self.model_spec.site_id.get(site_name)
         if sid is None:
-            return None, None
+            return None, None, None
+        jacp = np.zeros((3, self.model.nv), dtype=np.float64)
+        self.mujoco.mj_jacSite(self.model, self.data, jacp, None, sid)
+        current = np.asarray(self.data.site_xpos[sid], dtype=np.float64).copy()
+        vel = jacp @ qvel_full
+        err = np.asarray(target_position, dtype=np.float64).reshape(3) - current
+        return jacp, err, vel
+
+    def _orientation_task(
+        self,
+        site_name: str,
+        target_rpy: Tuple[float, float, float],
+        target_angular_velocity: np.ndarray,
+        kp: float,
+        kd: float,
+        qvel_full: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        sid = self.model_spec.site_id.get(site_name)
+        if sid is None:
+            return np.zeros((0, self.model.nv), dtype=np.float64), np.zeros((0,), dtype=np.float64)
         jacr = np.zeros((3, self.model.nv), dtype=np.float64)
         self.mujoco.mj_jacSite(self.model, self.data, None, jacr, sid)
-        J = np.asarray(jacr[:, self.model_spec.actuated_dof_indices], dtype=np.float64)
         current = np.asarray(self.data.site_xmat[sid], dtype=np.float64).reshape(3, 3)
-        target = self._rotation_matrix_from_rpy(
-            float(tasks.pelvis.roll_world),
-            float(tasks.pelvis.pitch_world),
-            float(tasks.pelvis.yaw_world + tasks.torso_yaw),
-        )
+        target = self._rotation_matrix_from_rpy(*target_rpy)
+        ang_vel = jacr @ qvel_full
         err = 0.5 * (
             np.cross(current[:, 0], target[:, 0])
             + np.cross(current[:, 1], target[:, 1])
             + np.cross(current[:, 2], target[:, 2])
         )
-        return J, err
+        a_des = float(kp) * err + float(kd) * (np.asarray(target_angular_velocity, dtype=np.float64) - ang_vel)
+        return jacr, a_des
 
-    def _measure_foot_errors(
+    def _joint_accel_command(
         self,
-        q_full: np.ndarray,
-        q_actuated: np.ndarray,
-        tasks: HumanoidTaskSpec,
-    ) -> Dict[str, float]:
-        full_work = self.model_spec.apply_actuated_qpos(q_full, q_actuated)
-        self.data.qpos[:] = full_work
-        self.mujoco.mj_forward(self.model, self.data)
-        out: Dict[str, float] = {}
-        for site_name, foot_task in (
-            ("left_foot", tasks.left_foot),
-            ("right_foot", tasks.right_foot),
+        q_target: np.ndarray,
+        q_act: np.ndarray,
+        qd_act: np.ndarray,
+        kp: float,
+        kd: float,
+        joints: Optional[Sequence[str]] = None,
+    ) -> np.ndarray:
+        out = np.zeros((len(joints) if joints is not None else self.model_spec.num_actuated,), dtype=np.float64)
+        names = self.model_spec.actuated_joints if joints is None else tuple(joints)
+        for i, name in enumerate(names):
+            j = self.model_spec.actuated_joints.index(name)
+            out[i] = float(kp) * (float(q_target[j]) - float(q_act[j])) + float(kd) * (0.0 - float(qd_act[j]))
+        return out
+
+    def _joint_selector(self, joint_names: Sequence[str], nv: int) -> np.ndarray:
+        valid = [name for name in joint_names if name in self.model_spec.actuated_joints]
+        J = np.zeros((len(valid), nv), dtype=np.float64)
+        for row, name in enumerate(valid):
+            dof = self.model_spec.joint_dof_index[name]
+            J[row, dof] = 1.0
+        return J
+
+    def _build_inequality_constraints(
+        self,
+        M: np.ndarray,
+        bias: np.ndarray,
+        support_blocks: Sequence[Dict[str, np.ndarray]],
+        nv: int,
+        n_lambda: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        rows: List[np.ndarray] = []
+        rhs: List[float] = []
+        total_dim = nv + n_lambda
+
+        if n_lambda > 0:
+            mu = float(self.cfg.friction_coeff)
+            for i in range(len(support_blocks)):
+                lam = slice(nv + 3 * i, nv + 3 * (i + 1))
+
+                row = np.zeros((total_dim,), dtype=np.float64)
+                row[lam.start + 0] = 1.0
+                row[lam.start + 2] = -mu
+                rows.append(row)
+                rhs.append(0.0)
+
+                row = np.zeros((total_dim,), dtype=np.float64)
+                row[lam.start + 0] = -1.0
+                row[lam.start + 2] = -mu
+                rows.append(row)
+                rhs.append(0.0)
+
+                row = np.zeros((total_dim,), dtype=np.float64)
+                row[lam.start + 1] = 1.0
+                row[lam.start + 2] = -mu
+                rows.append(row)
+                rhs.append(0.0)
+
+                row = np.zeros((total_dim,), dtype=np.float64)
+                row[lam.start + 1] = -1.0
+                row[lam.start + 2] = -mu
+                rows.append(row)
+                rhs.append(0.0)
+
+                row = np.zeros((total_dim,), dtype=np.float64)
+                row[lam.start + 2] = -1.0
+                rows.append(row)
+                rhs.append(-float(self.cfg.lambda_min_normal))
+
+                row = np.zeros((total_dim,), dtype=np.float64)
+                row[lam.start + 2] = 1.0
+                rows.append(row)
+                rhs.append(float(self.cfg.lambda_max_normal))
+
+                row = np.zeros((total_dim,), dtype=np.float64)
+                row[lam.start + 0] = 1.0
+                rows.append(row)
+                rhs.append(float(self.cfg.lambda_max_tangent))
+
+                row = np.zeros((total_dim,), dtype=np.float64)
+                row[lam.start + 0] = -1.0
+                rows.append(row)
+                rhs.append(float(self.cfg.lambda_max_tangent))
+
+                row = np.zeros((total_dim,), dtype=np.float64)
+                row[lam.start + 1] = 1.0
+                rows.append(row)
+                rhs.append(float(self.cfg.lambda_max_tangent))
+
+                row = np.zeros((total_dim,), dtype=np.float64)
+                row[lam.start + 1] = -1.0
+                rows.append(row)
+                rhs.append(float(self.cfg.lambda_max_tangent))
+
+        act_idx = self.model_spec.actuated_dof_indices
+        tau_map = np.zeros((self.model_spec.num_actuated, total_dim), dtype=np.float64)
+        tau_map[:, :nv] = M[act_idx, :]
+        if n_lambda > 0 and support_blocks:
+            support_jacobian = np.vstack([block["J"] for block in support_blocks])
+            tau_map[:, nv:] = -support_jacobian[:, act_idx].T
+        tau_bias = np.asarray(bias[act_idx], dtype=np.float64)
+        torque_limit = self.cfg.torque_limit_scale * self.model_spec.torque_limit_vector()
+        finite_mask = np.isfinite(torque_limit)
+        for i, finite in enumerate(finite_mask):
+            if not finite:
+                continue
+            rows.append(tau_map[i])
+            rhs.append(float(torque_limit[i] - tau_bias[i]))
+            rows.append(-tau_map[i])
+            rhs.append(float(torque_limit[i] + tau_bias[i]))
+
+        for i in range(nv):
+            bound = float(self.cfg.max_base_accel if i < 6 else self.cfg.max_joint_accel)
+            row = np.zeros((total_dim,), dtype=np.float64)
+            row[i] = 1.0
+            rows.append(row)
+            rhs.append(bound)
+            row = np.zeros((total_dim,), dtype=np.float64)
+            row[i] = -1.0
+            rows.append(row)
+            rhs.append(bound)
+
+        if not rows:
+            return np.zeros((0, total_dim), dtype=np.float64), np.zeros((0,), dtype=np.float64)
+        return np.vstack(rows), np.asarray(rhs, dtype=np.float64)
+
+    def _solve_constrained_qp(
+        self,
+        C: np.ndarray,
+        d: np.ndarray,
+        A: np.ndarray,
+        b: np.ndarray,
+        G: np.ndarray,
+        h: np.ndarray,
+        *,
+        prefer_trust_constr: bool = False,
+    ) -> tuple[np.ndarray, Dict[str, object]]:
+        total_dim = A.shape[1] if A.size > 0 else (C.shape[1] if C.size > 0 else G.shape[1])
+        H = A.T @ A + float(self.cfg.qp_regularization) * np.eye(total_dim, dtype=np.float64)
+        f = -(A.T @ b)
+        accept_tol = float(self.cfg.constraint_tol)
+        best_candidate: Optional[tuple[np.ndarray, Dict[str, object]]] = None
+        best_score: Optional[tuple[float, float]] = None
+
+        def register_candidate(
+            x_candidate: np.ndarray,
+            method: str,
+            *,
+            eq_residual: Optional[float] = None,
+            ineq_violation: Optional[float] = None,
+        ) -> Optional[tuple[np.ndarray, Dict[str, object]]]:
+            nonlocal best_candidate, best_score
+            x_candidate = np.asarray(x_candidate, dtype=np.float64)
+            if not np.all(np.isfinite(x_candidate)):
+                return None
+            eq_residual = float(np.linalg.norm(C @ x_candidate - d)) if eq_residual is None and C.size else float(eq_residual or 0.0)
+            ineq_violation = float(np.max(np.maximum(G @ x_candidate - h, 0.0))) if ineq_violation is None and G.size else float(ineq_violation or 0.0)
+            score = (ineq_violation, eq_residual)
+            if best_candidate is None or best_score is None or score < best_score:
+                best_candidate = (
+                    x_candidate.copy(),
+                    {
+                        "method": method,
+                        "eq_residual_norm": eq_residual,
+                        "ineq_violation_max": ineq_violation,
+                    },
+                )
+                best_score = score
+            if eq_residual <= accept_tol and ineq_violation <= accept_tol:
+                return (
+                    x_candidate,
+                    {
+                        "method": method,
+                        "eq_residual_norm": eq_residual,
+                        "ineq_violation_max": ineq_violation,
+                    },
+                )
+            return None
+
+        full_osqp = self._solve_full_space_osqp(H, f, C, d, G, h)
+        if full_osqp is not None:
+            x_osqp, meta = full_osqp
+            candidate = register_candidate(
+                x_osqp,
+                str(meta.get("method", "osqp")),
+                eq_residual=float(meta.get("eq_residual_norm", 0.0)),
+                ineq_violation=float(meta.get("ineq_violation_max", 0.0)),
+            )
+            if candidate is not None:
+                return candidate
+
+        if C.size == 0:
+            x0 = np.zeros((total_dim,), dtype=np.float64)
+            N = np.eye(total_dim, dtype=np.float64)
+        else:
+            CCt = C @ C.T
+            x0 = C.T @ self._safe_solve(CCt + float(self.cfg.qp_regularization) * np.eye(CCt.shape[0], dtype=np.float64), d)
+            _, S, Vt = np.linalg.svd(C, full_matrices=True)
+            rank = int(np.sum(S > 1e-8))
+            N = Vt[rank:].T
+            if N.size == 0:
+                candidate = register_candidate(x0, "equality_only")
+                if candidate is not None:
+                    return candidate
+                if best_candidate is not None:
+                    return best_candidate
+                return x0, {"method": "equality_only"}
+        Hr = N.T @ H @ N
+        fr = N.T @ (H @ x0 + f)
+
+        if G.size > 0:
+            Gr = G @ N
+            hr = h - G @ x0
+        else:
+            Gr = np.zeros((0, N.shape[1]), dtype=np.float64)
+            hr = np.zeros((0,), dtype=np.float64)
+
+        if Hr.size == 0:
+            candidate = register_candidate(x0, "degenerate")
+            if candidate is not None:
+                return candidate
+            if best_candidate is not None:
+                return best_candidate
+            return x0, {"method": "degenerate"}
+
+        if Gr.size == 0:
+            y = -self._safe_solve(Hr, fr)
+            x_candidate = x0 + N @ y
+            candidate = register_candidate(x_candidate, "reduced_ls")
+            if candidate is not None:
+                return candidate
+            if best_candidate is not None:
+                return best_candidate
+            return x_candidate, {"method": "reduced_ls"}
+
+        if bool(self.cfg.use_osqp):
+            try:
+                import osqp
+                from scipy import sparse
+
+                P = 0.5 * (Hr + Hr.T)
+                P = sparse.csc_matrix(P)
+                q = np.asarray(fr, dtype=np.float64)
+                Aineq = sparse.csc_matrix(Gr)
+                l = np.full(hr.shape, -np.inf, dtype=np.float64)
+                u = np.asarray(hr, dtype=np.float64)
+
+                solver = osqp.OSQP()
+                solver.setup(
+                    P=P,
+                    q=q,
+                    A=Aineq,
+                    l=l,
+                    u=u,
+                    verbose=bool(self.cfg.osqp_verbose),
+                    polish=bool(self.cfg.osqp_polish),
+                    max_iter=int(self.cfg.osqp_maxiter),
+                    eps_abs=float(self.cfg.constraint_tol),
+                    eps_rel=float(self.cfg.constraint_tol),
+                )
+                result = solver.solve()
+                status = str(getattr(result.info, "status", "")).lower()
+                if result.x is not None and ("solved" in status):
+                    y = np.asarray(result.x, dtype=np.float64)
+                    candidate = register_candidate(
+                        x0 + N @ y,
+                        "osqp_reduced",
+                    )
+                    if candidate is not None:
+                        return candidate
+            except Exception:
+                pass
+
+        def _trust_constr_attempt(maxiter: int) -> Optional[np.ndarray]:
+            try:
+                from scipy.optimize import LinearConstraint, minimize
+
+                objective = lambda y: 0.5 * float(y @ (Hr @ y)) + float(fr @ y)
+                gradient = lambda y: Hr @ y + fr
+                constraints = [LinearConstraint(Gr, -np.inf * np.ones_like(hr), hr)]
+                y0 = np.zeros((N.shape[1],), dtype=np.float64)
+                result = minimize(
+                    objective,
+                    y0,
+                    jac=gradient,
+                    method="trust-constr",
+                    constraints=constraints,
+                    options={"maxiter": int(maxiter), "verbose": 0},
+                )
+                if result.success and np.all(np.isfinite(result.x)):
+                    y = np.asarray(result.x, dtype=np.float64)
+                    x_candidate = x0 + N @ y
+                    candidate = register_candidate(x_candidate, "trust_constr_candidate")
+                    if candidate is not None:
+                        return y
+                    return y
+            except Exception:
+                return None
+            return None
+
+        if bool(self.cfg.use_slsqp):
+            try:
+                from scipy.optimize import minimize
+
+                objective = lambda y: 0.5 * float(y @ (Hr @ y)) + float(fr @ y)
+                gradient = lambda y: Hr @ y + fr
+                constraints = [
+                    {
+                        "type": "ineq",
+                        "fun": lambda y, G=Gr, h=hr: h - G @ y,
+                        "jac": lambda y, G=Gr, h=hr: -G,
+                    }
+                ]
+                y0 = np.zeros((N.shape[1],), dtype=np.float64)
+                result = minimize(
+                    objective,
+                    y0,
+                    jac=gradient,
+                    method="SLSQP",
+                    constraints=constraints,
+                    options={"maxiter": int(self.cfg.slsqp_maxiter), "ftol": 1e-8, "disp": False},
+                )
+                if result.success and np.all(np.isfinite(result.x)):
+                    y = np.asarray(result.x, dtype=np.float64)
+                    candidate = register_candidate(x0 + N @ y, "slsqp")
+                    if candidate is not None:
+                        return candidate
+            except Exception:
+                pass
+
+        if prefer_trust_constr:
+            trust_y = _trust_constr_attempt(int(self.cfg.single_support_trust_constr_maxiter))
+            if trust_y is not None:
+                candidate = register_candidate(x0 + N @ trust_y, "trust_constr_single_support")
+                if candidate is not None:
+                    return candidate
+
+        if bool(self.cfg.use_trust_constr):
+            trust_y = _trust_constr_attempt(int(self.cfg.trust_constr_maxiter))
+            if trust_y is not None:
+                candidate = register_candidate(x0 + N @ trust_y, "trust_constr")
+                if candidate is not None:
+                    return candidate
+
+        y = -self._safe_solve(Hr, fr)
+        if Gr.size > 0:
+            violation = Gr @ y - hr
+            if np.any(violation > 1e-6):
+                for _ in range(int(self.cfg.active_set_refine_iters)):
+                    active = violation > 1e-6
+                    if not np.any(active):
+                        break
+                    G_active = Gr[active]
+                    h_active = hr[active]
+                    KKT = np.block(
+                        [
+                            [Hr, G_active.T],
+                            [G_active, np.zeros((G_active.shape[0], G_active.shape[0]), dtype=np.float64)],
+                        ]
+                    )
+                    rhs = np.concatenate([-fr, h_active], axis=0)
+                    sol = self._safe_solve(KKT, rhs)
+                    y = sol[: Hr.shape[0]]
+                    violation = Gr @ y - hr
+        if Gr.size > 0 and np.max(Gr @ y - hr) > float(self.cfg.constraint_tol):
+            y_proj = y.copy()
+            for _ in range(int(self.cfg.projection_repair_iters)):
+                max_violation = 0.0
+                for i in range(Gr.shape[0]):
+                    gi = Gr[i]
+                    viol = float(gi @ y_proj - hr[i])
+                    if viol <= float(self.cfg.constraint_tol):
+                        continue
+                    denom = float(gi @ gi) + float(self.cfg.qp_regularization)
+                    if denom <= 0.0:
+                        continue
+                    y_proj = y_proj - (viol / denom) * gi
+                    max_violation = max(max_violation, viol)
+                if max_violation <= float(self.cfg.constraint_tol):
+                    y = y_proj
+                    break
+            if np.max(Gr @ y_proj - hr) <= float(self.cfg.constraint_tol):
+                candidate = register_candidate(x0 + N @ y_proj, "projection_repair")
+                if candidate is not None:
+                    return candidate
+            register_candidate(x0 + N @ y_proj, "projection_repair_candidate")
+        if (
+            bool(self.cfg.use_trust_constr_repair)
+            and np.max(Gr @ y - hr) > float(self.cfg.trust_constr_repair_violation_threshold)
         ):
-            _, err = self._site_jacobian_and_error(site_name, foot_task.position_world)
-            out[site_name] = float(np.linalg.norm(err)) if err is not None else float("nan")
-        return out
+            trust_y = _trust_constr_attempt(int(self.cfg.trust_constr_repair_maxiter))
+            if trust_y is not None:
+                candidate = register_candidate(x0 + N @ trust_y, "trust_constr_repair")
+                if candidate is not None:
+                    return candidate
+        register_candidate(x0 + N @ y, "active_set")
+        if best_candidate is not None:
+            return best_candidate
+        return x0 + N @ y, {"method": "active_set"}
 
-    def _measure_com_error(
+    def _solve_full_space_osqp(
         self,
-        q_full: np.ndarray,
-        q_actuated: np.ndarray,
-        tasks: HumanoidTaskSpec,
-    ) -> float:
-        full_work = self.model_spec.apply_actuated_qpos(q_full, q_actuated)
-        self.data.qpos[:] = full_work
-        self.mujoco.mj_forward(self.model, self.data)
-        _, err = self._subtree_com_jacobian_and_error(tasks)
-        return float(np.linalg.norm(err)) if err is not None else float("nan")
+        H: np.ndarray,
+        f: np.ndarray,
+        C: np.ndarray,
+        d: np.ndarray,
+        G: np.ndarray,
+        h: np.ndarray,
+    ) -> Optional[tuple[np.ndarray, Dict[str, object]]]:
+        if not bool(self.cfg.use_osqp):
+            return None
+        try:
+            import osqp
+            from scipy import sparse
 
-    def _measure_torso_orientation_error(
-        self,
-        q_full: np.ndarray,
-        q_actuated: np.ndarray,
-        tasks: HumanoidTaskSpec,
-    ) -> float:
-        full_work = self.model_spec.apply_actuated_qpos(q_full, q_actuated)
-        self.data.qpos[:] = full_work
-        self.mujoco.mj_forward(self.model, self.data)
-        _, err = self._torso_orientation_jacobian_and_error(tasks)
-        return float(np.linalg.norm(err)) if err is not None else float("nan")
+            P = sparse.csc_matrix(0.5 * (H + H.T))
+            q = np.asarray(f, dtype=np.float64)
+            blocks = []
+            lower = []
+            upper = []
+            if C.size > 0:
+                blocks.append(sparse.csc_matrix(C))
+                lower.append(np.asarray(d, dtype=np.float64))
+                upper.append(np.asarray(d, dtype=np.float64))
+            if G.size > 0:
+                blocks.append(sparse.csc_matrix(G))
+                lower.append(np.full(h.shape, -np.inf, dtype=np.float64))
+                upper.append(np.asarray(h, dtype=np.float64))
+            A = sparse.vstack(blocks, format="csc") if blocks else sparse.csc_matrix((0, H.shape[0]))
+            l = np.concatenate(lower, axis=0) if lower else np.zeros((0,), dtype=np.float64)
+            u = np.concatenate(upper, axis=0) if upper else np.zeros((0,), dtype=np.float64)
 
-    @staticmethod
-    def _slack_dict(
-        row_slices: Dict[str, tuple[int, int]],
-        slack: np.ndarray,
-    ) -> Dict[str, float]:
-        out: Dict[str, float] = {}
-        for name, (start, end) in row_slices.items():
-            out[name] = float(np.linalg.norm(slack[start:end])) if end > start else 0.0
-        return out
+            solver = osqp.OSQP()
+            solver.setup(
+                P=P,
+                q=q,
+                A=A,
+                l=l,
+                u=u,
+                verbose=bool(self.cfg.osqp_verbose),
+                polish=bool(self.cfg.osqp_polish),
+                max_iter=int(self.cfg.osqp_maxiter),
+                eps_abs=float(self.cfg.constraint_tol),
+                eps_rel=float(self.cfg.constraint_tol),
+            )
+            if self._last_osqp_solution is not None and self._last_osqp_solution.shape == q.shape:
+                solver.warm_start(x=self._last_osqp_solution)
+            result = solver.solve()
+            status = str(getattr(result.info, "status", "")).lower()
+            if result.x is None or "solved" not in status:
+                return None
 
-    @staticmethod
-    def _max_task_error(
-        foot_errors: Dict[str, float],
-        contact_slack: Dict[str, float],
-        com_error: float,
-        torso_orientation_error: float,
-    ) -> float:
-        values = [v for v in foot_errors.values() if np.isfinite(v)]
-        values.extend(v for v in contact_slack.values() if np.isfinite(v))
-        if np.isfinite(com_error):
-            values.append(float(com_error))
-        if np.isfinite(torso_orientation_error):
-            values.append(float(torso_orientation_error))
-        return float(max(values)) if values else 0.0
+            x = np.asarray(result.x, dtype=np.float64)
+            eq_residual = float(np.linalg.norm(C @ x - d)) if C.size else 0.0
+            ineq_violation = float(np.max(np.maximum(G @ x - h, 0.0))) if G.size else 0.0
+            self._last_osqp_solution = x.copy()
+            return x, {
+                "method": "osqp",
+                "eq_residual_norm": eq_residual,
+                "ineq_violation_max": ineq_violation,
+            }
+        except Exception:
+            return None
+        return None
+
+    def _through_gap_weight_scales(self, tasks: HumanoidTaskSpec) -> Dict[str, float]:
+        narrowness = float(
+            np.clip(
+                tasks.extras.get("gap_severity", tasks.extras.get("narrowness", 0.0)),
+                0.0,
+                1.0,
+            )
+        )
+        return {
+            "com": 1.0 + (float(self.cfg.through_gap_com_weight_scale) - 1.0) * narrowness,
+            "pelvis": 1.0 + (float(self.cfg.through_gap_pelvis_weight_scale) - 1.0) * narrowness,
+            "torso": 1.0 + (float(self.cfg.through_gap_torso_weight_scale) - 1.0) * narrowness,
+            "swing": 1.0 + (float(self.cfg.through_gap_swing_weight_scale) - 1.0) * narrowness,
+            "arm": 1.0 + (float(self.cfg.through_gap_arm_weight_scale) - 1.0) * narrowness,
+            "waist": 1.0 + (float(self.cfg.through_gap_waist_weight_scale) - 1.0) * narrowness,
+            "lower_body": 1.0 + (float(self.cfg.through_gap_lower_body_weight_scale) - 1.0) * narrowness,
+        }
+
+    def _support_weight_scales(self, num_contacts: int) -> Dict[str, float]:
+        if int(num_contacts) >= 2:
+            return {
+                "com": 1.0,
+                "pelvis": 1.0,
+                "torso": 1.0,
+                "swing": 1.0,
+                "arm": 1.0,
+                "waist": 1.0,
+                "lower_body": 1.0,
+            }
+        return {
+            "com": float(self.cfg.single_support_com_weight_scale),
+            "pelvis": float(self.cfg.single_support_pelvis_weight_scale),
+            "torso": float(self.cfg.single_support_torso_weight_scale),
+            "swing": float(self.cfg.single_support_swing_weight_scale),
+            "arm": float(self.cfg.single_support_arm_weight_scale),
+            "waist": float(self.cfg.single_support_waist_weight_scale),
+            "lower_body": float(self.cfg.single_support_lower_body_weight_scale),
+        }
 
     @staticmethod
     def _safe_solve(A: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -489,10 +1092,17 @@ class G1WholeBodySolverSkeleton:
         q_target = np.asarray(q_current, dtype=np.float64).copy()
         body_height = float(tasks.pelvis.position_world[2])
         crouch_ratio = self._crouch_ratio(body_height)
-        support_mid = 0.5 * (
-            np.asarray(tasks.left_foot.position_world[:2], dtype=np.float64)
-            + np.asarray(tasks.right_foot.position_world[:2], dtype=np.float64)
-        )
+        support_points = []
+        if bool(tasks.left_foot.in_contact):
+            support_points.append(np.asarray(tasks.left_foot.position_world[:2], dtype=np.float64))
+        if bool(tasks.right_foot.in_contact):
+            support_points.append(np.asarray(tasks.right_foot.position_world[:2], dtype=np.float64))
+        if not support_points:
+            support_points = [
+                np.asarray(tasks.left_foot.position_world[:2], dtype=np.float64),
+                np.asarray(tasks.right_foot.position_world[:2], dtype=np.float64),
+            ]
+        support_mid = np.mean(np.stack(support_points, axis=0), axis=0)
         yaw = float(tasks.pelvis.yaw_world)
         rot = np.asarray(
             [
@@ -539,20 +1149,7 @@ class G1WholeBodySolverSkeleton:
         denom = max(float(self.cfg.body_height_nominal) - float(self.cfg.body_height_min), 1e-6)
         return float(np.clip((float(self.cfg.body_height_nominal) - body_height) / denom, 0.0, 1.0))
 
-    def _lower_body_selector(self) -> np.ndarray:
-        return self._joint_selector(tuple(self.model_spec.left_leg_joints) + tuple(self.model_spec.right_leg_joints))
-
-    def _joint_selector(self, joint_names: Sequence[str]) -> np.ndarray:
-        selector = np.zeros((self.model_spec.num_actuated, self.model_spec.num_actuated), dtype=np.float64)
-        valid = [name for name in joint_names if name in self.model_spec.actuated_joints]
-        for name in valid:
-            idx = self.model_spec.actuated_joints.index(name)
-            selector[idx, idx] = 1.0
-        return selector
-
-    def _actuated_qvel_from_full(self, qvel_full: Optional[np.ndarray]) -> np.ndarray:
-        if qvel_full is None:
-            return np.zeros((self.model_spec.num_actuated,), dtype=np.float64)
+    def _actuated_qvel_from_full(self, qvel_full: np.ndarray) -> np.ndarray:
         idx = self.model_spec.actuated_dof_indices
         if idx.size == 0 or int(np.max(idx)) >= qvel_full.size:
             return np.zeros((self.model_spec.num_actuated,), dtype=np.float64)
@@ -578,3 +1175,15 @@ class G1WholeBodySolverSkeleton:
     def _get_joint_value(self, q_ref: np.ndarray, joint_name: str) -> float:
         idx = self.model_spec.actuated_joints.index(joint_name)
         return float(q_ref[idx])
+
+    @staticmethod
+    def _lambda_dict(contact_names: Sequence[str], lambda_ref: np.ndarray) -> Dict[str, Dict[str, float]]:
+        out: Dict[str, Dict[str, float]] = {}
+        for i, name in enumerate(contact_names):
+            lam = np.asarray(lambda_ref[3 * i: 3 * (i + 1)], dtype=np.float64)
+            out[name] = {"fx": float(lam[0]), "fy": float(lam[1]), "fz": float(lam[2])}
+        return out
+
+
+# Backward-compatible import name while the pipeline still uses the old symbol.
+G1WholeBodySolverSkeleton = G1WholeBodyDynamicWBCSolver

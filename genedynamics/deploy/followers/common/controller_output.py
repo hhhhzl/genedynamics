@@ -14,7 +14,9 @@ import numpy as np
 class JointTargets:
     q_ref: np.ndarray
     qd_ref: Optional[np.ndarray] = None
+    ddq_ref: Optional[np.ndarray] = None
     tau_ff: Optional[np.ndarray] = None
+    lambda_ref: Optional[np.ndarray] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 

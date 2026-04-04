@@ -70,6 +70,21 @@ def _draw_corridor_scene(ax: plt.Axes, env: Any) -> None:
                 facecolor=fc, edgecolor="#1a202c", linewidth=0.6,
                 alpha=alpha, zorder=3,
             ))
+        elif getattr(obs, "shape", "box") == "qc":
+            # Quarter-circle: determine start/end angles from clip_sign and cy.
+            # clip_sign=+1 (entry, solid at x<=cx): arc from 180° to 270° (cy>0) or 90° to 180° (cy<0)
+            # clip_sign=-1 (exit, solid at x>=cx):  arc from 270° to 360° (cy>0) or 0° to 90° (cy<0)
+            cs = getattr(obs, "qc_clip_sign", 1.0)
+            if obs.cy > 0:
+                theta1, theta2 = (180, 270) if cs > 0 else (270, 360)
+            else:
+                theta1, theta2 = (90, 180) if cs > 0 else (0, 90)
+            from matplotlib.patches import Wedge
+            ax.add_patch(Wedge(
+                (obs.cx, obs.cy), obs.radius, theta1, theta2,
+                facecolor=fc, edgecolor="#1a202c", linewidth=0.6,
+                alpha=alpha, zorder=3,
+            ))
         else:
             w = obs.x_max - obs.x_min
             h = obs.y_max - obs.y_min

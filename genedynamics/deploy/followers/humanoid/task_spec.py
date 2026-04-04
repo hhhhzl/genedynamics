@@ -37,6 +37,8 @@ class PelvisTask:
     yaw_world: float
     roll_world: float = 0.0
     pitch_world: float = 0.0
+    linear_velocity_world: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float64))
+    angular_velocity_world: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float64))
 
 
 @dataclass
@@ -45,12 +47,32 @@ class FootTask:
     velocity_world: np.ndarray
     yaw_world: float
     in_contact: bool
+    roll_world: float = 0.0
+    pitch_world: float = 0.0
+    angular_velocity_world: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float64))
     weight: float = 1.0
 
 
 @dataclass
 class ArmJointTask:
     joint_targets: Dict[str, float]
+
+
+@dataclass
+class FootContactObservation:
+    position_world: np.ndarray
+    velocity_world: np.ndarray
+    rotation_world: np.ndarray
+    angular_velocity_world: np.ndarray
+    in_contact: bool
+    contact_count: int = 0
+    support_load: float = 0.0
+
+
+@dataclass
+class ContactObservations:
+    left: FootContactObservation
+    right: FootContactObservation
 
 
 @dataclass

@@ -138,6 +138,9 @@ def main() -> None:
     qpos = np.asarray(rollout["qpos"], dtype=np.float64)
     qvel = np.asarray(rollout["qvel"], dtype=np.float64)
     ctrl = np.asarray(rollout["ctrl"], dtype=np.float64)
+    tau_ff = np.asarray(rollout.get("tau_ff", np.zeros((0, 0))), dtype=np.float64)
+    ddq = np.asarray(rollout.get("ddq", np.zeros((0, 0))), dtype=np.float64)
+    lam = np.asarray(rollout.get("lambda", np.zeros((0, 0))), dtype=np.float64)
     render_states = np.asarray(rollout.get("render_states", states), dtype=np.float64)
     plan_states = np.asarray(rollout["plan_states"], dtype=np.float64)
     corridor_scene = _load_corridor_scene_metadata(seed_dir)
@@ -146,6 +149,9 @@ def main() -> None:
     np.save(out_dir / "qpos.npy", qpos)
     np.save(out_dir / "qvel.npy", qvel)
     np.save(out_dir / "ctrl.npy", ctrl)
+    np.save(out_dir / "tau_ff.npy", tau_ff)
+    np.save(out_dir / "ddq.npy", ddq)
+    np.save(out_dir / "lambda.npy", lam)
     np.save(out_dir / "render_states.npy", render_states)
     np.save(out_dir / "plan_states.npy", plan_states)
 
@@ -160,6 +166,9 @@ def main() -> None:
         "nq": int(qpos.shape[1]) if qpos.ndim == 2 and qpos.size > 0 else 0,
         "nv": int(qvel.shape[1]) if qvel.ndim == 2 and qvel.size > 0 else 0,
         "nu": int(ctrl.shape[1]) if ctrl.ndim == 2 and ctrl.size > 0 else 0,
+        "n_tau": int(tau_ff.shape[1]) if tau_ff.ndim == 2 and tau_ff.size > 0 else 0,
+        "n_ddq": int(ddq.shape[1]) if ddq.ndim == 2 and ddq.size > 0 else 0,
+        "n_lambda": int(lam.shape[1]) if lam.ndim == 2 and lam.size > 0 else 0,
         "model_xml_path": str(rollout["metadata"].get("model_xml_path", "")),
         "control_dt": float(rollout["metadata"].get("control_dt", args.control_dt)),
         "sim_dt": float(rollout["metadata"].get("sim_dt", args.sim_dt)),
