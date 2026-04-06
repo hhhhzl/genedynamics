@@ -20,6 +20,10 @@ class G1WBCTaskStackConfig:
     contact_position_kd: float = 6.0
     contact_position_error_clip: float = 0.01
     contact_accel_limit: float = 6.0
+    contact_orientation_kp: float = 18.0
+    contact_orientation_kd: float = 6.0
+    contact_orientation_error_clip: float = 0.10
+    contact_angular_accel_limit: float = 8.0
     com_kp: float = 45.0
     com_kd: float = 14.0
     pelvis_orientation_kp: float = 40.0
@@ -42,7 +46,7 @@ class G1WBCTaskStackConfig:
     torso_task_weight: float = 6.0
     swing_foot_task_weight: float = 8.0
     swing_foot_orientation_weight: float = 2.5
-    lower_body_posture_weight: float = 2.0
+    lower_body_posture_weight: float = 1.2
     waist_posture_weight: float = 1.6
     arm_posture_weight: float = 1.2
     posture_weight: float = 0.5
@@ -51,10 +55,14 @@ class G1WBCTaskStackConfig:
     lambda_normal_target: float = 35.0
     lambda_normal_weight: float = 0.05
     lambda_tangent_weight: float = 0.02
+    lambda_moment_weight: float = 0.01
     friction_coeff: float = 0.60
     lambda_min_normal: float = 20.0
     lambda_max_normal: float = 550.0
     lambda_max_tangent: float = 220.0
+    lambda_max_moment_roll: float = 70.0
+    lambda_max_moment_pitch: float = 70.0
+    lambda_max_moment_yaw: float = 45.0
     through_gap_com_weight_scale: float = 1.35
     through_gap_pelvis_weight_scale: float = 1.25
     through_gap_torso_weight_scale: float = 2.20
@@ -63,9 +71,9 @@ class G1WBCTaskStackConfig:
     through_gap_waist_weight_scale: float = 2.00
     through_gap_lower_body_weight_scale: float = 1.40
     single_support_com_weight_scale: float = 1.20
-    single_support_pelvis_weight_scale: float = 0.95
-    single_support_torso_weight_scale: float = 0.35
-    single_support_swing_weight_scale: float = 0.12
+    single_support_pelvis_weight_scale: float = 1.10
+    single_support_torso_weight_scale: float = 0.50
+    single_support_swing_weight_scale: float = 0.16
     single_support_arm_weight_scale: float = 0.03
     single_support_waist_weight_scale: float = 0.05
     single_support_lower_body_weight_scale: float = 0.18
@@ -74,7 +82,7 @@ class G1WBCTaskStackConfig:
     crouch_hip_pitch_gain: float = 0.35
     crouch_knee_gain: float = 0.95
     crouch_ankle_pitch_gain: float = -0.45
-    pelvis_forward_hip_pitch_gain: float = 0.20
+    pelvis_forward_hip_pitch_gain: float = 0.0
     pelvis_lateral_hip_roll_gain: float = 0.50
     max_joint_accel: float = 40.0
     max_base_accel: float = 20.0
@@ -91,7 +99,7 @@ class G1WBCTaskStackConfig:
     slsqp_maxiter: int = 120
     use_trust_constr: bool = False
     trust_constr_maxiter: int = 80
-    use_trust_constr_repair: bool = True
+    use_trust_constr_repair: bool = False
     trust_constr_repair_maxiter: int = 40
     trust_constr_repair_violation_threshold: float = 1e-3
     single_support_trust_constr_maxiter: int = 160
@@ -234,21 +242,21 @@ class G1WholeBodyDynamicWBCSolver:
     ) -> tuple[np.ndarray, np.ndarray, Dict[str, object]]:
         support_blocks = self._support_contact_blocks(tasks, qvel_full)
         num_contacts = len(support_blocks)
-        n_lambda = 3 * num_contacts
+        n_lambda = 6 * num_contacts
         nv = self.model.nv
 
         dyn_C = np.zeros((6, nv + n_lambda), dtype=np.float64)
         dyn_C[:, :nv] = M[:6, :]
         for i, block in enumerate(support_blocks):
-            lam_slice = slice(nv + 3 * i, nv + 3 * (i + 1))
-            dyn_C[:, lam_slice] = -block["J"][:3, :6].T
+            lam_slice = slice(nv + 6 * i, nv + 6 * (i + 1))
+            dyn_C[:, lam_slice] = -block["J"][:, :6].T
         dyn_d = -bias[:6]
 
         if support_blocks:
-            contact_C = np.zeros((3 * num_contacts, nv + n_lambda), dtype=np.float64)
-            contact_d = np.zeros((3 * num_contacts,), dtype=np.float64)
+            contact_C = np.zeros((6 * num_contacts, nv + n_lambda), dtype=np.float64)
+            contact_d = np.zeros((6 * num_contacts,), dtype=np.float64)
             for i, block in enumerate(support_blocks):
-                row = slice(3 * i, 3 * (i + 1))
+                row = slice(6 * i, 6 * (i + 1))
                 contact_C[row, :nv] = block["J"]
                 contact_d[row] = block["a_des"]
             C_eq = np.vstack([dyn_C, contact_C])
@@ -308,7 +316,7 @@ class G1WholeBodyDynamicWBCSolver:
         rhs: List[np.ndarray] = []
         errors: Dict[str, float] = {}
         nv = self.model.nv
-        n_lambda = 3 * len(support_blocks)
+        n_lambda = 6 * len(support_blocks)
         narrowness = float(np.clip(tasks.extras.get("narrowness", 0.0), 0.0, 1.0))
         weight_scales = self._through_gap_weight_scales(tasks)
 
@@ -447,11 +455,21 @@ class G1WholeBodyDynamicWBCSolver:
 
             lambda_target = np.zeros((n_lambda,), dtype=np.float64)
             for i in range(len(support_blocks)):
-                lambda_target[3 * i + 2] = float(self.cfg.lambda_normal_target)
+                lambda_target[6 * i + 2] = float(self.cfg.lambda_normal_target)
             row_lambda_target = np.zeros((n_lambda, nv + n_lambda), dtype=np.float64)
-            row_lambda_target[:, nv:] = np.diag(
-                [self.cfg.lambda_tangent_weight, self.cfg.lambda_tangent_weight, self.cfg.lambda_normal_weight] * len(support_blocks)
-            )
+            lambda_weights = []
+            for _ in range(len(support_blocks)):
+                lambda_weights.extend(
+                    [
+                        self.cfg.lambda_tangent_weight,
+                        self.cfg.lambda_tangent_weight,
+                        self.cfg.lambda_normal_weight,
+                        self.cfg.lambda_moment_weight,
+                        self.cfg.lambda_moment_weight,
+                        self.cfg.lambda_moment_weight,
+                    ]
+                )
+            row_lambda_target[:, nv:] = np.diag(lambda_weights)
             rows.append(row_lambda_target)
             rhs.append(row_lambda_target[:, nv:] @ lambda_target)
 
@@ -470,16 +488,37 @@ class G1WholeBodyDynamicWBCSolver:
         for site_name, foot_task in (("left_foot", tasks.left_foot), ("right_foot", tasks.right_foot)):
             if not foot_task.in_contact:
                 continue
-            J, pos_err, vel = self._site_linear_kinematics(site_name, foot_task.position_world, qvel_full)
-            if J is None or pos_err is None or vel is None:
+            J_lin, pos_err, vel = self._site_linear_kinematics(site_name, foot_task.position_world, qvel_full)
+            J_ang, ori_err, ang_vel = self._site_orientation_kinematics(
+                site_name,
+                target_rpy=(foot_task.roll_world, foot_task.pitch_world, foot_task.yaw_world),
+                qvel_full=qvel_full,
+            )
+            if (
+                J_lin is None
+                or pos_err is None
+                or vel is None
+                or J_ang is None
+                or ori_err is None
+                or ang_vel is None
+            ):
                 continue
             pos_err = np.clip(
                 np.asarray(pos_err, dtype=np.float64),
                 -float(self.cfg.contact_position_error_clip),
                 float(self.cfg.contact_position_error_clip),
             )
-            a_des = float(self.cfg.contact_position_kp) * pos_err + float(self.cfg.contact_position_kd) * (-vel)
-            a_des = np.clip(a_des, -float(self.cfg.contact_accel_limit), float(self.cfg.contact_accel_limit))
+            ori_err = np.clip(
+                np.asarray(ori_err, dtype=np.float64),
+                -float(self.cfg.contact_orientation_error_clip),
+                float(self.cfg.contact_orientation_error_clip),
+            )
+            a_lin = float(self.cfg.contact_position_kp) * pos_err + float(self.cfg.contact_position_kd) * (-vel)
+            a_ang = float(self.cfg.contact_orientation_kp) * ori_err + float(self.cfg.contact_orientation_kd) * (-ang_vel)
+            a_lin = np.clip(a_lin, -float(self.cfg.contact_accel_limit), float(self.cfg.contact_accel_limit))
+            a_ang = np.clip(a_ang, -float(self.cfg.contact_angular_accel_limit), float(self.cfg.contact_angular_accel_limit))
+            J = np.vstack([J_lin, J_ang])
+            a_des = np.concatenate([a_lin, a_ang], axis=0)
             blocks.append({"name": site_name, "J": J, "a_des": a_des})
         return blocks
 
@@ -571,6 +610,27 @@ class G1WholeBodyDynamicWBCSolver:
         a_des = float(kp) * err + float(kd) * (np.asarray(target_angular_velocity, dtype=np.float64) - ang_vel)
         return jacr, a_des
 
+    def _site_orientation_kinematics(
+        self,
+        site_name: str,
+        target_rpy: Tuple[float, float, float],
+        qvel_full: np.ndarray,
+    ) -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+        sid = self.model_spec.site_id.get(site_name)
+        if sid is None:
+            return None, None, None
+        jacr = np.zeros((3, self.model.nv), dtype=np.float64)
+        self.mujoco.mj_jacSite(self.model, self.data, None, jacr, sid)
+        current = np.asarray(self.data.site_xmat[sid], dtype=np.float64).reshape(3, 3)
+        target = self._rotation_matrix_from_rpy(*target_rpy)
+        ang_vel = jacr @ qvel_full
+        err = 0.5 * (
+            np.cross(current[:, 0], target[:, 0])
+            + np.cross(current[:, 1], target[:, 1])
+            + np.cross(current[:, 2], target[:, 2])
+        )
+        return jacr, err, ang_vel
+
     def _joint_accel_command(
         self,
         q_target: np.ndarray,
@@ -610,7 +670,7 @@ class G1WholeBodyDynamicWBCSolver:
         if n_lambda > 0:
             mu = float(self.cfg.friction_coeff)
             for i in range(len(support_blocks)):
-                lam = slice(nv + 3 * i, nv + 3 * (i + 1))
+                lam = slice(nv + 6 * i, nv + 6 * (i + 1))
 
                 row = np.zeros((total_dim,), dtype=np.float64)
                 row[lam.start + 0] = 1.0
@@ -665,6 +725,23 @@ class G1WholeBodyDynamicWBCSolver:
                 row[lam.start + 1] = -1.0
                 rows.append(row)
                 rhs.append(float(self.cfg.lambda_max_tangent))
+
+                for axis, bound in enumerate(
+                    (
+                        float(self.cfg.lambda_max_moment_roll),
+                        float(self.cfg.lambda_max_moment_pitch),
+                        float(self.cfg.lambda_max_moment_yaw),
+                    )
+                ):
+                    row = np.zeros((total_dim,), dtype=np.float64)
+                    row[lam.start + 3 + axis] = 1.0
+                    rows.append(row)
+                    rhs.append(bound)
+
+                    row = np.zeros((total_dim,), dtype=np.float64)
+                    row[lam.start + 3 + axis] = -1.0
+                    rows.append(row)
+                    rhs.append(bound)
 
         act_idx = self.model_spec.actuated_dof_indices
         tau_map = np.zeros((self.model_spec.num_actuated, total_dim), dtype=np.float64)
@@ -902,7 +979,7 @@ class G1WholeBodyDynamicWBCSolver:
             except Exception:
                 pass
 
-        if prefer_trust_constr:
+        if prefer_trust_constr and bool(self.cfg.use_trust_constr):
             trust_y = _trust_constr_attempt(int(self.cfg.single_support_trust_constr_maxiter))
             if trust_y is not None:
                 candidate = register_candidate(x0 + N @ trust_y, "trust_constr_single_support")
@@ -1180,8 +1257,15 @@ class G1WholeBodyDynamicWBCSolver:
     def _lambda_dict(contact_names: Sequence[str], lambda_ref: np.ndarray) -> Dict[str, Dict[str, float]]:
         out: Dict[str, Dict[str, float]] = {}
         for i, name in enumerate(contact_names):
-            lam = np.asarray(lambda_ref[3 * i: 3 * (i + 1)], dtype=np.float64)
-            out[name] = {"fx": float(lam[0]), "fy": float(lam[1]), "fz": float(lam[2])}
+            lam = np.asarray(lambda_ref[6 * i: 6 * (i + 1)], dtype=np.float64)
+            out[name] = {
+                "fx": float(lam[0]),
+                "fy": float(lam[1]),
+                "fz": float(lam[2]),
+                "mx": float(lam[3]),
+                "my": float(lam[4]),
+                "mz": float(lam[5]),
+            }
         return out
 
 

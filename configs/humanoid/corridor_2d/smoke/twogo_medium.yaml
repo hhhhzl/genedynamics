@@ -155,9 +155,9 @@ scheduler_config:
       use_stochastic_gate: true
   diffusion_schedulers:
     - type: fixed
-      M_k: 2048
-      T_k: 0.3
-      Ndiffuse: 150
+      M_k: 2096
+      T_k: 0.1
+      Ndiffuse: 200
       beta0: 1e-5
       betaT: 1e-2
   constraint_merge_strategy: merge

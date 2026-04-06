@@ -26,7 +26,7 @@ class FootstepPlannerConfig:
     nominal_stance_width: float = 0.24
     nominal_foot_x: float = 0.02
     swing_height: float = 0.025
-    footstep_preview_time: float = 0.35
+    footstep_preview_time: float = 0.45
     max_step_forward: float = 0.28
     max_step_backward: float = 0.10
     max_step_lateral: float = 0.10
@@ -37,11 +37,12 @@ class FootstepPlannerConfig:
     through_gap_swing_height_scale: float = 0.85
     through_gap_center_bias_gain: float = 0.22
     through_gap_center_velocity_bias: float = 0.16
-    startup_small_step_count: int = 3
-    startup_forward_step_scale: float = 0.35
-    startup_lateral_step_scale: float = 0.55
-    startup_preview_scale: float = 0.45
-    touchdown_anchor_blend: float = 0.75
+    startup_small_step_count: int = 1
+    startup_forward_step_scale: float = 0.80
+    startup_lateral_step_scale: float = 0.80
+    startup_preview_scale: float = 0.85
+    touchdown_anchor_blend: float = 0.25
+    min_touchdown_goal_blend: float = 0.35
     envelope: CorridorEnvelopeConfig = field(default_factory=CorridorEnvelopeConfig)
 
 
@@ -156,10 +157,23 @@ class HumanoidFootstepPlanner:
             touchdown_obs = observations.left if self._active_swing_foot == "left" else observations.right
             touchdown_world = np.asarray(touchdown_obs.position_world, dtype=np.float64)
             if self._swing_goal_world is not None:
+                goal_delta = float(
+                    np.linalg.norm(
+                        np.asarray(self._swing_goal_world[:2], dtype=np.float64)
+                        - np.asarray(self._swing_start_world[:2], dtype=np.float64)
+                    )
+                ) if self._swing_start_world is not None else 0.0
+                goal_blend = max(float(self.cfg.min_touchdown_goal_blend), 1.0 - float(self.cfg.touchdown_anchor_blend))
                 touchdown_world = (
-                    float(self.cfg.touchdown_anchor_blend) * touchdown_world
-                    + (1.0 - float(self.cfg.touchdown_anchor_blend)) * self._swing_goal_world
+                    (1.0 - goal_blend) * touchdown_world
+                    + goal_blend * self._swing_goal_world
                 )
+                # When the intended step is meaningful, keep most of the planned forward progress.
+                if goal_delta >= 0.04:
+                    touchdown_world[0] = max(
+                        float(touchdown_world[0]),
+                        float(self._swing_start_world[0] + 0.75 * (self._swing_goal_world[0] - self._swing_start_world[0])),
+                    )
             if self._active_swing_foot == "left":
                 self._left_anchor_world = touchdown_world.copy()
             else:

@@ -27,6 +27,7 @@ from genedynamics.deploy.followers.humanoid.upper_body_mapper import UpperBodyTa
 
 @dataclass
 class HumanoidTaskBuilderConfig:
+    body_height_nominal: float = 0.75
     max_pelvis_forward_offset: float = 0.20
     max_pelvis_backward_offset: float = 0.08
     max_pelvis_lateral_offset: float = 0.12
@@ -39,6 +40,10 @@ class HumanoidTaskBuilderConfig:
     double_support_velocity_scale: float = 0.90
     single_support_velocity_scale: float = 0.30
     through_gap_single_support_velocity_scale: float = 0.18
+    startup_second_step_motion_scale: float = 0.70
+    startup_second_step_height_scale: float = 0.72
+    startup_second_step_torso_scale: float = 0.62
+    startup_second_step_joint_scale: float = 0.70
     body_pitch_from_crouch_gain: float = 0.08
     pelvis_roll_from_lateral_velocity_gain: float = 0.08
     pelvis_roll_max: float = 0.18
@@ -46,7 +51,7 @@ class HumanoidTaskBuilderConfig:
     through_gap_pelvis_lateral_scale: float = 0.45
     swing_task_min_weight: float = 0.04
     swing_task_max_weight: float = 0.28
-    swing_liftoff_transition_alpha: float = 0.40
+    swing_liftoff_transition_alpha: float = 0.18
     envelope: CorridorEnvelopeConfig = field(default_factory=CorridorEnvelopeConfig)
 
 
@@ -64,6 +69,7 @@ class HumanoidTaskBuilder:
         upper_body: UpperBodyTargets,
     ) -> HumanoidTaskSpec:
         envelope_state = self.envelope.evaluate(intent)
+        startup_scales = self._startup_tracking_scales(phase)
         left_in_contact, right_in_contact = self._contact_flags(phase)
         pelvis_xy = self._clamp_pelvis_xy_to_support(
             intent,
@@ -71,12 +77,24 @@ class HumanoidTaskBuilder:
             footsteps,
             left_in_contact,
             right_in_contact,
+            tracking_scale=startup_scales["motion"],
         )
         left_pos, left_vel, left_weight = self._foot_command("left", phase, footsteps, left_in_contact)
         right_pos, right_vel, right_weight = self._foot_command("right", phase, footsteps, right_in_contact)
-        pelvis_velocity = self._pelvis_velocity_command(frame, intent, phase, envelope_state.gap_severity)
+        pelvis_velocity = self._pelvis_velocity_command(
+            frame,
+            intent,
+            phase,
+            envelope_state.gap_severity,
+            startup_velocity_scale=startup_scales["motion"],
+        )
+        target_height = float(self.cfg.body_height_nominal) + startup_scales["height"] * (
+            float(intent.body_height) - float(self.cfg.body_height_nominal)
+        )
+        torso_yaw = startup_scales["torso"] * float(upper_body.torso_yaw)
+        joint_hints = self._scale_joint_hints(dict(upper_body.joint_hints), startup_scales["joint"])
         pelvis = PelvisTask(
-            position_world=np.asarray([pelvis_xy[0], pelvis_xy[1], intent.body_height], dtype=np.float64),
+            position_world=np.asarray([pelvis_xy[0], pelvis_xy[1], target_height], dtype=np.float64),
             yaw_world=float(intent.yaw),
             roll_world=float(
                 np.clip(
@@ -98,7 +116,7 @@ class HumanoidTaskBuilder:
         return HumanoidTaskSpec(
             plan_frame=frame,
             pelvis=pelvis,
-            torso_yaw=float(upper_body.torso_yaw),
+            torso_yaw=float(torso_yaw),
             left_foot=FootTask(
                 position_world=left_pos,
                 velocity_world=left_vel,
@@ -121,13 +139,14 @@ class HumanoidTaskBuilder:
             ),
             left_arm=upper_body.left_arm,
             right_arm=upper_body.right_arm,
-            joint_hints=dict(upper_body.joint_hints),
+            joint_hints=joint_hints,
             extras={
                 "crouch_ratio": float(upper_body.crouch_ratio),
                 "narrowness": float(upper_body.narrowness),
                 "gap_severity": float(upper_body.gap_severity),
                 "effective_width": float(upper_body.effective_width),
                 "through_gap_mode": bool(upper_body.through_gap_mode),
+                "startup_scales": dict(startup_scales),
                 "phase": phase.phase.value,
                 "phase_alpha": float(phase.alpha),
                 "step_index": phase.step_index,
@@ -178,6 +197,42 @@ class HumanoidTaskBuilder:
             return 0.0
         return self._effective_swing_alpha(phase.alpha)
 
+    def _startup_tracking_scales(self, phase: PhaseState) -> dict[str, float]:
+        if int(phase.step_index) <= 0:
+            if phase.phase == ContactPhase.DOUBLE_SUPPORT:
+                alpha = float(np.clip(phase.alpha, 0.0, 1.0))
+                motion = 0.05 + 0.20 * alpha
+                height = 0.08 + 0.18 * alpha
+                torso = 0.05 + 0.15 * alpha
+                joint = 0.15 + 0.20 * alpha
+            else:
+                release = self._support_release_alpha(phase)
+                if not bool(phase.metadata.get("liftoff_confirmed", False)):
+                    motion = 0.10
+                    height = 0.12
+                    torso = 0.08
+                    joint = 0.20
+                else:
+                    motion = 0.55 + 0.40 * release
+                    height = 0.45 + 0.40 * release
+                    torso = 0.35 + 0.40 * release
+                    joint = 0.45 + 0.35 * release
+            return {
+                "motion": float(motion),
+                "height": float(height),
+                "torso": float(torso),
+                "joint": float(joint),
+            }
+        if int(phase.step_index) == 1:
+            alpha = float(np.clip(phase.alpha if phase.phase == ContactPhase.DOUBLE_SUPPORT else self._support_release_alpha(phase), 0.0, 1.0))
+            return {
+                "motion": float(self.cfg.startup_second_step_motion_scale + (1.0 - self.cfg.startup_second_step_motion_scale) * 0.90 * alpha),
+                "height": float(self.cfg.startup_second_step_height_scale + (1.0 - self.cfg.startup_second_step_height_scale) * 0.90 * alpha),
+                "torso": float(self.cfg.startup_second_step_torso_scale + (1.0 - self.cfg.startup_second_step_torso_scale) * 0.90 * alpha),
+                "joint": float(self.cfg.startup_second_step_joint_scale + (1.0 - self.cfg.startup_second_step_joint_scale) * 0.90 * alpha),
+            }
+        return {"motion": 1.0, "height": 1.0, "torso": 1.0, "joint": 1.0}
+
     def _foot_command(
         self,
         side: str,
@@ -210,6 +265,7 @@ class HumanoidTaskBuilder:
         intent: TraversalIntent,
         phase: PhaseState,
         gap_severity: float,
+        startup_velocity_scale: float,
     ) -> np.ndarray:
         vel_xy = np.asarray(intent.planar_velocity, dtype=np.float64).copy()
         if phase.phase == ContactPhase.DOUBLE_SUPPORT:
@@ -224,7 +280,13 @@ class HumanoidTaskBuilder:
                 * float(np.clip(gap_severity, 0.0, 1.0))
             )
             vel_xy *= (0.2 + 0.8 * release) * single_support_scale
+        vel_xy *= float(np.clip(startup_velocity_scale, 0.0, 1.0))
         return np.asarray([vel_xy[0], vel_xy[1], frame.h_dot], dtype=np.float64)
+
+    @staticmethod
+    def _scale_joint_hints(joint_hints: dict[str, float], scale: float) -> dict[str, float]:
+        scale = float(np.clip(scale, 0.0, 1.0))
+        return {name: scale * float(value) for name, value in joint_hints.items()}
 
     def _clamp_pelvis_xy_to_support(
         self,
@@ -233,6 +295,7 @@ class HumanoidTaskBuilder:
         footsteps: FootstepPlan,
         left_in_contact: bool,
         right_in_contact: bool,
+        tracking_scale: float,
     ) -> np.ndarray:
         envelope_state = self.envelope.evaluate(intent)
         yaw = float(intent.yaw)
@@ -257,6 +320,7 @@ class HumanoidTaskBuilder:
         single_support = len(support_points) == 1
         desired = np.asarray(intent.planar_position, dtype=np.float64)
         local_offset = rot.T @ (desired - support_mid)
+        local_offset *= float(np.clip(tracking_scale, 0.0, 1.0))
         max_forward = self.cfg.single_support_forward_offset if single_support else self.cfg.max_pelvis_forward_offset
         max_backward = self.cfg.single_support_backward_offset if single_support else self.cfg.max_pelvis_backward_offset
         max_lateral = self.cfg.single_support_lateral_offset if single_support else self.cfg.max_pelvis_lateral_offset

@@ -53,6 +53,7 @@ class HumanoidMujocoPipelineConfig:
     task_builder: HumanoidTaskBuilderConfig = field(default_factory=HumanoidTaskBuilderConfig)
     upper_body: HumanoidUpperBodyMapperConfig = field(default_factory=HumanoidUpperBodyMapperConfig)
     wbc: G1WBCTaskStackConfig = field(default_factory=G1WBCTaskStackConfig)
+    startup_actuation_second_step_scale: float = 0.70
 
 
 class HumanoidMujocoPipeline:
@@ -178,6 +179,7 @@ class HumanoidMujocoPipeline:
             upper_body = self.upper_body_mapper.map(frame)
             tasks = self.task_builder.build(frame, intent, phase, footsteps, upper_body)
             targets = self.solver.solve(tasks, qpos=self.data.qpos, qvel=self.data.qvel, dt=step_dt)
+            self._apply_startup_actuation_blend(targets, phase)
 
             render_state_hist.append(self._compose_render_state(targets.q_ref, tasks))
             self.data.qfrc_applied[:] = 0.0
@@ -260,6 +262,58 @@ class HumanoidMujocoPipeline:
         left = np.asarray(self.data.site_xpos[left_sid], dtype=np.float64).copy()
         right = np.asarray(self.data.site_xpos[right_sid], dtype=np.float64).copy()
         return left, right
+
+    def _apply_startup_actuation_blend(self, targets: Any, phase: Any) -> None:
+        beta = self._startup_actuation_blend(phase)
+        if beta >= 0.999:
+            return
+        stand = np.asarray(self.model_spec.stand_ctrl, dtype=np.float64)
+        upper_mask = np.zeros((self.model_spec.num_actuated,), dtype=np.float64)
+        upper_joint_names = (
+            tuple(self.model_spec.waist_joints)
+            + tuple(self.model_spec.left_arm_joints)
+            + tuple(self.model_spec.right_arm_joints)
+        )
+        for name in upper_joint_names:
+            if name in self.model_spec.actuated_joints:
+                upper_mask[self.model_spec.actuated_joints.index(name)] = 1.0
+        leg_mask = 1.0 - upper_mask
+        leg_beta = min(1.0, 0.70 + 0.30 * beta)
+
+        q_ref = np.asarray(targets.q_ref, dtype=np.float64)
+        blended_q = q_ref.copy()
+        blended_q = stand + upper_mask * beta * (blended_q - stand) + leg_mask * leg_beta * (blended_q - stand)
+        targets.q_ref = blended_q
+        if targets.qd_ref is not None:
+            qd_ref = np.asarray(targets.qd_ref, dtype=np.float64)
+            targets.qd_ref = upper_mask * beta * qd_ref + leg_mask * leg_beta * qd_ref
+        if targets.ddq_ref is not None:
+            ddq_ref = np.asarray(targets.ddq_ref, dtype=np.float64)
+            ddq_ref = ddq_ref.copy()
+            act_idx = np.asarray(self.model_spec.actuated_dof_indices, dtype=np.int32)
+            ddq_ref[act_idx] = upper_mask * beta * ddq_ref[act_idx] + leg_mask * leg_beta * ddq_ref[act_idx]
+            targets.ddq_ref = ddq_ref
+        if targets.tau_ff is not None:
+            tau_ff = np.asarray(targets.tau_ff, dtype=np.float64)
+            targets.tau_ff = upper_mask * beta * tau_ff + leg_mask * leg_beta * tau_ff
+        targets.metadata = dict(targets.metadata)
+        targets.metadata["startup_actuation_blend"] = float(beta)
+        targets.metadata["startup_leg_actuation_blend"] = float(leg_beta)
+
+    def _startup_actuation_blend(self, phase: Any) -> float:
+        if int(phase.step_index) <= 0:
+            if phase.phase == "double_support" or getattr(phase.phase, "value", None) == "double_support":
+                alpha = float(np.clip(phase.alpha, 0.0, 1.0))
+                return float(0.10 + 0.50 * alpha)
+            liftoff = bool(phase.metadata.get("liftoff_confirmed", False))
+            if not liftoff:
+                return 0.35
+            release = float(np.clip((phase.alpha - 0.18) / 0.82, 0.0, 1.0))
+            return float(0.80 + 0.20 * release)
+        if int(phase.step_index) == 1:
+            alpha = float(np.clip(phase.alpha, 0.0, 1.0))
+            return float(min(1.0, self.cfg.startup_actuation_second_step_scale + 0.45 * alpha))
+        return 1.0
 
     def current_contact_observations(self) -> ContactObservations:
         left = self._foot_contact_observation("left")

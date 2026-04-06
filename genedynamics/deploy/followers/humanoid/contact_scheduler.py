@@ -25,9 +25,9 @@ from genedynamics.deploy.followers.humanoid.task_spec import (
 @dataclass
 class HumanoidContactSchedulerConfig:
     double_support_time: float = 0.12
-    double_support_time_through_gap: float = 0.22
-    swing_time: float = 0.42
-    swing_time_through_gap: float = 0.58
+    double_support_time_through_gap: float = 0.18
+    swing_time: float = 0.36
+    swing_time_through_gap: float = 0.48
     min_motion_score: float = 0.06
     progress_gate: float = 0.05
     yaw_rate_weight: float = 0.10
@@ -39,12 +39,12 @@ class HumanoidContactSchedulerConfig:
     touchdown_load_threshold_through_gap: float = 30.0
     liftoff_height_threshold: float = 0.03
     liftoff_unload_threshold: float = 12.0
-    max_liftoff_wait: float = 0.18
+    max_liftoff_wait: float = 0.08
     support_loss_timeout: float = 0.08
     double_support_load_threshold: float = 35.0
     swing_support_load_threshold: float = 70.0
-    startup_double_support_steps: int = 2
-    startup_double_support_scale: float = 2.5
+    startup_double_support_steps: int = 1
+    startup_double_support_scale: float = 1.6
     startup_swing_support_load_scale: float = 1.25
     envelope: CorridorEnvelopeConfig = field(default_factory=CorridorEnvelopeConfig)
 

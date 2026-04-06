@@ -105,6 +105,16 @@ def render_episode_to_gif(
         follow_cam.distance = 2.8 if model == "go2" else (3.0 if model == "g1" else 3.5)
         follow_cam.azimuth = 130.0
         follow_cam.elevation = -18.0
+        fixed_camera = bool(model == "g1")
+        if fixed_camera and positions.size > 0:
+            traj_min = np.min(positions, axis=0)
+            traj_max = np.max(positions, axis=0)
+            traj_center = 0.5 * (traj_min + traj_max)
+            traj_span = float(np.max(np.abs(traj_max - traj_min)))
+            follow_cam.lookat[:] = traj_center
+            follow_cam.distance = max(3.8, 2.4 + 3.0 * traj_span)
+            follow_cam.elevation = -16.0
+            follow_cam.azimuth = 122.0
 
         if output_path is None:
             output_path = Path(episode_dir) / "trajectory_mujoco.gif"
@@ -115,7 +125,7 @@ def render_episode_to_gif(
             mj_data.qpos[:] = states[i, : mj_model.nq]
             mj_data.qvel[:] = states[i, mj_model.nq : mj_model.nq + mj_model.nv] if states.shape[1] > mj_model.nq else 0
             mujoco.mj_forward(mj_model, mj_data)
-            if mj_model.nq >= 3:
+            if mj_model.nq >= 3 and not fixed_camera:
                 follow_cam.lookat[:] = mj_data.qpos[:3]
             renderer.update_scene(mj_data, camera=follow_cam)
             pixels = renderer.render()
