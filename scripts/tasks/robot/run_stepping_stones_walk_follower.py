@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Offline walk follower for stepping-stones plans.
+Offline walk follower for stepping-stones plans (v2 controller).
 
-Generates first full-body stepping rollout for Go2:
+Generates a full-body stepping rollout for Go2:
   - qpos.npy / qvel.npy / ctrl.npy
   - HTML/GIF replay
+
+Uses :class:`~genedynamics.deploy.controllers.quadruped_stepping.QuadrupedSteppingController`
+(Phase 11 — migrated from the legacy ``SteppingWalkFollower`` v1).
 """
 
 from __future__ import annotations
@@ -17,9 +20,9 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
-from genedynamics.deploy.sim_plan.stepping_walk_follower import (
-    SteppingWalkFollower,
-    WalkFollowerConfig,
+from genedynamics.deploy.controllers.quadruped_stepping import (
+    MinimalFollowerConfig,
+    QuadrupedSteppingController,
     load_stepping_plan_from_seed_dir,
 )
 from genedynamics.tasks.stepping_stones import sample_stepping_stones_scene, stepping_scene_to_dict
@@ -70,7 +73,6 @@ def main() -> None:
     parser.add_argument("--sim-dt", type=float, default=0.01)
     parser.add_argument("--base-height-offset", type=float, default=0.02)
     parser.add_argument("--min-foot-z", type=float, default=0.015)
-    parser.add_argument("--lock-base-pose", action="store_true")
     parser.add_argument("--base-z-min", type=float, default=0.22)
     parser.add_argument("--max-render-frames", type=int, default=140)
     args = parser.parse_args()
@@ -89,38 +91,35 @@ def main() -> None:
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    scene_dict = _resolve_stepping_scene(seed_dir, float(args.step_width))
+
     plan = load_stepping_plan_from_seed_dir(seed_dir, step_width=float(args.step_width))
-    follower = SteppingWalkFollower(
-        cfg=WalkFollowerConfig(
-            gait=str(args.gait),
-            sim_dt=float(args.sim_dt),
-            phase_steps=int(args.phase_steps),
-            swing_height=float(args.swing_height),
-            step_width=float(args.step_width),
-            base_height_offset=float(args.base_height_offset),
-            min_foot_z=float(args.min_foot_z),
-            lock_base_pose=bool(args.lock_base_pose),
-            base_z_min=float(args.base_z_min),
-        )
-    )
-    qpos, qvel, ctrl = follower.rollout(
-        mid=plan["mid"],
-        yaw=plan["yaw"],
+    cfg = MinimalFollowerConfig(
+        gait=str(args.gait),
+        sim_dt=float(args.sim_dt),
+        phase_steps=int(args.phase_steps),
+        swing_height=float(args.swing_height),
         step_width=float(args.step_width),
-        feet_ref=plan["feet"],
-        mode_ref=plan["mode"],
-        tau_ref=plan["tau"],
+        base_height_offset=float(args.base_height_offset),
+        min_foot_z=float(args.min_foot_z),
+        base_z_min=float(args.base_z_min),
     )
+    controller = QuadrupedSteppingController(cfg=cfg, stepping_scene=scene_dict)
+    result = controller.rollout(plan["states"])
+
+    qpos = result["qpos"]
+    qvel = result["qvel"]
+    ctrl = result["ctrl"]
 
     np.save(out_dir / "qpos.npy", qpos)
     np.save(out_dir / "qvel.npy", qvel)
     np.save(out_dir / "ctrl.npy", ctrl)
 
-    scene_dict = _resolve_stepping_scene(seed_dir, float(args.step_width))
     if scene_dict:
         with open(out_dir / "stepping_scene.json", "w", encoding="utf-8") as f:
             json.dump(scene_dict, f, indent=2)
 
+    summary = result.get("summary", {})
     with open(out_dir / "walk_follow_results.json", "w", encoding="utf-8") as f:
         json.dump(
             {
@@ -134,8 +133,10 @@ def main() -> None:
                 "phase_steps": int(args.phase_steps),
                 "base_height_offset": float(args.base_height_offset),
                 "min_foot_z": float(args.min_foot_z),
-                "lock_base_pose": bool(args.lock_base_pose),
                 "base_z_min": float(args.base_z_min),
+                "terminated": bool(result.get("terminated", False)),
+                "termination_reason": result.get("termination_reason"),
+                "summary": summary,
             },
             f,
             indent=2,
@@ -158,6 +159,9 @@ def main() -> None:
     html = renderer.render_html(ep, name="go2_walk_follow", width=960, height=720, fps=fps)
     print("Output dir:", out_dir)
     print("HTML:", html)
+    if summary:
+        print(f"Summary: goal_error_xy={summary.get('goal_error_xy', 'N/A'):.3f}  "
+              f"timeout_ratio={summary.get('interval_timeout_ratio', 0.0):.2f}")
 
 
 if __name__ == "__main__":

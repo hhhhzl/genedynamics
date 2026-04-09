@@ -49,16 +49,25 @@ class MotionEpisode:
     @classmethod
     def from_deploy_episode_dir(cls, episode_dir: str | Path, fps: float = 20.0) -> "MotionEpisode":
         """
-        Build from deploy replay directory containing states/actions npy files.
-        """
-        from genedynamics.execution.logging.episode_writer import EpisodeWriter
+        Build from a deploy recording directory.
 
+        Expects files written by :class:`~genedynamics.deploy.observers.recorder.RecorderObserver`:
+        ``states.npy``, optionally ``actions.npy``, and optionally ``meta.json``.
+        """
         ep_dir = Path(episode_dir)
-        writer = EpisodeWriter(str(ep_dir.parent))
-        data = writer.load_episode(ep_dir)
-        states = np.asarray(data.get("states"), dtype=np.float64)
-        actions = np.asarray(data.get("actions"), dtype=np.float64) if data.get("actions") is not None else None
-        meta = dict(data.get("meta") or {})
+        states_path = ep_dir / "states.npy"
+        if not states_path.exists():
+            raise FileNotFoundError(f"states.npy not found in {ep_dir}")
+
+        states = np.load(str(states_path))
+        actions_path = ep_dir / "actions.npy"
+        actions = np.load(str(actions_path)) if actions_path.exists() else None
+        meta: Dict[str, Any] = {}
+        meta_path = ep_dir / "meta.json"
+        if meta_path.exists():
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f) or {}
+
         state_dim = int(states.shape[-1]) if states.ndim >= 2 else int(states.size)
         model_id = _infer_model_id(state_dim)
         return cls(

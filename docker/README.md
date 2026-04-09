@@ -83,7 +83,7 @@ python -c "import jax; print(jax.default_backend())"
 6. Run the corridor follower:
 
 ```bash
-python3 scripts/tasks/robot/run_humanoid_corridor_g1_follower.py \
+python3 scripts/tasks/robot/run_humanoid_corridor_g1_wbc.py \
   --seed-dir results/humanoid/corridor_2d/smoke/twogo_zone_a/level_1/seed_0
 ```
 

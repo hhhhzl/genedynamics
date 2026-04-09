@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 """
 Offline G1 corridor WBC pipeline for humanoid corridor plans.
+
+Loads a seed directory (from the planner), runs the WBC controller closed-loop
+in MuJoCo, saves states + renders.
+
+Configuration is taken from :class:`G1CorridorMujocoWBCPreset`.
+
+Execution order per tick::
+
+    CorridorPlanFrame → TraversalIntent → HumanoidContactScheduler
+        → HumanoidFootstepPlanner → HumanoidUpperBodyMapper
+        → HumanoidTaskBuilder → HumanoidWBCController (act)
+        → MujocoRobotIO.send_control / step
 """
 
 from __future__ import annotations
@@ -13,10 +25,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
-from genedynamics.deploy.followers.humanoid.mujoco import (
-    HumanoidMujocoPipeline,
-    HumanoidMujocoPipelineConfig,
-)
+from genedynamics.deploy.presets.g1_corridor_mujoco_wbc import G1CorridorMujocoWBCPreset
 from genedynamics.envs.humanoid_corridor_2d import (
     corridor_scene_to_dict,
     resolve_corridor_scene_preset,
@@ -56,8 +65,7 @@ def _infer_config_path(seed_dir: Path) -> Optional[Path]:
     parts = rel.parts
     if len(parts) < 3:
         return None
-    stem_parts = list(parts[:-2])
-    config_path = (repo_root / "configs").joinpath(*stem_parts).with_suffix(".yaml")
+    config_path = (repo_root / "configs").joinpath(*list(parts[:-2])).with_suffix(".yaml")
     return config_path if config_path.exists() else None
 
 
@@ -88,19 +96,220 @@ def _load_corridor_scene_metadata(seed_dir: Path) -> Optional[Dict[str, Any]]:
     return scene_meta
 
 
+def _quat_wxyz_from_yaw(yaw: float) -> np.ndarray:
+    cy, sy = float(np.cos(0.5 * yaw)), float(np.sin(0.5 * yaw))
+    return np.array([cy, 0.0, 0.0, sy], dtype=np.float64)
+
+
+def rollout(
+    seed_dir: Path,
+    *,
+    best_idx: Optional[int] = None,
+    source_dt: float = 0.25,
+    control_dt: float = 0.02,
+    sim_dt: float = 1.0 / 500.0,
+    max_frames: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Run the WBC pipeline on a seed directory, return dict of history arrays."""
+    from genedynamics.deploy.followers.common.plan_adapter import CorridorTrajectoryAdapter
+    from genedynamics.deploy.followers.common.traversal_intent import TraversalIntent
+    from genedynamics.deploy.followers.humanoid.contact_scheduler import HumanoidContactScheduler
+    from genedynamics.deploy.followers.humanoid.footstep_planner import HumanoidFootstepPlanner
+    from genedynamics.deploy.followers.humanoid.task_builder import HumanoidTaskBuilder
+    from genedynamics.deploy.followers.humanoid.task_spec import (
+        ContactObservations,
+        FootContactObservation,
+    )
+    from genedynamics.deploy.followers.humanoid.upper_body_mapper import HumanoidUpperBodyMapper
+    from genedynamics.deploy.controllers.wbc import HumanoidWBCController, WBCResult
+    from genedynamics.deploy.interfaces.messages import Intent
+    from genedynamics.deploy.io.mujoco_io import MujocoRobotIO, FootContactSnapshot
+    import mujoco as _mj
+
+    # 1. Load plan
+    adapter = CorridorTrajectoryAdapter(source_dt=source_dt, target_dt=control_dt)
+    traj = adapter.load_seed_dir(seed_dir, best_idx=best_idx)
+    frames = traj.decode_frames()
+    if max_frames is not None:
+        frames = frames[: int(max_frames)]
+    if not frames:
+        return {}
+
+    # 2. Build stack
+    io = MujocoRobotIO(sim_dt=sim_dt)
+    controller = HumanoidWBCController(io=io)
+    contact_scheduler = HumanoidContactScheduler()
+    footstep_planner = HumanoidFootstepPlanner()
+    upper_body_mapper = HumanoidUpperBodyMapper()
+    task_builder = HumanoidTaskBuilder()
+
+    # 3. Anchor to first plan frame
+    f0 = frames[0]
+    height_offset = float(io.data.qpos[2]) - 0.75
+    io.data.qpos[0] = float(f0.x)
+    io.data.qpos[1] = float(f0.y)
+    io.data.qpos[2] = float(f0.h) + height_offset
+    io.data.qpos[3:7] = _quat_wxyz_from_yaw(float(f0.psi))
+    _mj.mj_forward(io.model, io.data)
+    stand_qpos = io.data.qpos.copy()
+
+    def _foot_positions() -> tuple[np.ndarray, np.ndarray]:
+        snaps = io.foot_contact_observations()
+        return snaps["left"].position_world.copy(), snaps["right"].position_world.copy()
+
+    def _contact_obs() -> ContactObservations:
+        snaps = io.foot_contact_observations()
+        def _snap(s: FootContactSnapshot) -> FootContactObservation:
+            return FootContactObservation(
+                position_world=s.position_world,
+                velocity_world=s.velocity_world,
+                rotation_world=s.rotation_world,
+                angular_velocity_world=s.angular_velocity_world,
+                in_contact=s.in_contact,
+                contact_count=s.contact_count,
+                support_load=s.support_load,
+            )
+        return ContactObservations(left=_snap(snaps["left"]), right=_snap(snaps["right"]))
+
+    left_pos, right_pos = _foot_positions()
+    intent0 = TraversalIntent.from_plan_frame(f0)
+    contact_scheduler.reset(initial_frame=f0)
+    footstep_planner.reset(initial_intent=intent0)
+    footstep_planner.seed_from_current_feet(left_pos, right_pos)
+    controller.reset()
+
+    # 4. Rollout loop
+    n = len(frames)
+    nq = int(io.model.nq)
+    nv = int(io.model.nv)
+    nu = int(io.spec.num_actuated)
+
+    qpos_hist, qvel_hist, ctrl_hist = [], [], []
+    tau_hist, ddq_hist, lam_hist = [], [], []
+    state_hist, render_state_hist, plan_states = [], [], []
+    debug = []
+
+    step_dt = float(max(traj.dt, control_dt))
+
+    for i, frame in enumerate(frames):
+        traversal_intent = TraversalIntent.from_plan_frame(frame)
+        contact_obs = _contact_obs()
+        phase = contact_scheduler.advance(traversal_intent, step_dt, contact_obs)
+        footsteps = footstep_planner.update(traversal_intent, phase, contact_obs, dt=step_dt)
+        upper_body = upper_body_mapper.map(frame)
+        tasks = task_builder.build(frame, traversal_intent, phase, footsteps, upper_body)
+
+        state = io.get_state()
+        intent = Intent(
+            t=float(frame.time_sec),
+            base_yaw=float(traversal_intent.yaw),
+            base_height=float(traversal_intent.body_height),
+            base_lin_vel=traversal_intent.planar_velocity.copy(),
+            base_yaw_rate=float(traversal_intent.yaw_rate),
+            base_pos_xy=traversal_intent.planar_position.copy(),
+            torso_yaw=float(tasks.torso_yaw),
+            contact_phase=phase.phase.value,
+            extras={"humanoid_tasks": tasks, "phase": phase, "dt": step_dt},
+        )
+        cmd = controller.act(state, intent)
+        wbc: WBCResult = cmd.extras.get("wbc")
+
+        # Kinematic render state: WBC q_ref at the task's target pelvis pose
+        q_render = stand_qpos.copy()
+        pelvis = np.asarray(tasks.pelvis.position_world, dtype=np.float64)
+        q_render[0] = float(pelvis[0])
+        q_render[1] = float(pelvis[1])
+        q_render[2] = float(pelvis[2]) + height_offset
+        cy, sy = float(np.cos(0.5 * tasks.pelvis.yaw_world)), float(np.sin(0.5 * tasks.pelvis.yaw_world))
+        q_render[3:7] = [cy, 0.0, 0.0, sy]
+        if wbc is not None and wbc.q_ref.size == nu:
+            q_render = io.spec.apply_actuated_qpos(q_render, wbc.q_ref)
+        render_state_hist.append(np.concatenate([q_render, np.zeros(nv, dtype=np.float64)]))
+
+        io.send_control(cmd)
+        io.step(step_dt)
+
+        qpos = np.asarray(io.data.qpos, dtype=np.float64).copy()
+        qvel = np.asarray(io.data.qvel, dtype=np.float64).copy()
+        qpos_hist.append(qpos)
+        qvel_hist.append(qvel)
+        ctrl_hist.append(wbc.q_ref.copy() if wbc is not None and wbc.q_ref.size else np.zeros(nu))
+        tau_hist.append(wbc.tau_ff.copy() if wbc is not None and wbc.tau_ff.size else np.zeros(nu))
+        ddq_hist.append(wbc.ddq_full.copy() if wbc is not None and wbc.ddq_full.size else np.zeros(nv))
+        lam_hist.append(_pad_lambda(wbc))
+        state_hist.append(np.concatenate([qpos, qvel]))
+        plan_states.append(frame.raw_state.copy())
+        debug.append({
+            "frame_index": i,
+            "time_sec": float(frame.time_sec),
+            "phase": phase.phase.value,
+            "solver_metadata": {
+                "method": wbc.method if wbc else "",
+                "eq_residual_norm": float(wbc.eq_residual) if wbc else 0.0,
+                "ineq_violation_max": float(wbc.ineq_violation) if wbc else 0.0,
+                "task_errors": dict(wbc.task_errors) if wbc else {},
+                "contact_feet": list(wbc.contact_feet) if wbc else [],
+                "torque_saturation_max": float(wbc.torque_saturation_max) if wbc else 0.0,
+                "torque_bound_violation_max": float(wbc.torque_bound_violation_max) if wbc else 0.0,
+                "startup_blend": float(wbc.startup_blend) if wbc else 0.0,
+            },
+        })
+
+    io.close()
+
+    return {
+        "states": np.asarray(state_hist, dtype=np.float64),
+        "qpos": np.asarray(qpos_hist, dtype=np.float64),
+        "qvel": np.asarray(qvel_hist, dtype=np.float64),
+        "ctrl": np.asarray(ctrl_hist, dtype=np.float64),
+        "tau_ff": np.asarray(tau_hist, dtype=np.float64),
+        "lambda": np.asarray(lam_hist, dtype=np.float64),
+        "ddq": np.asarray(ddq_hist, dtype=np.float64),
+        "render_states": np.asarray(render_state_hist, dtype=np.float64),
+        "plan_states": np.asarray(plan_states, dtype=np.float64),
+        "debug": debug,
+        "metadata": {
+            "model_xml_path": "",
+            "control_dt": step_dt,
+            "sim_dt": sim_dt,
+            "num_frames": n,
+            "best_idx": int(traj.best_idx),
+            "schema_version": adapter.schema.version,
+            "render_state_mode": "wbc_inverse_dynamics_root_preview",
+            "solver": "wbc_inverse_dynamics_qp_hard_contact",
+            "preset": "G1CorridorMujocoWBCPreset",
+        },
+    }
+
+
+def _pad_lambda(wbc: Any) -> np.ndarray:
+    out = np.zeros(6, dtype=np.float64)
+    if wbc is None or wbc.lambda_ref.size == 0:
+        return out
+    raw = np.asarray(wbc.lambda_ref, dtype=np.float64).reshape(-1)
+    for i, name in enumerate(wbc.contact_feet):
+        src = raw[3 * i : 3 * (i + 1)]
+        if src.size != 3:
+            continue
+        dst = slice(0, 3) if name == "left_foot" else slice(3, 6)
+        out[dst] = src
+    return out
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Offline G1 corridor WBC pipeline for humanoid corridor plans")
+    _preset = G1CorridorMujocoWBCPreset()
+
+    parser = argparse.ArgumentParser(description="Offline G1 corridor WBC pipeline")
     parser.add_argument(
         "--seed-dir",
         type=str,
         default="results/humanoid/corridor_2d/smoke/twogo_zone_a/level_1/seed_0",
     )
     parser.add_argument("--out-dir", type=str, default=None)
-    parser.add_argument("--model-xml-path", type=str, default=None)
     parser.add_argument("--best-idx", type=int, default=None)
     parser.add_argument("--source-dt", type=float, default=0.25)
-    parser.add_argument("--control-dt", type=float, default=0.02)
-    parser.add_argument("--sim-dt", type=float, default=0.002)
+    parser.add_argument("--control-dt", type=float, default=1.0 / _preset.control_hz)
+    parser.add_argument("--sim-dt", type=float, default=_preset.sim_dt)
     parser.add_argument("--max-frames", type=int, default=None)
     parser.add_argument("--max-render-frames", type=int, default=180)
     parser.add_argument(
@@ -108,7 +317,6 @@ def main() -> None:
         type=str,
         default="both",
         choices=("dynamic", "kinematic", "both"),
-        help="Which state stream to render: physical rollout, kinematic preview, or both.",
     )
     parser.add_argument("--no-render", action="store_true")
     args = parser.parse_args()
@@ -120,29 +328,28 @@ def main() -> None:
     out_dir = Path(args.out_dir) if args.out_dir else _default_output_dir(seed_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    pipeline = HumanoidMujocoPipeline(
-        model_xml_path=args.model_xml_path,
-        cfg=HumanoidMujocoPipelineConfig(
-            source_dt=float(args.source_dt),
-            control_dt=float(args.control_dt),
-            sim_dt=float(args.sim_dt),
-        ),
-    )
-    rollout = pipeline.rollout_plan_from_seed_dir(
-        str(seed_dir),
+    result = rollout(
+        seed_dir,
         best_idx=args.best_idx,
+        source_dt=float(args.source_dt),
+        control_dt=float(args.control_dt),
+        sim_dt=float(args.sim_dt),
         max_frames=args.max_frames,
     )
 
-    states = np.asarray(rollout["states"], dtype=np.float64)
-    qpos = np.asarray(rollout["qpos"], dtype=np.float64)
-    qvel = np.asarray(rollout["qvel"], dtype=np.float64)
-    ctrl = np.asarray(rollout["ctrl"], dtype=np.float64)
-    tau_ff = np.asarray(rollout.get("tau_ff", np.zeros((0, 0))), dtype=np.float64)
-    ddq = np.asarray(rollout.get("ddq", np.zeros((0, 0))), dtype=np.float64)
-    lam = np.asarray(rollout.get("lambda", np.zeros((0, 0))), dtype=np.float64)
-    render_states = np.asarray(rollout.get("render_states", states), dtype=np.float64)
-    plan_states = np.asarray(rollout["plan_states"], dtype=np.float64)
+    if not result:
+        print("ERROR: empty rollout — check seed_dir contains a trajectory")
+        return
+
+    states = result["states"]
+    qpos = result["qpos"]
+    qvel = result["qvel"]
+    ctrl = result["ctrl"]
+    tau_ff = result["tau_ff"]
+    ddq = result["ddq"]
+    lam = result["lambda"]
+    render_states = result["render_states"]
+    plan_states = result["plan_states"]
     corridor_scene = _load_corridor_scene_metadata(seed_dir)
 
     np.save(out_dir / "states.npy", states)
@@ -156,9 +363,10 @@ def main() -> None:
     np.save(out_dir / "plan_states.npy", plan_states)
 
     with open(out_dir / "debug.json", "w", encoding="utf-8") as f:
-        json.dump(rollout["debug"], f, indent=2, default=_json_default)
+        json.dump(result["debug"], f, indent=2, default=_json_default)
 
     seed_results = _load_json(seed_dir / "results.json")
+    meta = result["metadata"]
     follow_results: Dict[str, Any] = {
         "seed_dir": str(seed_dir),
         "out_dir": str(out_dir),
@@ -166,16 +374,13 @@ def main() -> None:
         "nq": int(qpos.shape[1]) if qpos.ndim == 2 and qpos.size > 0 else 0,
         "nv": int(qvel.shape[1]) if qvel.ndim == 2 and qvel.size > 0 else 0,
         "nu": int(ctrl.shape[1]) if ctrl.ndim == 2 and ctrl.size > 0 else 0,
-        "n_tau": int(tau_ff.shape[1]) if tau_ff.ndim == 2 and tau_ff.size > 0 else 0,
-        "n_ddq": int(ddq.shape[1]) if ddq.ndim == 2 and ddq.size > 0 else 0,
-        "n_lambda": int(lam.shape[1]) if lam.ndim == 2 and lam.size > 0 else 0,
-        "model_xml_path": str(rollout["metadata"].get("model_xml_path", "")),
-        "control_dt": float(rollout["metadata"].get("control_dt", args.control_dt)),
-        "sim_dt": float(rollout["metadata"].get("sim_dt", args.sim_dt)),
-        "best_idx": int(rollout["metadata"].get("best_idx", args.best_idx if args.best_idx is not None else -1)),
-        "schema_version": str(rollout["metadata"].get("schema_version", "")),
-        "render_state_mode": str(rollout["metadata"].get("render_state_mode", "")),
-        "solver": str(rollout["metadata"].get("solver", "")),
+        "control_dt": float(meta.get("control_dt", args.control_dt)),
+        "sim_dt": float(meta.get("sim_dt", args.sim_dt)),
+        "best_idx": int(meta.get("best_idx", args.best_idx if args.best_idx is not None else -1)),
+        "schema_version": str(meta.get("schema_version", "")),
+        "render_state_mode": str(meta.get("render_state_mode", "")),
+        "solver": str(meta.get("solver", "")),
+        "preset": str(meta.get("preset", "")),
         "source_results": seed_results,
     }
     with open(out_dir / "g1_corridor_wbc_results.json", "w", encoding="utf-8") as f:
@@ -194,14 +399,14 @@ def main() -> None:
             n = render_source_states.shape[0]
             step = max(1, int(np.ceil(n / max(1, int(args.max_render_frames)))))
             idx = np.arange(0, n, step, dtype=np.int32)
-            render_states_sub = render_source_states[idx]
+            render_sub = render_source_states[idx]
             render_actions = None
-            if ctrl.ndim == 2 and ctrl.shape[0] > 0:
-                aidx = np.clip(idx[:-1], 0, ctrl.shape[0] - 1) if idx.size > 1 else np.zeros((0,), dtype=np.int32)
+            if ctrl.ndim == 2 and ctrl.shape[0] > 0 and idx.size > 1:
+                aidx = np.clip(idx[:-1], 0, ctrl.shape[0] - 1)
                 render_actions = ctrl[aidx] if aidx.size > 0 else None
             fps = 1.0 / (float(args.sim_dt) * float(step))
             episode = MotionEpisode(
-                states=render_states_sub,
+                states=render_sub,
                 actions=render_actions,
                 robot_type="humanoid",
                 model_id="g1",
@@ -211,15 +416,12 @@ def main() -> None:
                     "best_idx": int(args.best_idx) if args.best_idx is not None else None,
                     "corridor_scene": corridor_scene,
                     "render_kind": render_kind,
-                    "render_state_mode": str(rollout["metadata"].get("render_state_mode", "")),
+                    "render_state_mode": str(meta.get("render_state_mode", "")),
+                    "preset": str(meta.get("preset", "")),
                 },
             )
             html_paths[render_kind] = renderer.render_html(
-                episode,
-                name=render_name,
-                width=960,
-                height=720,
-                fps=fps,
+                episode, name=render_name, width=960, height=720, fps=fps,
             )
 
     print("Output dir:", out_dir)

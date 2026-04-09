@@ -59,8 +59,8 @@ class MotionRenderer:
         ts = time.strftime("%Y%m%d-%H%M%S")
         gif_path = self.output_dir / f"{name}_{ts}.gif"
         self._persist_episode_metadata(episode)
-        # Lazy import avoids package-level circular import with deploy.viz.web_viz.
-        from genedynamics.deploy.viz.mujoco_render import render_episode_to_gif
+        # Lazy import avoids package-level circular import with deploy.observers.web_viz.
+        from genedynamics.deploy.observers.mujoco_render import render_episode_to_gif
 
         return render_episode_to_gif(
             episode_dir=self.output_dir,

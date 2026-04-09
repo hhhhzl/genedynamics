@@ -166,30 +166,17 @@ def _get_go2_path(mjx: bool = False) -> Optional[str]:
 
 
 def _get_g1_path() -> Optional[str]:
-    """Unitree G1 MJCF from mujoco_menagerie or env (if available)."""
-    import os
-    # 1. mujoco_menagerie (pip install mujoco-menagerie or git clone)
+    """Resolve the Unitree G1 scene MJCF.
+
+    Delegates to :mod:`genedynamics.robots.g1.assets`, which is the single
+    source of truth for G1 asset locations.
+    """
     try:
-        import mujoco_menagerie
-        base = Path(mujoco_menagerie.__file__).parent
-        p = base / "unitree_g1" / "g1.xml"
-        if p.exists():
-            return str(p)
-    except (ImportError, AttributeError):
-        pass
-    # 2. MUJOCO_MENAGERIE_PATH env
-    menagerie = os.environ.get("MUJOCO_MENAGERIE_PATH")
-    if menagerie:
-        p = Path(menagerie) / "unitree_g1" / "g1.xml"
-        if p.exists():
-            return str(p)
-    # 3. Project third_party
-    proj = Path(__file__).resolve().parents[2]
-    for d in (proj / "third_party" / "mujoco_menagerie", proj / "mujoco_menagerie"):
-        p = d / "unitree_g1" / "g1.xml"
-        if p.exists():
-            return str(p)
-    return None
+        from genedynamics.robots.g1.assets import g1_scene_path
+
+        return g1_scene_path()
+    except Exception:
+        return None
 
 
 def _get_h1_path() -> Optional[str]:
