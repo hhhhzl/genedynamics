@@ -29,10 +29,18 @@ from genedynamics.deploy.presets.g1_corridor_real_sport_mode import (
 from genedynamics.deploy.presets.go2_stepping_stones import (
     Go2SteppingStonesMujocoPreset,
 )
+from genedynamics.deploy.presets.g1_teleop_mujoco import (
+    G1TeleopMujocoPreset,
+)
+from genedynamics.deploy.presets.g1_teleop_real import (
+    G1TeleopRealPreset,
+)
 
 __all__ = [
     "G1CorridorMujocoSportModePreset",
     "G1CorridorMujocoWBCPreset",
     "G1CorridorRealSportModePreset",
     "Go2SteppingStonesMujocoPreset",
+    "G1TeleopMujocoPreset",
+    "G1TeleopRealPreset",
 ]

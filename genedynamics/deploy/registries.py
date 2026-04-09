@@ -226,6 +226,14 @@ def register_defaults() -> None:
     except ImportError:
         pass
 
+    # ----- io (ROS2) -------------------------------------------------------
+    try:
+        from genedynamics.deploy.io.ros2_io import ROS2RobotIO
+
+        io_registry.register("ros2", ROS2RobotIO)
+    except ImportError:
+        pass
+
     # ----- tasks ----------------------------------------------------------
     try:
         from genedynamics.deploy.tasks.base import BaseExecutionTask
@@ -233,6 +241,12 @@ def register_defaults() -> None:
 
         task_registry.register("noop", BaseExecutionTask)
         task_registry.register("corridor_follow", CorridorFollowTask)
+    except ImportError:
+        pass
+    try:
+        from genedynamics.deploy.tasks.teleop_task import TeleopTask
+
+        task_registry.register("teleop", TeleopTask)
     except ImportError:
         pass
 
@@ -243,6 +257,22 @@ def register_defaults() -> None:
 
         observer_registry.register("logger", LoggerObserver)
         observer_registry.register("recorder", RecorderObserver)
+    except ImportError:
+        pass
+    try:
+        from genedynamics.deploy.observers.ros2_publisher import ROS2PublisherObserver
+
+        observer_registry.register("ros2_publisher", ROS2PublisherObserver)
+    except ImportError:
+        pass
+
+    # ----- safety (teleop) ------------------------------------------------
+    try:
+        from genedynamics.deploy.safety.workspace_filter import WorkspaceFilter
+        from genedynamics.deploy.safety.singularity_filter import SingularityFilter
+
+        safety_registry.register("workspace", WorkspaceFilter)
+        safety_registry.register("singularity", SingularityFilter)
     except ImportError:
         pass
 
