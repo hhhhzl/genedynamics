@@ -92,6 +92,27 @@ device: cuda
 metrics: [corridor_metrics]
 visualizations: [corridor_trajectory, cost, adaptive, diffusion]
 
+# Per-visualization renderer + style config.
+# corridor_trajectory backends:
+#   matplotlib_top  — original 2D top-down (default)
+#   matplotlib_iso  — isometric pseudo-3D
+#   pyrender_mesh   — true 3D using G1 STL meshes from mujoco_menagerie
+visualization_config:
+  corridor_trajectory:
+    renderer: pyrender_mesh
+    n_ghosts: 8
+    camera_pitch_deg: 62
+    camera_yfov_deg: 36
+    room_height: 1.6
+    front_wall_height: 0.40
+    tall_obstacle_alpha: 0.32
+    short_obstacle_alpha: 0.85
+    ribbon_radius: 0.035
+    ribbon_arrow_len: 0.20
+    ribbon_arrow_radius: 0.09
+    render_width: 1600
+    render_height: 900
+
 scheduler_config:
   type: composite
   constraint_schedulers:

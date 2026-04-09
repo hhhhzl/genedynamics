@@ -1,155 +1,86 @@
 """
 Corridor obstacle avoidance trajectory visualisation.
 
-Renders a top-down 2D view of the corridor with walls, obstacles (shaded
-by z-range type), and the planned trajectory showing torso ellipse +
-arm positions over time.
+This plugin is now a thin dispatcher: it converts the env + trajectory
+into a SceneIR + RobotPoseIR list and hands them to a renderer backend
+selected via ``config["renderer"]`` (default ``"matplotlib_top"``).
+
+Backends live in ``visualizations/backends/``. The default backend is
+byte-equivalent to the original top-down draw code; iso/pyrender
+backends can be added without changing this file.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Dict
 
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import numpy as np
 
 from ...framework.base import VisualizationPlugin
+from .scene_ir import corridor_scene_to_ir, corridor_states_to_poses
+from .backends.matplotlib_top import render_corridor_top
+from .backends.matplotlib_iso import render_corridor_iso
 
-# Obstacle type colours by z-range.
-_Z_COLOR = {
-    "full":  ("#4a5568", 0.85),   # full-height wall/protrusion
-    "low":   ("#e53e3e", 0.55),   # overhead-only (low bar)
-    "floor": ("#dd6b20", 0.55),   # ground-only
-    "mid":   ("#805ad5", 0.55),   # mid-height aerial
-}
-
-
-def _obs_type(z_lo: float, z_hi: float) -> str:
-    if z_lo <= 0.05 and z_hi >= 1.8:
-        return "full"
-    if z_lo > 0.4:
-        return "low"
-    if z_hi < 0.5:
-        return "floor"
-    return "mid"
+try:
+    from .backends.pyrender_mesh import render_corridor_pyrender
+    _HAVE_PYRENDER = True
+except Exception:  # pyrender / OpenGL may be unavailable on some systems
+    render_corridor_pyrender = None
+    _HAVE_PYRENDER = False
 
 
-def _draw_corridor_scene(ax: plt.Axes, env: Any) -> None:
-    scene = env.scene
-    hw = scene.corridor_width / 2.0
-    length = scene.corridor_length
-
-    ax.set_facecolor("#f7f9fc")
-    ax.set_aspect("equal")
-    ax.set_xlim(-0.3, length + 0.3)
-    ax.set_ylim(-hw - 0.3, hw + 0.3)
-
-    # Corridor floor
-    ax.add_patch(plt.Rectangle(
-        (0, -hw), length, 2 * hw,
-        facecolor="#e2e8f0", edgecolor="none", zorder=0,
-    ))
-
-    # Walls
-    wall_w = 0.08
-    for wy in (-hw - wall_w, hw):
-        ax.add_patch(plt.Rectangle(
-            (0, wy), length, wall_w,
-            facecolor="#2d3748", edgecolor="#1a202c", linewidth=0.8, zorder=5,
-        ))
-
-    # Obstacles
-    for obs in scene.obstacles:
-        otype = _obs_type(obs.z_min, obs.z_max)
-        fc, alpha = _Z_COLOR[otype]
-        if getattr(obs, "shape", "box") == "sphere":
-            ax.add_patch(plt.Circle(
-                (obs.cx, obs.cy), obs.radius,
-                facecolor=fc, edgecolor="#1a202c", linewidth=0.6,
-                alpha=alpha, zorder=3,
-            ))
-        elif getattr(obs, "shape", "box") == "qc":
-            # Quarter-circle: determine start/end angles from clip_sign and cy.
-            # clip_sign=+1 (entry, solid at x<=cx): arc from 180° to 270° (cy>0) or 90° to 180° (cy<0)
-            # clip_sign=-1 (exit, solid at x>=cx):  arc from 270° to 360° (cy>0) or 0° to 90° (cy<0)
-            cs = getattr(obs, "qc_clip_sign", 1.0)
-            if obs.cy > 0:
-                theta1, theta2 = (180, 270) if cs > 0 else (270, 360)
-            else:
-                theta1, theta2 = (90, 180) if cs > 0 else (0, 90)
-            from matplotlib.patches import Wedge
-            ax.add_patch(Wedge(
-                (obs.cx, obs.cy), obs.radius, theta1, theta2,
-                facecolor=fc, edgecolor="#1a202c", linewidth=0.6,
-                alpha=alpha, zorder=3,
-            ))
-        else:
-            w = obs.x_max - obs.x_min
-            h = obs.y_max - obs.y_min
-            ax.add_patch(plt.Rectangle(
-                (obs.x_min, obs.y_min), w, h,
-                facecolor=fc, edgecolor="#1a202c", linewidth=0.6,
-                alpha=alpha, zorder=3,
-            ))
-        cx = 0.5 * (obs.x_min + obs.x_max)
-        cy = 0.5 * (obs.y_min + obs.y_max)
-        w_obs = obs.x_max - obs.x_min
-        h_obs = obs.y_max - obs.y_min
-        if w_obs > 0.15 and h_obs > 0.06:
-            ax.text(cx, cy, obs.name, fontsize=4, ha="center", va="center",
-                    color="white", zorder=4, clip_on=True)
-
-    # Start / Goal markers
-    sx, sy = scene.start_pos
-    gx, gy = scene.goal_pos
-    ax.plot(sx, sy, "o", color="#38a169", markersize=10, zorder=10, label="start")
-    ax.plot(gx, gy, "*", color="#e53e3e", markersize=14, zorder=10, label="goal")
-
-
-def _draw_body_ghost(
-    ax: plt.Axes,
-    x: float, y: float, psi: float, h: float, psi_torso: float,
-    a_L: float, a_R: float,
-    alpha: float = 0.4,
-    zorder: float = 8,
-) -> None:
-    """Draw a single body ghost: torso ellipse + arm line segments."""
+def _build_corridor_extras(env: Any, states: np.ndarray) -> Dict[str, Any]:
     from genedynamics.envs.humanoid_corridor_2d import (
-        TORSO_A, TORSO_B, TORSO_CROUCH_EXTRA, H_NOMINAL, H_MIN, H_MAX,
+        TORSO_A, TORSO_B, TORSO_CROUCH_EXTRA,
+        H_NOMINAL, H_MIN, H_MAX,
         ARM_REACH_OPEN, ARM_REACH_TUCKED,
     )
-    heading = psi + psi_torso
-    a_eff = TORSO_A + TORSO_CROUCH_EXTRA * max(0.0, H_NOMINAL - h)
-    # Ellipse color encodes body height: blue=low (crouching), red=high (standing).
-    h_norm = np.clip((h - H_MIN) / max(H_MAX - H_MIN, 1e-6), 0.0, 1.0)
-    import matplotlib.cm as cm
-    h_color = cm.coolwarm_r(h_norm)
-    ellipse = mpatches.Ellipse(
-        (x, y), width=2 * TORSO_B, height=2 * a_eff,
-        angle=np.degrees(heading),
-        facecolor=h_color, edgecolor="#2c5282",
-        alpha=alpha, linewidth=0.6, zorder=zorder,
-    )
-    ax.add_patch(ellipse)
+    coll = np.zeros(states.shape[0], dtype=bool)
+    for t in range(states.shape[0]):
+        coll[t] = bool(env.check_collision(states[t]))
+    return {
+        "torso_a": TORSO_A,
+        "torso_b": TORSO_B,
+        "torso_crouch_extra": TORSO_CROUCH_EXTRA,
+        "h_nominal": H_NOMINAL,
+        "h_min": H_MIN,
+        "h_max": H_MAX,
+        "arm_reach_open": ARM_REACH_OPEN,
+        "arm_reach_tucked": ARM_REACH_TUCKED,
+        "collision_mask": coll,
+    }
 
-    c, s = np.cos(heading), np.sin(heading)
-    for sign, a_tuck, color in [(1.0, a_L, "#e53e3e"), (-1.0, a_R, "#dd6b20")]:
-        reach = ARM_REACH_OPEN + (ARM_REACH_TUCKED - ARM_REACH_OPEN) * np.clip(a_tuck, 0, 1)
-        # Minimum display reach so tucked arms are still visible.
-        display_reach = max(reach, 0.12)
-        lx, ly = 0.0, sign * display_reach
-        wx = x + c * lx - s * ly
-        wy = y + s * lx + c * ly
-        # Thicker line when arm is tucked to show tuck state.
-        lw = 2.0 if a_tuck > 0.5 else 1.2
-        ax.plot([x, wx], [y, wy], color=color, linewidth=lw,
-                alpha=alpha * 0.9, zorder=zorder + 0.1)
-        # Larger dot when tucked.
-        ms = 4.0 if a_tuck > 0.5 else 2.5
-        ax.plot(wx, wy, "o", color=color, markersize=ms,
-                alpha=alpha * 0.9, zorder=zorder + 0.2)
+
+# Keys forwarded from yaml `config` into the renderer's `extras` dict.
+# Adding a key here is the only thing required to expose a new backend
+# knob through yaml.
+_FORWARDED_KEYS = (
+    # generic
+    "n_ghosts",
+    "ghost_alpha_min", "ghost_alpha_max",
+    # iso backend
+    "camera_yaw_deg", "camera_pitch_deg", "auto_resize_fig",
+    # pyrender backend
+    "render_width", "render_height",
+    "camera_yfov_deg", "camera_eye", "camera_target",
+    "room_height", "front_wall_height",
+    "tall_obstacle_alpha", "short_obstacle_alpha",
+    "ribbon_radius", "ribbon_arrow_len", "ribbon_arrow_radius",
+)
+
+
+def _merge_yaml_extras(extras: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    """Forward known yaml config keys into the backend extras dict.
+
+    yaml config takes precedence over computed extras (so the user can
+    override e.g. n_ghosts even though the plugin computes a default).
+    """
+    if not config:
+        return extras
+    for key in _FORWARDED_KEYS:
+        if key in config:
+            extras[key] = config[key]
+    return extras
 
 
 class CorridorTrajectoryVisualizationPlugin(VisualizationPlugin):
@@ -180,52 +111,27 @@ class CorridorTrajectoryVisualizationPlugin(VisualizationPlugin):
                     ha="center", va="center", transform=ax.transAxes)
             return
 
-        T = states.shape[0]
-        _draw_corridor_scene(ax, env)
+        scene_ir = corridor_scene_to_ir(env.scene)
+        poses = corridor_states_to_poses(states)
+        extras = _build_corridor_extras(env, states)
+        extras = _merge_yaml_extras(extras, config or {})
 
-        # Trajectory line.
-        ax.plot(states[:, 0], states[:, 1], "-", color="#3182ce",
-                linewidth=1.8, alpha=0.5, zorder=6, label="trajectory")
-
-        # Body ghosts at EVERY timestep (continuous chain of ellipses + arms).
-        for t in range(T):
-            a = 0.30 + 0.45 * (t / max(T - 1, 1))
-            _draw_body_ghost(
-                ax,
-                float(states[t, 0]), float(states[t, 1]),
-                float(states[t, 2]), float(states[t, 3]),
-                float(states[t, 4]),
-                float(states[t, 5]), float(states[t, 6]),
-                alpha=a,
-                zorder=6 + 0.01 * t,
+        renderer = (config or {}).get("renderer", "matplotlib_top")
+        if renderer == "matplotlib_top":
+            render_corridor_top(fig, ax, scene_ir, poses, extras=extras)
+        elif renderer == "matplotlib_iso":
+            render_corridor_iso(fig, ax, scene_ir, poses, extras=extras)
+        elif renderer == "pyrender_mesh":
+            if not _HAVE_PYRENDER:
+                raise RuntimeError(
+                    "renderer='pyrender_mesh' requested but pyrender import failed"
+                )
+            render_corridor_pyrender(fig, ax, scene_ir, poses, extras=extras)
+        else:
+            raise ValueError(
+                f"corridor_trajectory: unknown renderer '{renderer}' "
+                f"(available: matplotlib_top, matplotlib_iso, pyrender_mesh)"
             )
-
-        # Mark collision points.
-        for t in range(T):
-            if env.check_collision(states[t]):
-                ax.plot(states[t, 0], states[t, 1], "x",
-                        color="red", markersize=8, zorder=20)
-
-        # Height colorbar (matches ellipse fill color).
-        import matplotlib.cm as cm
-        from genedynamics.envs.humanoid_corridor_2d import H_MIN, H_MAX
-        sm = plt.cm.ScalarMappable(cmap="coolwarm_r", norm=plt.Normalize(vmin=H_MIN, vmax=H_MAX))
-        sm.set_array([])
-        cbar = fig.colorbar(sm, ax=ax, shrink=1.0, pad=0.02, aspect=30)
-        cbar.set_label("Body height (m)", fontsize=7)
-
-        # Legend for obstacle types.
-        legend_patches = [
-            mpatches.Patch(color=_Z_COLOR["full"][0], alpha=_Z_COLOR["full"][1], label="Full-height"),
-            mpatches.Patch(color=_Z_COLOR["low"][0], alpha=_Z_COLOR["low"][1], label="Low bar (duck)"),
-            mpatches.Patch(color=_Z_COLOR["floor"][0], alpha=_Z_COLOR["floor"][1], label="Floor block"),
-            mpatches.Patch(color=_Z_COLOR["mid"][0], alpha=_Z_COLOR["mid"][1], label="Aerial (sidestep)"),
-        ]
-        ax.legend(handles=legend_patches, loc="upper left", fontsize=6, framealpha=0.7)
-        ax.set_xlabel("x (m)", fontsize=8)
-        ax.set_ylabel("y (m)", fontsize=8)
-        ax.set_title("Corridor Trajectory (top-down)", fontsize=10)
-        ax.tick_params(labelsize=7)
 
     def save(self, output_path: Any, fig: Any, **kwargs: Any) -> None:
         dpi = kwargs.get("dpi", 150)
