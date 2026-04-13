@@ -246,10 +246,20 @@ class MRMFMBDPosteriorBackendJax:
         log_probs: jnp.ndarray,
         sigma: float,
     ) -> Tuple[jnp.ndarray, MCSADiagnostics]:
-        """MCSA score: (1/sigma) * sum_m w_m * delta_m."""
+        """
+        MCSA score with baseline subtraction (Eq. 169 in tex):
+            score = (1/σ) Σ_m w_m * (δ_m - δ̄)
+        where δ̄ = Σ_m w_m * δ_m is the weighted mean (baseline).
+        The subtraction reduces variance without changing the expectation.
+        """
         weights = self._weighter(log_probs, axis=0)
         weights = jnp.reshape(weights, (-1, 1))
-        score = jnp.sum(weights * deltas, axis=0) / max(sigma, 1e-8)
+
+        # Baseline subtraction: subtract weighted mean perturbation
+        delta_baseline = jnp.sum(weights * deltas, axis=0, keepdims=True)
+        centered_deltas = deltas - delta_baseline
+
+        score = jnp.sum(weights * centered_deltas, axis=0) / max(sigma, 1e-8)
 
         from genedynamics.core.inference.diagnostics import effective_sample_size, degeneracy_flags
 
@@ -287,6 +297,11 @@ class MRMFMBDPosteriorBackendJax:
         fidelity_history: List[int] = []
         fine_calls = 0
         wall_clock_start = time.perf_counter()
+
+        # Top-K candidate tracking: keep best candidates seen during optimization
+        top_k = max(self.config.top_k_fine, 1)
+        # Each entry: (mean_reward, theta_snapshot)
+        _top_k_candidates: List[Tuple[float, np.ndarray]] = []
 
         iter_range = range(K)
         if self.show_tqdm:
@@ -347,6 +362,13 @@ class MRMFMBDPosteriorBackendJax:
             theta = theta + eta_k * score + tau_k * noise
             theta = self.theta_param.clip(theta)
 
+            # Track top-K candidates by mean reward
+            step_mean_reward = float(np.mean(rewards))
+            theta_snapshot = np.asarray(theta).copy()
+            _top_k_candidates.append((step_mean_reward, theta_snapshot))
+            _top_k_candidates.sort(key=lambda t: -t[0])
+            _top_k_candidates = _top_k_candidates[:top_k]
+
             step_time = (time.perf_counter() - t0) * 1e3
             bridge_history.append({
                 "k": k,
@@ -360,29 +382,37 @@ class MRMFMBDPosteriorBackendJax:
                 "wall_time_ms": step_time,
             })
 
-        # Top-K fine validation
-        if self.config.top_k_fine > 0 and self.config.fine_fidelity_level > max(fidelity_history):
+        # Top-K fine validation using tracked candidates
+        best_fine_return = -np.inf
+        best_fine_theta = np.asarray(theta)
+        if self.config.top_k_fine > 0 and _top_k_candidates:
             from genedynamics.envs.evaluators import RolloutBatchRequest, RolloutRequest
 
-            # Use last theta as candidate; in full impl would keep top-K from history
-            candidates = [theta]
-            for cand in candidates[: self.config.top_k_fine]:
-                req = RolloutBatchRequest(
-                    task_id=self.task_id,
-                    requests=[
-                        RolloutRequest(
-                            morphology_params=np.asarray(cand[: self.theta_param.x_dim]),
-                            controller_params=np.asarray(cand[self.theta_param.x_dim :]),
-                            mode_id=0,
-                            fidelity_level=self.config.fine_fidelity_level,
-                            seed=self.seed + 999,
-                            num_repeats=2,
-                            record=False,
-                        )
-                    ],
-                )
-                _ = self.evaluator.evaluate_batch(req, parallel=False, use_cache=False)
-                fine_calls += 1
+            fine_level = self.config.fine_fidelity_level
+            for _score, cand in _top_k_candidates:
+                cand_np = np.asarray(cand)
+                requests = [
+                    RolloutRequest(
+                        morphology_params=cand_np[: self.theta_param.x_dim],
+                        controller_params=cand_np[self.theta_param.x_dim :],
+                        mode_id=c,
+                        fidelity_level=fine_level,
+                        seed=self.seed + 999 + c,
+                        num_repeats=1,
+                        record=False,
+                    )
+                    for c in range(self.num_modes)
+                ]
+                req = RolloutBatchRequest(task_id=self.task_id, requests=requests)
+                res = self.evaluator.evaluate_batch(req, parallel=False, use_cache=False)
+                fine_calls += self.num_modes
+                cand_return = float(np.mean(res.returns))
+                if cand_return > best_fine_return:
+                    best_fine_return = cand_return
+                    best_fine_theta = cand_np
+
+            # Use the best fine-validated candidate
+            theta = jnp.asarray(best_fine_theta, dtype=jnp.float32)
 
         wall_clock_total = time.perf_counter() - wall_clock_start
 
@@ -396,6 +426,10 @@ class MRMFMBDPosteriorBackendJax:
             "mode_responsibilities": np.array(mode_responsibilities_history),
             "fidelity_history": fidelity_history,
             "fine_calls": fine_calls,
+            "best_fine_return": best_fine_return if best_fine_return > -np.inf else None,
+            "top_k_candidates": [
+                {"reward": s, "theta": t.tolist()} for s, t in _top_k_candidates
+            ],
             "wall_clock": wall_clock_total,
             "diagnostics": {
                 "K": K,

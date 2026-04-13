@@ -1,10 +1,10 @@
-# Co-design experiment: MRMFMBD on crawling_ground (full S1+S3)
-name: co_design_mrmfmbd_crawling
-output_dir: results/co_design/mrmfmbd_crawling
-checkpoint_dir: results/co_design/checkpoints
+# Phase D: Full S1+S3 joint — out-of-distribution (crawling_desert)
+name: co_design_phase_d_full_ood
+output_dir: results/phase_d/full_ood
+checkpoint_dir: results/phase_d/checkpoints
 
 baseline_name: mrmfmbd
-task_id: crawling_ground
+task_id: crawling_desert
 seeds: [0, 1, 2]
 
 scheduler_config:

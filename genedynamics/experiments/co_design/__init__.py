@@ -1,26 +1,40 @@
 """
-Co-design experiment platform.
+Co-design experiment platform — backward compatibility re-exports.
 
-Baseline-agnostic interface: plug any baseline (MRMFMBD, ES, CMA-ES, etc.)
-into the experiment runner. No baseline implementations yet - interface only.
+All functionality has been moved to genedynamics.experiments.framework.
+This module re-exports for scripts that still import from co_design.
 """
 
 from __future__ import annotations
 
-from .baseline import BaselineProtocol, BaselineResult, BaselineConfig
-from .registry import BaselineRegistry, register_baseline, get_baseline, list_baselines
-from .platform import CoDesignExperimentPlatform, CoDesignExperimentConfig
-from .engineering import (
+# Re-export from framework
+from genedynamics.experiments.framework.baseline import (
+    BaselineProtocol,
+    BaselineResult,
+    BaselineConfig,
+)
+from genedynamics.experiments.framework.baseline_registry import (
+    register_baseline,
+    get_baseline,
+    list_baselines,
+    has_baseline,
+    BaselineRegistry,
+)
+from genedynamics.experiments.framework.baseline_platform import (
+    BaselineExperimentPlatform as CoDesignExperimentPlatform,
+    BaselineExperimentConfig as CoDesignExperimentConfig,
+)
+from genedynamics.experiments.common.engineering import (
     CheckpointManager,
     CheckpointState,
     ExperimentLogger,
-    config_hash,
+    config_hash_dict as config_hash,
     set_seed,
 )
 
 # Import baselines to trigger registration
 try:
-    from . import baselines  # noqa: F401
+    from genedynamics.experiments.framework import baselines as _baselines  # noqa: F401
 except ImportError:
     pass
 
@@ -28,10 +42,11 @@ __all__ = [
     "BaselineProtocol",
     "BaselineResult",
     "BaselineConfig",
-    "BaselineRegistry",
     "register_baseline",
     "get_baseline",
     "list_baselines",
+    "has_baseline",
+    "BaselineRegistry",
     "CoDesignExperimentPlatform",
     "CoDesignExperimentConfig",
     "CheckpointManager",

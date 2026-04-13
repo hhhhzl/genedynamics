@@ -49,20 +49,28 @@ class BaselineExperimentConfig:
     seeds: List[int] = field(default_factory=lambda: [0])
     output_dir: str = "results/baseline"
     checkpoint_dir: Optional[str] = None
+    scheduler_config: Optional[Dict[str, Any]] = None
+    method_params: Dict[str, Any] = field(default_factory=dict)
     baseline_params: Dict[str, Any] = field(default_factory=dict)
     evaluator_params: Dict[str, Any] = field(default_factory=dict)
+    save_gif: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "baseline_name": self.baseline_name,
             "task_domain": self.task_domain,
             "task_id": self.task_id,
             "seeds": list(self.seeds),
             "output_dir": self.output_dir,
             "checkpoint_dir": self.checkpoint_dir,
-            "baseline_params": self.baseline_params,
+            "method_params": self.method_params,
             "evaluator_params": self.evaluator_params,
         }
+        if self.scheduler_config:
+            d["scheduler_config"] = self.scheduler_config
+        if self.baseline_params:
+            d["baseline_params"] = self.baseline_params
+        return d
 
     def config_hash(self) -> str:
         """Stable hash for reproducibility."""
@@ -117,6 +125,20 @@ class BaselineExperimentPlatform:
             ExperimentLogger(self._output_dir / "experiment.jsonl") if use_logging else None
         )
 
+    def _create_scheduler(self) -> Optional[Any]:
+        """Create scheduler from scheduler_config if present."""
+        sc = self.config.scheduler_config
+        if not sc:
+            return None
+        from ..common.constraints import create_scheduler_from_config
+        return create_scheduler_from_config(sc, backend_name="jax")
+
+    def _resolve_method_params(self) -> Dict[str, Any]:
+        """Merge method_params and legacy baseline_params."""
+        merged = dict(self.config.baseline_params)
+        merged.update(self.config.method_params)
+        return merged
+
     def run_single(self, seed: int) -> Dict[str, Any]:
         """Run single experiment with given seed."""
         provider = get_task_domain_provider(self.config.task_domain)
@@ -128,6 +150,9 @@ class BaselineExperimentPlatform:
             **{k: v for k, v in self.config.evaluator_params.items() if k not in ("max_workers", "cache_size")},
         )
 
+        scheduler = self._create_scheduler()
+        method_params = self._resolve_method_params()
+
         set_seed(seed)
         if self._logger:
             self._logger.log("run_start", seed=seed, config_hash=self.config.config_hash())
@@ -136,7 +161,8 @@ class BaselineExperimentPlatform:
         bl_config = BaselineConfig(
             task_id=self.config.task_id,
             seed=seed,
-            extra=self.config.baseline_params,
+            extra=method_params,
+            scheduler=scheduler,
         )
 
         x_dim = getattr(task_spec, "x_dim", 3)

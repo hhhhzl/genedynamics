@@ -1,0 +1,342 @@
+\section{Method}
+\label{sec:method}
+
+\subsection{Problem Setup: Soft Robot Co-Design Under Mode and Fidelity Uncertainty}
+\label{subsec:setup}
+
+We consider soft robot co-design in simulation with design variables
+$x \in \mathbb{R}^d$ (morphology) and controller parameters $\phi \in \mathbb{R}^p$.
+For a given environment \emph{contact mode} $c \in \{1,\dots,K\}$ (e.g., friction/material regime)
+and simulation fidelity index $\ell \in \{0,\dots,L\}$ (coarse to fine),
+a rollout produces a task return (reward)
+\begin{equation}
+R_{\ell}(x,\phi;c)\in \mathbb{R}.
+\end{equation}
+Our goal is to find $(x^\star,\phi^\star)$ that maximizes performance while remaining robust to
+unknown mode changes and efficient in high-fidelity simulation usage.
+
+\paragraph{Energy-likelihood.}
+We convert reward maximization to probabilistic inference by defining a task likelihood
+\begin{equation}
+p_{\ell}(y=1 \mid x,\phi,c)
+~\propto~
+\exp\!\left(\frac{1}{\tau}R_{\ell}(x,\phi;c)\right),
+\label{eq:task_likelihood}
+\end{equation}
+where $\tau>0$ is a temperature controlling risk/greediness.
+
+\paragraph{Design priors.}
+We assume a morphology prior $p_0(x)$ represented by a pretrained diffusion model
+(or a simple base prior), and optionally a controller prior $p_0(\phi)$.
+Our method performs \emph{model-based diffusion} (MBD) with Monte Carlo Score Ascent (MCSA)
+to iteratively sample and refine designs.
+
+% -------------------------
+\subsection{S1: Contact-Mode Marginalization}
+\label{subsec:s1}
+
+Soft robot locomotion is contact-dominated; performance can change abruptly under different
+contact/friction regimes. Instead of optimizing for a single assumed mode, we marginalize modes:
+\begin{equation}
+\tilde p_{\ell}(y=1 \mid x,\phi)
+~\triangleq~
+\sum_{c=1}^{K} p_0(c)\, p_{\ell}(y=1\mid x,\phi,c),
+\label{eq:mode_marginal_likelihood}
+\end{equation}
+with mode prior $p_0(c)$ (uniform if unknown).
+
+\paragraph{Mixture-score identity.}
+Let $a_c(x,\phi)\triangleq p_0(c)\,p_{\ell}(y=1\mid x,\phi,c)$.
+Define responsibilities
+\begin{equation}
+w_c(x,\phi)
+~\triangleq~
+\frac{a_c(x,\phi)}{\sum_{c'}a_{c'}(x,\phi)}.
+\label{eq:responsibility}
+\end{equation}
+Then
+\begin{equation}
+\nabla_x \log \tilde p_{\ell}(y=1 \mid x,\phi)
+=
+\sum_{c=1}^K w_c(x,\phi)\, \nabla_x \log p_{\ell}(y=1\mid x,\phi,c).
+\label{eq:mixture_score}
+\end{equation}
+Using~\eqref{eq:task_likelihood},
+\begin{equation}
+\nabla_x \log p_{\ell}(y=1\mid x,\phi,c)
+=
+\frac{1}{\tau}\nabla_x R_{\ell}(x,\phi;c),
+\qquad
+\Rightarrow\quad
+\nabla_x \log \tilde p_{\ell}
+=
+\frac{1}{\tau}\sum_c w_c(x,\phi)\,\nabla_x R_{\ell}(x,\phi;c).
+\label{eq:reward_grad_mixture}
+\end{equation}
+
+\paragraph{Interpretation.}
+Eq.~\eqref{eq:reward_grad_mixture} shows that the mode-marginalized guidance is a
+responsibility-weighted average of per-mode reward gradients, which avoids ``betting'' on a single
+contact regime and improves out-of-distribution robustness.
+
+% -------------------------
+\subsection{S3: Multi-Fidelity Posterior Bridging}
+\label{subsec:s3}
+
+High-fidelity soft simulation is expensive. We introduce a joint annealing--fidelity bridge:
+\begin{equation}
+\pi_{k,\ell}(x,\phi)
+~\propto~
+p_0(x)\,p_0(\phi)\,
+\Big(\tilde p_{\ell}(y=1\mid x,\phi)\Big)^{\beta_k},
+\label{eq:bridge_dist}
+\end{equation}
+where $\beta_k$ is an annealing schedule with $\beta_K < \cdots < \beta_1$
+(we sample from $k=K\to 1$), and $\ell=\ell(k)$ is a nondecreasing fidelity ladder
+(e.g., coarse in early steps, fine in late steps).
+
+\paragraph{Bridged score.}
+Taking logs and differentiating,
+\begin{equation}
+\nabla_x \log \pi_{k,\ell}(x,\phi)
+=
+\nabla_x \log p_0(x)
++
+\beta_k \nabla_x \log \tilde p_{\ell}(y=1\mid x,\phi).
+\label{eq:bridge_score_general}
+\end{equation}
+Substituting Eq.~\eqref{eq:reward_grad_mixture},
+\begin{equation}
+\nabla_x \log \pi_{k,\ell}(x,\phi)
+=
+\nabla_x \log p_0(x)
++
+\frac{\beta_k}{\tau}
+\sum_{c=1}^{K} w_c(x,\phi)\,\nabla_x R_{\ell}(x,\phi;c).
+\label{eq:bridge_score_reward}
+\end{equation}
+Analogously for $\phi$ if we jointly optimize controller parameters:
+\begin{equation}
+\nabla_\phi \log \pi_{k,\ell}(x,\phi)
+=
+\nabla_\phi \log p_0(\phi)
++
+\frac{\beta_k}{\tau}
+\sum_{c=1}^{K} w_c(x,\phi)\,\nabla_\phi R_{\ell}(x,\phi;c).
+\label{eq:bridge_score_phi}
+\end{equation}
+
+\paragraph{A practical fidelity upgrade rule.}
+We upgrade fidelity when the coarse/fine discrepancy indicator exceeds a threshold,
+e.g.,
+\begin{equation}
+\Delta_{\ell}(x,\phi)
+~\triangleq~
+\big\|\widehat{s}_{k,\ell}(x,\phi)-\widehat{s}_{k,\ell-1}(x,\phi)\big\|_2
+>\delta,
+\label{eq:fidelity_rule}
+\end{equation}
+where $\widehat{s}_{k,\ell}$ is the estimated bridged score at fidelity $\ell$.
+
+% -------------------------
+\subsection{Monte Carlo Score Ascent for Soft Simulation (MCSA)}
+\label{subsec:mcsa}
+
+Direct gradients through contact-rich soft simulation are often noisy or unavailable.
+We estimate $\nabla_x R_\ell(x,\phi;c)$ (and optionally $\nabla_\phi R_\ell$) via Monte Carlo smoothing.
+
+\paragraph{Gaussian smoothing.}
+Define the smoothed reward
+\begin{equation}
+R_\ell^{(\sigma)}(x,\phi;c)
+~\triangleq~
+\mathbb{E}_{\epsilon\sim\mathcal{N}(0,I)}\big[R_\ell(x+\sigma\epsilon,\phi;c)\big].
+\label{eq:smooth_reward}
+\end{equation}
+Then
+\begin{equation}
+\nabla_x R_\ell^{(\sigma)}(x,\phi;c)
+=
+\frac{1}{\sigma}\,
+\mathbb{E}_{\epsilon}\Big[R_\ell(x+\sigma\epsilon,\phi;c)\,\epsilon\Big],
+\label{eq:es_grad_identity}
+\end{equation}
+estimated using $M$ samples $\{\epsilon_m\}_{m=1}^M$:
+\begin{equation}
+\widehat{\nabla_x R_\ell}(x,\phi;c)
+=
+\frac{1}{M\sigma}\sum_{m=1}^{M}
+\Big(R_\ell(x+\sigma\epsilon_m,\phi;c)-b\Big)\epsilon_m,
+\label{eq:es_grad_estimator}
+\end{equation}
+with baseline $b$ (e.g., sample mean) for variance reduction.
+
+\paragraph{Plug-in score.}
+We plug $\widehat{\nabla_x R_\ell}$ into Eq.~\eqref{eq:bridge_score_reward} to obtain
+an estimated bridged score $\widehat{s}_{k,\ell}(x,\phi)$ used by the reverse diffusion sampler.
+
+% -------------------------
+\subsection{Reverse Diffusion with Physics Guidance}
+\label{subsec:reverse_diffusion}
+
+Let $x_k$ be the diffusion state at reverse step $k$.
+We implement a guided reverse update of the general form
+\begin{equation}
+x_{k-1} \leftarrow \mathcal{T}_k\!\left(x_k;\, \widehat{s}_{k,\ell}(x_k,\phi)\right),
+\label{eq:reverse_update_generic}
+\end{equation}
+where $\mathcal{T}_k$ is any standard reverse sampler (DDPM/DDIM/probability flow ODE/SDE),
+and the guidance enters via $\widehat{s}_{k,\ell}$.
+The controller $\phi$ can be updated either
+(i) in an outer loop using the same MCSA estimator, or
+(ii) by conditioning a policy model and keeping $\phi$ implicit.
+
+% -------------------------
+\subsection{Optional: 3D Gaussian Splatting (3DGS) Integration}
+\label{subsec:3dgs}
+
+We incorporate 3DGS in two practical ways compatible with SoftZoo tasks even without real multi-view data.
+
+\paragraph{(C) 3DGS as prior/initialization.}
+Given a reference morphology rendered from $V$ virtual views (RGB/mask/depth) in simulation,
+we fit a 3DGS representation $\Theta_{\mathrm{gs}}$ and map it to the simulator morphology space via
+a differentiable (or fixed) projection $\Pi(\cdot)$ (e.g., density sampling $\to$ voxelization).
+We then augment the prior:
+\begin{equation}
+\log p_0(x)
+=
+\log p_{\mathrm{diff}}(x)
+-\lambda_{\mathrm{gs}}\|x-\Pi(\Theta_{\mathrm{gs}})\|_2^2.
+\label{eq:3dgs_prior}
+\end{equation}
+
+\paragraph{(B) 3DGS as fidelity-0 proxy.}
+We extract cheap geometric features $f(\Theta_{\mathrm{gs}})$ and train a surrogate return
+$\widehat{R}_0(f)$ to define a very cheap fidelity $\ell=0$ in Eq.~\eqref{eq:bridge_dist},
+thereby reducing high-fidelity calls.
+
+\paragraph{(A) 3DGS as observation term (optional).}
+When multi-view supervision is desired (simulation-generated or real),
+we add a visual likelihood $p(y_{\mathrm{vis}}\mid \Theta)$ and jointly optimize
+$\Theta$ under task and visual terms, then project $\Theta$ to SoftZoo via $\Pi(\cdot)$.
+(We recommend treating this as an extension if the GS$\to$voxel pipeline is stable.)
+
+% =========================================================
+\subsection{Algorithm}
+\label{subsec:algorithm}
+
+\begin{algorithm}[t]
+\caption{Mode-Robust Multi-Fidelity Model-Based Diffusion Co-Design (MR-MF-MBD)}
+\label{alg:mrmfmbd}
+\begin{algorithmic}[1]
+\REQUIRE Prior diffusion $p_0(x)$, controller init $\phi$, modes $\{c\}_{1:K}$ with $p_0(c)$,
+fidelity ladder $\ell(k)$, annealing schedule $\{\beta_k\}_{k=1}^K$, temperature $\tau$,
+MCSA samples $M$, smoothing $\sigma$, SoftZoo simulator.
+\STATE Sample initial diffusion state $x_K \sim \mathcal{N}(0,I)$ (or from prior).
+\FOR{$k = K, K-1, \dots, 1$}
+    \STATE $\ell \leftarrow \ell(k)$.
+    \STATE Draw perturbations $\epsilon_{1:M}\sim \mathcal{N}(0,I)$.
+    \FOR{each mode $c\in\{1,\dots,K\}$}
+        \STATE Evaluate rollouts to obtain $\{R_\ell(x_k+\sigma\epsilon_m,\phi;c)\}_{m=1}^M$.
+        \STATE Estimate $\widehat{\nabla_x R_\ell}(x_k,\phi;c)$ via Eq.~\eqref{eq:es_grad_estimator}.
+        \STATE Compute unnormalized $a_c \propto p_0(c)\exp\big(\frac{1}{\tau}\bar R_\ell(x_k,\phi;c)\big)$
+        using $\bar R$ (e.g., mean over $m$).
+    \ENDFOR
+    \STATE Compute responsibilities $w_c$ via Eq.~\eqref{eq:responsibility}.
+    \STATE Assemble score estimate
+    $\widehat{s}_{k,\ell}(x_k,\phi) \leftarrow \nabla_x\log p_0(x_k) + \frac{\beta_k}{\tau}\sum_c w_c\,\widehat{\nabla_x R_\ell}(x_k,\phi;c)$.
+    \STATE Reverse update $x_{k-1}\leftarrow \mathcal{T}_k(x_k;\widehat{s}_{k,\ell})$.
+    \STATE (Optional) Update controller $\phi$ using the same rollouts and Eq.~\eqref{eq:bridge_score_phi}.
+\ENDFOR
+\STATE Validate top candidates with high fidelity $\ell=L$ and return best $(x^\star,\phi^\star)$.
+\end{algorithmic}
+\end{algorithm}
+
+% =========================
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Benchmarks and Tasks (SoftZoo / DiffuseBot-style)}
+\label{subsec:benchmarks}
+
+We evaluate on SoftZoo locomotion tasks commonly used in physics-augmented co-design:
+(i) \textbf{Crawling} on flat terrain,
+(ii) \textbf{Obstacle crossing} (e.g., hurdles),
+and optionally (iii) \textbf{Turning/steering}.
+Designs are represented in the same morphology space as SoftZoo (e.g., voxel material grids),
+and controllers use the task-standard actuation parameterization.
+
+\subsection{Mode Set (S1) and Fidelity Levels (S3)}
+\label{subsec:mode_fidelity}
+
+\paragraph{Contact modes.}
+We model contact uncertainty as discrete modes, instantiated by friction coefficients
+$\mu\in\{0.2,0.5,0.8,1.1\}$ (or other material regimes) with uniform prior $p_0(c)$.
+Training uses mode-marginalized guidance; testing evaluates both in-distribution (ID) and
+out-of-distribution (OOD) frictions.
+
+\paragraph{Fidelity ladder.}
+We define three fidelities:
+$\ell=0$ (coarse: reduced grid/substeps, $\sim$10$\times$ faster),
+$\ell=1$ (medium),
+$\ell=2$ (fine: default high fidelity, used for final reporting).
+We use $\ell(k)$ such that early reverse steps run at coarse fidelity and later steps upgrade.
+We also evaluate the adaptive upgrade rule in Eq.~\eqref{eq:fidelity_rule}.
+
+\subsection{Baselines}
+\label{subsec:baselines}
+
+We compare against:
+\begin{itemize}
+\item \textbf{Single-fidelity MBD}: identical method but always using $\ell=2$ (no S3).
+\item \textbf{No-mode MBD}: optimize assuming a single friction mode (no S1).
+\item \textbf{Evolutionary search (CMA-ES)}: optimize $x$ (and optionally $\phi$) via black-box evolution.
+\item \textbf{Ablations}: (i) w/o diffusion prior (random init), (ii) w/o 3DGS prior/proxy (if used).
+\end{itemize}
+
+\subsection{Metrics}
+\label{subsec:metrics}
+
+We report:
+\begin{itemize}
+\item \textbf{Final performance}: best return $R_{\ell=2}$ after a fixed wall-clock budget.
+\item \textbf{Sample efficiency}: time-to-threshold (reach target return), and number of fine calls.
+\item \textbf{Robustness}: OOD return drop under unseen friction/materials; success rate.
+\item \textbf{Diversity} (optional): top-$N$ design performance distribution and morphology distances.
+\end{itemize}
+
+\subsection{Main Results: What to Run and What to Plot}
+\label{subsec:main_results}
+
+\paragraph{Exp-1: Multi-fidelity efficiency (S3).}
+Fix a wall-clock budget (or total simulator steps).
+Compare MR-MF-MBD vs Single-fidelity MBD.
+Plot return vs wall-clock and return vs \#(fine calls).
+Report speedup in reaching a target return.
+
+\paragraph{Exp-2: Mode-robustness (S1).}
+Train with mode-marginalized guidance (Eq.~\eqref{eq:mode_marginal_likelihood}).
+Test on held-out frictions (OOD).
+Plot ID vs OOD return and success rate; report OOD drop.
+
+\paragraph{Exp-3: 3DGS advantage without real multi-view.}
+We generate synthetic multi-view observations by placing $V$ virtual cameras around the robot
+(e.g., a 360$^\circ$ orbit) and rendering RGB/mask (and depth if available).
+We evaluate:
+\begin{itemize}
+\item \textbf{3DGS-prior (C)}: MR-MF-MBD with prior anchoring in Eq.~\eqref{eq:3dgs_prior} vs without it.
+Metric: time-to-threshold, failure rate, and final return.
+\item \textbf{3DGS-proxy fidelity-0 (B)}: use 3DGS features to build a cheap surrogate return
+for $\ell=0$ and compare against standard coarse simulation fidelity-0.
+Metric: reduction in fine calls and wall-clock to reach threshold.
+\end{itemize}
+We recommend using (C) and (B) as the primary 3DGS studies, and treating (A) as an extension.
+
+\subsection{Implementation Details (JAX + SoftZoo)}
+\label{subsec:impl}
+
+The diffusion prior and reverse sampler are implemented in JAX (Flax/Optax),
+while SoftZoo rollouts are executed as batched external evaluations.
+MCSA uses Gaussian perturbations and a baseline for variance reduction
+(Eq.~\eqref{eq:es_grad_estimator}). For fairness, all methods use the same rollout budget.
+We select the best design by high-fidelity validation on $\ell=2$.

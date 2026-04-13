@@ -1,0 +1,27 @@
+# Phase C: S3 validation — single-fidelity baseline (always fine, no ladder)
+# Exp-1 baseline: same budget but always uses ℓ=2
+# Compare: wall-clock and #fine-calls vs multi-fidelity
+name: co_design_phase_c_single_fidelity
+output_dir: results/phase_c/single_fidelity
+checkpoint_dir: results/phase_c/checkpoints
+
+baseline_name: mrmfmbd
+task_id: crawling_ground
+seeds: [0, 1, 2]
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 4
+      T_k: 0.1
+      Ndiffuse: 12
+      beta0: 1e-6
+      betaT: 1.0
+  diffusion_merge_strategy: merge
+
+method_params:
+  num_modes: 4
+  num_fidelity_levels: 1       # single fidelity — always fine
+  fine_fidelity_level: 0       # only one level available
+  show_tqdm: true

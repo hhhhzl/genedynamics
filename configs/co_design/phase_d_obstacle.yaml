@@ -1,10 +1,11 @@
-# Co-design experiment: MRMFMBD on crawling_ground (full S1+S3)
-name: co_design_mrmfmbd_crawling
-output_dir: results/co_design/mrmfmbd_crawling
-checkpoint_dir: results/co_design/checkpoints
+# Phase D: Full S1+S3 joint — obstacle crossing task
+# Tests generalization to a different task (not just crawling)
+name: co_design_phase_d_obstacle
+output_dir: results/phase_d/obstacle
+checkpoint_dir: results/phase_d/checkpoints
 
 baseline_name: mrmfmbd
-task_id: crawling_ground
+task_id: obstacle_crossing
 seeds: [0, 1, 2]
 
 scheduler_config:

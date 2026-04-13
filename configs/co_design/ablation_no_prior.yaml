@@ -1,8 +1,8 @@
-# Phase B: S1 validation — no-mode baseline (single regime), in-distribution
-# Compare: no-mode vs full S1
-name: co_design_phase_b_nomode_id
-output_dir: results/phase_b/nomode_id
-checkpoint_dir: results/phase_b/checkpoints
+# Ablation: no diffusion prior (random initialization)
+# Tests the value of the prior p0(x) in guiding search
+name: co_design_ablation_no_prior
+output_dir: results/ablations/no_prior
+checkpoint_dir: results/ablations/checkpoints
 
 baseline_name: mrmfmbd
 task_id: crawling_ground
@@ -20,6 +20,7 @@ scheduler_config:
   diffusion_merge_strategy: merge
 
 method_params:
-  num_modes: 1
+  num_modes: 4
   num_fidelity_levels: 1
+  use_prior: false          # disable prior score term
   show_tqdm: true
