@@ -4,6 +4,7 @@ MBD3D method plugin for 3DGS robust mapping.
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Dict
 
 import numpy as np
@@ -136,23 +137,51 @@ class MBD3DMethodPlugin(MethodPlugin):
         if bool(getattr(renderer, "requires_no_jvp", False)):
             solver_enable_subspace = False
 
-        bridge_K = config.get("bridge_K", 50)
-        eta_start = config.get("bridge_eta", 0.02)
-        eta_end = config.get("bridge_eta_end", eta_start * 0.1)
-        eta_schedule = np.linspace(float(eta_start), float(eta_end), bridge_K, dtype=np.float32).tolist()
-        tau_start = config.get("bridge_tau", 0.01)
-        tau_end = config.get("bridge_tau_end", 0.001)
-        tau_schedule = np.linspace(float(tau_start), float(tau_end), bridge_K, dtype=np.float32).tolist()
-        sigma_mcsa = config.get("sigma_mcsa", 0.05)
-        sigma_start = config.get("sigma_mcsa_start", sigma_mcsa * 1.6)
-        sigma_end = config.get("sigma_mcsa_end", sigma_mcsa * 0.4)
-        sigma_schedule = np.linspace(float(sigma_start), float(sigma_end), bridge_K, dtype=np.float32).tolist()
+        # ----- DDPM noise schedule + MC sample size -----
+        # Preferred form: scheduler_config.diffusion_schedulers[0] following
+        # the /single_2d/mbd.yaml convention. Falls back to legacy
+        # method_params (bridge_K / M / ddpm_beta*) for backward compat.
+        sc = config.get("scheduler_config") or {}
+        ds_list = sc.get("diffusion_schedulers") or []
+        ds0 = ds_list[0] if ds_list else {}
+
+        bridge_K = int(ds0.get("Ndiffuse", config.get("bridge_K", 100)))
+        ddpm_beta0 = float(ds0.get("beta0", config.get("ddpm_beta0", 1e-4)))
+        ddpm_betaT = float(ds0.get("betaT", config.get("ddpm_betaT", 1e-2)))
+        M_val = int(ds0.get("M_k", config.get("M", 16)))
+        temperature = float(ds0.get("T_k", config.get("temperature", 1.0)))
+
+        legacy_keys = (
+            "bridge_beta0", "bridge_betaK", "bridge_eta", "bridge_eta_end",
+            "sigma_mcsa", "sigma_mcsa_start", "sigma_mcsa_end",
+        )
+        legacy_present = [k for k in legacy_keys if k in config]
+        if legacy_present:
+            warnings.warn(
+                "mbd3d: legacy method_params {} are no-ops under the clean-state "
+                "MBD formulation (β-tempering and MCSA σ are gone). Configure the "
+                "DDPM schedule via scheduler_config.diffusion_schedulers[0] "
+                "(Ndiffuse/beta0/betaT/M_k/T_k) instead.".format(legacy_present),
+                stacklevel=2,
+            )
+
+        # Decayed extra exploration noise injected after the reverse update
+        # (cf. /MBD action_extra_sigma). Reuses bridge_tau* names for now.
+        extra_sigma_start = float(
+            config.get("extra_sigma_start", config.get("bridge_tau", 0.0))
+        )
+        extra_sigma_end = float(
+            config.get("extra_sigma_end", config.get("bridge_tau_end", 0.0))
+        )
+        tau_schedule = np.linspace(
+            extra_sigma_start, extra_sigma_end, bridge_K, dtype=np.float32
+        ).tolist()
+        # BridgeSchedule is still used by the backend to carry K and the
+        # tau_k schedule; β/η/σ slots are filled with inert defaults.
         bridge_schedule = create_linear_bridge_schedule(
             K=bridge_K,
-            beta0=config.get("bridge_beta0", 0.0),
-            betaK=config.get("bridge_betaK", 1.0),
-            eta_schedule=eta_schedule,
-            sigma_schedule=sigma_schedule,
+            beta0=0.0,
+            betaK=1.0,
             tau_schedule=tau_schedule,
         )
 
@@ -166,9 +195,12 @@ class MBD3DMethodPlugin(MethodPlugin):
             bridge_schedule=bridge_schedule,
             horizon=horizon,
             n_gaussians=n_gaussians,
-            M=config.get("M", 16),
-            sigma_mcsa=config.get("sigma_mcsa", 0.05),
+            M=M_val,
+            sigma_mcsa=0.0,
             ess_min=config.get("ess_min", 1.0),
+            ddpm_beta0=ddpm_beta0,
+            ddpm_betaT=ddpm_betaT,
+            temperature=temperature,
             seed=config.get("np_random_seed", 0),
             show_tqdm=config.get("show_tqdm", False),
             fix_cameras=config.get("fix_cameras", True),
@@ -186,8 +218,8 @@ class MBD3DMethodPlugin(MethodPlugin):
             subspace_refresh_every_end=config.get(
                 "subspace_refresh_every_end", config.get("subspace_refresh_every", 1)
             ),
-            proposal_count_start=config.get("proposal_count_start", config.get("M", 16)),
-            proposal_count_end=config.get("proposal_count_end", config.get("M", 16)),
+            proposal_count_start=config.get("proposal_count_start", M_val),
+            proposal_count_end=config.get("proposal_count_end", M_val),
             profiling=config.get("profiling", True),
             subspace_oversample=config.get("subspace_oversample", 2),
             compile_stable_shapes=config.get("compile_stable_shapes", True),

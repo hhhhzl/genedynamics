@@ -30,7 +30,7 @@ from genedynamics.deploy.interfaces.messages import (
     Intent,
     RobotState,
 )
-from genedynamics.deploy.io.mujoco_io import MujocoRobotIO
+from genedynamics.deploy.interfaces.robot_io import RobotIO
 
 __all__ = [
     "PolicyArtifact",
@@ -198,7 +198,7 @@ class RLController:
     # Controller protocol
     # ------------------------------------------------------------------
 
-    def reset(self, io: Optional[MujocoRobotIO] = None) -> None:
+    def reset(self, io: Optional[RobotIO] = None) -> None:
         if io is not None:
             self.spec = io.spec
         self.obs_builder.reset()

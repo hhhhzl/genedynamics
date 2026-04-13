@@ -35,8 +35,16 @@ from genedynamics.deploy.presets.g1_teleop_mujoco import (
 from genedynamics.deploy.presets.g1_teleop_real import (
     G1TeleopRealPreset,
 )
+from genedynamics.deploy.presets.g1_corridor_brax import (
+    G1CorridorBraxPreset,
+)
+from genedynamics.deploy.presets.g1_corridor_isaac_lab import (
+    G1CorridorIsaacLabPreset,
+)
 
 __all__ = [
+    "G1CorridorBraxPreset",
+    "G1CorridorIsaacLabPreset",
     "G1CorridorMujocoSportModePreset",
     "G1CorridorMujocoWBCPreset",
     "G1CorridorRealSportModePreset",

@@ -145,6 +145,18 @@ def register_defaults() -> None:
         io_registry.register("stub", StubRobotIO)
     except ImportError:
         pass
+    try:
+        from genedynamics.deploy.io.brax_io import BraxRobotIO
+
+        io_registry.register("brax", BraxRobotIO)
+    except ImportError:
+        pass
+    try:
+        from genedynamics.deploy.io.isaac_lab_io import IsaacLabRobotIO
+
+        io_registry.register("isaac_lab", IsaacLabRobotIO)
+    except ImportError:
+        pass
 
     # ----- controllers ----------------------------------------------------
     try:

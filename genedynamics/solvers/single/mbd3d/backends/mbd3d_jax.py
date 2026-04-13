@@ -276,9 +276,14 @@ class MBD3DBackendJax:
         render_flat_fn, sigma_inv_apply_fn, log_likelihood_fn, obs_images = model_fns[active_ds]
         log_prior_fn = self._build_log_prior()
 
+        # Clean-state target log π_1 = log p_0 + log p(y|θ). No β tempering:
+        # Eq 13 fixes the clean posterior; the "annealing" in MBD is encoded
+        # in the forward noise schedule ᾱ_k (Eq 17, Eq 19), not in a
+        # likelihood exponent. Tempering the likelihood breaks the Tweedie
+        # identity that Eq 21 relies on.
         def _make_log_pi(log_likelihood_local: Any):
-            def _log_pi(theta: jnp.ndarray, beta: float) -> jnp.ndarray:
-                return log_prior_fn(theta) + beta * log_likelihood_local(theta)
+            def _log_pi(theta: jnp.ndarray) -> jnp.ndarray:
+                return log_prior_fn(theta) + log_likelihood_local(theta)
             return _log_pi
 
         log_pi_fns: Dict[int, Any] = {ds: _make_log_pi(model_fns[ds][2]) for ds in fidelity_levels}
@@ -286,8 +291,8 @@ class MBD3DBackendJax:
         if use_lax_map_logpi:
             def _make_mapped_log_pi(log_pi_single: Any):
                 @jax.jit
-                def _mapped(theta_batch: jnp.ndarray, beta_val: float) -> jnp.ndarray:
-                    return jax.lax.map(lambda th: log_pi_single(th, beta_val), theta_batch)
+                def _mapped(theta_batch: jnp.ndarray) -> jnp.ndarray:
+                    return jax.lax.map(lambda th: log_pi_single(th), theta_batch)
                 return _mapped
 
             log_pi_batched_fns: Dict[int, Any] = {
@@ -295,8 +300,16 @@ class MBD3DBackendJax:
             }
         else:
             log_pi_batched_fns: Dict[int, Any] = {
-                ds: jax.jit(jax.vmap(log_pi_fns[ds], in_axes=(0, None))) for ds in fidelity_levels
+                ds: jax.jit(jax.vmap(log_pi_fns[ds], in_axes=0)) for ds in fidelity_levels
             }
+
+        # DDPM noise schedule for the forward kernel q(θ_k|θ_1). Indexed 0..K-1
+        # from clean-end (large ᾱ) to noisy-end (small ᾱ). Reverse diffusion
+        # walks step_idx 0..K-1 with k_noise = (K-1)-step_idx.
+        ddpm_beta0 = float(self.config.get("ddpm_beta0", 1e-4))
+        ddpm_betaT = float(self.config.get("ddpm_betaT", 1e-2))
+        betas_ddpm_np = np.linspace(ddpm_beta0, ddpm_betaT, K, dtype=np.float32)
+        alphas_bar_np = np.cumprod(1.0 - betas_ddpm_np, axis=0).astype(np.float32)
         theta = jnp.asarray(theta_init, dtype=jnp.float32)
         history: Dict[str, List[float]] = {
             "ess": [], "score_norm": [], "log_pi": [], "beta": [],
@@ -309,6 +322,7 @@ class MBD3DBackendJax:
             "update_time_ms": [],
             "proposals_per_sec": [],
             "views_per_sec": [],
+            "alpha_bar": [],
         }
 
         U = None
@@ -336,15 +350,23 @@ class MBD3DBackendJax:
             alpha = float(k_step) / float(total - 1)
             return int(round((1.0 - alpha) * float(start) + alpha * float(end)))
 
+        # MBD reverse step in clean-state coordinates. theta_k here denotes
+        # the current clean-state estimate θ̄ (= θ_{noisy} / √ᾱ_k). Candidates
+        # are drawn from the forward kernel N(θ̄, (1/ᾱ_k − 1)·U U^T) as in
+        # Eq 19 / Eq 23, then weighted under the fixed clean target p_1
+        # (Eq 20). Because the DDPM reverse update
+        #     θ_{k−1,noisy} = (θ_{k,noisy} + (1−ᾱ_k)·S) / √α_k
+        # followed by dividing by √ᾱ_{k−1} collapses algebraically to the
+        # weighted clean-state mean Σ w_m·θ̃_m, we simply return that mean
+        # (plus optional subspace exploration noise).
         def _make_proposal_step(log_pi_batched_local: Any):
             @jax.jit
             def _proposal_update_step(
                 theta_k: jnp.ndarray,
                 U_k: jnp.ndarray,
-                beta_k: float,
-                sigma_k: float,
-                eta_k: float,
-                tau_k: float,
+                scale_prop: float,
+                extra_sigma: float,
+                temperature: float,
                 m_k: int,
                 rk_active: int,
                 key_eps: jnp.ndarray,
@@ -353,20 +375,23 @@ class MBD3DBackendJax:
                 eps = jax.random.normal(key_eps, (m_cap, rank_cap), dtype=jnp.float32)
                 rank_mask = (rank_indices < rk_active).astype(jnp.float32)
                 eps_eff = eps * rank_mask[None, :]
-                proposals = theta_k[None, :] + sigma_k * (eps_eff @ U_k.T)
-                log_probs = log_pi_batched_local(proposals, beta_k)
+                proposals = theta_k[None, :] + scale_prop * (eps_eff @ U_k.T)
+                log_probs = log_pi_batched_local(proposals)
                 prop_mask = proposal_indices < m_k
                 masked_log_probs = jnp.where(prop_mask, log_probs, -jnp.inf)
-                weights = jax.nn.softmax(masked_log_probs - jnp.max(masked_log_probs))
+                # Softmax temperature T_k (cf. /MBD T_k_arr): scales the
+                # spread of weights without changing the target distribution.
+                centered = (masked_log_probs - jnp.max(masked_log_probs)) / jnp.maximum(temperature, 1e-8)
+                weights = jax.nn.softmax(centered)
                 weights = weights * prop_mask.astype(jnp.float32)
                 weights = weights / (jnp.sum(weights) + 1e-12)
-                coeff = (weights[:, None] * eps_eff).sum(axis=0) / jnp.maximum(sigma_k, 1e-8)
-                score = U_k @ coeff
+                theta_bar_next = jnp.sum(weights[:, None] * proposals, axis=0)
                 noise = jax.random.normal(key_noise, (rank_cap,), dtype=jnp.float32) * rank_mask
-                xi = tau_k * (U_k @ noise)
-                theta_next = theta_k + eta_k * score + xi
+                xi = extra_sigma * (U_k @ noise)
+                theta_next = theta_bar_next + xi
+                score_dir = theta_bar_next - theta_k
                 ess = 1.0 / (jnp.sum(jnp.square(weights)) + 1e-12)
-                return theta_next, ess, score
+                return theta_next, ess, score_dir
 
             return _proposal_update_step
 
@@ -387,9 +412,9 @@ class MBD3DBackendJax:
                     )
                 )
 
-        for k in iter_range:
+        for step_idx in iter_range:
             t0 = time.perf_counter()
-            progress = float(k + 1) / float(max(1, K))
+            progress = float(step_idx + 1) / float(max(1, K))
             for end_frac, ds in fidelity_schedule:
                 if progress <= end_frac:
                     active_ds = ds
@@ -397,29 +422,37 @@ class MBD3DBackendJax:
             if model_fns[active_ds][2] is not log_likelihood_fn:
                 render_flat_fn, sigma_inv_apply_fn, log_likelihood_fn, obs_images = model_fns[active_ds]
                 n_views = int(obs_images.shape[0])
-            beta = float(self.bridge_schedule.beta(k))
-            sigma = float(self.bridge_schedule.sigma(k))
-            eta = float(self.bridge_schedule.eta(k))
-            tau = float(self.bridge_schedule.tau(k))
+
+            # Reverse-diffusion noise-level index: early step_idx = high noise
+            # (small ᾱ_k); late step_idx = clean (ᾱ_k → 1).
+            k_noise = (K - 1) - int(step_idx)
+            ab_k = float(max(alphas_bar_np[k_noise], 1e-8))
+            one_minus_ab = max(1.0 - ab_k, 1e-8)
+            scale_prop = float(np.sqrt(max(1.0 / ab_k - 1.0, 0.0)))
+            # τ_k is reused from the bridge schedule as the decayed extra
+            # exploration noise; it no longer drives a separate MCSA update.
+            tau = float(self.bridge_schedule.tau(step_idx))
+            temperature_k = float(self.config.get("temperature", 1.0))
+
+            # ESS-adaptive widening of the proposal scale (biased but stabilizing).
             if ess_adaptive and prev_ess is not None and ess_min > 0 and prev_ess < ess_min:
-                eta_scale = min(1.0, max(0.3, float(prev_ess) / ess_min))
-                sigma_scale = 1.0 + 0.4 * max(0.0, 1.0 - float(prev_ess) / ess_min)
-                eta = eta * eta_scale
-                sigma = sigma * sigma_scale
-            rank_k = _linear_int(self._subspace_rank_start, self._subspace_rank_end, k, K)
+                scale_boost = 1.0 + 0.4 * max(0.0, 1.0 - float(prev_ess) / ess_min)
+                scale_prop = scale_prop * scale_boost
+
+            rank_k = _linear_int(self._subspace_rank_start, self._subspace_rank_end, step_idx, K)
             rank_k = int(min(max(1, rank_k), self._theta_dim))
-            m_k = _linear_int(self._proposal_count_start, self._proposal_count_end, k, K)
+            m_k = _linear_int(self._proposal_count_start, self._proposal_count_end, step_idx, K)
             m_k = int(max(2, m_k))
             refresh_every_k = _linear_int(
                 self._subspace_refresh_every_start,
                 self._subspace_refresh_every_end,
-                k,
+                step_idx,
                 K,
             )
             refresh_every_k = int(max(1, refresh_every_k))
 
             t_sub0 = time.perf_counter()
-            if (U is None) or (k % refresh_every_k == 0):
+            if (U is None) or (step_idx % refresh_every_k == 0):
                 rng, key_u = jax.random.split(rng)
                 subspace_rank = rank_cap if self._compile_stable_shapes else rank_k
                 if self._compile_stable_shapes:
@@ -439,24 +472,27 @@ class MBD3DBackendJax:
             rk_active = int(min(rank_k, rk))
             rng, key_eps, key_noise = jax.random.split(rng, 3)
             t_prop0 = time.perf_counter()
-            theta, ess, score = proposal_step_fns[active_ds](
-                theta, U, beta, sigma, eta, tau, m_k, rk_active, key_eps, key_noise
+            theta, ess, score_dir = proposal_step_fns[active_ds](
+                theta, U, scale_prop, tau, temperature_k, m_k, rk_active, key_eps, key_noise
             )
             t_prop_ms = (time.perf_counter() - t_prop0) * 1e3
             prev_ess = float(np.asarray(ess))
 
             t_upd_ms = 0.0
 
-            lp = log_pi_fns[active_ds](theta, beta)
+            lp = log_pi_fns[active_ds](theta)
             energy = float(jnp.sum(jnp.maximum(eigvals, 0.0))) if eigvals is not None else 0.0
+            # Diagnostic score norm via Eq 21 coefficient √ᾱ_k / (1 − ᾱ_k).
+            score_coeff = float(np.sqrt(ab_k)) / one_minus_ab
+            score_norm_val = float(np.asarray(jnp.linalg.norm(score_dir))) * score_coeff
             step_ms = (time.perf_counter() - t0) * 1e3
             pps = float(m_k / max(t_prop_ms / 1e3, 1e-9))
             vps = float((m_k * n_views) / max(t_prop_ms / 1e3, 1e-9))
             history["ess"].append(float(np.asarray(ess)))
-            history["score_norm"].append(float(np.asarray(jnp.linalg.norm(score))))
+            history["score_norm"].append(score_norm_val)
             history["log_pi"].append(float(np.asarray(lp)))
-            history["beta"].append(beta)
-            history["sigma"].append(sigma)
+            history["beta"].append(progress)
+            history["sigma"].append(scale_prop)
             history["subspace_rank"].append(float(rk_active))
             history["subspace_energy"].append(energy)
             history["proposal_count"].append(float(m_k))
@@ -467,6 +503,7 @@ class MBD3DBackendJax:
             history["update_time_ms"].append(t_upd_ms)
             history["proposals_per_sec"].append(pps)
             history["views_per_sec"].append(vps)
+            history["alpha_bar"].append(ab_k)
             if self.show_tqdm and self._profiling and hasattr(iter_range, "set_postfix"):
                 iter_range.set_postfix(
                     ess=f"{float(np.asarray(ess)):.2f}",

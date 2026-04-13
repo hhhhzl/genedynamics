@@ -31,10 +31,13 @@ moving Python modules.
 from __future__ import annotations
 
 import inspect
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from genedynamics.deploy.registries import get_registry, resolve_class
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "DeployConfig",
@@ -264,7 +267,11 @@ class BuiltComponents:
     observers: List[Any] = None  # type: ignore[assignment]
 
 
-def build_components(cfg: type[DeployConfig] | DeployConfig) -> BuiltComponents:
+def build_components(
+    cfg: type[DeployConfig] | DeployConfig,
+    *,
+    strict: bool = False,
+) -> BuiltComponents:
     """Walk a :class:`DeployConfig` and instantiate every declared component.
 
     The build order is:
@@ -274,6 +281,12 @@ def build_components(cfg: type[DeployConfig] | DeployConfig) -> BuiltComponents:
     them. Sections that don't appear on the config are skipped (returned
     as ``None``); the pipeline runner is responsible for treating their
     absence as a config error if it cares.
+
+    Args:
+        cfg: The deploy config (class or instance).
+        strict: When ``True``, raise if ``io`` or ``controller`` sections
+            are missing on the config. Defaults to ``False`` for backwards
+            compatibility.
 
     The function never opens a network socket or starts a sim — it just
     constructs the objects. The pipeline loop in
@@ -325,7 +338,24 @@ def build_components(cfg: type[DeployConfig] | DeployConfig) -> BuiltComponents:
                 node_dict = config_to_dict(entry)
             built.observers.append(_initialize_dict(node_dict))
 
-    return built
+    # Strict build validation: require io + controller.
+    build_strict = strict or bool(getattr(cfg, "strict_build", False))
+    if build_strict:
+        missing = []
+        if built.io is None:
+            missing.append("io")
+        if built.controller is None:
+            missing.append("controller")
+        if missing:
+            raise RuntimeError(
+                f"build_components(strict=True): required sections missing "
+                f"on {type(cfg).__name__}: {missing}"
+            )
+
+    from genedynamics.deploy.runtime_check import validate_runtimes
+
+    runtime_strict = bool(getattr(cfg, "strict_runtime", False))
+    return validate_runtimes(built, strict=runtime_strict)
 
 
 # ---------------------------------------------------------------------------
@@ -375,8 +405,18 @@ def _build_robot(node: Any) -> Any:
         from genedynamics.robots.registry import get_robot_registry
 
         return get_robot_registry().get(robot_type, model_id)
-    except Exception:
+    except ImportError:
+        logger.warning(
+            "Robot registry unavailable (genedynamics.robots not installed); "
+            "skipping robot resolution for %s/%s", robot_type, model_id,
+        )
         return None
+    except Exception as exc:
+        logger.error(
+            "Failed to resolve robot %s/%s: %s", robot_type, model_id, exc,
+            exc_info=True,
+        )
+        raise
 
 
 def _build_safety(node: Any, extras: Mapping[str, Any]) -> Any:
@@ -442,5 +482,9 @@ def _only_accepted(node: Any, extras: Mapping[str, Any]) -> Dict[str, Any]:
         sig = inspect.signature(cls.__init__)
         accepted = {n for n in sig.parameters if n != "self"}
         return {k: v for k, v in extras.items() if k in accepted}
-    except Exception:
+    except KeyError:
+        logger.debug("Registry key %r not found during extras filtering; passing all extras", key)
+        return dict(extras)
+    except Exception as exc:
+        logger.debug("Could not inspect %r for extras filtering: %s", key, exc)
         return dict(extras)

@@ -43,8 +43,9 @@ class ExperimentConfig:
     env_params: Dict[str, Any] = field(default_factory=dict)
     method_params: Dict[str, Any] = field(default_factory=dict)
     
-    # Obstacle configuration
-    obstacle_levels: List[int] = field(default_factory=lambda: list(range(11)))
+    # Obstacle configuration. Defaults to a single dummy level so configs
+    # that don't sweep obstacles (e.g. 3DGS reconstruction) can omit them.
+    obstacle_levels: List[int] = field(default_factory=lambda: [0])
     obstacle_config: Dict[str, Any] = field(default_factory=dict)
     
     # Experiment execution
@@ -219,9 +220,6 @@ class ExperimentConfig:
         
         if not self.seeds:
             errors.append("At least one seed must be specified")
-        
-        if not self.obstacle_levels:
-            errors.append("At least one obstacle level must be specified")
         
         return errors
 

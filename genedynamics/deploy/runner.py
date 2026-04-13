@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import logging
 from typing import Any, Optional
 
 from genedynamics.deploy.config_schema import (
@@ -33,6 +34,8 @@ from genedynamics.deploy.config_schema import (
     DeployConfig,
     build_components,
 )
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["load_preset", "build_from_preset", "run_preset", "main"]
 
@@ -96,18 +99,29 @@ def run_preset(
         try:
             built.follower.reset()
         except TypeError:
-            pass
+            logger.warning(
+                "Follower %s.reset() signature mismatch; called without args",
+                type(built.follower).__name__,
+            )
     if built.task is not None and hasattr(built.task, "reset"):
         try:
             built.task.reset(built.io)
         except TypeError:
-            built.task.reset()
+            try:
+                built.task.reset()
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Task {type(built.task).__name__}.reset() failed: {exc}"
+                ) from exc
 
     for obs in built.observers:
         try:
             obs.on_episode_start(episode_id, {"preset": type(preset).__name__})
-        except Exception as exc:  # pragma: no cover
-            print(f"[runner] observer {obs} on_episode_start failed: {exc}")
+        except Exception as exc:
+            logger.error(
+                "Observer %s.on_episode_start failed: %s",
+                type(obs).__name__, exc, exc_info=True,
+            )
 
     from genedynamics.deploy.interfaces.messages import Intent, StepInfo
     import numpy as np
@@ -141,8 +155,11 @@ def run_preset(
         for obs in built.observers:
             try:
                 obs.on_step(state.t, state, intent, cmd, info)
-            except Exception as exc:  # pragma: no cover
-                print(f"[runner] observer {obs} on_step failed: {exc}")
+            except Exception as exc:
+                logger.error(
+                    "Observer %s.on_step failed at t=%.3f: %s",
+                    type(obs).__name__, state.t, exc, exc_info=True,
+                )
         actual_steps += 1
         if info.done:
             break
@@ -155,13 +172,16 @@ def run_preset(
     if built.task is not None and hasattr(built.task, "summary"):
         try:
             summary.update(dict(built.task.summary()))
-        except Exception:  # pragma: no cover
-            pass
+        except Exception as exc:
+            logger.warning("Task summary failed: %s", exc)
     for obs in built.observers:
         try:
             obs.on_episode_end(summary)
-        except Exception as exc:  # pragma: no cover
-            print(f"[runner] observer {obs} on_episode_end failed: {exc}")
+        except Exception as exc:
+            logger.error(
+                "Observer %s.on_episode_end failed: %s",
+                type(obs).__name__, exc, exc_info=True,
+            )
 
     built.io.close()
     return built

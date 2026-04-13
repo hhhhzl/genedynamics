@@ -28,6 +28,23 @@ except ImportError:
 from genedynamics.deploy.io.unitree_g1_io import UnitreeG1RobotIO
 
 
+# Optional: BraxRobotIO needs brax + jax; gracefully degrade.
+try:
+    from genedynamics.deploy.io.brax_io import BraxRobotIO
+    _HAS_BRAX = True
+except ImportError:
+    _HAS_BRAX = False
+    BraxRobotIO = None  # type: ignore[assignment]
+
+# Optional: IsaacLabRobotIO needs omni.isaac.lab + torch; gracefully degrade.
+try:
+    from genedynamics.deploy.io.isaac_lab_io import IsaacLabRobotIO
+    _HAS_ISAAC_LAB = True
+except ImportError:
+    _HAS_ISAAC_LAB = False
+    IsaacLabRobotIO = None  # type: ignore[assignment]
+
+
 __all__ = [
     "BaseRobotIO",
     "FootContactSnapshot",
@@ -38,3 +55,7 @@ __all__ = [
 ]
 if _HAS_MJX:
     __all__.append("MjxRobotIO")
+if _HAS_BRAX:
+    __all__.append("BraxRobotIO")
+if _HAS_ISAAC_LAB:
+    __all__.append("IsaacLabRobotIO")

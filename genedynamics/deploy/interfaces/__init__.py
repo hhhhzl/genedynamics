@@ -32,8 +32,10 @@ from genedynamics.deploy.interfaces.messages import (
 from genedynamics.deploy.interfaces.observers import Observer
 from genedynamics.deploy.interfaces.robot_io import RobotIO
 from genedynamics.deploy.interfaces.safety import SafetyFilter, SafetyResult
+from genedynamics.deploy.runtime_check import CommandKindError, RuntimeMismatchError
 
 __all__ = [
+    "CommandKindError",
     "Controller",
     "ControlCommand",
     "Intent",
@@ -41,6 +43,7 @@ __all__ = [
     "Observer",
     "RobotIO",
     "RobotState",
+    "RuntimeMismatchError",
     "SafetyFilter",
     "SafetyResult",
     "StepInfo",

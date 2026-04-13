@@ -42,7 +42,9 @@ class SafetyFilter(Protocol):
         spec: Robot spec the filter was constructed against.
         runtime: Tag for the array runtime backend, mirroring
             :class:`Controller.runtime`. Pipelines verify cross-component
-            compatibility at startup.
+            compatibility at startup. Set to ``"any"`` for filters that
+            operate purely on :class:`ControlCommand` metadata and are
+            agnostic to the underlying array backend.
     """
 
     spec: Any

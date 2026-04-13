@@ -19,19 +19,7 @@ env_params:
 
 method: mbd3d
 method_params:
-  horizon: 19
   n_gaussians: 4096
-  bridge_K: 1000
-  bridge_beta0: 0.0
-  bridge_betaK: 1.0
-  bridge_eta: 0.0002
-  bridge_eta_end: 0.00005
-  bridge_tau: 0.00008
-  bridge_tau_end: 0.00001
-  M: 20
-  sigma_mcsa: 0.0035
-  sigma_mcsa_start: 0.005
-  sigma_mcsa_end: 0.0018
   ess_min: 1.5
   observation_sigma2: 0.0025
   image_height: 128
@@ -48,16 +36,17 @@ method_params:
   fix_cameras: true
   initialization_mode: direct
   init_jitter_scale: 0.0
-  enable_subspace: false
-  subspace_rank: 5
-  subspace_rank_start: 2
-  subspace_rank_end: 5
-  subspace_power_iters: 1
+  # Subspace MUST be on at d ≈ 4096·11; otherwise IS weights collapse.
+  enable_subspace: true
+  subspace_rank: 64
+  subspace_rank_start: 32
+  subspace_rank_end: 64
+  subspace_power_iters: 2
   subspace_refresh_every: 2
   subspace_refresh_every_start: 1
   subspace_refresh_every_end: 5
-  subspace_oversample: 1
-  proposal_count_start: 8
+  subspace_oversample: 2
+  proposal_count_start: 16
   proposal_count_end: 20
   compile_stable_shapes: true
   profiling: true
@@ -67,12 +56,20 @@ method_params:
   prior_scale_means: 2.0
   prior_scale_scales: 0.5
   prior_bbox: [-0.6, 0.6, -0.6, 0.6, -0.6, 0.6]
+  extra_sigma_start: 0.00008
+  extra_sigma_end: 0.00001
   show_tqdm: true
 
-obstacle_levels: [0]
-obstacle_config:
-  generator: box2d
-  robot_radius: 0.05
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      Ndiffuse: 1000
+      beta0: 1.0e-4
+      betaT: 1.0e-2
+      M_k: 20
+      T_k: 1.0
+  diffusion_merge_strategy: merge
 
 seeds: [0]
 backend: jax
@@ -82,5 +79,5 @@ metrics: []
 visualizations: []
 
 metadata:
-  description: "Optimal trainingfree: 20 views, jaxsplat, K=1000 M=20, prior_bbox, subspace off."
+  description: "Optimal trainingfree: 20 views, jaxsplat, K=1000 M=20, prior_bbox, subspace on (clean-state MBD)."
   author: "genedynamics"
