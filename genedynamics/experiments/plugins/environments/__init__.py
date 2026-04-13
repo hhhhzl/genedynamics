@@ -28,6 +28,7 @@ from .avoiding_plan import AvoidingPlanEnvironmentPlugin
 from .softzoo import SoftZooEnvironmentPlugin
 from .mujoco_scene_mapping import MujocoSceneMappingPlugin
 from .nerf_synthetic_3dgs import NerfSynthetic3DGSPlugin
+from .humanoid_corridor import HumanoidCorridor2DPlugin
 
 __all__ = [
     'SingleIntegrator2DPlugin',
@@ -50,5 +51,6 @@ __all__ = [
     'SoftZooEnvironmentPlugin',
     'MujocoSceneMappingPlugin',
     'NerfSynthetic3DGSPlugin',
+    'HumanoidCorridor2DPlugin',
 ]
 

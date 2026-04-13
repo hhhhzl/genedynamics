@@ -20,15 +20,7 @@ env_params:
 
 method: mbd3d
 method_params:
-  horizon: 10
   n_gaussians: 512
-  bridge_K: 1200
-  bridge_beta0: 0.0
-  bridge_betaK: 1.0
-  bridge_eta: 0.015
-  bridge_eta_end: 0.005
-  M: 16
-  sigma_mcsa: 0.05
   ess_min: 1.0
   observation_sigma2: 0.005
   image_height: 128
@@ -46,17 +38,29 @@ method_params:
   subspace_rank: 64
   subspace_power_iters: 2
   subspace_refresh_every: 1
+  # Decayed extra exploration noise added after the reverse update.
+  extra_sigma_start: 0.00008
+  extra_sigma_end: 0.00001
   show_tqdm: true
 
-obstacle_levels: [0]
-obstacle_config:
-  generator: box2d
-  robot_radius: 0.05
+# DDPM noise schedule for the forward kernel q(θ_k|θ_1) (Eq 17, 19).
+# Ndiffuse = K reverse steps; beta0/betaT define linear ᾱ_k decay;
+# M_k Monte-Carlo candidates per step; T_k softmax temperature.
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      Ndiffuse: 1200
+      beta0: 1.0e-4
+      betaT: 1.0e-2
+      M_k: 16
+      T_k: 1.0
+  diffusion_merge_strategy: merge
 
 seeds: [0]
 backend: jax
 device: cuda
 
 metadata:
-  description: "Experiment 1 Part A: sanity reconstruction, correlated likelihood (aligned with ablations/lego_mbd_corr)."
+  description: "Experiment 1 Part A: sanity reconstruction, correlated likelihood (clean-state MBD, no β tempering)."
   experiment_part: sanity

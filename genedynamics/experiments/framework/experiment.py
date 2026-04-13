@@ -740,6 +740,11 @@ class ExperimentRunner:
             obs, _info = env.reset(seed=seed)
             return np.asarray(obs, dtype=np.float32)
 
+        # Humanoid corridor 2D: planning-level env with built-in start position.
+        if self.config.env_name == "humanoid_corridor_2d":
+            obs, _info = env.reset(seed=seed)
+            return np.asarray(obs, dtype=np.float32)
+
         # Quadruped/Humanoid MJX: need valid [qpos; qvel] from reset, then override base xyz
         env_name_lower = (self.config.env_name or "").lower()
         if ("quadruped" in env_name_lower or "humanoid" in env_name_lower) and (
@@ -1111,6 +1116,10 @@ class ExperimentRunner:
 
         target = np.asarray(env.target, dtype=np.float32)
         target_pos = np.asarray(task_spec.extract_position(target), dtype=np.float32).reshape(-1)
+        # Use env's body-aware collision check when available (accounts for
+        # torso ellipse, arms, height-gating); fall back to point-SDF otherwise.
+        has_body_sdf = callable(getattr(env, '_body_min_sdf_np', None))
+
         safe_success_mask = []
         for states in candidate_states_list:
             states_arr = [np.asarray(s, dtype=np.float32) for s in states]
@@ -1118,7 +1127,12 @@ class ExperimentRunner:
                 safe_success_mask.append(False)
                 continue
             safe = True
-            if obstacles is not None and hasattr(obstacles, '__len__') and len(obstacles) > 0:
+            if has_body_sdf:
+                for s in states_arr:
+                    if env._body_min_sdf_np(s) < 0.0:
+                        safe = False
+                        break
+            elif obstacles is not None and hasattr(obstacles, '__len__') and len(obstacles) > 0:
                 for s in states_arr:
                     pos = np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1)
                     sdf = obstacles.sdf(pos)
@@ -1266,9 +1280,15 @@ class ExperimentRunner:
             if len(states_arr) == 0:
                 continue
 
-            # Safe: no collision
+            # Safe: no collision (use body-aware SDF when available)
             safe = True
-            if obstacles is not None and hasattr(obstacles, '__len__') and len(obstacles) > 0:
+            has_body_sdf = callable(getattr(env, '_body_min_sdf_np', None))
+            if has_body_sdf:
+                for s in states_arr:
+                    if env._body_min_sdf_np(s) < 0.0:
+                        safe = False
+                        break
+            elif obstacles is not None and hasattr(obstacles, '__len__') and len(obstacles) > 0:
                 for s in states_arr:
                     pos = np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1)
                     sdf = obstacles.sdf(pos)
@@ -1573,7 +1593,7 @@ class ExperimentRunner:
                 import matplotlib.pyplot as plt
 
                 # Visualization-specific figure creation
-                if viz_name in ('trajectory', 'stepping_trajectory'):
+                if viz_name in ('trajectory', 'stepping_trajectory', 'corridor_trajectory'):
                     out_dir = self._get_output_path(result['level'], result['seed'])
                     trajectory_dir = out_dir / "trajectory"
                     trajectory_dir.mkdir(parents=True, exist_ok=True)

@@ -57,6 +57,7 @@ from .environments import (
     SoftZooEnvironmentPlugin,
     MujocoSceneMappingPlugin,
     NerfSynthetic3DGSPlugin,
+    HumanoidCorridor2DPlugin,
 )
 
 from .metrics import (
@@ -65,6 +66,7 @@ from .metrics import (
     NonconvexityMetricsPlugin,
     EpisodeOutcomeMetricsPlugin,
     SteppingStonesMetricsPlugin,
+    CorridorMetricsPlugin,
 )
 
 from .visualizations import (
@@ -79,6 +81,7 @@ from .visualizations import (
     SteppingStonesTrajectoryVisualizationPlugin,
     SteppingStonesModesVisualizationPlugin,
     GateDynamicsVisualizationPlugin,
+    CorridorTrajectoryVisualizationPlugin,
 )
 
 from .obstacles import (
@@ -86,6 +89,7 @@ from .obstacles import (
     Box3DObstacleGeneratorPlugin,
     D3ILAvoidingFixedGeneratorPlugin,
     SteppingStones2DObstacleGeneratorPlugin,
+    Corridor2DObstacleGeneratorPlugin,
 )
 
 __all__ = [
@@ -124,12 +128,14 @@ __all__ = [
     'SoftZooEnvironmentPlugin',
     'MujocoSceneMappingPlugin',
     'NerfSynthetic3DGSPlugin',
+    'HumanoidCorridor2DPlugin',
     # Metrics
     'SSRMetricsPlugin',
     'ObstacleDensityMetricsPlugin',
     'NonconvexityMetricsPlugin',
     'EpisodeOutcomeMetricsPlugin',
     'SteppingStonesMetricsPlugin',
+    'CorridorMetricsPlugin',
     # Visualizations
     'TrajectoryVisualizationPlugin',
     'Trajectory3DVisualizationPlugin',
@@ -142,10 +148,12 @@ __all__ = [
     'SteppingStonesTrajectoryVisualizationPlugin',
     'SteppingStonesModesVisualizationPlugin',
     'GateDynamicsVisualizationPlugin',
+    'CorridorTrajectoryVisualizationPlugin',
     # Obstacles
     'Box2DObstacleGeneratorPlugin',
     'Box3DObstacleGeneratorPlugin',
     'D3ILAvoidingFixedGeneratorPlugin',
     'SteppingStones2DObstacleGeneratorPlugin',
+    'Corridor2DObstacleGeneratorPlugin',
 ]
 

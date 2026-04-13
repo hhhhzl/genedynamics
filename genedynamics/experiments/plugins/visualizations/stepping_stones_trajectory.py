@@ -1,5 +1,12 @@
 """
 Stepping-stones trajectory visualizations.
+
+Like ``corridor_trajectory``, this is now a thin dispatcher: it builds a
+SceneIR + RobotPoseIR list and forwards them to a renderer backend
+selected via ``config["renderer"]`` (default ``"matplotlib_top"``).
+
+The modes plugin (multi-candidate overlay) draws the background through
+the same backend helper, then overlays candidates inline.
 """
 
 from __future__ import annotations
@@ -11,7 +18,27 @@ import numpy as np
 
 from genedynamics.envs.obstacles.stepping_stones import foot_stepping_violation_np
 from genedynamics.tasks.stepping_stones import decode_plan_states
+
 from ...framework.base import VisualizationPlugin
+from .scene_ir import (
+    SceneIR,
+    corridor_scene_to_ir,
+    stepping_decoded_to_poses,
+    stepping_scene_to_ir,
+)
+from .backends.matplotlib_top import (
+    draw_corridor_scene,
+    draw_stepping_scene,
+    render_stepping_top,
+)
+from .backends.matplotlib_iso import render_stepping_iso
+
+try:
+    from .backends.pyrender_mesh import render_stepping_pyrender
+    _HAVE_PYRENDER = True
+except Exception:
+    render_stepping_pyrender = None
+    _HAVE_PYRENDER = False
 
 
 def _get_scene(env: Any, obstacles: Any):
@@ -22,52 +49,46 @@ def _get_scene(env: Any, obstacles: Any):
     return None
 
 
-def _draw_scene(ax: Any, scene: Any):
-    ax.set_aspect("equal")
-    ax.set_xlim(scene.map_x[0], scene.map_x[1])
-    ax.set_ylim(scene.map_y[0], scene.map_y[1])
-    ax.set_facecolor("#f7f9fc")
-    if bool(getattr(scene, "has_river", True)):
-        rx0, rx1 = scene.river_x
-        ry0, ry1 = scene.map_y
-        ax.add_patch(
-            plt.Rectangle(
-                (rx0, ry0),
-                rx1 - rx0,
-                ry1 - ry0,
-                facecolor="#d9ecff",
-                edgecolor="#7aa6d9",
-                linewidth=1.0,
-                alpha=0.9,
-                zorder=0.5,
-            )
-        )
-    for row in np.asarray(getattr(scene, "support_platforms", np.zeros((0, 4))), dtype=np.float32).reshape(-1, 4):
-        xmin, xmax, ymin, ymax = float(row[0]), float(row[1]), float(row[2]), float(row[3])
-        ax.add_patch(
-            plt.Rectangle(
-                (xmin, ymin),
-                xmax - xmin,
-                ymax - ymin,
-                facecolor="#8b949e",
-                edgecolor="#2f3640",
-                linewidth=1.4,
-                alpha=0.88,
-                zorder=0.85,
-            )
-        )
-    for c, r in zip(np.asarray(scene.stones_centers), np.asarray(scene.stones_radii)):
-        ax.add_patch(
-            plt.Circle(
-                (float(c[0]), float(c[1])),
-                float(r),
-                facecolor="#9099a2",
-                edgecolor="#59636e",
-                linewidth=0.7,
-                alpha=0.8,
-                zorder=1,
-            )
-        )
+def _is_corridor_scene(scene: Any) -> bool:
+    return hasattr(scene, "corridor_width") and hasattr(scene, "obstacles")
+
+
+def _scene_to_ir(scene: Any) -> SceneIR:
+    if _is_corridor_scene(scene):
+        return corridor_scene_to_ir(scene)
+    return stepping_scene_to_ir(scene)
+
+
+def _draw_scene_ir(ax: Any, scene_ir: SceneIR) -> None:
+    if scene_ir.kind == "corridor":
+        draw_corridor_scene(ax, scene_ir)
+    else:
+        draw_stepping_scene(ax, scene_ir)
+
+
+def _draw_scene(ax: Any, scene: Any) -> None:
+    """Backward-compat shim for callers (e.g. diffusion plugin) that import
+    `_draw_scene` directly. Routes through SceneIR + matplotlib_top backend."""
+    _draw_scene_ir(ax, _scene_to_ir(scene))
+
+
+# Yaml keys forwarded to renderer extras (mirrors corridor plugin).
+_FORWARDED_KEYS = (
+    "n_ghosts",
+    "camera_yaw_deg", "camera_pitch_deg", "auto_resize_fig",
+    "render_width", "render_height",
+    "camera_yfov_deg", "camera_eye", "camera_target",
+    "ribbon_radius", "ribbon_arrow_len", "ribbon_arrow_radius",
+)
+
+
+def _merge_yaml_extras(extras: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    if not config:
+        return extras
+    for key in _FORWARDED_KEYS:
+        if key in config:
+            extras[key] = config[key]
+    return extras
 
 
 def _infer_foot_radius(viz_cfg: Dict[str, Any]) -> float:
@@ -79,29 +100,6 @@ def _infer_foot_radius(viz_cfg: Dict[str, Any]) -> float:
         if "robot_radius" in obs_cfg:
             return float(obs_cfg["robot_radius"])
     return 0.03
-
-
-def _on_platform_raw(p: np.ndarray, platforms: np.ndarray) -> bool:
-    """True if point is inside any support platform (raw bounds, no margin shrink)."""
-    for k in range(platforms.shape[0]):
-        xmin, xmax, ymin, ymax = float(platforms[k, 0]), float(platforms[k, 1]), float(platforms[k, 2]), float(platforms[k, 3])
-        if xmin <= float(p[0]) <= xmax and ymin <= float(p[1]) <= ymax:
-            return True
-    return False
-
-
-def _on_any_stone_raw(p: np.ndarray, centers: np.ndarray, radii: np.ndarray) -> bool:
-    """True if foot center is within any stone disk (raw radius, no margin)."""
-    if centers.shape[0] == 0:
-        return False
-    d = np.linalg.norm(centers - p[None, :], axis=-1)
-    return bool(np.any(d <= radii))
-
-
-def _swing_pair(mode: int):
-    if int(mode) % 2 == 0:
-        return ("FR", "RL")
-    return ("FL", "RR")
 
 
 class SteppingStonesTrajectoryVisualizationPlugin(VisualizationPlugin):
@@ -116,101 +114,72 @@ class SteppingStonesTrajectoryVisualizationPlugin(VisualizationPlugin):
         viz_cfg = config or {}
         scene = _get_scene(env, obstacles)
         if scene is None:
-            ax.text(0.5, 0.5, "missing stepping scene", ha="center", va="center", transform=ax.transAxes)
+            ax.text(0.5, 0.5, "missing stepping scene",
+                    ha="center", va="center", transform=ax.transAxes)
             return
-        _draw_scene(ax, scene)
 
-        partial_t = data.get("partial_until_step", None)
-        gif_style = data.get("gif_style", False)
+        scene_ir = _scene_to_ir(scene)
 
-        states = np.asarray([np.asarray(s, dtype=np.float32).reshape(-1) for s in traj.states], dtype=np.float32)
-        if states.ndim == 2 and states.shape[1] >= 3:
-            body, _yaw, feet, mode = decode_plan_states(
-                states,
-                step_width=float(getattr(env, "step_width", getattr(env, "stance_width", 0.30))),
-                half_pair_length=float(getattr(env, "fore_hind_offset", 0.18)),
-                centerline_y=float(getattr(env, "centerline_y", 0.0)),
-                env=env,
+        states = np.asarray(
+            [np.asarray(s, dtype=np.float32).reshape(-1) for s in traj.states],
+            dtype=np.float32,
+        )
+        if not (states.ndim == 2 and states.shape[1] >= 3):
+            _draw_scene_ir(ax, scene_ir)
+            ax.set_xticks([]); ax.set_yticks([]); ax.grid(True, alpha=0.25)
+            return
+
+        body, _yaw, feet, mode = decode_plan_states(
+            states,
+            step_width=float(getattr(env, "step_width",
+                                     getattr(env, "stance_width", 0.30))),
+            half_pair_length=float(getattr(env, "fore_hind_offset", 0.18)),
+            centerline_y=float(getattr(env, "centerline_y", 0.0)),
+            env=env,
+        )
+        poses = stepping_decoded_to_poses(body, feet, mode)
+
+        # Use raw scene arrays (not the IR) for violation checks so behavior
+        # matches the original byte-for-byte.
+        centers_v = np.asarray(scene.stones_centers, dtype=np.float32)
+        radii_v = np.asarray(scene.stones_radii, dtype=np.float32)
+        plat_v = np.asarray(
+            getattr(scene, "support_platforms", np.zeros((0, 4))),
+            dtype=np.float32,
+        )
+
+        extras = {
+            "foot_radius": _infer_foot_radius(viz_cfg),
+            "stone_margin": float(getattr(env, "stone_margin", 0.032)),
+            "violation_fn": foot_stepping_violation_np,
+            "centers": centers_v,
+            "radii": radii_v,
+            "platforms": plat_v,
+            "partial_until_step": data.get("partial_until_step", None),
+            "gif_style": data.get("gif_style", False),
+        }
+        extras = _merge_yaml_extras(extras, viz_cfg)
+
+        renderer = viz_cfg.get("renderer", "matplotlib_top")
+        if renderer == "matplotlib_top":
+            render_stepping_top(fig, ax, scene_ir, poses, extras=extras)
+        elif renderer == "matplotlib_iso":
+            render_stepping_iso(fig, ax, scene_ir, poses, extras=extras)
+        elif renderer == "pyrender_mesh":
+            if not _HAVE_PYRENDER:
+                raise RuntimeError(
+                    "renderer='pyrender_mesh' requested but pyrender import failed"
+                )
+            render_stepping_pyrender(fig, ax, scene_ir, poses, extras=extras)
+        else:
+            raise ValueError(
+                f"stepping_trajectory: unknown renderer '{renderer}' "
+                f"(available: matplotlib_top, matplotlib_iso, pyrender_mesh)"
             )
-            # Determine visible range for GIF partial rendering
-            T_all = body.shape[0]
-            if partial_t is not None:
-                T_vis = min(int(partial_t) + 1, T_all)
-            else:
-                T_vis = T_all
-
-            foot_radius = _infer_foot_radius(viz_cfg)
-            tracks = [
-                ("FL", feet["FL"], "#ff7f0e"),
-                ("FR", feet["FR"], "#2ca02c"),
-                ("RL", feet["RL"], "#9467bd"),
-                ("RR", feet["RR"], "#8c564b"),
-            ]
-            centers_v = np.asarray(scene.stones_centers, dtype=np.float32)
-            radii_v = np.asarray(scene.stones_radii, dtype=np.float32)
-            plat_v = np.asarray(getattr(scene, "support_platforms", np.zeros((0, 4))), dtype=np.float32)
-            sm_v = float(getattr(env, "stone_margin", 0.032))
-
-            # GIF mode: draw full path as ghost, then partial as solid
-            if gif_style and partial_t is not None:
-                ax.plot(body[:, 0], body[:, 1], color="#1664c0", linewidth=1.0, alpha=0.20, zorder=2.5)
-                for _leg, pts_full, color in tracks:
-                    ax.plot(pts_full[:, 0], pts_full[:, 1], color=color, linewidth=0.6, alpha=0.12, zorder=2.3)
-
-            ax.plot(body[:T_vis, 0], body[:T_vis, 1], color="#1664c0", linewidth=1.8, alpha=0.9, zorder=3, label="body")
-            for leg, pts_full, color in tracks:
-                pts = pts_full[:T_vis]
-                ax.plot(pts[:, 0], pts[:, 1], color=color, linewidth=1.2, alpha=0.80, zorder=2.7, label=leg)
-                ax.scatter(pts[:, 0], pts[:, 1], s=8, color=color, alpha=0.18, zorder=2.5)
-                # Red-dot criteria: only flag feet whose center is truly
-                # in the gap (unstable).  Skip platform feet and feet whose
-                # center physically sits on a stone surface (within raw radius).
-                for ti in range(int(pts.shape[0])):
-                    pt = pts[ti]
-                    if plat_v.shape[0] > 0 and _on_platform_raw(pt, plat_v):
-                        continue
-                    if _on_any_stone_raw(pt, centers_v, radii_v):
-                        continue
-                    if foot_stepping_violation_np(pt, centers_v, radii_v, plat_v, sm_v) > 1e-3:
-                        ax.scatter(
-                            float(pt[0]),
-                            float(pt[1]),
-                            s=42,
-                            facecolors="#d62728",
-                            edgecolors="#6a0000",
-                            linewidths=0.65,
-                            marker="o",
-                            zorder=4.2,
-                        )
-            for t in range(T_vis):
-                mode_idx = mode[t]
-                for swing_leg in _swing_pair(int(mode_idx)):
-                    p = feet[swing_leg][t]
-                    ax.add_patch(
-                        plt.Circle(
-                            (float(p[0]), float(p[1])),
-                            float(1.5 * foot_radius),
-                            facecolor="#f04f88",
-                            edgecolor="none",
-                            alpha=0.08,
-                            zorder=2.1,
-                        )
-                    )
-            ax.scatter(body[0, 0], body[0, 1], marker="o", s=28, color="white", edgecolor="#1664c0", zorder=5)
-            if gif_style and partial_t is not None and T_vis > 0:
-                # Moving body marker at current step
-                t_cur = T_vis - 1
-                ax.scatter(body[t_cur, 0], body[t_cur, 1], marker="o", s=50, color="#1664c0", edgecolor="white", linewidths=1.0, zorder=6)
-                for _leg, pts_full, color in tracks:
-                    ax.scatter(pts_full[t_cur, 0], pts_full[t_cur, 1], s=30, color=color, edgecolor="white", linewidths=0.5, zorder=5.5)
-            else:
-                ax.scatter(body[-1, 0], body[-1, 1], marker="*", s=90, color="#f04f88", zorder=5)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.grid(True, alpha=0.25)
 
     def save(self, output_path: Any, fig: Any, **kwargs: Any) -> None:
-        fig.savefig(output_path, dpi=kwargs.get("dpi", 150), bbox_inches=kwargs.get("bbox_inches", "tight"))
+        fig.savefig(output_path, dpi=kwargs.get("dpi", 150),
+                    bbox_inches=kwargs.get("bbox_inches", "tight"))
 
 
 class SteppingStonesModesVisualizationPlugin(VisualizationPlugin):
@@ -224,9 +193,11 @@ class SteppingStonesModesVisualizationPlugin(VisualizationPlugin):
         obstacles = data["obstacles"]
         scene = _get_scene(env, obstacles)
         if scene is None:
-            ax.text(0.5, 0.5, "missing stepping scene", ha="center", va="center", transform=ax.transAxes)
+            ax.text(0.5, 0.5, "missing stepping scene",
+                    ha="center", va="center", transform=ax.transAxes)
             return
-        _draw_scene(ax, scene)
+        scene_ir = _scene_to_ir(scene)
+        _draw_scene_ir(ax, scene_ir)
 
         partial_t = data.get("partial_until_step", None)
 
@@ -235,8 +206,10 @@ class SteppingStonesModesVisualizationPlugin(VisualizationPlugin):
             cand_states = [result.get("states", [])]
         best_idx = int(result.get("best_idx", 0))
         colors = ["#6a7fdb"] * len(cand_states)
-        foot_colors = {"FL": "#ff7f0e", "FR": "#2ca02c", "RL": "#9467bd", "RR": "#8c564b"}
-        step_width = float(getattr(env, "step_width", getattr(env, "stance_width", 0.30)))
+        foot_colors = {"FL": "#ff7f0e", "FR": "#2ca02c",
+                       "RL": "#9467bd", "RR": "#8c564b"}
+        step_width = float(getattr(env, "step_width",
+                                   getattr(env, "stance_width", 0.30)))
         for i, st in enumerate(cand_states):
             s = np.asarray(st, dtype=np.float32)
             if s.ndim != 2 or s.shape[1] < 3:
@@ -248,20 +221,24 @@ class SteppingStonesModesVisualizationPlugin(VisualizationPlugin):
                 centerline_y=float(getattr(env, "centerline_y", 0.0)),
                 env=env,
             )
-            T_vis = min(int(partial_t) + 1, mid.shape[0]) if partial_t is not None else mid.shape[0]
+            T_vis = (min(int(partial_t) + 1, mid.shape[0])
+                     if partial_t is not None else mid.shape[0])
             is_best = i == best_idx
             lw = 2.6 if is_best else 1.1
             a = 0.95 if is_best else 0.35
-            ax.plot(mid[:T_vis, 0], mid[:T_vis, 1], color=colors[i], linewidth=lw, alpha=a, zorder=3)
+            ax.plot(mid[:T_vis, 0], mid[:T_vis, 1], color=colors[i],
+                    linewidth=lw, alpha=a, zorder=3)
             for leg in ("FL", "FR", "RL", "RR"):
                 fp = feet_i[leg][:T_vis]
                 f_lw = 1.0 if is_best else 0.5
                 f_a = 0.70 if is_best else 0.18
-                ax.plot(fp[:, 0], fp[:, 1], color=foot_colors[leg], linewidth=f_lw, alpha=f_a, zorder=2.7 if is_best else 2.2)
+                ax.plot(fp[:, 0], fp[:, 1], color=foot_colors[leg],
+                        linewidth=f_lw, alpha=f_a,
+                        zorder=2.7 if is_best else 2.2)
         ax.set_xticks([])
         ax.set_yticks([])
         ax.grid(True, alpha=0.25)
 
     def save(self, output_path: Any, fig: Any, **kwargs: Any) -> None:
-        fig.savefig(output_path, dpi=kwargs.get("dpi", 150), bbox_inches=kwargs.get("bbox_inches", "tight"))
-
+        fig.savefig(output_path, dpi=kwargs.get("dpi", 150),
+                    bbox_inches=kwargs.get("bbox_inches", "tight"))

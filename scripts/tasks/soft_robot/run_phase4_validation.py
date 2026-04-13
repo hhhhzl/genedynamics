@@ -24,7 +24,7 @@ VENV = os.environ.get("VENV", str(ROOT / ".venv_arm64" / "bin" / "python"))
 def run_deploy(config: str, episodes: int = 1, max_steps: int = 20) -> tuple[bool, float, str]:
     """Run deploy and return (success, elapsed_sec, output_tail)."""
     cmd = [
-        VENV, "-m", "genedynamics.deploy.cli",
+        VENV, "-m", "genedynamics.deploy.runner",
         "--config", str(ROOT / config),
         "--episodes", str(episodes),
         "--max-steps", str(max_steps),

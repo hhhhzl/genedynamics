@@ -1,21 +1,22 @@
 # =============================================================================
-# 3DGS 实验配置模板 (Experiment 1: Small object 3D reconstruction)
-# 复制此文件并修改 name/output_dir/env_params/method_params 即可
+# 3DGS experiment config template (clean-state MBD).
+# Copy and override name/output_dir/env_params/method_params/scheduler_config.
 # =============================================================================
 
-name: 3dgs_<object>_<method>  # 如 3dgs_lego_mbd_iid
+name: 3dgs_<object>_<method>          # e.g. 3dgs_lego_mbd_iid
 output_dir: results/3dgs/<object>_<method>
 
 # -----------------------------------------------------------------------------
-# 环境
+# Environment
 # -----------------------------------------------------------------------------
 env_name: 3dgs_nerf_synthetic
 env_params:
-  dataset_root: data/nerf_synthetic/<object>  # 或绝对路径
-  object: lego  # lego | chair | drums | ficus | hotdog | materials | ship
-  use_stub_when_unavailable: true  # 无数据时用随机观测
+  dataset_root: data/nerf_synthetic/<object>   # absolute path also OK
+  object: lego                                  # lego | chair | drums | ficus | hotdog | materials | ship
+  use_stub_when_unavailable: true               # random observations if dataset missing
   split: train
-  max_views: 50  # 50-100 视角，需与 horizon+1 对齐
+  eval_split: test
+  max_views: 100
   view_stride: 1
   shuffle_seed: 0
   resolution_infer: 128
@@ -24,33 +25,51 @@ env_params:
   pose_convention: opencv
 
 # -----------------------------------------------------------------------------
-# 方法
+# Method (mbd3d, clean-state MBD per §3.3 of the theory doc)
 # -----------------------------------------------------------------------------
 method: mbd3d
 method_params:
-  horizon: 10  # 由 n_views 自动覆盖，此处为占位
-  n_gaussians: 32
-  bridge_K: 50
-  bridge_beta0: 0.0
-  bridge_betaK: 1.0
-  M: 16
-  sigma_mcsa: 0.05
+  n_gaussians: 512
   ess_min: 1.0
   observation_sigma2: 0.01
   image_height: 128
   image_width: 128
   image_channels: 3
-  use_lowrank_noise: false  # true = corr, false = iid
+  use_lowrank_noise: false              # true → Σ = AAᵀ + σ²I (correlated nuisance)
+  lowrank_view_rank: 4
+  lowrank_spatial_rank: 2
+  lowrank_color_rank: 3
+  lowrank_max_rank: 16
+  use_real_splat: true
+  prefer_jax_renderer: true
+  fix_cameras: true
+  # Subspace MUST be on for d ≫ M; otherwise IS weights collapse.
+  enable_subspace: true
+  subspace_rank: 64
+  subspace_power_iters: 2
+  subspace_refresh_every: 1
+  # Decayed extra exploration noise added after the reverse update.
+  extra_sigma_start: 0.00008
+  extra_sigma_end: 0.00001
   show_tqdm: true
 
 # -----------------------------------------------------------------------------
-# 实验执行
+# DDPM noise schedule (forward kernel q(θ_k|θ_1) — Eq 17, Eq 19)
 # -----------------------------------------------------------------------------
-obstacle_levels: [0]
-obstacle_config:
-  generator: box2d
-  robot_radius: 0.05
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      Ndiffuse: 1000     # K reverse steps
+      beta0: 1.0e-4      # DDPM noise endpoints (NOT the deprecated tempering β!)
+      betaT: 1.0e-2
+      M_k: 16            # Monte-Carlo candidates per step
+      T_k: 1.0           # Softmax temperature (1.0 = no sharpening)
+  diffusion_merge_strategy: merge
 
+# -----------------------------------------------------------------------------
+# Execution
+# -----------------------------------------------------------------------------
 seeds: [0]
 backend: jax
 device: cuda

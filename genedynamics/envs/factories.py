@@ -70,6 +70,9 @@ def make_env(name: str, **kwargs):
     elif name == "quadruped_stepping_stones_2d":
         from genedynamics.envs.quadruped_stepping_stones_2d import QuadrupedSteppingStones2DEnv
         return QuadrupedSteppingStones2DEnv(**kwargs)
+    elif name == "humanoid_corridor_2d":
+        from genedynamics.envs.humanoid_corridor_2d import HumanoidCorridor2DEnv
+        return HumanoidCorridor2DEnv(**kwargs)
     elif name == "drone_box_3d":
         from genedynamics.envs.drone_box_3d import DroneBox3DEnv
         return DroneBox3DEnv(**kwargs)
@@ -453,6 +456,13 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
         )
 
         return make_stepping_stones_energy(QuadrupedSteppingStones2DEnv())
+    elif env_name == "humanoid_corridor_2d":
+        from genedynamics.envs.humanoid_corridor_2d import (
+            HumanoidCorridor2DEnv,
+            make_corridor_energy,
+        )
+
+        return make_corridor_energy(HumanoidCorridor2DEnv())
     else:
         raise ValueError(f"Unknown environment name: {env_name}")
 

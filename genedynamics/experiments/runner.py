@@ -56,11 +56,13 @@ from genedynamics.experiments.plugins import (
     SoftZooEnvironmentPlugin,
     MujocoSceneMappingPlugin,
     NerfSynthetic3DGSPlugin,
+    HumanoidCorridor2DPlugin,
     SSRMetricsPlugin,
     ObstacleDensityMetricsPlugin,
     NonconvexityMetricsPlugin,
     EpisodeOutcomeMetricsPlugin,
     SteppingStonesMetricsPlugin,
+    CorridorMetricsPlugin,
     TrajectoryVisualizationPlugin,
     Trajectory3DVisualizationPlugin,
     TrajectoryModesVisualizationPlugin,
@@ -72,10 +74,12 @@ from genedynamics.experiments.plugins import (
     SteppingStonesTrajectoryVisualizationPlugin,
     SteppingStonesModesVisualizationPlugin,
     GateDynamicsVisualizationPlugin,
+    CorridorTrajectoryVisualizationPlugin,
     Box2DObstacleGeneratorPlugin,
     Box3DObstacleGeneratorPlugin,
     D3ILAvoidingFixedGeneratorPlugin,
     SteppingStones2DObstacleGeneratorPlugin,
+    Corridor2DObstacleGeneratorPlugin,
 )
 
 
@@ -225,14 +229,16 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(SoftZooEnvironmentPlugin(), 'environment')
     runner.register_plugin(MujocoSceneMappingPlugin(), 'environment')
     runner.register_plugin(NerfSynthetic3DGSPlugin(), 'environment')
-    
+    runner.register_plugin(HumanoidCorridor2DPlugin(), 'environment')
+
     # Metrics plugins
     runner.register_plugin(SSRMetricsPlugin(), 'metric')
     runner.register_plugin(ObstacleDensityMetricsPlugin(), 'metric')
     runner.register_plugin(NonconvexityMetricsPlugin(), 'metric')
     runner.register_plugin(EpisodeOutcomeMetricsPlugin(), 'metric')
     runner.register_plugin(SteppingStonesMetricsPlugin(), 'metric')
-    
+    runner.register_plugin(CorridorMetricsPlugin(), 'metric')
+
     # Visualization plugins
     runner.register_plugin(TrajectoryVisualizationPlugin(), 'visualization')
     runner.register_plugin(Trajectory3DVisualizationPlugin(), 'visualization')
@@ -245,12 +251,14 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(SteppingStonesTrajectoryVisualizationPlugin(), 'visualization')
     runner.register_plugin(SteppingStonesModesVisualizationPlugin(), 'visualization')
     runner.register_plugin(GateDynamicsVisualizationPlugin(), 'visualization')
-    
+    runner.register_plugin(CorridorTrajectoryVisualizationPlugin(), 'visualization')
+
     # Obstacle generator plugins
     runner.register_plugin(Box2DObstacleGeneratorPlugin(), 'obstacle_generator')
     runner.register_plugin(Box3DObstacleGeneratorPlugin(), 'obstacle_generator')
     runner.register_plugin(D3ILAvoidingFixedGeneratorPlugin(), 'obstacle_generator')
     runner.register_plugin(SteppingStones2DObstacleGeneratorPlugin(), 'obstacle_generator')
+    runner.register_plugin(Corridor2DObstacleGeneratorPlugin(), 'obstacle_generator')
 
 
 if __name__ == "__main__":

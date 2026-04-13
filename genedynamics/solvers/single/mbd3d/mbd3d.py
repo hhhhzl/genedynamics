@@ -105,6 +105,9 @@ class MBD3DSolver(BaseModelBasedDiffusionSolver):
                 profiling=kwargs.get("profiling", True),
                 subspace_oversample=kwargs.get("subspace_oversample", 2),
                 compile_stable_shapes=kwargs.get("compile_stable_shapes", True),
+                ddpm_beta0=kwargs.get("ddpm_beta0", 1e-4),
+                ddpm_betaT=kwargs.get("ddpm_betaT", 1e-2),
+                temperature=kwargs.get("temperature", 1.0),
             )
         )
 
@@ -155,6 +158,9 @@ class MBD3DSolver(BaseModelBasedDiffusionSolver):
                 profiling=self.config.get("profiling", True),
                 subspace_oversample=self.config.get("subspace_oversample", 2),
                 compile_stable_shapes=self.config.get("compile_stable_shapes", True),
+                ddpm_beta0=self.config.get("ddpm_beta0", 1e-4),
+                ddpm_betaT=self.config.get("ddpm_betaT", 1e-2),
+                temperature=self.config.get("temperature", 1.0),
             )
             self._backend_impl = _MBD3DObservationAdapter(raw, self)
             self._backend_impl = to_unified_backend(self._backend_impl)

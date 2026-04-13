@@ -28,3 +28,9 @@ try:
     __all__.append("DroneModel")
 except ImportError:
     pass
+
+try:
+    from genedynamics.envs.robots.g1 import G1RobotModel
+    __all__.append("G1RobotModel")
+except ImportError:
+    pass

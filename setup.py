@@ -26,10 +26,7 @@ setup(
     install_requires=requires_list,
     entry_points={
         "console_scripts": [
-            "genedynamics-deploy=genedynamics.deploy.cli:main",
-            "genedynamics-deploy-sim=genedynamics.deploy.sim_plan.sim_process:main",
-            "genedynamics-deploy-plan=genedynamics.deploy.sim_plan.plan_process:main",
-            "genedynamics-deploy-sim2sim=genedynamics.deploy.sim_plan.sim2sim_launcher:main",
+            "genedynamics-deploy=genedynamics.deploy.runner:main",
         ],
     },
 )

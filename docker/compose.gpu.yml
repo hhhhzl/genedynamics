@@ -1,0 +1,24 @@
+services:
+  genedynamics-train-gpu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: train-gpu
+    image: genedynamics/train-gpu:local
+    platform: linux/amd64
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    gpus: all
+    env_file:
+      - env/train-gpu.env
+    environment:
+      PYTHONPATH: /workspace/third_party/environments/d3il:${PYTHONPATH:-}
+    volumes:
+      - ..:/workspace
+      - genedynamics-pip-cache:/tmp/pip-cache
+
+volumes:
+  genedynamics-pip-cache:

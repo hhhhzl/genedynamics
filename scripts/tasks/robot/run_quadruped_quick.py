@@ -14,7 +14,7 @@ def main():
     out = "results/deploy/quadruped_go2_mbd_sim"
     # 1. Deploy
     r = subprocess.run([
-        sys.executable, "-m", "genedynamics.deploy.cli",
+        sys.executable, "-m", "genedynamics.deploy.runner",
         "--config", cfg,
         "--episodes", "2",
         "--max-steps", "60",

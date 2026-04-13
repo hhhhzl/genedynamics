@@ -30,7 +30,13 @@ def _safe_unit(v: np.ndarray) -> np.ndarray:
 
 
 def _is_stepping_env(env: Any) -> bool:
-    return hasattr(env, "scene") and getattr(env, "scene", None) is not None
+    scene = getattr(env, "scene", None)
+    if scene is None:
+        return False
+    # Corridor scenes have corridor_width; stepping scenes have stones_centers.
+    if hasattr(scene, "corridor_width"):
+        return True  # corridor scene — also uses _draw_scene dispatch
+    return hasattr(scene, "stones_centers")
 
 
 def _get_method_name(exp_cfg: Any) -> Any:
@@ -421,8 +427,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     if len(states) > 1:
                         positions = np.array([env_plugin.extract_position(s) for s in states])
                         ax.plot(positions[:, 0], positions[:, 1], color=light_rgba, linewidth=0.8)
-                        # Stepping: draw sample foot trajectories in light foot colors
-                        if is_stepping:
+                        # Stepping: draw sample foot trajectories (only for stepping-stones, not corridor)
+                        if is_stepping and hasattr(env, "scene") and hasattr(getattr(env, "scene", None), "stones_centers"):
                             try:
                                 from genedynamics.tasks.stepping_stones import decode_plan_states
                                 s_arr = np.asarray([np.asarray(s, dtype=np.float32).reshape(-1) for s in states], dtype=np.float32)
@@ -478,8 +484,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                 zorder=6
             )
 
-            # ── Stepping: draw foot trajectories from decoded states ──
-            if is_stepping and states_sequence is not None and len(states_sequence) > 1:
+            # ── Stepping: draw foot trajectories from decoded states (stepping-stones only) ──
+            if is_stepping and hasattr(env, "scene") and hasattr(getattr(env, "scene", None), "stones_centers") and states_sequence is not None and len(states_sequence) > 1:
                 try:
                     from genedynamics.tasks.stepping_stones import decode_plan_states
                     s_arr = np.asarray([np.asarray(s, dtype=np.float32).reshape(-1) for s in states_sequence], dtype=np.float32)
@@ -893,6 +899,8 @@ class DiffusionVisualizationPlugin(VisualizationPlugin):
                     ax_single.set_facecolor('white')
                 fig_single.savefig(out_path, dpi=dpi, bbox_inches='tight', facecolor=fig_single.get_facecolor())
                 plt.close(fig_single)
+
+            # diffusion_data.json saving disabled.
 
             # 2. Generate GIF: 100% -> 1% (high noise to low noise)
             # Order: step_idx Ndiffuse-1 (most noisy) -> 0 (least noisy)

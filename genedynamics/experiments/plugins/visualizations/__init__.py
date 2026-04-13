@@ -15,6 +15,7 @@ from .stepping_stones_trajectory import (
     SteppingStonesModesVisualizationPlugin,
 )
 from .gate_dynamics import GateDynamicsVisualizationPlugin
+from .corridor_trajectory import CorridorTrajectoryVisualizationPlugin
 
 __all__ = [
     'TrajectoryVisualizationPlugin',
@@ -28,5 +29,6 @@ __all__ = [
     'SteppingStonesTrajectoryVisualizationPlugin',
     'SteppingStonesModesVisualizationPlugin',
     'GateDynamicsVisualizationPlugin',
+    'CorridorTrajectoryVisualizationPlugin',
 ]
 

@@ -392,8 +392,10 @@ class CFSMBDBackendJax:
             # Total reward = sum of step rewards + terminal - augmented penalty
             total_augmented_reward = total_reward + terminal_reward - augmented_penalty
 
-            # Violation magnitude (per-trajectory scalar): max_t [g]_+.
-            v_n = max_g_plus
+            # Violation magnitude (per-trajectory scalar).
+            # Use mean rather than max to avoid rho spiking from a single
+            # bad timestep in long-horizon humanoid trajectories.
+            v_n = total_g_plus / H
             return total_augmented_reward, v_n
 
         def _default_target():
