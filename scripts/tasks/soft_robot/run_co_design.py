@@ -2,7 +2,7 @@
 """
 Run co-design experiment from YAML config.
 
-Uses CoDesignExperimentPlatform. Any registered baseline can be used.
+Uses BaselineExperimentPlatform. Any registered baseline can be used.
 Example: python scripts/tasks/soft_robot/run_co_design.py configs/co_design/mrmfmbd_crawling.yaml
 """
 
@@ -36,28 +36,33 @@ def main() -> int:
     with open(config_path) as f:
         data = yaml.safe_load(f) or {}
 
-    from genedynamics.experiments.co_design import (
-        CoDesignExperimentPlatform,
-        CoDesignExperimentConfig,
-        list_baselines,
+    from genedynamics.experiments.framework.baseline_platform import (
+        BaselineExperimentPlatform,
+        BaselineExperimentConfig,
     )
+    from genedynamics.experiments.framework.baseline_registry import list_baselines
+    import genedynamics.experiments.framework.baselines  # noqa: F401 — trigger registration
 
     if args.seed is not None:
         data["seeds"] = [args.seed]
 
-    evaluator_runtime = data.get("evaluator_runtime", {})
+    evaluator_params = data.get("evaluator_runtime", data.get("evaluator_params", {}))
     if data.get("softzoo_ti_arch"):
-        evaluator_runtime = dict(evaluator_runtime, ti_arch=data["softzoo_ti_arch"])
+        evaluator_params = dict(evaluator_params, ti_arch=data["softzoo_ti_arch"])
     if data.get("ti_device_memory_fraction") is not None:
-        evaluator_runtime = dict(evaluator_runtime, ti_device_memory_fraction=float(data["ti_device_memory_fraction"]))
-    config = CoDesignExperimentConfig(
+        evaluator_params = dict(evaluator_params, ti_device_memory_fraction=float(data["ti_device_memory_fraction"]))
+
+    config = BaselineExperimentConfig(
         baseline_name=data.get("baseline_name", "mrmfmbd"),
+        task_domain=data.get("task_domain", "softzoo"),
         task_id=data.get("task_id", "crawling_ground"),
         seeds=data.get("seeds", [0]),
         output_dir=data.get("output_dir", "results/co_design"),
         checkpoint_dir=data.get("checkpoint_dir"),
+        scheduler_config=data.get("scheduler_config"),
+        method_params=data.get("method_params", {}),
         baseline_params=data.get("baseline_params", {}),
-        evaluator_runtime=evaluator_runtime,
+        evaluator_params=evaluator_params,
         save_gif=data.get("save_gif", False),
     )
 
@@ -74,7 +79,7 @@ def main() -> int:
         print(f"  output_dir: {config.output_dir}")
         return 0
 
-    platform = CoDesignExperimentPlatform(config, project_root=root)
+    platform = BaselineExperimentPlatform(config, project_root=root)
     print(f"Running {config.baseline_name} on {config.task_id}")
     print(f"Seeds: {config.seeds}")
     results = platform.run_all()

@@ -36,7 +36,7 @@ def main():
     print(f"Diffusion: M_k={params['M_k']}, Ndiffuse={params['Ndiffuse']}, T_k={params['T_k']}")
 
     # 4. Baseline config
-    from genedynamics.experiments.co_design.baseline import BaselineConfig
+    from genedynamics.experiments.framework.baseline import BaselineConfig
     bl_config = BaselineConfig(
         task_id=cfg["task_id"],
         seed=0,
@@ -47,7 +47,8 @@ def main():
     print(f"BaselineConfig: K={dp['Ndiffuse']}, M={dp['M_k']}")
 
     # 5. Baseline registry
-    from genedynamics.experiments.co_design import list_baselines
+    from genedynamics.experiments.framework.baseline_registry import list_baselines
+    import genedynamics.experiments.framework.baselines  # noqa: F401
     print(f"Baselines: {list_baselines()}")
 
     # 6. Evaluator instantiation

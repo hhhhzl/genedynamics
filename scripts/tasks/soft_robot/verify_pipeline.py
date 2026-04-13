@@ -27,11 +27,11 @@ tk = dp["T_k"]
 print(f"[PASS] CompositeScheduler: M_k={mk}, Ndiffuse={nd}, T_k={tk}")
 
 # 3. Platform + BaselineConfig
-from genedynamics.experiments.co_design.platform import (
-    CoDesignExperimentConfig,
-    CoDesignExperimentPlatform,
+from genedynamics.experiments.framework.baseline_platform import (
+    BaselineExperimentConfig,
+    BaselineExperimentPlatform,
 )
-from genedynamics.experiments.co_design.baseline import BaselineConfig
+from genedynamics.experiments.framework.baseline import BaselineConfig
 
 exp_cfg = CoDesignExperimentConfig(
     baseline_name=cfg["baseline_name"],
@@ -52,7 +52,8 @@ assert dp2["Ndiffuse"] == 2
 print(f"[PASS] Platform + BaselineConfig: K={dp2['Ndiffuse']}, M={dp2['M_k']}")
 
 # 4. Baseline registry
-from genedynamics.experiments.co_design import list_baselines
+from genedynamics.experiments.framework.baseline_registry import list_baselines
+import genedynamics.experiments.framework.baselines  # noqa: F401
 bl = list_baselines()
 assert "mrmfmbd" in bl and "cmaes" in bl
 print(f"[PASS] Baselines: {bl}")
