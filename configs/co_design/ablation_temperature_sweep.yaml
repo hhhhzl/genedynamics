@@ -1,0 +1,27 @@
+# Ablation: temperature sweep τ ∈ {0.01, 0.1, 1.0}
+# Tests sensitivity of mode marginalization to Boltzmann temperature
+# Run once per temperature value (override T_k in scheduler_config)
+name: co_design_ablation_temperature_sweep
+output_dir: results/ablations/temperature_sweep
+checkpoint_dir: results/ablations/checkpoints
+
+baseline_name: mrmfmbd
+task_id: crawling_ground
+seeds: [0, 1, 2]
+
+# Default: T_k=0.1. To sweep, create copies with T_k=0.01 and T_k=1.0
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 4
+      T_k: 0.1        # change to 0.01 or 1.0 for sweep
+      Ndiffuse: 12
+      beta0: 1e-6
+      betaT: 1.0
+  diffusion_merge_strategy: merge
+
+method_params:
+  num_modes: 4
+  num_fidelity_levels: 1
+  show_tqdm: true

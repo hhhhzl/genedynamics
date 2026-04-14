@@ -1,7 +1,8 @@
-# Co-design experiment: MRMFMBD on crawling_ground (full S1+S3)
-name: co_design_mrmfmbd_crawling
-output_dir: results/co_design/mrmfmbd_crawling
-checkpoint_dir: results/co_design/checkpoints
+# Phase D: Full S1+S3 joint — in-distribution (crawling_ground)
+# Full-scale experiment with mode marginalization + multi-fidelity
+name: co_design_phase_d_full_id
+output_dir: results/phase_d/full_id
+checkpoint_dir: results/phase_d/checkpoints
 
 baseline_name: mrmfmbd
 task_id: crawling_ground

@@ -42,6 +42,11 @@ class MRMFMBDBaseline(BaselineProtocol):
             default_mode_system_config,
             create_fidelity_ladder,
         )
+        from genedynamics.core.inference.annealed_bridge import (
+            BridgeScheduleConfig,
+            LinearBridgeSchedule,
+            GeometricBridgeSchedule,
+        )
 
         theta_param = ThetaParametrization(
             x_dim=x_dim,
@@ -52,27 +57,50 @@ class MRMFMBDBaseline(BaselineProtocol):
         theta_prior = ThetaPrior(theta_param, ThetaPriorConfig(x_std=0.5, phi_std=30.0))
 
         extra = config.extra
-        K = extra.get("K", 50)
-        M = extra.get("M", 8)
+        # Extract diffusion params from scheduler (new-style) or fall back to extra (legacy)
+        diff_params = config.get_diffusion_params()
+
+        K = int(diff_params.get("Ndiffuse", extra.get("K", 50)))
+        M = int(diff_params.get("M_k", extra.get("M", 8)))
+        reward_temperature = float(diff_params.get("T_k", extra.get("reward_temperature", 0.1)))
+        beta0 = float(diff_params.get("beta0", extra.get("beta0", 1e-6)))
+        betaK = float(diff_params.get("betaT", extra.get("betaT", 1.0)))
+
         num_modes = extra.get("num_modes", task_spec.num_modes if hasattr(task_spec, "num_modes") else 4)
         num_fidelity_levels = extra.get("num_fidelity_levels", 3)
+        fidelity_ladder_type = extra.get("fidelity_ladder_type", "geometric")
+        fidelity_step_ratio = float(extra.get("fidelity_step_ratio", 1.5))
 
         mode_marginalizer = ModeMarginalizerS1(
             default_mode_system_config(num_modes),
             backend="jax",
         )
         fidelity_ladder = create_fidelity_ladder(
-            K=K, num_levels=num_fidelity_levels, ladder_type="geometric", step_ratio=1.5
+            K=K, num_levels=num_fidelity_levels,
+            ladder_type=fidelity_ladder_type, step_ratio=fidelity_step_ratio,
         )
+
+        # Create annealing schedule from beta0/betaK
+        schedule_type = extra.get("schedule_type", "linear")
+        bridge_config = BridgeScheduleConfig(K=K, beta0=beta0, betaK=betaK, schedule_type=schedule_type)
+        if schedule_type == "geometric":
+            bridge_schedule = GeometricBridgeSchedule(bridge_config)
+        else:
+            bridge_schedule = LinearBridgeSchedule(bridge_config)
 
         fine_fidelity = extra.get("fine_fidelity_level", max(0, num_fidelity_levels - 1))
         backend = MRMFMBDPosteriorBackendJax(
             evaluator=evaluator,
             theta_param=theta_param,
             theta_prior=theta_prior,
+            bridge_schedule=bridge_schedule,
             mode_marginalizer=mode_marginalizer,
             fidelity_ladder=fidelity_ladder,
-            config=PosteriorBridgeConfig(K=K, M=M, fine_fidelity_level=fine_fidelity),
+            config=PosteriorBridgeConfig(
+                K=K, M=M,
+                reward_temperature=reward_temperature,
+                fine_fidelity_level=fine_fidelity,
+            ),
             task_id=config.task_id,
             num_modes=num_modes,
             seed=config.seed,

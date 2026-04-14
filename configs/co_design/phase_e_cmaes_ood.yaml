@@ -1,9 +1,9 @@
-# Phase B: S1 validation — no-mode baseline, out-of-distribution (crawling_desert)
-name: co_design_phase_b_nomode_ood
-output_dir: results/phase_b/nomode_ood
-checkpoint_dir: results/phase_b/checkpoints
+# Phase E: CMA-ES baseline — out-of-distribution (crawling_desert)
+name: co_design_phase_e_cmaes_ood
+output_dir: results/phase_e/cmaes_ood
+checkpoint_dir: results/phase_e/checkpoints
 
-baseline_name: mrmfmbd
+baseline_name: cmaes
 task_id: crawling_desert
 seeds: [0, 1, 2]
 
@@ -19,6 +19,7 @@ scheduler_config:
   diffusion_merge_strategy: merge
 
 method_params:
-  num_modes: 1
-  num_fidelity_levels: 1
+  num_modes: 4
+  popsize: 8
+  sigma0: 0.3
   show_tqdm: true

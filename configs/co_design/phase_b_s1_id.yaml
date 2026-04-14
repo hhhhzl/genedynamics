@@ -1,16 +1,26 @@
-# Phase B: S1 验证 - full S1, ID (crawling_ground)
-# 对比: full S1 vs no-mode
-# 图: ID return, OOD return, OOD drop, mode responsibilities
+# Phase B: S1 validation — full S1 mode marginalization, in-distribution
+# Compare: full S1 vs no-mode
+# Plot: ID return, OOD return, OOD drop, mode responsibilities
+name: co_design_phase_b_s1_id
+output_dir: results/phase_b/s1_id
+checkpoint_dir: results/phase_b/checkpoints
 
 baseline_name: mrmfmbd
 task_id: crawling_ground
 seeds: [0, 1, 2]
-output_dir: results/phase_b/s1_id
-checkpoint_dir: results/phase_b/checkpoints
 
-baseline_params:
-  K: 12
-  M: 4
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 4
+      T_k: 0.1
+      Ndiffuse: 12
+      beta0: 1e-6
+      betaT: 1.0
+  diffusion_merge_strategy: merge
+
+method_params:
   num_modes: 4
   num_fidelity_levels: 1
   show_tqdm: true
