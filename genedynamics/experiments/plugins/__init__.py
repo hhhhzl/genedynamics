@@ -26,6 +26,7 @@ from .methods import (
     EBMBDMethodPlugin,
     MBDMethodPlugin,
     MBD3DMethodPlugin,
+    MBD3DActiveMethodPlugin,
     MRMFMBDMethodPlugin,
     D3ILUnifiedMethodPlugin,
     MDOCMethodPlugin,
@@ -57,6 +58,9 @@ from .environments import (
     SoftZooEnvironmentPlugin,
     MujocoSceneMappingPlugin,
     NerfSynthetic3DGSPlugin,
+    Replica3DGSPlugin,
+    TUM_RGBD_3DGSPlugin,
+    MuJoCoActivePerceptionPlugin,
     HumanoidCorridor2DPlugin,
 )
 
@@ -98,6 +102,7 @@ __all__ = [
     'EBMBDMethodPlugin',
     'MBDMethodPlugin',
     'MBD3DMethodPlugin',
+    'MBD3DActiveMethodPlugin',
     'MRMFMBDMethodPlugin',
     'EDOCMPCMethodPlugin',
     'D3ILUnifiedMethodPlugin',
@@ -128,6 +133,9 @@ __all__ = [
     'SoftZooEnvironmentPlugin',
     'MujocoSceneMappingPlugin',
     'NerfSynthetic3DGSPlugin',
+    'Replica3DGSPlugin',
+    'TUM_RGBD_3DGSPlugin',
+    'MuJoCoActivePerceptionPlugin',
     'HumanoidCorridor2DPlugin',
     # Metrics
     'SSRMetricsPlugin',

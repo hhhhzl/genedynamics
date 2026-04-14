@@ -1,0 +1,33 @@
+# Phase B S1 ID — CPU 16-way parallel validation run.
+# K=24, M=8, 4 modes, 1 fidelity = 768 evals.
+# workers=16 caps peak Taichi memory (~4G/worker × 16 ≈ 64G) well below 503G.
+name: co_design_phase_b_s1_id_gpu
+output_dir: results/phase_b/s1_id_gpu
+checkpoint_dir: results/phase_b/checkpoints_gpu
+
+baseline_name: mrmfmbd
+task_id: crawling_ground
+seeds: [0]
+save_gif: true
+
+softzoo_ti_arch: cpu
+
+evaluator_runtime:
+  max_workers: 16
+  cache_size: 0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 8
+      T_k: 0.1
+      Ndiffuse: 24
+      beta0: 1e-6
+      betaT: 1.0
+  diffusion_merge_strategy: merge
+
+method_params:
+  num_modes: 4
+  num_fidelity_levels: 1
+  show_tqdm: true

@@ -29,6 +29,7 @@ from genedynamics.experiments.plugins import (
     EBMBDMethodPlugin,
     MBDMethodPlugin,
     MBD3DMethodPlugin,
+    MBD3DActiveMethodPlugin,
     MRMFMBDMethodPlugin,
     D3ILUnifiedMethodPlugin,
     CFSMBDMethodPlugin,
@@ -56,6 +57,9 @@ from genedynamics.experiments.plugins import (
     SoftZooEnvironmentPlugin,
     MujocoSceneMappingPlugin,
     NerfSynthetic3DGSPlugin,
+    Replica3DGSPlugin,
+    TUM_RGBD_3DGSPlugin,
+    MuJoCoActivePerceptionPlugin,
     HumanoidCorridor2DPlugin,
     SSRMetricsPlugin,
     ObstacleDensityMetricsPlugin,
@@ -198,6 +202,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(EBMBDMethodPlugin(), 'method')
     runner.register_plugin(MBDMethodPlugin(), 'method')
     runner.register_plugin(MBD3DMethodPlugin(), 'method')
+    runner.register_plugin(MBD3DActiveMethodPlugin(), 'method')
     runner.register_plugin(MRMFMBDMethodPlugin(), 'method')
     runner.register_plugin(D3ILUnifiedMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDMethodPlugin(), 'method')
@@ -229,6 +234,9 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(SoftZooEnvironmentPlugin(), 'environment')
     runner.register_plugin(MujocoSceneMappingPlugin(), 'environment')
     runner.register_plugin(NerfSynthetic3DGSPlugin(), 'environment')
+    runner.register_plugin(Replica3DGSPlugin(), 'environment')
+    runner.register_plugin(TUM_RGBD_3DGSPlugin(), 'environment')
+    runner.register_plugin(MuJoCoActivePerceptionPlugin(), 'environment')
     runner.register_plugin(HumanoidCorridor2DPlugin(), 'environment')
 
     # Metrics plugins

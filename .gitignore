@@ -8,6 +8,7 @@ log
 .DS_Store
 **/__pycache__/
 /results
+.claude
 
 /data
 

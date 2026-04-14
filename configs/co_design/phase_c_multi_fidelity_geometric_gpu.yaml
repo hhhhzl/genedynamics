@@ -1,0 +1,34 @@
+# Phase C — geometric multi-fidelity, CPU 32-way parallel validation run.
+# K=12, M=8, 4 modes, 3 fidelity levels (coarse/med/fine).
+name: co_design_phase_c_mf_geom_gpu
+output_dir: results/phase_c/multi_fidelity_geometric_gpu
+checkpoint_dir: results/phase_c/checkpoints_gpu
+
+baseline_name: mrmfmbd
+task_id: crawling_ground
+seeds: [0]
+save_gif: true
+
+softzoo_ti_arch: cpu
+
+evaluator_runtime:
+  max_workers: 16
+  cache_size: 0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 8
+      T_k: 0.1
+      Ndiffuse: 24
+      beta0: 1e-6
+      betaT: 1.0
+  diffusion_merge_strategy: merge
+
+method_params:
+  num_modes: 4
+  num_fidelity_levels: 3
+  fidelity_ladder_type: geometric
+  fidelity_step_ratio: 1.5
+  show_tqdm: true

@@ -30,7 +30,7 @@ from .image_preprocess import (
 )
 from .perturbations import apply_shared_pose_bias, build_shared_pose_bias_se3
 from .split import sample_view_indices
-from ..types import ObservationBundle
+from .types import ObservationBundle
 
 
 # Canonical NeRF Synthetic object names

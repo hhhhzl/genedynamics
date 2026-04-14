@@ -25,7 +25,7 @@ except ImportError:
 
 def _pose_to_w2c(pose: np.ndarray) -> np.ndarray:
     """Convert 7D pose [px,py,pz,qw,qx,qy,qz] to 4x4 world-to-camera matrix."""
-    from ..data.camera_utils import pose_to_c2w_matrix
+    from genedynamics.data.camera_utils import pose_to_c2w_matrix
     c2w = pose_to_c2w_matrix(pose)
     return np.linalg.inv(c2w).astype(np.float32)
 

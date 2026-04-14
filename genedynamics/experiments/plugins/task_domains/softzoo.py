@@ -33,9 +33,12 @@ class SoftZooTaskDomainProvider:
         **kwargs: Any,
     ) -> Any:
         from genedynamics.envs.evaluators import SoftZooRolloutEvaluator, SoftZooEvaluatorConfig
+        runtime_keys = ("ti_arch", "ti_device_memory_fraction", "device", "use_renderer")
+        runtime_config = {k: kwargs[k] for k in runtime_keys if k in kwargs and kwargs[k] is not None}
         return SoftZooRolloutEvaluator(
             config=SoftZooEvaluatorConfig(max_workers=max_workers, cache_size=cache_size),
             project_root=project_root,
+            runtime_config=runtime_config,
         )
 
     def list_tasks(self) -> List[str]:

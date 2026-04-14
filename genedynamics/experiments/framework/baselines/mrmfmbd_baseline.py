@@ -115,6 +115,13 @@ class MRMFMBDBaseline(BaselineProtocol):
         # Clamp geometry (x[0]) to avoid zero-density particles (p_rho_lower_bound_mul=0.1)
         if x_dim >= 1 and x_star[0] < 0.1:
             x_star[0] = 0.1
+        # Clamp actuator multiplier (x[2]) so the optimizer can't pick the trivial
+        # zero-actuation degenerate minimum that produces a static robot. The
+        # `move_forward` reward gives small positive credit for purely passive
+        # gravity drift, so without this the optimizer will sometimes choose
+        # act_mul ~= 0 to avoid any actuation cost.
+        if x_dim >= 3 and x_star[2] < 0.5:
+            x_star[2] = 0.5
 
         # Re-evaluate best theta to report a real rollout return (not bridge proxy).
         from genedynamics.envs.evaluators import RolloutBatchRequest, RolloutRequest
@@ -133,7 +140,7 @@ class MRMFMBDBaseline(BaselineProtocol):
         ]
         eval_batch = evaluator.evaluate_batch(
             RolloutBatchRequest(task_id=config.task_id, requests=eval_requests),
-            parallel=False,
+            parallel=True,
             use_cache=False,
         )
         real_return = float(np.mean(eval_batch.returns)) if eval_batch.returns.size > 0 else 0.0

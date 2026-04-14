@@ -144,6 +144,9 @@ def make_softzoo_env(
     if platform.system() == "Darwin":
         # Work around Taichi kernel crashes seen on macOS in occupancy setup.
         os.environ.setdefault("SOFTZOO_SKIP_OCCUPANCY_KERNELS", "1")
+    elif (runtime_config.ti_arch or "").lower() == "cuda":
+        # Taichi 1.7.x + CUDA: occupancy kernels trigger device-side assert.
+        os.environ.setdefault("SOFTZOO_SKIP_OCCUPANCY_KERNELS", "1")
 
     if task_spec is None:
         task_spec = get_task_spec(task_id or "crawling_ground")
@@ -244,10 +247,18 @@ def make_softzoo_env(
         from softzoo.envs.land_environment import LandEnvironment
         env_cls = LandEnvironment
 
-    # Patch ENV_CONFIGS_DIR so softzoo finds configs
+    # Patch ENV_CONFIGS_DIR so softzoo finds configs. `from . import ENV_CONFIGS_DIR`
+    # in submodules caches the value at import time, so update both package and submodule
+    # namespaces to keep them in sync across repeated make_softzoo_env calls.
     import softzoo.envs as envs_mod
-    if _temp_cfg_file is None:
-        envs_mod.ENV_CONFIGS_DIR = str(paths.env_configs_dir)
+    _env_cfg_dir = (
+        os.path.dirname(_temp_cfg_file) if _temp_cfg_file is not None else str(paths.env_configs_dir)
+    )
+    envs_mod.ENV_CONFIGS_DIR = _env_cfg_dir
+    for _sub in ("land_environment", "aquatic_environment", "manipulation_environment", "dummy_env"):
+        _m = sys.modules.get(f"softzoo.envs.{_sub}")
+        if _m is not None and hasattr(_m, "ENV_CONFIGS_DIR"):
+            _m.ENV_CONFIGS_DIR = _env_cfg_dir
 
     env = env_cls(
         cfg_file=cfg_file_or_cfg,

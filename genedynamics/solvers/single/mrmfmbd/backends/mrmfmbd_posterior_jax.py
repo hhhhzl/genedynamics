@@ -194,23 +194,29 @@ class MRMFMBDPosteriorBackendJax:
         M, _ = proposals.shape
         rewards = np.zeros((M, self.num_modes), dtype=np.float32)
 
+        # Pack all M*num_modes requests into one batch so the evaluator's
+        # process pool can saturate (up to max_workers). The previous
+        # per-mode loop only exposed M parallelism, leaving idle workers.
+        flat_requests = []
+        index_pairs = []
         for c in range(self.num_modes):
-            requests = [
-                RolloutRequest(
-                    morphology_params=proposals[m, : self.theta_param.x_dim],
-                    controller_params=proposals[m, self.theta_param.x_dim :],
-                    mode_id=c,
-                    fidelity_level=fidelity_level,
-                    seed=seed_base + m * self.num_modes + c,
-                    num_repeats=1,
-                    record=False,
+            for m in range(M):
+                flat_requests.append(
+                    RolloutRequest(
+                        morphology_params=proposals[m, : self.theta_param.x_dim],
+                        controller_params=proposals[m, self.theta_param.x_dim :],
+                        mode_id=c,
+                        fidelity_level=fidelity_level,
+                        seed=seed_base + m * self.num_modes + c,
+                        num_repeats=1,
+                        record=False,
+                    )
                 )
-                for m in range(M)
-            ]
-            batch_req = RolloutBatchRequest(task_id=self.task_id, requests=requests)
-            batch_res = self.evaluator.evaluate_batch(batch_req, parallel=False, use_cache=False)
-            rewards[:, c] = batch_res.returns
-
+                index_pairs.append((m, c))
+        batch_req = RolloutBatchRequest(task_id=self.task_id, requests=flat_requests)
+        batch_res = self.evaluator.evaluate_batch(batch_req, parallel=True, use_cache=False)
+        for (m, c), r in zip(index_pairs, batch_res.returns):
+            rewards[m, c] = r
         return rewards
 
     def _compute_marginal_log_likelihood_and_responsibilities(
@@ -404,7 +410,7 @@ class MRMFMBDPosteriorBackendJax:
                     for c in range(self.num_modes)
                 ]
                 req = RolloutBatchRequest(task_id=self.task_id, requests=requests)
-                res = self.evaluator.evaluate_batch(req, parallel=False, use_cache=False)
+                res = self.evaluator.evaluate_batch(req, parallel=True, use_cache=False)
                 fine_calls += self.num_modes
                 cand_return = float(np.mean(res.returns))
                 if cand_return > best_fine_return:

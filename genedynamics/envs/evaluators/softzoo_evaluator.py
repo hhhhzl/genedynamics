@@ -223,6 +223,31 @@ class SoftZooRolloutEvaluator:
         self._project_root = project_root
         self._runtime_config = runtime_config or self.config.extra.get("runtime_config") or {}
         self._cache = _ResultCache(self.config.cache_size)
+        # Persistent process pool: created on first parallel call, kept alive
+        # across batches so workers don't repay Taichi/SoftZoo init cost
+        # (which is several seconds per worker).
+        self._pool: Optional[ProcessPoolExecutor] = None
+        self._pool_workers: int = 0
+
+    def _get_pool(self, workers: int) -> ProcessPoolExecutor:
+        if self._pool is not None and self._pool_workers == workers:
+            return self._pool
+        if self._pool is not None:
+            self._pool.shutdown(wait=False, cancel_futures=True)
+        self._pool = ProcessPoolExecutor(max_workers=workers)
+        self._pool_workers = workers
+        return self._pool
+
+    def close(self) -> None:
+        if self._pool is not None:
+            self._pool.shutdown(wait=True)
+            self._pool = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def evaluate_batch(
         self,
@@ -324,9 +349,10 @@ class SoftZooRolloutEvaluator:
         indices: List[int],
         max_workers: int,
     ) -> List[RolloutResult]:
-        """Evaluate requests in parallel via ProcessPoolExecutor."""
+        """Evaluate requests in parallel via persistent ProcessPoolExecutor."""
         out: List[Optional[RolloutResult]] = [None] * len(indices)
-        with ProcessPoolExecutor(max_workers=max_workers) as ex:
+        ex = self._get_pool(max_workers)
+        if True:
             futures = {}
             for pos, idx in enumerate(indices):
                 req = request.requests[idx]

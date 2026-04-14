@@ -169,13 +169,23 @@ class BaselineExperimentPlatform:
         phi_dim = getattr(task_spec, "phi_dim", 4)
 
         t0 = time.perf_counter()
-        result = baseline.run(
-            bl_config,
-            evaluator,
-            task_spec,
-            x_dim=x_dim,
-            phi_dim=phi_dim,
-        )
+        try:
+            result = baseline.run(
+                bl_config,
+                evaluator,
+                task_spec,
+                x_dim=x_dim,
+                phi_dim=phi_dim,
+            )
+        finally:
+            # Release ProcessPoolExecutor workers so successive seeds don't
+            # stack Taichi-allocated memory (each worker holds several GB).
+            close_fn = getattr(evaluator, "close", None)
+            if callable(close_fn):
+                try:
+                    close_fn()
+                except Exception:
+                    pass
         wall_time = time.perf_counter() - t0
 
         out = {

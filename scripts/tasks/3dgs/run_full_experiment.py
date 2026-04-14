@@ -213,7 +213,7 @@ def main() -> int:
 
     from genedynamics.experiments.framework import ExperimentConfig, ExperimentRunner
     from genedynamics.experiments.runner import register_all_plugins
-    from genedynamics.solvers.single.mbd3d.data import (
+    from genedynamics.data import (
         NerfSyntheticDataAdapter,
         nerf_synthetic_config_from_env_params,
     )
@@ -318,7 +318,7 @@ def main() -> int:
     render_w = getattr(renderer, "image_width", gt_images.shape[2])
     orig_h, orig_w = int(gt_images.shape[1]), int(gt_images.shape[2])
     if (render_h, render_w) != (orig_h, orig_w):
-        from genedynamics.solvers.single.mbd3d.data.camera_utils import resize_intrinsics
+        from genedynamics.data.camera_utils import resize_intrinsics
         def _scale_K(K, oh, ow, nh, nw):
             if K.ndim == 3:
                 return np.stack([resize_intrinsics(K[i], oh, ow, nh, nw) for i in range(K.shape[0])], axis=0)
