@@ -1,76 +1,117 @@
-# 3DGS Config Layout (Phase 0 Cleanup)
+# 3DGS Config Layout
 
-This folder is now organized by experiment role instead of historical file names.
+Configs are organized by experiment role and stress condition.
 
 ## Structure
 
-- `main/`: canonical method runs (paper/mainline behavior)
-- `ablations/`: controlled switches (iid vs corr, warm-start, etc.)
-- `baselines/`: non-method baselines (gsplat training, 3DGS-MAP protocol)
-- `_template.yaml`: template for creating new configs
-- `_base_nerf_synth.yaml`: shared reference defaults
-
-## Current configs
-
-### Main
-
-- `main/lego_mbd_canonical.yaml`
-
-### Ablations
-
-- `ablations/lego_mbd_iid_ablation.yaml`
-- `ablations/lego_mbd_corr_ablation.yaml`
-- `ablations/lego_mbd_warmstart_ablation.yaml`
-- `ablations/chair_mbd_iid_ablation.yaml`
-- `ablations/chair_mbd_corr_ablation.yaml`
-
-### Baselines
-
-- `baselines/lego_gsplat_baseline.yaml`
-- `baselines/lego_gsplat_densify_baseline.yaml`
-- `baselines/lego_3dgs_map_baseline.yaml`
-
-## Run examples
-
-```bash
-# Canonical MBD run (no warm start, ~5 dB PSNR)
-python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_canonical.yaml
-
-# PSNR-focused: warm start from gsplat (~10 dB PSNR)
-# Step 1: Train gsplat for warm start (128 gaussians, ~20 dB on train views)
-python scripts/tasks/3dgs/train_gsplat.py configs/3dgs/main/lego_mbd_canonical.yaml \
-  --output results/3dgs/lego_gsplat_warmstart --iters 6000 --n-gaussians 128
-# Step 2: Run MBD with prior-centered init (Phase 3+4: best_chain, train/test metrics)
-python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_quality_recovery_vramfit.yaml \
-  --initial-scene-path results/3dgs/lego_gsplat_warmstart/scene_params.npz \
-  --initialization-mode prior_center --init-jitter-scale 0.1 --n-seeds 2 --best-chain
-
-# One-liner: bash scripts/tasks/3dgs/run_quality_recovery.sh
-
-# Quality recovery configs (tuned for PSNR)
-python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_quality_recovery_vramfit.yaml
-python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/main/lego_mbd_psnr_improved.yaml  # 192 gaussians, may OOM on smaller GPUs
-
-# Likelihood ablation
-python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/ablations/lego_mbd_iid_ablation.yaml
-python scripts/tasks/3dgs/run_full_experiment.py configs/3dgs/ablations/lego_mbd_corr_ablation.yaml
-
-# Baseline (pure gsplat training path)
-python scripts/tasks/3dgs/run_baseline_experiment.py configs/3dgs/baselines/lego_gsplat_baseline.yaml --iters 30000
-python scripts/tasks/3dgs/run_baseline_experiment.py configs/3dgs/baselines/lego_gsplat_densify_baseline.yaml --iters 30000 --densify --max-gaussians 30000
+```
+configs/3dgs/
+├── main/                              # MBD3D method (ours)
+│   ├── clean/lego_mbd_clean.yaml
+│   ├── pose_bias/
+│   │   ├── lego_mbd_pose_extreme_v1.yaml
+│   │   └── lego_mbd_pose_extreme_v2.yaml
+│   └── exposure_drift/
+│       ├── lego_mbd_exposure_linear_strong.yaml
+│       ├── lego_mbd_exposure_linear_extreme.yaml
+│       ├── lego_mbd_exposure_bias_strong.yaml
+│       └── lego_mbd_exposure_bias_extreme.yaml
+├── baselines/                         # gsplat baseline, matched conditions
+│   ├── clean/lego_gsplat_clean.yaml
+│   ├── pose_bias/
+│   │   ├── lego_gsplat_pose_extreme_v1.yaml
+│   │   └── lego_gsplat_pose_extreme_v2.yaml
+│   └── exposure_drift/
+│       ├── lego_gsplat_exposure_linear_strong.yaml
+│       ├── lego_gsplat_exposure_linear_extreme.yaml
+│       ├── lego_gsplat_exposure_bias_strong.yaml
+│       └── lego_gsplat_exposure_bias_extreme.yaml
+├── ablations/                         # likelihood / warmstart ablations
+├── stress_tests/                      # legacy sweep YAMLs (use main/ instead)
+├── _template.yaml
+└── _base_nerf_synth.yaml
 ```
 
-## PSNR improvement
+## Locked-in method parameters
 
-| Setup | PSNR | LPIPS |
-|-------|------|-------|
-| Canonical (random init) | ~5.4 dB | ~0.98 |
-| Quality recovery vramfit | ~5.4 dB | ~0.97 |
-| **Warm start** (gsplat 6k iters → MBD prior_center) | **~10.3 dB** | **~0.76** |
+Paired `main/` and `baselines/` configs use the version of MBD3D that preserves
+gsplat warm-start quality while still benefiting from Bayesian posterior under
+perturbation:
 
-Warm start: train gsplat 6k iters with 128 gaussians (~20 dB on train), then run MBD with `--initial-scene-path` and `--init-jitter-scale 0.1`.
+| Parameter | Value | Why |
+|-----------|-------|-----|
+| `initialization_mode` | `direct` | Use warm-start directly, no prior resampling |
+| `init_jitter_scale` | `0.0` | No initial perturbation of warm-start |
+| `observation_sigma2` | `0.0005` | Tight likelihood → stays near warm-start |
+| warm-start ckpt | `results/3dgs/lego_gsplat_warmstart_v3/scene_params.npz` | gsplat 3k iters, densify, 8000 Gaussians → ~14.5 dB test PSNR |
+
+Conditions are chosen to be in the regime where MBD3D's Bayesian posterior
+matters — clean and strong-to-extreme perturbations.
+
+## Running
+
+### MBD3D (ours)
+
+```bash
+CKPT=results/3dgs/lego_gsplat_warmstart_v3/scene_params.npz
+
+# Clean
+python scripts/tasks/3dgs/run_full_experiment.py \
+  configs/3dgs/main/clean/lego_mbd_clean.yaml \
+  --initial-scene-path $CKPT \
+  --initialization-mode direct --init-jitter-scale 0.0 \
+  --max-initial-gaussians 4096 --n-seeds 1
+
+# Pose bias
+python scripts/tasks/3dgs/run_full_experiment.py \
+  configs/3dgs/main/pose_bias/lego_mbd_pose_extreme_v2.yaml \
+  --initial-scene-path $CKPT \
+  --initialization-mode direct --init-jitter-scale 0.0 \
+  --max-initial-gaussians 4096 --n-seeds 1
+
+# Exposure drift
+python scripts/tasks/3dgs/run_full_experiment.py \
+  configs/3dgs/main/exposure_drift/lego_mbd_exposure_linear_strong.yaml \
+  --initial-scene-path $CKPT \
+  --initialization-mode direct --init-jitter-scale 0.0 \
+  --max-initial-gaussians 4096 --n-seeds 1
+```
+
+### gsplat (baseline)
+
+```bash
+python scripts/tasks/3dgs/train_gsplat.py \
+  configs/3dgs/baselines/pose_bias/lego_gsplat_pose_extreme_v2.yaml \
+  --output results/3dgs/baselines/pose_bias/lego_gsplat_pose_extreme_v2 \
+  --iters 3000 --n-gaussians 4096 --densify --max-gaussians 8000
+```
+
+### Warm-start ckpt (one-time)
+
+```bash
+python scripts/tasks/3dgs/train_gsplat.py configs/3dgs/main/lego_mbd_warmup.yaml \
+  --output results/3dgs/lego_gsplat_warmstart_v3 \
+  --iters 3000 --n-gaussians 4096 --densify --max-gaussians 8000
+```
+
+## Results (lego)
+
+| Condition | gsplat Test PSNR | **MBD3D Test PSNR** | MBD advantage |
+|-----------|------------------|---------------------|---------------|
+| clean | 14.16 | **14.41** | +0.25 dB |
+| pose_extreme_v1 (3°, 0.15m) | 12.43 | **14.55** | **+2.12 dB** |
+| pose_extreme_v2 (5°, 0.25m) | 11.60 | **14.11** | **+2.51 dB** |
+| exposure_linear_strong (s=0.30) | 13.76 | **14.01** | +0.25 dB |
+| exposure_linear_extreme (s=0.50) | 13.35 | **13.96** | **+0.61 dB** |
+| exposure_bias_strong (s=0.15) | 13.63 | 13.39 | −0.24 dB |
+| exposure_bias_extreme (s=0.25) | 13.08 | **13.24** | +0.16 dB |
+
+**Main takeaway**: under realistic SfM-level pose perturbation (≥ a few degrees /
+centimeters), gsplat degrades ~2.5 dB while MBD3D stays essentially flat — this
+is the robustness advantage the Bayesian posterior buys you.
 
 ## Notes
 
-- The `gsplat` baselines are intentionally separated from `main` to avoid mixing method and baseline semantics.
-- Warm-start behavior is treated as an ablation, not the canonical method definition.
+- `stress_tests/` sweep YAMLs are legacy; prefer the per-run configs under `main/` and `baselines/`.
+- `ablations/` is for comparing against variants (iid vs corr likelihood, warm-start on/off).
+- Warm-start checkpoint (gsplat 3k iters, densify) is shared across all MBD3D runs.

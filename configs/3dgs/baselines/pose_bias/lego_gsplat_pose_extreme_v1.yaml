@@ -1,0 +1,35 @@
+name: lego_gsplat_pose_extreme_v1
+env_name: 3dgs_nerf_synthetic
+env_params:
+  dataset_root: data/nerf_synthetic/lego
+  object: lego
+  use_stub_when_unavailable: false
+  split: train
+  eval_split: test
+  max_views: 100
+  view_stride: 1
+  shuffle_seed: 0
+  resolution_infer: 128
+  resolution_eval: 512
+  eval_resolution: 512
+  composite_background: white
+  pose_convention: opencv
+  pose_bias_rotation_deg: 3.0
+  pose_bias_translation_m: 0.15
+  pose_bias_seed: 0
+method: gsplat
+method_params:
+  n_gaussians: 4096
+gsplat_training:
+  iters: 3000
+  densify: true
+  max_gaussians: 8000
+  lr: 0.0025
+seeds:
+- 0
+backend: torch
+device: cuda
+metadata:
+  description: "gsplat baseline \u2014 extreme pose bias v1 (3.0\xB0, 0.15m)"
+  training: gsplat 3000 iters, densify enabled, up to 8000 Gaussians
+output_dir: results/3dgs/baselines/pose_bias/lego_gsplat_pose_extreme_v1

@@ -15,7 +15,7 @@ try:
         "DummyPhysicsBackend",
         "MujocoPhysicsBackend",
     ]
-except (ImportError, ModuleNotFoundError):
+except (ImportError, ModuleNotFoundError, AttributeError):
     __all__ = [
         "PhysicsBackend",
         "DummyPhysicsBackend",
@@ -25,12 +25,12 @@ except (ImportError, ModuleNotFoundError):
 try:
     from genedynamics.core.backends.adapters.mjx_adapter import MjxPhysicsBackend
     __all__.append("MjxPhysicsBackend")
-except ImportError:
+except (ImportError, ModuleNotFoundError, AttributeError):
     pass
 
 # Isaac Sim adapter (optional)
 try:
     from genedynamics.core.backends.adapters.isaac_adapter import IsaacSimBackend
     __all__.append("IsaacSimBackend")
-except ImportError:
+except (ImportError, ModuleNotFoundError, AttributeError):
     pass

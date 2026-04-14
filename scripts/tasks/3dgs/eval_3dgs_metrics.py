@@ -84,11 +84,19 @@ def main():
 
     if "total_log_prob" in data:
         metrics["nll"] = -float(data["total_log_prob"])
+    if "metrics_3dgs" in data and isinstance(data["metrics_3dgs"], dict):
+        m3 = data["metrics_3dgs"]
+        if "psnr" in m3:
+            metrics["psnr"] = float(m3["psnr"])
+        if "lpips" in m3 and m3["lpips"] >= 0:
+            metrics["lpips"] = float(m3["lpips"])
+        if "per_view_psnr" in m3:
+            metrics["per_view_psnr"] = m3["per_view_psnr"]
     if "metrics" in data and isinstance(data["metrics"], dict):
         m = data["metrics"]
-        if "psnr" in m:
+        if "psnr" in m and metrics["psnr"] is None:
             metrics["psnr"] = float(m["psnr"])
-        if "lpips" in m:
+        if "lpips" in m and metrics["lpips"] is None:
             metrics["lpips"] = float(m["lpips"])
         if "nll" in m:
             metrics["nll"] = float(m["nll"])

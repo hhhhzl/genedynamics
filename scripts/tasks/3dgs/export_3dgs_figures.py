@@ -96,12 +96,24 @@ def main():
         print(f"No trajectory found in {result_dir}")
         return 0
 
-    if "states" in traj and "images" in traj:
+    # Try loading images from .npy files first, then from trajectory.json
+    renders_dir = result_dir / "level_0" / "seed_0" / "renders"
+    gt_npy = renders_dir / "gt_images.npy"
+    pred_npy = renders_dir / "pred_images.npy"
+
+    if gt_npy.exists() and pred_npy.exists():
+        gt = np.load(gt_npy)
+        pred = np.load(pred_npy)
+    elif "images" in traj:
         gt = np.asarray(traj.get("images", []))
         pred = np.asarray(traj.get("predicted_images", []))
-        if gt.size > 0 and pred.size > 0:
-            render_comparison(gt, pred, out_dir / "render_comparison.png", args.n_show)
-            print(f"Saved {out_dir / 'render_comparison.png'}")
+    else:
+        gt = np.array([])
+        pred = np.array([])
+
+    if gt.size > 0 and pred.size > 0:
+        render_comparison(gt, pred, out_dir / "render_comparison.png", args.n_show)
+        print(f"Saved {out_dir / 'render_comparison.png'}")
 
     samples = traj.get("posterior_samples", [])
     if len(samples) > 1:

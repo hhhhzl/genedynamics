@@ -62,7 +62,7 @@ except ImportError:
 try:
     from genedynamics.core.backends.render_impl import MujocoRenderer
     __all__.append("MujocoRenderer")
-except ImportError:
+except (ImportError, AttributeError):
     pass
 
 try:
@@ -75,7 +75,7 @@ except ImportError:
 try:
     from genedynamics.core.backends.adapters import MujocoPhysicsBackend
     __all__.append("MujocoPhysicsBackend")
-except ImportError:
+except (ImportError, AttributeError):
     pass
 
 try:

@@ -258,6 +258,10 @@ class ExperimentRunner:
             'env_plugin': env_plugin,  # For TaskSpec / position_extractor
             'env_name': getattr(self.config, 'env_name', None),
         }
+        # Pass top-level scheduler_config so method plugins (e.g. MBD3D) can read
+        # Ndiffuse / beta0 / betaT / M_k / T_k from diffusion_schedulers.
+        if scheduler_config and 'scheduler_config' not in method_config:
+            method_config['scheduler_config'] = scheduler_config
         # Merge first diffusion_scheduler's M_k / Ndiffuse / T_k / beta into method_config
         # so method plugins (MDOC, MBD, etc.) use YAML diffusion_schedulers values instead of defaults
         if scheduler is not None and getattr(scheduler, 'diffusion_schedulers', None):
@@ -2593,6 +2597,32 @@ class ExperimentRunner:
                 serializable_result["total_log_prob"] = convert_to_json_serializable(planning_result["total_log_prob"])
             if "n_steps" in planning_result:
                 serializable_result["n_steps"] = convert_to_json_serializable(planning_result["n_steps"])
+
+            # MBD3D / 3DGS: metrics_3dgs (PSNR, LPIPS) and rendered images
+            if "metrics_3dgs" in planning_result:
+                serializable_result["metrics_3dgs"] = convert_to_json_serializable(planning_result["metrics_3dgs"])
+            if "images" in planning_result or "predicted_images" in planning_result:
+                img_dir = output_path / "renders"
+                img_dir.mkdir(parents=True, exist_ok=True)
+                if "images" in planning_result:
+                    np.save(img_dir / "gt_images.npy", np.asarray(planning_result["images"], dtype=np.float32))
+                if "predicted_images" in planning_result:
+                    np.save(img_dir / "pred_images.npy", np.asarray(planning_result["predicted_images"], dtype=np.float32))
+                # Also write into trajectory.json so export_3dgs_figures.py can find them
+                trajectory_dir = output_path / "trajectory"
+                trajectory_dir.mkdir(parents=True, exist_ok=True)
+                traj_json_path = trajectory_dir / "trajectory.json"
+                if traj_json_path.exists():
+                    import json as _json
+                    with open(traj_json_path) as _f:
+                        traj_data = _json.load(_f)
+                else:
+                    traj_data = {}
+                traj_data["images"] = convert_to_json_serializable(planning_result["images"])
+                traj_data["predicted_images"] = convert_to_json_serializable(planning_result["predicted_images"])
+                traj_data["states"] = convert_to_json_serializable(planning_result.get("states", []))
+                with open(traj_json_path, "w") as _f:
+                    _json.dump(traj_data, _f)
         
         # Save JSON
         with open(output_path / "results.json", 'w') as f:

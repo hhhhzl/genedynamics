@@ -7,7 +7,7 @@ cd "$ROOT"
 PY="${VENV:-$ROOT/.venv_arm64/bin/python}"
 
 OBJECT="${1:-lego}"
-CONFIG="configs/3dgs/${OBJECT}_mbd_iid.yaml"
+CONFIG="configs/3dgs/ablations/${OBJECT}_mbd_iid_ablation.yaml"
 
 if [[ ! -f "$CONFIG" ]]; then
   echo "Config not found: $CONFIG"

@@ -522,6 +522,76 @@ class MBD3DBackendJax:
             }
         return theta, history
 
+    def _render_eval(
+        self,
+        scene_final: Any,
+        cam_final: Any,
+        observations: ObservationBundle,
+    ) -> Dict[str, Any]:
+        """Render predicted images from final scene and compute PSNR/LPIPS."""
+        extras: Dict[str, Any] = {}
+        try:
+            gt_images = np.asarray(observations.images, dtype=np.float32)
+            cam_poses = jnp.asarray(cam_final, dtype=jnp.float32)
+            intrinsics = getattr(observations, "intrinsics", None)
+            pred_jax = self.renderer.render(
+                scene_final, cam_poses, intrinsics=intrinsics,
+            )
+            pred_images = np.asarray(pred_jax, dtype=np.float32)
+            pred_images = np.clip(pred_images, 0.0, 1.0)
+
+            # Align shapes — GT may have more views than cam_final
+            n = min(gt_images.shape[0], pred_images.shape[0])
+            gt_crop = gt_images[:n]
+            pred_crop = pred_images[:n]
+
+            # Resize GT to match pred resolution if needed
+            if gt_crop.shape[1:3] != pred_crop.shape[1:3]:
+                from skimage.transform import resize as sk_resize
+                gt_resized = np.stack([
+                    sk_resize(gt_crop[i], pred_crop.shape[1:3], anti_aliasing=True).astype(np.float32)
+                    for i in range(n)
+                ])
+            else:
+                gt_resized = gt_crop
+
+            # PSNR
+            mse = float(np.mean((pred_crop - gt_resized) ** 2))
+            psnr = 10.0 * np.log10(1.0 / max(mse, 1e-10))
+
+            # Per-view PSNR
+            per_view_psnr = []
+            for i in range(n):
+                v_mse = float(np.mean((pred_crop[i] - gt_resized[i]) ** 2))
+                per_view_psnr.append(float(10.0 * np.log10(1.0 / max(v_mse, 1e-10))))
+
+            # LPIPS (optional)
+            lpips_val = -1.0
+            try:
+                import lpips as _lpips
+                loss_fn = _lpips.LPIPS(net="alex", verbose=False)
+                import torch
+                p = torch.from_numpy((pred_crop * 2 - 1).transpose(0, 3, 1, 2))
+                g = torch.from_numpy((gt_resized * 2 - 1).transpose(0, 3, 1, 2))
+                with torch.no_grad():
+                    lpips_val = float(loss_fn(p, g).mean())
+            except Exception:
+                pass
+
+            # Store for export_3dgs_figures.py
+            extras["images"] = gt_resized.tolist()
+            extras["predicted_images"] = pred_crop.tolist()
+            extras["metrics_3dgs"] = {
+                "psnr": float(psnr),
+                "lpips": lpips_val,
+                "per_view_psnr": per_view_psnr,
+            }
+        except Exception as e:
+            import traceback
+            print(f"[mbd3d] Warning: eval rendering failed: {e}")
+            traceback.print_exc()
+        return extras
+
     def plan(self, x0: Any, rng_key: Optional[Any] = None, observations: Optional[Any] = None) -> Dict[str, Any]:
         if rng_key is None:
             rng_key = jax.random.PRNGKey(self.seed)
@@ -589,6 +659,10 @@ class MBD3DBackendJax:
             total_log_prob=history["log_pi"][-1] if history["log_pi"] else 0.0,
             n_steps=len(history["log_pi"]),
         )
+
+        # --- Render predicted images & compute metrics ---
+        eval_extras = self._render_eval(scene_final, cam_final, observations)
+
         return {
             "states": states_list,
             "actions": actions_list,
@@ -603,6 +677,7 @@ class MBD3DBackendJax:
             "candidate_costs": np.asarray([-float(result.total_log_prob)], dtype=np.float32),
             "best_idx": 0,
             **result.to_trajectory_info(),
+            **eval_extras,
         }
 
     def sample_trajectories(self, x0: Any, n_samples: int, rng_key: Optional[Any] = None, observations: Optional[Any] = None) -> List[Trajectory]:

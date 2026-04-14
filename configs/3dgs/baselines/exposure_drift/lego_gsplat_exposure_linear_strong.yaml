@@ -1,0 +1,34 @@
+name: lego_gsplat_exposure_linear_strong
+env_name: 3dgs_nerf_synthetic
+env_params:
+  dataset_root: data/nerf_synthetic/lego
+  object: lego
+  use_stub_when_unavailable: false
+  split: train
+  eval_split: test
+  max_views: 100
+  view_stride: 1
+  shuffle_seed: 0
+  resolution_infer: 128
+  resolution_eval: 512
+  eval_resolution: 512
+  composite_background: white
+  pose_convention: opencv
+  exposure_drift_mode: linear_gain
+  exposure_drift_strength: 0.3
+method: gsplat
+method_params:
+  n_gaussians: 4096
+gsplat_training:
+  iters: 3000
+  densify: true
+  max_gaussians: 8000
+  lr: 0.0025
+seeds:
+- 0
+backend: torch
+device: cuda
+metadata:
+  description: "gsplat baseline \u2014 strong linear gain drift (s=0.30)"
+  training: gsplat 3000 iters, densify enabled, up to 8000 Gaussians
+output_dir: results/3dgs/baselines/exposure_drift/lego_gsplat_exposure_linear_strong
