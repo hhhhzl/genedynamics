@@ -105,48 +105,47 @@ def _render_gif(positions_over_time: np.ndarray, out_path: Path, return_value: f
     plt.close(fig)
 
 
-def _capture_rollout(
+def _capture_rollout_worker(
     task_id: str,
     x_star: np.ndarray,
     phi_star: np.ndarray,
     runtime_config_kwargs: dict,
-    project_root: Path,
-) -> tuple[np.ndarray, float]:
-    """Re-run rollout for best theta while capturing particle positions each step."""
+    project_root_str: str,
+    out_queue,
+):
+    """Subprocess body: runs one rollout and pushes (positions, return) to queue.
+
+    Lives in its own process so its Taichi CUDA context cannot collide with
+    the parent's JAX CUDA context (which deadlocks at the driver futex level).
+    """
+    import os
+    os.environ.setdefault("SOFTZOO_SKIP_OCCUPANCY_KERNELS", "1")
+    import numpy as _np
     from genedynamics.envs.external.softzoo.bootstrap import ensure_softzoo_on_path
     from genedynamics.envs.external.softzoo.adapters import (
-        make_softzoo_env,
-        encode_morphology,
-        encode_controller,
+        make_softzoo_env, encode_morphology, encode_controller,
     )
     from genedynamics.envs.external.softzoo.task_registry import get_task_spec
     from genedynamics.envs.external.softzoo.config import SoftZooRuntimeConfig
-
-    ensure_softzoo_on_path(str(project_root))
+    ensure_softzoo_on_path(project_root_str)
     rc = SoftZooRuntimeConfig(
-        project_root=project_root,
+        project_root=Path(project_root_str),
         ti_arch=runtime_config_kwargs.get("ti_arch"),
         ti_device_memory_fraction=runtime_config_kwargs.get("ti_device_memory_fraction"),
     )
     spec = get_task_spec(task_id)
     env = make_softzoo_env(
-        task_spec=spec, fidelity_spec=None, mode_spec=None, runtime_config=rc
+        task_spec=spec, fidelity_spec=None, mode_spec=None, runtime_config=rc,
     )
     ctrl = encode_controller(phi_star, spec, env)
     dsg = encode_morphology(x_star, spec, env=env)
-
-    obs = env.reset(dsg)
-    ctrl.reset()
-
+    obs = env.reset(dsg); ctrl.reset()
     positions = []
     ret = 0.0
     for _ in range(spec.max_steps):
         s = env.sim.solver.current_s
         rx = env.design_space.get_x(s)
-        if hasattr(rx, "numpy"):
-            rx_np = rx.numpy()
-        else:
-            rx_np = np.asarray(rx)
+        rx_np = rx.numpy() if hasattr(rx, "numpy") else _np.asarray(rx)
         positions.append(rx_np.copy())
         act = ctrl(s, obs)
         obs, r, done, info = env.step(act)
@@ -154,7 +153,72 @@ def _capture_rollout(
         if done:
             break
     env.close()
-    return np.stack(positions, axis=0).astype(np.float32), ret
+    out_queue.put((_np.stack(positions, axis=0).astype(_np.float32), float(ret)))
+
+
+def _capture_rollout_jax_mpm(
+    x_star: np.ndarray,
+    phi_star: np.ndarray,
+    evaluator_params: dict,
+) -> tuple[np.ndarray, float]:
+    """Capture rollout for jax_mpm backend. No subprocess needed — JAX MPM is pure
+    JAX so it shares the main process's GPU context freely."""
+    import jax.numpy as jnp
+    from genedynamics.envs.external.jax_mpm.scene import (
+        MPMConfig, build_scene, rollout_with_positions,
+    )
+
+    mpm_kwargs = {
+        "n_grid": int(evaluator_params.get("n_grid", 64)),
+        "shaping_weight": float(evaluator_params.get("reward_shaping_weight", 100.0)),
+    }
+    cfg = MPMConfig(**{k: v for k, v in mpm_kwargs.items()
+                       if k in MPMConfig.__dataclass_fields__})
+    scene = build_scene(cfg)
+    fr = 0.45  # mid friction for replay — sweet spot for stick-slip peristalsis
+    num_env_steps = 200  # match softzoo default for gif fidelity
+
+    xm = jnp.asarray(x_star, dtype=jnp.float32)
+    ph = jnp.asarray(phi_star, dtype=jnp.float32)
+    fr_j = jnp.asarray(fr, dtype=jnp.float32)
+    reward, disp, com_traj, particle_traj, mass_field = rollout_with_positions(
+        xm, ph, fr_j, scene, cfg, num_env_steps,
+    )
+    reward.block_until_ready()
+    # Filter ghost particles (mass < 0.5 from voxel occupancy < 0.5) so the
+    # gif shows only the materialized robot.
+    mask = np.asarray(mass_field) > 0.5
+    if mask.sum() == 0:  # degenerate empty robot — show all
+        mask = np.ones_like(mask, dtype=bool)
+    particles_visible = np.asarray(particle_traj, dtype=np.float32)[:, mask, :]
+    return particles_visible, float(reward)
+
+
+def _capture_rollout(
+    task_id: str,
+    x_star: np.ndarray,
+    phi_star: np.ndarray,
+    runtime_config_kwargs: dict,
+    project_root: Path,
+) -> tuple[np.ndarray, float]:
+    """Run capture in a spawn-mode subprocess to isolate Taichi from parent's JAX."""
+    import multiprocessing as mp
+    ctx = mp.get_context("spawn")
+    q = ctx.Queue()
+    proc = ctx.Process(
+        target=_capture_rollout_worker,
+        args=(task_id, x_star, phi_star, runtime_config_kwargs, str(project_root), q),
+        daemon=False,
+    )
+    proc.start()
+    try:
+        positions, ret = q.get(timeout=300)
+    finally:
+        proc.join(timeout=10)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=5)
+    return positions, ret
 
 
 def main() -> int:
@@ -235,13 +299,19 @@ def main() -> int:
 
     print("Replaying best theta with trajectory capture...")
     t0 = time.time()
-    positions, replay_return = _capture_rollout(
-        task_id=data.get("task_id", "crawling_ground"),
-        x_star=x_star,
-        phi_star=phi_star,
-        runtime_config_kwargs=evaluator_params,
-        project_root=root,
-    )
+    task_domain = data.get("task_domain", "softzoo")
+    if task_domain == "jax_mpm":
+        positions, replay_return = _capture_rollout_jax_mpm(
+            x_star=x_star, phi_star=phi_star,
+            evaluator_params=evaluator_params,
+        )
+    else:
+        positions, replay_return = _capture_rollout(
+            task_id=data.get("task_id", "crawling_ground"),
+            x_star=x_star, phi_star=phi_star,
+            runtime_config_kwargs=evaluator_params,
+            project_root=root,
+        )
     print(f"Captured {positions.shape[0]} frames in {time.time()-t0:.1f}s, replay_return={replay_return:.4f}")
 
     gif_path = output_dir / args.gif_name

@@ -15,6 +15,7 @@ from .protocols import (
     RolloutBatchResult,
 )
 from .softzoo_evaluator import SoftZooRolloutEvaluator, SoftZooEvaluatorConfig
+from .jax_mpm_evaluator import JaxMpmRolloutEvaluator, JaxMpmEvaluatorConfig
 
 __all__ = [
     "RolloutEvaluator",
@@ -24,4 +25,6 @@ __all__ = [
     "RolloutBatchResult",
     "SoftZooRolloutEvaluator",
     "SoftZooEvaluatorConfig",
+    "JaxMpmRolloutEvaluator",
+    "JaxMpmEvaluatorConfig",
 ]

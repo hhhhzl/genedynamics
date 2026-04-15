@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import time
+import multiprocessing as _mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -35,6 +36,15 @@ class SoftZooEvaluatorConfig:
         cache_size: LRU cache size (0 = disabled)
         max_retries: Retries per failed rollout
         timeout_per_rollout: Timeout in seconds (None = no limit)
+        max_tasks_per_child: mp.Pool worker recycle count.
+            None = auto (1 for CPU, unlimited for CUDA — Taichi 1.7.4 can
+            re-init across rollouts on CUDA but silently segfaults on CPU
+            when a 2nd env is created in the same process).
+        ti_arch: Taichi backend (used to auto-pick max_tasks_per_child)
+        reward_shaping_weight: Extra bonus added to per-rollout return:
+            shaped = env_return + w * (final_com_x - init_com_x).
+            0.0 disables. Defeats the per_step_velocity "wiggle-in-place"
+            attractor by rewarding actual net forward displacement.
     """
 
     max_workers: int = 0
@@ -42,6 +52,10 @@ class SoftZooEvaluatorConfig:
     max_retries: int = 1
     timeout_per_rollout: Optional[float] = None
     raise_on_failure: bool = True
+    max_tasks_per_child: Optional[int] = None
+    ti_arch: Optional[str] = None
+    reward_shaping_weight: float = 0.0
+    reward_shaping_only: bool = False  # if True, ignore env_return; use only w·(final_com - init_com)
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -49,6 +63,26 @@ def _theta_hash(x: np.ndarray, phi: np.ndarray) -> str:
     """Stable hash for (x, phi) for caching."""
     data = np.concatenate([np.asarray(x).ravel(), np.asarray(phi).ravel()])
     return hashlib.sha256(data.tobytes()).hexdigest()[:16]
+
+
+# Persistent per-worker env cache (CUDA-only optimization).
+# Key: (task_id, mode_id, fidelity_level, runtime_config_sig). On key match
+# we skip the 5-7s softzoo/Taichi JIT build and just call env.reset(design)
+# with the new morphology (~10 ms). On mismatch we close the old env +
+# `ti.reset()` before building a new one (verified safe on CUDA by probe T5).
+#
+# Module-global because mp.Pool workers each import this module fresh on
+# spawn; the cache lives for the worker's lifetime.
+_WORKER_ENV_CACHE: Dict[Tuple, Any] = {}
+
+
+def _runtime_config_sig(kw: Optional[Dict[str, Any]]) -> Tuple:
+    if not kw:
+        return ()
+    return tuple(sorted(
+        (k, v) for k, v in kw.items()
+        if k in ("ti_arch", "device", "ti_device_memory_fraction")
+    ))
 
 
 def _run_single_rollout(
@@ -129,13 +163,61 @@ def _run_single_rollout(
     trajectory: Optional[Dict[str, np.ndarray]] = None
     failure_code: Optional[str] = None
 
+    shaping_w = 0.0
+    shaping_only = False
+    if runtime_config_kwargs:
+        shaping_w = float(runtime_config_kwargs.get("reward_shaping_weight", 0.0) or 0.0)
+        shaping_only = bool(runtime_config_kwargs.get("reward_shaping_only", False))
+    fwd_dir = np.asarray(getattr(task_spec, "forward_direction", (1.0, 0.0, 0.0)), dtype=np.float32)
+
+    def _com_x(env_obj) -> float:
+        """Current COM projected on forward direction."""
+        try:
+            s = env_obj.sim.solver.current_s
+            x_p = env_obj.design_space.get_x(s)
+            mean_p = x_p.mean(0)
+            if hasattr(mean_p, "numpy"):
+                mean_p = np.asarray(mean_p.numpy(), dtype=np.float32)
+            else:
+                mean_p = np.asarray(mean_p, dtype=np.float32)
+            return float(np.dot(mean_p[:3], fwd_dir))
+        except Exception:
+            return 0.0
+
+    # Resolve env-reuse policy. Disabled on CPU (re-init segfaults in same
+    # process); enabled on CUDA or when explicitly requested.
+    arch = (runtime_config_kwargs or {}).get("ti_arch", "").lower() if runtime_config_kwargs else ""
+    reuse_env = (arch == "cuda") and (runtime_config_kwargs or {}).get("env_reuse", True) is not False
+    rc_sig = _runtime_config_sig(runtime_config_kwargs)
+    cache_key = (task_id, int(mode_id), int(fidelity_level), rc_sig) if reuse_env else None
+
+    env = None
     try:
-        env = make_softzoo_env(
-            task_spec=task_spec,
-            fidelity_spec=fid_spec,
-            mode_spec=mode_spec,
-            runtime_config=runtime_config,
-        )
+        if reuse_env and cache_key in _WORKER_ENV_CACHE:
+            env = _WORKER_ENV_CACHE[cache_key]
+        else:
+            # Tear down any previously cached env with a different key.
+            if reuse_env and _WORKER_ENV_CACHE:
+                for old_env in list(_WORKER_ENV_CACHE.values()):
+                    try:
+                        old_env.close()
+                    except Exception:
+                        pass
+                _WORKER_ENV_CACHE.clear()
+                try:
+                    import taichi as ti
+                    ti.reset()
+                except Exception:
+                    pass
+            env = make_softzoo_env(
+                task_spec=task_spec,
+                fidelity_spec=fid_spec,
+                mode_spec=mode_spec,
+                runtime_config=runtime_config,
+            )
+            if reuse_env:
+                _WORKER_ENV_CACHE[cache_key] = env
+
         controller = encode_controller(phi, task_spec, env)
         design = encode_morphology(x, task_spec, env=env)
 
@@ -145,6 +227,7 @@ def _run_single_rollout(
             controller.reset()
             ep_return = 0.0
             step_count = 0
+            init_com_fwd = _com_x(env)
 
             for _ in range(task_spec.max_steps):
                 act = controller(env.sim.solver.current_s, obs)
@@ -153,6 +236,20 @@ def _run_single_rollout(
                 step_count += 1
                 if done:
                     break
+
+            # B3: shaped reward.
+            #   reward_shaping_only=True  -> ep_return = w * (final - init)  (pure
+            #     net displacement; no per_step_velocity contribution; defeats
+            #     wiggle attractor by construction since w·0 = 0).
+            #   reward_shaping_only=False -> ep_return += w * (final - init)
+            #     (additive bonus on top of env's per_step_velocity sum).
+            if shaping_w != 0.0 or shaping_only:
+                final_com_fwd = _com_x(env)
+                disp = final_com_fwd - init_com_fwd
+                if shaping_only:
+                    ep_return = shaping_w * disp
+                else:
+                    ep_return = ep_return + shaping_w * disp
 
             returns_list.append(ep_return)
             if rep == 0:
@@ -164,7 +261,8 @@ def _run_single_rollout(
                         for k, v in info["trajectory"].items()
                     }
 
-        env.close()
+        if not reuse_env and env is not None:
+            env.close()
     except Exception as e:
         failure_code = str(type(e).__name__) + ": " + str(e)[:64]
         returns_list = [0.0] * max(1, num_repeats)
@@ -221,26 +319,64 @@ class SoftZooRolloutEvaluator:
     ):
         self.config = config or SoftZooEvaluatorConfig(**kwargs)
         self._project_root = project_root
-        self._runtime_config = runtime_config or self.config.extra.get("runtime_config") or {}
+        self._runtime_config = dict(runtime_config or self.config.extra.get("runtime_config") or {})
+        # Mirror select config fields into runtime_config so they travel to workers.
+        if self.config.ti_arch and "ti_arch" not in self._runtime_config:
+            self._runtime_config["ti_arch"] = self.config.ti_arch
+        if self.config.reward_shaping_weight:
+            self._runtime_config["reward_shaping_weight"] = float(self.config.reward_shaping_weight)
+        if self.config.reward_shaping_only:
+            self._runtime_config["reward_shaping_only"] = True
         self._cache = _ResultCache(self.config.cache_size)
         # Persistent process pool: created on first parallel call, kept alive
         # across batches so workers don't repay Taichi/SoftZoo init cost
         # (which is several seconds per worker).
-        self._pool: Optional[ProcessPoolExecutor] = None
+        # Pool worker recycle policy:
+        #   CPU: maxtasksperchild=1 — Taichi 1.7.4 + softzoo segfault on 2nd
+        #        env creation in same process.
+        #   CUDA: maxtasksperchild=None (persistent) — verified safe; saves
+        #        ~7s Taichi JIT per rollout.
+        self._pool: Optional[Any] = None
         self._pool_workers: int = 0
+        self._pool_maxtasks: Optional[int] = -1  # sentinel: never configured
 
-    def _get_pool(self, workers: int) -> ProcessPoolExecutor:
-        if self._pool is not None and self._pool_workers == workers:
+    def _resolve_max_tasks(self) -> Optional[int]:
+        cfg_val = self.config.max_tasks_per_child
+        if cfg_val is not None:
+            return cfg_val
+        arch = (self.config.ti_arch or self._runtime_config.get("ti_arch") or "").lower()
+        return None if arch == "cuda" else 1
+
+    def _get_pool(self, workers: int):
+        maxtasks = self._resolve_max_tasks()
+        if (
+            self._pool is not None
+            and self._pool_workers == workers
+            and self._pool_maxtasks == maxtasks
+        ):
             return self._pool
         if self._pool is not None:
-            self._pool.shutdown(wait=False, cancel_futures=True)
-        self._pool = ProcessPoolExecutor(max_workers=workers)
+            try:
+                self._pool.terminate()
+                self._pool.join()
+            except Exception:
+                pass
+        ctx = _mp.get_context("spawn")
+        self._pool = ctx.Pool(processes=workers, maxtasksperchild=maxtasks)
         self._pool_workers = workers
+        self._pool_maxtasks = maxtasks
         return self._pool
 
     def close(self) -> None:
         if self._pool is not None:
-            self._pool.shutdown(wait=True)
+            try:
+                self._pool.close()
+                self._pool.join()
+            except Exception:
+                try:
+                    self._pool.terminate()
+                except Exception:
+                    pass
             self._pool = None
 
     def __del__(self):
@@ -349,15 +485,15 @@ class SoftZooRolloutEvaluator:
         indices: List[int],
         max_workers: int,
     ) -> List[RolloutResult]:
-        """Evaluate requests in parallel via persistent ProcessPoolExecutor."""
+        """Evaluate requests in parallel via recycled mp.Pool workers."""
         out: List[Optional[RolloutResult]] = [None] * len(indices)
-        ex = self._get_pool(max_workers)
-        if True:
-            futures = {}
-            for pos, idx in enumerate(indices):
-                req = request.requests[idx]
-                fut = ex.submit(
-                    _run_single_rollout,
+        pool = self._get_pool(max_workers)
+        async_results = []
+        for pos, idx in enumerate(indices):
+            req = request.requests[idx]
+            ar = pool.apply_async(
+                _run_single_rollout,
+                args=(
                     request.task_id,
                     req.morphology_params,
                     req.controller_params,
@@ -368,35 +504,35 @@ class SoftZooRolloutEvaluator:
                     req.record,
                     self._project_root,
                     self._runtime_config if self._runtime_config else None,
-                )
-                futures[fut] = (pos, idx)
+                ),
+            )
+            async_results.append((pos, ar))
 
-            for fut in as_completed(futures):
-                pos, _ = futures[fut]
-                try:
-                    mean_ret, success, num_steps, wall_time, failure_code, trajectory = fut.result()
-                    if failure_code and self.config.raise_on_failure:
-                        raise RuntimeError(failure_code)
-                    out[pos] = RolloutResult(
-                        return_=mean_ret,
-                        success=success,
-                        num_steps=num_steps,
-                        mean_return=mean_ret,
-                        std_return=0.0,
-                        failure_code=failure_code,
-                        wall_time=wall_time,
-                        trajectory=trajectory,
-                    )
-                except Exception as e:
-                    if self.config.raise_on_failure:
-                        raise
-                    out[pos] = RolloutResult(
-                        return_=0.0,
-                        success=False,
-                        num_steps=0,
-                        failure_code=str(e)[:64],
-                        wall_time=0.0,
-                    )
+        for pos, ar in async_results:
+            try:
+                mean_ret, success, num_steps, wall_time, failure_code, trajectory = ar.get()
+                if failure_code and self.config.raise_on_failure:
+                    raise RuntimeError(failure_code)
+                out[pos] = RolloutResult(
+                    return_=mean_ret,
+                    success=success,
+                    num_steps=num_steps,
+                    mean_return=mean_ret,
+                    std_return=0.0,
+                    failure_code=failure_code,
+                    wall_time=wall_time,
+                    trajectory=trajectory,
+                )
+            except Exception as e:
+                if self.config.raise_on_failure:
+                    raise
+                out[pos] = RolloutResult(
+                    return_=0.0,
+                    success=False,
+                    num_steps=0,
+                    failure_code=str(e)[:64],
+                    wall_time=0.0,
+                )
         return [o for o in out if o is not None]
 
     def _aggregate(

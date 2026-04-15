@@ -1,0 +1,45 @@
+# Phase E CMA-ES ID — CUDA + env-reuse + shaped reward, fair vs phase_b_s1_id_mbd.
+#
+# Same rollout budget as MRMFMBD phase B (K * M * num_modes = 512). Evaluated
+# mode-major inside each generation so our per-worker env cache only rebuilds
+# `num_modes` times per generation, not once per θ.
+#
+# CMA-ES here does NOT do S1 mode marginalization — it treats mode-averaged
+# return as the objective. This is by design: phase B vs phase E tests whether
+# S1 helps; phase D (S1+S3) runs the full stack.
+name: co_design_phase_e_cmaes_id_cuda
+output_dir: results/phase_e/cmaes_id_cuda
+checkpoint_dir: results/phase_e/checkpoints_cuda
+
+baseline_name: cmaes
+task_id: crawling_ground
+seeds: [0]
+save_gif: true
+
+softzoo_ti_arch: cuda
+ti_device_memory_fraction: 0.3
+
+evaluator_runtime:
+  max_workers: 1
+  max_tasks_per_child: null       # persistent CUDA worker (T5-safe)
+  cache_size: 0
+  reward_shaping_weight: 10.0     # B3 — same as MBD for fair comparison
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 8                      # → CMA popsize = max(M_k, 8) = 8
+      T_k: 0.1
+      Ndiffuse: 16                # → max_generations = K*M*C / (pop*C) = 16
+      beta0: 1.0e-4
+      betaT: 2.0e-2
+  diffusion_merge_strategy: merge
+
+method_params:
+  num_modes: 4
+  popsize: 8                      # (explicit) matches M_k for same total budget
+  sigma0: 0.3
+  fine_fidelity_level: 2          # evaluate at fine throughout; fair to MBD's
+                                  # fine-eval validation stage
+  show_tqdm: true

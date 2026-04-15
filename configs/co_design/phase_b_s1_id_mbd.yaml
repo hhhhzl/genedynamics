@@ -1,0 +1,60 @@
+# Phase B S1 ID — MBD Level-3 + bug fixes + CUDA persistent worker.
+#
+# Stack changes vs phase_b_s1_id_small.yaml:
+#   * method_params.backend = "mbd" → uses MRMFMBDBackendMBD (reverse DDPM
+#     denoising, per-dim σ scale, weighted-mean update).
+#   * phi_dim auto-clamped to 4 in baseline (B1a). x_dim=3, θ_dim=7.
+#   * Actuator clamp removed in baseline (B2).
+#   * Prior centered on bounds midpoint (B4).
+#   * reward_shaping_weight: 10.0 → per_step_velocity + 10·(final COM.x - init)
+#     defeats wiggle-in-place (B3).
+#   * softzoo_ti_arch: cuda + max_tasks_per_child=None → 1 persistent CUDA
+#     worker paying Taichi JIT once.
+#
+# Expected wall-time: ~30-60 min on 3090.
+name: co_design_phase_b_s1_id_mbd
+output_dir: results/phase_b/s1_id_mbd
+checkpoint_dir: results/phase_b/checkpoints_mbd
+
+baseline_name: mrmfmbd
+task_id: crawling_ground
+seeds: [0]
+save_gif: true
+
+softzoo_ti_arch: cuda
+ti_device_memory_fraction: 0.3
+
+evaluator_runtime:
+  max_workers: 1
+  max_tasks_per_child: null
+  cache_size: 0
+  # Blended reward: R = per_step_velocity_sum + 100 * net_forward_displacement
+  # per_step_velocity provides the dense gradient signal MBD needs early (pure
+  # displacement is ~0 for random θ, kills the MBD softmax weights). The
+  # 100x displacement bonus ensures real crawling (~0.1 m) dominates wiggle
+  # (~0 m) in the final reward.
+  reward_shaping_weight: 100.0
+  reward_shaping_only: false
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 8
+      T_k: 0.5                      # base reward temperature (MBD softmax)
+      Ndiffuse: 16
+      beta0: 1.0e-4                  # DDPM β₀ (small — low early noise)
+      betaT: 2.0e-2                  # DDPM β_T (2%/step cumulative → σ_K≈0.55)
+  diffusion_merge_strategy: merge
+
+method_params:
+  backend: mbd
+  num_modes: 4
+  num_fidelity_levels: 3              # S3 ON: coarse early, fine late
+  fidelity_ladder_type: geometric
+  fidelity_step_ratio: 0.5             # coarse-heavy (fixes the docstring intent)
+  fine_fidelity_level: 2
+  reward_temperature_min: 0.1
+  tau_frac: 0.1
+  top_k_fine: 3
+  show_tqdm: true

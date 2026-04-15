@@ -1,0 +1,41 @@
+# MBD backend smoke test: K=2, M=2, single seed. ~2-3 min on CUDA.
+name: co_design_mbd_smoke
+output_dir: results/mbd_smoke
+checkpoint_dir: results/mbd_smoke/checkpoints
+
+baseline_name: mrmfmbd
+task_id: crawling_ground
+seeds: [0]
+save_gif: false
+
+softzoo_ti_arch: cuda
+ti_device_memory_fraction: 0.3
+
+evaluator_runtime:
+  max_workers: 1
+  max_tasks_per_child: null
+  cache_size: 0
+  reward_shaping_weight: 10.0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 2
+      T_k: 0.5
+      Ndiffuse: 2
+      beta0: 1.0e-4
+      betaT: 2.0e-2
+  diffusion_merge_strategy: merge
+
+method_params:
+  backend: mbd
+  num_modes: 2
+  num_fidelity_levels: 2
+  fidelity_ladder_type: geometric
+  fidelity_step_ratio: 2.0
+  fine_fidelity_level: 1
+  reward_temperature_min: 0.1
+  tau_frac: 0.1
+  top_k_fine: 1
+  show_tqdm: true

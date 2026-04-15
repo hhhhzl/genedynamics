@@ -1,0 +1,33 @@
+# Phase B S1 ID — small CPU validation run (single seed).
+# Goal: verify pipeline + show forward crawling in gif before scaling up.
+# ~8*4*4 + 4 = 132 rollouts, with 8 workers -> ~11 min wall.
+name: co_design_phase_b_s1_id_small
+output_dir: results/phase_b/s1_id_small
+checkpoint_dir: results/phase_b/checkpoints_small
+
+baseline_name: mrmfmbd
+task_id: crawling_ground
+seeds: [0]
+save_gif: true
+
+softzoo_ti_arch: cpu
+
+evaluator_runtime:
+  max_workers: 16
+  cache_size: 0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 4
+      T_k: 0.1
+      Ndiffuse: 8
+      beta0: 1e-6
+      betaT: 1.0
+  diffusion_merge_strategy: merge
+
+method_params:
+  num_modes: 4
+  num_fidelity_levels: 1
+  show_tqdm: true

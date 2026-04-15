@@ -68,37 +68,54 @@ class CMAESBaseline(BaselineProtocol):
 
         num_evals = 0
         wall_start = time.perf_counter()
+        fidelity_level = int(extra.get("fine_fidelity_level", 0))
 
-        def evaluate_theta(theta: np.ndarray) -> float:
-            """Evaluate mode-averaged return for a single θ."""
+        def evaluate_population(thetas: np.ndarray) -> np.ndarray:
+            """Evaluate mode-averaged return for a population of θ.
+
+            Batch is built in MODE-MAJOR order (all θ for mode 0, then all
+            θ for mode 1, ...). This matches the env-reuse cache key
+            (task, mode, fidelity): only `num_modes` env rebuilds per
+            generation instead of `popsize × num_modes`.
+            """
             nonlocal num_evals
-            theta = np.clip(theta, lo, hi).astype(np.float32)
-            x_part = theta[:x_dim]
-            phi_part = theta[x_dim:]
+            thetas = np.clip(thetas, lo[None, :], hi[None, :]).astype(np.float32)
+            P = thetas.shape[0]
 
-            requests = [
-                RolloutRequest(
-                    morphology_params=x_part,
-                    controller_params=phi_part,
-                    mode_id=c,
-                    fidelity_level=extra.get("fine_fidelity_level", 0),
-                    seed=int(config.seed + num_evals + c),
-                    num_repeats=1,
-                    record=False,
-                )
-                for c in range(num_modes)
-            ]
+            flat_requests = []
+            index_pairs = []  # list of (p, c) for un-flattening
+            for c in range(num_modes):
+                for p in range(P):
+                    flat_requests.append(
+                        RolloutRequest(
+                            morphology_params=thetas[p, :x_dim],
+                            controller_params=thetas[p, x_dim:],
+                            mode_id=c,
+                            fidelity_level=fidelity_level,
+                            seed=int(config.seed + num_evals + p * num_modes + c),
+                            num_repeats=1,
+                            record=False,
+                        )
+                    )
+                    index_pairs.append((p, c))
             batch = evaluator.evaluate_batch(
-                RolloutBatchRequest(task_id=config.task_id, requests=requests),
-                parallel=False,
+                RolloutBatchRequest(task_id=config.task_id, requests=flat_requests),
+                parallel=True,
                 use_cache=False,
             )
-            num_evals += num_modes
-            return float(np.mean(batch.returns))
+            rewards_pc = np.zeros((P, num_modes), dtype=np.float32)
+            for (p, c), r in zip(index_pairs, batch.returns):
+                rewards_pc[p, c] = r
+            num_evals += P * num_modes
+            return rewards_pc.mean(axis=1)  # mode-averaged, shape (P,)
+
+        def evaluate_theta(theta: np.ndarray) -> float:
+            """Single-θ fallback (used by final_return validation)."""
+            return float(evaluate_population(theta[None, :])[0])
 
         # Try cma package first
         best_theta, best_return = self._run_cma(
-            evaluate_theta, x0, sigma0, lo, hi,
+            evaluate_population, x0, sigma0, lo, hi,
             popsize=popsize, max_generations=max_generations,
         )
 
@@ -130,7 +147,7 @@ class CMAESBaseline(BaselineProtocol):
 
     def _run_cma(
         self,
-        objective,
+        population_objective,
         x0: np.ndarray,
         sigma0: float,
         lo: np.ndarray,
@@ -138,21 +155,25 @@ class CMAESBaseline(BaselineProtocol):
         popsize: int,
         max_generations: int,
     ):
-        """Run CMA-ES. Try `cma` package, fall back to simple ES."""
+        """Run CMA-ES. Try `cma` package, fall back to simple ES.
+
+        `population_objective(thetas: (P, D)) -> returns: (P,)` — mode-majored
+        inside for env-reuse friendliness. CMA-ES itself sees one fitness per θ.
+        """
         try:
-            import cma
+            import cma  # noqa: F401
             return self._run_cma_package(
-                objective, x0, sigma0, lo, hi, popsize, max_generations,
+                population_objective, x0, sigma0, lo, hi, popsize, max_generations,
             )
         except ImportError:
             return self._run_simple_es(
-                objective, x0, sigma0, lo, hi, popsize, max_generations,
+                population_objective, x0, sigma0, lo, hi, popsize, max_generations,
             )
 
     def _run_cma_package(
-        self, objective, x0, sigma0, lo, hi, popsize, max_generations,
+        self, population_objective, x0, sigma0, lo, hi, popsize, max_generations,
     ):
-        """CMA-ES via Hansen's `cma` package."""
+        """CMA-ES via Hansen's `cma` package (batched)."""
         import cma
 
         opts = {
@@ -160,9 +181,8 @@ class CMAESBaseline(BaselineProtocol):
             "maxiter": max_generations,
             "bounds": [lo.tolist(), hi.tolist()],
             "seed": 42,
-            "verbose": -9,  # suppress output
+            "verbose": -9,
         }
-        # CMA-ES minimizes; we maximize return, so negate
         es = cma.CMAEvolutionStrategy(x0.tolist(), sigma0, opts)
 
         best_theta = x0.copy()
@@ -170,34 +190,33 @@ class CMAESBaseline(BaselineProtocol):
 
         while not es.stop():
             solutions = es.ask()
-            fitnesses = []
-            for sol in solutions:
-                ret = objective(np.array(sol, dtype=np.float32))
-                fitnesses.append(-ret)  # negate for minimization
-                if ret > best_return:
-                    best_return = ret
-                    best_theta = np.array(sol, dtype=np.float32)
+            thetas = np.array(solutions, dtype=np.float32)
+            returns = population_objective(thetas)  # (P,)
+            fitnesses = (-returns).tolist()          # CMA minimizes
+            gen_best_idx = int(np.argmax(returns))
+            if returns[gen_best_idx] > best_return:
+                best_return = float(returns[gen_best_idx])
+                best_theta = thetas[gen_best_idx].copy()
             es.tell(solutions, fitnesses)
 
         return best_theta, best_return
 
     def _run_simple_es(
-        self, objective, x0, sigma0, lo, hi, popsize, max_generations,
+        self, population_objective, x0, sigma0, lo, hi, popsize, max_generations,
     ):
         """
         Simple (μ, λ)-ES fallback when `cma` package is not installed.
 
         Uses diagonal covariance (separable ES) with rank-μ update.
+        Batched: one population_objective call per generation (env-reuse friendly).
         """
         rng = np.random.RandomState(42)
         dim = len(x0)
         mean = x0.astype(np.float64).copy()
         sigma = sigma0
-        # Diagonal covariance
         C_diag = np.ones(dim, dtype=np.float64)
 
-        mu = max(popsize // 2, 1)  # parent count
-        # Log weights (CMA-style)
+        mu = max(popsize // 2, 1)
         weights = np.log(mu + 0.5) - np.log(np.arange(1, mu + 1))
         weights = weights / np.sum(weights)
 
@@ -205,16 +224,11 @@ class CMAESBaseline(BaselineProtocol):
         best_return = -np.inf
 
         for _gen in range(max_generations):
-            # Sample population
             z = rng.randn(popsize, dim)
             population = mean[None, :] + sigma * np.sqrt(C_diag)[None, :] * z
             population = np.clip(population, lo, hi)
 
-            # Evaluate
-            returns = np.array([
-                objective(population[i].astype(np.float32))
-                for i in range(popsize)
-            ])
+            returns = population_objective(population.astype(np.float32))
 
             # Track best
             gen_best_idx = np.argmax(returns)

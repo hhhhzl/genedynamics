@@ -169,6 +169,7 @@ class BaselineExperimentPlatform:
         phi_dim = getattr(task_spec, "phi_dim", 4)
 
         t0 = time.perf_counter()
+        result = None
         try:
             result = baseline.run(
                 bl_config,
@@ -177,26 +178,43 @@ class BaselineExperimentPlatform:
                 x_dim=x_dim,
                 phi_dim=phi_dim,
             )
+            wall_time = time.perf_counter() - t0
+            out = {
+                "seed": seed,
+                "result": result.to_dict(),
+                "wall_time": wall_time,
+                "config_hash": self.config.config_hash(),
+            }
+            # Persist per-seed result IMMEDIATELY (before evaluator.close()).
+            # CUDA Taichi pool teardown can deadlock against JAX's CUDA context
+            # in the parent process; if that happens we still keep the result.
+            seed_path = self._output_dir / f"results_seed_{seed}.json"
+            try:
+                with open(seed_path, "w") as f:
+                    json.dump(self._serialize_results([out])[0], f, indent=2)
+            except Exception:
+                pass
+            if self._logger:
+                self._logger.log("run_complete", seed=seed, return_=result.return_, wall_time=wall_time)
+                self._logger.flush()
         finally:
-            # Release ProcessPoolExecutor workers so successive seeds don't
-            # stack Taichi-allocated memory (each worker holds several GB).
+            # Best-effort pool cleanup with a short hard deadline. CUDA Taichi
+            # workers occasionally hang in driver futexes; we'd rather leak a
+            # subprocess than block the main job indefinitely.
             close_fn = getattr(evaluator, "close", None)
             if callable(close_fn):
-                try:
-                    close_fn()
-                except Exception:
-                    pass
-        wall_time = time.perf_counter() - t0
-
-        out = {
-            "seed": seed,
-            "result": result.to_dict(),
-            "wall_time": wall_time,
-            "config_hash": self.config.config_hash(),
-        }
-        if self._logger:
-            self._logger.log("run_complete", seed=seed, return_=result.return_, wall_time=wall_time)
-            self._logger.flush()
+                import threading
+                done_evt = threading.Event()
+                def _do_close():
+                    try:
+                        close_fn()
+                    except Exception:
+                        pass
+                    finally:
+                        done_evt.set()
+                t = threading.Thread(target=_do_close, daemon=True)
+                t.start()
+                done_evt.wait(timeout=30.0)
         return out
 
     def run_all(self) -> List[Dict[str, Any]]:
@@ -234,6 +252,14 @@ class BaselineExperimentPlatform:
                     ),
                     key=cfg_hash,
                 )
+            # Write rolling results.json after every seed so we never lose
+            # data if a later seed (or post-run teardown) hangs or crashes.
+            try:
+                out_path = self._output_dir / "results.json"
+                with open(out_path, "w") as f:
+                    json.dump(self._serialize_results(results), f, indent=2)
+            except Exception:
+                pass
 
         out_path = self._output_dir / "results.json"
         with open(out_path, "w") as f:
@@ -241,20 +267,6 @@ class BaselineExperimentPlatform:
         return results
 
     def _serialize_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Convert results to JSON-serializable form. Truncates large metadata."""
-        out = []
-        for r in results:
-            rcopy = dict(r)
-            if "result" in rcopy and isinstance(rcopy["result"], dict):
-                res = rcopy["result"]
-                if (
-                    "bridge_history" in res
-                    and isinstance(res["bridge_history"], list)
-                    and len(res["bridge_history"]) > 20
-                ):
-                    bh = res["bridge_history"]
-                    res = dict(res)
-                    res["bridge_history"] = bh[:5] + ["...truncated..."] + bh[-5:]
-                    rcopy["result"] = res
-            out.append(rcopy)
-        return out
+        """Convert results to JSON-serializable form. Keep full bridge_history
+        so we can plot MBD reward convergence curves."""
+        return list(results)

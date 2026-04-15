@@ -188,6 +188,18 @@ def create_fidelity_ladder(
     if config is None:
         from .specs import default_fidelity_system_config
         config = default_fidelity_system_config(num_levels)
+    # Forward the step_ratio arg into the config (previously dead-dropped,
+    # which meant all yaml-level `fidelity_step_ratio` overrides were ignored
+    # and the ladder always defaulted to r=1.5 → fine-heavy).
+    try:
+        config.step_ratio = float(step_ratio)
+    except Exception:
+        pass
+    # Also forward ladder_type so config is self-consistent.
+    try:
+        config.ladder_type = ladder_type
+    except Exception:
+        pass
     return FidelityLadderS3(
         config=config,
         K=K,

@@ -8,6 +8,15 @@ task_id: crawling_ground
 seeds: [0]
 save_gif: true
 
+softzoo_ti_arch: cpu
+
+# max_workers >=1 forces ProcessPoolExecutor subprocesses for each rollout.
+# Required because Taichi 1.7.4 cannot reinitialize cleanly in the same
+# process, so in-process sequential rollouts crash at the 2nd env creation.
+evaluator_runtime:
+  max_workers: 2
+  cache_size: 0
+
 scheduler_config:
   type: composite
   diffusion_schedulers:
@@ -24,7 +33,3 @@ method_params:
   num_fidelity_levels: 1
   fine_fidelity_level: 0
   show_tqdm: true
-
-# evaluator_runtime:
-#   softzoo_ti_arch: cuda           # uncomment on GPU machine
-#   ti_device_memory_fraction: 0.25
