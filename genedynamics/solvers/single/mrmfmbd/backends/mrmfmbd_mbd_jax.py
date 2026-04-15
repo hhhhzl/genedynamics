@@ -11,22 +11,16 @@ Algorithm (reverse-time denoising diffusion applied to θ = (x, φ)):
         Ybar = Σ_m w_m · Y_m                      # denoise = reward-weighted mean
         Ybar = Ybar + τ_k · scale ⊙ ξ            # vanishing exploration noise
 
-Compared to the old MCSA `mrmfmbd_posterior_jax.MRMFMBDPosteriorBackendJax`:
-    - Update rule is MBD weighted-mean (not MCSA score ascent with η decoupled from σ).
-    - Iteration is reversed (denoising), not forward annealing.
-    - σ is **per-dim scaled** by `scale_d = (hi_d - lo_d) / 2` so every param
-      dimension is perturbed in its natural range (fixes the "φ never moves"
-      bug where a single scalar σ was applied across x∈(0.01,2) and φ∈(5,150)).
-    - No explicit `log p₀(θ)` term: prior enters via `Ybar_init` (= prior mean).
-    - S1 stays: `_compute_marginal_log_likelihood_and_responsibilities`.
-    - S3 stays: `fidelity_ladder(K-1-idx)` returns coarse early, fine late.
+Two execution paths:
 
-JIT strategy:
-    softzoo rollouts are external (Python subprocess with Taichi MPM), so the
-    reverse-time loop cannot live inside `jax.lax.scan`. Everything else runs
-    inside two JIT-compiled step kernels:
-        * `_propose_jit`  — forward-corrupt proposals
-        * `_denoise_jit`  — reward-weighted denoise + vanishing noise
+    * _plan_jax_scan  (FAST): When the evaluator exposes the JAX-MPM internals
+      (`._scene`, `._mpm_cfg`, `._mode_friction`), the whole reverse loop lives
+      inside `jax.lax.scan`, blocked by S3 fidelity level. S1 marginalization
+      is pure JAX inside the scan body. No numpy round-trips per step.
+
+    * _plan_python_loop  (SLOW, softzoo-compat): Original host-side loop that
+      dispatches rollouts through evaluator.evaluate_batch. Used for softzoo
+      (subprocess-backed) or any evaluator not exposing JAX-MPM internals.
 """
 
 from __future__ import annotations
@@ -67,19 +61,7 @@ except ImportError:
 
 @dataclass
 class MBDConfig:
-    """Configuration for the Level-3 MBD backend.
-
-    Attributes:
-        K: Number of reverse-diffusion steps.
-        M: Proposals per step.
-        beta0: DDPM forward noise rate at step 0.
-        betaT: DDPM forward noise rate at step K-1.
-        reward_temperature: Base temperature T0 for weight softmax.
-        reward_temperature_min: Final temperature TK (anneal T over K).
-        tau_frac: Exploration noise fraction (τ_k = tau_frac · σ_k).
-        top_k_fine: How many snapshots to re-validate at fine fidelity.
-        fine_fidelity_level: Fidelity level for top-K validation.
-    """
+    """Configuration for the Level-3 MBD backend."""
 
     K: int = 16
     M: int = 8
@@ -91,6 +73,24 @@ class MBDConfig:
     top_k_fine: int = 3
     fine_fidelity_level: int = 2
     extra: Dict[str, Any] = field(default_factory=dict)
+
+
+def _s1_marginalize_jax(
+    rewards_mc: jnp.ndarray,   # (M, C)
+    log_prior: jnp.ndarray,    # (C,)
+    T: jnp.ndarray,            # scalar
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """Pure-JAX S1 mode marginalization.
+
+    Returns (R_m, w_c) where
+        R_m[m] = logsumexp_c(log p(c) + R[m,c]/T)
+        w_c[m, c] = softmax_c(log p(c) + R[m,c]/T)
+    """
+    rewards_mc = jnp.nan_to_num(rewards_mc, nan=-1e6, posinf=1e6, neginf=-1e6)
+    log_terms = log_prior[None, :] + rewards_mc / jnp.maximum(T, 1e-8)
+    R_m = jax.scipy.special.logsumexp(log_terms, axis=-1)
+    w_c = jnp.exp(jax.nn.log_softmax(log_terms, axis=-1))
+    return R_m, w_c
 
 
 class MRMFMBDBackendMBD:
@@ -127,7 +127,7 @@ class MRMFMBDBackendMBD:
 
         K = int(self.config.K)
 
-        # S1: mode marginalizer (same module the MCSA backend uses)
+        # S1: mode marginalizer (kept for softzoo path; JAX path uses pure fn).
         self.mode_marginalizer = mode_marginalizer
         if self.mode_marginalizer is None and S1_AVAILABLE:
             self.mode_marginalizer = ModeMarginalizerS1(
@@ -144,8 +144,7 @@ class MRMFMBDBackendMBD:
 
         self._D = theta_param.theta_dim
 
-        # Per-dim scale: half the bound-range. Used to make σ meaningful for
-        # both x (range ≈ 2) and φ (range ≈ 145) simultaneously.
+        # Per-dim scale: half the bound-range.
         x_lo, x_hi = theta_param.x_bounds if theta_param.x_bounds else (-1.0, 1.0)
         p_lo, p_hi = theta_param.phi_bounds if theta_param.phi_bounds else (-1.0, 1.0)
         scale_x = np.full(theta_param.x_dim, (float(x_hi) - float(x_lo)) / 2.0, dtype=np.float32)
@@ -153,10 +152,7 @@ class MRMFMBDBackendMBD:
         self._scale_np = np.concatenate([scale_x, scale_p]).astype(np.float32)
         self._scale = jnp.asarray(self._scale_np)
 
-        # DDPM noise schedule (pre-computed once). Capped at sigma_max so
-        # very early (large-σ) proposals can't push per-dim perturbations
-        # into numerically explosive territory — we saw phi ± 3σ·scale_phi
-        # produce ω=150 rad/s extremes that blow up Taichi MPM particles.
+        # DDPM noise schedule (pre-computed once), capped at sigma_max.
         betas = np.linspace(self.config.beta0, self.config.betaT, K, dtype=np.float64)
         alphas = 1.0 - betas
         alphas_bar = np.cumprod(alphas)
@@ -166,7 +162,7 @@ class MRMFMBDBackendMBD:
         self._sigmas = jnp.asarray(sigmas)
         self._taus = jnp.asarray(sigmas * float(self.config.tau_frac))
 
-        # Geometric anneal for the reward temperature T_k (larger→smaller).
+        # Geometric anneal for the reward temperature T_k.
         T0 = float(self.config.reward_temperature)
         TK = float(self.config.reward_temperature_min)
         if TK <= 0:
@@ -183,59 +179,82 @@ class MRMFMBDBackendMBD:
         self._phi_hi = jnp.asarray(float(p_hi), dtype=jnp.float32)
         self._x_dim = theta_param.x_dim
 
-        # Pre-build JIT'd kernels. Static shapes (M, D) are baked in.
+        # S1 log prior as jnp.
+        self._log_prior_c = jnp.asarray(
+            np.asarray(self.mode_log_priors[: self.num_modes], dtype=np.float32)
+        )
+
+        # JIT kernels for the softzoo-compat path (unchanged).
         self._propose_jit = jax.jit(self._propose_impl)
         self._denoise_jit = jax.jit(self._denoise_impl)
 
-    # --------- JIT'd kernels -------------------------------------------------
+        # Per-(num_env_steps) block-runner cache for the JAX-direct fast path.
+        self._block_runner_cache: Dict[int, Any] = {}
+
+    # --------- JIT kernels (shared) -----------------------------------------
 
     def _clip_theta_jnp(self, theta: jnp.ndarray) -> jnp.ndarray:
-        """Per-dim clip; works on shapes (D,) or (M, D)."""
         x_part = jnp.clip(theta[..., : self._x_dim], self._x_lo, self._x_hi)
         phi_part = jnp.clip(theta[..., self._x_dim :], self._phi_lo, self._phi_hi)
         return jnp.concatenate([x_part, phi_part], axis=-1)
 
     def _propose_impl(
-        self,
-        Ybar: jnp.ndarray,       # (D,)
-        sigma_k: jnp.ndarray,    # scalar
-        eps: jnp.ndarray,        # (M, D)
+        self, Ybar: jnp.ndarray, sigma_k: jnp.ndarray, eps: jnp.ndarray,
     ) -> jnp.ndarray:
-        """Y0s = clip(Ybar + σ_k · scale ⊙ ε)."""
         Y0s = Ybar[None, :] + sigma_k * self._scale[None, :] * eps
         return self._clip_theta_jnp(Y0s)
 
     def _denoise_impl(
         self,
-        Y0s: jnp.ndarray,        # (M, D)
-        R_m: jnp.ndarray,        # (M,) — S1-marginalized log p(R|θ_m)
-        tau_k: jnp.ndarray,      # scalar
-        T_k: jnp.ndarray,        # scalar reward temperature at this step
-        noise: jnp.ndarray,      # (D,)
+        Y0s: jnp.ndarray, R_m: jnp.ndarray,
+        tau_k: jnp.ndarray, T_k: jnp.ndarray, noise: jnp.ndarray,
     ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        """Weighted-mean denoising + vanishing exploration.
-
-        Returns (Ybar_next, weights, ess).
-        """
         R_mean = jnp.mean(R_m)
         R_std = jnp.maximum(jnp.std(R_m), jnp.asarray(1e-4, dtype=R_m.dtype))
         log_w = (R_m - R_mean) / (R_std * T_k)
-        weights = jax.nn.softmax(log_w)                                 # (M,)
-        Ybar_next = jnp.einsum("m,md->d", weights, Y0s)                 # (D,)
+        weights = jax.nn.softmax(log_w)
+        Ybar_next = jnp.einsum("m,md->d", weights, Y0s)
         Ybar_next = Ybar_next + tau_k * self._scale * noise
         Ybar_next = self._clip_theta_jnp(Ybar_next)
         ess = 1.0 / jnp.sum(weights * weights)
         return Ybar_next, weights, ess
 
-    # --------- External: softzoo rollout batch -------------------------------
+    # --------- Fidelity block partition -------------------------------------
+
+    def _build_fid_blocks(self) -> List[Tuple[int, int, int]]:
+        """Return list of (fid, reverse_start_idx, length) for contiguous blocks.
+
+        The reverse loop walks idx = K-1, K-2, ..., 0; step `i` in reverse order
+        has kprime = i, and fidelity_ladder(kprime) must be non-decreasing in i
+        (coarse early, fine late). Otherwise we raise — blocked scan requires
+        a sorted ladder.
+        """
+        K = int(self.config.K)
+        if self.fidelity_ladder is None:
+            return [(0, 0, K)]
+        fids = [int(self.fidelity_ladder(kprime)) for kprime in range(K)]
+        blocks: List[Tuple[int, int, int]] = []
+        cur_fid, cur_start, cur_len = fids[0], 0, 1
+        for i in range(1, K):
+            f = fids[i]
+            if f == cur_fid:
+                cur_len += 1
+            elif f > cur_fid:
+                blocks.append((cur_fid, cur_start, cur_len))
+                cur_fid, cur_start, cur_len = f, i, 1
+            else:
+                raise ValueError(
+                    f"MBD fidelity ladder must be non-decreasing in reverse-step order; "
+                    f"got fids={fids}. Use ladder_type='geometric' or 'linear'."
+                )
+        blocks.append((cur_fid, cur_start, cur_len))
+        return blocks
+
+    # --------- Softzoo-compat path: external rollouts -----------------------
 
     def _evaluate_proposals_modes(
-        self,
-        proposals: np.ndarray,   # (M, D)
-        fidelity_level: int,
-        seed_base: int,
+        self, proposals: np.ndarray, fidelity_level: int, seed_base: int,
     ) -> np.ndarray:
-        """Run M × num_modes rollouts, return rewards shape (M, num_modes)."""
         from genedynamics.envs.evaluators import RolloutBatchRequest, RolloutRequest
         M = proposals.shape[0]
         flat_requests: List[Any] = []
@@ -263,24 +282,17 @@ class MRMFMBDBackendMBD:
         return rewards
 
     def _s1_marginalize(self, rewards_mc: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Return (R_m marginal, w_c responsibilities) from (M, num_modes) rewards."""
-        # Guard against NaN / ±inf rewards from blown-up rollouts (extreme
-        # phi sometimes drives softzoo particles off grid → NaN COM → NaN
-        # reward). Replacing with a very negative finite value lets MBD
-        # softmax assign near-zero weight instead of propagating NaN into Ybar.
         rewards_mc = np.nan_to_num(
             rewards_mc, nan=-1e6, posinf=1e6, neginf=-1e6
         ).astype(np.float32)
         if self.mode_marginalizer is not None:
             result = self.mode_marginalizer(
-                rewards_mc,
-                temperature=float(self.config.reward_temperature),
+                rewards_mc, temperature=float(self.config.reward_temperature),
             )
             return (
                 np.asarray(result.marginal_log_likelihood, dtype=np.float32),
                 np.asarray(result.responsibilities, dtype=np.float32),
             )
-        # Inline fallback (same formula as THEORY.md).
         T = max(float(self.config.reward_temperature), 1e-8)
         log_prior_c = np.asarray(self.mode_log_priors[: self.num_modes], dtype=np.float32)
         log_terms = log_prior_c[None, :] + rewards_mc.astype(np.float32) / T
@@ -289,32 +301,124 @@ class MRMFMBDBackendMBD:
             + log_terms.max(axis=-1),
             dtype=np.float32,
         )
-        w = np.exp(log_terms - np.log(np.sum(np.exp(log_terms - log_terms.max(axis=-1, keepdims=True)), axis=-1, keepdims=True)) - log_terms.max(axis=-1, keepdims=True))
+        w = np.exp(
+            log_terms
+            - np.log(np.sum(np.exp(log_terms - log_terms.max(axis=-1, keepdims=True)), axis=-1, keepdims=True))
+            - log_terms.max(axis=-1, keepdims=True)
+        )
         return marginal, w.astype(np.float32)
 
-    # --------- Main driver ---------------------------------------------------
+    # --------- JAX-direct fast path: scan block runner ----------------------
+
+    def _is_jax_direct(self) -> bool:
+        ev = self.evaluator
+        return (
+            hasattr(ev, "_scene")
+            and hasattr(ev, "_mpm_cfg")
+            and hasattr(ev, "_mode_friction")
+        )
+
+    def _make_block_runner(self, num_env_steps: int):
+        """Build a jitted scan runner for blocks of this num_env_steps.
+
+        Captures scene/cfg/friction_table via closure; returns a function with
+        signature:
+
+            run_block(Ybar, rng_key, topk_theta, topk_score,
+                      sigmas_b, taus_b, Ts_b)
+                -> (Ybar_new, rng_key_new, topk_theta_new, topk_score_new,
+                    step_outputs_dict)
+        """
+        from genedynamics.envs.external.jax_mpm.scene import rollout_return_batch
+
+        scene = self.evaluator._scene
+        cfg = self.evaluator._mpm_cfg
+        friction_table = jnp.asarray(
+            np.asarray(self.evaluator._mode_friction, dtype=np.float32)
+        )  # (C,)
+
+        M = int(self.config.M)
+        D = int(self._D)
+        C = int(self.num_modes)
+        x_dim = int(self._x_dim)
+        top_k_cap = max(int(self.config.top_k_fine), 1)
+        T_mode = jnp.asarray(
+            max(float(self.config.reward_temperature), 1e-8), dtype=jnp.float32
+        )
+        log_prior_c = self._log_prior_c
+
+        def step(carry, xs):
+            Ybar, rng_key, topk_theta, topk_score = carry
+            sigma_k, tau_k, T_k = xs
+
+            rng_key, k_eps, k_noise = jax.random.split(rng_key, 3)
+            eps = jax.random.normal(k_eps, (M, D), dtype=jnp.float32)
+            Y0s = self._propose_impl(Ybar, sigma_k, eps)  # (M, D)
+
+            # M × C flat batch: index = m*C + c; (x[m], friction[c]).
+            x_flat = jnp.repeat(Y0s[:, :x_dim], C, axis=0)       # (M*C, x_dim)
+            phi_flat = jnp.repeat(Y0s[:, x_dim:], C, axis=0)     # (M*C, phi_dim)
+            fr_flat = jnp.tile(friction_table, M)                # (M*C,)
+
+            rs, _disps = rollout_return_batch(
+                x_flat, phi_flat, fr_flat, scene, cfg, num_env_steps
+            )
+            rewards_mc = rs.reshape(M, C)
+
+            R_m, w_c = _s1_marginalize_jax(rewards_mc, log_prior_c, T_mode)
+
+            noise = jax.random.normal(k_noise, (D,), dtype=jnp.float32)
+            Ybar_next, weights, ess = self._denoise_impl(Y0s, R_m, tau_k, T_k, noise)
+
+            # Top-K: concat running top_k with M new candidates, keep top cap.
+            cand_scores = jnp.mean(rewards_mc, axis=-1)           # (M,)
+            all_theta = jnp.concatenate([topk_theta, Y0s], axis=0)   # (cap+M, D)
+            all_scores = jnp.concatenate([topk_score, cand_scores], axis=0)
+            _, top_idx = jax.lax.top_k(all_scores, top_k_cap)
+            new_topk_theta = all_theta[top_idx]
+            new_topk_score = all_scores[top_idx]
+
+            mean_env_return = jnp.mean(rewards_mc)
+            mean_R = jnp.mean(R_m)
+            w_c_mean = jnp.mean(w_c, axis=0)  # (C,)
+
+            out = {
+                "sigma_k": sigma_k,
+                "tau_k": tau_k,
+                "T_k": T_k,
+                "mean_R_s1": mean_R,
+                "mean_env_return": mean_env_return,
+                "ess": ess,
+                "w_c_mean": w_c_mean,
+            }
+            return (Ybar_next, rng_key, new_topk_theta, new_topk_score), out
+
+        @jax.jit
+        def run_block(Ybar, rng_key, topk_theta, topk_score, sigmas_b, taus_b, Ts_b):
+            carry = (Ybar, rng_key, topk_theta, topk_score)
+            (Ybar_f, rng_f, topk_t_f, topk_s_f), out = jax.lax.scan(
+                step, carry, (sigmas_b, taus_b, Ts_b)
+            )
+            return Ybar_f, rng_f, topk_t_f, topk_s_f, out
+
+        return run_block
+
+    def _get_block_runner(self, num_env_steps: int):
+        if num_env_steps not in self._block_runner_cache:
+            self._block_runner_cache[num_env_steps] = self._make_block_runner(num_env_steps)
+        return self._block_runner_cache[num_env_steps]
+
+    # --------- Ybar init ----------------------------------------------------
 
     def _bounds_midpoint(self) -> np.ndarray:
         x_lo, x_hi = self.theta_param.x_bounds or (-1.0, 1.0)
         p_lo, p_hi = self.theta_param.phi_bounds or (-1.0, 1.0)
-        mid = np.concatenate([
+        return np.concatenate([
             np.full(self.theta_param.x_dim, (float(x_lo) + float(x_hi)) / 2.0, dtype=np.float32),
             np.full(self.theta_param.phi_dim, (float(p_lo) + float(p_hi)) / 2.0, dtype=np.float32),
         ])
-        return mid
 
-    def plan(
-        self,
-        theta_init: Optional[Any] = None,
-        rng_key: Optional[Any] = None,
-    ) -> Dict[str, Any]:
-        K = int(self.config.K)
-        M = int(self.config.M)
-
-        if rng_key is None:
-            rng_key = jax.random.PRNGKey(int(self.seed))
-
-        # Ybar init: theta_init > prior mean > bounds midpoint.
+    def _init_ybar(self, theta_init: Optional[Any]) -> jnp.ndarray:
         if theta_init is not None:
             Ybar = jnp.asarray(theta_init, dtype=jnp.float32)
         else:
@@ -323,7 +427,162 @@ class MRMFMBDBackendMBD:
                 Ybar = jnp.asarray(prior_mean, dtype=jnp.float32)
             else:
                 Ybar = jnp.asarray(self._bounds_midpoint(), dtype=jnp.float32)
-        Ybar = self._clip_theta_jnp(Ybar)
+        return self._clip_theta_jnp(Ybar)
+
+    # --------- JAX-direct plan path -----------------------------------------
+
+    def _plan_jax_scan(self, theta_init: Optional[Any], rng_key: Any) -> Dict[str, Any]:
+        from genedynamics.envs.external.jax_mpm.adapters import FIDELITY_STEPS
+
+        K = int(self.config.K)
+        M = int(self.config.M)
+        D = int(self._D)
+        top_k_cap = max(int(self.config.top_k_fine), 1)
+
+        Ybar = self._init_ybar(theta_init)
+
+        # Running top-K buffer, init with -inf so any real candidate wins.
+        topk_theta = jnp.zeros((top_k_cap, D), dtype=jnp.float32)
+        topk_score = jnp.full((top_k_cap,), -1e30, dtype=jnp.float32)
+
+        blocks = self._build_fid_blocks()
+
+        # Stitched per-step outputs (collected across blocks).
+        stitched: Dict[str, List[np.ndarray]] = {
+            "sigma_k": [], "tau_k": [], "T_k": [],
+            "mean_R_s1": [], "mean_env_return": [], "ess": [], "w_c_mean": [],
+        }
+        fidelity_history: List[int] = []
+        block_wall_times: List[float] = []
+
+        wall_start = time.perf_counter()
+
+        for (fid, start, length) in blocks:
+            num_env_steps = int(FIDELITY_STEPS.get(fid, FIDELITY_STEPS[max(FIDELITY_STEPS)]))
+            runner = self._get_block_runner(num_env_steps)
+
+            # Reverse-step index i = start..start+length-1 maps to idx = K-1-i.
+            # sigmas/taus/Ts are indexed by `idx` (the original DDPM step idx).
+            idxs_block = np.arange(K - 1 - start, K - 1 - start - length, -1)
+            sig_b = jnp.asarray(np.asarray(self._sigmas)[idxs_block])
+            tau_b = jnp.asarray(np.asarray(self._taus)[idxs_block])
+            T_b = jnp.asarray(np.asarray(self._T_schedule)[idxs_block])
+
+            if self.show_tqdm:
+                print(f"[MBD] block fid={fid} steps={length} num_env_steps={num_env_steps}",
+                      flush=True)
+
+            t0 = time.perf_counter()
+            Ybar, rng_key, topk_theta, topk_score, out = runner(
+                Ybar, rng_key, topk_theta, topk_score, sig_b, tau_b, T_b,
+            )
+            Ybar.block_until_ready()
+            block_wall = time.perf_counter() - t0
+            block_wall_times.append(block_wall)
+
+            for key in stitched:
+                stitched[key].append(np.asarray(out[key]))
+            fidelity_history.extend([fid] * length)
+
+        # Concatenate per-step arrays in reverse order (matches old bridge_history).
+        per_step: Dict[str, np.ndarray] = {
+            k: np.concatenate(v, axis=0) for k, v in stitched.items()
+        }
+        bridge_history: List[Dict[str, Any]] = []
+        total = per_step["sigma_k"].shape[0]
+        for i in range(total):
+            idx = K - 1 - i
+            bridge_history.append({
+                "k_reverse_idx": int(idx),
+                "k_forward": int(i),
+                "sigma_k": float(per_step["sigma_k"][i]),
+                "tau_k": float(per_step["tau_k"][i]),
+                "T_k": float(per_step["T_k"][i]),
+                "fidelity_level": int(fidelity_history[i]),
+                "mean_R_s1": float(per_step["mean_R_s1"][i]),
+                "mean_env_return": float(per_step["mean_env_return"][i]),
+                "ess": float(per_step["ess"][i]),
+            })
+        mode_resp_history = per_step["w_c_mean"]
+
+        # Extract top-K candidates as Python list (sorted desc).
+        topk_theta_np = np.asarray(topk_theta)
+        topk_score_np = np.asarray(topk_score)
+        order = np.argsort(-topk_score_np)
+        _top_k: List[Tuple[float, np.ndarray]] = [
+            (float(topk_score_np[i]), topk_theta_np[i])
+            for i in order
+            if topk_score_np[i] > -1e29
+        ]
+
+        # Fine-fidelity re-evaluation of top-K (outside scan; num_env_steps differs).
+        best_fine_return, best_fine_theta, fine_calls = self._fine_revalidate(_top_k, Ybar)
+        if best_fine_return > -float("inf"):
+            Ybar = jnp.asarray(best_fine_theta, dtype=jnp.float32)
+
+        wall = time.perf_counter() - wall_start
+        x_final, phi_final = self.theta_param.unpack(Ybar)
+
+        return {
+            "theta": np.asarray(Ybar),
+            "x": np.asarray(x_final),
+            "phi": np.asarray(phi_final),
+            "bridge_history": bridge_history,
+            "mode_responsibilities": np.asarray(mode_resp_history),
+            "fidelity_history": fidelity_history,
+            "fine_calls": fine_calls,
+            "best_fine_return": best_fine_return if best_fine_return > -float("inf") else None,
+            "top_k_candidates": [
+                {"reward": float(s), "theta": np.asarray(t).tolist()} for s, t in _top_k
+            ],
+            "wall_clock": wall,
+            "block_wall_times": block_wall_times,
+        }
+
+    def _fine_revalidate(
+        self,
+        top_k: List[Tuple[float, np.ndarray]],
+        Ybar_fallback: jnp.ndarray,
+    ) -> Tuple[float, np.ndarray, int]:
+        best_fine_return = float("-inf")
+        best_fine_theta = np.asarray(Ybar_fallback)
+        fine_calls = 0
+        if self.config.top_k_fine <= 0 or not top_k:
+            return best_fine_return, best_fine_theta, fine_calls
+
+        from genedynamics.envs.evaluators import RolloutBatchRequest, RolloutRequest
+        x_dim = self.theta_param.x_dim
+        fine_level = int(self.config.fine_fidelity_level)
+        for _score, cand in top_k:
+            cand_np = np.asarray(cand, dtype=np.float32)
+            requests = [
+                RolloutRequest(
+                    morphology_params=cand_np[:x_dim],
+                    controller_params=cand_np[x_dim:],
+                    mode_id=c,
+                    fidelity_level=fine_level,
+                    seed=self.seed + 999 + c,
+                    num_repeats=1,
+                    record=False,
+                )
+                for c in range(self.num_modes)
+            ]
+            req = RolloutBatchRequest(task_id=self.task_id, requests=requests)
+            res = self.evaluator.evaluate_batch(req, parallel=True, use_cache=False)
+            fine_calls += self.num_modes
+            cand_return = float(np.mean(res.returns))
+            if cand_return > best_fine_return:
+                best_fine_return = cand_return
+                best_fine_theta = cand_np
+        return best_fine_return, best_fine_theta, fine_calls
+
+    # --------- Softzoo-compat plan path -------------------------------------
+
+    def _plan_python_loop(self, theta_init: Optional[Any], rng_key: Any) -> Dict[str, Any]:
+        K = int(self.config.K)
+        M = int(self.config.M)
+
+        Ybar = self._init_ybar(theta_init)
 
         bridge_history: List[Dict[str, Any]] = []
         mode_resp_history: List[np.ndarray] = []
@@ -348,8 +607,6 @@ class MRMFMBDBackendMBD:
             tau_k = self._taus[idx]
             T_k = self._T_schedule[idx]
 
-            # S3: reverse-time index k' = K-1-idx — coarse early (large idx),
-            # fine late (small idx). Equivalent to "cheap when noise large".
             kprime = K - 1 - idx
             fid = int(self.fidelity_ladder(kprime)) if self.fidelity_ladder is not None else 0
             fidelity_history.append(fid)
@@ -357,11 +614,9 @@ class MRMFMBDBackendMBD:
             rng_key, k_eps, k_noise = jax.random.split(rng_key, 3)
             eps = jax.random.normal(k_eps, (M, self._D), dtype=jnp.float32)
 
-            # --- JIT block 1: propose ---
             Y0s = self._propose_jit(Ybar, sigma_k, eps)
             Y0s_np = np.asarray(Y0s)
 
-            # --- External: softzoo rollouts + S1 marginalization ---
             rewards_mc = self._evaluate_proposals_modes(
                 Y0s_np, fid,
                 seed_base=self.seed + idx * M * self.num_modes,
@@ -369,13 +624,11 @@ class MRMFMBDBackendMBD:
             R_m, w_c = self._s1_marginalize(rewards_mc)
             mode_resp_history.append(w_c.mean(axis=0))
 
-            # --- JIT block 2: denoise ---
             noise = jax.random.normal(k_noise, (self._D,), dtype=jnp.float32)
             Ybar, weights, ess = self._denoise_jit(
                 Y0s, jnp.asarray(R_m, dtype=jnp.float32), tau_k, T_k, noise,
             )
 
-            # Track top-K by this step's mean S1 marginal reward.
             mean_R = float(np.mean(R_m))
             mean_env_return = float(np.mean(rewards_mc))
             _top_k.append((mean_env_return, np.asarray(Ybar)))
@@ -395,35 +648,8 @@ class MRMFMBDBackendMBD:
                 "wall_time_ms": (time.perf_counter() - t0) * 1e3,
             })
 
-        # Top-K fine validation (same pattern as the old backend).
-        best_fine_return = float("-inf")
-        best_fine_theta = np.asarray(Ybar)
-        fine_calls = 0
-        if self.config.top_k_fine > 0 and _top_k:
-            from genedynamics.envs.evaluators import RolloutBatchRequest, RolloutRequest
-            x_dim = self.theta_param.x_dim
-            fine_level = int(self.config.fine_fidelity_level)
-            for _score, cand in _top_k:
-                cand_np = np.asarray(cand, dtype=np.float32)
-                requests = [
-                    RolloutRequest(
-                        morphology_params=cand_np[:x_dim],
-                        controller_params=cand_np[x_dim:],
-                        mode_id=c,
-                        fidelity_level=fine_level,
-                        seed=self.seed + 999 + c,
-                        num_repeats=1,
-                        record=False,
-                    )
-                    for c in range(self.num_modes)
-                ]
-                req = RolloutBatchRequest(task_id=self.task_id, requests=requests)
-                res = self.evaluator.evaluate_batch(req, parallel=True, use_cache=False)
-                fine_calls += self.num_modes
-                cand_return = float(np.mean(res.returns))
-                if cand_return > best_fine_return:
-                    best_fine_return = cand_return
-                    best_fine_theta = cand_np
+        best_fine_return, best_fine_theta, fine_calls = self._fine_revalidate(_top_k, Ybar)
+        if best_fine_return > -float("inf"):
             Ybar = jnp.asarray(best_fine_theta, dtype=jnp.float32)
 
         wall = time.perf_counter() - wall_start
@@ -443,3 +669,16 @@ class MRMFMBDBackendMBD:
             ],
             "wall_clock": wall,
         }
+
+    # --------- Dispatcher ---------------------------------------------------
+
+    def plan(
+        self,
+        theta_init: Optional[Any] = None,
+        rng_key: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        if rng_key is None:
+            rng_key = jax.random.PRNGKey(int(self.seed))
+        if self._is_jax_direct():
+            return self._plan_jax_scan(theta_init, rng_key)
+        return self._plan_python_loop(theta_init, rng_key)

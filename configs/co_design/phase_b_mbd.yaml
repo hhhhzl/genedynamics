@@ -1,0 +1,57 @@
+# Phase B MBD — full scan-refactor + n_grid=32 + M=256 + Ndiffuse=100.
+#
+# Stack vs phase_b_jaxmpm.yaml:
+#   * MBD plan() reverse loop lives inside jax.lax.scan (blocked by S3 fidelity).
+#     S1 marginalization is pure JAX inside the scan body. No host round-trips.
+#   * n_grid: 64 → 32 (≈8× cheaper grid op in 3D)
+#   * M_k: 128 → 256 (2× proposals per step; scan amortizes JIT cost)
+#   * Ndiffuse: 100 (keep full convergence curve)
+#
+# Expected: ~4–6× wall-clock speedup vs phase_b_jaxmpm.yaml on same GPU.
+name: co_design_phase_b_mbd
+output_dir: results/phase_b/mbd
+checkpoint_dir: results/phase_b/checkpoints_mbd
+
+baseline_name: mrmfmbd
+task_domain: jax_mpm
+task_id: crawling_ground
+seeds: [0]
+save_gif: true
+
+evaluator_runtime:
+  max_workers: 1
+  reward_shaping_weight: 100.0
+  n_grid: 32
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 256
+      T_k: 0.5
+      Ndiffuse: 100
+      beta0: 1.0e-4
+      betaT: 2.0e-2
+  diffusion_merge_strategy: merge
+
+method_params:
+  backend: mbd
+  num_modes: 4
+  num_fidelity_levels: 3
+  fidelity_ladder_type: geometric
+  fidelity_step_ratio: 0.5        # coarse-heavy: {0:57, 1:28, 2:15} out of K=100
+  fine_fidelity_level: 2
+  reward_temperature_min: 0.05
+  tau_frac: 0.05
+  top_k_fine: 5
+  show_tqdm: true
+  # tanh(W·sin+b) controller: phi_dim=50 (10 actuators × 4 waves + 10 bias).
+  phi_dim_override: true
+  phi_lo: -2.0
+  phi_hi: 2.0
+  phi_std: 0.5
+  # Voxel morphology (3×3×3 = 27 occupancy cells from MPMConfig.voxel_dims).
+  x_lo: 0.0
+  x_hi: 1.0
+  x_mean: 0.7
+  x_std: 0.25
