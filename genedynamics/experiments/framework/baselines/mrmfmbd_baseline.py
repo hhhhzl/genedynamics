@@ -59,10 +59,16 @@ class MRMFMBDBaseline(BaselineProtocol):
         if backend_type == "mbd" and phi_dim > 4 and not extra.get("phi_dim_override", False):
             phi_dim = 4
 
-        # B4: prior centered on bounds midpoint (not 0) so clipping doesn't
-        # pull every dim to its lower bound. x~[0.01,2] midpoint=1; φ~[5,150]
-        # midpoint=77.5 (close to typical locomotion ω range). jax_mpm with
-        # tanh(W·sin+b) controller overrides via extra.phi_lo/hi/std.
+        # Z-symmetry: optimizer sees half the voxels along Z, mirrored before rollout.
+        # Must be resolved BEFORE ThetaParametrization so x_dim is correct.
+        morphology_symmetry = str(extra.get("morphology_symmetry", "")).lower()
+        voxel_dims = extra.get("voxel_dims")
+        if morphology_symmetry == "z" and voxel_dims is not None:
+            vx, vy, vz = (int(v) for v in voxel_dims)
+            if vz % 2 != 0:
+                raise ValueError(f"Z-symmetry requires even vz, got voxel_dims={voxel_dims}")
+            x_dim = vx * vy * (vz // 2)
+
         x_lo = float(extra.get("x_lo", 0.01))
         x_hi = float(extra.get("x_hi", 2.0))
         x_mean_init = float(extra.get("x_mean", (x_lo + x_hi) / 2.0))
@@ -127,6 +133,10 @@ class MRMFMBDBaseline(BaselineProtocol):
                     tau_frac=float(extra.get("tau_frac", 0.1)),
                     top_k_fine=int(extra.get("top_k_fine", 3)),
                     fine_fidelity_level=fine_fidelity,
+                    extra={
+                        "morphology_symmetry": morphology_symmetry,
+                        "voxel_dims": voxel_dims,
+                    },
                 ),
                 task_id=config.task_id,
                 num_modes=num_modes,
@@ -163,20 +173,22 @@ class MRMFMBDBaseline(BaselineProtocol):
         x_star = theta_star[:x_dim].copy()
         phi_star = theta_star[x_dim:]
 
-        # B2: clamps removed. The act_mul<0.5 clamp was a bandaid for the
-        # per_step_velocity reward loophole (zero actuation got small positive
-        # credit). With the shaped reward from softzoo_evaluator.py (B3) this
-        # loophole is gone; we want to see what θ* the optimizer *actually*
-        # picks. The only guard left is the physics-hard geometry lower bound.
         if x_dim >= 1 and x_star[0] < 0.1:
             x_star[0] = 0.1
+
+        # Expand x_star to full voxel grid if z-symmetric (for eval + GIF).
+        x_star_full = x_star
+        if morphology_symmetry == "z" and voxel_dims is not None:
+            vx, vy, vz = (int(v) for v in voxel_dims)
+            h = x_star.reshape(vx, vy, vz // 2)
+            x_star_full = np.concatenate([h, np.flip(h, axis=-1)], axis=-1).reshape(-1)
 
         # Re-evaluate best theta to report a real rollout return (not bridge proxy).
         from genedynamics.envs.evaluators import RolloutBatchRequest, RolloutRequest
         eval_fidelity = max(0, num_fidelity_levels - 1)
         eval_requests = [
             RolloutRequest(
-                morphology_params=x_star,
+                morphology_params=x_star_full,
                 controller_params=phi_star,
                 mode_id=mode_id,
                 fidelity_level=eval_fidelity,
@@ -195,8 +207,8 @@ class MRMFMBDBaseline(BaselineProtocol):
         real_success = bool(np.any(eval_batch.successes)) if eval_batch.successes.size > 0 else False
 
         return BaselineResult(
-            theta=theta_star,
-            x=x_star,
+            theta=np.concatenate([x_star_full, phi_star]),
+            x=x_star_full,
             phi=phi_star,
             return_=real_return,
             success=real_success,

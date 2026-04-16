@@ -75,6 +75,20 @@ class MBDConfig:
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
+def _mirror_z_voxels(
+    x_half: jnp.ndarray,  # (..., vx*vy*vz_half)
+    vx: int, vy: int, vz_half: int,
+) -> jnp.ndarray:
+    """Mirror voxel occupancy along Z axis: (vx,vy,vz_half) → (vx,vy,vz_half*2).
+
+    Works on batched (..., D) or single (D,) inputs.
+    """
+    leading = x_half.shape[:-1]
+    h = x_half.reshape(*leading, vx, vy, vz_half)
+    full = jnp.concatenate([h, jnp.flip(h, axis=-1)], axis=-1)
+    return full.reshape(*leading, vx * vy * vz_half * 2)
+
+
 def _s1_marginalize_jax(
     rewards_mc: jnp.ndarray,   # (M, C)
     log_prior: jnp.ndarray,    # (C,)
@@ -124,6 +138,15 @@ class MRMFMBDBackendMBD:
         self.mode_log_priors = mode_log_priors or [0.0] * num_modes
         self.seed = seed
         self.show_tqdm = show_tqdm
+
+        # Z-symmetry: optimizer sees x_half, mirrored to x_full before rollout.
+        # voxel_dims/symmetry are passed via config.extra by the baseline.
+        self._z_sym = str(self.config.extra.get("morphology_symmetry", "")).lower() == "z"
+        vd = self.config.extra.get("voxel_dims")
+        if vd is not None:
+            self._voxel_dims = tuple(int(v) for v in vd)
+        else:
+            self._voxel_dims = None  # will be read from evaluator if needed
 
         K = int(self.config.K)
 
@@ -252,6 +275,15 @@ class MRMFMBDBackendMBD:
 
     # --------- Softzoo-compat path: external rollouts -----------------------
 
+    def _expand_x_np(self, x_opt: np.ndarray) -> np.ndarray:
+        """Expand optimizer's x (possibly half) to full voxel occupancy for rollout."""
+        if self._z_sym and self._voxel_dims is not None:
+            vx, vy, vz = self._voxel_dims
+            vz_half = vz // 2
+            h = x_opt.reshape(vx, vy, vz_half)
+            return np.concatenate([h, np.flip(h, axis=-1)], axis=-1).reshape(-1)
+        return x_opt
+
     def _evaluate_proposals_modes(
         self, proposals: np.ndarray, fidelity_level: int, seed_base: int,
     ) -> np.ndarray:
@@ -264,7 +296,7 @@ class MRMFMBDBackendMBD:
             for m in range(M):
                 flat_requests.append(
                     RolloutRequest(
-                        morphology_params=proposals[m, :x_dim],
+                        morphology_params=self._expand_x_np(proposals[m, :x_dim]),
                         controller_params=proposals[m, x_dim:],
                         mode_id=c,
                         fidelity_level=fidelity_level,
@@ -334,18 +366,28 @@ class MRMFMBDBackendMBD:
         scene = self.evaluator._scene
         cfg = self.evaluator._mpm_cfg
         friction_table = jnp.asarray(
-            np.asarray(self.evaluator._mode_friction, dtype=np.float32)
+            np.asarray(self.evaluator._mode_friction, dtype=np.float32)[: int(self.num_modes)]
         )  # (C,)
 
         M = int(self.config.M)
         D = int(self._D)
         C = int(self.num_modes)
-        x_dim = int(self._x_dim)
+        x_dim = int(self._x_dim)  # optimizer's x_dim (half if z-sym)
         top_k_cap = max(int(self.config.top_k_fine), 1)
         T_mode = jnp.asarray(
             max(float(self.config.reward_temperature), 1e-8), dtype=jnp.float32
         )
         log_prior_c = self._log_prior_c
+
+        # Z-symmetry: optimizer x_dim is half; mirror to full before rollout.
+        z_sym = self._z_sym
+        if z_sym and self._voxel_dims is not None:
+            vx, vy, vz = self._voxel_dims
+            vz_half = vz // 2
+            x_dim_full = vx * vy * vz
+        else:
+            z_sym = False
+            x_dim_full = x_dim
 
         def step(carry, xs):
             Ybar, rng_key, topk_theta, topk_score = carry
@@ -355,8 +397,15 @@ class MRMFMBDBackendMBD:
             eps = jax.random.normal(k_eps, (M, D), dtype=jnp.float32)
             Y0s = self._propose_impl(Ybar, sigma_k, eps)  # (M, D)
 
+            # Extract x (optimizer dim) and expand if z-symmetric.
+            x_opt = Y0s[:, :x_dim]
+            if z_sym:
+                x_full = _mirror_z_voxels(x_opt, vx, vy, vz_half)  # (M, x_dim_full)
+            else:
+                x_full = x_opt
+
             # M × C flat batch: index = m*C + c; (x[m], friction[c]).
-            x_flat = jnp.repeat(Y0s[:, :x_dim], C, axis=0)       # (M*C, x_dim)
+            x_flat = jnp.repeat(x_full, C, axis=0)               # (M*C, x_dim_full)
             phi_flat = jnp.repeat(Y0s[:, x_dim:], C, axis=0)     # (M*C, phi_dim)
             fr_flat = jnp.tile(friction_table, M)                # (M*C,)
 
@@ -557,7 +606,7 @@ class MRMFMBDBackendMBD:
             cand_np = np.asarray(cand, dtype=np.float32)
             requests = [
                 RolloutRequest(
-                    morphology_params=cand_np[:x_dim],
+                    morphology_params=self._expand_x_np(cand_np[:x_dim]),
                     controller_params=cand_np[x_dim:],
                     mode_id=c,
                     fidelity_level=fine_level,

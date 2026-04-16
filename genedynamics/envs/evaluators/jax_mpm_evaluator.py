@@ -36,6 +36,7 @@ class JaxMpmEvaluatorConfig:
     cache_size: int = 0         # ignored
     reward_shaping_weight: float = 100.0  # picked up by scene.MPMConfig
     n_grid: int = 64
+    voxel_dims: Optional[tuple] = None  # (vx, vy, vz); None → MPMConfig default (3,3,3)
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -60,6 +61,8 @@ class JaxMpmRolloutEvaluator:
             "n_grid": int(self.config.n_grid),
             "shaping_weight": float(self.config.reward_shaping_weight),
         }
+        if self.config.voxel_dims is not None:
+            mpm_kwargs["voxel_dims"] = tuple(int(v) for v in self.config.voxel_dims)
         # Let runtime_config override anything in MPMConfig (e.g., dt, gravity).
         for k in ("dt", "gravity", "scale", "p_vol", "friction_coeff",
                   "actuation_strength_scale", "act_strength_base"):

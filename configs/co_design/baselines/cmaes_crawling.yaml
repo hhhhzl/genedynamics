@@ -1,0 +1,35 @@
+# CMA-ES baseline for crawling_ground.
+# Same task/physics as main/crawling_ground.yaml for fair comparison.
+name: cmaes_crawling_ground
+output_dir: results/co_design/baselines/cmaes_crawling
+cache_dir: results/co_design/baselines/cmaes_crawling_cache
+
+baseline_name: cmaes
+task_domain: jax_mpm
+task_id: crawling_ground
+seeds: [0, 1, 2]
+
+evaluator_runtime:
+  max_workers: 1
+  reward_shaping_weight: 100.0
+  n_grid: 64
+  voxel_dims: [4, 3, 4]
+  act_strength_base: 8.0
+  scale: 30.0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 4
+      T_k: 0.1
+      Ndiffuse: 12
+      beta0: 1e-6
+      betaT: 1.0
+  diffusion_merge_strategy: merge
+
+method_params:
+  num_modes: 4
+  popsize: 8
+  sigma0: 0.3
+  show_tqdm: true

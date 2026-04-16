@@ -2,7 +2,7 @@
 """
 Run co-design experiment from YAML config, then render best-theta rollout as GIF.
 
-Wraps run_co_design.py; after training, rebuilds env, rolls out best (x*, phi*)
+Wraps run_co_design.py; after planning, rebuilds env, rolls out best (x*, phi*)
 while capturing particle positions, and renders a top-down/side matplotlib GIF.
 """
 
@@ -160,6 +160,7 @@ def _capture_rollout_jax_mpm(
     x_star: np.ndarray,
     phi_star: np.ndarray,
     evaluator_params: dict,
+    replay_friction: float | None = None,
 ) -> tuple[np.ndarray, float]:
     """Capture rollout for jax_mpm backend. No subprocess needed — JAX MPM is pure
     JAX so it shares the main process's GPU context freely."""
@@ -172,10 +173,23 @@ def _capture_rollout_jax_mpm(
         "n_grid": int(evaluator_params.get("n_grid", 64)),
         "shaping_weight": float(evaluator_params.get("reward_shaping_weight", 100.0)),
     }
+    # Forward ALL MPMConfig-compatible fields so the GIF replay uses the same
+    # physics the planner saw (act_strength_base, scale, voxel_dims, etc.).
+    for k in ("voxel_dims", "act_strength_base", "scale", "dt", "gravity",
+              "p_vol", "friction_coeff", "actuation_strength_scale"):
+        v = evaluator_params.get(k)
+        if v is not None:
+            if k == "voxel_dims":
+                mpm_kwargs[k] = tuple(int(d) for d in v)
+            else:
+                mpm_kwargs[k] = float(v)
     cfg = MPMConfig(**{k: v for k, v in mpm_kwargs.items()
                        if k in MPMConfig.__dataclass_fields__})
     scene = build_scene(cfg)
-    fr = 0.45  # mid friction for replay — sweet spot for stick-slip peristalsis
+    # Use the friction that MBD planned against if caller provides it
+    # (important when num_modes=1: the planner only saw _mode_friction[0]=0.3,
+    # so replaying at fr=0.45 silently breaks the gait).
+    fr = 0.45 if replay_friction is None else float(replay_friction)
     num_env_steps = 200  # match softzoo default for gif fidelity
 
     xm = jnp.asarray(x_star, dtype=jnp.float32)
@@ -187,7 +201,7 @@ def _capture_rollout_jax_mpm(
     reward.block_until_ready()
     # Filter ghost particles (mass < 0.5 from voxel occupancy < 0.5) so the
     # gif shows only the materialized robot.
-    mask = np.asarray(mass_field) > 0.5
+    mask = np.asarray(mass_field) > 0.15
     if mask.sum() == 0:  # degenerate empty robot — show all
         mask = np.ones_like(mask, dtype=bool)
     particles_visible = np.asarray(particle_traj, dtype=np.float32)[:, mask, :]
@@ -270,7 +284,7 @@ def main() -> int:
             task_id=data.get("task_id", "crawling_ground"),
             seeds=data.get("seeds", [0]),
             output_dir=str(output_dir),
-            checkpoint_dir=data.get("checkpoint_dir"),
+            cache_dir=data.get("cache_dir", data.get("checkpoint_dir")),
             scheduler_config=data.get("scheduler_config"),
             method_params=data.get("method_params", {}),
             baseline_params=data.get("baseline_params", {}),
@@ -278,10 +292,13 @@ def main() -> int:
             save_gif=data.get("save_gif", True),
         )
         platform = BaselineExperimentPlatform(cfg, project_root=root)
-        print(f"Training: baseline={cfg.baseline_name} task={cfg.task_id} seeds={cfg.seeds}")
+        # MBD and its siblings are zero-shot samplers, not learners — no
+        # "training" happens here. Frame the wall time as planning time.
+        verb = "Planning" if cfg.baseline_name in ("mrmfmbd", "mbd") else "Running"
+        print(f"{verb}: baseline={cfg.baseline_name} task={cfg.task_id} seeds={cfg.seeds}")
         t0 = time.time()
         results = platform.run_all()
-        print(f"Training complete in {time.time()-t0:.1f}s")
+        print(f"{verb} complete in {time.time()-t0:.1f}s")
     else:
         import json
         with open(output_dir / "results.json") as f:
@@ -301,9 +318,15 @@ def main() -> int:
     t0 = time.time()
     task_domain = data.get("task_domain", "softzoo")
     if task_domain == "jax_mpm":
+        # If num_modes=1, match the single friction the planner saw. Otherwise keep
+        # the default mid-friction (0.45), which is the average over mode 0..3.
+        num_modes = int((data.get("method_params") or {}).get("num_modes", 4))
+        _mode_friction_table = [0.3, 0.4, 0.5, 0.6]
+        replay_fr = _mode_friction_table[0] if num_modes == 1 else None
         positions, replay_return = _capture_rollout_jax_mpm(
             x_star=x_star, phi_star=phi_star,
             evaluator_params=evaluator_params,
+            replay_friction=replay_fr,
         )
     else:
         positions, replay_return = _capture_rollout(

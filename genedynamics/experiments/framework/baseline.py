@@ -149,7 +149,7 @@ class BaselineProtocol(Protocol):
             task_spec: TaskSpec from task domain
             x_dim: Design/morphology dimension
             phi_dim: Controller/policy dimension
-            **kwargs: Additional options (checkpoint_dir, etc.)
+            **kwargs: Additional options (cache_dir, etc.)
 
         Returns:
             BaselineResult with best design

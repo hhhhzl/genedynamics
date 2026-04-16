@@ -56,11 +56,15 @@ class JaxMpmTaskDomainProvider:
         runtime_keys = ("dt", "gravity", "scale", "p_vol", "friction_coeff",
                         "actuation_strength_scale", "act_strength_base")
         runtime_config = {k: kwargs[k] for k in runtime_keys if k in kwargs}
+        voxel_dims = kwargs.get("voxel_dims")
+        if voxel_dims is not None:
+            voxel_dims = tuple(int(v) for v in voxel_dims)
         cfg = JaxMpmEvaluatorConfig(
             max_workers=max_workers,
             cache_size=cache_size,
             reward_shaping_weight=float(kwargs.get("reward_shaping_weight", 100.0) or 100.0),
             n_grid=int(kwargs.get("n_grid", 64)),
+            voxel_dims=voxel_dims,
         )
         return JaxMpmRolloutEvaluator(
             config=cfg,

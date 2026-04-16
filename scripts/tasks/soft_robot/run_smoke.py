@@ -40,7 +40,7 @@ def main():
         task_id=raw.get("task_id", "crawling_ground"),
         seeds=raw.get("seeds", [0]),
         output_dir=raw.get("output_dir", "results/phase_a/smoke"),
-        checkpoint_dir=raw.get("checkpoint_dir"),
+        cache_dir=raw.get("cache_dir", raw.get("checkpoint_dir")),
         scheduler_config=raw.get("scheduler_config"),
         method_params=raw.get("method_params", {}),
         baseline_params=raw.get("baseline_params", {}),

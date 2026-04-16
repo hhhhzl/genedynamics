@@ -2,7 +2,7 @@
 Baseline experiment platform.
 
 Task-agnostic: runs any registered baseline on any registered task domain.
-Supports checkpointing, logging, and reproducibility.
+Supports per-seed result caching (for resume), logging, and reproducibility.
 """
 
 from __future__ import annotations
@@ -38,7 +38,10 @@ class BaselineExperimentConfig:
         task_id: Task identifier within domain
         seeds: Seeds to run
         output_dir: Output directory
-        checkpoint_dir: Optional checkpoint directory
+        cache_dir: Optional per-seed result cache directory. Used to resume
+            long multi-seed runs; nothing model-related is stored here (no
+            weights, no checkpoints — most of our baselines including MBD are
+            zero-shot samplers). Defaults to ``{output_dir}/run_cache``.
         baseline_params: Extra params for baseline
         evaluator_params: Extra params for evaluator creation
     """
@@ -48,7 +51,7 @@ class BaselineExperimentConfig:
     task_id: str = "crawling_ground"
     seeds: List[int] = field(default_factory=lambda: [0])
     output_dir: str = "results/baseline"
-    checkpoint_dir: Optional[str] = None
+    cache_dir: Optional[str] = None
     scheduler_config: Optional[Dict[str, Any]] = None
     method_params: Dict[str, Any] = field(default_factory=dict)
     baseline_params: Dict[str, Any] = field(default_factory=dict)
@@ -62,7 +65,7 @@ class BaselineExperimentConfig:
             "task_id": self.task_id,
             "seeds": list(self.seeds),
             "output_dir": self.output_dir,
-            "checkpoint_dir": self.checkpoint_dir,
+            "cache_dir": self.cache_dir,
             "method_params": self.method_params,
             "evaluator_params": self.evaluator_params,
         }
@@ -117,9 +120,11 @@ class BaselineExperimentPlatform:
             self._output_dir = self._project_root / self._output_dir
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
-        ckpt_dir = config.checkpoint_dir or str(self._output_dir / "checkpoints")
-        self._checkpoint = (
-            CheckpointManager(Path(ckpt_dir), prefix="baseline") if use_checkpointing else None
+        cache_dir = config.cache_dir or str(self._output_dir / "run_cache")
+        # CheckpointManager here is just a seed-level result cache for resume;
+        # no model weights / learned parameters are ever saved by this platform.
+        self._cache = (
+            CheckpointManager(Path(cache_dir), prefix="baseline") if use_checkpointing else None
         )
         self._logger = (
             ExperimentLogger(self._output_dir / "experiment.jsonl") if use_logging else None
@@ -158,15 +163,25 @@ class BaselineExperimentPlatform:
             self._logger.log("run_start", seed=seed, config_hash=self.config.config_hash())
 
         baseline = get_baseline(self.config.baseline_name)
+
+        x_dim = getattr(task_spec, "x_dim", 3)
+        phi_dim = getattr(task_spec, "phi_dim", 4)
+
+        # Override x_dim if evaluator was built with non-default voxel_dims.
+        voxel_dims = self.config.evaluator_params.get("voxel_dims")
+        if voxel_dims is not None:
+            x_dim = int(voxel_dims[0]) * int(voxel_dims[1]) * int(voxel_dims[2])
+
+        # Forward voxel_dims from evaluator_params into method_params so the
+        # baseline can apply morphology symmetry without knowing the evaluator.
+        if voxel_dims is not None and "voxel_dims" not in method_params:
+            method_params["voxel_dims"] = list(voxel_dims)
         bl_config = BaselineConfig(
             task_id=self.config.task_id,
             seed=seed,
             extra=method_params,
             scheduler=scheduler,
         )
-
-        x_dim = getattr(task_spec, "x_dim", 3)
-        phi_dim = getattr(task_spec, "phi_dim", 4)
 
         t0 = time.perf_counter()
         result = None
@@ -218,11 +233,11 @@ class BaselineExperimentPlatform:
         return out
 
     def run_all(self) -> List[Dict[str, Any]]:
-        """Run all seeds, return list of results. Resumes from checkpoint if enabled."""
+        """Run all seeds, return list of results. Resumes from per-seed cache if enabled."""
         cfg_hash = self.config.config_hash()
         completed: Dict[int, Dict[str, Any]] = {}
-        if self._resume and self._checkpoint:
-            state = self._checkpoint.load_latest(key=cfg_hash)
+        if self._resume and self._cache:
+            state = self._cache.load_latest(key=cfg_hash)
             if state and state.config_hash == cfg_hash and state.payload:
                 completed = {
                     int(k): v for k, v in state.payload.get("results_by_seed", {}).items()
@@ -233,13 +248,13 @@ class BaselineExperimentPlatform:
             if seed in completed:
                 results.append(completed[seed])
                 if self._logger:
-                    self._logger.log("run_skipped_resume", seed=seed, reason="checkpoint")
+                    self._logger.log("run_skipped_resume", seed=seed, reason="cache")
                 continue
             out = self.run_single(seed)
             results.append(out)
-            if self._checkpoint:
+            if self._cache:
                 by_seed = {r["seed"]: r for r in results}
-                self._checkpoint.save(
+                self._cache.save(
                     CheckpointState(
                         step=len(results),
                         seed=seed,

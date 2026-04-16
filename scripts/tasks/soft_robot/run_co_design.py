@@ -58,7 +58,7 @@ def main() -> int:
         task_id=data.get("task_id", "crawling_ground"),
         seeds=data.get("seeds", [0]),
         output_dir=data.get("output_dir", "results/co_design"),
-        checkpoint_dir=data.get("checkpoint_dir"),
+        cache_dir=data.get("cache_dir", data.get("checkpoint_dir")),
         scheduler_config=data.get("scheduler_config"),
         method_params=data.get("method_params", {}),
         baseline_params=data.get("baseline_params", {}),
