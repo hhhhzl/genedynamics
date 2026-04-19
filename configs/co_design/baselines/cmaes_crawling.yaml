@@ -14,8 +14,8 @@ evaluator_runtime:
   reward_shaping_weight: 100.0
   n_grid: 64
   voxel_dims: [4, 3, 4]
-  act_strength_base: 8.0
-  scale: 30.0
+  act_strength_base: 12.0
+  scale: 50.0
 
 scheduler_config:
   type: composite

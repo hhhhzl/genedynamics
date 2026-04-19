@@ -9,8 +9,9 @@ Pipeline per env step:
     g2p_3d  : grid velocity → new particle (x, v, C)
 
 theta = (x_morph, phi_ctrl) convention, same as the softzoo backend:
-    x_morph = [geom_mul, soft_mul, act_mul]  (bounds (0.01, 2.0))
-    phi_ctrl = [omega_0, ..., omega_{K-1}]   (bounds (5.0, 150.0), K=4)
+    x_morph = voxel occupancy (bounds (0.2, 1.0))
+    phi_ctrl = [W.flat, b, g, a, c]  where W ∈ R^(n_act×K), b,g,a,c ∈ R^(n_act)
+               g = velocity feedback gain, a/c = time envelope params
 """
 
 from __future__ import annotations
@@ -96,9 +97,12 @@ class MPMConfig:
     n_actuators: int = 10
     act_strength_base: float = 4.0  # multiplied by act_mul (θ[2])
 
-    # Controller: tanh(W @ sin(ω·t + phases) + b), matches hw4 parameterization.
-    # phi layout: phi[0:n_actuators*n_sin_waves] = W.flatten(), phi[n_actuators*n_sin_waves:] = b
+    # Controller: [tanh(W·sin + b + g·v_com_x_scaled)] * envelope(a, c, t).
+    # phi layout: W(n_act*K) | b(n_act) | g(n_act) | a(n_act) | c(n_act)
+    #           → phi_dim = n_act*K + 4*n_act
     n_sin_waves: int = 4
+    feedback_v_scale: float = 1000.0   # scale v_com_x so feedback is O(0.1), not O(1e-4)
+    env_horizon: int = 200             # normalizes t_frac = env_t / env_horizon for envelope
     actuation_omega: float = 20.0
     actuation_strength_scale: float = 1.0   # bumped from 0.3; combined with
                                              # act_strength_base gives peak act≈4,
@@ -392,23 +396,45 @@ def g2p_3d(x: jnp.ndarray, grid_v_out: jnp.ndarray, cfg: MPMConfig):
 # ---------------------------------------------------------------------------
 
 
-def compute_actuation(phi: jnp.ndarray, env_t: jnp.ndarray, cfg: MPMConfig) -> jnp.ndarray:
+def compute_actuation(
+    phi: jnp.ndarray,
+    env_t: jnp.ndarray,
+    cfg: MPMConfig,
+    v_com_x: jnp.ndarray = DTYPE(0.0),
+) -> jnp.ndarray:
     """Return actuation signal (n_actuators,) at env-time env_t.
 
-    Controller follows hw4 parameterization:
-        act[a] = tanh( sum_k W[a,k] * sin(ω·t + 2π·k/K) + b[a] )
-    Fixed ω = cfg.actuation_omega, fixed phase bank 2π·k/K for k in [0, K).
-    Learnable params: W ∈ R^(n_act × K) and b ∈ R^(n_act).
-    phi layout: phi[:n_act*K] = W.flatten(), phi[n_act*K:] = b.
+    Controller:
+        raw[a] = tanh( W[a,:] · sin(ω·t + phases) + b[a] + g[a] · v_com_x_scaled )
+        act[a] = raw[a] * sigmoid( a[a] + c[a] · t_frac )
+
+    phi layout (n_act=10, K=4 → phi_dim=80):
+        phi[:40]  = W.flat    (sin-wave weights)
+        phi[40:50] = b        (bias)
+        phi[50:60] = g        (velocity feedback gain)
+        phi[60:70] = a        (envelope offset)
+        phi[70:80] = c        (envelope slope)
     """
     n_act = cfg.n_actuators
     K = cfg.n_sin_waves
     W = phi[: n_act * K].reshape(n_act, K)
     b = phi[n_act * K : n_act * K + n_act]
+    g = phi[n_act * K + n_act : n_act * K + 2 * n_act]
+    a = phi[n_act * K + 2 * n_act : n_act * K + 3 * n_act]
+    c = phi[n_act * K + 3 * n_act : n_act * K + 4 * n_act]
+
     t_seconds = env_t.astype(DTYPE) * DTYPE(cfg.frame_dt)
     phases = 2.0 * math.pi / DTYPE(K) * jnp.arange(K, dtype=DTYPE)
     basis = jnp.sin(DTYPE(cfg.actuation_omega) * t_seconds + phases)  # (K,)
-    return jnp.tanh(W @ basis + b)  # (n_act,)
+
+    # Velocity feedback scaled so the term is O(0.1) instead of O(1e-4).
+    v_scaled = v_com_x * DTYPE(cfg.feedback_v_scale)
+    raw = jnp.tanh(W @ basis + b + g * v_scaled)  # (n_act,)
+
+    # Time envelope: per-actuator sigmoid modulation over the rollout.
+    t_frac = env_t.astype(DTYPE) / DTYPE(cfg.env_horizon)
+    envelope = jax.nn.sigmoid(a + c * t_frac)  # (n_act,)
+    return raw * envelope  # (n_act,)
 
 
 # ---------------------------------------------------------------------------
@@ -436,7 +462,11 @@ def _env_step(
 ):
     """One env step = `substeps_per_env_step` MPM substeps + reward probe."""
     n_sub = cfg.substeps_per_env_step
-    act_env = compute_actuation(phi, env_t, cfg)
+    # COM velocity feedback: compute v_com_x from current state for the controller.
+    x, v, _, _ = carry
+    w = mass_field / (jnp.sum(mass_field) + DTYPE(1e-8))
+    v_com_x = jnp.sum(v[:, 0] * w, axis=0)
+    act_env = compute_actuation(phi, env_t, cfg, v_com_x=v_com_x)
     act_t = act_env * DTYPE(cfg.act_strength_base) * DTYPE(cfg.actuation_strength_scale)
 
     def substep(c, _):

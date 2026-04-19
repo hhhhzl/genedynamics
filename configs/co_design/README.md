@@ -26,24 +26,29 @@ GIF output is saved to `output_dir` when `save_gif: true`.
 
 ## Current Controller
 
-Open-loop sinusoidal with tanh activation:
+Sinusoidal with velocity feedback + time envelope:
 
 ```
-act_i(t) = tanh( W_i · sin(ωt + phases) + b_i )
+raw_i(t) = tanh( W_i · sin(ωt + phases) + b_i + g_i · (1000 · v_com_x) )
+act_i(t) = raw_i(t) · σ( a_i + c_i · t/T )
 ```
 
-- `W`: (n_actuators, n_sin_waves) = (10, 4) weight matrix
-- `b`: (n_actuators,) bias vector
+- `W`: (10, 4) sin-wave weight matrix
+- `b`: (10,) bias vector
+- `g`: (10,) per-actuator velocity feedback gain (v_com_x scaled ×1000)
+- `a`: (10,) envelope offset
+- `c`: (10,) envelope slope
 - `ω = 20.0 rad/s`, `frame_dt = 8ms` → period ≈ 39 env steps
-- `phi = [W.flatten(), b]` → 50 parameters
+- `phi = [W.flatten(), b, g, a, c]` → 80 parameters
 - `phi ∈ [-0.5, 0.5]` to keep tanh in its linear region (prevent saturation)
 
-### Known Limitation
+**Velocity feedback** (`g · v_com_x_scaled`): When the robot decelerates,
+the feedback term adapts actuator output to compensate. v_com_x is scaled
+by 1000 so the feedback is O(0.1), comparable to the sin-wave terms.
 
-After 2–3 gait cycles (~100 env steps), the MPM soft body drifts from its
-initial shape under repeated loading. The fixed open-loop signal no longer
-matches the deformed body → the robot stalls. This is a fundamental limitation
-of open-loop control on plastically-deforming soft bodies.
+**Time envelope** (`σ(a + c · t/T)`): Per-actuator sigmoid modulation
+over the rollout horizon. Enables phased strategies: e.g. front actuators
+push hard early, then taper off as body deforms.
 
 ---
 

@@ -22,12 +22,12 @@ class JaxMpmTaskDomainProvider:
         # JaxMpmRolloutEvaluator reads `modes[*].friction` and maps fidelity_level
         # through its own FIDELITY_STEPS table. SoftZooTaskSpec is frozen and has
         # no phi_dim/x_dim fields, so we proxy it and expose those attributes for
-        # the richer tanh(W·sin+b) controller: n_act*n_sin_waves + n_act = 50.
+        # the controller: W(n_act*K) + b(n_act) + g(n_act) + a(n_act) + c(n_act) = 80.
         from genedynamics.envs.external.jax_mpm.scene import MPMConfig
         from genedynamics.envs.external.softzoo.task_registry import get_task_spec
         spec = get_task_spec(task_id)
         cfg = MPMConfig()
-        phi_dim = cfg.n_actuators * cfg.n_sin_waves + cfg.n_actuators
+        phi_dim = cfg.n_actuators * cfg.n_sin_waves + 4 * cfg.n_actuators
         vx, vy, vz = cfg.voxel_dims
         x_dim = vx * vy * vz   # voxel occupancy = morphology
 
