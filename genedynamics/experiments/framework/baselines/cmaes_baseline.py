@@ -56,15 +56,28 @@ class CMAESBaseline(BaselineProtocol):
         max_generations = max(max_generations, 1)
 
         theta_dim = x_dim + phi_dim
-        x_lo = np.full(x_dim, 0.01, dtype=np.float32)
-        x_hi = np.full(x_dim, 2.0, dtype=np.float32)
-        phi_lo = np.full(phi_dim, 5.0, dtype=np.float32)
-        phi_hi = np.full(phi_dim, 150.0, dtype=np.float32)
+        # Bounds come from method_params so each task can override them. The
+        # legacy softzoo defaults (x∈[0.01, 2.0], φ∈[5, 150]) are kept as
+        # fallback but will saturate the tanh in jax_mpm — new configs must
+        # pass x_lo/x_hi/phi_lo/phi_hi explicitly.
+        x_lo_v = float(extra.get("x_lo", 0.01))
+        x_hi_v = float(extra.get("x_hi", 2.0))
+        phi_lo_v = float(extra.get("phi_lo", 5.0))
+        phi_hi_v = float(extra.get("phi_hi", 150.0))
+        x_lo = np.full(x_dim, x_lo_v, dtype=np.float32)
+        x_hi = np.full(x_dim, x_hi_v, dtype=np.float32)
+        phi_lo = np.full(phi_dim, phi_lo_v, dtype=np.float32)
+        phi_hi = np.full(phi_dim, phi_hi_v, dtype=np.float32)
         lo = np.concatenate([x_lo, phi_lo])
         hi = np.concatenate([x_hi, phi_hi])
 
-        # Initial mean: center of bounds
-        x0 = (lo + hi) / 2.0
+        # Initial mean: x_mean / 0 (center of bounds) — configurable via extra.
+        x_mean = float(extra.get("x_mean", (x_lo_v + x_hi_v) / 2.0))
+        phi_mean = float(extra.get("phi_mean", (phi_lo_v + phi_hi_v) / 2.0))
+        x0 = np.concatenate([
+            np.full(x_dim, x_mean, dtype=np.float32),
+            np.full(phi_dim, phi_mean, dtype=np.float32),
+        ])
 
         num_evals = 0
         wall_start = time.perf_counter()
@@ -113,10 +126,12 @@ class CMAESBaseline(BaselineProtocol):
             """Single-θ fallback (used by final_return validation)."""
             return float(evaluate_population(theta[None, :])[0])
 
-        # Try cma package first
+        # Try cma package first. Both backends append to `gen_history` in-place.
+        gen_history: list = []
         best_theta, best_return = self._run_cma(
             evaluate_population, x0, sigma0, lo, hi,
             popsize=popsize, max_generations=max_generations,
+            gen_history=gen_history,
         )
 
         wall_time = time.perf_counter() - wall_start
@@ -142,6 +157,7 @@ class CMAESBaseline(BaselineProtocol):
                 "sigma0": sigma0,
                 "max_generations": max_generations,
                 "total_budget": total_budget,
+                "generation_history": gen_history,
             },
         )
 
@@ -154,24 +170,31 @@ class CMAESBaseline(BaselineProtocol):
         hi: np.ndarray,
         popsize: int,
         max_generations: int,
+        gen_history: list | None = None,
     ):
         """Run CMA-ES. Try `cma` package, fall back to simple ES.
 
         `population_objective(thetas: (P, D)) -> returns: (P,)` — mode-majored
         inside for env-reuse friendliness. CMA-ES itself sees one fitness per θ.
+        If `gen_history` is provided, each generation appends a dict with
+        best_return / mean_return / elite_mean_return so the caller can plot
+        reward-vs-generation against diffusion baselines.
         """
         try:
             import cma  # noqa: F401
             return self._run_cma_package(
                 population_objective, x0, sigma0, lo, hi, popsize, max_generations,
+                gen_history=gen_history,
             )
         except ImportError:
             return self._run_simple_es(
                 population_objective, x0, sigma0, lo, hi, popsize, max_generations,
+                gen_history=gen_history,
             )
 
     def _run_cma_package(
         self, population_objective, x0, sigma0, lo, hi, popsize, max_generations,
+        gen_history: list | None = None,
     ):
         """CMA-ES via Hansen's `cma` package (batched)."""
         import cma
@@ -187,6 +210,7 @@ class CMAESBaseline(BaselineProtocol):
 
         best_theta = x0.copy()
         best_return = -np.inf
+        gen_idx = 0
 
         while not es.stop():
             solutions = es.ask()
@@ -197,12 +221,23 @@ class CMAESBaseline(BaselineProtocol):
             if returns[gen_best_idx] > best_return:
                 best_return = float(returns[gen_best_idx])
                 best_theta = thetas[gen_best_idx].copy()
+            if gen_history is not None:
+                mu = max(len(returns) // 2, 1)
+                elite_mask = np.argsort(-returns)[:mu]
+                gen_history.append({
+                    "generation": gen_idx,
+                    "best_return": float(returns.max()),
+                    "mean_return": float(returns.mean()),
+                    "elite_mean_return": float(returns[elite_mask].mean()),
+                })
             es.tell(solutions, fitnesses)
+            gen_idx += 1
 
         return best_theta, best_return
 
     def _run_simple_es(
         self, population_objective, x0, sigma0, lo, hi, popsize, max_generations,
+        gen_history: list | None = None,
     ):
         """
         Simple (μ, λ)-ES fallback when `cma` package is not installed.
@@ -239,6 +274,14 @@ class CMAESBaseline(BaselineProtocol):
             # Select top-μ
             rank = np.argsort(-returns)[:mu]
             selected_z = z[rank]
+
+            if gen_history is not None:
+                gen_history.append({
+                    "generation": _gen,
+                    "best_return": float(returns.max()),
+                    "mean_return": float(returns.mean()),
+                    "elite_mean_return": float(returns[rank].mean()),
+                })
 
             # Update mean
             mean = mean + sigma * np.sqrt(C_diag) * np.dot(weights, selected_z)

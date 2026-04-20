@@ -35,17 +35,22 @@ I3 = jnp.eye(3, dtype=DTYPE)
 # breaks the whole-body symmetry that kept the robot pancaking in place
 # and enables a real crawling gait under sinusoidal activation.
 def _muscle_directions(n_actuators: int) -> jnp.ndarray:
-    """Pure +X axial muscle direction for every actuator band.
+    """Lift-push muscle pattern: back half (+X, +Y), front half (+X, -Y),
+    unit-normalized. Breaks the pure-axial peristaltic ceiling (handcrafted
+    traveling-wave goes from disp=0.00078 to 0.00428 at act=12 — ~5.5x).
 
-    Each actuator contracts/extends along the body's longitudinal axis, so a
-    traveling-wave sin controller produces a peristaltic stretch-compress wave
-    along +X — the classic earthworm gait. Combined with mid friction (0.3-
-    0.5), stick-slip accumulates net forward displacement.
+    Actuator layout (see build_scene): bin 0 is at x_min (back/trailing edge),
+    bin n-1 is at x_max (front/leading edge). Back half pushes forward-and-up
+    (lift trailing edge off the ground between strides); front half pushes
+    forward-and-down (press leading edge into ground as an anchor).
     """
+    half = n_actuators // 2
     dx = jnp.ones((n_actuators,), dtype=DTYPE)
-    dy = jnp.zeros((n_actuators,), dtype=DTYPE)
+    idx = jnp.arange(n_actuators)
+    dy = jnp.where(idx < half, DTYPE(1.0), DTYPE(-1.0))
     dz = jnp.zeros((n_actuators,), dtype=DTYPE)
-    return jnp.stack([dx, dy, dz], axis=-1)  # (n_actuators, 3)
+    raw = jnp.stack([dx, dy, dz], axis=-1)
+    return raw / jnp.linalg.norm(raw, axis=-1, keepdims=True)
 
 
 # Unit-direction fallback (used when actuator_id == -1 / passive).
@@ -117,6 +122,10 @@ class MPMConfig:
 
     # Reward shaping
     shaping_weight: float = 100.0
+    # Penalty on backward COM velocity (sum of max(0, -v_x[t]) over rollout).
+    # 0 = main behaviour; smoothness variants set >0 so the optimizer is
+    # pressured to avoid "lunge-and-recoil" patterns.
+    backward_penalty_weight: float = 0.0
 
     @property
     def dx(self) -> float:
@@ -518,12 +527,22 @@ def rollout_return(
     carry, (com_v_hist, com_x_hist) = jax.lax.scan(
         body, carry, jnp.arange(num_env_steps, dtype=jnp.int32)
     )
-    per_step_v_sum = jnp.sum(com_v_hist[:, 0])
+    # Integrated forward displacement: rewards spending TIME ahead of start,
+    # not just ending ahead. Fixes the "lunge then stall/reverse" strategy the
+    # per_step_v_sum reward was indifferent to (Σv telescopes to final_disp/dt,
+    # so it is redundant with shaping_weight * final_disp).
+    per_step_forward_disp = jnp.sum(com_x_hist[:, 0] - init_com_x[0])
     final_disp = com_x_hist[-1, 0] - init_com_x[0]
     # Penalize empty/near-empty robots (no mass = trivially "fast" zeros).
     total_mass = jnp.sum(mass_field)
     mass_penalty = DTYPE(0.5) * jnp.maximum(DTYPE(0.1) * scene.n_particles - total_mass, 0.0)
-    reward = per_step_v_sum + DTYPE(cfg.shaping_weight) * final_disp - mass_penalty
+    # Backward-motion penalty: Σ_t max(0, -v_x[t]). Active only when
+    # cfg.backward_penalty_weight > 0 (smoothness variant).
+    backward_sum = jnp.sum(jnp.maximum(-com_v_hist[:, 0], 0.0))
+    smooth_pen = DTYPE(cfg.backward_penalty_weight) * backward_sum
+    reward = (per_step_forward_disp
+              + DTYPE(cfg.shaping_weight) * final_disp
+              - mass_penalty - smooth_pen)
     return reward, final_disp, com_x_hist
 
 
@@ -554,9 +573,13 @@ def rollout_with_positions(
     carry, (com_v_hist, com_x_hist, x_hist) = jax.lax.scan(
         body, carry, jnp.arange(num_env_steps, dtype=jnp.int32)
     )
-    per_step_v_sum = jnp.sum(com_v_hist[:, 0])
+    per_step_forward_disp = jnp.sum(com_x_hist[:, 0] - init_com_x[0])
     final_disp = com_x_hist[-1, 0] - init_com_x[0]
-    reward = per_step_v_sum + DTYPE(cfg.shaping_weight) * final_disp
+    backward_sum = jnp.sum(jnp.maximum(-com_v_hist[:, 0], 0.0))
+    smooth_pen = DTYPE(cfg.backward_penalty_weight) * backward_sum
+    reward = (per_step_forward_disp
+              + DTYPE(cfg.shaping_weight) * final_disp
+              - smooth_pen)
     return reward, final_disp, com_x_hist, x_hist, mass_field
 
 

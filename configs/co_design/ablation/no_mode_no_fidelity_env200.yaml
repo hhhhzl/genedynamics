@@ -1,10 +1,11 @@
-# Ablation: disable S1 mode marginalization (num_modes=1, single friction).
-# Friction = 0.45 (mean of the 4-mode main [0.3, 0.4, 0.5, 0.6]) so the
-# single-mode is the "average contact" rather than the default first mode (0.3).
-# Everything else identical to main/crawling_ground.yaml.
-name: ablation_no_mode_marginalization
-output_dir: results/co_design/ablation/no_mode_marginalization
-cache_dir: results/co_design/ablation/no_mode_marginalization_cache
+# Ablation: disable BOTH S1 (num_modes=1, fr=0.45) AND S3 (single fidelity,
+# env=200). This is the apples-to-apples diffusion counterpart of CMA-ES env=200
+# and CEM env=200 — same contact, same fidelity, same rollout count — so the
+# residual gap tells us what the diffusion optimizer itself contributes over
+# classical evolutionary search.
+name: ablation_no_mode_no_fidelity_env200
+output_dir: results/co_design/ablation/no_mode_no_fidelity_env200
+cache_dir: results/co_design/ablation/no_mode_no_fidelity_env200_cache
 
 baseline_name: mrmfmbd
 task_domain: jax_mpm
@@ -35,10 +36,10 @@ scheduler_config:
 method_params:
   backend: mbd
   num_modes: 1                    # <-- ablation: no S1
-  num_fidelity_levels: 3
+  num_fidelity_levels: 1          # <-- ablation: no S3
   fidelity_ladder_type: geometric
   fidelity_step_ratio: 1.5
-  fine_fidelity_level: 2
+  fine_fidelity_level: 2          # env=200
   reward_temperature_min: 0.05
   tau_frac: 0.05
   top_k_fine: 5

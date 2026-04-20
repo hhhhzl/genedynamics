@@ -110,12 +110,23 @@ class MRMFMBDBaseline(BaselineProtocol):
             default_mode_system_config(num_modes),
             backend="jax",
         )
-        fidelity_ladder = create_fidelity_ladder(
-            K=K, num_levels=num_fidelity_levels,
-            ladder_type=fidelity_ladder_type, step_ratio=fidelity_step_ratio,
-        )
-
         fine_fidelity = extra.get("fine_fidelity_level", max(0, num_fidelity_levels - 1))
+        # When num_fidelity_levels==1 the ladder collapses to a single level.
+        # `create_fidelity_ladder` otherwise ignores fine_fidelity_level and
+        # fills the ladder with level 0 regardless — so we pass explicit_levels
+        # to pin the whole ladder at the requested `fine_fidelity_level`.
+        if int(num_fidelity_levels) <= 1:
+            fidelity_ladder = create_fidelity_ladder(
+                K=K,
+                num_levels=max(int(fine_fidelity) + 1, 1),  # must cover level `fine_fidelity`
+                ladder_type=fidelity_ladder_type, step_ratio=fidelity_step_ratio,
+                explicit_levels=[int(fine_fidelity)] * K,
+            )
+        else:
+            fidelity_ladder = create_fidelity_ladder(
+                K=K, num_levels=num_fidelity_levels,
+                ladder_type=fidelity_ladder_type, step_ratio=fidelity_step_ratio,
+            )
 
         if backend_type == "mbd":
             # Level-3: DDPM reverse-diffusion with S1 marginalization + S3 ladder.
@@ -221,5 +232,10 @@ class MRMFMBDBaseline(BaselineProtocol):
                 "final_eval_returns": eval_batch.returns.tolist(),
                 "final_eval_successes": eval_batch.successes.tolist(),
                 "final_eval_failure_codes": list(eval_batch.failure_codes),
+                # (K, D) theta trajectory used by diffusion-evolution plots.
+                # Stored as list-of-lists for JSON serializability.
+                "theta_history": np.asarray(
+                    result.get("theta_history", []), dtype=np.float32
+                ).tolist(),
             },
         )

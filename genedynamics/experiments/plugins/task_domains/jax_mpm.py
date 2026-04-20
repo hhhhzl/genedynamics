@@ -54,7 +54,8 @@ class JaxMpmTaskDomainProvider:
             JaxMpmEvaluatorConfig,
         )
         runtime_keys = ("dt", "gravity", "scale", "p_vol", "friction_coeff",
-                        "actuation_strength_scale", "act_strength_base")
+                        "actuation_strength_scale", "act_strength_base",
+                        "mode_friction", "backward_penalty_weight")
         runtime_config = {k: kwargs[k] for k in runtime_keys if k in kwargs}
         voxel_dims = kwargs.get("voxel_dims")
         if voxel_dims is not None:

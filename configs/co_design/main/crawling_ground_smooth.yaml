@@ -1,15 +1,13 @@
-# MRMFMBD co-design: crawling_ground (full S1 mode marginalization + S3 fidelity ladder)
+# Smoothness variant of main/crawling_ground.yaml.
 #
-# 4x3x4 voxels with Z-symmetry (optimizer sees 24 morphology dims, mirrored to 48).
-# Controller phi_dim=80: W(40) + b(10) + g_feedback(10) + a_envelope(10) + c_envelope(10).
-# Reward: Σ_t(com_x[t] - com_x[0]) + 100·final_disp — integrated forward disp
-# breaks the "lunge-and-stall" local optimum that pure final_disp rewarded.
-# Physics: act=24 + lift_push muscle directions (scene.py:_muscle_directions)
-# → disp=0.058 (58% body length / 1.6s), breaks the axial-peristaltic ceiling
-# at 0.014 that persisted under all sampling/temperature/reward variants.
-name: mrmfmbd_crawling_ground
-output_dir: results/co_design/main/crawling_ground
-cache_dir: results/co_design/main/crawling_ground_cache
+# Only difference vs main: add backward_penalty_weight=10.0 — penalizes
+# Σ_t max(0, -v_x[t]) to suppress the lunge-then-recoil pattern that
+# current main's trajectory shows (disp spikes at t=50 → dips at t=75 →
+# spikes at t=100 → dips at t=150). Target outcome: disp_t curve closer to
+# monotonic, CV across friction modes tighter.
+name: mrmfmbd_crawling_ground_smooth
+output_dir: results/co_design/main/crawling_ground_smooth
+cache_dir: results/co_design/main/crawling_ground_smooth_cache
 
 baseline_name: mrmfmbd
 task_domain: jax_mpm
@@ -24,6 +22,7 @@ evaluator_runtime:
   voxel_dims: [4, 3, 4]
   act_strength_base: 24.0
   scale: 50.0
+  backward_penalty_weight: 10.0   # <-- smoothness knob (main uses 0.0)
 
 scheduler_config:
   type: composite

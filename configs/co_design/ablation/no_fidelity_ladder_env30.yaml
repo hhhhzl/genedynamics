@@ -1,8 +1,8 @@
-# Ablation: disable S3 fidelity ladder (single fidelity level, always fine).
+# Ablation: disable S3 fidelity ladder — single fidelity level = 0 (30 env steps).
 # Everything else identical to main/crawling_ground.yaml.
-name: ablation_no_fidelity_ladder
-output_dir: results/co_design/ablation/no_fidelity_ladder
-cache_dir: results/co_design/ablation/no_fidelity_ladder_cache
+name: ablation_no_fidelity_ladder_env30
+output_dir: results/co_design/ablation/no_fidelity_ladder_env30
+cache_dir: results/co_design/ablation/no_fidelity_ladder_env30_cache
 
 baseline_name: mrmfmbd
 task_domain: jax_mpm
@@ -15,14 +15,14 @@ evaluator_runtime:
   reward_shaping_weight: 100.0
   n_grid: 64
   voxel_dims: [4, 3, 4]
-  act_strength_base: 12.0
+  act_strength_base: 24.0
   scale: 50.0
 
 scheduler_config:
   type: composite
   diffusion_schedulers:
     - type: fixed
-      M_k: 64
+      M_k: 32
       T_k: 0.5
       Ndiffuse: 100
       beta0: 1.0e-4

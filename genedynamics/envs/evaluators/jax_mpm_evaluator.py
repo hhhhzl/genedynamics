@@ -65,7 +65,8 @@ class JaxMpmRolloutEvaluator:
             mpm_kwargs["voxel_dims"] = tuple(int(v) for v in self.config.voxel_dims)
         # Let runtime_config override anything in MPMConfig (e.g., dt, gravity).
         for k in ("dt", "gravity", "scale", "p_vol", "friction_coeff",
-                  "actuation_strength_scale", "act_strength_base"):
+                  "actuation_strength_scale", "act_strength_base",
+                  "backward_penalty_weight"):
             if k in self._runtime_config:
                 mpm_kwargs[k] = float(self._runtime_config[k])
 
@@ -73,8 +74,16 @@ class JaxMpmRolloutEvaluator:
                                      if k in MPMConfig.__dataclass_fields__})
         self._scene = build_scene(self._mpm_cfg)
 
-        # Mode → friction table. Mirrors softzoo task_registry.DEFAULT_MODES.
-        self._mode_friction = [0.3, 0.4, 0.5, 0.6]
+        # Mode → friction table. Default mirrors softzoo task_registry.DEFAULT_MODES.
+        # Overridable via runtime_config["mode_friction"] (list of floats) so
+        # single-mode ablations can pick a specific coefficient (e.g., the mean
+        # 0.45 instead of the default-first 0.3).
+        default_mode_friction = [0.3, 0.4, 0.5, 0.6]
+        override = self._runtime_config.get("mode_friction")
+        if override is not None:
+            self._mode_friction = [float(f) for f in override]
+        else:
+            self._mode_friction = default_mode_friction
 
     # -- protocol ------------------------------------------------------------
 

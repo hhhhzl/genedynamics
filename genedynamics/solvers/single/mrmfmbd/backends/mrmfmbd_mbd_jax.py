@@ -439,6 +439,11 @@ class MRMFMBDBackendMBD:
                 "mean_env_return": mean_env_return,
                 "ess": ess,
                 "w_c_mean": w_c_mean,
+                # Full theta checkpoint after denoise at this step. Scan stacks
+                # these into (K, D). Post-hoc visualization uses a sparse subset
+                # (e.g. k ∈ {0, K/5, 2K/5, ...}); the cost of keeping all K is
+                # K × D × 4 bytes = 100 × 104 × 4 ≈ 42 KB — negligible.
+                "Ybar": Ybar_next,
             }
             return (Ybar_next, rng_key, new_topk_theta, new_topk_score), out
 
@@ -500,6 +505,7 @@ class MRMFMBDBackendMBD:
         stitched: Dict[str, List[np.ndarray]] = {
             "sigma_k": [], "tau_k": [], "T_k": [],
             "mean_R_s1": [], "mean_env_return": [], "ess": [], "w_c_mean": [],
+            "Ybar": [],
         }
         fidelity_history: List[int] = []
         block_wall_times: List[float] = []
@@ -586,6 +592,9 @@ class MRMFMBDBackendMBD:
             ],
             "wall_clock": wall,
             "block_wall_times": block_wall_times,
+            # (K, D) trajectory of the denoised mean across all diffusion steps.
+            # Row i corresponds to bridge_history[i]["k_forward"] = i.
+            "theta_history": per_step["Ybar"],
         }
 
     def _fine_revalidate(

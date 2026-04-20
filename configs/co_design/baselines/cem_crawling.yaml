@@ -1,10 +1,11 @@
-# CMA-ES baseline for crawling_ground.
+# CEM (Cross-Entropy Method) baseline for crawling_ground.
 # Same task/physics as main/crawling_ground.yaml for fair comparison.
-name: cmaes_crawling_ground
-output_dir: results/co_design/baselines/cmaes_crawling
-cache_dir: results/co_design/baselines/cmaes_crawling_cache
+# Budget = Ndiffuse × M_k × num_modes  (matches MRMFMBD main).
+name: cem_crawling_ground
+output_dir: results/co_design/baselines/cem_crawling
+cache_dir: results/co_design/baselines/cem_crawling_cache
 
-baseline_name: cmaes
+baseline_name: cem
 task_domain: jax_mpm
 task_id: crawling_ground
 seeds: [0]
@@ -17,12 +18,9 @@ evaluator_runtime:
   voxel_dims: [4, 3, 4]
   act_strength_base: 24.0
   scale: 50.0
-  mode_friction: [0.45]           # single-mode = mean; cmaes has no S1
+  mode_friction: [0.45]           # single-mode = mean; cem has no S1
 
 scheduler_config:
-  # CMA-ES doesn't use the diffusion schedule directly, but the baseline
-  # reads Ndiffuse × M_k × num_modes as the total rollout budget for fair
-  # comparison against MRMFMBD main (100 × 32 × 4 = 12800 rollouts).
   type: composite
   diffusion_schedulers:
     - type: fixed
@@ -36,12 +34,14 @@ scheduler_config:
 method_params:
   num_modes: 1                # no S1 mode marginalization
   popsize: 32                 # K·M·num_modes/(popsize·num_modes) = 100 generations
-  sigma0: 0.3
+  elite_frac: 0.25
+  init_std: 0.3
+  min_std: 0.02
+  noise_decay: 0.97
+  extra_noise: 0.05
   show_tqdm: true
   fine_fidelity_level: 1      # 100 env-steps (no S3 — single fidelity)
-  # Search bounds — must match jax_mpm's clipping (scene.py uses phi ∈ [-0.5, 0.5]
-  # and morphology ∈ [0.2, 1.0]). The cmaes baseline's legacy softzoo defaults
-  # (phi ∈ [5, 150]) would saturate every tanh and flatten the fitness surface.
+  # Search bounds must match jax_mpm's controller clipping.
   x_lo: 0.2
   x_hi: 1.0
   x_mean: 0.6
