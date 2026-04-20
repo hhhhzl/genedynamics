@@ -195,8 +195,12 @@ class MRMFMBDBaseline(BaselineProtocol):
             x_star_full = np.concatenate([h, np.flip(h, axis=-1)], axis=-1).reshape(-1)
 
         # Re-evaluate best theta to report a real rollout return (not bridge proxy).
+        # Eval at the user-specified fine_fidelity_level — matches what the ladder
+        # actually saw. Using (num_fidelity_levels - 1) would pick fid=0 when the
+        # ablation has num_fidelity_levels=1 but fine_fidelity=1 or 2, producing
+        # a return from a 30-step rollout instead of the intended 100/200.
         from genedynamics.envs.evaluators import RolloutBatchRequest, RolloutRequest
-        eval_fidelity = max(0, num_fidelity_levels - 1)
+        eval_fidelity = int(fine_fidelity)
         eval_requests = [
             RolloutRequest(
                 morphology_params=x_star_full,
