@@ -2,8 +2,8 @@
 JAX backend for MRMFMBD posterior bridge (theta = x, phi co-design).
 
 True posterior bridge: π_k(θ) ∝ p0(θ) * p(R|θ)^β_k with MCSA score ascent.
-- S1: Mode marginalization (ModeMarginalizerS1) - log p(R|θ)=logsumexp(log p(c)+R_c/T)
-- S3: Multi-fidelity ladder (FidelityLadderS3) - coarse→fine, cost-optimal
+- Mode marginalization (ModeMarginalizer) - log p(R|θ)=logsumexp(log p(c)+R_c/T)
+- Multi-fidelity ladder (BlockFidelityLadder) - coarse→fine, cost-optimal
 - Output: bridge_history, mode_responsibilities, fidelity_history, fine_calls
 """
 
@@ -31,34 +31,34 @@ from genedynamics.core.inference.annealed_bridge import (
 from genedynamics.core.inference.mcsa import ImportanceWeighter, MCSADiagnostics
 from genedynamics.solvers.single.mrmfmbd.theta_prior import ThetaParametrization, ThetaPrior
 
-# S1/S3 systems (optional - backward compat with core.inference)
+# Mode + Fidelity systems (optional - backward compat with core.inference)
 try:
-    from genedynamics.solvers.single.mrmfmbd.s1_mode_system import (
-        ModeMarginalizerS1,
+    from genedynamics.solvers.single.mrmfmbd.mode_system import (
+        ModeMarginalizer,
         ModeSystemConfig,
         default_mode_system_config,
     )
-    S1_AVAILABLE = True
+    MODE_SYSTEM_AVAILABLE = True
 except ImportError:
-    ModeMarginalizerS1 = None
+    ModeMarginalizer = None
     ModeSystemConfig = None
     default_mode_system_config = None
-    S1_AVAILABLE = False
+    MODE_SYSTEM_AVAILABLE = False
 
 try:
-    from genedynamics.solvers.single.mrmfmbd.s3_fidelity_system import (
-        FidelityLadderS3,
+    from genedynamics.solvers.single.mrmfmbd.fidelity_system import (
+        BlockFidelityLadder,
         create_fidelity_ladder,
         FidelitySystemConfig,
         default_fidelity_system_config,
     )
-    S3_AVAILABLE = True
+    FIDELITY_SYSTEM_AVAILABLE = True
 except ImportError:
-    FidelityLadderS3 = None
+    BlockFidelityLadder = None
     create_fidelity_ladder = None
     FidelitySystemConfig = None
     default_fidelity_system_config = None
-    S3_AVAILABLE = False
+    FIDELITY_SYSTEM_AVAILABLE = False
 
 # Fallback to core.inference
 try:
@@ -106,7 +106,7 @@ class MRMFMBDPosteriorBackendJax:
     Posterior bridge for soft-robot co-design: theta = (x, phi).
 
     Uses annealed bridge π_k(θ) ∝ p0(θ) * p(R|θ)^β_k with MCSA score ascent.
-    S1: Mode marginalization. S3: Multi-fidelity ladder.
+    Mode marginalization. Multi-fidelity ladder.
     """
 
     def __init__(
@@ -142,17 +142,17 @@ class MRMFMBDPosteriorBackendJax:
         K = self.config.K
         self.bridge_schedule = bridge_schedule or create_linear_bridge_schedule(K=K)
 
-        # S1: Mode marginalization (theory-correct)
+        # Mode marginalization (theory-correct)
         self.mode_marginalizer = mode_marginalizer
-        if self.mode_marginalizer is None and S1_AVAILABLE and default_mode_system_config:
-            self.mode_marginalizer = ModeMarginalizerS1(
+        if self.mode_marginalizer is None and MODE_SYSTEM_AVAILABLE and default_mode_system_config:
+            self.mode_marginalizer = ModeMarginalizer(
                 default_mode_system_config(num_modes),
                 backend="jax",
             )
 
-        # S3: Fidelity ladder (cost-optimal coarse→fine)
+        # Fidelity ladder (cost-optimal coarse→fine)
         self.fidelity_ladder = fidelity_ladder
-        if self.fidelity_ladder is None and S3_AVAILABLE and create_fidelity_ladder:
+        if self.fidelity_ladder is None and FIDELITY_SYSTEM_AVAILABLE and create_fidelity_ladder:
             self.fidelity_ladder = create_fidelity_ladder(
                 K=K, num_levels=3, ladder_type="geometric", step_ratio=1.5
             )
@@ -194,23 +194,29 @@ class MRMFMBDPosteriorBackendJax:
         M, _ = proposals.shape
         rewards = np.zeros((M, self.num_modes), dtype=np.float32)
 
+        # Pack all M*num_modes requests into one batch so the evaluator's
+        # process pool can saturate (up to max_workers). The previous
+        # per-mode loop only exposed M parallelism, leaving idle workers.
+        flat_requests = []
+        index_pairs = []
         for c in range(self.num_modes):
-            requests = [
-                RolloutRequest(
-                    morphology_params=proposals[m, : self.theta_param.x_dim],
-                    controller_params=proposals[m, self.theta_param.x_dim :],
-                    mode_id=c,
-                    fidelity_level=fidelity_level,
-                    seed=seed_base + m * self.num_modes + c,
-                    num_repeats=1,
-                    record=False,
+            for m in range(M):
+                flat_requests.append(
+                    RolloutRequest(
+                        morphology_params=proposals[m, : self.theta_param.x_dim],
+                        controller_params=proposals[m, self.theta_param.x_dim :],
+                        mode_id=c,
+                        fidelity_level=fidelity_level,
+                        seed=seed_base + m * self.num_modes + c,
+                        num_repeats=1,
+                        record=False,
+                    )
                 )
-                for m in range(M)
-            ]
-            batch_req = RolloutBatchRequest(task_id=self.task_id, requests=requests)
-            batch_res = self.evaluator.evaluate_batch(batch_req, parallel=False, use_cache=False)
-            rewards[:, c] = batch_res.returns
-
+                index_pairs.append((m, c))
+        batch_req = RolloutBatchRequest(task_id=self.task_id, requests=flat_requests)
+        batch_res = self.evaluator.evaluate_batch(batch_req, parallel=True, use_cache=False)
+        for (m, c), r in zip(index_pairs, batch_res.returns):
+            rewards[m, c] = r
         return rewards
 
     def _compute_marginal_log_likelihood_and_responsibilities(
@@ -218,7 +224,7 @@ class MRMFMBDPosteriorBackendJax:
         rewards: np.ndarray,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """
-        S1 theory-correct: log p(R|θ) = logsumexp(log p(c) + R_c/T)
+        Mode theory-correct: log p(R|θ) = logsumexp(log p(c) + R_c/T)
         w_c = softmax(log p(c) + R_c/T).  Note: β NOT inside mixture.
         """
         if self.mode_marginalizer is not None:
@@ -246,10 +252,20 @@ class MRMFMBDPosteriorBackendJax:
         log_probs: jnp.ndarray,
         sigma: float,
     ) -> Tuple[jnp.ndarray, MCSADiagnostics]:
-        """MCSA score: (1/sigma) * sum_m w_m * delta_m."""
+        """
+        MCSA score with baseline subtraction (Eq. 169 in tex):
+            score = (1/σ) Σ_m w_m * (δ_m - δ̄)
+        where δ̄ = Σ_m w_m * δ_m is the weighted mean (baseline).
+        The subtraction reduces variance without changing the expectation.
+        """
         weights = self._weighter(log_probs, axis=0)
         weights = jnp.reshape(weights, (-1, 1))
-        score = jnp.sum(weights * deltas, axis=0) / max(sigma, 1e-8)
+
+        # Baseline subtraction: subtract weighted mean perturbation
+        delta_baseline = jnp.sum(weights * deltas, axis=0, keepdims=True)
+        centered_deltas = deltas - delta_baseline
+
+        score = jnp.sum(weights * centered_deltas, axis=0) / max(sigma, 1e-8)
 
         from genedynamics.core.inference.diagnostics import effective_sample_size, degeneracy_flags
 
@@ -287,6 +303,11 @@ class MRMFMBDPosteriorBackendJax:
         fidelity_history: List[int] = []
         fine_calls = 0
         wall_clock_start = time.perf_counter()
+
+        # Top-K candidate tracking: keep best candidates seen during optimization
+        top_k = max(self.config.top_k_fine, 1)
+        # Each entry: (mean_reward, theta_snapshot)
+        _top_k_candidates: List[Tuple[float, np.ndarray]] = []
 
         iter_range = range(K)
         if self.show_tqdm:
@@ -327,7 +348,7 @@ class MRMFMBDPosteriorBackendJax:
             # Log prior for each proposal
             log_prior_vals = self.theta_prior.log_prob_batch(proposals)
 
-            # S1: log p(R|θ) = logsumexp(log p(c) + R_c/T), w_c = responsibilities
+            # Mode: log p(R|θ) = logsumexp(log p(c) + R_c/T), w_c = responsibilities
             # Theory: β_k applied externally: log π_k(θ) = log p0(θ) + β_k * log p(R|θ)
             marginal_log, w_c = self._compute_marginal_log_likelihood_and_responsibilities(
                 rewards
@@ -347,6 +368,13 @@ class MRMFMBDPosteriorBackendJax:
             theta = theta + eta_k * score + tau_k * noise
             theta = self.theta_param.clip(theta)
 
+            # Track top-K candidates by mean reward
+            step_mean_reward = float(np.mean(rewards))
+            theta_snapshot = np.asarray(theta).copy()
+            _top_k_candidates.append((step_mean_reward, theta_snapshot))
+            _top_k_candidates.sort(key=lambda t: -t[0])
+            _top_k_candidates = _top_k_candidates[:top_k]
+
             step_time = (time.perf_counter() - t0) * 1e3
             bridge_history.append({
                 "k": k,
@@ -360,29 +388,37 @@ class MRMFMBDPosteriorBackendJax:
                 "wall_time_ms": step_time,
             })
 
-        # Top-K fine validation
-        if self.config.top_k_fine > 0 and self.config.fine_fidelity_level > max(fidelity_history):
+        # Top-K fine validation using tracked candidates
+        best_fine_return = -np.inf
+        best_fine_theta = np.asarray(theta)
+        if self.config.top_k_fine > 0 and _top_k_candidates:
             from genedynamics.envs.evaluators import RolloutBatchRequest, RolloutRequest
 
-            # Use last theta as candidate; in full impl would keep top-K from history
-            candidates = [theta]
-            for cand in candidates[: self.config.top_k_fine]:
-                req = RolloutBatchRequest(
-                    task_id=self.task_id,
-                    requests=[
-                        RolloutRequest(
-                            morphology_params=np.asarray(cand[: self.theta_param.x_dim]),
-                            controller_params=np.asarray(cand[self.theta_param.x_dim :]),
-                            mode_id=0,
-                            fidelity_level=self.config.fine_fidelity_level,
-                            seed=self.seed + 999,
-                            num_repeats=2,
-                            record=False,
-                        )
-                    ],
-                )
-                _ = self.evaluator.evaluate_batch(req, parallel=False, use_cache=False)
-                fine_calls += 1
+            fine_level = self.config.fine_fidelity_level
+            for _score, cand in _top_k_candidates:
+                cand_np = np.asarray(cand)
+                requests = [
+                    RolloutRequest(
+                        morphology_params=cand_np[: self.theta_param.x_dim],
+                        controller_params=cand_np[self.theta_param.x_dim :],
+                        mode_id=c,
+                        fidelity_level=fine_level,
+                        seed=self.seed + 999 + c,
+                        num_repeats=1,
+                        record=False,
+                    )
+                    for c in range(self.num_modes)
+                ]
+                req = RolloutBatchRequest(task_id=self.task_id, requests=requests)
+                res = self.evaluator.evaluate_batch(req, parallel=True, use_cache=False)
+                fine_calls += self.num_modes
+                cand_return = float(np.mean(res.returns))
+                if cand_return > best_fine_return:
+                    best_fine_return = cand_return
+                    best_fine_theta = cand_np
+
+            # Use the best fine-validated candidate
+            theta = jnp.asarray(best_fine_theta, dtype=jnp.float32)
 
         wall_clock_total = time.perf_counter() - wall_clock_start
 
@@ -396,6 +432,10 @@ class MRMFMBDPosteriorBackendJax:
             "mode_responsibilities": np.array(mode_responsibilities_history),
             "fidelity_history": fidelity_history,
             "fine_calls": fine_calls,
+            "best_fine_return": best_fine_return if best_fine_return > -np.inf else None,
+            "top_k_candidates": [
+                {"reward": s, "theta": t.tolist()} for s, t in _top_k_candidates
+            ],
             "wall_clock": wall_clock_total,
             "diagnostics": {
                 "K": K,

@@ -1,0 +1,40 @@
+env_name: 3dgs_tum_rgbd
+env_params:
+  dataset_root: data/tum
+  sequence: rgbd_dataset_freiburg1_desk
+  use_stub_when_unavailable: false
+  split: train
+  eval_split: test
+  perturb_target_split: train
+  max_views: 100
+  view_stride: 1
+  shuffle_seed: 0
+  resolution_infer: 128
+  resolution_eval: 480
+  composite_background: white
+  pose_convention: opencv
+  train_frac: 0.9
+  max_time_diff: 0.02
+  pose_bias_rotation_deg: 5.0
+  pose_bias_translation_m: 0.25
+  pose_bias_seed: 0
+method: gsplat
+method_params:
+  n_gaussians: 4096
+scheduler_config: null
+seeds:
+- 0
+backend: jax
+device: cuda
+metrics: []
+visualizations: []
+name: tum_desk_gsplat_pose_extreme_v2
+output_dir: results/3dgs/exp2_robust/tum/gsplat/tum_desk_gsplat_pose_extreme_v2
+gsplat_training:
+  iters: 3000
+  densify: true
+  max_gaussians: 8000
+  lr: 0.0025
+metadata:
+  description: TUM fr1_desk pose_extreme_v2 gsplat
+  training: gsplat 3000 iters, densify, 8000 Gaussians

@@ -89,51 +89,10 @@ class SceneParams:
         return cls(means=means, scales=scales, quats=quats, opacities=opacities, colors=colors, spherical_harmonics=sh)
 
 
-@dataclass
-class CameraPose:
-    """
-    Camera pose (extrinsics).
-
-    Attributes:
-        position: (3,) camera position in world
-        quaternion: (4,) xyzw quaternion for orientation
-        or rotation_matrix: (3, 3) alternative to quaternion
-    """
-
-    position: Array
-    quaternion: Optional[Array] = None
-    rotation_matrix: Optional[Array] = None
-
-    def to_matrix(self) -> Array:
-        """4x4 extrinsic matrix."""
-        raise NotImplementedError("Subclass or implement for backend")
-
-
-@dataclass
-class ObservationBundle:
-    """
-    Bundle of observations for likelihood computation.
-
-    Attributes:
-        images: list of (H, W, C) images or stacked (N, H, W, C)
-        camera_poses: list of CameraPose or (N, 7) [px, py, pz, qw, qx, qy, qz]
-        intrinsics: (3, 3) or (N, 3, 3) camera intrinsics
-        masks: optional (N, H, W) validity masks
-        timestamps: optional (N,) for temporal ordering
-    """
-
-    images: Array
-    camera_poses: Array  # (N, 7) or list of CameraPose
-    intrinsics: Optional[Array] = None
-    masks: Optional[Array] = None
-    timestamps: Optional[Array] = None
-    initial_scene: Optional[Any] = None  # SceneParams for MBD warm start
-
-    @property
-    def num_views(self) -> int:
-        if hasattr(self.images, "shape"):
-            return int(self.images.shape[0]) if self.images.ndim >= 4 else 1
-        return len(self.images)
+# CameraPose and ObservationBundle now live in genedynamics.data.types
+# (shared across all dataset adapters). Re-exported here for backward
+# compatibility with existing `from ...mbd3d.types import ObservationBundle`.
+from genedynamics.data.types import CameraPose, ObservationBundle  # noqa: F401
 
 
 @dataclass

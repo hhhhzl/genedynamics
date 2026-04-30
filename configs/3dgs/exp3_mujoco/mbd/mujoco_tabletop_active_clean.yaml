@@ -1,0 +1,83 @@
+name: mujoco_tabletop_active_clean
+output_dir: results/3dgs/exp3_mujoco/mbd/mujoco_tabletop_active_clean
+env_name: 3dgs_mujoco_active
+env_params:
+  xml_path: assets/mujoco/tabletop_scene.xml
+  candidate_views_path: assets/mujoco/candidate_views.json
+  camera_name: render_cam
+  render_height: 256
+  render_width: 256
+  render_fov_deg: 60.0
+  image_height: 128
+  image_width: 128
+  resolution_infer: 128
+  resolution_eval: 256
+  composite_background: black
+  pose_convention: opencv
+  max_views: 40
+  train_frac: 0.75
+  split: train
+  eval_split: test
+  perturb_target_split: train
+method: mbd3d_active
+method_params:
+  n_gaussians: 4096
+  ess_min: 2.0
+  observation_sigma2: 0.0005
+  image_height: 128
+  image_width: 128
+  image_channels: 3
+  use_lowrank_noise: true
+  lowrank_view_rank: 3
+  lowrank_spatial_rank: 1
+  lowrank_color_rank: 3
+  lowrank_max_rank: 16
+  use_real_splat: true
+  prefer_jax_renderer: true
+  prefer_external_jaxsplat: true
+  fix_cameras: true
+  initialization_mode: prior_center
+  init_jitter_scale: 0.2
+  enable_subspace: true
+  subspace_rank: 64
+  subspace_rank_start: 32
+  subspace_rank_end: 64
+  subspace_power_iters: 2
+  subspace_refresh_every: 2
+  subspace_refresh_every_start: 1
+  subspace_refresh_every_end: 5
+  subspace_oversample: 2
+  proposal_count_start: 16
+  proposal_count_end: 16
+  compile_stable_shapes: true
+  profiling: true
+  fidelity_ladder:
+  - end_frac: 1.0
+    downsample: 4
+  prior_scale_means: 2.0
+  prior_scale_scales: 0.5
+  extra_sigma_start: 8.0e-05
+  extra_sigma_end: 1.0e-05
+  show_tqdm: true
+  active_scorer: posterior_variance
+  active_n_init: 5
+  active_n_rounds: 10
+  active_n_select_per_round: 1
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+  - type: fixed
+    Ndiffuse: 500
+    beta0: 0.0001
+    betaT: 0.01
+    M_k: 16
+    T_k: 1.0
+  diffusion_merge_strategy: merge
+seeds:
+- 0
+backend: jax
+device: cuda
+metrics: []
+visualizations: []
+metadata:
+  description: "Exp3 MuJoCo tabletop \u2014 clean"

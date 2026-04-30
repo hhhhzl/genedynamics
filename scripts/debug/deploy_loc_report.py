@@ -150,7 +150,7 @@ def main() -> None:
         print("    3. WBC was split across 7 files for unit-testability and")
         print("       weighs ~2000 lines including grouped configs vs the")
         print("       original 1273-line god file. The split was a stated")
-        print("       goal of Phase 4; it trades raw LOC for testability.")
+        print("       goal of the deploy refactor; it trades raw LOC for testability.")
         print("    4. Multi-controller support (sport_mode + rl_unitree +")
         print("       rl_passthrough + wbc) lives in the same package")
         print("       whereas the baseline had wbc only.")
@@ -177,7 +177,7 @@ def main() -> None:
         marker = "(dir)" if path.is_dir() else "(file)"
         print(f"    {name:<30} {marker:<8} {size:>6} lines")
     print()
-    print("  Status: Phase 11 complete — sim_plan/ deleted.")
+    print("  Status: stepping-walk migration complete — sim_plan/ deleted.")
     print("    - setup.py now declares 1 console script: genedynamics-deploy -> deploy.runner")
     print("    - deploy.cli, factory, pipeline, config, modes, profiles, backends deleted")
     print("    - execution/ deleted; followers/humanoid/mujoco+unitree deleted")

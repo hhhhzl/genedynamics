@@ -1,8 +1,8 @@
 """
 Task protocols for MRMFMBD co-design.
 
-Defines abstract interfaces for task domains. Any domain (SoftZoo, etc.)
-implements TaskDomain to be pluggable into the experiment platform.
+Defines abstract interfaces for task domains. Any domain implements
+TaskDomain to be pluggable into the experiment platform.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ class TaskSpec:
 
     Attributes:
         task_id: Unique identifier
-        domain: Domain name (e.g. "softzoo")
+        domain: Domain name (e.g. "jax_mpm")
         x_dim: Morphology parameter dimension
         phi_dim: Controller parameter dimension
         num_modes: Number of contact/friction modes
@@ -64,7 +64,7 @@ class TaskDomain(Protocol):
 
     @property
     def domain_name(self) -> str:
-        """Domain identifier (e.g. 'softzoo')."""
+        """Domain identifier (e.g. 'jax_mpm')."""
         ...
 
     def get_task_spec(self, task_id: str) -> TaskSpec:

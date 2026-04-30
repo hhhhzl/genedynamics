@@ -1,5 +1,5 @@
 """
-Rollout evaluators for external simulators (SoftZoo, etc.).
+Rollout evaluators for external simulators.
 
 Provides protocol and implementations for batch evaluation of
 design+controller pairs with mode and fidelity support.
@@ -14,7 +14,7 @@ from .protocols import (
     RolloutBatchRequest,
     RolloutBatchResult,
 )
-from .softzoo_evaluator import SoftZooRolloutEvaluator, SoftZooEvaluatorConfig
+from .jax_mpm_evaluator import JaxMpmRolloutEvaluator, JaxMpmEvaluatorConfig
 
 __all__ = [
     "RolloutEvaluator",
@@ -22,6 +22,6 @@ __all__ = [
     "RolloutResult",
     "RolloutBatchRequest",
     "RolloutBatchResult",
-    "SoftZooRolloutEvaluator",
-    "SoftZooEvaluatorConfig",
+    "JaxMpmRolloutEvaluator",
+    "JaxMpmEvaluatorConfig",
 ]

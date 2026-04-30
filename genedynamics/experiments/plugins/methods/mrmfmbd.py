@@ -1,5 +1,5 @@
 """
-MRMFMBD method plugin for Soft-robot S1+S3.
+MRMFMBD method plugin for soft-robot co-design (mode marginalization + fidelity ladder).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from ._result_utils import normalize_result_from_trajectory
 
 class MRMFMBDMethodPlugin(MethodPlugin):
     """
-    Plugin for MRMFMBD (Soft-robot S1+S3) solver.
+    Plugin for MRMFMBD (soft-robot co-design (mode marginalization + fidelity ladder)) solver.
     """
 
     @property

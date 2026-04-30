@@ -24,7 +24,8 @@ class BaselineConfig:
         seed: Random seed
         max_wall_time: Optional time budget (seconds)
         max_evaluations: Optional evaluation budget
-        extra: Baseline-specific parameters
+        extra: Baseline-specific parameters (method_params from YAML)
+        scheduler: Optional CompositeScheduler created from scheduler_config
     """
 
     task_id: str = ""
@@ -32,6 +33,23 @@ class BaselineConfig:
     max_wall_time: Optional[float] = None
     max_evaluations: Optional[int] = None
     extra: Dict[str, Any] = field(default_factory=dict)
+    scheduler: Optional[Any] = None
+
+    def get_diffusion_params(self) -> Dict[str, Any]:
+        """
+        Extract diffusion parameters from scheduler (if present).
+
+        Returns dict with keys: M_k, T_k, Ndiffuse, beta0, betaT.
+        Falls back to empty dict if no scheduler.
+        """
+        if self.scheduler is None:
+            return {}
+        ds_list = getattr(self.scheduler, "diffusion_schedulers", None)
+        if not ds_list:
+            return {}
+        from genedynamics.core.constraints.core.types import ScheduleState
+        params = ds_list[0].diffusion_params(ScheduleState(k=0, K=1))
+        return params if params else {}
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -131,7 +149,7 @@ class BaselineProtocol(Protocol):
             task_spec: TaskSpec from task domain
             x_dim: Design/morphology dimension
             phi_dim: Controller/policy dimension
-            **kwargs: Additional options (checkpoint_dir, etc.)
+            **kwargs: Additional options (cache_dir, etc.)
 
         Returns:
             BaselineResult with best design

@@ -25,9 +25,11 @@ from .manipulator import ManipulatorEnvironmentPlugin
 from .d3il_avoiding import D3ILAvoidingPlugin
 from .d3il_avoiding_9d import D3ILAvoiding9DPlugin
 from .avoiding_plan import AvoidingPlanEnvironmentPlugin
-from .softzoo import SoftZooEnvironmentPlugin
 from .mujoco_scene_mapping import MujocoSceneMappingPlugin
 from .nerf_synthetic_3dgs import NerfSynthetic3DGSPlugin
+from .replica_3dgs import Replica3DGSPlugin
+from .tum_rgbd_3dgs import TUM_RGBD_3DGSPlugin
+from .mujoco_active_perception import MuJoCoActivePerceptionPlugin
 from .humanoid_corridor import HumanoidCorridor2DPlugin
 
 __all__ = [
@@ -48,9 +50,11 @@ __all__ = [
     'D3ILAvoidingPlugin',
     'D3ILAvoiding9DPlugin',
     'AvoidingPlanEnvironmentPlugin',
-    'SoftZooEnvironmentPlugin',
     'MujocoSceneMappingPlugin',
     'NerfSynthetic3DGSPlugin',
+    'Replica3DGSPlugin',
+    'TUM_RGBD_3DGSPlugin',
+    'MuJoCoActivePerceptionPlugin',
     'HumanoidCorridor2DPlugin',
 ]
 

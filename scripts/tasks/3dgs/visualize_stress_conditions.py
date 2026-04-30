@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT))
 
 def _load_dataset(dataset_root: str, split: str, max_views: int, res: int,
                   exposure_drift_mode=None, exposure_drift_strength=0.0):
-    from genedynamics.solvers.single.mbd3d.data import (
+    from genedynamics.data import (
         NerfSyntheticDataAdapter, NerfSyntheticConfig,
     )
     cfg = NerfSyntheticConfig(
@@ -58,7 +58,7 @@ def _load_scene_from_npz(path):
 def _render_views(scene, poses, intrinsics, res):
     """Render using gsplat (torch)."""
     import torch, gsplat
-    from genedynamics.solvers.single.mbd3d.data.camera_utils import pose_to_c2w_matrix
+    from genedynamics.data.camera_utils import pose_to_c2w_matrix
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n = len(poses)
@@ -108,7 +108,7 @@ def visualize_pose_bias(output_path: Path, dataset_root: str, ckpt_path: str):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from genedynamics.solvers.single.mbd3d.data.perturbations import (
+    from genedynamics.data.perturbations import (
         build_shared_pose_bias_se3, apply_shared_pose_bias,
     )
 
@@ -263,7 +263,7 @@ def visualize_exposure_drift(output_path: Path, dataset_root: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Visualize stress test conditions")
-    parser.add_argument("--output", type=str, default="figures/stress_conditions")
+    parser.add_argument("--output", type=str, default="results/figures/stress_conditions")
     parser.add_argument("--dataset", type=str, default="data/nerf_synthetic/lego")
     parser.add_argument("--checkpoint", type=str,
                         default="results/3dgs/lego_gsplat_warmstart_v3/scene_params.npz",

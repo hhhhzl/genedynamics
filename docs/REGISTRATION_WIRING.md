@@ -48,12 +48,11 @@ runner.register_plugin(MRMFMBDMethodPlugin(), 'method')
 | Humanoid Simplified | HumanoidSimplifiedMjxPlugin | `environment` | `humanoid_simplified_mjx` |
 | Humanoid G1 | HumanoidG1MjxPlugin | `environment` | `humanoid_g1_mjx` |
 | Drone Full 3D | DroneFull3DPlugin | `environment` | `drone_full_3d_mjx` |
-| **SoftZoo** | **SoftZooEnvironmentPlugin** | **`environment`** | **`softzoo`** |
 | Mujoco Scene Mapping | MujocoSceneMappingPlugin | `environment` | `mujoco_scene_mapping` |
 | D3IL Avoiding | D3ILAvoidingPlugin | `environment` | `d3il_avoiding` |
 | ... | ... | ... | ... |
 
-**MRMFMBD 依赖**: `env_name: softzoo` → `SoftZooEnvironmentPlugin`
+**MRMFMBD 软体协同设计**: 通过 `task_domain: jax_mpm` 走 baseline_platform。
 
 ### 1.4 插件导出链
 
@@ -80,7 +79,7 @@ ExperimentRunner.run_single()
 
 | 输入 | 来源 | 用途 |
 |------|------|------|
-| `env` | env_plugin.create_env() | SoftZooEnv 或 _SoftZooEnvStub |
+| `env` | env_plugin.create_env() | environment instance |
 | `energy` | env_plugin.create_energy() | LegacyEnergyFunctional |
 | `config` | method_params + scheduler + obstacles | 扩散参数、fidelity 等 |
 
@@ -98,16 +97,14 @@ MRMFMBDSolver
   └── _backend_impl: MRMFMBDBackendJax(...)
 ```
 
-### 2.3 Env 协议要求 (SoftZoo)
+### 2.3 Env 协议要求
 
 - `jax_transition(state, action)` — 必需，用于 JAX rollout
-- `jax_transition_fidelity(state, action, level)` — 可选，多保真度 S1/S3
-- `_SoftZooEnvStub`: 无 SoftZoo 时提供 stub，仅 `jax_transition`
+- `jax_transition_fidelity(state, action, level)` — 可选，multi-fidelity (mode + fidelity systems)
 
 ### 2.4 TaskSpec
 
 - `get_default_task_spec(env_plugin, env_name)` → `extract_position`, `position_dim`
-- `env_name="softzoo"` 时使用 SoftZoo 的 position 提取
 
 ---
 
@@ -117,7 +114,7 @@ MRMFMBDSolver
 
 Deploy 管道用于 **quadruped / humanoid / uav3d** 等机器人仿真与部署。
 
-**MRMFMBD 不接入 Deploy 管道**：MRMFMBD 面向 SoftZoo (软体机器人)，通过实验框架 `configs/mrmfmbd/*.yaml` 运行。
+**MRMFMBD 不接入 Deploy 管道**：MRMFMBD 面向软体机器人协同设计，通过 baseline_platform `configs/soft_robot/*/*.yaml` 运行。
 
 ### 3.2 Deploy 支持的 Planner
 

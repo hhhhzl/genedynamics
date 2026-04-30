@@ -70,20 +70,20 @@ from genedynamics.genemetry.registry import (
 )
 
 # -- Orchestrators (public API) ----------------------------------------
-# Phase A
+# Single-step orchestrators
 from genedynamics.genemetry.manifold.sdf import SdfManifold
 from genedynamics.genemetry.modulation.null import NullModulator
 from genedynamics.genemetry.modulation.probe import ProbeModulator
 from genedynamics.genemetry.retraction.cfs import CfsRetraction
 from genedynamics.genemetry.retraction.stepping import SteppingRetraction
 from genedynamics.genemetry.gate.multimodal import MultimodalGate
-# Phase B
+# Windowed refinement
 from genedynamics.genemetry.window.sliding import SlidingWindow
 from genedynamics.genemetry.pipeline.probe import ProbePipeline
 from genedynamics.genemetry.pipeline.refine import WindowRefinement
 from genedynamics.genemetry.step.agp import AgpStep
 from genedynamics.genemetry.retraction.local_cfs import LocalCfsRetraction
-# Phase C
+# Schedule overlay
 from genedynamics.genemetry.schedule.overlay import ScheduleOverlay
 from genedynamics.genemetry.schedule.config import (
     OverlayConfig,
@@ -125,20 +125,20 @@ __all__ = [
     "get_genemetry_registry",
     "register_genemetry",
     "GenemetryRegistry",
-    # Orchestrators — Phase A
+    # Orchestrators — single-step
     "SdfManifold",
     "NullModulator",
     "ProbeModulator",
     "CfsRetraction",
     "SteppingRetraction",
     "MultimodalGate",
-    # Orchestrators — Phase B
+    # Orchestrators — windowed refinement
     "SlidingWindow",
     "ProbePipeline",
     "WindowRefinement",
     "AgpStep",
     "LocalCfsRetraction",
-    # Orchestrators — Phase C
+    # Orchestrators — schedule overlay
     "ScheduleOverlay",
     "OverlayConfig",
     "resolve_overlay_config",

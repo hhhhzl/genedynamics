@@ -1,0 +1,79 @@
+env_name: 3dgs_replica
+env_params:
+  dataset_root: data/replica
+  sequence: room_0
+  use_stub_when_unavailable: false
+  split: train
+  eval_split: test
+  perturb_target_split: train
+  max_views: 100
+  view_stride: 1
+  shuffle_seed: 0
+  resolution_infer: 128
+  resolution_eval: 512
+  composite_background: white
+  pose_convention: opencv
+  train_frac: 0.9
+  exposure_drift_mode: linear_gain
+  exposure_drift_strength: 0.5
+method: mbd3d
+method_params:
+  n_gaussians: 4096
+  ess_min: 2.0
+  observation_sigma2: 0.0005
+  image_height: 128
+  image_width: 128
+  image_channels: 3
+  use_lowrank_noise: true
+  lowrank_view_rank: 3
+  lowrank_spatial_rank: 1
+  lowrank_color_rank: 3
+  lowrank_max_rank: 16
+  use_real_splat: true
+  prefer_jax_renderer: true
+  prefer_external_jaxsplat: true
+  fix_cameras: true
+  initialization_mode: direct
+  init_jitter_scale: 0.0
+  enable_subspace: true
+  subspace_rank: 64
+  subspace_rank_start: 32
+  subspace_rank_end: 64
+  subspace_power_iters: 2
+  subspace_refresh_every: 2
+  subspace_refresh_every_start: 1
+  subspace_refresh_every_end: 5
+  subspace_oversample: 2
+  proposal_count_start: 16
+  proposal_count_end: 16
+  compile_stable_shapes: true
+  profiling: true
+  fidelity_ladder:
+  - end_frac: 1.0
+    downsample: 4
+  prior_scale_means: 2.0
+  prior_scale_scales: 0.5
+  extra_sigma_start: 8.0e-05
+  extra_sigma_end: 1.0e-05
+  show_tqdm: true
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+  - type: fixed
+    Ndiffuse: 500
+    beta0: 0.0001
+    betaT: 0.01
+    M_k: 16
+    T_k: 1.0
+  diffusion_merge_strategy: merge
+seeds:
+- 0
+backend: jax
+device: cuda
+metrics: []
+visualizations: []
+name: replica_room0_mbd_exposure_linear_extreme
+output_dir: results/3dgs/exp2_robust/replica/mbd/replica_room0_mbd_exposure_linear_extreme
+metadata:
+  description: Replica room_0 exposure_linear_extreme MBD3D
+  warmstart_ckpt_key: replica_room0_mbd_exposure_linear_extreme

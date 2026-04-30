@@ -35,7 +35,7 @@ def _load_nerf_synthetic_via_adapter(
     return_masks: bool,
 ) -> tuple:
     """Load NeRF Synthetic via NerfSyntheticDataAdapter (matches MBD stress protocol)."""
-    from genedynamics.solvers.single.mbd3d.data import (
+    from genedynamics.data import (
         NerfSyntheticDataAdapter,
         nerf_synthetic_config_from_env_params,
     )

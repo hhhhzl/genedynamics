@@ -1,9 +1,9 @@
 """
-MRMFMBD (Soft-robot S1+S3) solver.
+MRMFMBD (soft-robot co-design (mode marginalization + fidelity ladder)) solver.
 
 Multi-Resolution, Multi-Fidelity Model-Based Diffusion.
 Posterior bridge for theta=(x, phi) co-design.
-S1: Mode marginalization. S3: Multi-fidelity ladder.
+Mode marginalization. Multi-fidelity ladder.
 """
 
 from .mrmfmbd import MRMFMBDSolver
@@ -12,20 +12,20 @@ from .protocols import FidelitySimulator, ModeMarginalizer
 from .theta_prior import ThetaParametrization, ThetaPrior, ThetaPriorConfig
 from .backends import MRMFMBDPosteriorBackendJax, PosteriorBridgeConfig
 
-# S1/S3 systems
-from .s1_mode_system import (
+# Mode + Fidelity systems
+from .mode_system import (
     ModeSpec,
     ModeSystemConfig,
-    ModeMarginalizerS1,
+    ModeMarginalizer,
     default_mode_system_config,
     compute_marginal_log_likelihood,
     compute_responsibilities,
 )
-from .s3_fidelity_system import (
+from .fidelity_system import (
     FidelityLevelSpec,
     FidelitySystemConfig,
     default_fidelity_system_config,
-    FidelityLadderS3,
+    BlockFidelityLadder,
     FidelityLadderType,
     create_fidelity_ladder,
     UpgradeRule,
@@ -53,17 +53,17 @@ __all__ = [
     "ThetaPriorConfig",
     "MRMFMBDPosteriorBackendJax",
     "PosteriorBridgeConfig",
-    # S1
+    # Mode system
     "ModeSpec",
     "ModeSystemConfig",
-    "ModeMarginalizerS1",
+    "ModeMarginalizer",
     "compute_marginal_log_likelihood",
     "compute_responsibilities",
     "default_mode_system_config",
-    # S3
+    # Fidelity system
     "FidelityLevelSpec",
     "FidelitySystemConfig",
-    "FidelityLadderS3",
+    "BlockFidelityLadder",
     "FidelityLadderType",
     "create_fidelity_ladder",
     "UpgradeRule",

@@ -1,7 +1,7 @@
 """
 Task domain provider: bridges task domains to evaluator creation.
 
-Task-agnostic: any domain (softzoo, 3dgs, quadruped, etc.) implements
+Task-agnostic: any domain (jax_mpm, 3dgs, quadruped, etc.) implements
 this protocol to provide task_spec + evaluator for the baseline platform.
 """
 
@@ -21,7 +21,7 @@ class TaskDomainProvider(Protocol):
 
     @property
     def domain_name(self) -> str:
-        """Domain identifier (e.g. 'softzoo', '3dgs')."""
+        """Domain identifier (e.g. 'jax_mpm', '3dgs')."""
         ...
 
     def get_task_spec(self, task_id: str) -> Any:

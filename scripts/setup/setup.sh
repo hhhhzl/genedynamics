@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Setup genedynamics environment. Optional third-party: d3il, softzoo, 3dgs, all
-# Usage: ./scripts/setup/setup.sh [d3il|softzoo|3dgs|all]
+# Setup genedynamics environment. Optional third-party: d3il, 3dgs, all
+# Usage: ./scripts/setup/setup.sh [d3il|3dgs|all]
 # Default (no args): d3il + pip install -e . + PyTorch
 
 set -euo pipefail
@@ -24,24 +24,19 @@ case "$_target" in
     python -c "import torch; assert torch.cuda.is_available(), 'PyTorch CUDA unavailable (driver/GPU not visible?)'"
     python -c "import jax; b=jax.default_backend(); assert b == 'gpu', f'JAX expected GPU backend, got {b!r}; devices={jax.devices()}'"
     ;;
-  softzoo)
-    echo "=== Setup SoftZoo assets ==="
-    "$SCRIPT_DIR/setup_softzoo.sh"
-    ;;
   3dgs)
     echo "=== Setup 3DGS ==="
     echo "Set GAUSSIAN_SPLATTING_PATH to official 3DGS repo. See scripts/tasks/3dgs/README.md"
     ;;
   all)
     "$SCRIPT_DIR/setup.sh" d3il
-    "$SCRIPT_DIR/setup.sh" softzoo
+    "$SCRIPT_DIR/setup.sh" 3dgs
     ;;
   *)
-    echo "Usage: $0 [d3il|softzoo|3dgs|all]"
+    echo "Usage: $0 [d3il|3dgs|all]"
     echo "  d3il    - D3IL + genedynamics + PyTorch (default)"
-    echo "  softzoo - SoftZoo assets (data/softzoo/assets)"
     echo "  3dgs    - 3DGS (set GAUSSIAN_SPLATTING_PATH)"
-    echo "  all     - d3il + softzoo"
+    echo "  all     - d3il + 3dgs"
     exit 1
     ;;
 esac

@@ -12,7 +12,7 @@ import numpy as np
 
 from ...framework.base import EnvironmentPlugin
 from genedynamics.solvers.single.mbd3d.types import ObservationBundle
-from genedynamics.solvers.single.mbd3d.data import (
+from genedynamics.data import (
     NerfSyntheticDataAdapter,
     nerf_synthetic_config_from_env_params,
 )
