@@ -8,7 +8,7 @@ This package contains implementations of various plugins:
 - visualizations: Visualization plugins
 - obstacles: Obstacle generation plugins
 - baselines: Baseline algorithms for comparison (mrmfmbd, etc.)
-- task_domains: Task domain providers (softzoo, etc.)
+- task_domains: Task domain providers (jax_mpm, etc.)
 """
 
 # Import to trigger task domain and baseline registration
@@ -55,7 +55,6 @@ from .environments import (
     D3ILAvoidingPlugin,
     D3ILAvoiding9DPlugin,
     AvoidingPlanEnvironmentPlugin,
-    SoftZooEnvironmentPlugin,
     MujocoSceneMappingPlugin,
     NerfSynthetic3DGSPlugin,
     Replica3DGSPlugin,
@@ -130,7 +129,6 @@ __all__ = [
     'D3ILAvoidingPlugin',
     'D3ILAvoiding9DPlugin',
     'AvoidingPlanEnvironmentPlugin',
-    'SoftZooEnvironmentPlugin',
     'MujocoSceneMappingPlugin',
     'NerfSynthetic3DGSPlugin',
     'Replica3DGSPlugin',

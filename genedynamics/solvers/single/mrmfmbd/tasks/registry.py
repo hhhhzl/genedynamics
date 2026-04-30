@@ -1,7 +1,7 @@
 """
 Task Extension Registry: unified registration for co-design task domains.
 
-Enables adding new domains (SoftZoo, custom simulators) without modifying core.
+Enables adding new domains without modifying core.
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ class TaskExtensionRegistry:
     Fluent API for task domain registration.
 
     Usage:
-        TaskExtensionRegistry().register(SoftZooTaskAdapter()).freeze()
+        TaskExtensionRegistry().register(MyTaskAdapter()).freeze()
     """
 
     def __init__(self) -> None:

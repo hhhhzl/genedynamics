@@ -4,7 +4,7 @@
 
 | Directory | Purpose |
 |-----------|---------|
-| **setup/** | Environment setup. Optional third-party: d3il, softzoo, 3dgs |
+| **setup/** | Environment setup. Optional third-party: d3il, 3dgs |
 | **tasks/** | Task-specific execution scripts by domain (3dgs, robot, soft_robot, mdcoas) |
 | **debug/** | Debug/verification scripts. Safe to delete after use |
 | **visualizations/** | Plotting, rendering, deploy analysis |
@@ -21,7 +21,7 @@
 
 # Optional: setup specific third-party env
 ./scripts/setup/setup.sh d3il
-./scripts/setup/setup.sh softzoo
+./scripts/setup/setup.sh 3dgs
 ./scripts/setup/setup.sh all
 ```
 

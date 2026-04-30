@@ -15,13 +15,6 @@ from .registry import (
     list_task_ids,
     list_domains,
 )
-from .softzoo_adapter import SoftZooTaskAdapter
-
-# Auto-register SoftZoo domain when available
-try:
-    register_task_domain(SoftZooTaskAdapter())
-except Exception:
-    pass
 
 __all__ = [
     "TaskSpec",
@@ -31,5 +24,4 @@ __all__ = [
     "get_task_spec",
     "list_task_ids",
     "list_domains",
-    "SoftZooTaskAdapter",
 ]

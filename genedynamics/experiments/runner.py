@@ -54,7 +54,6 @@ from genedynamics.experiments.plugins import (
     D3ILAvoidingPlugin,
     D3ILAvoiding9DPlugin,
     AvoidingPlanEnvironmentPlugin,
-    SoftZooEnvironmentPlugin,
     MujocoSceneMappingPlugin,
     NerfSynthetic3DGSPlugin,
     Replica3DGSPlugin,
@@ -231,7 +230,6 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(D3ILAvoidingPlugin(), 'environment')
     runner.register_plugin(D3ILAvoiding9DPlugin(), 'environment')
     runner.register_plugin(AvoidingPlanEnvironmentPlugin(), 'environment')
-    runner.register_plugin(SoftZooEnvironmentPlugin(), 'environment')
     runner.register_plugin(MujocoSceneMappingPlugin(), 'environment')
     runner.register_plugin(NerfSynthetic3DGSPlugin(), 'environment')
     runner.register_plugin(Replica3DGSPlugin(), 'environment')

@@ -57,9 +57,9 @@ class CMAESBaseline(BaselineProtocol):
 
         theta_dim = x_dim + phi_dim
         # Bounds come from method_params so each task can override them. The
-        # legacy softzoo defaults (x∈[0.01, 2.0], φ∈[5, 150]) are kept as
-        # fallback but will saturate the tanh in jax_mpm — new configs must
-        # pass x_lo/x_hi/phi_lo/phi_hi explicitly.
+        # legacy defaults (x∈[0.01, 2.0], φ∈[5, 150]) are kept as fallback but
+        # will saturate the tanh in jax_mpm — new configs must pass
+        # x_lo/x_hi/phi_lo/phi_hi explicitly.
         x_lo_v = float(extra.get("x_lo", 0.01))
         x_hi_v = float(extra.get("x_hi", 2.0))
         phi_lo_v = float(extra.get("phi_lo", 5.0))

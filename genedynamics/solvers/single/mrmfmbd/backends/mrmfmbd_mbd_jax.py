@@ -18,9 +18,9 @@ Two execution paths:
       inside `jax.lax.scan`, blocked by S3 fidelity level. S1 marginalization
       is pure JAX inside the scan body. No numpy round-trips per step.
 
-    * _plan_python_loop  (SLOW, softzoo-compat): Original host-side loop that
-      dispatches rollouts through evaluator.evaluate_batch. Used for softzoo
-      (subprocess-backed) or any evaluator not exposing JAX-MPM internals.
+    * _plan_python_loop  (SLOW, fallback): Original host-side loop that
+      dispatches rollouts through evaluator.evaluate_batch. Used for any
+      evaluator not exposing the JAX-MPM internals required by _plan_jax_scan.
 """
 
 from __future__ import annotations
@@ -150,7 +150,7 @@ class MRMFMBDBackendMBD:
 
         K = int(self.config.K)
 
-        # S1: mode marginalizer (kept for softzoo path; JAX path uses pure fn).
+        # S1: mode marginalizer (kept for python-loop path; JAX path uses pure fn).
         self.mode_marginalizer = mode_marginalizer
         if self.mode_marginalizer is None and S1_AVAILABLE:
             self.mode_marginalizer = ModeMarginalizerS1(
@@ -207,7 +207,7 @@ class MRMFMBDBackendMBD:
             np.asarray(self.mode_log_priors[: self.num_modes], dtype=np.float32)
         )
 
-        # JIT kernels for the softzoo-compat path (unchanged).
+        # JIT kernels for the python-loop fallback path (unchanged).
         self._propose_jit = jax.jit(self._propose_impl)
         self._denoise_jit = jax.jit(self._denoise_impl)
 

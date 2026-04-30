@@ -38,17 +38,30 @@ Quadruped, UAV, acceptance tests.
 
 ## soft_robot/
 
-MRMFMBD, co-design, Phase A/B.
+MRMFMBD soft-robot co-design (jax_mpm backend). Organized under `co_design/`:
 
+### co_design/main/
 | Script | Purpose |
 |--------|---------|
-| `run_mrmfmbd.sh` | MRMFMBD SoftZoo experiments |
-| `run_mrmfmbd_posterior.py` | MRMFMBD posterior bridge |
 | `run_co_design.py` | Co-design from YAML config |
-| `run_phase_a.sh` | Phase A smoke |
-| `run_phase_b.sh` | Phase B S1 validation |
-| `run_phase4_fair_comparison.sh` | Fair comparison MBD vs MD-COAS |
-| `run_phase4_validation.py` | Phase 4 validation (Python) |
+| `run_co_design_with_gif.py` | Co-design + render best-theta as GIF |
+| `run_all_experiments.sh` | Sequential run of all 7 main/ablation/baseline configs |
+
+### co_design/analysis/
+| Script | Purpose |
+|--------|---------|
+| `analyze_main_result.py` | Analyze main run (morphology + reward + cross-mode) |
+| `analyze_baseline_run.py` | Analyze CMA-ES / CEM baseline runs |
+| `analyze_diffusion_run.py` | Diffusion evolution figures + cross-mode |
+| `compare_4_methods.py` | Reward curves: MRMFMBD vs ablation vs CMA-ES vs CEM |
+| `compare_reward_curves.py` | Generic reward-curve comparison |
+| `compare_s3_ablation.py` | S3 fidelity-ladder ablation comparison |
+| `plot_co_design_results.py` | Plot co-design results from results.json |
+
+### co_design/viz/
+| Script | Purpose |
+|--------|---------|
+| `regenerate_all_visuals.sh` | Re-render every GIF + figure (no retraining) |
 
 ## mdcoas/
 

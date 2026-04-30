@@ -8,7 +8,7 @@ Pipeline per env step:
     grid_op : momentum/mass → velocity, add gravity, walls, floor-friction
     g2p_3d  : grid velocity → new particle (x, v, C)
 
-theta = (x_morph, phi_ctrl) convention, same as the softzoo backend:
+theta = (x_morph, phi_ctrl) convention:
     x_morph = voxel occupancy (bounds (0.2, 1.0))
     phi_ctrl = [W.flat, b, g, a, c]  where W ∈ R^(n_act×K), b,g,a,c ∈ R^(n_act)
                g = velocity feedback gain, a/c = time envelope params
@@ -68,14 +68,14 @@ OFFSETS_F_3 = OFFSETS_I_3.astype(DTYPE)
 class MPMConfig:
     """Simulation hyperparameters.
 
-    Defaults are tuned to approximate softzoo's `crawling_ground` at reduced
-    grid resolution (64 instead of 128) so the whole rollout fits comfortably
-    on one 3090 even when vmap'd over 32 proposals.
+    Defaults are tuned for `crawling_ground` at grid resolution 64 so the
+    whole rollout fits comfortably on one 3090 even when vmap'd over 32
+    proposals.
     """
 
     n_grid: int = 64
     # CFL: dt <= dx / sqrt(E*scale). With E=1, scale=100, mu~100, c~10, dx=1/64
-    # -> dt <= ~1.5e-3. Match softzoo's 5e-4 for safety.
+    # -> dt <= ~1.5e-3. Use 5e-4 for safety.
     dt: float = 5e-4
     gravity: float = 3.8
     # Stress coefficient dt * V * 4 * inv_dx^3 controls how hard actuators
@@ -90,7 +90,7 @@ class MPMConfig:
     bound: int = 3
     friction_coeff: float = 0.5
 
-    # Robot box (matches softzoo's ground.yaml Primitive.Box).
+    # Robot box.
     # box_origin.y=0.05 places the body just above the floor (bound*dx=0.047),
     # so the replay starts immediately in contact — avoids the first ~25 env
     # steps of free-fall that previously showed up as a big Y drop in gifs.
@@ -182,7 +182,7 @@ def build_scene(cfg: MPMConfig) -> SceneData:
     pts = np.stack([xs.reshape(-1), ys.reshape(-1), zs.reshape(-1)], axis=-1)
 
     # Actuator group by X-bin (front → back). Keep a thin passive dorsal strip
-    # on top so there's a neutral core (like softzoo's table-top).
+    # on top so there's a neutral core (table-top of the body).
     xs_flat = pts[:, 0]
     x_min, x_max = xs_flat.min(), xs_flat.max()
     bin_idx = np.floor(

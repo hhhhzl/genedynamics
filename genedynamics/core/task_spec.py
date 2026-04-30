@@ -163,32 +163,6 @@ class EnvPluginTaskSpecAdapter(TaskSpec):
         return 2
 
 
-class SoftZooTaskSpec(TaskSpec):
-    """
-    TaskSpec for SoftZoo soft robot environments.
-
-    Extracts position (centroid or control points) from high-dimensional
-    deformable state. Default: first 2 dims for 2D planar, or first 3 for 3D.
-    """
-
-    def __init__(self, position_dim: int = 2, position_indices: Optional[tuple] = None):
-        self._position_dim = int(position_dim)
-        self._position_indices = position_indices  # None => use first N dims
-
-    def extract_position(self, state: Any) -> np.ndarray:
-        state_np = np.asarray(state, dtype=np.float32).reshape(-1)
-        if self._position_indices is not None:
-            idx = np.asarray(self._position_indices, dtype=np.int32)
-            idx = idx[idx >= 0]
-            idx = idx[idx < len(state_np)]
-            return state_np[idx].copy()
-        return state_np[: min(self._position_dim, len(state_np))].copy()
-
-    @property
-    def position_dim(self) -> int:
-        return self._position_dim
-
-
 def get_default_task_spec(
     env_plugin: Optional[Any] = None,
     env_name: Optional[str] = None,
@@ -206,9 +180,6 @@ def get_default_task_spec(
     env_name_lower = (env_name or "").lower()
     if "stepping_stones_2d" in env_name_lower and env_plugin is not None and hasattr(env_plugin, "extract_position"):
         return EnvPluginTaskSpecAdapter(env_plugin, fallback=Legacy2DTaskSpec())
-    # SoftZoo: high-dim soft robot, use 2D centroid by default
-    if "softzoo" in env_name_lower:
-        return SoftZooTaskSpec(position_dim=2)
     # Quadruped: ant, go2 (flat [qpos; qvel], position = state[:3])
     if "quadruped" in env_name_lower:
         from genedynamics.tasks.quadruped.spec import QuadrupedTaskSpec

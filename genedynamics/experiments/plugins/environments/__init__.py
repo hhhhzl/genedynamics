@@ -25,7 +25,6 @@ from .manipulator import ManipulatorEnvironmentPlugin
 from .d3il_avoiding import D3ILAvoidingPlugin
 from .d3il_avoiding_9d import D3ILAvoiding9DPlugin
 from .avoiding_plan import AvoidingPlanEnvironmentPlugin
-from .softzoo import SoftZooEnvironmentPlugin
 from .mujoco_scene_mapping import MujocoSceneMappingPlugin
 from .nerf_synthetic_3dgs import NerfSynthetic3DGSPlugin
 from .replica_3dgs import Replica3DGSPlugin
@@ -51,7 +50,6 @@ __all__ = [
     'D3ILAvoidingPlugin',
     'D3ILAvoiding9DPlugin',
     'AvoidingPlanEnvironmentPlugin',
-    'SoftZooEnvironmentPlugin',
     'MujocoSceneMappingPlugin',
     'NerfSynthetic3DGSPlugin',
     'Replica3DGSPlugin',

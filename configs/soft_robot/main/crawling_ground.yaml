@@ -1,0 +1,58 @@
+# MRMFMBD co-design: crawling_ground (full S1 mode marginalization + S3 fidelity ladder)
+#
+# 4x3x4 voxels with Z-symmetry (optimizer sees 24 morphology dims, mirrored to 48).
+# Controller phi_dim=80: W(40) + b(10) + g_feedback(10) + a_envelope(10) + c_envelope(10).
+# Reward: Σ_t(com_x[t] - com_x[0]) + 100·final_disp — integrated forward disp
+# breaks the "lunge-and-stall" local optimum that pure final_disp rewarded.
+# Physics: act=24 + lift_push muscle directions (scene.py:_muscle_directions)
+# → disp=0.058 (58% body length / 1.6s), breaks the axial-peristaltic ceiling
+# at 0.014 that persisted under all sampling/temperature/reward variants.
+name: mrmfmbd_crawling_ground
+output_dir: results/soft_robot/main/crawling_ground
+cache_dir: results/soft_robot/main/crawling_ground_cache
+
+baseline_name: mrmfmbd
+task_domain: jax_mpm
+task_id: crawling_ground
+seeds: [0]
+save_gif: true
+
+evaluator_runtime:
+  max_workers: 1
+  reward_shaping_weight: 100.0
+  n_grid: 64
+  voxel_dims: [4, 3, 4]
+  act_strength_base: 24.0
+  scale: 50.0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 32
+      T_k: 0.5
+      Ndiffuse: 100
+      beta0: 1.0e-4
+      betaT: 2.0e-2
+  diffusion_merge_strategy: merge
+
+method_params:
+  backend: mbd
+  num_modes: 4
+  num_fidelity_levels: 3
+  fidelity_ladder_type: geometric
+  fidelity_step_ratio: 1.5
+  fine_fidelity_level: 2
+  reward_temperature_min: 0.05
+  tau_frac: 0.05
+  top_k_fine: 5
+  show_tqdm: true
+  morphology_symmetry: z
+  phi_dim_override: true
+  phi_lo: -0.5
+  phi_hi: 0.5
+  phi_std: 0.15
+  x_lo: 0.2
+  x_hi: 1.0
+  x_mean: 0.6
+  x_std: 0.3

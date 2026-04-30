@@ -1,11 +1,11 @@
 """JAX-MPM rollout evaluator.
 
-Implements the same protocol as SoftZooRolloutEvaluator:
+Implements the RolloutEvaluator protocol:
     evaluator.evaluate_batch(RolloutBatchRequest, parallel=True, use_cache=False)
         -> RolloutBatchResult(returns, successes, ...)
 
-Unlike softzoo we do NOT need a subprocess pool — everything is pure JAX, so
-a single `jax.vmap` call processes the entire batch inside one GPU kernel.
+No subprocess pool needed — everything is pure JAX, so a single `jax.vmap`
+call processes the entire batch inside one GPU kernel.
 """
 
 from __future__ import annotations
@@ -27,9 +27,8 @@ from .protocols import (
 class JaxMpmEvaluatorConfig:
     """Config for JaxMpmRolloutEvaluator.
 
-    We deliberately mirror SoftZooEvaluatorConfig's knobs (max_workers,
-    reward_shaping_weight) where they make sense, but JAX-MPM ignores most
-    of them (no pool, shaping is baked into the reward).
+    max_workers and cache_size are accepted for protocol compatibility but
+    ignored — JAX-MPM batches inside one vmap kernel.
     """
 
     max_workers: int = 1       # ignored (JAX handles batching internally)
@@ -74,10 +73,9 @@ class JaxMpmRolloutEvaluator:
                                      if k in MPMConfig.__dataclass_fields__})
         self._scene = build_scene(self._mpm_cfg)
 
-        # Mode → friction table. Default mirrors softzoo task_registry.DEFAULT_MODES.
-        # Overridable via runtime_config["mode_friction"] (list of floats) so
-        # single-mode ablations can pick a specific coefficient (e.g., the mean
-        # 0.45 instead of the default-first 0.3).
+        # Mode → friction table. Override via runtime_config["mode_friction"]
+        # (list of floats) so single-mode ablations can pick a specific
+        # coefficient (e.g., the mean 0.45 instead of the default-first 0.3).
         default_mode_friction = [0.3, 0.4, 0.5, 0.6]
         override = self._runtime_config.get("mode_friction")
         if override is not None:

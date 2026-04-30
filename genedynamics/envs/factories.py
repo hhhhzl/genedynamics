@@ -127,9 +127,6 @@ def make_env(name: str, **kwargs):
     elif name == "humanoid_g1_mjx":
         from genedynamics.envs.humanoid_mjx import HumanoidG1MjxEnv
         return HumanoidG1MjxEnv(**kwargs)
-    elif name == "softzoo":
-        from genedynamics.experiments.plugins.environments.softzoo import SoftZooEnvironmentPlugin
-        return SoftZooEnvironmentPlugin().create_env(kwargs)
     else:
         available = []
         try:

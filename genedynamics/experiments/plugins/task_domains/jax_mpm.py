@@ -1,13 +1,31 @@
 """JAX-MPM task domain provider.
 
-Serves the same `crawling_ground` task as softzoo but backed by our JAX MPM
-simulator. Reuses the softzoo task_spec schema so the rest of the pipeline
-(baseline_platform, MRMFMBD, CMA-ES, reporters) doesn't need to care.
+Provides task_spec resolution and evaluator creation for the JAX MPM
+co-design pipeline. Self-contained — no external softzoo dependency.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, List
+
+
+@dataclass
+class _JaxMpmTaskSpec:
+    """Minimal task spec the baseline platform consumes.
+
+    The mrmfmbd / cmaes baselines read x_dim, phi_dim, and (optionally)
+    num_modes off this object. Everything else is supplied via yaml extras.
+    """
+    task_id: str
+    x_dim: int
+    phi_dim: int
+    num_modes: int = 4
+    max_steps: int = 200
+
+
+# Tasks supported by the jax_mpm backend. Add entries here as new ones come online.
+_TASKS = ("crawling_ground",)
 
 
 class JaxMpmTaskDomainProvider:
@@ -18,28 +36,15 @@ class JaxMpmTaskDomainProvider:
         return "jax_mpm"
 
     def get_task_spec(self, task_id: str) -> Any:
-        # Reuse softzoo's task registry — modes/fidelity semantics are identical;
-        # JaxMpmRolloutEvaluator reads `modes[*].friction` and maps fidelity_level
-        # through its own FIDELITY_STEPS table. SoftZooTaskSpec is frozen and has
-        # no phi_dim/x_dim fields, so we proxy it and expose those attributes for
-        # the controller: W(n_act*K) + b(n_act) + g(n_act) + a(n_act) + c(n_act) = 80.
+        if task_id not in _TASKS:
+            raise KeyError(f"Unknown jax_mpm task: {task_id!r}. Known: {list(_TASKS)}")
         from genedynamics.envs.external.jax_mpm.scene import MPMConfig
-        from genedynamics.envs.external.softzoo.task_registry import get_task_spec
-        spec = get_task_spec(task_id)
         cfg = MPMConfig()
+        # Controller layout: W(n_act*K) + b(n_act) + g(n_act) + a(n_act) + c(n_act)
         phi_dim = cfg.n_actuators * cfg.n_sin_waves + 4 * cfg.n_actuators
         vx, vy, vz = cfg.voxel_dims
-        x_dim = vx * vy * vz   # voxel occupancy = morphology
-
-        class _JaxMpmSpecProxy:
-            def __init__(self, inner, x_dim, phi_dim):
-                object.__setattr__(self, "_inner", inner)
-                object.__setattr__(self, "phi_dim", int(phi_dim))
-                object.__setattr__(self, "x_dim", int(x_dim))
-            def __getattr__(self, name):
-                return getattr(self._inner, name)
-
-        return _JaxMpmSpecProxy(spec, x_dim, phi_dim)
+        x_dim = vx * vy * vz
+        return _JaxMpmTaskSpec(task_id=task_id, x_dim=int(x_dim), phi_dim=int(phi_dim))
 
     def create_evaluator(
         self,
@@ -74,8 +79,7 @@ class JaxMpmTaskDomainProvider:
         )
 
     def list_tasks(self) -> List[str]:
-        from genedynamics.envs.external.softzoo.task_registry import list_tasks
-        return list_tasks()
+        return list(_TASKS)
 
 
 def register() -> None:

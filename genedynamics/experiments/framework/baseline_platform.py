@@ -34,7 +34,7 @@ class BaselineExperimentConfig:
 
     Attributes:
         baseline_name: Registered baseline (e.g. 'mrmfmbd')
-        task_domain: Task domain (e.g. 'softzoo', '3dgs')
+        task_domain: Task domain (e.g. 'jax_mpm', '3dgs')
         task_id: Task identifier within domain
         seeds: Seeds to run
         output_dir: Output directory
@@ -47,7 +47,7 @@ class BaselineExperimentConfig:
     """
 
     baseline_name: str
-    task_domain: str = "softzoo"
+    task_domain: str = "jax_mpm"
     task_id: str = "crawling_ground"
     seeds: List[int] = field(default_factory=lambda: [0])
     output_dir: str = "results/baseline"
@@ -98,7 +98,7 @@ class BaselineExperimentPlatform:
     """
     Platform for running baseline comparison experiments.
 
-    Task-agnostic: works with any task domain (softzoo, 3dgs, quadruped, etc.)
+    Task-agnostic: works with any task domain (jax_mpm, 3dgs, quadruped, etc.)
     and any baseline (mrmfmbd, cmaes, etc.). Resolves evaluator and task_spec
     via task domain provider registry.
     """

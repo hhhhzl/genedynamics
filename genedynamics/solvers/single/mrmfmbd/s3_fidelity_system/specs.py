@@ -21,7 +21,7 @@ class FidelityLevelSpec:
         level: Integer level (0=coarse, 1=medium, 2=fine)
         cost: Relative cost per rollout (e.g. 1.0, 3.0, 10.0)
         quality: Quality factor (0-1 or higher)
-        max_substeps: Sim substeps (SoftZoo)
+        max_substeps: Sim substeps
         max_substeps_local: Local substeps
         n_frames: Frames per episode
         extra: Extensible metadata

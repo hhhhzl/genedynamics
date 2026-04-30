@@ -21,7 +21,7 @@ class ModeSpec:
         mode_id: Integer mode index
         name: Human-readable name (e.g. "low_friction", "sticking")
         log_prior: log p(c) for mode prior
-        friction: Friction coefficient (for SoftZoo terrain)
+        friction: Friction coefficient (for terrain)
         damping: Optional damping
         terrain_variant: Optional terrain override
         extra: Extensible metadata

@@ -1,14 +1,12 @@
 """Adapters: JAX-MPM rollout → RolloutBatchResult protocol.
 
-Wraps the JAX scene module behind the same `evaluate_batch(RolloutBatchRequest)`
-interface that `SoftZooRolloutEvaluator` exposes. That lets the existing MRMFMBD
-backend (and CMA-ES baseline) use either softzoo or jax_mpm by swapping the
-task_domain alone.
+Wraps the JAX scene module behind the standard
+`evaluate_batch(RolloutBatchRequest)` interface so the MRMFMBD backend
+(and CMA-ES baseline) can plug in by name.
 
-Mode → friction mapping: the softzoo task registry keeps a tuple of
-`SoftZooModeSpec` per task; we just read the `friction` field from each spec.
-Fidelity → env-step count: level-0 → 30, level-1 → 100, level-2 → 200
-(approximates softzoo's max_substeps/n_sub step counts).
+Mode → friction mapping: configurable via runtime_config["mode_friction"]
+(list of floats per mode_id), defaulting to [0.3, 0.4, 0.5, 0.6].
+Fidelity → env-step count: level-0 → 30, level-1 → 100, level-2 → 200.
 """
 
 from __future__ import annotations
@@ -42,8 +40,7 @@ def _get_batched_fn(scene: SceneData, cfg: MPMConfig, num_env_steps: int):
     return _jitted
 
 
-# Fidelity level → env step count. Values roughly match softzoo's ladder
-# (coarse=29, medium=88, fine=200) so the S3 bookkeeping stays meaningful.
+# Fidelity level → env step count (coarse=30, medium=100, fine=200).
 FIDELITY_STEPS = {0: 30, 1: 100, 2: 200}
 
 
