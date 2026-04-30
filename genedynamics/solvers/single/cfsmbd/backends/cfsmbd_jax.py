@@ -51,6 +51,7 @@ class CFSMBDBackendJax:
         obstacles: Any = None,
         aug_lambda: float = 0.0,
         aug_rho: float = 1.0,
+        noise_sampler: Any = None,
         **kwargs: Any,
     ):
         # Support both old-style (direct params) and new-style (solver object) initialization
@@ -271,6 +272,19 @@ class CFSMBDBackendJax:
                 self._T_k_arr = jnp.asarray(T_k_list, dtype=jnp.float32)
         except Exception:
             self._T_k_arr = None
+
+        # Optional pluggable noise sampler. None → inline unit-variance
+        # ``jax.random.normal`` (zero behaviour change). See
+        # genedynamics.core.prob.NoiseSampler for the protocol.
+        if noise_sampler is None and solver is not None:
+            noise_sampler = getattr(solver, "noise_sampler", None)
+        self.noise_sampler = noise_sampler
+
+    def _draw_unit_noise(self, key, shape, *, state=None):
+        """Unit-variance noise. Routes to ``self.noise_sampler`` if set."""
+        if self.noise_sampler is not None:
+            return self.noise_sampler.sample(shape, key=key, state=state)
+        return jax.random.normal(key, shape, dtype=jnp.float32)
 
     def _build_jax_functions(self) -> None:
         def transition_fn(state, action):
@@ -598,7 +612,7 @@ class CFSMBDBackendJax:
             rng_curr, Ybar_curr, carry_sched = carry
             rng_curr, noise_key, extra_key, filter_key = jax.random.split(rng_curr, 4)
 
-            eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
+            eps = self._draw_unit_noise(noise_key, (self.Nsample, self.horizon, self.act_dim), state=Ybar_curr)
             Y0s = eps * sigmas[idx] + Ybar_curr
             Y0s = jnp.clip(Y0s, -self.action_limit, self.action_limit)
 
@@ -666,7 +680,7 @@ class CFSMBDBackendJax:
             Ybar_next = jax.lax.cond(do_qp, filter_mean, lambda _: Ybar_weighted, operand=None)
 
             extra_sigma = extra_sigmas_by_idx[idx]
-            noise_extra = jax.random.normal(extra_key, (self.horizon, self.act_dim), dtype=jnp.float32)
+            noise_extra = self._draw_unit_noise(extra_key, (self.horizon, self.act_dim), state=Ybar_next)
             Ybar_next = Ybar_next + extra_sigma * noise_extra
             Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
 
@@ -721,7 +735,7 @@ class CFSMBDBackendJax:
                 # Need separate RNGs for diffusion noise and extra noise.
                 rng_curr, noise_key, extra_key, filter_key = jax.random.split(rng_curr, 4)
 
-                eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
+                eps = self._draw_unit_noise(noise_key, (self.Nsample, self.horizon, self.act_dim), state=Ybar_curr)
                 Y0s = eps * sigmas[idx] + Ybar_curr
                 Y0s = jnp.clip(Y0s, -self.action_limit, self.action_limit)
 
@@ -778,7 +792,7 @@ class CFSMBDBackendJax:
                 
                 # Add extra noise for diversity (decays over diffusion steps, aligned with ebmbd)
                 extra_sigma = extra_sigmas_by_idx[idx]
-                noise_extra = jax.random.normal(extra_key, (self.horizon, self.act_dim), dtype=jnp.float32)
+                noise_extra = self._draw_unit_noise(extra_key, (self.horizon, self.act_dim), state=Ybar_next)
                 Ybar_next = Ybar_next + extra_sigma * noise_extra
                 Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
 
@@ -1084,7 +1098,7 @@ class CFSMBDBackendJax:
                 rng_curr, Ybar_curr = carry
                 rng_curr, noise_key, extra_key, filter_key = jax.random.split(rng_curr, 4)
                 
-                eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
+                eps = self._draw_unit_noise(noise_key, (self.Nsample, self.horizon, self.act_dim), state=Ybar_curr)
                 Y0s = eps * sigmas[idx] + Ybar_curr
                 Y0s = jnp.clip(Y0s, -self.action_limit, self.action_limit)
                 
@@ -1150,7 +1164,7 @@ class CFSMBDBackendJax:
                 
                 # Add extra noise for diversity (decays over diffusion steps, aligned with ebmbd)
                 extra_sigma = extra_sigmas_by_idx_batch[idx]
-                noise_extra = jax.random.normal(extra_key, (self.horizon, self.act_dim), dtype=jnp.float32)
+                noise_extra = self._draw_unit_noise(extra_key, (self.horizon, self.act_dim), state=Ybar_next)
                 Ybar_next = Ybar_next + extra_sigma * noise_extra
                 Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
                 

@@ -88,6 +88,12 @@ class EBMBDBackendJax:
         self.position_extractor = getattr(solver, "position_extractor", None) or legacy_extract_position
         self.position_dim = int(getattr(solver, "position_dim", 2))
 
+        # Optional pluggable noise sampler. None → inline unit-variance
+        # ``jax.random.normal`` (zero behaviour change). Custom samplers must
+        # return UNIT-variance noise; per-step σ is applied externally.
+        # See genedynamics.core.prob.NoiseSampler for the protocol.
+        self.noise_sampler = getattr(solver, "noise_sampler", None)
+
         # Allow constraint scheduler to override barrier params (emerging_barrier)
         if self.scheduler is not None and hasattr(self.scheduler, "constraint_schedulers"):
             try:
@@ -187,6 +193,12 @@ class EBMBDBackendJax:
 
     # ------------------------------------------------------------------ #
     # Builders
+    def _draw_unit_noise(self, key, shape, *, state=None):
+        """Unit-variance noise. Routes to ``self.noise_sampler`` if set."""
+        if self.noise_sampler is not None:
+            return self.noise_sampler.sample(shape, key=key, state=state)
+        return jax.random.normal(key, shape, dtype=jnp.float32)
+
     # ------------------------------------------------------------------ #
     def _build_cost_fn(self):
         def cost(state, action, ctx):
@@ -428,11 +440,11 @@ class EBMBDBackendJax:
                 sigma_i = sigmas[idx]
                 Yi = Ybar_curr * sqrt_alpha_bar_i
                 
-                eps = jax.random.normal(eps_key, (self.Nsample, horizon, act_dim), dtype=jnp.float32)
+                eps = self._draw_unit_noise(eps_key, (self.Nsample, horizon, act_dim), state=Ybar_curr)
                 Y0s = Ybar_curr[None, :] + sigma_i * eps
                 limit = self.action_limit
                 Y0s = jnp.clip(Y0s, -limit, limit)
-                
+
                 states_batch = self._rollout_states_batch_fn(x0_jnp, Y0s)
                 total_stage_terminal_cost, rews_mean = self._rollout_total_cost_with_target_batch_fn(x0_jnp, Y0s, target)
                 
@@ -465,7 +477,7 @@ class EBMBDBackendJax:
                 Ybar_next = Yim1 / sqrt_alpha_bar_prev
                 
                 extra_sigma = extra_sigmas_by_idx[idx]
-                noise_extra = jax.random.normal(extra_key, (horizon, act_dim), dtype=jnp.float32)
+                noise_extra = self._draw_unit_noise(extra_key, (horizon, act_dim), state=Ybar_next)
                 Ybar_next = Ybar_next + extra_sigma * noise_extra
                 Ybar_next = jnp.clip(Ybar_next, -limit, limit)
                 # reward_history: stage + terminal only (for convergence comparison across methods)
@@ -589,7 +601,7 @@ class EBMBDBackendJax:
             Yi = Ybar_curr * sqrt_alpha_bar_i
 
             # Sample actions
-            eps = jax.random.normal(eps_key, (self.Nsample, horizon, act_dim), dtype=jnp.float32)
+            eps = self._draw_unit_noise(eps_key, (self.Nsample, horizon, act_dim), state=Ybar_curr)
             Y0s = Ybar_curr[None, :] + sigma_i * eps
 
             # Clip actions
@@ -642,7 +654,7 @@ class EBMBDBackendJax:
 
             # Add extra noise (decays to 0)
             extra_sigma = extra_sigmas_by_idx[idx]
-            noise_extra = jax.random.normal(extra_key, (horizon, act_dim), dtype=jnp.float32)
+            noise_extra = self._draw_unit_noise(extra_key, (horizon, act_dim), state=Ybar_next)
             Ybar_next = Ybar_next + extra_sigma * noise_extra
 
             # Clip

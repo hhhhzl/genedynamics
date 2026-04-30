@@ -45,6 +45,7 @@ class MDOCBackendJax:
         show_tqdm: bool = False,
         constraint_filter: Optional[ConstraintFilter] = None,
         obstacles: Any = None,
+        noise_sampler: Any = None,
         **kwargs: Any,
     ):
         # Support both old-style (direct params) and new-style (solver object) initialization
@@ -111,7 +112,14 @@ class MDOCBackendJax:
         
         # New: Support for terminal cost and guidance (aligned with mdoc.py)
         self.terminal_weight = float(kwargs.get("terminal_energy_weight", 100.0))
-        self.guide_weight = float(kwargs.get("guide_weight", 20.0)) 
+        self.guide_weight = float(kwargs.get("guide_weight", 20.0))
+
+        # Optional pluggable noise sampler. None → inline unit-variance
+        # ``jax.random.normal`` (zero behaviour change). See
+        # genedynamics.core.prob.NoiseSampler for the protocol.
+        if noise_sampler is None and solver is not None:
+            noise_sampler = getattr(solver, "noise_sampler", None)
+        self.noise_sampler = noise_sampler
 
         self._build_jax_functions()
 
@@ -168,6 +176,12 @@ class MDOCBackendJax:
                 self._T_k_arr = jnp.asarray(T_k_list, dtype=jnp.float32)
         except Exception:
             self._T_k_arr = None
+
+    def _draw_unit_noise(self, key, shape, *, state=None):
+        """Unit-variance noise. Routes to ``self.noise_sampler`` if set."""
+        if self.noise_sampler is not None:
+            return self.noise_sampler.sample(shape, key=key, state=state)
+        return jax.random.normal(key, shape, dtype=jnp.float32)
 
     def _build_jax_functions(self) -> None:
         def transition_fn(state, action):
@@ -282,7 +296,11 @@ class MDOCBackendJax:
                 rng_curr, noise_key = jax.random.split(rng_curr)
 
                 # Generate candidates around current mean
-                eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
+                eps = self._draw_unit_noise(
+                    noise_key,
+                    (self.Nsample, self.horizon, self.act_dim),
+                    state=Ybar_curr,
+                )
                 Y0s = eps * sigmas[idx] + Ybar_curr
                 Y0s = jnp.clip(Y0s, -self.action_limit, self.action_limit)
 
@@ -487,10 +505,14 @@ class MDOCBackendJax:
                 rng_curr, Ybar_curr = carry
                 rng_curr, noise_key = jax.random.split(rng_curr)
                 
-                eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
+                eps = self._draw_unit_noise(
+                    noise_key,
+                    (self.Nsample, self.horizon, self.act_dim),
+                    state=Ybar_curr,
+                )
                 Y0s = eps * sigmas[idx] + Ybar_curr
                 Y0s = jnp.clip(Y0s, -self.action_limit, self.action_limit)
-                
+
                 step_k = jnp.asarray((self.Ndiffuse - 1), dtype=jnp.int32) - idx
                 sched_state = {"k": step_k, "K": total_steps_jnp}
                 if self._margin_arr is not None:

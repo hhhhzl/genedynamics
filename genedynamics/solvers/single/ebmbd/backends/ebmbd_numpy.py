@@ -55,6 +55,11 @@ class EBMBDBackendNumpy:
         self.scheduler = getattr(solver, "scheduler", None)
         self.show_tqdm = bool(getattr(solver, "show_tqdm", False))
 
+        # Optional pluggable noise sampler. None → inline unit-variance
+        # ``rng.standard_normal`` (zero behaviour change). Custom samplers
+        # must return UNIT-variance noise; per-step σ is applied externally.
+        self.noise_sampler = getattr(solver, "noise_sampler", None)
+
         # Allow constraint scheduler override (emerging_barrier)
         if self.scheduler is not None and hasattr(self.scheduler, "constraint_schedulers"):
             try:
@@ -79,6 +84,15 @@ class EBMBDBackendNumpy:
         # Validate env adapter
         if not hasattr(self.env, "transition"):
             raise ValueError("EB-MBD NumPy backend requires env.transition (NumPy transition).")
+
+    def _draw_unit_noise(self, shape, *, state=None) -> np.ndarray:
+        """Unit-variance noise. Routes to ``self.noise_sampler`` if set."""
+        if self.noise_sampler is not None:
+            return np.asarray(
+                self.noise_sampler.sample(shape, key=self._np_rng, state=state),
+                dtype=np.float32,
+            )
+        return self._np_rng.standard_normal(size=shape).astype(np.float32)
 
     # --------------------------------------------------------------------- SDF
     def _box_sdf(self, pos: np.ndarray) -> np.ndarray:
@@ -244,7 +258,7 @@ class EBMBDBackendNumpy:
             sqrt_alpha_bar = float(np.sqrt(alphas_bar[idx]))
             Yi = Ybar * sqrt_alpha_bar
             sigma_i = float(sigmas[idx])
-            eps = self._np_rng.standard_normal(size=(local_Nsample, horizon, act_dim)).astype(np.float32)
+            eps = self._draw_unit_noise((local_Nsample, horizon, act_dim), state=Ybar)
             Y0s = Ybar[None, :, :] + sigma_i * eps
             Y0s = np.clip(Y0s, -self.action_limit, self.action_limit)
 
@@ -297,7 +311,7 @@ class EBMBDBackendNumpy:
             # extra noise (early large -> late 0)
             extra_sigma = float(extra_sigmas_by_idx[idx])
             if abs(extra_sigma) > 0.0:
-                noise = self._np_rng.standard_normal(size=(horizon, act_dim)).astype(np.float32)
+                noise = self._draw_unit_noise((horizon, act_dim), state=Ybar_next)
                 Ybar_next = Ybar_next + extra_sigma * noise
 
             Ybar_next = np.clip(Ybar_next, -self.action_limit, self.action_limit)
