@@ -28,6 +28,8 @@ from .mixtures import (
     weighted_score,
     stable_log_softmax,
 )
+from .noise_sampler import NoiseSampler, IsotropicGaussian
+from .structured_noise import StructuredNoise
 
 __all__ = [
     # Gaussian low-rank
@@ -40,4 +42,8 @@ __all__ = [
     "mixture_logprob",
     "weighted_score",
     "stable_log_softmax",
+    # Noise samplers (pluggable, backend-agnostic)
+    "NoiseSampler",
+    "IsotropicGaussian",
+    "StructuredNoise",
 ]

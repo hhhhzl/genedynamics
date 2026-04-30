@@ -13,13 +13,20 @@ All robot models implement the RobotModel protocol, providing:
 """
 
 from genedynamics.envs.robots.base import RobotModel
+from genedynamics.envs.robots.kinematics_protocol import KinematicsProtocol
 
-__all__ = ["RobotModel"]
+__all__ = ["RobotModel", "KinematicsProtocol"]
 
 # Import concrete implementations if available
 try:
     from genedynamics.envs.robots.manipulator import ManipulatorModel
     __all__.append("ManipulatorModel")
+except ImportError:
+    pass
+
+try:
+    from genedynamics.envs.robots.jax_kinematics import JAXKinematics
+    __all__.append("JAXKinematics")
 except ImportError:
     pass
 

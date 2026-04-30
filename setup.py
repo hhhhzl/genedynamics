@@ -24,6 +24,15 @@ setup(
     author_email='hectorh@cmu.edu',
     packages=find_packages(),
     install_requires=requires_list,
+    extras_require={
+        # JAX-native kinematics + 3D mesh SDF for serial-arm / contact tasks
+        # (genedynamics.envs.robots.jax_kinematics, envs.obstacles.sdf_grid_3d).
+        "manipulator": [
+            "jaxlie>=1.4",
+            "urchin>=0.0.27",
+            "rtree>=1.0",  # trimesh.proximity.signed_distance backend
+        ],
+    },
     entry_points={
         "console_scripts": [
             "genedynamics-deploy=genedynamics.deploy.runner:main",

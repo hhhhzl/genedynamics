@@ -19,6 +19,7 @@ from genedynamics.envs.obstacles.collision import (
     compute_sdf_batch,
 )
 from genedynamics.envs.obstacles.sdf_texture import SDFTexture2D
+from genedynamics.envs.obstacles.sdf_grid_3d import SDFGrid3D
 
 # Non-convex obstacles (optional, may require trimesh)
 try:
@@ -44,6 +45,7 @@ try:
         "compute_distances",
         "compute_sdf_batch",
         "SDFTexture2D",
+        "SDFGrid3D",
     ]
 except ImportError:
     __all__ = [
