@@ -27,6 +27,7 @@ class MPPIBackendJax:
         lambda_: float,
         action_limit: float,
         seed: int = 0,
+        noise_sampler: Optional[Any] = None,
     ):
         self.env = env_adapter
         self.energy = legacy_energy
@@ -39,8 +40,18 @@ class MPPIBackendJax:
         self.action_limit = action_limit
         self.seed = seed
         self.act_dim = self.env.act_dim
+        # Optional pluggable noise sampler. When None, the inline isotropic
+        # Gaussian path below is used (zero behaviour change vs prior code).
+        # See genedynamics.core.prob.NoiseSampler for the protocol.
+        self.noise_sampler = noise_sampler
 
         self._build_jax_functions()
+
+    def _draw_noise(self, key, shape, *, state=None):
+        """Draw noise. Routes to ``self.noise_sampler`` if set, else inline N(0, σ²I)."""
+        if self.noise_sampler is not None:
+            return self.noise_sampler.sample(shape, key=key, state=state)
+        return jax.random.normal(key, shape, dtype=jnp.float32) * self.noise_sigma
 
     def _build_jax_functions(self) -> None:
         def transition_fn(state, action):
@@ -87,9 +98,11 @@ class MPPIBackendJax:
 
         for _ in range(self.num_iterations):
             rng, noise_key = jax.random.split(rng)
-            noise = jax.random.normal(
-                noise_key, (self.num_samples, self.horizon, self.act_dim), dtype=jnp.float32
-            ) * self.noise_sigma
+            noise = self._draw_noise(
+                noise_key,
+                (self.num_samples, self.horizon, self.act_dim),
+                state=mean_actions,
+            )
 
             candidates = mean_actions[None, :, :] + noise
             if self.action_limit is not None:
@@ -153,7 +166,11 @@ class MPPIBackendJax:
         rng = rng_key
         for _ in range(n_samples):
             rng, noise_key = jax.random.split(rng)
-            noise = jax.random.normal(noise_key, (self.horizon, self.act_dim), dtype=jnp.float32) * self.noise_sigma
+            noise = self._draw_noise(
+                noise_key,
+                (self.horizon, self.act_dim),
+                state=mean_actions,
+            )
             candidate = mean_actions + noise
             if self.action_limit is not None:
                 candidate = jnp.clip(candidate, -self.action_limit, self.action_limit)

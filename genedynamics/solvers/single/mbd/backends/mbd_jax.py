@@ -34,6 +34,7 @@ class MBDBackendJax:
         seed: int = 0,
         scheduler: Any = None,
         show_tqdm: bool = False,
+        noise_sampler: Any = None,
         **kwargs,
     ):
         # Support both old-style (direct params) and new-style (solver object) initialization
@@ -92,7 +93,20 @@ class MBDBackendJax:
             self.position_extractor = kwargs.get("position_extractor") or legacy_extract_position
             self.position_dim = int(kwargs.get("position_dim", 2))
 
+        # Optional pluggable noise sampler. When None, the inline unit-variance
+        # ``jax.random.normal`` path is used (zero behaviour change vs prior
+        # code). Custom samplers must return UNIT-variance noise — MBD applies
+        # the diffusion schedule's per-step sigma externally.
+        # See genedynamics.core.prob.NoiseSampler for the protocol.
+        self.noise_sampler = noise_sampler
+
         self._build_jax_functions()
+
+    def _draw_unit_noise(self, key, shape, *, state=None):
+        """Unit-variance noise. Routes to ``self.noise_sampler`` if set."""
+        if self.noise_sampler is not None:
+            return self.noise_sampler.sample(shape, key=key, state=state)
+        return jax.random.normal(key, shape, dtype=jnp.float32)
 
     def _build_jax_functions(self) -> None:
         def transition_fn(state, action):
@@ -233,7 +247,11 @@ class MBDBackendJax:
                 rng_curr, noise_key, extra_key = jax.random.split(rng_curr, 3)
 
                 Yi = Ybar_curr * jnp.sqrt(alphas_bar[idx])
-                eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
+                eps = self._draw_unit_noise(
+                    noise_key,
+                    (self.Nsample, self.horizon, self.act_dim),
+                    state=Ybar_curr,
+                )
                 Y0s = eps * sigmas[idx] + Ybar_curr
                 Y0s = jnp.clip(Y0s, -self.action_limit, self.action_limit)
 
@@ -254,7 +272,9 @@ class MBDBackendJax:
 
                 # Add extra noise for diversity (decays over diffusion steps, aligned with ebmbd)
                 extra_sigma = extra_sigmas_by_idx[idx]
-                noise_extra = jax.random.normal(extra_key, (self.horizon, self.act_dim), dtype=jnp.float32)
+                noise_extra = self._draw_unit_noise(
+                    extra_key, (self.horizon, self.act_dim), state=Ybar_next,
+                )
                 Ybar_next = Ybar_next + extra_sigma * noise_extra
                 Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
 
@@ -366,7 +386,11 @@ class MBDBackendJax:
                 rng_curr, noise_key, extra_key = jax.random.split(rng_curr, 3)
 
                 Yi = Ybar_curr * jnp.sqrt(alphas_bar[idx])
-                eps = jax.random.normal(noise_key, (self.Nsample, self.horizon, self.act_dim), dtype=jnp.float32)
+                eps = self._draw_unit_noise(
+                    noise_key,
+                    (self.Nsample, self.horizon, self.act_dim),
+                    state=Ybar_curr,
+                )
                 Y0s = eps * sigmas[idx] + Ybar_curr
                 Y0s = jnp.clip(Y0s, -self.action_limit, self.action_limit)
 
@@ -387,10 +411,12 @@ class MBDBackendJax:
                 
                 # Add extra noise for diversity (decays over diffusion steps, aligned with ebmbd)
                 extra_sigma = extra_sigmas_by_idx[idx]
-                noise_extra = jax.random.normal(extra_key, (self.horizon, self.act_dim), dtype=jnp.float32)
+                noise_extra = self._draw_unit_noise(
+                    extra_key, (self.horizon, self.act_dim), state=Ybar_next,
+                )
                 Ybar_next = Ybar_next + extra_sigma * noise_extra
                 Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
-                
+
                 return (rng_curr, Ybar_next), (jnp.mean(rews_mean), Ybar_next, Y0s)
             
             Ybar_init = jnp.zeros((self.horizon, self.act_dim), dtype=jnp.float32)
