@@ -547,7 +547,7 @@ class TwoGOBackendJax:
                     a_geom = inner._constraint_geometry_time_jit(x0_jnp, Ybar_curr, margin)
                 a_geom0 = a_geom * wmask[:, None]
 
-                eps_noise = jax.random.normal(noise_key, (Nsample, horizon, act_dim), dtype=jnp.float32)
+                eps_noise = inner._draw_unit_noise(noise_key, (Nsample, horizon, act_dim), state=Ybar_curr)
                 Y0s = jnp.clip(eps_noise * sigmas[idx] + Ybar_curr, -action_limit, action_limit)
                 rews, v_batch = inner._augmented_and_v_batch_jit(
                     x0_jnp, Y0s, margin, aug_lam, aug_rho, target
@@ -667,7 +667,7 @@ class TwoGOBackendJax:
                     _target_actions = target
                 task_dir = _task_direction.direction(Ybar_curr, _target_actions, step_k, hardness_k)
                 score_base = kappa_k * (Ybar_weighted - Ybar_curr) + task_dir
-                noise_extra = jax.random.normal(extra_key, (horizon, act_dim), dtype=jnp.float32)
+                noise_extra = inner._draw_unit_noise(extra_key, (horizon, act_dim), state=Ybar_curr)
                 if geometry_enabled:
                     u_agp_proj = _constraint_manifold.project(score_base, bundle, mode="metric")
                     u_agp = jax.lax.cond(bundle.is_valid, lambda _: u_agp_proj, lambda _: score_base, operand=None)

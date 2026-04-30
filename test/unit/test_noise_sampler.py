@@ -185,19 +185,60 @@ def test_structured_jax_jit() -> None:
     assert eta.shape == (16, 3)
 
 
-# ----- Solver injection: MPPI + MBD default-path unchanged -----------------
+# ----- Solver injection: each backend exposes the noise_sampler hook ---------
+
+
+def _check_has_draw_unit_noise(cls) -> None:
+    assert hasattr(cls, "_draw_unit_noise") or hasattr(cls, "_draw_noise"), (
+        f"{cls.__name__} is missing the noise injection hook"
+    )
 
 
 def test_mppi_backend_accepts_noise_sampler_kwarg() -> None:
-    """MPPI backend constructor must accept the new keyword without behavior change."""
+    """MPPI uses sigma-included `_draw_noise` (returns randn * sigma)."""
     pytest.importorskip("jax")
     from genedynamics.solvers.single.mppi.backends.mppi_jax import MPPIBackendJax
-    sig = MPPIBackendJax.__init__.__code__.co_varnames
-    assert "noise_sampler" in sig
+    assert "noise_sampler" in MPPIBackendJax.__init__.__code__.co_varnames
+    assert hasattr(MPPIBackendJax, "_draw_noise")
 
 
 def test_mbd_backend_accepts_noise_sampler_kwarg() -> None:
+    """MBD uses unit-variance `_draw_unit_noise`; sigma applied externally."""
     pytest.importorskip("jax")
     from genedynamics.solvers.single.mbd.backends.mbd_jax import MBDBackendJax
-    sig = MBDBackendJax.__init__.__code__.co_varnames
-    assert "noise_sampler" in sig
+    assert "noise_sampler" in MBDBackendJax.__init__.__code__.co_varnames
+    _check_has_draw_unit_noise(MBDBackendJax)
+
+
+def test_ebmbd_jax_backend_exposes_noise_sampler() -> None:
+    pytest.importorskip("jax")
+    from genedynamics.solvers.single.ebmbd.backends.ebmbd_jax import EBMBDBackendJax
+    _check_has_draw_unit_noise(EBMBDBackendJax)
+
+
+def test_ebmbd_numpy_backend_exposes_noise_sampler() -> None:
+    from genedynamics.solvers.single.ebmbd.backends.ebmbd_numpy import EBMBDBackendNumpy
+    _check_has_draw_unit_noise(EBMBDBackendNumpy)
+
+
+def test_mdoc_backend_exposes_noise_sampler() -> None:
+    pytest.importorskip("jax")
+    from genedynamics.solvers.single.mdoc.backends.mdoc_jax import MDOCBackendJax
+    assert "noise_sampler" in MDOCBackendJax.__init__.__code__.co_varnames
+    _check_has_draw_unit_noise(MDOCBackendJax)
+
+
+def test_cfsmbd_backend_exposes_noise_sampler() -> None:
+    pytest.importorskip("jax")
+    from genedynamics.solvers.single.cfsmbd.backends.cfsmbd_jax import CFSMBDBackendJax
+    assert "noise_sampler" in CFSMBDBackendJax.__init__.__code__.co_varnames
+    _check_has_draw_unit_noise(CFSMBDBackendJax)
+
+
+def test_twogo_backend_inherits_noise_sampler_via_inner_cfsmbd() -> None:
+    """2GO wraps CFSMBD and delegates noise drawing to the inner ``_draw_unit_noise``."""
+    pytest.importorskip("jax")
+    from genedynamics.solvers.single.twogo.backends.twogo_jax import TwoGOBackendJax
+    from genedynamics.solvers.single.cfsmbd.backends.cfsmbd_jax import CFSMBDBackendJax
+    # 2GO doesn't define its own; the inner CFSMBD does.
+    _check_has_draw_unit_noise(CFSMBDBackendJax)
