@@ -18,7 +18,7 @@ evaluator_runtime:
   voxel_dims: [4, 3, 4]
   act_strength_base: 24.0
   scale: 50.0
-  mode_friction: [0.45]           # single-mode = mean; cem has no S1
+  mode_friction: [0.45]           # single-mode = mean; cem has no mode marginalization
 
 scheduler_config:
   type: composite
@@ -32,7 +32,7 @@ scheduler_config:
   diffusion_merge_strategy: merge
 
 method_params:
-  num_modes: 1                # no S1 mode marginalization
+  num_modes: 1                # no mode marginalization
   popsize: 32                 # K·M·num_modes/(popsize·num_modes) = 100 generations
   elite_frac: 0.25
   init_std: 0.3
@@ -40,7 +40,7 @@ method_params:
   noise_decay: 0.97
   extra_noise: 0.05
   show_tqdm: true
-  fine_fidelity_level: 1      # 100 env-steps (no S3 — single fidelity)
+  fine_fidelity_level: 1      # 100 env-steps (no fidelity ladder — single fidelity)
   # Search bounds must match jax_mpm's controller clipping.
   x_lo: 0.2
   x_hi: 1.0

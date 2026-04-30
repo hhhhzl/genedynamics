@@ -20,13 +20,13 @@ import matplotlib.pyplot as plt
 
 
 RUNS = {
-    "MRMFMBD (main, S1+S3)":
+    "MRMFMBD (main, mode marginalization + fidelity ladder)":
         "/workspace/genedynamics/results/soft_robot/main/crawling_ground/results.json",
-    "Diff (4m, env=200, no S3)":
+    "Diff (4m, env=200, no fidelity ladder)":
         "/workspace/genedynamics/results/soft_robot/ablation/no_fidelity_ladder_env200/results.json",
-    "Diff (4m, env=100, no S3)":
+    "Diff (4m, env=100, no fidelity ladder)":
         "/workspace/genedynamics/results/soft_robot/ablation/no_fidelity_ladder_env100/results.json",
-    "Diff (1m, env=200, no S1+S3)":
+    "Diff (1m, env=200, no mode marginalization + fidelity ladder)":
         "/workspace/genedynamics/results/soft_robot/ablation/no_mode_no_fidelity_env200/results.json",
     "CMA-ES  env=100":
         "/workspace/genedynamics/results/soft_robot/baselines/cmaes_crawling/results.json",
@@ -38,10 +38,10 @@ RUNS = {
         "/workspace/genedynamics/results/soft_robot/baselines/cem_crawling_env200/results.json",
 }
 COLORS = {
-    "MRMFMBD (main, S1+S3)":        "#d62728",
-    "Diff (4m, env=200, no S3)":    "#e377c2",
-    "Diff (4m, env=100, no S3)":    "#ff7f0e",
-    "Diff (1m, env=200, no S1+S3)": "#8c564b",
+    "MRMFMBD (main, mode marginalization + fidelity ladder)":        "#d62728",
+    "Diff (4m, env=200, no fidelity ladder)":    "#e377c2",
+    "Diff (4m, env=100, no fidelity ladder)":    "#ff7f0e",
+    "Diff (1m, env=200, no mode marginalization + fidelity ladder)": "#8c564b",
     "CMA-ES  env=100":              "#1f77b4",
     "CEM     env=100":              "#2ca02c",
     "CMA-ES  env=200":              "#6a3d9a",

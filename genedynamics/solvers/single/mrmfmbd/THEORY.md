@@ -1,4 +1,4 @@
-# MRMFMBD Theory: S1 + S3
+# MRMFMBD Theory: Mode Marginalization + Fidelity Ladder
 
 ## Posterior Bridge
 
@@ -6,7 +6,7 @@ Target: sample from posterior π(θ|R) ∝ p₀(θ) p(R|θ) over design+controll
 
 Annealed bridge: πₖ(θ) ∝ p₀(θ) p(R|θ)^βₖ with 0 ≤ β₀ < … < βₖ = 1.
 
-## S1: Mode Marginalization
+## Mode Marginalization
 
 Discrete latent modes c (contact/friction regimes). Marginal likelihood:
 
@@ -32,7 +32,7 @@ log πₖ(θ) = log p₀(θ) + βₖ · log p(R|θ)
 ```
 β must NOT appear inside the mixture terms.
 
-## S3: Multi-Fidelity Ladder
+## Multi-Fidelity Ladder
 
 Fidelity levels ℓ ∈ {0,1,2} (coarse → fine). Cost(ℓ₀) < Cost(ℓ₁) < Cost(ℓ₂).
 

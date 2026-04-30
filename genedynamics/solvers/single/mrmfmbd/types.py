@@ -1,5 +1,5 @@
 """
-Type definitions for MRMFMBD (Soft-robot S1+S3) solver.
+Type definitions for MRMFMBD (soft-robot co-design (mode marginalization + fidelity ladder)) solver.
 
 Multi-Resolution, Multi-Fidelity Model-Based Diffusion for deformable/soft robots.
 """

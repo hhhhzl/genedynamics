@@ -1,5 +1,5 @@
 """
-S3 Fidelity Ladder: maps bridge step k to fidelity level ℓ.
+Fidelity Ladder: maps bridge step k to fidelity level ℓ.
 
 Theory: Early steps use coarse (low cost), late steps use fine (high fidelity).
 Cost-optimal: geometric allocation n_ℓ ∝ r^ℓ gives more steps at coarse.
@@ -82,9 +82,9 @@ def _build_cosine_ladder(K: int, L: int) -> List[int]:
     return ladder
 
 
-class FidelityLadderS3:
+class BlockFidelityLadder:
     """
-    S3 Fidelity Ladder: maps bridge step k to fidelity level ℓ.
+    Fidelity Ladder: maps bridge step k to fidelity level ℓ.
 
     Supports fixed, geometric, linear, cosine schedules.
     Cost-aware: geometric allocates more steps at coarse.
@@ -170,9 +170,9 @@ def create_fidelity_ladder(
     *,
     config: Optional[FidelitySystemConfig] = None,
     explicit_levels: Optional[List[int]] = None,
-) -> FidelityLadderS3:
+) -> BlockFidelityLadder:
     """
-    Factory for FidelityLadderS3.
+    Factory for BlockFidelityLadder.
 
     Args:
         K: Number of bridge steps
@@ -183,7 +183,7 @@ def create_fidelity_ladder(
         explicit_levels: Override with explicit [ℓ_0, ℓ_1, ..., ℓ_{K-1}]
 
     Returns:
-        FidelityLadderS3 instance
+        BlockFidelityLadder instance
     """
     if config is None:
         from .specs import default_fidelity_system_config
@@ -200,7 +200,7 @@ def create_fidelity_ladder(
         config.ladder_type = ladder_type
     except Exception:
         pass
-    return FidelityLadderS3(
+    return BlockFidelityLadder(
         config=config,
         K=K,
         explicit_ladder=explicit_levels,

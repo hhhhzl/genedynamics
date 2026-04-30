@@ -1,5 +1,5 @@
 """
-S1 Mode Marginalizer: theory-correct implementation.
+Mode Marginalizer: theory-correct implementation.
 
 Implements:
   log p(R|θ) = log Σ_c p(c) exp(R_c/T) = logsumexp(log p(c) + R_c/T)
@@ -145,9 +145,9 @@ class ModeMarginalizerResult:
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
-class ModeMarginalizerS1:
+class ModeMarginalizer:
     """
-    S1 Mode marginalization: theory-correct implementation.
+    Mode marginalization: theory-correct implementation.
 
     Provides:
     - log p(R|θ) = logsumexp(log p(c) + R_c/T)

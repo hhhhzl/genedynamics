@@ -1,8 +1,8 @@
 """
-MRMFMBD (Soft-robot S1+S3) solver.
+MRMFMBD (soft-robot co-design (mode marginalization + fidelity ladder)) solver.
 
 Multi-Resolution, Multi-Fidelity Model-Based Diffusion for deformable/soft robots.
-Uses fidelity ladder (coarse S1 -> fine S3) and optional mode-marginalization.
+Uses fidelity ladder (coarse → fine) and optional mode-marginalization.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class MRMFMBDSolver(BaseModelBasedDiffusionSolver):
     """
     Solver for soft-robot MR-MF-MBD.
 
-    Multi-fidelity diffusion: early steps use coarse sim (S1), late steps use fine (S3).
+    Multi-fidelity diffusion: early steps use coarse sim, late steps use fine.
     """
 
     def __init__(

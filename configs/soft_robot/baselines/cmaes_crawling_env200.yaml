@@ -19,7 +19,7 @@ evaluator_runtime:
   voxel_dims: [4, 3, 4]
   act_strength_base: 24.0
   scale: 50.0
-  mode_friction: [0.45]           # single-mode = mean; cmaes has no S1
+  mode_friction: [0.45]           # single-mode = mean; cmaes has no mode marginalization
 
 scheduler_config:
   type: composite

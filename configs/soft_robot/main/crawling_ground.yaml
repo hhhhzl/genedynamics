@@ -1,4 +1,4 @@
-# MRMFMBD co-design: crawling_ground (full S1 mode marginalization + S3 fidelity ladder)
+# MRMFMBD co-design: crawling_ground (full mode marginalization + fidelity ladder)
 #
 # 4x3x4 voxels with Z-symmetry (optimizer sees 24 morphology dims, mirrored to 48).
 # Controller phi_dim=80: W(40) + b(10) + g_feedback(10) + a_envelope(10) + c_envelope(10).

@@ -6,7 +6,7 @@ Algorithm (reverse-time denoising diffusion applied to θ = (x, φ)):
     for idx in reversed(range(K)):
         σ_k  = sqrt(1 - ᾱ_k)                     # DDPM noise schedule
         Y_m  = Ybar + σ_k · scale ⊙ ε_m           # forward-corrupt M proposals
-        R_m  = logsumexp_c(log π(c) + R_{m,c}/T)  # S1 mode marginalization
+        R_m  = logsumexp_c(log π(c) + R_{m,c}/T)  # mode marginalization
         w_m  = softmax((R_m - R̄) / (σ_R · T_k))  # reward-temp weights
         Ybar = Σ_m w_m · Y_m                      # denoise = reward-weighted mean
         Ybar = Ybar + τ_k · scale ⊙ ξ            # vanishing exploration noise
@@ -15,7 +15,7 @@ Two execution paths:
 
     * _plan_jax_scan  (FAST): When the evaluator exposes the JAX-MPM internals
       (`._scene`, `._mpm_cfg`, `._mode_friction`), the whole reverse loop lives
-      inside `jax.lax.scan`, blocked by S3 fidelity level. S1 marginalization
+      inside `jax.lax.scan`, blocked by fidelity level. mode marginalization
       is pure JAX inside the scan body. No numpy round-trips per step.
 
     * _plan_python_loop  (SLOW, fallback): Original host-side loop that
@@ -41,21 +41,21 @@ except ImportError:
 from genedynamics.solvers.single.mrmfmbd.theta_prior import ThetaParametrization, ThetaPrior
 
 try:
-    from genedynamics.solvers.single.mrmfmbd.s1_mode_system.marginalizer import (
-        ModeMarginalizerS1,
+    from genedynamics.solvers.single.mrmfmbd.mode_system.marginalizer import (
+        ModeMarginalizer,
         default_mode_system_config,
     )
-    S1_AVAILABLE = True
+    MODE_SYSTEM_AVAILABLE = True
 except ImportError:
-    S1_AVAILABLE = False
-    ModeMarginalizerS1 = None
+    MODE_SYSTEM_AVAILABLE = False
+    ModeMarginalizer = None
     default_mode_system_config = None
 
 try:
-    from genedynamics.solvers.single.mrmfmbd.s3_fidelity_system.ladder import create_fidelity_ladder
-    S3_AVAILABLE = True
+    from genedynamics.solvers.single.mrmfmbd.fidelity_system.ladder import create_fidelity_ladder
+    FIDELITY_SYSTEM_AVAILABLE = True
 except ImportError:
-    S3_AVAILABLE = False
+    FIDELITY_SYSTEM_AVAILABLE = False
     create_fidelity_ladder = None
 
 
@@ -94,7 +94,7 @@ def _s1_marginalize_jax(
     log_prior: jnp.ndarray,    # (C,)
     T: jnp.ndarray,            # scalar
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    """Pure-JAX S1 mode marginalization.
+    """Pure-JAX mode marginalization.
 
     Returns (R_m, w_c) where
         R_m[m] = logsumexp_c(log p(c) + R[m,c]/T)
@@ -108,7 +108,7 @@ def _s1_marginalize_jax(
 
 
 class MRMFMBDBackendMBD:
-    """Level-3 MBD backend: DDPM-style reverse diffusion over θ with S1+S3 hooks."""
+    """Level-3 MBD backend: DDPM-style reverse diffusion over θ with mode + fidelity systems hooks."""
 
     def __init__(
         self,
@@ -150,17 +150,17 @@ class MRMFMBDBackendMBD:
 
         K = int(self.config.K)
 
-        # S1: mode marginalizer (kept for python-loop path; JAX path uses pure fn).
+        # Mode: mode marginalizer (kept for python-loop path; JAX path uses pure fn).
         self.mode_marginalizer = mode_marginalizer
-        if self.mode_marginalizer is None and S1_AVAILABLE:
-            self.mode_marginalizer = ModeMarginalizerS1(
+        if self.mode_marginalizer is None and MODE_SYSTEM_AVAILABLE:
+            self.mode_marginalizer = ModeMarginalizer(
                 default_mode_system_config(num_modes),
                 backend="jax",
             )
 
-        # S3: fidelity ladder (coarse early, fine late on *reverse* index)
+        # Fidelity: fidelity ladder (coarse early, fine late on *reverse* index)
         self.fidelity_ladder = fidelity_ladder
-        if self.fidelity_ladder is None and S3_AVAILABLE and create_fidelity_ladder is not None:
+        if self.fidelity_ladder is None and FIDELITY_SYSTEM_AVAILABLE and create_fidelity_ladder is not None:
             self.fidelity_ladder = create_fidelity_ladder(
                 K=K, num_levels=3, ladder_type="geometric", step_ratio=2.0
             )
@@ -202,7 +202,7 @@ class MRMFMBDBackendMBD:
         self._phi_hi = jnp.asarray(float(p_hi), dtype=jnp.float32)
         self._x_dim = theta_param.x_dim
 
-        # S1 log prior as jnp.
+        # Mode log prior as jnp.
         self._log_prior_c = jnp.asarray(
             np.asarray(self.mode_log_priors[: self.num_modes], dtype=np.float32)
         )

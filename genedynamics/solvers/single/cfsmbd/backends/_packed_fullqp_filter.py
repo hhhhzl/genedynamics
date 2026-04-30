@@ -1,11 +1,11 @@
 """
 Packed-array obstacle path for CFSQPFullFilter (JAX).
 
-Goal (Phase 5):
+Goal (vectorized obstacle SDF):
 - Remove Python obstacle branch trees (`lax.switch` over Python objects) from the hot path.
 - Represent obstacles as pure arrays (circle/box primitives) and compute SDF+grad in one vectorized pass.
 
-Goal (Phase 6 support):
+Goal (host-side logging support):
 - Keep logging host-side and optional; return histories via the existing planner results.
 
 Implementation strategy:

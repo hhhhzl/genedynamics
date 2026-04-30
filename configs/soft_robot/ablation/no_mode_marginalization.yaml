@@ -1,4 +1,4 @@
-# Ablation: disable S1 mode marginalization (num_modes=1, single friction).
+# Ablation: disable mode marginalization (num_modes=1, single friction).
 # Friction = 0.45 (mean of the 4-mode main [0.3, 0.4, 0.5, 0.6]) so the
 # single-mode is the "average contact" rather than the default first mode (0.3).
 # Everything else identical to main/crawling_ground.yaml.
@@ -34,7 +34,7 @@ scheduler_config:
 
 method_params:
   backend: mbd
-  num_modes: 1                    # <-- ablation: no S1
+  num_modes: 1                    # <-- ablation: no mode marginalization
   num_fidelity_levels: 3
   fidelity_ladder_type: geometric
   fidelity_step_ratio: 1.5

@@ -3,10 +3,10 @@
 Each subpackage hosts an implementation of the
 :class:`~genedynamics.deploy.interfaces.controller.Controller` protocol:
 
-* :mod:`wbc`                — humanoid whole-body inverse-dynamics controller (Phase 4)
+* :mod:`wbc`                — humanoid whole-body inverse-dynamics controller
 * :mod:`sport_mode`         — LocoClient adapter (spark RL policy / Unitree SDK)
-* :mod:`rl`                 — third-party RL policy framework (Phase 6)
-* :mod:`quadruped_stepping` — batch stepping-walk controller for Go2 (Phase 11)
+* :mod:`rl`                 — third-party RL policy framework
+* :mod:`quadruped_stepping` — batch stepping-walk controller for Go2
 """
 
 from genedynamics.deploy.controllers.quadruped_stepping import (

@@ -1,5 +1,5 @@
 """
-Protocols for MRMFMBD (Soft-robot S1+S3) solver.
+Protocols for MRMFMBD (soft-robot co-design (mode marginalization + fidelity ladder)) solver.
 
 Defines abstract interfaces for multi-fidelity simulation and
 optional mode-marginalization (contact/friction regimes).

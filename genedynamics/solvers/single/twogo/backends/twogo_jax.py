@@ -96,7 +96,7 @@ class TwoGOBackendJax:
         if self.twogo_use_jax_scan_core:
             self._build_twogo_scan_kernels()
 
-        # -- Phase B genemetry: refinement components ----------------------
+        # -- Windowed-refinement genemetry components ----------------------
         from genedynamics.genemetry.window.backends.multimodality_numpy import (
             WindowMultimodalityNumpy,
         )
@@ -618,7 +618,7 @@ class TwoGOBackendJax:
                     a_geom1, topk_active, eps_stab
                 )
 
-                # Phase B/C: cluster-based reweighting + retract blend.
+                # Cluster-based reweighting + retract blend.
                 # Guarded behind a static flag so the trace graph is
                 # identical to baseline when both are disabled.
                 rew_mean = jnp.mean(rews)

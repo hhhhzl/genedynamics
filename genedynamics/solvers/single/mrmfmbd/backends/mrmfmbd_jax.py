@@ -1,8 +1,8 @@
 """
-JAX backend for MRMFMBD (Soft-robot S1+S3).
+JAX backend for MRMFMBD (Soft-robot mode marginalization + fidelity ladder).
 
 Multi-Resolution, Multi-Fidelity Model-Based Diffusion:
-- Fidelity ladder: early diffusion steps use coarse sim (S1), late steps use fine (S3)
+- Fidelity ladder: early diffusion steps use coarse sim, late steps use fine
 - MCSA: reward-weighted score ascent (ES gradient)
 - Optional mode-marginalization over contact/friction regimes
 """
@@ -23,7 +23,7 @@ class MRMFMBDBackendJax:
     JAX implementation of MR-MF-MBD for soft robots.
 
     Diffusion over actions with fidelity-dependent rollout.
-    Early steps: coarse sim (S1). Late steps: fine sim (S3).
+    Early steps: coarse sim. Late steps: fine sim.
     """
 
     def __init__(

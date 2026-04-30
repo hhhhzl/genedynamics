@@ -100,7 +100,7 @@ MRMFMBDSolver
 ### 2.3 Env 协议要求
 
 - `jax_transition(state, action)` — 必需，用于 JAX rollout
-- `jax_transition_fidelity(state, action, level)` — 可选，多保真度 S1/S3
+- `jax_transition_fidelity(state, action, level)` — 可选，multi-fidelity (mode + fidelity systems)
 
 ### 2.4 TaskSpec
 

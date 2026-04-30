@@ -38,7 +38,7 @@ class MRMFMBDBaseline(BaselineProtocol):
             ThetaPriorConfig,
             MRMFMBDPosteriorBackendJax,
             PosteriorBridgeConfig,
-            ModeMarginalizerS1,
+            ModeMarginalizer,
             default_mode_system_config,
             create_fidelity_ladder,
         )
@@ -106,7 +106,7 @@ class MRMFMBDBaseline(BaselineProtocol):
         fidelity_ladder_type = extra.get("fidelity_ladder_type", "geometric")
         fidelity_step_ratio = float(extra.get("fidelity_step_ratio", 1.5))
 
-        mode_marginalizer = ModeMarginalizerS1(
+        mode_marginalizer = ModeMarginalizer(
             default_mode_system_config(num_modes),
             backend="jax",
         )
@@ -129,7 +129,7 @@ class MRMFMBDBaseline(BaselineProtocol):
             )
 
         if backend_type == "mbd":
-            # Level-3: DDPM reverse-diffusion with S1 marginalization + S3 ladder.
+            # Level-3: DDPM reverse-diffusion with mode marginalization + fidelity ladder.
             backend = MRMFMBDBackendMBD(
                 evaluator=evaluator,
                 theta_param=theta_param,

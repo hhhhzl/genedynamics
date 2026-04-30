@@ -1,4 +1,4 @@
-# Ablation: disable BOTH S1 (num_modes=1, fr=0.45) AND S3 (single fidelity,
+# Ablation: disable BOTH mode marginalization (num_modes=1, fr=0.45) AND fidelity ladder (single fidelity,
 # env=200). This is the apples-to-apples diffusion counterpart of CMA-ES env=200
 # and CEM env=200 — same contact, same fidelity, same rollout count — so the
 # residual gap tells us what the diffusion optimizer itself contributes over
@@ -35,8 +35,8 @@ scheduler_config:
 
 method_params:
   backend: mbd
-  num_modes: 1                    # <-- ablation: no S1
-  num_fidelity_levels: 1          # <-- ablation: no S3
+  num_modes: 1                    # <-- ablation: no mode marginalization
+  num_fidelity_levels: 1          # <-- ablation: no fidelity ladder
   fidelity_ladder_type: geometric
   fidelity_step_ratio: 1.5
   fine_fidelity_level: 2          # env=200

@@ -1,5 +1,5 @@
 """
-S1 Mode Specs: immutable configuration for contact/friction regimes.
+Mode Specs: immutable configuration for contact/friction regimes.
 
 Extensible design for mode registration and prior specification.
 """
@@ -58,7 +58,7 @@ class ModeSpec:
 @dataclass
 class ModeSystemConfig:
     """
-    Configuration for S1 mode marginalization system.
+    Configuration for mode marginalization system.
 
     Attributes:
         modes: List of ModeSpec

@@ -7,7 +7,7 @@ Generates a full-body stepping rollout for Go2:
   - HTML/GIF replay
 
 Uses :class:`~genedynamics.deploy.controllers.quadruped_stepping.QuadrupedSteppingController`
-(Phase 11 — migrated from the legacy ``SteppingWalkFollower`` v1).
+(migrated from the legacy ``SteppingWalkFollower`` v1).
 """
 
 from __future__ import annotations

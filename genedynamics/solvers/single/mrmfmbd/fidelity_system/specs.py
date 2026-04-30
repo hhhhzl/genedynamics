@@ -1,5 +1,5 @@
 """
-S3 Fidelity Specs: immutable configuration for multi-fidelity levels.
+Fidelity Specs: immutable configuration for multi-fidelity levels.
 
 Extensible design for per-level cost, quality, and simulation params.
 """
@@ -58,7 +58,7 @@ class FidelityLevelSpec:
 @dataclass
 class FidelitySystemConfig:
     """
-    Configuration for S3 multi-fidelity system.
+    Configuration for multi-fidelity system.
 
     Attributes:
         levels: Tuple of FidelityLevelSpec

@@ -4,11 +4,11 @@
 
 ```
 soft_robot/
-├── main/              # Full MRMFMBD (S1 mode marginalization + S3 fidelity ladder)
+├── main/              # Full MRMFMBD (mode marginalization + fidelity ladder)
 │   └── crawling_ground.yaml
 ├── ablation/          # Single-factor ablations
-│   ├── no_mode_marginalization.yaml   # S1 off (num_modes=1)
-│   └── no_fidelity_ladder.yaml        # S3 off (num_fidelity_levels=1)
+│   ├── no_mode_marginalization.yaml   # mode marginalization off (num_modes=1)
+│   └── no_fidelity_ladder.yaml        # fidelity ladder off (num_fidelity_levels=1)
 └── baselines/
     └── cmaes_crawling.yaml            # CMA-ES baseline
 ```

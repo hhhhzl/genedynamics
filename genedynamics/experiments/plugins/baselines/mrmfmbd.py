@@ -39,7 +39,7 @@ class MRMFMBDBaseline(BaselineProtocol):
             ThetaPriorConfig,
             MRMFMBDPosteriorBackendJax,
             PosteriorBridgeConfig,
-            ModeMarginalizerS1,
+            ModeMarginalizer,
             default_mode_system_config,
             create_fidelity_ladder,
         )
@@ -59,7 +59,7 @@ class MRMFMBDBaseline(BaselineProtocol):
             "num_modes", task_spec.num_modes if hasattr(task_spec, "num_modes") else 4
         )
 
-        mode_marginalizer = ModeMarginalizerS1(
+        mode_marginalizer = ModeMarginalizer(
             default_mode_system_config(num_modes),
             backend="jax",
         )

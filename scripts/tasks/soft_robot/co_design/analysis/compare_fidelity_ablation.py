@@ -1,6 +1,6 @@
-"""S3 (fidelity ladder) ablation: main (multi-fidelity 30→100→200) vs
-fixed-fidelity at env=30 / env=100 / env=200. All 4 methods use S1
-(4-mode marginalization), so isolating S3.
+"""fidelity-ladder ablation: main (multi-fidelity 30→100→200) vs
+fixed-fidelity at env=30 / env=100 / env=200. All 4 methods use mode marginalization
+(4-mode marginalization), so it isolates the fidelity ladder.
 """
 from __future__ import annotations
 
@@ -15,16 +15,16 @@ from genedynamics.envs.external.jax_mpm.scene import MPMConfig, build_scene, rol
 
 
 RUNS = [
-    ("MRMFMBD main (S1+S3 ladder 30→100→200)",
+    ("MRMFMBD main (mode marginalization + fidelity ladder ladder 30→100→200)",
      "/workspace/genedynamics/results/soft_robot/main/crawling_ground/results.json",
      "#d62728"),
-    ("fixed env=30 (no S3)",
+    ("fixed env=30 (no fidelity ladder)",
      "/workspace/genedynamics/results/soft_robot/ablation/no_fidelity_ladder_env30/results.json",
      "#1f77b4"),
-    ("fixed env=100 (no S3)",
+    ("fixed env=100 (no fidelity ladder)",
      "/workspace/genedynamics/results/soft_robot/ablation/no_fidelity_ladder_env100/results.json",
      "#2ca02c"),
-    ("fixed env=200 (no S3)",
+    ("fixed env=200 (no fidelity ladder)",
      "/workspace/genedynamics/results/soft_robot/ablation/no_fidelity_ladder_env200/results.json",
      "#ff7f0e"),
 ]
@@ -80,10 +80,10 @@ def _reward_curve(r):
 
 # Training fidelity (env steps) per method — used for corrected return reeval.
 TRAIN_ENV = {
-    "MRMFMBD main (S1+S3 ladder 30→100→200)": 200,   # main's eval at fine fid (main uses fine-fidelity validate)
-    "fixed env=30 (no S3)": 30,
-    "fixed env=100 (no S3)": 100,
-    "fixed env=200 (no S3)": 200,
+    "MRMFMBD main (mode marginalization + fidelity ladder ladder 30→100→200)": 200,   # main's eval at fine fid (main uses fine-fidelity validate)
+    "fixed env=30 (no fidelity ladder)": 30,
+    "fixed env=100 (no fidelity ladder)": 100,
+    "fixed env=200 (no fidelity ladder)": 200,
 }
 
 
@@ -97,7 +97,7 @@ def main():
         corrected_R = _corrected_return(r, env_steps, FRICTIONS)
         # Also compute total physics substeps as a cost metric
         substeps = (r.get("num_evaluations", 0) * env_steps * 16
-                    if name != "MRMFMBD main (S1+S3 ladder 30→100→200)"
+                    if name != "MRMFMBD main (mode marginalization + fidelity ladder ladder 30→100→200)"
                     else 27_300_000)  # main's known substep count from bridge analysis
         stats[name] = dict(
             color=color, disps=disps, iters=iters, running=running, cum=cum,
@@ -137,17 +137,17 @@ def main():
                 label=f"{name}  ({d['substeps']/1e6:.1f}M substeps, {d['wall']:.0f}s)")
     ax.set_xlabel("cumulative physics substeps  (millions)")
     ax.set_ylabel("running-max environment return")
-    ax.set_title("Reward vs compute  (S3 ladder's true cost saving)",
+    ax.set_title("Reward vs compute  (fidelity ladder.s true cost saving)",
                  fontsize=11, weight="bold")
     ax.grid(True, alpha=0.3)
     ax.legend(loc="lower right", fontsize=9)
 
     fig.suptitle(
-        "S3 ablation — MRMFMBD (fidelity ladder) vs fixed env=30/100/200",
+        "Fidelity ablation — MRMFMBD (fidelity ladder) vs fixed env=30/100/200",
         fontsize=12, weight="bold", y=1.01,
     )
     fig.tight_layout()
-    out = "/workspace/genedynamics/results/soft_robot/s3_ablation_comparison.png"
+    out = "/workspace/genedynamics/results/soft_robot/fidelity_ablation_comparison.png"
     fig.savefig(out, dpi=160, bbox_inches="tight")
     plt.close(fig)
     print(f"saved {out}\n")
@@ -182,9 +182,9 @@ def main():
 
     print()
     print("=" * 108)
-    print("MAIN vs each fixed-fidelity baseline  (same 12800 rollouts, S1 equal)")
+    print("MAIN vs each fixed-fidelity baseline  (same 12800 rollouts, equal mode marginalization)")
     print("=" * 108)
-    main_stats = stats["MRMFMBD main (S1+S3 ladder 30→100→200)"]
+    main_stats = stats["MRMFMBD main (mode marginalization + fidelity ladder ladder 30→100→200)"]
     for name, d in stats.items():
         if name.startswith("MRMFMBD"): continue
         dmean = (main_stats["disp_mean"] - d["disp_mean"]) / max(d["disp_mean"], 1e-6) * 100

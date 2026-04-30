@@ -17,10 +17,10 @@ from genedynamics.envs.external.jax_mpm.scene import MPMConfig, build_scene, rol
 
 
 RUNS = [
-    ("MRMFMBD main (S1+S3, 4-mode)",
+    ("MRMFMBD main (mode marginalization + fidelity ladder, 4-mode)",
      "/workspace/genedynamics/results/soft_robot/main/crawling_ground/results.json",
      "#d62728"),
-    ("Diff 1-mode, env=200 (no S1+S3)",
+    ("Diff 1-mode, env=200 (no mode marginalization + fidelity ladder)",
      "/workspace/genedynamics/results/soft_robot/ablation/no_mode_no_fidelity_env200/results.json",
      "#8c564b"),
     ("CMA-ES env=200",
@@ -130,7 +130,7 @@ def main():
     print(f"saved {out}\n")
 
     # ---- Console table --------------------------------------------------------
-    main_stats = stats["MRMFMBD main (S1+S3, 4-mode)"]
+    main_stats = stats["MRMFMBD main (mode marginalization + fidelity ladder, 4-mode)"]
 
     def _fmt_delta(method_val, main_val, higher_is_better=True):
         """Return a +/- % difference vs main."""

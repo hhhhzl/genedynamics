@@ -1,5 +1,5 @@
 """
-S3 Multi-Fidelity System for MRMFMBD.
+Multi-Fidelity System for MRMFMBD.
 
 Theory-correct coarse-to-fine fidelity ladder:
    - Early steps: coarse sim (low cost, fast)
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from .specs import FidelityLevelSpec, FidelitySystemConfig, default_fidelity_system_config
 from .ladder import (
-    FidelityLadderS3,
+    BlockFidelityLadder,
     FidelityLadderType,
     create_fidelity_ladder,
 )
@@ -23,7 +23,7 @@ __all__ = [
     "FidelityLevelSpec",
     "FidelitySystemConfig",
     "default_fidelity_system_config",
-    "FidelityLadderS3",
+    "BlockFidelityLadder",
     "FidelityLadderType",
     "create_fidelity_ladder",
     "UpgradeRule",

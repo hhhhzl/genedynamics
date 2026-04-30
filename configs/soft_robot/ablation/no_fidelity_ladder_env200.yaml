@@ -1,5 +1,5 @@
-# Ablation: disable S3 fidelity ladder — single fidelity level = 2 (200 env steps).
-# Keeps S1 (4 contact modes) so num_modes=4. Pairs with env30 and env100 variants
+# Ablation: disable fidelity ladder — single fidelity level = 2 (200 env steps).
+# Keeps the contact mode system (4 modes) so num_modes=4. Pairs with env30 and env100 variants
 # to map "what fixed fidelity is enough?" as a function of env-step horizon.
 name: ablation_no_fidelity_ladder_env200
 output_dir: results/soft_robot/ablation/no_fidelity_ladder_env200
@@ -33,7 +33,7 @@ scheduler_config:
 method_params:
   backend: mbd
   num_modes: 4
-  num_fidelity_levels: 1          # <-- ablation: no S3
+  num_fidelity_levels: 1          # <-- ablation: no fidelity ladder
   fidelity_ladder_type: geometric
   fidelity_step_ratio: 1.5
   fine_fidelity_level: 2          # env=200

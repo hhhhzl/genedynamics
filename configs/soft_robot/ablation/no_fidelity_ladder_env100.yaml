@@ -1,4 +1,4 @@
-# Ablation: disable S3 fidelity ladder — single fidelity level = 1 (100 env steps).
+# Ablation: disable fidelity ladder — single fidelity level = 1 (100 env steps).
 # Everything else identical to main/crawling_ground.yaml.
 name: ablation_no_fidelity_ladder_env100
 output_dir: results/soft_robot/ablation/no_fidelity_ladder_env100
@@ -32,7 +32,7 @@ scheduler_config:
 method_params:
   backend: mbd
   num_modes: 4
-  num_fidelity_levels: 1          # <-- ablation: no S3
+  num_fidelity_levels: 1          # <-- ablation: no fidelity ladder
   fidelity_ladder_type: geometric
   fidelity_step_ratio: 1.5
   fine_fidelity_level: 1

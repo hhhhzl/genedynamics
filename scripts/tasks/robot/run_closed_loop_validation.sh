@@ -1,6 +1,6 @@
 #!/bin/bash
-# Phase 4: Closed-loop validation and fair comparison
-# Run: bash scripts/tasks/robot/run_phase4_validation.sh
+# Closed-loop validation and fair comparison
+# Run: bash scripts/tasks/robot/run_closed_loop_validation.sh
 # Uses .venv_arm64 by default. Set VENV=path for custom venv.
 
 set -e
@@ -9,7 +9,7 @@ cd "$ROOT"
 VENV="${VENV:-$ROOT/.venv_arm64/bin/python}"
 PY="$VENV"
 
-echo "=== Phase 4: Closed-loop validation ==="
+echo "=== Closed-loop validation ==="
 echo "Python: $PY"
 echo ""
 
@@ -48,4 +48,4 @@ $PY -m genedynamics.deploy.cli --config configs/quadruped/push_recovery/mbd_depl
 echo "OK"
 echo ""
 
-echo "=== All Phase 4 validation tests passed ==="
+echo "=== All closed-loop validation tests passed ==="

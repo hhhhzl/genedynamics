@@ -1,5 +1,5 @@
 """
-S3 Fidelity Upgrade Rules: when to switch from coarse to fine.
+Fidelity Upgrade Rules: when to switch from coarse to fine.
 
 Used for adaptive fidelity: upgrade when coarse and fine disagree (score gap)
 or when ESS is low (need more accurate evaluation).

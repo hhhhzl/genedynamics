@@ -32,7 +32,7 @@
 See `scripts/tasks/README.md` for task-specific scripts:
 - **3dgs/** - 3D Gaussian Splatting experiments
 - **robot/** - Quadruped, UAV, acceptance tests
-- **soft_robot/** - MRMFMBD, co-design, Phase A/B
+- **soft_robot/** - MRMFMBD soft-robot co-design (jax_mpm)
 - **mdcoas/** - MD-COAS experiments
 
 ---

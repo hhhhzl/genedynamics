@@ -17,7 +17,7 @@ evaluator_runtime:
   voxel_dims: [4, 3, 4]
   act_strength_base: 24.0
   scale: 50.0
-  mode_friction: [0.45]           # single-mode = mean; cmaes has no S1
+  mode_friction: [0.45]           # single-mode = mean; cmaes has no mode marginalization
 
 scheduler_config:
   # CMA-ES doesn't use the diffusion schedule directly, but the baseline
@@ -34,11 +34,11 @@ scheduler_config:
   diffusion_merge_strategy: merge
 
 method_params:
-  num_modes: 1                # no S1 mode marginalization
+  num_modes: 1                # no mode marginalization
   popsize: 32                 # K·M·num_modes/(popsize·num_modes) = 100 generations
   sigma0: 0.3
   show_tqdm: true
-  fine_fidelity_level: 1      # 100 env-steps (no S3 — single fidelity)
+  fine_fidelity_level: 1      # 100 env-steps (no fidelity ladder — single fidelity)
   # Search bounds — must match jax_mpm's clipping (scene.py uses phi ∈ [-0.5, 0.5]
   # and morphology ∈ [0.2, 1.0]). The cmaes baseline's legacy defaults
   # (phi ∈ [5, 150]) would saturate every tanh and flatten the fitness surface.

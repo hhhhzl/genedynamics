@@ -34,7 +34,7 @@ Quadruped, UAV, acceptance tests.
 | `summarize_stepping_stones.py` | Aggregate success/CVaR/time from results |
 | `run_quadruped_quick.py` | One-shot deploy + render |
 | `run_acceptance.sh` | Acceptance tests |
-| `run_phase4_validation.sh` | Phase 4 closed-loop validation |
+| `run_closed_loop_validation.sh` | Closed-loop validation acceptance tests |
 
 ## soft_robot/
 
@@ -55,8 +55,7 @@ MRMFMBD soft-robot co-design (jax_mpm backend). Organized under `co_design/`:
 | `analyze_diffusion_run.py` | Diffusion evolution figures + cross-mode |
 | `compare_4_methods.py` | Reward curves: MRMFMBD vs ablation vs CMA-ES vs CEM |
 | `compare_reward_curves.py` | Generic reward-curve comparison |
-| `compare_s3_ablation.py` | S3 fidelity-ladder ablation comparison |
-| `plot_co_design_results.py` | Plot co-design results from results.json |
+| `compare_fidelity_ablation.py` | Fidelity-ladder ablation comparison |
 
 ### co_design/viz/
 | Script | Purpose |

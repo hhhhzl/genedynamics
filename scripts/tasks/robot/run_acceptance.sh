@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run acceptance tests (Phase 4: closed-loop validation)
+# Run acceptance tests (closed-loop validation)
 # Uses .venv_arm64 by default. Set VENV=path for custom Python.
 set -e
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

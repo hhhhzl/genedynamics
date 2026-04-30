@@ -2,8 +2,8 @@
 JAX backend for MRMFMBD posterior bridge (theta = x, phi co-design).
 
 True posterior bridge: π_k(θ) ∝ p0(θ) * p(R|θ)^β_k with MCSA score ascent.
-- S1: Mode marginalization (ModeMarginalizerS1) - log p(R|θ)=logsumexp(log p(c)+R_c/T)
-- S3: Multi-fidelity ladder (FidelityLadderS3) - coarse→fine, cost-optimal
+- Mode marginalization (ModeMarginalizer) - log p(R|θ)=logsumexp(log p(c)+R_c/T)
+- Multi-fidelity ladder (BlockFidelityLadder) - coarse→fine, cost-optimal
 - Output: bridge_history, mode_responsibilities, fidelity_history, fine_calls
 """
 
@@ -31,34 +31,34 @@ from genedynamics.core.inference.annealed_bridge import (
 from genedynamics.core.inference.mcsa import ImportanceWeighter, MCSADiagnostics
 from genedynamics.solvers.single.mrmfmbd.theta_prior import ThetaParametrization, ThetaPrior
 
-# S1/S3 systems (optional - backward compat with core.inference)
+# Mode + Fidelity systems (optional - backward compat with core.inference)
 try:
-    from genedynamics.solvers.single.mrmfmbd.s1_mode_system import (
-        ModeMarginalizerS1,
+    from genedynamics.solvers.single.mrmfmbd.mode_system import (
+        ModeMarginalizer,
         ModeSystemConfig,
         default_mode_system_config,
     )
-    S1_AVAILABLE = True
+    MODE_SYSTEM_AVAILABLE = True
 except ImportError:
-    ModeMarginalizerS1 = None
+    ModeMarginalizer = None
     ModeSystemConfig = None
     default_mode_system_config = None
-    S1_AVAILABLE = False
+    MODE_SYSTEM_AVAILABLE = False
 
 try:
-    from genedynamics.solvers.single.mrmfmbd.s3_fidelity_system import (
-        FidelityLadderS3,
+    from genedynamics.solvers.single.mrmfmbd.fidelity_system import (
+        BlockFidelityLadder,
         create_fidelity_ladder,
         FidelitySystemConfig,
         default_fidelity_system_config,
     )
-    S3_AVAILABLE = True
+    FIDELITY_SYSTEM_AVAILABLE = True
 except ImportError:
-    FidelityLadderS3 = None
+    BlockFidelityLadder = None
     create_fidelity_ladder = None
     FidelitySystemConfig = None
     default_fidelity_system_config = None
-    S3_AVAILABLE = False
+    FIDELITY_SYSTEM_AVAILABLE = False
 
 # Fallback to core.inference
 try:
@@ -106,7 +106,7 @@ class MRMFMBDPosteriorBackendJax:
     Posterior bridge for soft-robot co-design: theta = (x, phi).
 
     Uses annealed bridge π_k(θ) ∝ p0(θ) * p(R|θ)^β_k with MCSA score ascent.
-    S1: Mode marginalization. S3: Multi-fidelity ladder.
+    Mode marginalization. Multi-fidelity ladder.
     """
 
     def __init__(
@@ -142,17 +142,17 @@ class MRMFMBDPosteriorBackendJax:
         K = self.config.K
         self.bridge_schedule = bridge_schedule or create_linear_bridge_schedule(K=K)
 
-        # S1: Mode marginalization (theory-correct)
+        # Mode marginalization (theory-correct)
         self.mode_marginalizer = mode_marginalizer
-        if self.mode_marginalizer is None and S1_AVAILABLE and default_mode_system_config:
-            self.mode_marginalizer = ModeMarginalizerS1(
+        if self.mode_marginalizer is None and MODE_SYSTEM_AVAILABLE and default_mode_system_config:
+            self.mode_marginalizer = ModeMarginalizer(
                 default_mode_system_config(num_modes),
                 backend="jax",
             )
 
-        # S3: Fidelity ladder (cost-optimal coarse→fine)
+        # Fidelity ladder (cost-optimal coarse→fine)
         self.fidelity_ladder = fidelity_ladder
-        if self.fidelity_ladder is None and S3_AVAILABLE and create_fidelity_ladder:
+        if self.fidelity_ladder is None and FIDELITY_SYSTEM_AVAILABLE and create_fidelity_ladder:
             self.fidelity_ladder = create_fidelity_ladder(
                 K=K, num_levels=3, ladder_type="geometric", step_ratio=1.5
             )
@@ -224,7 +224,7 @@ class MRMFMBDPosteriorBackendJax:
         rewards: np.ndarray,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """
-        S1 theory-correct: log p(R|θ) = logsumexp(log p(c) + R_c/T)
+        Mode theory-correct: log p(R|θ) = logsumexp(log p(c) + R_c/T)
         w_c = softmax(log p(c) + R_c/T).  Note: β NOT inside mixture.
         """
         if self.mode_marginalizer is not None:
@@ -348,7 +348,7 @@ class MRMFMBDPosteriorBackendJax:
             # Log prior for each proposal
             log_prior_vals = self.theta_prior.log_prob_batch(proposals)
 
-            # S1: log p(R|θ) = logsumexp(log p(c) + R_c/T), w_c = responsibilities
+            # Mode: log p(R|θ) = logsumexp(log p(c) + R_c/T), w_c = responsibilities
             # Theory: β_k applied externally: log π_k(θ) = log p0(θ) + β_k * log p(R|θ)
             marginal_log, w_c = self._compute_marginal_log_likelihood_and_responsibilities(
                 rewards

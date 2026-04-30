@@ -1,4 +1,4 @@
-"""Unit tests for the Phase 6 RL controller framework.
+"""Unit tests for the RL controller framework.
 
 These tests use callable-based inference closures so they don't depend on
 torch / onnx / jax. They cover:

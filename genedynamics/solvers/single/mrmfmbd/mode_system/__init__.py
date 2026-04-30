@@ -1,5 +1,5 @@
 """
-S1 Contact Mode System for MRMFMBD.
+Contact Mode System for MRMFMBD.
 
 Theory-correct mode marginalization over contact/friction regimes.
 
@@ -13,12 +13,12 @@ Theory:
 from __future__ import annotations
 
 from .specs import ModeSpec, ModeSystemConfig, default_mode_system_config
-from .marginalizer import ModeMarginalizerS1, compute_marginal_log_likelihood, compute_responsibilities
+from .marginalizer import ModeMarginalizer, compute_marginal_log_likelihood, compute_responsibilities
 
 __all__ = [
     "ModeSpec",
     "ModeSystemConfig",
-    "ModeMarginalizerS1",
+    "ModeMarginalizer",
     "compute_marginal_log_likelihood",
     "compute_responsibilities",
     "default_mode_system_config",
