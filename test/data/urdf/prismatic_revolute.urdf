@@ -1,0 +1,36 @@
+<?xml version="1.0" ?>
+<!-- Synthetic 2-DoF arm: 1 prismatic (along +Z) + 1 revolute (about +Z).
+     Hand-computed FK at q = (d, theta):
+       Lift: world → (0, 0, 0.5 + d)
+       Rotate joint origin: + (1, 0, 0) → joint at (1, 0, 0.5 + d) before rotation
+       EE: rotate by theta about Z, then translate (1, 0, 0) in rotated frame
+         → p_ee = (1 + cos theta, sin theta, 0.5 + d)
+-->
+<robot name="prismatic_revolute">
+  <link name="base"/>
+  <link name="lift"/>
+  <link name="rotor"/>
+  <link name="ee"/>
+
+  <joint name="lift_joint" type="prismatic">
+    <parent link="base"/>
+    <child link="lift"/>
+    <origin xyz="0 0 0.5" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0.0" upper="1.0" velocity="0.5" effort="1.0"/>
+  </joint>
+
+  <joint name="rotate_joint" type="revolute">
+    <parent link="lift"/>
+    <child link="rotor"/>
+    <origin xyz="1.0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159" upper="3.14159" velocity="1.0" effort="1.0"/>
+  </joint>
+
+  <joint name="ee_fixed" type="fixed">
+    <parent link="rotor"/>
+    <child link="ee"/>
+    <origin xyz="1.0 0 0" rpy="0 0 0"/>
+  </joint>
+</robot>

@@ -1,0 +1,36 @@
+<?xml version="1.0" ?>
+<!-- Synthetic 2-DoF planar arm for kinematics tests.
+     Two revolute joints about Z, link lengths L1=L2=1.0 along +X.
+     Hand-computed FK at q = (q1, q2):
+       p_ee = (L1*cos(q1) + L2*cos(q1+q2),
+               L1*sin(q1) + L2*sin(q1+q2),
+               0)
+-->
+<robot name="planar2">
+  <link name="base"/>
+  <link name="link1"/>
+  <link name="link2"/>
+  <link name="ee"/>
+
+  <joint name="joint1" type="revolute">
+    <parent link="base"/>
+    <child link="link1"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159" upper="3.14159" velocity="2.0" effort="1.0"/>
+  </joint>
+
+  <joint name="joint2" type="revolute">
+    <parent link="link1"/>
+    <child link="link2"/>
+    <origin xyz="1.0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159" upper="3.14159" velocity="2.0" effort="1.0"/>
+  </joint>
+
+  <joint name="ee_fixed" type="fixed">
+    <parent link="link2"/>
+    <child link="ee"/>
+    <origin xyz="1.0 0 0" rpy="0 0 0"/>
+  </joint>
+</robot>

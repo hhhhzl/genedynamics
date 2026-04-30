@@ -24,6 +24,14 @@ setup(
     author_email='hectorh@cmu.edu',
     packages=find_packages(),
     install_requires=requires_list,
+    extras_require={
+        # JAX-native kinematics for serial-arm manipulators
+        # (genedynamics.envs.robots.jax_kinematics).
+        "manipulator": [
+            "jaxlie>=1.4",
+            "urchin>=0.0.27",
+        ],
+    },
     entry_points={
         "console_scripts": [
             "genedynamics-deploy=genedynamics.deploy.runner:main",
