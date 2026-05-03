@@ -25,7 +25,7 @@ git clone https://github.com/VAST-AI-Research/TripoSG.git triposg
 # follow upstream README for model weight download
 ```
 
-Asset bank generation is **offline** (`scripts/morphology/build_asset_bank.py`,
+Asset bank generation is **offline** (`scripts/tasks/soft_robot/morphology/build_asset_bank.py`,
 to be added in Phase 3) and writes meshes + metadata to
 `data/asset_banks/<prior_name>/`. The online co-design loop only loads cached
 meshes, so the heavy 3D prior never has to live in the same GPU process as

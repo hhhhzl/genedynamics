@@ -14,7 +14,7 @@ runs the experimental sweeps that produce the paper's tables and figures.
 | **Phase 0** | Robotization extraction (`SoftBodySpec` + `default_robotize`); third_party stubs | ✅ done | [genedynamics/morphology/](../../genedynamics/morphology/), [third_party/](../../third_party/) |
 | **Phase 1** | `composite + alm_adaptive` scheduler hookup; JM2D u-step inner denoising; alm history in metadata | ✅ done | [main_v2/crawling_alm.yaml](main_v2/crawling_alm.yaml), [solvers/single/mrmfmbd/](../../genedynamics/solvers/single/mrmfmbd/) |
 | **Phase 2** | Terrain height-fields; kinematic manipuland (push); regime bank; risk-sensitive marginalization | ✅ done | [main_v2/locomotion_terrain.yaml](main_v2/locomotion_terrain.yaml), [main_v2/push.yaml](main_v2/push.yaml), [envs/external/jax_mpm/{terrain,manipuland,tasks}/](../../genedynamics/envs/external/jax_mpm/) |
-| **Phase 3** | Mesh-pipeline robotization; asset bank manifest; CLI (`build_asset_bank` / `robotize_bank`); `random_shapes` + `triposg` (lazy) priors | ✅ done | [main_v2/crawling_from_mesh.yaml](main_v2/crawling_from_mesh.yaml), [genedynamics/morphology/](../../genedynamics/morphology/), [scripts/morphology/](../../scripts/morphology/) |
+| **Phase 3** | Mesh-pipeline robotization; asset bank manifest; CLI (`build_asset_bank` / `robotize_bank`); `random_shapes` + `triposg` (lazy) priors | ✅ done | [main_v2/crawling_from_mesh.yaml](main_v2/crawling_from_mesh.yaml), [genedynamics/morphology/](../../genedynamics/morphology/), [scripts/tasks/soft_robot/morphology/](../../scripts/tasks/soft_robot/morphology/) |
 | **Phase 4** | SHAC-only baseline (truncated h + critic + Polyak); MBD+SHAC top-K refinement (writeup §8.1); finite-grad guard | ✅ done | [main_v2/shac_only_crawling.yaml](main_v2/shac_only_crawling.yaml), [main_v2/crawling_alm_shac.yaml](main_v2/crawling_alm_shac.yaml), [solvers/single/shac/](../../genedynamics/solvers/single/shac/) |
 | **Phase 5** | Full ablation sweeps (writeup Tables 1-4) + figures + writeup wrap | ⏳ to run | this README §3-§5 |
 
@@ -159,15 +159,15 @@ Skip this section if you're only reproducing Tables 1, 2, 4 (default body).
 
 ```bash
 # (a) Generate meshes from a prior. random_shapes for dev, triposg for the paper.
-python scripts/morphology/build_asset_bank.py \
+python scripts/tasks/soft_robot/morphology/build_asset_bank.py \
     --prior random_shapes \
     --bank-name loco_v1 \
-    --prompts-file scripts/morphology/prompts/locomotion.txt \
+    --prompts-file scripts/tasks/soft_robot/morphology/prompts/locomotion.txt \
     --n-per-prompt 30 --seed 0
 # → data/asset_banks/loco_v1/{manifest.json, meshes/}
 
 # (b) Robotize the bank.
-python scripts/morphology/robotize_bank.py --bank-root data/asset_banks/loco_v1
+python scripts/tasks/soft_robot/morphology/robotize_bank.py --bank-root data/asset_banks/loco_v1
 # Last stdout line: "RobotizationSuccess (whole bank): XX.X%"
 # Writeup target: ≥30 %. We see ~100% with random_shapes, ~50-70% expected with triposg.
 

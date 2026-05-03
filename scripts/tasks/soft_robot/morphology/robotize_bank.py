@@ -2,7 +2,7 @@
 """Robotize every mesh in an asset bank → SoftBodySpec cache + RobotizationSuccess.
 
 Usage:
-    python scripts/morphology/robotize_bank.py \
+    python scripts/tasks/soft_robot/morphology/robotize_bank.py \
         --bank-root data/asset_banks/loco_v1 \
         [--n-actuators 10] [--voxel-dims 3,3,3] \
         [--box-origin 0.30,0.05,0.40] [--box-size 0.10,0.06,0.10] \
@@ -25,7 +25,10 @@ import os
 import sys
 from typing import List, Tuple
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+# Repo root is 4 directories up from scripts/tasks/soft_robot/morphology/.
+sys.path.insert(0, os.path.abspath(os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", "..",
+)))
 
 from genedynamics.morphology import (
     AssetBank,

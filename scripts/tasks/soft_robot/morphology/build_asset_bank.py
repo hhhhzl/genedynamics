@@ -2,11 +2,11 @@
 """Build a mesh asset bank from one prior × N prompts × M seeds.
 
 Usage:
-    python scripts/morphology/build_asset_bank.py \
+    python scripts/tasks/soft_robot/morphology/build_asset_bank.py \
         --prior random_shapes \
         --bank-name loco_v1 \
         --bank-root data/asset_banks \
-        --prompts-file scripts/morphology/prompts/locomotion.txt \
+        --prompts-file scripts/tasks/soft_robot/morphology/prompts/locomotion.txt \
         --n-per-prompt 10 --seed 0 \
         [--prior-kwargs k1=v1,k2=v2]
 
@@ -27,8 +27,12 @@ import sys
 import time
 from typing import Any, Dict, List
 
-# Make `genedynamics` importable when running from repo root.
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+# Make `genedynamics` importable. This file is at
+# scripts/tasks/soft_robot/morphology/build_asset_bank.py — repo root is
+# 4 directories up.
+sys.path.insert(0, os.path.abspath(os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", "..",
+)))
 
 from genedynamics.morphology import AssetBank
 from genedynamics.morphology.priors import get_prior, list_priors, MissingDependencyError
