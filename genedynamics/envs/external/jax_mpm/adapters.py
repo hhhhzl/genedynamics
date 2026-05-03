@@ -17,7 +17,10 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from .scene import MPMConfig, build_scene, rollout_return_batch, SceneData
+from .scene import (
+    MPMConfig, SceneData, build_scene,
+    rollout_return_batch, rollout_return_push_batch,
+)
 
 
 # Precompile on first use and cache so subsequent `evaluate_batch` calls are
@@ -49,6 +52,10 @@ def evaluate_batch_request(
     scene: SceneData,
     cfg: MPMConfig,
     mode_friction_table: List[float],
+    regime_bank: List[Any] = None,    # Phase 2.2: optional list[RegimeSpec]
+    task: str = "crawling_ground",   # "crawling_ground" | "locomotion" | "push"
+    push_goal_x: float = 0.85,
+    push_weights: Tuple[float, float, float, float] = (1.0, 5.0, 0.01, 50.0),
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Evaluate all requests in one JIT'd vmap'd forward.
 
@@ -57,37 +64,86 @@ def evaluate_batch_request(
             controller_params, mode_id, fidelity_level, seed.
         scene: built once upfront.
         cfg: MPMConfig.
-        mode_friction_table: friction coeff per mode_id.
+        mode_friction_table: friction coeff per mode_id (legacy fallback used
+            when regime_bank is None).
+        regime_bank: Phase 2.2 optional list of RegimeSpec. When provided,
+            mode_id indexes this list; per-mode terrain (and per-mode
+            manipuland for push) is dispatched to the appropriate batched
+            rollout. Returns the SAME (returns, disp) shape regardless.
+        task: which rollout to use when regime_bank is set. "locomotion" uses
+            rollout_return_batch (with terrain); "push" uses
+            rollout_return_push_batch (terrain + manipuland). Ignored when
+            regime_bank is None.
 
     Returns:
         (returns_float32[B], disp_float32[B])
+        For push, the second array carries dist_to_goal_T (not COM displacement).
     """
     req_list = request.requests
     if not req_list:
         return np.zeros((0,), dtype=np.float32), np.zeros((0,), dtype=np.float32)
 
-    # Group by fidelity_level so each JIT sees a fixed rollout length. Most
-    # phase-B batches will have all entries at the same fidelity anyway.
-    by_fid: dict = {}
-    for i, r in enumerate(req_list):
-        by_fid.setdefault(int(r.fidelity_level), []).append(i)
+    # Phase 2.2 dispatch: per-mode terrain/manip means we group by (fid, mode),
+    # not just fid. Without a regime_bank we keep the legacy fid-only grouping
+    # (terrain is implicitly flat, friction comes from mode_friction_table).
+    if regime_bank is None:
+        by_key: dict = {}
+        for i, r in enumerate(req_list):
+            by_key.setdefault(int(r.fidelity_level), []).append(i)
+        keyed = [((fid, None), idxs) for fid, idxs in by_key.items()]
+    else:
+        from .terrain import to_grid as _to_grid
+        by_fid_mode: dict = {}
+        for i, r in enumerate(req_list):
+            by_fid_mode.setdefault((int(r.fidelity_level), int(r.mode_id)), []).append(i)
+        keyed = list(by_fid_mode.items())
 
     returns_out = np.zeros(len(req_list), dtype=np.float32)
     disp_out = np.zeros(len(req_list), dtype=np.float32)
 
-    for fid, idxs in by_fid.items():
-        num_env_steps = int(FIDELITY_STEPS.get(fid, FIDELITY_STEPS[2]))
-        fn = _get_batched_fn(scene, cfg, num_env_steps)
+    for key, idxs in keyed:
+        if regime_bank is None:
+            fid = key
+            num_env_steps = int(FIDELITY_STEPS.get(fid, FIDELITY_STEPS[2]))
+            fr_b = np.asarray(
+                [mode_friction_table[int(req_list[i].mode_id) % len(mode_friction_table)] for i in idxs],
+                dtype=np.float32,
+            )
+            terrain_h = None
+            push = False
+            manip_cfg_local = None
+        else:
+            fid, mode_id = key
+            num_env_steps = int(FIDELITY_STEPS.get(fid, FIDELITY_STEPS[2]))
+            regime = regime_bank[int(mode_id) % len(regime_bank)]
+            fr_b = np.full(len(idxs), float(regime.friction), dtype=np.float32)
+            from .terrain import to_grid as _to_grid
+            terrain_h = jnp.asarray(_to_grid(regime.terrain, cfg.n_grid))
+            push = (task == "push") and regime.has_manipuland
+            manip_cfg_local = regime.manipuland if push else None
+
         x_b = np.stack([np.asarray(req_list[i].morphology_params, dtype=np.float32) for i in idxs])
         phi_b = np.stack([np.asarray(req_list[i].controller_params, dtype=np.float32) for i in idxs])
-        fr_b = np.asarray(
-            [mode_friction_table[int(req_list[i].mode_id) % len(mode_friction_table)] for i in idxs],
-            dtype=np.float32,
-        )
-
-        # Pad phi to consistent shape if needed (jax vmap needs equal shapes).
         x_b = jnp.asarray(x_b); phi_b = jnp.asarray(phi_b); fr_b = jnp.asarray(fr_b)
-        rs, ds = fn(x_b, phi_b, fr_b)
+
+        if push:
+            rs, ds = rollout_return_push_batch(
+                x_b, phi_b, fr_b, scene, cfg, num_env_steps,
+                manip_cfg=manip_cfg_local, goal_x=push_goal_x,
+                terrain_height=terrain_h, weights=push_weights,
+            )
+        elif terrain_h is not None:
+            # Per-regime terrain — bypass the fidelity-keyed JIT cache (which
+            # keys on env-step count alone) and call rollout_return_batch
+            # directly. JAX will trace once per (n_env_steps, terrain.shape).
+            rs, ds = rollout_return_batch(
+                x_b, phi_b, fr_b, scene, cfg, num_env_steps,
+                terrain_height=terrain_h,
+            )
+        else:
+            fn = _get_batched_fn(scene, cfg, num_env_steps)
+            rs, ds = fn(x_b, phi_b, fr_b)
+
         rs = np.asarray(rs, dtype=np.float32)
         ds = np.asarray(ds, dtype=np.float32)
         for j, i in enumerate(idxs):

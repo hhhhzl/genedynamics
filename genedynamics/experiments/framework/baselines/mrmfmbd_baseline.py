@@ -144,6 +144,25 @@ class MRMFMBDBaseline(BaselineProtocol):
                     tau_frac=float(extra.get("tau_frac", 0.1)),
                     top_k_fine=int(extra.get("top_k_fine", 3)),
                     fine_fidelity_level=fine_fidelity,
+                    # Phase 1.3 (JM2D u-step). 0 = identical to baseline.
+                    inner_denoise_steps=int(extra.get("inner_denoise_steps", 0)),
+                    inner_denoise_shrink=float(extra.get("inner_denoise_shrink", 0.5)),
+                    # Phase 2.3: regime-marginalization flavor.
+                    # "reward" (default) keeps legacy MBD math; "risk_sensitive"
+                    # activates the writeup §5 robust posterior.
+                    regime_posterior_mode=str(extra.get("regime_posterior_mode", "reward")),
+                    risk_temperature=float(extra.get("risk_temperature", 1.0)),
+                    # Phase 4.2: SHAC top-K refinement (writeup §8.1). Steps=0 (default) → no-op.
+                    shac_refine_steps=int(extra.get("shac_refine_steps", 0)),
+                    shac_refine_h=int(extra.get("shac_refine_h", 32)),
+                    shac_refine_lr=float(extra.get("shac_refine_lr", 5.0e-4)),
+                    shac_proximal_lambda=float(extra.get("shac_proximal_lambda", 1.0)),
+                    shac_refine_topk=int(extra.get("shac_refine_topk", 3)),
+                    # Phase 1.2 plumbing: pull alm_adaptive scalars from the
+                    # CompositeScheduler and forward to the backend for
+                    # diagnostics. Empty dict when no constraint scheduler is
+                    # configured → behavior unchanged.
+                    alm_params=config.get_constraint_alm_params(),
                     extra={
                         "morphology_symmetry": morphology_symmetry,
                         "voxel_dims": voxel_dims,

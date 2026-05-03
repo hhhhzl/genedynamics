@@ -1,0 +1,131 @@
+# Phase 4.2: MRMFMBD + SHAC local refinement (writeup §8.1).
+#
+# After the main MBD reverse loop converges, the top-K candidates each get
+# `shac_refine_steps` of gradient ascent on phi via BPTT through
+# rollout_h_from_state, with a proximal `λ_prox * ‖phi - phi_0‖²` penalty so
+# the local update can't override the diffusion sampler's global structure.
+#
+# Set shac_refine_steps to 0 in this file to recover crawling_alm.yaml exactly.
+# Set to e.g. 5 to ablate MBD vs MBD+SHAC at fixed compute budget.
+name: mrmfmbd_crawling_alm_shac
+output_dir: results/soft_robot/main_v2/crawling_alm_shac
+cache_dir: results/soft_robot/main_v2/crawling_alm_shac_cache
+
+baseline_name: mrmfmbd
+task_domain: jax_mpm
+task_id: crawling_ground
+seeds: [0]
+save_gif: true
+
+evaluator_runtime:
+  max_workers: 1
+  reward_shaping_weight: 100.0
+  n_grid: 64
+  voxel_dims: [4, 3, 4]
+  act_strength_base: 24.0
+  scale: 50.0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 32
+      T_k: 0.5
+      Ndiffuse: 100
+      beta0: 1.0e-4
+      betaT: 2.0e-2
+  diffusion_merge_strategy: merge
+  constraint_schedulers:
+    - type: alm_adaptive
+      margin: 0.0
+      lam0: 0.0
+      rho0: 1.0
+      nu0: 0.0
+      compute_cost_mode: product
+      compute_cost_a0: 0.0
+      compute_cost_aK: 1.0
+      compute_cost_aI: 1.0
+      compute_cost_use_qp_gate: false
+      compute_budget_B: 8.0
+      compute_budget_time_profile: constant
+      compute_budget_time_amp: 0.0
+      compute_budget_time_mu: 0.5
+      compute_budget_time_sigma: 0.2
+      eta_nu: 0.05
+      nu_max: 0.0
+      eta_lam_forget: 0.02
+      rho_min: 0.5
+      rho_tau_hi: 5.0e-4
+      rho_tau_lo: 1.0e-4
+      rho_gamma_up: 2.0
+      rho_gamma_down: 1.5
+      rho_good_steps: 5
+      gamma: 2.0
+      rho_max: 500.0
+      kappa: 0.9
+      r_tol: 5.0e-4
+      v_signal_mode: rate
+      v_star: 0.0
+      v_ema_beta: 0.3
+      v_tau_hi: 0.05
+      v_tau_lo: 0.01
+      eta_p: 2.0
+      eta_p_plus: 2.0
+      eta_p_minus: 0.3
+      eta_c_p: 0.2
+      eta_topK: 10.0
+      eta_topK_plus: 10.0
+      eta_topK_minus: 2.0
+      eta_c_topK: 1.0
+      eta_I: 8.0
+      eta_I_plus: 8.0
+      eta_I_minus: 2.0
+      eta_c_I: 1.0
+      eta_eps: 0.01
+      eta_eps_plus: 0.01
+      eta_eps_minus: 0.003
+      eta_c_eps: 0.01
+      p_min: 0.0
+      p_max: 1.0
+      eps_min: 1.0e-5
+      eps_max: 1.0e-2
+      I_min: 1
+      I_max: 5
+      topK_min: 1
+      topK_max: 8
+      use_stochastic_gate: true
+  constraint_merge_strategy: merge
+
+method_params:
+  backend: mbd
+  num_modes: 4
+  num_fidelity_levels: 3
+  fidelity_ladder_type: geometric
+  fidelity_step_ratio: 1.5
+  fine_fidelity_level: 2
+  reward_temperature_min: 0.05
+  tau_frac: 0.05
+  top_k_fine: 5
+  show_tqdm: true
+  morphology_symmetry: z
+  phi_dim_override: true
+  phi_lo: -0.5
+  phi_hi: 0.5
+  phi_std: 0.15
+  x_lo: 0.2
+  x_hi: 1.0
+  x_mean: 0.6
+  x_std: 0.3
+
+  inner_denoise_steps: 0
+  inner_denoise_shrink: 0.5
+
+  regime_posterior_mode: reward
+  risk_temperature: 1.0
+
+  # === Phase 4.2: SHAC local refinement (writeup §8.1) ====================
+  shac_refine_steps: 5         # 0 → no-op; 1-5 typical; >10 risks gradient explosion
+  shac_refine_h: 32            # short horizon for the refinement BPTT
+  shac_refine_lr: 5.0e-4       # plain SGD on phi; small to keep displacement bounded
+  shac_proximal_lambda: 1.0    # λ_prox * ‖phi^+ - phi‖² penalty
+  shac_refine_topk: 5          # number of top-K candidates to refine

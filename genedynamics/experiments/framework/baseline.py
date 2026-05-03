@@ -51,6 +51,39 @@ class BaselineConfig:
         params = ds_list[0].diffusion_params(ScheduleState(k=0, K=1))
         return params if params else {}
 
+    def get_constraint_alm_params(self) -> Dict[str, Any]:
+        """Extract static alm_adaptive scalars from the constraint scheduler.
+
+        Returns the writeup §6/§7 anytime-iALM knobs (nu, compute cost coeffs,
+        topK/I/eps bounds, budget B) as plain floats / ints so downstream
+        backends can build per-step arrays without importing the scheduler
+        class. Returns {} when there is no constraint scheduler or the first
+        one isn't alm_adaptive-shaped.
+
+        Phase 1 plumbing only: backends RECORD these in result metadata; they
+        do not yet modulate the importance weight (waiting on Phase 2's
+        per-candidate fidelity). Setting `nu_max=0.0` in YAML guarantees
+        nu_k stays at 0, keeping the run bit-identical to the no-ALM baseline.
+        """
+        if self.scheduler is None:
+            return {}
+        cs_list = getattr(self.scheduler, "constraint_schedulers", None)
+        if not cs_list:
+            return {}
+        cs = cs_list[0]
+        # Duck-type alm_adaptive: must expose all the scalars writeup §7 cares about.
+        required = (
+            "nu0", "nu_max", "eta_nu",
+            "compute_budget_B",
+            "compute_cost_a0", "compute_cost_aK", "compute_cost_aI",
+            "compute_cost_mode",
+            "topK_min", "topK_max", "I_min", "I_max",
+            "eps_min", "eps_max",
+        )
+        if not all(hasattr(cs, name) for name in required):
+            return {}
+        return {name: getattr(cs, name) for name in required}
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "task_id": self.task_id,

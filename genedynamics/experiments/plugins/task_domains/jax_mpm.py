@@ -25,7 +25,8 @@ class _JaxMpmTaskSpec:
 
 
 # Tasks supported by the jax_mpm backend. Add entries here as new ones come online.
-_TASKS = ("crawling_ground",)
+# Phase 2.2 added "locomotion" (terrain bank) and "push" (terrain + manipuland).
+_TASKS = ("crawling_ground", "locomotion", "push")
 
 
 class JaxMpmTaskDomainProvider:
@@ -44,7 +45,19 @@ class JaxMpmTaskDomainProvider:
         phi_dim = cfg.n_actuators * cfg.n_sin_waves + 4 * cfg.n_actuators
         vx, vy, vz = cfg.voxel_dims
         x_dim = vx * vy * vz
-        return _JaxMpmTaskSpec(task_id=task_id, x_dim=int(x_dim), phi_dim=int(phi_dim))
+        # num_modes scales with regime bank size for the new tasks; mrmfmbd
+        # plumbing reads .num_modes for the marginalizer, which then folds the
+        # full bank into the importance weight.
+        if task_id == "locomotion":
+            num_modes = 12   # 4 terrains × 3 frictions (writeup §10.3 train)
+        elif task_id == "push":
+            num_modes = 36   # 4 terrains × 3 frictions × 3 masses
+        else:
+            num_modes = 4
+        return _JaxMpmTaskSpec(
+            task_id=task_id, x_dim=int(x_dim), phi_dim=int(phi_dim),
+            num_modes=int(num_modes),
+        )
 
     def create_evaluator(
         self,
@@ -65,13 +78,23 @@ class JaxMpmTaskDomainProvider:
         voxel_dims = kwargs.get("voxel_dims")
         if voxel_dims is not None:
             voxel_dims = tuple(int(v) for v in voxel_dims)
-        cfg = JaxMpmEvaluatorConfig(
+        # Phase 2.2 evaluator-side config (default values keep crawling_ground
+        # behavior identical when these keys are absent from yaml).
+        cfg_kwargs = dict(
             max_workers=max_workers,
             cache_size=cache_size,
             reward_shaping_weight=float(kwargs.get("reward_shaping_weight", 100.0) or 100.0),
             n_grid=int(kwargs.get("n_grid", 64)),
             voxel_dims=voxel_dims,
+            task=str(kwargs.get("task", "crawling_ground")),
+            regime_bank_kind=kwargs.get("regime_bank_kind"),
+            push_goal_x=float(kwargs.get("push_goal_x", 0.85)),
+            # Phase 3: pre-robotized SoftBodySpec on disk.
+            softbody_spec_path=kwargs.get("softbody_spec_path"),
         )
+        if "push_weights" in kwargs and kwargs["push_weights"] is not None:
+            cfg_kwargs["push_weights"] = tuple(float(w) for w in kwargs["push_weights"])
+        cfg = JaxMpmEvaluatorConfig(**cfg_kwargs)
         return JaxMpmRolloutEvaluator(
             config=cfg,
             project_root=project_root,

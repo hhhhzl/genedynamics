@@ -9,6 +9,7 @@ from __future__ import annotations
 from .mrmfmbd_baseline import MRMFMBDBaseline
 from .cmaes_baseline import CMAESBaseline
 from .cem_baseline import CEMBaseline
+from .shac_baseline import SHACBaseline
 
 from ..baseline_registry import register_baseline
 
@@ -16,5 +17,6 @@ from ..baseline_registry import register_baseline
 register_baseline(MRMFMBDBaseline())
 register_baseline(CMAESBaseline())
 register_baseline(CEMBaseline())
+register_baseline(SHACBaseline())
 
-__all__ = ["MRMFMBDBaseline", "CMAESBaseline", "CEMBaseline"]
+__all__ = ["MRMFMBDBaseline", "CMAESBaseline", "CEMBaseline", "SHACBaseline"]

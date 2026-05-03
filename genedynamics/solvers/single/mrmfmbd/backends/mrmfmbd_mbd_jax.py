@@ -72,6 +72,38 @@ class MBDConfig:
     tau_frac: float = 0.1
     top_k_fine: int = 3
     fine_fidelity_level: int = 2
+    # Phase 1.3 (JM2D Takeaway 1): u-step inner refinement of clean candidates.
+    # Each outer reverse-diffusion step runs (inner_denoise_steps + 1) iterations
+    # of (rollout → reward-weighted mean → re-propose with shrunk noise). At
+    # u=0 we recover the original single-shot Tweedie estimate exactly.
+    # JM2D Table 3 reports +50 pp safe-success on Cluttered going u=0 → u=10;
+    # cost scales linearly: u=10 means 11x rollouts per outer step.
+    inner_denoise_steps: int = 0
+    inner_denoise_shrink: float = 0.5
+    # Phase 2.3: regime-marginalization flavor.
+    #   "reward"          → legacy logsumexp(log p + R/T)        (easy-regime weighted)
+    #   "risk_sensitive"  → -tau_r * logsumexp(log p - R/tau_r)  (failure-prone weighted)
+    # tau_r controls the soft-min sharpness; tau_r → 0 = max-min, tau_r → ∞ = uniform.
+    regime_posterior_mode: str = "reward"
+    risk_temperature: float = 1.0
+    # Phase 4.2 (writeup §8.1): SHAC local refinement on the top-K candidates
+    # AFTER the main MBD reverse loop converges. For each surviving theta
+    # (x, phi), runs `shac_refine_steps` of BPTT on the controller portion
+    # using rollout_h_from_state. Adds a proximal `λ_prox * ‖phi^+ - phi‖²`
+    # penalty so the local update can't override the diffusion sampler.
+    # All zero → no refinement (default; identical to Phase 1/2/3 behavior).
+    shac_refine_steps: int = 0
+    shac_refine_h: int = 32
+    shac_refine_lr: float = 5.0e-4
+    shac_proximal_lambda: float = 1.0
+    shac_refine_topk: int = 3
+    # Phase 1.2 plumbing: alm_adaptive constraint scheduler scalars (writeup §6/§7).
+    # Backends store these and write them to result metadata for ablation
+    # diagnostics; with `nu_max=0.0` (the default in main_v2/crawling_alm.yaml)
+    # the budget tracker is INERT and the run is identical to the no-ALM baseline.
+    # Phase 2 will consume `nu_k * compute_cost` per candidate-fidelity pair
+    # in the importance weight; Phase 1 only wires the scaffold.
+    alm_params: Dict[str, Any] = field(default_factory=dict)
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -194,6 +226,41 @@ class MRMFMBDBackendMBD:
         t_ratio = max(t_ratio, 1e-6)
         T_schedule = T0 * (t_ratio ** (np.arange(K, dtype=np.float32) / max(K - 1, 1)))
         self._T_schedule = jnp.asarray(T_schedule.astype(np.float32))
+
+        # ----- Phase 1.2: alm_adaptive plumbing -----------------------------
+        # Build a per-step nu_k schedule and a static cost-per-candidate from
+        # the alm_adaptive scalars (writeup §6/§7). Phase 1 uses a deterministic
+        # linear ramp from nu0 to nu_max (no feedback yet — soft_robot crawling
+        # has no g(x) ≤ 0 to drive the dual). Phase 2 will replace this with
+        # the JAX adaptive carry once we have per-candidate fidelity to feed.
+        alm = self.config.alm_params or {}
+        if alm:
+            nu0 = float(alm.get("nu0", 0.0))
+            nu_max = float(alm.get("nu_max", 0.0))
+            B = float(alm.get("compute_budget_B", 0.0))
+            mode = str(alm.get("compute_cost_mode", "product"))
+            a0 = float(alm.get("compute_cost_a0", 0.0))
+            aK_ = float(alm.get("compute_cost_aK", 1.0))
+            aI_ = float(alm.get("compute_cost_aI", 1.0))
+            topK_max = float(alm.get("topK_max", 8))
+            I_max = float(alm.get("I_max", 5))
+            if nu_max <= nu0:
+                nu_schedule_np = np.full(K, nu0, dtype=np.float32)
+            else:
+                nu_schedule_np = np.linspace(nu0, nu_max, K, dtype=np.float32)
+            if mode == "linear":
+                cost_const = a0 + aK_ * topK_max + aI_ * I_max
+            else:  # "product" — match alm_adaptive default
+                cost_const = a0 + aK_ * topK_max * aI_ * I_max
+            self._alm_active = nu_max > 0.0
+            self._alm_nu_schedule_np = nu_schedule_np
+            self._alm_cost_const = float(cost_const)
+            self._alm_budget_B = B
+        else:
+            self._alm_active = False
+            self._alm_nu_schedule_np = np.zeros(K, dtype=np.float32)
+            self._alm_cost_const = 0.0
+            self._alm_budget_B = 0.0
 
         # Bounds as jnp arrays for JIT-compatible clipping.
         self._x_lo = jnp.asarray(float(x_lo), dtype=jnp.float32)
@@ -379,6 +446,24 @@ class MRMFMBDBackendMBD:
         )
         log_prior_c = self._log_prior_c
 
+        # Phase 2.3: pick the marginalizer once at trace time. Both branches
+        # return (R_m (M,), w_c (M, C)) with identical sign convention so the
+        # rest of the scan body is agnostic to the choice.
+        from genedynamics.solvers.single.mrmfmbd.mode_system.regime_posterior import (
+            risk_sensitive_marginalize_jax,
+            validate_mode,
+        )
+        validate_mode(self.config.regime_posterior_mode)
+        risk_mode = (self.config.regime_posterior_mode == "risk_sensitive")
+        tau_r = jnp.asarray(
+            max(float(self.config.risk_temperature), 1e-8), dtype=jnp.float32
+        )
+
+        # Phase 1.3: JM2D-style inner refinement (Alg 2, Table 3 of CoRL'25 paper).
+        # Captured as Python ints so JAX unrolls; u=0 → single eval → same as before.
+        inner_steps = max(int(self.config.inner_denoise_steps), 0)
+        inner_shrink = float(self.config.inner_denoise_shrink)
+
         # Z-symmetry: optimizer x_dim is half; mirror to full before rollout.
         z_sym = self._z_sym
         if z_sym and self._voxel_dims is not None:
@@ -389,35 +474,72 @@ class MRMFMBDBackendMBD:
             z_sym = False
             x_dim_full = x_dim
 
+        # Inline propose+clip (mirrors self._propose_impl). Used by the inner
+        # refinement loop with progressively shrunken sigma.
+        def _propose_inline(center: jnp.ndarray, sigma_eff: jnp.ndarray, key) -> jnp.ndarray:
+            eps = jax.random.normal(key, (M, D), dtype=jnp.float32)
+            Y = center[None, :] + sigma_eff * self._scale[None, :] * eps
+            return self._clip_theta_jnp(Y)
+
+        # Inline rollout + mode marginalization. Returns (rewards_mc, R_m).
+        def _rollout_and_marginalize(Y0s_in: jnp.ndarray):
+            x_opt = Y0s_in[:, :x_dim]
+            if z_sym:
+                x_full = _mirror_z_voxels(x_opt, vx, vy, vz_half)  # (M, x_dim_full)
+            else:
+                x_full = x_opt
+            x_flat = jnp.repeat(x_full, C, axis=0)             # (M*C, x_dim_full)
+            phi_flat = jnp.repeat(Y0s_in[:, x_dim:], C, axis=0)  # (M*C, phi_dim)
+            fr_flat = jnp.tile(friction_table, M)              # (M*C,)
+            rs, _disps = rollout_return_batch(
+                x_flat, phi_flat, fr_flat, scene, cfg, num_env_steps
+            )
+            rewards_mc_local = rs.reshape(M, C)
+            if risk_mode:
+                R_m_local, w_c_local = risk_sensitive_marginalize_jax(
+                    rewards_mc_local, log_prior_c, tau_r
+                )
+            else:
+                R_m_local, w_c_local = _s1_marginalize_jax(
+                    rewards_mc_local, log_prior_c, T_mode
+                )
+            return rewards_mc_local, R_m_local, w_c_local
+
+        # Reward-weighted mean only — no tau noise / no clip yet (those happen
+        # after the inner refinement loop completes).
+        def _weighted_mean(Y0s_in: jnp.ndarray, R_m_in: jnp.ndarray, T_k):
+            R_mean = jnp.mean(R_m_in)
+            R_std = jnp.maximum(jnp.std(R_m_in), jnp.asarray(1e-4, dtype=R_m_in.dtype))
+            log_w = (R_m_in - R_mean) / (R_std * T_k)
+            w = jax.nn.softmax(log_w)
+            Yb = jnp.einsum("m,md->d", w, Y0s_in)
+            return Yb, w
+
         def step(carry, xs):
             Ybar, rng_key, topk_theta, topk_score = carry
             sigma_k, tau_k, T_k = xs
 
             rng_key, k_eps, k_noise = jax.random.split(rng_key, 3)
-            eps = jax.random.normal(k_eps, (M, D), dtype=jnp.float32)
-            Y0s = self._propose_impl(Ybar, sigma_k, eps)  # (M, D)
+            Y0s = _propose_inline(Ybar, sigma_k, k_eps)  # (M, D)
 
-            # Extract x (optimizer dim) and expand if z-symmetric.
-            x_opt = Y0s[:, :x_dim]
-            if z_sym:
-                x_full = _mirror_z_voxels(x_opt, vx, vy, vz_half)  # (M, x_dim_full)
-            else:
-                x_full = x_opt
-
-            # M × C flat batch: index = m*C + c; (x[m], friction[c]).
-            x_flat = jnp.repeat(x_full, C, axis=0)               # (M*C, x_dim_full)
-            phi_flat = jnp.repeat(Y0s[:, x_dim:], C, axis=0)     # (M*C, phi_dim)
-            fr_flat = jnp.tile(friction_table, M)                # (M*C,)
-
-            rs, _disps = rollout_return_batch(
-                x_flat, phi_flat, fr_flat, scene, cfg, num_env_steps
-            )
-            rewards_mc = rs.reshape(M, C)
-
-            R_m, w_c = _s1_marginalize_jax(rewards_mc, log_prior_c, T_mode)
+            # ---- u-step inner refinement (JM2D Alg 2) -----------------------
+            # u=0 → single iteration, identical to original behavior.
+            rewards_mc, R_m, w_c = _rollout_and_marginalize(Y0s)
+            Ybar_inner, weights = _weighted_mean(Y0s, R_m, T_k)
+            for u_iter in range(inner_steps):
+                rng_key, k_refine = jax.random.split(rng_key)
+                # Shrink the proposal noise on each refinement iter so the
+                # candidate cloud collapses around the running weighted mean.
+                shrink = jnp.asarray(inner_shrink ** (u_iter + 1), dtype=jnp.float32)
+                Y0s = _propose_inline(Ybar_inner, sigma_k * shrink, k_refine)
+                rewards_mc, R_m, w_c = _rollout_and_marginalize(Y0s)
+                Ybar_inner, weights = _weighted_mean(Y0s, R_m, T_k)
+            # -----------------------------------------------------------------
 
             noise = jax.random.normal(k_noise, (D,), dtype=jnp.float32)
-            Ybar_next, weights, ess = self._denoise_impl(Y0s, R_m, tau_k, T_k, noise)
+            # Final DDPM exploration noise + clip (was the tail of _denoise_impl).
+            Ybar_next = self._clip_theta_jnp(Ybar_inner + tau_k * self._scale * noise)
+            ess = 1.0 / jnp.sum(weights * weights)
 
             # Top-K: concat running top_k with M new candidates, keep top cap.
             cand_scores = jnp.mean(rewards_mc, axis=-1)           # (M,)
@@ -547,7 +669,7 @@ class MRMFMBDBackendMBD:
         total = per_step["sigma_k"].shape[0]
         for i in range(total):
             idx = K - 1 - i
-            bridge_history.append({
+            entry = {
                 "k_reverse_idx": int(idx),
                 "k_forward": int(i),
                 "sigma_k": float(per_step["sigma_k"][i]),
@@ -557,7 +679,17 @@ class MRMFMBDBackendMBD:
                 "mean_R_s1": float(per_step["mean_R_s1"][i]),
                 "mean_env_return": float(per_step["mean_env_return"][i]),
                 "ess": float(per_step["ess"][i]),
-            })
+            }
+            # Phase 1.2: record per-step alm_adaptive state for diagnostics.
+            # `nu_k_forward` is indexed in forward-time (i = 0 is the first
+            # reverse-diffusion step), matching the rest of bridge_history.
+            if self._alm_active or self.config.alm_params:
+                entry["alm_nu_k"] = float(self._alm_nu_schedule_np[idx])
+                entry["alm_cost"] = float(self._alm_cost_const)
+                entry["alm_budget_pen"] = float(
+                    self._alm_nu_schedule_np[idx] * self._alm_cost_const
+                )
+            bridge_history.append(entry)
         mode_resp_history = per_step["w_c_mean"]
 
         # Extract top-K candidates as Python list (sorted desc).
@@ -574,6 +706,19 @@ class MRMFMBDBackendMBD:
         best_fine_return, best_fine_theta, fine_calls = self._fine_revalidate(_top_k, Ybar)
         if best_fine_return > -float("inf"):
             Ybar = jnp.asarray(best_fine_theta, dtype=jnp.float32)
+
+        # Phase 4.2: SHAC local refinement (writeup §8.1). One-step short-
+        # horizon gradient ascent on the controller portion of the top-K
+        # candidates with a proximal penalty on the displacement. Skipped
+        # entirely when shac_refine_steps == 0 → behavior unchanged.
+        shac_summary = {"active": False, "applied": 0, "improved": 0}
+        if int(self.config.shac_refine_steps) > 0 and self._is_jax_direct():
+            shac_summary, refined_top, best_refined = self._shac_refine_topk(_top_k)
+            if best_refined is not None and best_refined[0] > best_fine_return:
+                Ybar = jnp.asarray(best_refined[1], dtype=jnp.float32)
+                best_fine_return = float(best_refined[0])
+                # Update _top_k so downstream stats use the refined leaderboard.
+                _top_k = refined_top
 
         wall = time.perf_counter() - wall_start
         x_final, phi_final = self.theta_param.unpack(Ybar)
@@ -595,7 +740,120 @@ class MRMFMBDBackendMBD:
             # (K, D) trajectory of the denoised mean across all diffusion steps.
             # Row i corresponds to bridge_history[i]["k_forward"] = i.
             "theta_history": per_step["Ybar"],
+            # Phase 1.2: top-level alm summary (full per-step values are in bridge_history).
+            "alm_summary": {
+                "active": bool(self._alm_active),
+                "nu_max": float(self._alm_nu_schedule_np.max()) if self._alm_active else 0.0,
+                "cost_const": float(self._alm_cost_const),
+                "budget_B": float(self._alm_budget_B),
+            },
+            # Phase 4.2: SHAC refinement diagnostic (writeup §8.1).
+            "shac_summary": shac_summary,
         }
+
+    def _shac_refine_topk(
+        self,
+        top_k: List[Tuple[float, np.ndarray]],
+    ) -> Tuple[Dict[str, Any], List[Tuple[float, np.ndarray]], Optional[Tuple[float, np.ndarray]]]:
+        """SHAC local refinement on the top-K candidates (writeup §8.1).
+
+        For each candidate `theta = (x, phi)`:
+        1. Hold `x` fixed; treat `phi` as the optimization variable.
+        2. Run `shac_refine_steps` of gradient ascent on
+           `R̂_h(phi) - λ_prox * ‖phi - phi_0‖²`
+           where R̂_h is the discounted h-step return from
+           `rollout_h_from_state` and `phi_0` is the pre-refinement value.
+        3. Re-evaluate at the configured fine fidelity; keep the better of
+           the original or refined candidate.
+
+        Returns
+        -------
+        summary : dict
+            {"active": True, "applied": #candidates refined, "improved": # that beat their pre-score}
+        refined_top : list[(score, theta)]
+            Same length as `top_k`, with refined entries replacing the originals
+            ONLY when refinement improved the fine-fidelity score.
+        best : (score, theta) | None
+            The single best post-refinement candidate.
+        """
+        n_steps = int(self.config.shac_refine_steps)
+        if n_steps <= 0 or not top_k:
+            return {"active": False, "applied": 0, "improved": 0}, list(top_k), None
+
+        from genedynamics.envs.external.jax_mpm.scene import (
+            _init_carry,
+            rollout_h_from_state,
+        )
+
+        scene = self.evaluator._scene
+        cfg = self.evaluator._mpm_cfg
+        friction_table = np.asarray(self.evaluator._mode_friction, dtype=np.float32)
+        h = int(self.config.shac_refine_h)
+        lr = float(self.config.shac_refine_lr)
+        lam_prox = float(self.config.shac_proximal_lambda)
+        x_dim = int(self.theta_param.x_dim)
+
+        def loss_fn(phi, x_morph, friction, phi_init):
+            """Negative discounted return + proximal penalty (we minimize)."""
+            carry = _init_carry(scene)
+            _, rewards, _ = rollout_h_from_state(
+                carry, jnp.int32(0), phi, h, friction, scene, cfg,
+                x_morph=x_morph,
+            )
+            gammas = jnp.power(jnp.asarray(0.99, dtype=jnp.float32),
+                                jnp.arange(h, dtype=jnp.float32))
+            R_h = jnp.sum(gammas * rewards)
+            prox = lam_prox * jnp.sum((phi - phi_init) ** 2)
+            return -(R_h - prox)
+
+        grad_fn = jax.jit(jax.grad(loss_fn, argnums=0))
+
+        refined: List[Tuple[float, np.ndarray]] = []
+        best: Optional[Tuple[float, np.ndarray]] = None
+        n_applied = 0
+        n_improved = 0
+        for original_score, theta in top_k:
+            theta_np = np.asarray(theta, dtype=np.float32).copy()
+            x_part = theta_np[:x_dim]
+            phi_part = theta_np[x_dim:].copy()
+            phi_init = phi_part.copy()
+
+            x_full = self._expand_x_np(x_part)
+            x_full_j = jnp.asarray(x_full, dtype=jnp.float32)
+            fr_j = jnp.asarray(float(friction_table[0]), dtype=jnp.float32)
+            phi_init_j = jnp.asarray(phi_init, dtype=jnp.float32)
+            phi_j = jnp.asarray(phi_part, dtype=jnp.float32)
+
+            # Plain SGD on phi for n_steps. (Adam state across candidates is
+            # noise; proximal penalty supplies stability.)
+            for _ in range(n_steps):
+                g = grad_fn(phi_j, x_full_j, fr_j, phi_init_j)
+                phi_j = phi_j - lr * g
+                phi_j = jnp.clip(phi_j,
+                                  jnp.asarray(self._phi_lo, dtype=jnp.float32),
+                                  jnp.asarray(self._phi_hi, dtype=jnp.float32))
+            phi_refined = np.asarray(phi_j, dtype=np.float32)
+            n_applied += 1
+
+            # Re-evaluate with the existing fine_revalidate machinery so we
+            # compare apples to apples (same fidelity, same regime average).
+            refined_theta = np.concatenate([x_part, phi_refined]).astype(np.float32)
+            re_score, _, _ = self._fine_revalidate(
+                [(original_score, refined_theta)], jnp.asarray(refined_theta),
+            )
+            if re_score > original_score:
+                n_improved += 1
+                refined.append((float(re_score), refined_theta))
+                if best is None or re_score > best[0]:
+                    best = (float(re_score), refined_theta)
+            else:
+                refined.append((original_score, theta_np))
+
+        return (
+            {"active": True, "applied": n_applied, "improved": n_improved},
+            refined,
+            best,
+        )
 
     def _fine_revalidate(
         self,
