@@ -276,7 +276,7 @@ def test_sport_mode_controller_merges_leg_targets_with_humanoid_tasks_hints():
 
 
 def test_sport_mode_controller_merges_leg_targets_with_upper_body_targets_hints():
-    """The new path used by diagnose_sport_mode_corridor.py — direct
+    """The new path used by sport_mode_corridor.py — direct
     UpperBodyTargets in extras['upper_body_targets']."""
     io = _FakeIO()
     loco = _ScriptedLocoClient()

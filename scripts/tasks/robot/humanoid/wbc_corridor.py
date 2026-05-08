@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Diagnose the WBC controller on a real corridor trajectory.
 
-Sibling of :mod:`scripts.tasks.robot.diagnose_sport_mode_corridor`. Produces the same
+Sibling of :mod:`scripts.tasks.robot.humanoid.sport_mode_corridor`. Produces the same
 metric schema (steps, fell-over flag, pelvis z range, endpoint distance,
 mean/max lateral offset, real-time factor) so the WBC and sport-mode
 results can be compared directly with ``diff``-friendly numbers.
@@ -26,18 +26,18 @@ What it does
 
 Output schema
 -------------
-Identical to ``diagnose_sport_mode_corridor.py``:
+Identical to ``sport_mode_corridor.py``:
 
 * stdout text report with verdict
-* ``<out-dir>/diagnose_wbc.npz`` — full per-step timeseries
-* ``<out-dir>/diagnose_wbc.json`` — JSON summary
+* ``<out-dir>/wbc.npz`` — full per-step timeseries
+* ``<out-dir>/wbc.json`` — JSON summary
 
 Usage
 -----
 ::
 
     docker run --rm -v "$PWD:/work" -w /work genedynamics/dev-cpu:local \\
-        python scripts/tasks/robot/diagnose_wbc_corridor.py
+        python scripts/tasks/robot/humanoid/wbc_corridor.py
 """
 
 from __future__ import annotations
@@ -53,14 +53,14 @@ from typing import Optional
 import numpy as np
 
 
-# Path: scripts/tasks/robot/<file>.py — parents[3] is the project root.
-_ROOT = Path(__file__).resolve().parents[3]
+# Path: scripts/tasks/robot/humanoid/<file>.py — parents[4] is the project root.
+_ROOT = Path(__file__).resolve().parents[4]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 
 DEFAULT_PLAN = (
-    "results/humanoid/corridor_2d/smoke/twogo_zone_a/level_1/seed_0/"
+    "results/humanoid/corridor_2d/plan/twogo_zone_a/level_1/seed_0/"
     "trajectory/trajectory.json"
 )
 
@@ -151,7 +151,7 @@ def diagnose(
     cap_omega: Optional[float] = None,
 ) -> WBCDiagnoseResult:
     if not quiet:
-        print(f"[wbc-diagnose] loading plan: {plan_path}")
+        print(f"[wbc] loading plan: {plan_path}")
 
     # ----- 1. Imports (lazy so ImportError is surfaced cleanly) -----------
     from genedynamics.deploy.followers.common.plan_adapter import (
@@ -187,7 +187,7 @@ def diagnose(
     if cap_vx is not None or cap_vy is not None or cap_omega is not None:
         if not quiet:
             print(
-                f"[wbc-diagnose] capping plan velocities: "
+                f"[wbc] capping plan velocities: "
                 f"vx≤{cap_vx} vy≤{cap_vy} omega≤{cap_omega}"
             )
         states = plan.states.copy()
@@ -206,7 +206,7 @@ def diagnose(
     n_plan = len(frames)
     if not quiet:
         print(
-            f"[wbc-diagnose] plan loaded: {n_plan} frames @ "
+            f"[wbc] plan loaded: {n_plan} frames @ "
             f"{1.0 / control_hz:.4f}s"
         )
 
@@ -215,7 +215,7 @@ def diagnose(
 
     # ----- 3. Build IO + controller + follower stack ----------------------
     if not quiet:
-        print("[wbc-diagnose] building MujocoRobotIO + HumanoidWBCController + follower stack")
+        print("[wbc] building MujocoRobotIO + HumanoidWBCController + follower stack")
 
     io = MujocoRobotIO(sim_dt=sim_dt)
     controller = HumanoidWBCController(io=io)
@@ -329,7 +329,7 @@ def diagnose(
 
     wall_t1 = time.monotonic()
     if not quiet:
-        print(f"[wbc-diagnose] rollout finished: {n_steps} steps in {wall_t1 - wall_t0:.2f}s")
+        print(f"[wbc] rollout finished: {n_steps} steps in {wall_t1 - wall_t0:.2f}s")
 
     # ----- 5. Metrics ------------------------------------------------------
     plan_xy_actual = plan_xy_full[:n_steps]
@@ -406,7 +406,7 @@ def diagnose(
             dtype=np.float64,
         )
         np.savez(
-            out_dir / "diagnose_wbc.npz",
+            out_dir / "wbc.npz",
             pelvis_xy=result.pelvis_xy,
             pelvis_z=pelvis_z_log,
             plan_xy=result.plan_xy,
@@ -418,11 +418,11 @@ def diagnose(
             ineq_violation=ineq_viol_arr,
             **task_err_arrays,
         )
-        (out_dir / "diagnose_wbc.json").write_text(
+        (out_dir / "wbc.json").write_text(
             json.dumps(result.to_json(), indent=2)
         )
         if not quiet:
-            print(f"[wbc-diagnose] dumped {out_dir / 'diagnose_wbc.npz'}")
+            print(f"[wbc] dumped {out_dir / 'wbc.npz'}")
 
     io.close()
     return result
@@ -500,7 +500,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.add_argument(
         "--out-dir",
         type=Path,
-        default=_ROOT / "results" / "deploy" / "diagnose_wbc",
+        default=_ROOT / "results" / "deploy" / "wbc",
     )
     p.add_argument("--quiet", action="store_true")
     args = p.parse_args(argv)
@@ -526,7 +526,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(
             "  Run inside the genedynamics/dev-cpu Docker image:\n"
             "    docker run --rm -v $PWD:/work -w /work genedynamics/dev-cpu \\\n"
-            "        python scripts/tasks/robot/diagnose_wbc_corridor.py",
+            "        python scripts/tasks/robot/humanoid/wbc_corridor.py",
             file=sys.stderr,
         )
         return 3

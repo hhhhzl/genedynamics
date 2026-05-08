@@ -1,13 +1,14 @@
 # ── 2GO Zone A only: thin center wall (multimodal: left or right) ──
-name: humanoid_corridor_2d_twogo_zone_c
-output_dir: results/humanoid/corridor_2d/smoke/twogo_zone_c
+name: humanoid_corridor_2d_twogo_zone_d
+output_dir: results/humanoid/corridor_2d/plan/twogo_zone_d
 
 env_name: humanoid_corridor_2d
 env_params:
   dt: 0.25
-  horizon: 20
-  scene_preset: zone_c
-  vx_max: 0.8
+  horizon: 50
+  scene_preset: zone_d
+  # Capped to match SparkRL deploy policy (cmd_clip = ±0.3 m/s).
+  vx_max: 0.3
   vx_min: -0.3
   vy_max: 0.3
   omega_max: 0.5
@@ -83,14 +84,14 @@ obstacle_config:
   robot_radius: 0.20
   collision_margin: 0.03
   success_margin: 0.20
-  scene_preset: zone_c
+  scene_preset: zone_d
 
 seeds: [0]
 backend: jax
-device: cuda
+device: cpu
 
 metrics: [corridor_metrics]
-visualizations: [corridor_trajectory, cost, adaptive, diffusion]
+visualizations: [corridor_trajectory, cost, adaptive, diffusion, gate_dynamics]
 
 scheduler_config:
   type: composite

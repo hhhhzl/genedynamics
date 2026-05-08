@@ -68,20 +68,20 @@ docker run --rm -v "$PWD:/work" -w /work genedynamics/dev-cpu \
 
 # Corridor diagnose (currently: robot falls):
 docker run --rm -v "$PWD:/work" -w /work genedynamics/dev-cpu \
-    python scripts/tasks/robot/diagnose_wbc_corridor.py \
-        --plan results/humanoid/corridor_2d/smoke/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json
+    python scripts/tasks/robot/humanoid/wbc_corridor.py \
+        --plan results/humanoid/corridor_2d/plan/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json
 
 # Compare against sport-mode baseline:
 docker run --rm -v "$PWD:/work" -w /work genedynamics/dev-cpu \
-    python scripts/tasks/robot/diagnose_sport_mode_corridor.py
+    python scripts/tasks/robot/humanoid/sport_mode_corridor.py
 ```
 
 ## Tuning Workflow
 
-1. Run `diagnose_wbc_corridor.py` — check QP failure count and torque saturation rate.
+1. Run `wbc_corridor.py` — check QP failure count and torque saturation rate.
 2. If `qp_solve_failures > 0`: lower `LimitsConfig.lambda_max_normal` or raise `SolverConfig.osqp_maxiter`.
 3. If `torque_saturations > 20%` of steps: lower `TaskWeightsConfig.com` or `TaskWeightsConfig.contact`.
-4. If `fell_over` at first step: the contact scheduler is wrong. Inspect `phase` in `diagnose_wbc.npz`.
+4. If `fell_over` at first step: the contact scheduler is wrong. Inspect `phase` in `wbc.npz`.
 5. Run the standing integration test after each config change to confirm it doesn't regress.
 
 ## Interface Stability

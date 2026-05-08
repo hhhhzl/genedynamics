@@ -1,13 +1,16 @@
 # ── 2GO Zone A only: thin center wall (multimodal: left or right) ──
 name: humanoid_corridor_2d_twogo_zone_a
-output_dir: results/humanoid/corridor_2d/smoke/twogo_zone_a
+output_dir: results/humanoid/corridor_2d/plan/twogo_zone_a
 
 env_name: humanoid_corridor_2d
 env_params:
   dt: 0.25
-  horizon: 20
+  horizon: 50
   scene_preset: zone_a
-  vx_max: 0.8
+  # Capped to match SparkRL deploy policy (cmd_clip = ±0.3 m/s).
+  # Going below 0.15 puts the cmd outside the policy's training
+  # distribution and makes the gait visibly jittery — keep it at 0.3.
+  vx_max: 0.3
   vx_min: -0.3
   vy_max: 0.3
   omega_max: 0.5
@@ -87,10 +90,10 @@ obstacle_config:
 
 seeds: [0]
 backend: jax
-device: cuda
+device: cpu
 
 metrics: [corridor_metrics]
-visualizations: [corridor_trajectory, cost, adaptive, diffusion]
+visualizations: [corridor_trajectory, cost, adaptive, diffusion, gate_dynamics]
 
 scheduler_config:
   type: composite

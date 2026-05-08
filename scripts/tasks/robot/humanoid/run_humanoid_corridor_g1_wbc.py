@@ -56,7 +56,7 @@ def _default_output_dir(seed_dir: Path) -> Path:
 
 
 def _infer_config_path(seed_dir: Path) -> Optional[Path]:
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[4]
     seed_path = seed_dir.resolve() if seed_dir.is_absolute() else (repo_root / seed_dir).resolve()
     try:
         rel = seed_path.relative_to((repo_root / "results").resolve())
@@ -113,7 +113,10 @@ def rollout(
     """Run the WBC pipeline on a seed directory, return dict of history arrays."""
     from genedynamics.deploy.followers.common.plan_adapter import CorridorTrajectoryAdapter
     from genedynamics.deploy.followers.common.traversal_intent import TraversalIntent
-    from genedynamics.deploy.followers.humanoid.contact_scheduler import HumanoidContactScheduler
+    from genedynamics.deploy.followers.humanoid.contact_scheduler import (
+        HumanoidContactScheduler,
+        HumanoidContactSchedulerConfig,
+    )
     from genedynamics.deploy.followers.humanoid.footstep_planner import HumanoidFootstepPlanner
     from genedynamics.deploy.followers.humanoid.task_builder import HumanoidTaskBuilder
     from genedynamics.deploy.followers.humanoid.task_spec import (
@@ -122,6 +125,7 @@ def rollout(
     )
     from genedynamics.deploy.followers.humanoid.upper_body_mapper import HumanoidUpperBodyMapper
     from genedynamics.deploy.controllers.wbc import HumanoidWBCController, WBCResult
+    from genedynamics.deploy.controllers.wbc.config import WBCConfig, TaskGainsConfig
     from genedynamics.deploy.interfaces.messages import Intent
     from genedynamics.deploy.io.mujoco_io import MujocoRobotIO, FootContactSnapshot
     import mujoco as _mj
@@ -137,8 +141,27 @@ def rollout(
 
     # 2. Build stack
     io = MujocoRobotIO(sim_dt=sim_dt)
-    controller = HumanoidWBCController(io=io)
-    contact_scheduler = HumanoidContactScheduler()
+    # Reduced gains to avoid torque saturation at swing-leg liftoff. The
+    # default swing_foot_position_kp=20 demanded 21+ N·m of bound violation
+    # in the first gait cycle, collapsing the robot at t≈1.56 s. Halving
+    # the swing-foot tracking gain (and damping) lets the QP find a torque
+    # solution that respects G1's joint limits at the cost of looser foot
+    # tracking.
+    wbc_cfg = WBCConfig()
+    wbc_cfg.gains.swing_foot_position_kp = 10.0
+    wbc_cfg.gains.swing_foot_position_kd = 4.0
+    wbc_cfg.gains.com_kp = 25.0
+    wbc_cfg.gains.com_kd = 10.0
+    wbc_cfg.gains.pelvis_orientation_kp = 25.0
+    wbc_cfg.gains.pelvis_orientation_kd = 8.0
+    controller = HumanoidWBCController(io=io, cfg=wbc_cfg)
+    # Slower gait — gives the WBC more time per phase, lower torque demand,
+    # more time for new support foot to load before pelvis collapses.
+    contact_cfg = HumanoidContactSchedulerConfig(
+        swing_time=0.50,
+        double_support_time=0.20,
+    )
+    contact_scheduler = HumanoidContactScheduler(cfg=contact_cfg)
     footstep_planner = HumanoidFootstepPlanner()
     upper_body_mapper = HumanoidUpperBodyMapper()
     task_builder = HumanoidTaskBuilder()
@@ -303,7 +326,7 @@ def main() -> None:
     parser.add_argument(
         "--seed-dir",
         type=str,
-        default="results/humanoid/corridor_2d/smoke/twogo_zone_a/level_1/seed_0",
+        default="results/humanoid/corridor_2d/plan/twogo_zone_a/level_1/seed_0",
     )
     parser.add_argument("--out-dir", type=str, default=None)
     parser.add_argument("--best-idx", type=int, default=None)

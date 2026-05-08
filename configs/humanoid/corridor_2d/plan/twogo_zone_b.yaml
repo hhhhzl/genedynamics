@@ -1,6 +1,6 @@
 # ── 2GO Zone A only: thin center wall (multimodal: left or right) ──
 name: humanoid_corridor_2d_twogo_zone_b
-output_dir: results/humanoid/corridor_2d/smoke/twogo_zone_b
+output_dir: results/humanoid/corridor_2d/plan/twogo_zone_b
 
 env_name: humanoid_corridor_2d
 env_params:
@@ -87,10 +87,10 @@ obstacle_config:
 
 seeds: [0]
 backend: jax
-device: cuda
+device: cpu
 
 metrics: [corridor_metrics]
-visualizations: [corridor_trajectory, cost, adaptive, diffusion]
+visualizations: [corridor_trajectory, cost, adaptive, diffusion, gate_dynamics]
 
 scheduler_config:
   type: composite
