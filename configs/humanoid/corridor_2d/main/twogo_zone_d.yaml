@@ -1,18 +1,18 @@
-# ── 2GO Zone A+C+D combined: thin wall + circular squeeze + aerial spheres ──
-name: humanoid_corridor_2d_twogo_long
-output_dir: results/humanoid/corridor_2d/plan/twogo_long
+# ── 2GO Zone A only: thin center wall (multimodal: left or right) ──
+name: humanoid_corridor_2d_twogo_zone_d
+output_dir: results/humanoid/corridor_2d/main/twogo_zone_d
 
 env_name: humanoid_corridor_2d
 env_params:
   dt: 0.25
-  horizon: 150
-  scene_preset: medium
+  horizon: 42
+  scene_preset: zone_d
   # Capped to match SparkRL deploy policy (cmd_clip = ±0.3 m/s).
   vx_max: 0.3
   vx_min: -0.3
   vy_max: 0.3
   omega_max: 0.5
-  h_dot_max: 0.02
+  h_dot_max: 0.3
   psi_torso_dot_max: 0.4
   arm_tuck_rate_max: 1.0
   arm_posture_rate_max: 1.0
@@ -22,7 +22,7 @@ method: 2go
 method_params:
   show_tqdm: true
   action_extra_sigma: 0.15
-  max_constraints_per_point: 32
+  max_constraints_per_point: 8
   constraint_margin: 0.01
   cfs_action_convexifier: cfs_action
   aug_lambda: 0.0
@@ -43,25 +43,25 @@ method_params:
   twogo_enable_local_gating: true
   twogo_gate_ema_beta: 0.7
   twogo_gate_risk_theta: 0.05
-  twogo_task_dir_alpha: 0.5
+  twogo_task_dir_alpha: 0.3
   twogo_cluster_reweight_alpha: 0.0
   twogo_cluster_retract_mu: 0.0
   twogo_enable_sample_tail: true
   twogo_enable_agp_batch: false
   twogo_use_jax_scan_core: true
-  twogo_retract_qp_boost: true
+  twogo_retract_qp_boost: false
   twogo_enable_geometry: true
   twogo_stability_eps: 1e-6
   twogo_gamma_init: 1.0
-  twogo_retract_qp_every: 1
+  twogo_retract_qp_every: 3
   twogo_probe_enable: true
   twogo_probe_tail_mix: 0.5
   twogo_probe_tail_pool_ratio: 0.25
   twogo_probe_geom_alpha: 0.3
-  twogo_probe_b: 64
+  twogo_probe_b: 32
   twogo_overlay:
     hardness:
-      rho_ref: 100.0
+      rho_ref: 500.0
     constraint:
       kappa0: 1.0
       kappa_rho_gain: 0.01
@@ -84,7 +84,7 @@ obstacle_config:
   robot_radius: 0.20
   collision_margin: 0.03
   success_margin: 0.20
-  scene_preset: medium
+  scene_preset: zone_d
 
 seeds: [0]
 backend: jax
@@ -93,32 +93,11 @@ device: cpu
 metrics: [corridor_metrics]
 visualizations: [corridor_trajectory, cost, adaptive, diffusion, gate_dynamics]
 
-# Per-visualization renderer + style config.
-# corridor_trajectory backends:
-#   matplotlib_top  — original 2D top-down (default)
-#   matplotlib_iso  — isometric pseudo-3D
-#   pyrender_mesh   — true 3D using G1 STL meshes from mujoco_menagerie
-visualization_config:
-  corridor_trajectory:
-    renderer: pyrender_mesh
-    n_ghosts: 8
-    camera_pitch_deg: 62
-    camera_yfov_deg: 36
-    room_height: 1.6
-    front_wall_height: 0.40
-    tall_obstacle_alpha: 0.32
-    short_obstacle_alpha: 0.85
-    ribbon_radius: 0.035
-    ribbon_arrow_len: 0.20
-    ribbon_arrow_radius: 0.09
-    render_width: 1600
-    render_height: 900
-
 scheduler_config:
   type: composite
   constraint_schedulers:
     - type: alm_adaptive
-      margin: 0.03
+      margin: 0.02
       lam0: 0.0
       rho0: 1.0
       nu0: 0.0
@@ -136,13 +115,13 @@ scheduler_config:
       nu_max: 0.0
       eta_lam_forget: 0.02
       rho_min: 0.5
-      rho_tau_hi: 5e-4
-      rho_tau_lo: 1e-4
-      rho_gamma_up: 1.5
-      rho_gamma_down: 2.5
-      rho_good_steps: 6
+      rho_tau_hi: 5.0e-4
+      rho_tau_lo: 1.0e-4
+      rho_gamma_up: 2.0
+      rho_gamma_down: 1.5
+      rho_good_steps: 5
       gamma: 2.0
-      rho_max: 100.0
+      rho_max: 500.0
       kappa: 0.9
       r_tol: 5e-4
       v_signal_mode: mean
@@ -166,20 +145,20 @@ scheduler_config:
       eta_eps_plus: 0.01
       eta_eps_minus: 0.003
       eta_c_eps: 0.01
-      p_min: 0.5
+      p_min: 0.0
       p_max: 1.0
       eps_min: 1e-5
       eps_max: 1e-2
-      I_min: 10
-      I_max: 25
+      I_min: 1
+      I_max: 10
       topK_min: 1
-      topK_max: 32
+      topK_max: 10
       use_stochastic_gate: true
   diffusion_schedulers:
     - type: fixed
-      M_k: 2096
-      T_k: 0.1
-      Ndiffuse: 200
+      M_k: 1024
+      T_k: 0.3
+      Ndiffuse: 100
       beta0: 1e-5
       betaT: 1e-2
   constraint_merge_strategy: merge

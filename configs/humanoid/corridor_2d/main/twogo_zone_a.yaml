@@ -1,6 +1,6 @@
 # ── 2GO Zone A only: thin center wall (multimodal: left or right) ──
 name: humanoid_corridor_2d_twogo_zone_a
-output_dir: results/humanoid/corridor_2d/plan/twogo_zone_a
+output_dir: results/humanoid/corridor_2d/main/twogo_zone_a
 
 env_name: humanoid_corridor_2d
 env_params:

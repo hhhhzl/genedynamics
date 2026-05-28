@@ -1,0 +1,69 @@
+# ── MBD Long: zones A+C+D combined, long horizon ──
+name: humanoid_corridor_2d_mbd_long
+output_dir: results/humanoid/corridor_2d/main/mbd_long
+
+env_name: humanoid_corridor_2d
+env_params:
+  dt: 0.25
+  horizon: 150
+  scene_preset: medium
+  vx_max: 0.3
+  vx_min: -0.3
+  vy_max: 0.3
+  omega_max: 0.5
+  h_dot_max: 0.02
+  psi_torso_dot_max: 0.4
+  arm_tuck_rate_max: 1.0
+  arm_posture_rate_max: 1.0
+  collision_margin: 0.03
+
+method: mbd
+method_params:
+  show_tqdm: true
+  action_extra_sigma: 0.05
+  terminal_energy_weight: 80.0
+  guide_weight: 15.0
+  num_modes: 8
+  mode_strategy: multirun
+
+obstacle_levels: [1]
+obstacle_config:
+  generator: corridor_2d
+  robot_radius: 0.20
+  collision_margin: 0.03
+  success_margin: 0.20
+  scene_preset: medium
+
+seeds: [0]
+backend: jax
+device: cpu
+
+metrics: [corridor_metrics]
+visualizations: [corridor_trajectory, cost, diffusion]
+
+visualization_config:
+  corridor_trajectory:
+    renderer: pyrender_mesh
+    n_ghosts: 8
+    camera_pitch_deg: 62
+    camera_yfov_deg: 36
+    room_height: 1.6
+    front_wall_height: 0.40
+    tall_obstacle_alpha: 0.32
+    short_obstacle_alpha: 0.85
+    ribbon_radius: 0.035
+    ribbon_arrow_len: 0.20
+    ribbon_arrow_radius: 0.09
+    render_width: 1600
+    render_height: 900
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 2048
+      T_k: 0.1
+      Ndiffuse: 200
+      beta0: 1e-5
+      betaT: 1e-2
+  diffusion_merge_strategy: merge

@@ -1,13 +1,12 @@
-# ── 2GO Zone A only: thin center wall (multimodal: left or right) ──
-name: humanoid_corridor_2d_twogo_zone_c
-output_dir: results/humanoid/corridor_2d/plan/twogo_zone_c
+# ── MD-COAS Zone A: thin center wall — CFS-MBD full + ALM adaptive ──
+name: humanoid_corridor_2d_mdcoas_zone_a
+output_dir: results/humanoid/corridor_2d/main/mdcoas_zone_a
 
 env_name: humanoid_corridor_2d
 env_params:
   dt: 0.25
   horizon: 50
-  scene_preset: zone_c
-  # Capped to match SparkRL deploy policy (cmd_clip = ±0.3 m/s).
+  scene_preset: zone_a
   vx_max: 0.3
   vx_min: -0.3
   vy_max: 0.3
@@ -18,65 +17,18 @@ env_params:
   arm_posture_rate_max: 1.0
   collision_margin: 0.03
 
-method: 2go
+method: cfsmbd_full
 method_params:
   show_tqdm: true
-  action_extra_sigma: 0.15
+  action_extra_sigma: 0.20
   max_constraints_per_point: 8
-  constraint_margin: 0.01
+  constraint_margin: 0.005
   cfs_action_convexifier: cfs_action
+  terminal_energy_weight: 300.0
   aug_lambda: 0.0
   aug_rho: 1.0
   num_modes: 8
   mode_strategy: multirun
-
-  twogo_gate_vrate_threshold: 0.01
-  twogo_cvar_alpha: 0.9
-  twogo_window_size: 6
-  twogo_window_stride: 3
-  twogo_tail_ratio: 0.3
-  twogo_active_topk: 8
-  twogo_agp_eta: 0.08
-  twogo_cfs_gain: 0.35
-  twogo_multi_scale: 0.25
-  twogo_enable_agp_refine: false
-  twogo_enable_local_gating: true
-  twogo_gate_ema_beta: 0.7
-  twogo_gate_risk_theta: 0.05
-  twogo_task_dir_alpha: 0.3
-  twogo_cluster_reweight_alpha: 0.0
-  twogo_cluster_retract_mu: 0.0
-  twogo_enable_sample_tail: true
-  twogo_enable_agp_batch: false
-  twogo_use_jax_scan_core: true
-  twogo_retract_qp_boost: false
-  twogo_enable_geometry: true
-  twogo_stability_eps: 1e-6
-  twogo_gamma_init: 1.0
-  twogo_retract_qp_every: 3
-  twogo_probe_enable: true
-  twogo_probe_tail_mix: 0.5
-  twogo_probe_tail_pool_ratio: 0.25
-  twogo_probe_geom_alpha: 0.3
-  twogo_probe_b: 32
-  twogo_overlay:
-    hardness:
-      rho_ref: 500.0
-    constraint:
-      kappa0: 1.0
-      kappa_rho_gain: 0.01
-      delta_margin_scale: 0.4
-      delta_rho_gain: 0.02
-      delta_min: 5e-4
-    diffusion:
-      sigma_max: 0.15
-      sigma_hardness_power: 1.0
-      theta_max: 0.6
-      theta_min: 0.2
-      eta_scale_min: 0.5
-      eta_scale_max: 1.0
-      eta_hardness_power: 1.0
-      gate_every: 1
 
 obstacle_levels: [1]
 obstacle_config:
@@ -84,14 +36,14 @@ obstacle_config:
   robot_radius: 0.20
   collision_margin: 0.03
   success_margin: 0.20
-  scene_preset: zone_c
+  scene_preset: zone_a
 
 seeds: [0]
 backend: jax
 device: cpu
 
 metrics: [corridor_metrics]
-visualizations: [corridor_trajectory, cost, adaptive, diffusion, gate_dynamics]
+visualizations: [corridor_trajectory, cost, adaptive, diffusion]
 
 scheduler_config:
   type: composite

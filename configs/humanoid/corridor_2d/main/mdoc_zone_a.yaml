@@ -1,0 +1,74 @@
+# ── MDOC Zone A: thin center wall, per-step CBF-QP action filter ──
+name: humanoid_corridor_2d_mdoc_zone_a
+output_dir: results/humanoid/corridor_2d/main/mdoc_zone_a
+
+env_name: humanoid_corridor_2d
+env_params:
+  dt: 0.25
+  horizon: 50
+  scene_preset: zone_a
+  vx_max: 0.3
+  vx_min: -0.3
+  vy_max: 0.3
+  omega_max: 0.5
+  h_dot_max: 0.3
+  psi_torso_dot_max: 0.4
+  arm_tuck_rate_max: 1.0
+  arm_posture_rate_max: 1.0
+  collision_margin: 0.03
+
+method: mdoc
+method_params:
+  show_tqdm: true
+  mdoc_constraint_mode: cbf_corridor
+  cbf_tau: 0.02
+  cbf_eta: 1.2
+  cbf_margin: 0.03
+  base_beta: 0.01
+  terminal_energy_weight: 80.0
+  guide_weight: 15.0
+  num_modes: 8
+  mode_strategy: multirun
+
+  mdoc_viz_style: "cap"
+  mdoc_viz_scale: 1.0
+  mdoc_viz_band: 1
+  mdoc_viz_use_beta: False
+  mdoc_viz_draw_disk: False
+  mdoc_viz_draw_grad: False
+
+obstacle_levels: [1]
+obstacle_config:
+  generator: corridor_2d
+  robot_radius: 0.20
+  collision_margin: 0.03
+  success_margin: 0.20
+  scene_preset: zone_a
+
+seeds: [0]
+backend: jax
+device: cpu
+
+metrics: [corridor_metrics]
+visualizations: [corridor_trajectory, cost, diffusion]
+
+scheduler_config:
+  type: composite
+  constraint_schedulers:
+    - type: fixed
+      margin: 0.03
+      rho: 10.0
+      qp_gate: true
+      qp_prob: 1.0
+      topK: null
+      eps: 1e-4
+      I_QP: 10
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 1024
+      T_k: 0.3
+      Ndiffuse: 100
+      beta0: 1.0e-5
+      betaT: 1e-2
+  constraint_merge_strategy: merge
+  diffusion_merge_strategy: merge
