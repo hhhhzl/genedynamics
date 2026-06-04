@@ -29,6 +29,7 @@ against 3D bounding-box obstacles.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -406,14 +407,44 @@ class CorridorScene:
         )
 
 
+# ---------------------------------------------------------------------------
+# Runtime scene-preset registry
+# ---------------------------------------------------------------------------
+# Lets callers register a CorridorScene under a name so it resolves like a
+# built-in preset everywhere a preset name is accepted — both the env's
+# ``scene_preset`` (via ``__post_init__``) and the corridor obstacle generator
+# (which builds its ObstacleManager from ``HumanoidCorridor2DEnv(scene_preset=...)``).
+# Used by AR replanning to plan 2GO against measured / virtual (AR) obstacles
+# without authoring a new hard-coded preset. See genedynamics/deploy/ar/ and
+# scripts/ar/replan_from_scene.py.
+_RUNTIME_SCENE_PRESETS: Dict[str, CorridorScene] = {}
+
+
+def register_corridor_scene_preset(name: str, scene: CorridorScene) -> str:
+    """Register *scene* under *name* (case-insensitive); returns the key."""
+    key = str(name or "").strip().lower()
+    if not key:
+        raise ValueError("scene preset name must be non-empty")
+    _RUNTIME_SCENE_PRESETS[key] = scene
+    return key
+
+
+def unregister_corridor_scene_preset(name: str) -> None:
+    _RUNTIME_SCENE_PRESETS.pop(str(name or "").strip().lower(), None)
+
+
 def resolve_corridor_scene_preset(scene_preset: str) -> CorridorScene:
     """
     Resolve a named corridor preset into a concrete scene object.
 
     This is used by planning, replay, and offline rendering code so that
     visualizations can reconstruct the same corridor geometry as the planner.
+    Runtime-registered presets (see :func:`register_corridor_scene_preset`)
+    take precedence over the built-in table.
     """
     preset = str(scene_preset or "").strip().lower()
+    if preset in _RUNTIME_SCENE_PRESETS:
+        return copy.deepcopy(_RUNTIME_SCENE_PRESETS[preset])
     table = {
         "easy": CorridorScene.easy,
         "medium": CorridorScene.medium,
@@ -555,19 +586,23 @@ class HumanoidCorridor2DEnv:
 
     def __post_init__(self) -> None:
         if self.scene is None:
-            presets = {
-                "easy": CorridorScene.easy,
-                "medium": CorridorScene.medium,
-                "hard": CorridorScene.hard,
-                "trapezoid": CorridorScene.trapezoid_squeeze,
-                "zone_abc": CorridorScene.zone_abc,
-                "zone_a": CorridorScene.zone_a,
-                "zone_b": CorridorScene.zone_b,
-                "zone_c": CorridorScene.zone_c,
-                "zone_d": CorridorScene.zone_d,
-            }
-            factory = presets.get(self.scene_preset, CorridorScene.medium)
-            self.scene = factory()
+            key = str(self.scene_preset or "").strip().lower()
+            if key in _RUNTIME_SCENE_PRESETS:
+                self.scene = copy.deepcopy(_RUNTIME_SCENE_PRESETS[key])
+            else:
+                presets = {
+                    "easy": CorridorScene.easy,
+                    "medium": CorridorScene.medium,
+                    "hard": CorridorScene.hard,
+                    "trapezoid": CorridorScene.trapezoid_squeeze,
+                    "zone_abc": CorridorScene.zone_abc,
+                    "zone_a": CorridorScene.zone_a,
+                    "zone_b": CorridorScene.zone_b,
+                    "zone_c": CorridorScene.zone_c,
+                    "zone_d": CorridorScene.zone_d,
+                }
+                factory = presets.get(self.scene_preset, CorridorScene.medium)
+                self.scene = factory()
         self.target = np.asarray(self.scene.goal_pos, dtype=np.float32)
         self.start = np.asarray(self.scene.start_pos, dtype=np.float32)
 

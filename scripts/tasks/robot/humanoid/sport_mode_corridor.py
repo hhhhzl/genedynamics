@@ -66,7 +66,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -318,6 +318,8 @@ def diagnose(
     out_dir: Optional[Path] = None,
     quiet: bool = False,
     loco_kwargs: Optional[dict] = None,
+    io: Optional[Any] = None,
+    loco_client: Optional[Any] = None,
     cap_vx: Optional[float] = None,
     body_frame_track: bool = True,
     yaw_kp: float = 0.0,
@@ -341,7 +343,15 @@ def diagnose(
     Args:
         loco_kwargs: Forwarded to :class:`SparkRLLocoClient.__init__` so
             callers can override ``policy_path``, ``nominal_step_period``
-            or ``cmd_clip``.
+            or ``cmd_clip``. Ignored when ``loco_client`` is supplied.
+        io: Pre-built RobotIO to drive. Defaults to a fresh
+            :class:`MujocoRobotIO` (the verbatim sim path). Inject e.g.
+            :class:`UnitreeG1RobotIO` to run this same governor-aware
+            diagnostic on hardware / AR. The Spark MuJoCo PD-gain patch is
+            auto-skipped for non-MuJoCo IOs.
+        loco_client: Pre-built loco client. Defaults to
+            :class:`SparkRLLocoClient`. Inject :class:`RealLocoClient` for the
+            stock G1 sport-mode loco interface on hardware.
         cap_vx: Optional cap on ``intent.base_lin_vel`` magnitude. Useful
             for testing whether slowing the commanded velocity keeps the
             walker on track when the policy's training-time speed limit
@@ -402,11 +412,10 @@ def diagnose(
     plan_xy_full = np.asarray([[f.x, f.y] for f in frames], dtype=np.float64)
 
     # ----- 2. Build IO + controller + upper-body mapper -------------------
-    if not quiet:
-        print(
-            "[diagnose] building MujocoRobotIO + SportModeController + "
-            "SparkRLLocoClient + HumanoidUpperBodyMapper"
-        )
+    # IO and loco client are injectable so the SAME governor-aware diagnostic
+    # can drive a different backend (e.g. UnitreeG1RobotIO + RealLocoClient for
+    # hardware / AR) without touching any governor logic below. When both are
+    # left as None the defaults reproduce the verbatim MuJoCo + SparkRL sim path.
     from genedynamics.deploy.io.mujoco_io import MujocoRobotIO
     from genedynamics.deploy.controllers.sport_mode import (
         SparkRLLocoClient,
@@ -417,11 +426,18 @@ def diagnose(
     )
     from genedynamics.envs.robots.g1 import G1RobotModel
 
-    io = MujocoRobotIO(sim_dt=sim_dt)
     robot = G1RobotModel()
-    loco = SparkRLLocoClient(robot=robot, **(loco_kwargs or {}))
-    controller = SportModeController(io=io, loco_client=loco)
+    if io is None:
+        io = MujocoRobotIO(sim_dt=sim_dt)
+    if loco_client is None:
+        loco_client = SparkRLLocoClient(robot=robot, **(loco_kwargs or {}))
+    controller = SportModeController(io=io, loco_client=loco_client)
     upper_body_mapper = HumanoidUpperBodyMapper()
+    if not quiet:
+        print(
+            f"[diagnose] building {type(io).__name__} + SportModeController + "
+            f"{type(loco_client).__name__} + HumanoidUpperBodyMapper"
+        )
 
     # Optional: override PD gains to match spark's MuJoCo training distribution.
     # The G1 XML uses <position kp="500" dampratio="1"> uniformly across all
@@ -431,7 +447,7 @@ def diagnose(
     # MjModel actuator params (gainprm / biasprm) since SportModeController's
     # cmd.kp/kd is silently ignored by MujocoRobotIO (it just writes joint_pos
     # to data.ctrl and lets the XML actuators apply their own gains).
-    if spark_pd_gains:
+    if spark_pd_gains and isinstance(io, MujocoRobotIO):
         gains_by_role = {
             "hip": (100.0, 2.0),
             "knee": (150.0, 4.0),

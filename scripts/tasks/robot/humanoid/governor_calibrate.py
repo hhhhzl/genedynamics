@@ -101,6 +101,8 @@ def _make_planned_clearance_fn(scene: dict):
 def calibrate(
     zone: str,
     *,
+    plan_path: Optional[Path] = None,
+    scene: Optional[dict] = None,
     max_steps: Optional[int] = None,
     safety_factor: float = 1.3,
     envelope: Optional[PolicyEnvelope] = None,
@@ -109,15 +111,26 @@ def calibrate(
     work_dir: Path = _ROOT / "results" / "deploy" / "governor_calib",
     quiet_diagnose: bool = True,
 ) -> dict:
-    """Run live Step-1/3/4 calibration for one zone; optionally bake into the plan."""
+    """Run live Step-1/3/4 calibration for one zone; optionally bake into the plan.
+
+    Args:
+        zone: Plan alias (resolved via ``resolve_plan_path`` when ``plan_path``
+            is not given) and the label used for work-dir / report naming.
+        plan_path: Explicit trajectory.json to calibrate. When given, ``zone``
+            is used only as a label — this is the path used by AR replanning,
+            whose plans have no registered alias.
+        scene: Explicit corridor-scene dict (``corridor_scene_to_dict`` shape).
+            When ``None`` it is inferred from the plan's config (built-in zones).
+            Required for AR plans, whose scene cannot be inferred from a config.
+    """
     envelope = envelope or PolicyEnvelope()
-    plan_path = resolve_plan_path(zone)
+    plan_path = Path(plan_path) if plan_path is not None else resolve_plan_path(zone)
     blob = json.loads(plan_path.read_text())
     candidates = np.asarray(blob["candidate_states"], dtype=np.float64)  # (M, T, 14)
     M = candidates.shape[0]
     orig_best = int(blob.get("planner_best_idx", blob.get("best_idx", 0)))
 
-    scene = _infer_corridor_scene_meta(plan_path) or {}
+    scene = scene if scene is not None else (_infer_corridor_scene_meta(plan_path) or {})
     planned_clearance_fn = _make_planned_clearance_fn(scene)
 
     print(f"[calib] zone={zone}  plan={plan_path}")
@@ -132,6 +145,7 @@ def calibrate(
             plan_path,
             best_idx=int(idx),
             use_governor=False,
+            body_sdf_scene=scene,  # explicit so AR plans (no inferable config) certify correctly
             max_steps=max_steps,
             out_dir=run_dir,
             quiet=quiet_diagnose,

@@ -54,6 +54,9 @@ qpax==0.0.9
 jaxopt==0.8.5
 qpth
 
+# Deploy: AR scene server (WebSocket broadcast of corridor scene contract)
+websockets>=12
+
 # Dev tools
 pytest>=9.0.2
 black>=24.3.0
