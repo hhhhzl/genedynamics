@@ -35,6 +35,7 @@ class MBDBackendJax:
         scheduler: Any = None,
         show_tqdm: bool = False,
         noise_sampler: Any = None,
+        transport: Any = None,
         **kwargs,
     ):
         # Support both old-style (direct params) and new-style (solver object) initialization
@@ -100,7 +101,56 @@ class MBDBackendJax:
         # See genedynamics.core.prob.NoiseSampler for the protocol.
         self.noise_sampler = noise_sampler
 
+        # Optional pluggable reverse transport (DDPM/DDIM/FM/...). When None
+        # (the default) the solver runs the VERBATIM inline DDPM score-form
+        # update, so the traced graph and the float output are byte-identical
+        # to the pre-transport code. A transport object is consulted only on the
+        # explicit ``else`` branch. This mirrors ``noise_sampler`` above.
+        # See genedynamics.solvers.common.transport.base.ReverseTransport.
+        #
+        # Config-driven family selection: when no transport is passed
+        # explicitly, the family is read from the (Fixed)DiffusionScheduler's
+        # ``transport_family`` field (default "DDPM"). "DDPM"/None keeps the
+        # byte-identical inline path (make_transport returns None); "DDIM"/"FM"
+        # build the matching eps-form backend. An explicitly passed ``transport``
+        # always wins (used by the byte-identical regression harness).
+        if transport is None:
+            family = self._resolve_transport_family(scheduler)
+            self.transport_family = family
+            from genedynamics.solvers.common.transport import make_transport
+
+            transport = make_transport(family)
+        else:
+            self.transport_family = getattr(transport, "family", "DDPM")
+        self.transport = transport
+
         self._build_jax_functions()
+
+    @staticmethod
+    def _resolve_transport_family(scheduler: Any) -> str:
+        """Read the ``transport_family`` tag from the diffusion scheduler.
+
+        Mirrors the ``T_k`` lookup in ``plan``: the first entry of the
+        scheduler's ``diffusion_schedulers`` list, queried via
+        ``diffusion_params``. Defaults to "DDPM" when unavailable so the
+        byte-identical inline path is preserved.
+        """
+        if scheduler is None or not hasattr(scheduler, "diffusion_schedulers"):
+            return "DDPM"
+        try:
+            ds_list = getattr(scheduler, "diffusion_schedulers", [])
+            if not ds_list:
+                return "DDPM"
+            ds = ds_list[0]
+            fam = getattr(ds, "transport_family", None)
+            if fam is None:
+                from genedynamics.core.constraints.core.types import ScheduleState
+
+                params = ds.diffusion_params(ScheduleState(k=0, K=1)) or {}
+                fam = params.get("transport_family", "DDPM")
+            return str(fam).upper()
+        except Exception:
+            return "DDPM"
 
     def _draw_unit_noise(self, key, shape, *, state=None):
         """Unit-variance noise. Routes to ``self.noise_sampler`` if set."""
@@ -266,16 +316,55 @@ class MBDBackendJax:
                 weights = jax.nn.softmax(logp0)
                 Ybar_weighted = jnp.einsum("n,nij->ij", weights, Y0s)
 
-                score = (-Yi + jnp.sqrt(alphas_bar[idx]) * Ybar_weighted) / (1.0 - alphas_bar[idx])
-                Yim1 = (Yi + (1.0 - alphas_bar[idx]) * score) / jnp.sqrt(alphas[idx])
-                Ybar_next = Yim1 / jnp.sqrt(alphas_bar[idx - 1])
-
-                # Add extra noise for diversity (decays over diffusion steps, aligned with ebmbd)
+                # Per-step annealed diversity sigma (decays over diffusion
+                # steps, aligned with ebmbd) and its unit noise. Drawn here so
+                # DDIM/FM can consume them as the reverse-noise (sigma, z) kick.
+                # The ``state=`` arg is unused by the default normal path, so
+                # this is byte-identical to drawing it after ``Ybar_next``.
                 extra_sigma = extra_sigmas_by_idx[idx]
                 noise_extra = self._draw_unit_noise(
-                    extra_key, (self.horizon, self.act_dim), state=Ybar_next,
+                    extra_key, (self.horizon, self.act_dim), state=Ybar_curr,
                 )
-                Ybar_next = Ybar_next + extra_sigma * noise_extra
+
+                if self.transport is None:
+                    # VERBATIM default DDPM score-form update (byte-identical
+                    # to pre-transport code). DO NOT refactor these lines.
+                    score = (-Yi + jnp.sqrt(alphas_bar[idx]) * Ybar_weighted) / (1.0 - alphas_bar[idx])
+                    Yim1 = (Yi + (1.0 - alphas_bar[idx]) * score) / jnp.sqrt(alphas[idx])
+                    Ybar_next = Yim1 / jnp.sqrt(alphas_bar[idx - 1])
+                    # DDPM diversity term composes on top, unchanged.
+                    Ybar_next = Ybar_next + extra_sigma * noise_extra
+                else:
+                    # Swappable reverse transport (static Python branch, not a
+                    # traced lax.cond). eps_hat_k materialised for DDIM/FM.
+                    abar_k = alphas_bar[idx]
+                    eps_k = (Yi - jnp.sqrt(abar_k) * Ybar_weighted) / jnp.sqrt(
+                        jnp.maximum(1.0 - abar_k, 1e-8)
+                    )
+                    consumes = getattr(self.transport, "consumes_diversity_noise", False)
+                    # DDIM/FM apply the (sigma * z) kick inside step(); DDPM
+                    # ignores sigma/z and gets the diversity term added after.
+                    step_sigma = extra_sigma if consumes else 0.0
+                    step_z = noise_extra if consumes else None
+                    Ybar_next = self.transport.step(
+                        tau_k=Yi,
+                        tau1_k=Ybar_weighted,
+                        eps_k=eps_k,
+                        score_g=None,
+                        sched={
+                            "abar_k": abar_k,
+                            "alpha_k": alphas[idx],
+                            "abar_km1": alphas_bar[idx - 1],
+                        },
+                        sigma=step_sigma,
+                        z=step_z,
+                    )
+                    if not consumes:
+                        # DDPMTransport path: identical to the inline default,
+                        # so the diversity term is added the same way (keeps the
+                        # transport=DDPMTransport() == None baseline byte-identical).
+                        Ybar_next = Ybar_next + extra_sigma * noise_extra
+
                 Ybar_next = jnp.clip(Ybar_next, -self.action_limit, self.action_limit)
 
                 return (rng_curr, Ybar_next), (jnp.mean(rews_mean), Ybar_next, Y0s)

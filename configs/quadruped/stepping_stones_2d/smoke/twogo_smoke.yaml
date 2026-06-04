@@ -98,7 +98,7 @@ backend: jax
 device: cuda
 
 metrics: [stepping_metrics]
-visualizations: [stepping_trajectory, stepping_modes, cost, adaptive, diffusion, gate_dynamics]
+visualizations: [stepping_trajectory, stepping_modes, cost, adaptive, diffusion]
 
 scheduler_config:
   type: composite

@@ -44,7 +44,7 @@ Usage
 
     # Pick a different plan file:
     python scripts/tasks/robot/humanoid/sport_mode_corridor.py \\
-        --plan results/humanoid/corridor_2d/plan/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json
+        --plan results/humanoid/corridor_2d/main/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json
 
     # Save a plot:
     python scripts/tasks/robot/humanoid/sport_mode_corridor.py --plot
@@ -79,18 +79,18 @@ if str(_ROOT) not in sys.path:
 
 
 DEFAULT_PLAN = (
-    "results/humanoid/corridor_2d/plan/twogo_long/level_1/seed_0/"
+    "results/humanoid/corridor_2d/main/twogo_long/level_1/seed_0/"
     "trajectory/trajectory.json"
 )
 
 
 # Convenience aliases so callers / batch drivers can pass a short name.
 PLAN_ALIASES = {
-    "twogo_long":   "results/humanoid/corridor_2d/plan/twogo_long/level_1/seed_0/trajectory/trajectory.json",
-    "twogo_zone_a": "results/humanoid/corridor_2d/plan/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json",
-    "twogo_zone_b": "results/humanoid/corridor_2d/plan/twogo_zone_b/level_1/seed_0/trajectory/trajectory.json",
-    "twogo_zone_c": "results/humanoid/corridor_2d/plan/twogo_zone_c/level_1/seed_0/trajectory/trajectory.json",
-    "twogo_zone_d": "results/humanoid/corridor_2d/plan/twogo_zone_d/level_1/seed_0/trajectory/trajectory.json",
+    "twogo_long":   "results/humanoid/corridor_2d/main/twogo_long/level_1/seed_0/trajectory/trajectory.json",
+    "twogo_zone_a": "results/humanoid/corridor_2d/main/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json",
+    "twogo_zone_b": "results/humanoid/corridor_2d/main/twogo_zone_b/level_1/seed_0/trajectory/trajectory.json",
+    "twogo_zone_c": "results/humanoid/corridor_2d/main/twogo_zone_c/level_1/seed_0/trajectory/trajectory.json",
+    "twogo_zone_d": "results/humanoid/corridor_2d/main/twogo_zone_d/level_1/seed_0/trajectory/trajectory.json",
 }
 
 
@@ -241,6 +241,9 @@ class DiagnoseResult:
     pelvis_z_max: float
     pelvis_xy: np.ndarray  # (n, 2)
     plan_xy: np.ndarray  # (n, 2)
+    # Full executed qpos per step (n, nq_full); [:, 3:7] is the base quaternion
+    # (w, x, y, z) -> the faithful executed base yaw for body-SDF evaluation.
+    qpos: np.ndarray
     intent_lin_vel: np.ndarray  # (n, 2)
     intent_yaw_rate: np.ndarray  # (n,)
     rate_overruns: int
@@ -249,6 +252,12 @@ class DiagnoseResult:
     # Commanded actuated-joint position vector (per-step, what the controller asked).
     cmd_joint_pos: np.ndarray  # (n, num_actuated)
     actuated_joint_names: tuple  # length num_actuated
+    # A-posteriori safety certificate (Step 4): executed minimum body-SDF
+    # clearance min_t g(x_t) over the rollout (elliptical torso + arm tips vs
+    # the scene obstacles/walls, at the EXECUTED base pose), and whether it
+    # certifies safety (min clearance >= 0  <=>  executed g(x) <= 0).
+    executed_min_body_sdf: float = float("nan")
+    certified_safe: bool = False
 
     def to_json(self) -> dict:
         """Compact JSON-friendly summary (no big arrays)."""
@@ -264,6 +273,8 @@ class DiagnoseResult:
             "pelvis_z_min": float(self.pelvis_z_min),
             "pelvis_z_max": float(self.pelvis_z_max),
             "rate_overruns": int(self.rate_overruns),
+            "executed_min_body_sdf": float(self.executed_min_body_sdf),
+            "certified_safe": bool(self.certified_safe),
         }
 
 
@@ -316,6 +327,14 @@ def diagnose(
     warmup_sec: float = 0.8,
     cmd_lpf_tau: float = 0.0,
     spark_pd_gains: bool = True,
+    use_governor: bool = False,
+    corridor_half_width: Optional[float] = None,
+    governor_cfg: Optional[dict] = None,
+    gov_cmd_lpf: float = 1.0,  # <1.0 => first-order LPF alpha on governor output velocity (kills cmd jerk)
+    use_body_sdf_governor: bool = False,
+    body_sdf_scene: Optional[dict] = None,
+    body_sdf_activation_band: float = 0.30,
+    body_sdf_lookahead: float = 0.30,
 ) -> DiagnoseResult:
     """Run the diagnostic and return the result struct.
 
@@ -443,6 +462,47 @@ def diagnose(
     )
     controller.reset(io)
 
+    # Optional reference governor (off by default -> existing path unchanged).
+    # Acts as a per-step admissibility / rate / posture limiter ON TOP of the
+    # xy_kp position feedback below (spark needs that feedback; the governor
+    # adds principled rate limiting, a pelvis-roll posture margin, and the
+    # m_track safety tightening). See genedynamics/deploy/followers/governor/.
+    governor = None
+    body_sdf_set = None  # set when use_body_sdf_governor (obstacle-aware safety)
+    if use_governor:
+        from genedynamics.deploy.followers.governor import (
+            ContinuousBaseGovernor,
+            CorridorAdmissibleSet,
+            GovernorConfig,
+        )
+        _gcfg = GovernorConfig(dt=1.0 / control_hz, **(governor_cfg or {}))
+        if use_body_sdf_governor:
+            # Obstacle-aware governor: build a BodySdfAdmissibleSet from the
+            # run's corridor scene (elliptical torso + arm tips, height-gated
+            # against the actual obstacles). Reuses the planner body SDF.
+            from genedynamics.deploy.followers.governor import (
+                BodyConfig,
+                BodySdfAdmissibleSet,
+            )
+            _scene = body_sdf_scene
+            if _scene is None:
+                _scene = _infer_corridor_scene_meta(plan_path) or {}
+            body_sdf_set = BodySdfAdmissibleSet.from_scene_dict(
+                _scene,
+                body=BodyConfig(),
+                activation_band=float(body_sdf_activation_band),
+                lookahead=float(body_sdf_lookahead),
+            )
+            governor = ContinuousBaseGovernor(body_sdf_set, _gcfg)
+            if not quiet:
+                n_obs = len(_scene.get("obstacles", []) or [])
+                print(f"[diagnose] body-SDF governor: {n_obs} obstacles, "
+                      f"corridor_width={_scene.get('corridor_width')}, "
+                      f"activation_band={body_sdf_activation_band}")
+        else:
+            governor = ContinuousBaseGovernor(CorridorAdmissibleSet(), _gcfg)
+        governor.reset(state)
+
     # ----- 3. Replay loop -------------------------------------------------
     from genedynamics.deploy.interfaces.messages import Intent
     from genedynamics.deploy.runtime.rate_limiter import RateLimiter
@@ -455,6 +515,7 @@ def diagnose(
     lpf_alpha = float(dt_ctrl) / (float(cmd_lpf_tau) + float(dt_ctrl)) if cmd_lpf_tau > 0 else 1.0
     vxy_ff_filt = np.zeros(2, dtype=np.float64)
     omega_ff_filt = 0.0
+    _gov_v_prev = None  # LPF state for governor output-velocity smoothing (gov_cmd_lpf)
 
     # Silent warmup. Ramps the cmd velocity from 0 to plan[0].v over
     # ``warmup_sec`` so the policy enters the gait smoothly. Earlier we tried
@@ -512,6 +573,13 @@ def diagnose(
                 f"({plan_xy_offset[0]:+.4f}, {plan_xy_offset[1]:+.4f}) m"
             )
 
+    # Hand the body-SDF governor the planner's (collision-free) lateral lane,
+    # offset-corrected to the executed world frame, so its safety half-space can
+    # steer toward the globally-consistent safe side instead of a myopic local
+    # gradient. Additive: only when the obstacle-aware governor is active.
+    if body_sdf_set is not None:
+        body_sdf_set.set_plan_lane(plan_xy_full + plan_xy_offset)
+
     rate = RateLimiter(hz=control_hz)
     n_steps = min(n_plan, int(max_steps) if max_steps else n_plan)
 
@@ -556,6 +624,59 @@ def diagnose(
         if corr_norm > xy_correction_cap:
             xy_correction = xy_correction * (xy_correction_cap / max(corr_norm, 1e-9))
         vxy_world = vxy_world_ff + xy_correction
+        if governor is not None:
+            from genedynamics.deploy.followers.governor import CorridorContext
+            _gyaw = 0.0
+            if state.qpos is not None and state.qpos.size >= 7:
+                _q = np.asarray(state.qpos[3:7], dtype=np.float64)
+                _gyaw = float(np.arctan2(
+                    2.0 * (_q[0] * _q[3] + _q[1] * _q[2]),
+                    1.0 - 2.0 * (_q[2] * _q[2] + _q[3] * _q[3]),
+                ))
+            governor.set_anchor(float(actual_xy[0]), float(actual_xy[1]), _gyaw)
+            if body_sdf_set is not None:
+                # Obstacle-aware: refresh the per-step body config from the plan
+                # frame (torso yaw + arm tuck + height) so the SDF reflects the
+                # follower's commanded posture, then govern in the world frame.
+                from genedynamics.deploy.followers.governor import (
+                    BodyConfig,
+                    BodySdfContext,
+                )
+                _body = BodyConfig(
+                    h=float(f.h),
+                    psi_torso=float(f.psi_torso),
+                    a_left=float(f.a_left),
+                    a_right=float(f.a_right),
+                )
+                _ctx = BodySdfContext(
+                    obstacles=body_sdf_set._ctx.obstacles,
+                    wall_y_min=body_sdf_set._ctx.wall_y_min,
+                    wall_y_max=body_sdf_set._ctx.wall_y_max,
+                    body=_body,
+                    plan_x=body_sdf_set._ctx.plan_x,
+                    plan_y=body_sdf_set._ctx.plan_y,
+                )
+            else:
+                _ctx = CorridorContext(
+                    center=plan_xy, tangent_yaw=float(f.psi), half_width=corridor_half_width,
+                )
+            _ref = Intent(
+                t=float(f.time_sec), base_yaw=float(f.psi), base_height=float(f.h),
+                base_lin_vel=vxy_world, base_yaw_rate=omega_ff_filt,
+                base_pos_xy=actual_xy + vxy_world / float(control_hz),
+            )
+            governor.govern(_ref, state, _ctx)
+            _gp = governor.governed_pose
+            if _gp is not None:
+                vxy_world = (_gp[:2] - actual_xy) * float(control_hz)
+                # Command smoothing: first-order LPF on the governor's output
+                # velocity to suppress the per-step jerk introduced by the
+                # intermittent body-SDF correction + measured-pose re-anchor.
+                if gov_cmd_lpf < 1.0:
+                    if _gov_v_prev is None:
+                        _gov_v_prev = vxy_world.copy()
+                    vxy_world = gov_cmd_lpf * vxy_world + (1.0 - gov_cmd_lpf) * _gov_v_prev
+                    _gov_v_prev = vxy_world.copy()
         if cap_vx is not None:
             speed = float(np.linalg.norm(vxy_world))
             if speed > cap_vx:
@@ -645,6 +766,50 @@ def diagnose(
     laterals = _lateral_offsets(pelvis_xy_log, plan_xy_full)
     fell = bool(pelvis_z_log.min() < fall_threshold_m) if n_steps > 0 else True
 
+    # ----- 4b. A-posteriori safety certificate (Step 4) -------------------
+    # Evaluate the executed minimum body-SDF clearance g(x) over the rollout,
+    # using the EXECUTED base pose (qpos) + per-step commanded posture
+    # (plan_arm_torso, executed pelvis height). This is the operative safety
+    # guarantee — certified iff min_t g(x_t) >= 0 (body never penetrates an
+    # obstacle/wall). Computed independently of the governor so the baseline
+    # and the governed run are certified on the same footing. Best-effort:
+    # a missing scene / import never breaks the rollout.
+    executed_body_sdf = np.full(max(n_steps, 1), np.nan, dtype=np.float64)
+    executed_min_body_sdf = float("nan")
+    certified_safe = False
+    try:
+        from genedynamics.deploy.followers.governor import (  # noqa: PLC0415
+            BodyConfig as _CertBodyConfig,
+            BodySdfAdmissibleSet as _CertBodySdfSet,
+        )
+        from genedynamics.deploy.followers.governor.reference_selector import (  # noqa: PLC0415
+            certify_safety as _certify_safety,
+        )
+        _cert_scene = body_sdf_scene if body_sdf_scene is not None else (_infer_corridor_scene_meta(plan_path) or {})
+        _has_scene = bool(_cert_scene.get("obstacles")) or (_cert_scene.get("corridor_width") is not None)
+        if n_steps > 0 and _has_scene:
+            _cert_set = _CertBodySdfSet.from_scene_dict(_cert_scene, body=_CertBodyConfig())
+            _cert_ctx = _cert_set._ctx
+            for _i in range(n_steps):
+                _x = float(qpos_log[_i, 0])
+                _y = float(qpos_log[_i, 1])
+                _q = qpos_log[_i, 3:7]
+                _yaw = float(np.arctan2(
+                    2.0 * (_q[0] * _q[3] + _q[1] * _q[2]),
+                    1.0 - 2.0 * (_q[2] * _q[2] + _q[3] * _q[3]),
+                ))
+                _aL, _aR, _pL, _pR, _psiT = plan_arm_torso_log[_i]
+                _cert_ctx.body = _CertBodyConfig(
+                    h=float(pelvis_z_log[_i]), psi_torso=float(_psiT),
+                    a_left=float(_aL), a_right=float(_aR),
+                )
+                executed_body_sdf[_i] = _cert_set.body_min_sdf(_x, _y, _yaw, _cert_ctx)
+            executed_min_body_sdf = float(np.nanmin(executed_body_sdf[:n_steps]))
+            certified_safe = bool(_certify_safety(executed_min_body_sdf))
+    except Exception as _cert_exc:  # noqa: BLE001 — certificate is best-effort
+        if not quiet:
+            print(f"[diagnose] body-SDF certificate unavailable: {_cert_exc}")
+
     result = DiagnoseResult(
         plan_path=str(plan_path),
         n_steps=n_steps,
@@ -660,12 +825,15 @@ def diagnose(
         pelvis_z_max=float(pelvis_z_log.max()) if n_steps else float("nan"),
         pelvis_xy=pelvis_xy_log,
         plan_xy=plan_xy_actual,
+        qpos=qpos_log,
         intent_lin_vel=intent_lin_vel_log,
         intent_yaw_rate=intent_yaw_rate_log,
         rate_overruns=int(rate.stats.overruns),
         plan_arm_torso=plan_arm_torso_log,
         cmd_joint_pos=cmd_joint_pos_log,
         actuated_joint_names=tuple(io.spec.actuated_joints),
+        executed_min_body_sdf=executed_min_body_sdf,
+        certified_safe=certified_safe,
     )
 
     if out_dir is not None:
@@ -684,6 +852,7 @@ def diagnose(
             plan_arm_torso=plan_arm_torso_log,
             cmd_joint_pos=cmd_joint_pos_log,
             actuated_joint_names=np.asarray(result.actuated_joint_names, dtype=object),
+            executed_body_sdf=executed_body_sdf[:n_steps],
         )
         (out_dir / "sport_mode.json").write_text(
             json.dumps(result.to_json(), indent=2)
@@ -728,6 +897,9 @@ def print_report(result: DiagnoseResult) -> None:
     fall = "YES — robot fell over" if result.fell_over else "no"
     print(f"  Fell over:              {fall}")
     print(f"  Pelvis z range:         [{result.pelvis_z_min:.3f}, {result.pelvis_z_max:.3f}] m")
+    if not np.isnan(result.executed_min_body_sdf):
+        _cert = "CERTIFIED  g(x)<=0" if result.certified_safe else "VIOLATED — body penetrates"
+        print(f"  Exec min body-SDF:      {result.executed_min_body_sdf:+.3f} m  →  {_cert}")
     print(f"  Endpoint distance:      {result.endpoint_distance_m:.3f} m")
     print(f"  Mean lateral offset:    {result.mean_lateral_offset_m:.3f} m")
     print(f"  Max  lateral offset:    {result.max_lateral_offset_m:.3f} m")

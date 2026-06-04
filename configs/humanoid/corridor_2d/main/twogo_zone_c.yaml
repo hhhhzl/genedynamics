@@ -7,6 +7,7 @@ env_params:
   dt: 0.25
   horizon: 36
   scene_preset: zone_c
+  goal_weight: 5.0
   # Capped to match SparkRL deploy policy (cmd_clip = ±0.3 m/s).
   vx_max: 0.3
   vx_min: -0.3
@@ -21,6 +22,13 @@ env_params:
 method: 2go
 method_params:
   show_tqdm: true
+  twogo_goal_decel_dist: 1.0
+  # Adaptive transport family rho_k (per-step DDPM/DDIM/FM from CVaR risk + Pi_multi,
+  # separate from the sigma_eff noise gate) + hard goal-stop (clamp cumulative forward
+  # travel at the goal so route-committed modes stop instead of overshooting).
+  # Together: local SSR 5/8 -> 8/8 (viol 0).
+  twogo_transport_schedule: adaptive
+  twogo_goal_hardstop: true
   action_extra_sigma: 0.15
   max_constraints_per_point: 8
   constraint_margin: 0.01
@@ -91,7 +99,22 @@ backend: jax
 device: cpu
 
 metrics: [corridor_metrics]
-visualizations: [corridor_trajectory, cost, adaptive, diffusion, gate_dynamics]
+visualizations: [corridor_trajectory, cost, adaptive, diffusion]
+
+# Publication-style top-down planner figure (matplotlib_top backend).
+visualization_config:
+  corridor_trajectory:
+    renderer: matplotlib_top
+    body_shape: capsule
+    arm_style: articulated
+    ghost_color: time
+    n_ghosts: 9
+    highlight: narrowest
+    axis_fontsize: 22
+    tick_fontsize: 16
+    show_title: false
+    show_legend: false
+    show_obstacle_labels: false
 
 scheduler_config:
   type: composite

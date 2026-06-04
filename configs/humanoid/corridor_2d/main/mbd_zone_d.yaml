@@ -41,6 +41,21 @@ device: cpu
 metrics: [corridor_metrics]
 visualizations: [corridor_trajectory, cost, diffusion]
 
+# Publication-style top-down planner figure (matplotlib_top backend).
+visualization_config:
+  corridor_trajectory:
+    renderer: matplotlib_top
+    body_shape: capsule
+    arm_style: articulated
+    ghost_color: time
+    n_ghosts: 9
+    highlight: narrowest
+    axis_fontsize: 22
+    tick_fontsize: 16
+    show_title: false
+    show_legend: false
+    show_obstacle_labels: false
+
 scheduler_config:
   type: composite
   diffusion_schedulers:

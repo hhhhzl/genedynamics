@@ -436,6 +436,7 @@ def create_scheduler_from_config(
                     beta0=ds_config.get('beta0'),
                     betaT=ds_config.get('betaT'),
                     Ndiffuse=ds_config.get('Ndiffuse'),
+                    transport_family=ds_config.get('transport_family', 'DDPM'),
                     backend=backend_name,
                 )
                 diffusion_schedulers.append(scheduler)

@@ -36,6 +36,7 @@ class FixedDiffusionSchedulerNumpy(FixedDiffusionScheduler):
         params = {
             "M_k": self.M_k,
             "T_k": self.T_k,
+            "transport_family": getattr(self, "transport_family", "DDPM"),
             **self.extra,
         }
         if self.s_k is not None:

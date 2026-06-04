@@ -295,23 +295,26 @@ class CorridorScene:
 
     @classmethod
     def zone_c(cls) -> "CorridorScene":
-        """Zone C only: taper → 1m squeeze → taper. Gap=0.60m at narrowest."""
+        """Zone C only: 1/4-circle taper → 1m squeeze → 1/4-circle taper.
+
+        Gap=0.60m at narrowest. Entry/exit tapers are smooth quarter circles
+        (matching the ``medium`` preset's squeeze ends) instead of stacked
+        boxes, so the rounded approach is both rendered and planned-against
+        faithfully.
+        """
         hw = 0.80
         squeeze_inner = 0.30  # ±0.30 from center → 0.60m gap
+        qr = hw - squeeze_inner  # 0.50m quarter-circle radius (wall → squeeze)
         obs = [
             # Main squeeze section (1.0m long in x)
             CorridorObstacle(1.5, 2.5, squeeze_inner, hw, 0.0, 2.0, "squeeze_L"),
             CorridorObstacle(1.5, 2.5, -hw, -squeeze_inner, 0.0, 2.0, "squeeze_R"),
-            # Entry taper (2 slices per side)
-            CorridorObstacle(1.1, 1.3, 0.55, hw, 0.0, 2.0, "taper_L_entry1"),
-            CorridorObstacle(1.3, 1.5, squeeze_inner + 0.12, hw, 0.0, 2.0, "taper_L_entry2"),
-            CorridorObstacle(1.1, 1.3, -hw, -0.55, 0.0, 2.0, "taper_R_entry1"),
-            CorridorObstacle(1.3, 1.5, -hw, -(squeeze_inner + 0.12), 0.0, 2.0, "taper_R_entry2"),
-            # Exit taper (2 slices per side)
-            CorridorObstacle(2.5, 2.7, squeeze_inner + 0.12, hw, 0.0, 2.0, "taper_L_exit1"),
-            CorridorObstacle(2.7, 2.9, 0.55, hw, 0.0, 2.0, "taper_L_exit2"),
-            CorridorObstacle(2.5, 2.7, -hw, -(squeeze_inner + 0.12), 0.0, 2.0, "taper_R_exit1"),
-            CorridorObstacle(2.7, 2.9, -hw, -0.55, 0.0, 2.0, "taper_R_exit2"),
+            # Entry taper: quarter circles rounding the squeeze mouth.
+            CorridorObstacle.quarter_circle(1.5, hw, qr, +1.0, 0.0, 2.0, "qc_L_entry"),
+            CorridorObstacle.quarter_circle(1.5, -hw, qr, +1.0, 0.0, 2.0, "qc_R_entry"),
+            # Exit taper.
+            CorridorObstacle.quarter_circle(2.5, hw, qr, -1.0, 0.0, 2.0, "qc_L_exit"),
+            CorridorObstacle.quarter_circle(2.5, -hw, qr, -1.0, 0.0, 2.0, "qc_R_exit"),
         ]
         return cls(
             corridor_width=2 * hw, corridor_length=4.0,
@@ -534,6 +537,12 @@ class HumanoidCorridor2DEnv:
 
     # Collision safety margin
     collision_margin: float = 0.03
+    # Multiplier on the planner reward's goal-attraction term (||pos - goal||^2).
+    # The default 1.0 reproduces the verbatim reward (goal coefficient 0.2 in the
+    # JAX rollout cost). Raising it (e.g. 4-10) makes overshooting the goal costly,
+    # so multimodal candidates DECELERATE to stop at the goal instead of running
+    # past it (fixes SSR task_success failures on tight zones). Set via env_params.
+    goal_weight: float = 1.0
 
     state_dim: int = STATE_DIM
     act_dim: int = ACT_DIM
@@ -1528,6 +1537,7 @@ class HumanoidCorridor2DEnv:
 # ---------------------------------------------------------------------------
 def make_corridor_energy(env: HumanoidCorridor2DEnv) -> LegacyEnergyFunctional:
     """Build the LegacyEnergyFunctional for corridor obstacle avoidance."""
+    _goal_weight = float(getattr(env, "goal_weight", 1.0))  # goal-attraction multiplier (default 1.0 = verbatim)
     goal = np.asarray(env.target, dtype=np.float32)
     start = np.asarray(env.start, dtype=np.float32)
     corridor_length = float(env.scene.corridor_length)
@@ -1619,7 +1629,7 @@ def make_corridor_energy(env: HumanoidCorridor2DEnv) -> LegacyEnergyFunctional:
             # Goal attraction — mildly scale with corridor length.
             # Cap at 2× so 4 m zones stay at 0.2, 12 m → 0.4.
             goal_scale = jnp.clip(corridor_span / 6.0, 1.0, 2.0)
-            goal_err = 0.2 * goal_scale * jnp.sum((pos - goal_j) ** 2)
+            goal_err = _goal_weight * 0.2 * goal_scale * jnp.sum((pos - goal_j) ** 2)
 
             # Centreline preference (mild).
             center_err = 1.0 * st[_S_Y] ** 2
@@ -1681,7 +1691,7 @@ def make_corridor_energy(env: HumanoidCorridor2DEnv) -> LegacyEnergyFunctional:
         st = np.asarray(x, dtype=np.float32).ravel()[:STATE_DIM]
         act = np.asarray(u, dtype=np.float32).ravel()[:ACT_DIM]
         pos = st[:2]
-        goal_err = float(np.sum((pos - goal) ** 2))
+        goal_err = _goal_weight * float(np.sum((pos - goal) ** 2))
         center_err = 2.0 * float(st[_S_Y] ** 2)
         arm_err = float(st[_S_AL] ** 2 + st[_S_AR] ** 2)
         torso_err = 1.5 * float(st[_S_PSI_T] ** 2)

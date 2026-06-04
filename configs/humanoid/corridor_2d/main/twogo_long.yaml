@@ -91,7 +91,7 @@ backend: jax
 device: cpu
 
 metrics: [corridor_metrics]
-visualizations: [corridor_trajectory, cost, adaptive, diffusion, gate_dynamics]
+visualizations: [corridor_trajectory, cost, adaptive, diffusion]
 
 # Per-visualization renderer + style config.
 # corridor_trajectory backends:
