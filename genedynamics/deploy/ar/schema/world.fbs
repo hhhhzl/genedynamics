@@ -1,0 +1,58 @@
+// Engine-neutral world model for the multi-robot AR digital twin (P1 compat core).
+//
+// This IDL is the SINGLE source of truth shared by every renderer. Run `flatc`
+// to generate readers/writers in each language so Swift/RealityKit and Unity/C#
+// (and Python/TS) stay in lockstep:
+//
+//   flatc --python  --csharp --swift --ts -o generated/ world.fbs
+//
+// FlatBuffers is zero-copy: clients read poses straight out of the received
+// buffer with no parse/allocate step (the P2 hot path). A JSON projection of the
+// same shape is used for debug / browser / the existing scene_server.
+//
+// Conventions (frames, units, per-engine axis maps, registration, assets,
+// rev/identity semantics) are NORMATIVE in conventions.md — read it first.
+
+namespace twin;
+
+struct Vec3 { x:float; y:float; z:float; }
+struct Quat { w:float; x:float; y:float; z:float; }   // unit quaternion (w,x,y,z)
+struct Pose { p:Vec3; q:Quat; }                        // expressed in Entity.frame
+
+enum GeomKind:byte { Box = 0, Sphere, Cylinder, Capsule, Usd, Urdf, Path }
+enum EntityType:byte { Obstacle = 0, Wall, Robot, ArmLink, Goal, Path, Occluder }
+
+table Geometry {
+  kind:GeomKind = Box;
+  half_extents:Vec3;     // Box/Capsule local half-sizes (m)
+  radius:float;          // Sphere/Cylinder/Capsule
+  height:float;          // Cylinder/Capsule
+  asset_uri:string;      // Usd/Urdf: USDZ / URDF reference (cross-engine asset)
+  joints:[float];        // Urdf: joint values
+  polyline:[Vec3];       // Path: points in Entity.frame
+}
+
+table Entity {
+  id:string (key);              // STABLE across frames (identity); enables update/remove
+  type:EntityType = Obstacle;
+  frame:string;                 // frame this pose/geom lives in (default "world")
+  pose:Pose;
+  geom:Geometry;
+  color_rgba:uint = 0xFFFFFFFF; // RGBA8 packed
+  rev:uint;                     // monotonic revision when this entity last changed
+  meta:string;                  // optional JSON blob (free-form per-entity extras)
+}
+
+table WorldSnapshot {
+  schema_version:uint = 2;      // 1 = legacy corridor contract; 2 = entity model
+  site:string;                  // deployment / cell id
+  stamp_ns:ulong;               // producer wall-clock (nanoseconds)
+  frame:string;                 // root world frame name, e.g. "world"
+  tracker:string;               // localization source: vicon|optitrack|slam|vio|fiducial|...
+  units:string;                 // "m_rad"
+  is_keyframe:bool = true;      // true: full state (self-contained); false: delta
+  entities:[Entity];            // keyframe: full set; delta: only changed entities
+  removed_ids:[string];         // delta: ids removed since the client's cursor rev
+}
+
+root_type WorldSnapshot;

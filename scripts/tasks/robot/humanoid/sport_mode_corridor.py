@@ -470,12 +470,17 @@ def diagnose(
                   f"{n_overridden} leg joints (hip 100/2, knee 150/4, ankle 40/2)")
 
     # Anchor the robot to the plan's first XY so the diagnostic actually
-    # tracks rather than diverging from the moment t=0.
+    # tracks rather than diverging from the moment t=0. Sim IOs can teleport
+    # (reset_to); real hardware can't — it just reads its current (localized)
+    # pose, so the robot must be physically placed at the plan start.
     f0 = frames[0]
-    state = io.reset_to(
-        base_xyz=(f0.x, f0.y, f0.h),
-        base_quat_wxyz=(np.cos(f0.psi / 2), 0.0, 0.0, np.sin(f0.psi / 2)),
-    )
+    if hasattr(io, "reset_to"):
+        state = io.reset_to(
+            base_xyz=(f0.x, f0.y, f0.h),
+            base_quat_wxyz=(np.cos(f0.psi / 2), 0.0, 0.0, np.sin(f0.psi / 2)),
+        )
+    else:
+        state = io.reset()
     controller.reset(io)
 
     # Optional reference governor (off by default -> existing path unchanged).
@@ -603,9 +608,15 @@ def diagnose(
     pelvis_z_log = np.zeros(n_steps, dtype=np.float64)
     intent_lin_vel_log = np.zeros((n_steps, 2), dtype=np.float64)
     intent_yaw_rate_log = np.zeros(n_steps, dtype=np.float64)
-    # Full state history for the MuJoCo renderer (needs nq + nv per step).
-    nq_full = int(io.model.nq)
-    nv_full = int(io.model.nv)
+    # Full executed state history (qpos_log feeds the body-SDF certificate +
+    # the MuJoCo renderer). Sim exposes io.model.nq/nv; real hardware has no
+    # MuJoCo model, so size from the spec: qpos = 7 (floating base) + actuated.
+    if hasattr(io, "model"):
+        nq_full = int(io.model.nq)
+        nv_full = int(io.model.nv)
+    else:
+        nq_full = 7 + int(io.spec.num_actuated)
+        nv_full = 6 + int(io.spec.num_actuated)
     nu_full = int(io.spec.num_actuated)
     qpos_log = np.zeros((n_steps, nq_full), dtype=np.float64)
     qvel_log = np.zeros((n_steps, nv_full), dtype=np.float64)

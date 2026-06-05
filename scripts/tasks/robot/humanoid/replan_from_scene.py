@@ -14,14 +14,14 @@ framework is special-cased.
 
 Run (needs jax + the experiment deps — use Docker)::
 
-    python scripts/ar/replan_from_scene.py --preset zone_d \
+    python scripts/tasks/robot/humanoid/replan_from_scene.py --preset zone_d \
         --out results/ar/replan_zone_d --collision-margin 0.18
 
     # from a saved contract / scene spec:
-    python scripts/ar/replan_from_scene.py --scene-file my_scene.json --out results/ar/run1
+    python scripts/tasks/robot/humanoid/replan_from_scene.py --scene-file my_scene.json --out results/ar/run1
 
     # quick wiring check (reduced modes / diffusion steps):
-    python scripts/ar/replan_from_scene.py --preset zone_d --out results/ar/fast --fast
+    python scripts/tasks/robot/humanoid/replan_from_scene.py --preset zone_d --out results/ar/fast --fast
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = Path(__file__).resolve().parents[4]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 

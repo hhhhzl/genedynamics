@@ -416,7 +416,7 @@ class CorridorScene:
 # (which builds its ObstacleManager from ``HumanoidCorridor2DEnv(scene_preset=...)``).
 # Used by AR replanning to plan 2GO against measured / virtual (AR) obstacles
 # without authoring a new hard-coded preset. See genedynamics/deploy/ar/ and
-# scripts/ar/replan_from_scene.py.
+# scripts/tasks/robot/humanoid/replan_from_scene.py.
 _RUNTIME_SCENE_PRESETS: Dict[str, CorridorScene] = {}
 
 

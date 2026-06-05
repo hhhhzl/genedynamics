@@ -10,7 +10,7 @@ compares per-mode planned body-SDF clearance to a native reference plan
 Run in Docker::
 
     docker run --rm -v "$PWD:/work" -w /work genedynamics/dev-cpu:torch \
-        python scripts/ar/validate_planning_margin.py --margin 0.20
+        python scripts/tasks/robot/humanoid/validate_planning_margin.py --margin 0.20
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = Path(__file__).resolve().parents[4]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
@@ -47,7 +47,7 @@ def main(argv=None) -> int:
     p.add_argument("--out", default="results/ar/margin_val")
     args = p.parse_args(argv)
 
-    from scripts.ar.replan_from_scene import replan_from_scene
+    from scripts.tasks.robot.humanoid.replan_from_scene import replan_from_scene
 
     scene = corridor_scene_to_dict(SceneSource.from_preset("zone_d").scene, scene_preset="ar_runtime")
 

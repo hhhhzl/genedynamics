@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Corridor Twin · WebXR</title>
+<style>body{margin:0;font-family:ui-monospace,monospace}#hud{position:fixed;top:8px;left:8px;color:#0f0;
+background:#0008;padding:6px 8px;font-size:12px;z-index:10;white-space:pre}</style>
+</head>
+<body>
+<div id="hud">connecting…</div>
+<!-- Zero-install AR client: WebSocket WorldSnapshot → three.js, with interpolation +
+     occluder holdout. WebXR immersive-ar works on Android Chrome (NOT iOS Safari;
+     visionOS Safari partial). Serve over HTTPS (WebXR needs a secure context).
+     Conventions §2: three.js is RH y-up −z fwd → world→three = (-y, z, -x). -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { ARButton } from 'three/addons/webxr/ARButton.js';
+
+// ---- config -------------------------------------------------------------
+const WS_URL = `ws://${location.hostname}:8766/`;   // world_ws (same host by default)
+const INTERP_DELAY = 0.08;                           // seconds behind newest sample
+const hud = document.getElementById('hud');
+
+// ---- three.js scene -----------------------------------------------------
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 50);
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(devicePixelRatio); renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true; document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+
+// hit-test reticle + a worldOrigin group (obstacles are its children)
+const worldOrigin = new THREE.Group(); scene.add(worldOrigin);
+const reticle = new THREE.Mesh(new THREE.RingGeometry(0.07,0.09,32).rotateX(-Math.PI/2),
+  new THREE.MeshBasicMaterial({color:0x00ff00})); reticle.visible=false; scene.add(reticle);
+
+document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures:['hit-test'] }));
+
+// Tap to place the world origin (simple registration). For Vicon-accurate
+// registration, replace this with a fiducial/image-anchor library and set
+// worldOrigin from T_world_fiducial (see instruction.md A6).
+const controller = renderer.xr.getController(0);
+controller.addEventListener('select', () => {
+  if (reticle.visible) { worldOrigin.position.setFromMatrixPosition(reticle.matrix);
+    worldOrigin.quaternion.setFromRotationMatrix(reticle.matrix); }
+});
+scene.add(controller);
+
+// ---- world→three helpers (conventions §2: (-y, z, -x)) ------------------
+const v3 = (w)=> new THREE.Vector3(-w.y, w.z, -w.x);
+function worldQuatToThree(q){ // q world (THREE.Quaternion holding world comps)
+  const fx=v3(new THREE.Vector3(1,0,0).applyQuaternion(q));
+  const up=v3(new THREE.Vector3(0,0,1).applyQuaternion(q));
+  const z=fx.clone().multiplyScalar(-1).normalize();
+  const x=new THREE.Vector3().crossVectors(up,z).normalize();
+  const y=new THREE.Vector3().crossVectors(z,x);
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x,y,z));
+}
+
+// ---- entity state + interpolation --------------------------------------
+const states = new Map();   // id -> {type,geom,color, buf:[{t,p,q}], mesh, dirty}
+function pushPose(st,t,p,q){ const b=st.buf; if(b.length&&t<=b[b.length-1].t) return;
+  b.push({t,p,q}); if(b.length>8) b.shift(); }
+function sample(st,t){ const b=st.buf; if(!b.length) return null;
+  if(b.length===1||t<=b[0].t) return [b[0].p,b[0].q];
+  const last=b[b.length-1]; if(t>=last.t) return [last.p,last.q];
+  for(let i=0;i<b.length-1;i++){const a=b[i],c=b[i+1];
+    if(t>=a.t&&t<=c.t){const u=(t-a.t)/Math.max(1e-6,c.t-a.t);
+      return [a.p.clone().lerp(c.p,u), a.q.clone().slerp(c.q,u)];}}
+  return [last.p,last.q]; }
+
+function rgba(c){ return new THREE.Color(((c>>>24)&255)/255,((c>>>16)&255)/255,((c>>>8)&255)/255); }
+function makeMesh(st){
+  const g=st.geom||{}; let geo;
+  if(g.kind==='sphere') geo=new THREE.SphereGeometry(g.radius||0.05,24,16);
+  else if(g.kind==='cylinder'||g.kind==='capsule') geo=new THREE.CylinderGeometry(g.radius||0.05,g.radius||0.05,g.height||0.1,24);
+  else { const h=g.half_extents||[0.05,0.05,0.05]; geo=new THREE.BoxGeometry(2*h[1],2*h[2],2*h[0]); } // world→three sizes
+  const mat = st.type==='occluder'
+    ? new THREE.MeshBasicMaterial({colorWrite:false}) // holdout: writes depth, no color
+    : new THREE.MeshStandardMaterial({color:rgba(st.color), transparent:(st.color&255)<255, opacity:(st.color&255)/255});
+  const m=new THREE.Mesh(geo,mat); if(st.type==='occluder') m.renderOrder=-1;
+  worldOrigin.add(m); return m;
+}
+
+// ---- websocket: keyframe / delta ---------------------------------------
+function applyEntity(e){
+  let st=states.get(e.id); if(!st){st={id:e.id,buf:[],dirty:true};states.set(e.id,st);}
+  if(e.geom && (!st.geom||st.geom.kind!==e.geom.kind)) st.dirty=true;
+  st.type=e.type; st.color=(e.color_rgba>>>0); if(e.geom) st.geom=e.geom;
+  const p=new THREE.Vector3(e.pose.p[0],e.pose.p[1],e.pose.p[2]);
+  const q=new THREE.Quaternion(e.pose.q[1],e.pose.q[2],e.pose.q[3],e.pose.q[0]); // (x,y,z,w) from (w,x,y,z)
+  pushPose(st, performance.now()/1000, p, q);
+}
+function removeEntity(id){ const st=states.get(id); if(st&&st.mesh) worldOrigin.remove(st.mesh); states.delete(id); }
+function connect(){
+  const ws=new WebSocket(WS_URL);
+  ws.onmessage=ev=>{ const m=JSON.parse(ev.data);
+    if(m.is_keyframe){ const keep=new Set(m.entities.map(e=>e.id)); m.entities.forEach(applyEntity);
+      [...states.keys()].forEach(id=>{ if(!keep.has(id)) removeEntity(id); }); }
+    else { m.entities.forEach(applyEntity); (m.removed_ids||[]).forEach(removeEntity); }
+  };
+  ws.onclose=()=>setTimeout(connect,1000);
+}
+connect();
+
+// ---- render loop (interpolated) ----------------------------------------
+let hitTestSource=null, localSpace=null;
+renderer.xr.addEventListener('sessionstart', async ()=>{
+  const s=renderer.xr.getSession();
+  const viewer=await s.requestReferenceSpace('viewer');
+  hitTestSource=await s.requestHitTestSource({space:viewer});
+  localSpace=await s.requestReferenceSpace('local');
+});
+renderer.setAnimationLoop((_,frame)=>{
+  if(frame&&hitTestSource){ const hits=frame.getHitTestResults(hitTestSource);
+    if(hits.length){ const pose=hits[0].getPose(localSpace); reticle.visible=true;
+      reticle.matrix.fromArray(pose.transform.matrix);} else reticle.visible=false; }
+  const t=performance.now()/1000 - INTERP_DELAY;
+  for(const st of states.values()){ const s=sample(st,t); if(!s) continue;
+    if(!st.mesh||st.dirty){ if(st.mesh) worldOrigin.remove(st.mesh); st.mesh=makeMesh(st); st.dirty=false; }
+    st.mesh.position.copy(v3(s[0])); st.mesh.quaternion.copy(worldQuatToThree(s[1])); }
+  hud.textContent=`entities: ${states.size}  ${renderer.xr.isPresenting?'AR':'tap "Start AR"'}`;
+  renderer.render(scene,camera);
+});
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+</script>
+</body>
+</html>

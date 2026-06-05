@@ -1,8 +1,23 @@
 # AR clients — corridor shared digital twin
 
 Renders the **same** obstacle scene the robot avoids, as holograms registered
-to the **Vicon world frame**, on Vision Pro and phones/tablets from one Unity
-codebase (AR Foundation → ARKit / ARCore / visionOS PolySpatial).
+to the shared world frame, on Vision Pro and phones/tablets.
+
+> **Two client generations — use the entity-model one for new work:**
+> - **Entity model (P1/P2, generic, multi-robot)** — consumes the `WorldSnapshot`
+>   contract (`../schema/world.fbs`) from `transport/world_ws.py` with **delta/
+>   keyframe + client-side interpolation**:
+>   - Unity: `unity/Scripts/WorldEntities.cs` + `WorldClient.cs` + `WorldRenderer.cs`
+>     (interpolation, occluder holdout, world→Unity `(-y,z,x)`).
+>   - Swift/RealityKit: `swift/` package (`WorldClient` + `EntityState` + `WorldRenderer`,
+>     `OcclusionMaterial`, world→RK `(-y,z,-x)`).
+> - **Legacy corridor contract (M1)** — `unity/Scripts/{SceneClient,SceneContract,
+>   CorridorRenderer}.cs` consume `scene_server`'s corridor-only JSON. Kept for the
+>   M1 debug path; superseded by the entity model above.
+> Both share `FrameRegistration.cs` (world-origin anchor + axis map).
+
+The legacy Unity path (one AR Foundation codebase → ARKit / ARCore / visionOS
+PolySpatial):
 
 ```
 scene_server (ws://host:8765/ws)  ──JSON contract──►  SceneClient.cs
