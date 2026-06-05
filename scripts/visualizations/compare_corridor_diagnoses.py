@@ -3,8 +3,8 @@
 
 Loads the .npz files produced by:
 
-* ``scripts/tasks/robot/diagnose_sport_mode_corridor.py`` (spark RL)
-* ``scripts/tasks/robot/diagnose_wbc_corridor.py``        (WBC)
+* ``scripts/tasks/robot/humanoid/sport_mode_corridor.py`` (spark RL)
+* ``scripts/tasks/robot/humanoid/wbc_corridor.py``        (WBC)
 
 …and produces a single matplotlib figure: pelvis xy traces overlaid on
 the plan, plus pelvis-z time-series so the fall events are visible.
@@ -46,8 +46,8 @@ def main() -> int:
         print("matplotlib not installed; cannot plot")
         return 1
 
-    spark = _load(RESULTS / "diagnose_spark_rl" / "diagnose_sport_mode.npz")
-    wbc = _load(RESULTS / "diagnose_wbc" / "diagnose_wbc.npz")
+    spark = _load(RESULTS / "spark_rl" / "sport_mode.npz")
+    wbc = _load(RESULTS / "wbc" / "wbc.npz")
 
     if not any([spark, wbc]):
         print("[compare] no diagnose artifacts found — run the diagnose scripts first")

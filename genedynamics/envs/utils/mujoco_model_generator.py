@@ -783,14 +783,18 @@ def _build_corridor_scene_overlay_xml(corridor_scene: Optional[Dict[str, Any]]) 
     wall_y_max = float(corridor_scene.get("wall_y_max", half_w))
     wall_thickness = 0.025
     wall_height = 1.10
-    geoms = [
-        f'      <geom name="corridor_floor_patch" type="box" pos="{half_l:.6f} 0.000000 0.000500" '
-        f'size="{half_l:.6f} {half_w:.6f} 0.000500" rgba="0.14 0.16 0.19 0.35" contype="0" conaffinity="0"/>',
+    geoms = []
+    if not corridor_scene.get("hide_floor_patch", False):
+        geoms.append(
+            f'      <geom name="corridor_floor_patch" type="box" pos="{half_l:.6f} 0.000000 0.000500" '
+            f'size="{half_l:.6f} {half_w:.6f} 0.000500" rgba="0.14 0.16 0.19 0.35" contype="0" conaffinity="0"/>'
+        )
+    geoms.extend([
         f'      <geom name="corridor_wall_left" type="box" pos="{half_l:.6f} {wall_y_max + 0.5 * wall_thickness:.6f} {0.5 * wall_height:.6f}" '
         f'size="{half_l:.6f} {0.5 * wall_thickness:.6f} {0.5 * wall_height:.6f}" rgba="0.72 0.75 0.80 0.28" contype="0" conaffinity="0"/>',
         f'      <geom name="corridor_wall_right" type="box" pos="{half_l:.6f} {wall_y_min - 0.5 * wall_thickness:.6f} {0.5 * wall_height:.6f}" '
         f'size="{half_l:.6f} {0.5 * wall_thickness:.6f} {0.5 * wall_height:.6f}" rgba="0.72 0.75 0.80 0.28" contype="0" conaffinity="0"/>',
-    ]
+    ])
 
     obstacles = corridor_scene.get("obstacles", [])
     for i, obs in enumerate(obstacles):

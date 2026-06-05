@@ -78,6 +78,23 @@ class TwoGOSolver(CFSMBDSolver):
                 twogo_probe_b=kwargs.get("twogo_probe_b", None),
                 twogo_probe_m_cap=kwargs.get("twogo_probe_m_cap", None),
                 twogo_overlay=kwargs.get("twogo_overlay", None),
+                # Goal-deceleration distance (m); >0 ramps forward-push vx to 0 near goal.
+                twogo_goal_decel_dist=float(kwargs.get("twogo_goal_decel_dist", 0.0)),
+                # Goal push-back gain; >0 lets the decel ramp go negative to pull an
+                # overshooting mode back to the goal (default 0 => verbatim decel).
+                twogo_goal_pushback=float(kwargs.get("twogo_goal_pushback", 0.0)),
+                # Hard goal-stop; True => clamp forward travel at goal (no overshoot).
+                twogo_goal_hardstop=bool(kwargs.get("twogo_goal_hardstop", False)),
+                # Hard goal-stop budget margin (m); shrinks the budget to offset the
+                # body-frame ∫vx vs world-x gap for heading-rotating modes.
+                twogo_goal_hardstop_margin=float(kwargs.get("twogo_goal_hardstop_margin", 0.0)),
+                # rho_k transport-family schedule (the unified-update transport knob,
+                # SEPARATE from the sigma_eff noise gate). None/"ddpm" => constant DDPM
+                # (byte-identical MBD special case). "adaptive" => per-step signal-driven
+                # (CVaR risk + Pi_multi). "progress"/"ddim"/"fm" also available.
+                twogo_transport_schedule=kwargs.get("twogo_transport_schedule", None),
+                twogo_transport_ddim_frac=float(kwargs.get("twogo_transport_ddim_frac", 1.0 / 3.0)),
+                twogo_transport_fm_frac=float(kwargs.get("twogo_transport_fm_frac", 2.0 / 3.0)),
             )
         )
 

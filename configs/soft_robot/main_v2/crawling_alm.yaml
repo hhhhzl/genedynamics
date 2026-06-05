@@ -1,0 +1,152 @@
+# MRMFMBD + composite(diffusion + alm_adaptive) on crawling_ground.
+#
+# This config is the soft_robot analogue of d3il_avoiding/mdcoas.yaml:
+# the diffusion schedule is identical to configs/soft_robot/main/crawling_ground.yaml,
+# but the scheduler is wrapped in `composite` so the alm_adaptive ConstraintScheduler
+# can deliver the writeup §6 budget penalty
+#       w_j ∝ ... · exp(-nu_k * compute_cost_j)
+# and the writeup §7 anytime-iALM knobs (I, topK, eps, p) per step.
+#
+# The crawling task has no hard inequality constraints (g(x) <= 0), so the
+# augmented-Lagrangian half of alm_adaptive (lam, rho) stays at zero. This file
+# therefore reduces to "MRMFMBD + compute-budget tracker"; with nu_max=0 the
+# tracker is INACTIVE and the run should match crawling_ground.yaml exactly.
+# Ablations (compute_budget_B sweep, nu_max>0, inner_denoise_steps>0) live in
+# sibling configs once Phase 1 is verified.
+name: mrmfmbd_crawling_ground_alm
+output_dir: results/soft_robot/main_v2/crawling_alm
+cache_dir: results/soft_robot/main_v2/crawling_alm_cache
+
+baseline_name: mrmfmbd
+task_domain: jax_mpm
+task_id: crawling_ground
+seeds: [0]
+save_gif: true
+
+evaluator_runtime:
+  max_workers: 1
+  reward_shaping_weight: 100.0
+  n_grid: 64
+  voxel_dims: [4, 3, 4]
+  act_strength_base: 24.0
+  scale: 50.0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 32
+      T_k: 0.5
+      Ndiffuse: 100
+      beta0: 1.0e-4
+      betaT: 2.0e-2
+  diffusion_merge_strategy: merge
+
+  # alm_adaptive in budget-tracker mode: lam/rho stay at zero (no g constraints
+  # in crawling), only nu_k (compute-budget dual) is exercised. Setting
+  # nu_max=0.0 keeps nu_k clamped to 0 → behavior identical to the no-ALM
+  # baseline. Flip nu_max>0 in the ablation config to activate the writeup §6
+  # budget penalty.
+  constraint_schedulers:
+    - type: alm_adaptive
+      margin: 0.0
+      lam0: 0.0
+      rho0: 1.0
+      nu0: 0.0
+
+      # Compute budget knobs (writeup §6: ν_k Σ q(m|z) C_ℓ).
+      # cost = a0 + aK*topK + aI*I_QP (product or linear).
+      compute_cost_mode: product
+      compute_cost_a0: 0.0
+      compute_cost_aK: 1.0
+      compute_cost_aI: 1.0
+      compute_cost_use_qp_gate: false
+      compute_budget_B: 8.0
+      compute_budget_time_profile: constant
+      compute_budget_time_amp: 0.0
+      compute_budget_time_mu: 0.5
+      compute_budget_time_sigma: 0.2
+      eta_nu: 0.05
+      nu_max: 0.0   # ← INACTIVE; bump to e.g. 5.0 in ablation to enable
+
+      # Non-monotone ALM (unused on crawling — kept so the scheduler initializes).
+      eta_lam_forget: 0.02
+      rho_min: 0.5
+      rho_tau_hi: 5.0e-4
+      rho_tau_lo: 1.0e-4
+      rho_gamma_up: 2.0
+      rho_gamma_down: 1.5
+      rho_good_steps: 5
+      gamma: 2.0
+      rho_max: 500.0
+      kappa: 0.9
+      r_tol: 5.0e-4
+
+      # v-controller (rate of constraint signal). Inert on crawling.
+      v_signal_mode: rate
+      v_star: 0.0
+      v_ema_beta: 0.3
+      v_tau_hi: 0.05
+      v_tau_lo: 0.01
+
+      # p / topK / I / eps controllers — anytime-iALM stopping knobs from
+      # writeup §7. On crawling these are passed through to the cost model
+      # but don't change rollout behavior (no QP / projection in jax_mpm).
+      eta_p: 2.0
+      eta_p_plus: 2.0
+      eta_p_minus: 0.3
+      eta_c_p: 0.2
+
+      eta_topK: 10.0
+      eta_topK_plus: 10.0
+      eta_topK_minus: 2.0
+      eta_c_topK: 1.0
+
+      eta_I: 8.0
+      eta_I_plus: 8.0
+      eta_I_minus: 2.0
+      eta_c_I: 1.0
+
+      eta_eps: 0.01
+      eta_eps_plus: 0.01
+      eta_eps_minus: 0.003
+      eta_c_eps: 0.01
+
+      p_min: 0.0
+      p_max: 1.0
+      eps_min: 1.0e-5
+      eps_max: 1.0e-2
+      I_min: 1
+      I_max: 5
+      topK_min: 1
+      topK_max: 8
+      use_stochastic_gate: true
+  constraint_merge_strategy: merge
+
+method_params:
+  backend: mbd
+  num_modes: 4
+  num_fidelity_levels: 3
+  fidelity_ladder_type: geometric
+  fidelity_step_ratio: 1.5
+  fine_fidelity_level: 2
+  reward_temperature_min: 0.05
+  tau_frac: 0.05
+  top_k_fine: 5
+  show_tqdm: true
+  morphology_symmetry: z
+  phi_dim_override: true
+  phi_lo: -0.5
+  phi_hi: 0.5
+  phi_std: 0.15
+  x_lo: 0.2
+  x_hi: 1.0
+  x_mean: 0.6
+  x_std: 0.3
+
+  # JM2D Takeaway 1 (Phase 1.3): u-step inner denoising of clean candidates.
+  # 0 = original behavior (single-shot Tweedie); >0 = u extra refinement
+  # iterations per outer diffusion step, shrinking the candidate noise each
+  # iter. JM2D Table 3 reports +50 pp safe-success on Cluttered going 0 → 10.
+  inner_denoise_steps: 0
+  inner_denoise_shrink: 0.5

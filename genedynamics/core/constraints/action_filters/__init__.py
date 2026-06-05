@@ -17,6 +17,7 @@ from .cbf_closed_form_joint_lift import ClosedFormCBFFilterJointLift
 from .cbf_qp_joint_lift import QPBasedCBFFilterJointLift
 from .cfs_qp_perstep import CFSQPPerStepFilter
 from .cfs_qp_full import CFSQPFullFilter
+from .task_specific.cbf_corridor import CorridorCBFFilter
 
 __all__ = [
     "ConstraintFilter",
@@ -27,4 +28,5 @@ __all__ = [
     "QPBasedCBFFilterJointLift",
     "CFSQPPerStepFilter",
     "CFSQPFullFilter",
+    "CorridorCBFFilter",
 ]

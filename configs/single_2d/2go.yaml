@@ -107,7 +107,7 @@ visualizations:
   - diffusion
   - cost
   - adaptive
-  - gate_dynamics
+  - 
 
 scheduler_config:
   type: composite

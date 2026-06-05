@@ -1,0 +1,152 @@
+# Phase 3: crawling on a pre-robotized mesh (writeup §3 robotization output).
+#
+# Workflow before running this config:
+#   1. Build an asset bank:
+#        python scripts/tasks/soft_robot/morphology/build_asset_bank.py \
+#            --prior random_shapes \
+#            --bank-name loco_v1 \
+#            --prompts-file scripts/tasks/soft_robot/morphology/prompts/locomotion.txt \
+#            --n-per-prompt 10 --seed 0
+#      (replace `random_shapes` with `triposg` once third_party/morphology_priors/triposg
+#       is installed; same CLI works.)
+#   2. Robotize the bank:
+#        python scripts/tasks/soft_robot/morphology/robotize_bank.py --bank-root data/asset_banks/loco_v1
+#   3. Pick any successful asset_id from data/asset_banks/loco_v1/manifest.json
+#      and put its robotized npz path in `evaluator_runtime.softbody_spec_path` below.
+#
+# The evaluator loads the SoftBodySpec at init-time and uses build_scene_from_spec
+# in place of the legacy build_scene(cfg) — so the optimizer sees a body whose
+# particle layout / actuator partition came from the generated mesh, while the
+# rest of the pipeline (controller, MBD diffusion, alm_adaptive scheduler) is
+# unchanged.
+name: mrmfmbd_crawling_from_mesh
+output_dir: results/soft_robot/main_v2/crawling_from_mesh
+cache_dir: results/soft_robot/main_v2/crawling_from_mesh_cache
+
+baseline_name: mrmfmbd
+task_domain: jax_mpm
+task_id: crawling_ground
+seeds: [0]
+save_gif: true
+
+evaluator_runtime:
+  max_workers: 1
+  reward_shaping_weight: 100.0
+  n_grid: 64
+  # voxel_dims must match the spec's; using the mesh-pipeline default (3,3,3)
+  # keeps the optimizer's morphology dimension equal to crawling_ground.yaml
+  # (z-symmetry then gives x_dim = 3*3*(3//2) — but our default vz=3 is odd
+  # so disable z-symmetry below for from-mesh runs).
+  voxel_dims: [3, 3, 3]
+  act_strength_base: 24.0
+  scale: 50.0
+  task: crawling_ground
+
+  # === Phase 3: load pre-robotized SoftBodySpec ===
+  # Set to a real path produced by scripts/tasks/soft_robot/morphology/robotize_bank.py.
+  # Until you build a bank, leave this commented out and the run falls back
+  # to default_robotize (legacy crawling_ground behavior).
+  # softbody_spec_path: data/asset_banks/loco_v1/robotized/<asset_id>.npz
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 32
+      T_k: 0.5
+      Ndiffuse: 100
+      beta0: 1.0e-4
+      betaT: 2.0e-2
+  diffusion_merge_strategy: merge
+
+  # alm_adaptive in budget-tracker mode (same as crawling_alm.yaml).
+  constraint_schedulers:
+    - type: alm_adaptive
+      margin: 0.0
+      lam0: 0.0
+      rho0: 1.0
+      nu0: 0.0
+      compute_cost_mode: product
+      compute_cost_a0: 0.0
+      compute_cost_aK: 1.0
+      compute_cost_aI: 1.0
+      compute_cost_use_qp_gate: false
+      compute_budget_B: 8.0
+      compute_budget_time_profile: constant
+      compute_budget_time_amp: 0.0
+      compute_budget_time_mu: 0.5
+      compute_budget_time_sigma: 0.2
+      eta_nu: 0.05
+      nu_max: 0.0
+      eta_lam_forget: 0.02
+      rho_min: 0.5
+      rho_tau_hi: 5.0e-4
+      rho_tau_lo: 1.0e-4
+      rho_gamma_up: 2.0
+      rho_gamma_down: 1.5
+      rho_good_steps: 5
+      gamma: 2.0
+      rho_max: 500.0
+      kappa: 0.9
+      r_tol: 5.0e-4
+      v_signal_mode: rate
+      v_star: 0.0
+      v_ema_beta: 0.3
+      v_tau_hi: 0.05
+      v_tau_lo: 0.01
+      eta_p: 2.0
+      eta_p_plus: 2.0
+      eta_p_minus: 0.3
+      eta_c_p: 0.2
+      eta_topK: 10.0
+      eta_topK_plus: 10.0
+      eta_topK_minus: 2.0
+      eta_c_topK: 1.0
+      eta_I: 8.0
+      eta_I_plus: 8.0
+      eta_I_minus: 2.0
+      eta_c_I: 1.0
+      eta_eps: 0.01
+      eta_eps_plus: 0.01
+      eta_eps_minus: 0.003
+      eta_c_eps: 0.01
+      p_min: 0.0
+      p_max: 1.0
+      eps_min: 1.0e-5
+      eps_max: 1.0e-2
+      I_min: 1
+      I_max: 5
+      topK_min: 1
+      topK_max: 8
+      use_stochastic_gate: true
+  constraint_merge_strategy: merge
+
+method_params:
+  backend: mbd
+  num_modes: 4
+  num_fidelity_levels: 3
+  fidelity_ladder_type: geometric
+  fidelity_step_ratio: 1.5
+  fine_fidelity_level: 2
+  reward_temperature_min: 0.05
+  tau_frac: 0.05
+  top_k_fine: 5
+  show_tqdm: true
+  # No z-symmetry: mesh-derived bodies are not z-symmetric in general, so
+  # mirroring half the voxels is wrong. The optimizer sees the full 27-dim
+  # morphology vector.
+  morphology_symmetry: ""
+  phi_dim_override: true
+  phi_lo: -0.5
+  phi_hi: 0.5
+  phi_std: 0.15
+  x_lo: 0.2
+  x_hi: 1.0
+  x_mean: 0.6
+  x_std: 0.3
+
+  inner_denoise_steps: 0
+  inner_denoise_shrink: 0.5
+
+  regime_posterior_mode: reward
+  risk_temperature: 1.0

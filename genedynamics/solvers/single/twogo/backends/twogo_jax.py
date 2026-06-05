@@ -74,6 +74,58 @@ class TwoGOBackendJax:
         self.twogo_probe_b = cfg.get("twogo_probe_b", None)
         self.twogo_probe_m_cap = cfg.get("twogo_probe_m_cap", None)
         self.twogo_task_dir_alpha = float(cfg.get("twogo_task_dir_alpha", 0.15))
+        # Goal-deceleration distance (m). For a low-dim (goal-point) target the task
+        # direction otherwise pushes vx=0.8*action_limit for the WHOLE horizon, so
+        # modes overshoot the goal (fail SSR task_success when horizon*vx > goal
+        # distance). When >0, the forward-push target vx ramps 0.8*limit -> 0 as the
+        # predicted x (x0 + cumsum(vx)*dt) approaches goal_x, so modes decelerate to
+        # STOP at the goal. Default 0.0 => OFF => verbatim constant push (byte-identical).
+        self.twogo_goal_decel_dist = float(max(0.0, cfg.get("twogo_goal_decel_dist", 0.0)))
+        # Goal push-back gain. The decel ramp (above) only floors the forward-push
+        # target vx at 0 when a mode reaches the goal, so a mode that has already
+        # overshot (pred_x > goal_x) just coasts and SETTLES past the goal (the sole
+        # zone_c SSR failure mode: overshoot, all modes safe). When >0, the ramp is
+        # allowed to go NEGATIVE down to -pushback, so the forward-push target
+        # REVERSES (pulls the mode back toward the goal) once it overshoots.
+        # Default 0.0 => ramp clipped at [0,1] => verbatim decel (byte-identical).
+        self.twogo_goal_pushback = float(max(0.0, cfg.get("twogo_goal_pushback", 0.0)))
+        # Hard goal-stop. Soft decel/pushback are reward/bias terms the diffusion can
+        # override (zone_c modes that pin vx at the cap coast straight through the
+        # goal). When True, the planned forward action is HARD-clamped so the
+        # cumulative forward travel never exceeds (goal_x - x0): once a mode reaches
+        # the goal its remaining vx is zeroed, so it physically stops at the goal
+        # instead of overshooting. Only acts on a low-dim (goal-point) target.
+        # Default False => no clamp => byte-identical.
+        self.twogo_goal_hardstop = bool(cfg.get("twogo_goal_hardstop", False))
+        # Hard goal-stop budget margin (m). The hardstop clamps cumulative
+        # BODY-FRAME forward travel (∫vx·dt) at (goal_x - x0). For modes that
+        # rotate the heading a lot (e.g. zone_c turns ~90° to squeeze) the
+        # body-forward integral underestimates the world-x advance (vx maps to
+        # world-x via cos(psi) plus a vy cross-term), so such modes still
+        # overshoot the goal in world-x. Subtracting a small margin from the
+        # budget pulls every mode's stop point back by ~margin in body frame,
+        # which compensates the heading leak for the rotating modes while
+        # leaving the straight modes safely inside the success radius.
+        # Default 0.0 => byte-identical to the plain hardstop.
+        self.twogo_goal_hardstop_margin = float(max(0.0, cfg.get("twogo_goal_hardstop_margin", 0.0)))
+        # rho_k TRANSPORT SCHEDULE: the per-step transport family (DDPM/DDIM/FM)
+        # of the unified reverse update (method.tex eq:unified_reverse_update_k).
+        # This is the TRANSPORT knob (the deterministic reverse map), SEPARATE
+        # from the sigma_eff noise gate -- "the transport schedule selects rho_k,
+        # and the gate controls sigma_eff under that transport" (method.tex 232).
+        #   None / "ddpm" (default) => rho_k = DDPM at every step => reproduces the
+        #     (rho_k=DDPM, sigma_eff) MBD/CFSMBD special case byte-identically.
+        #   "progress" => adaptive along the reverse process: DDPM in the early
+        #     (high-noise) third, DDIM in the middle, FM in the late (low-noise)
+        #     third, by reverse-progress fraction f in [0,1]. DDPM snaps to the
+        #     reward-weighted clean estimate; DDIM/FM take a gentler probability-
+        #     flow step that retains a noise-scaled fraction d_k of the current
+        #     iterate (d_k -> 0 as noise -> 0, so the families coincide at the
+        #     clean end, per prelims.tex). "ddim"/"fm" => that family at every step.
+        _ts = cfg.get("twogo_transport_schedule", None)
+        self.twogo_transport_schedule = (str(_ts).lower() if _ts is not None else None)
+        self.twogo_transport_ddim_frac = float(np.clip(float(cfg.get("twogo_transport_ddim_frac", 1.0 / 3.0)), 0.0, 1.0))
+        self.twogo_transport_fm_frac = float(np.clip(float(cfg.get("twogo_transport_fm_frac", 2.0 / 3.0)), 0.0, 1.0))
         rho_ref_default = float(getattr(getattr(self._inner, "_cs", None), "rho_max", 500.0))
         self._overlay_config = resolve_overlay_config(
             cfg.get("twogo_overlay", None), rho_ref_default=rho_ref_default,
@@ -182,6 +234,34 @@ class TwoGOBackendJax:
 
     def _build_twogo_scan_kernels(self) -> None:
         inner = self._inner
+        # rho_k = the per-step TRANSPORT FAMILY (deterministic reverse map) of the
+        # unified update (method.tex 140-237). The transport SCHEDULE selects it
+        # (NOT the gate); it is INDEPENDENT of the sigma_eff noise gate. The
+        # per-step schedule array `_rho_sched` (DDPM=0 / DDIM=1 / FM=2) is built
+        # below, once the noise levels `alphas_bar` exist. Here we resolve the
+        # scheduler's static transport_family tag (the default constant family).
+        _fam_map = {"DDPM": 0.0, "DDIM": 1.0, "FM": 2.0}
+        _fam_tag = "DDPM"
+        try:
+            _sched = getattr(inner, "scheduler", None)
+            _ds_list = getattr(_sched, "diffusion_schedulers", None) if _sched is not None else None
+            if _ds_list:
+                _fam_tag = str(getattr(_ds_list[0], "transport_family", "DDPM")).upper()
+        except Exception:
+            _fam_tag = "DDPM"
+        _ts_mode = self.twogo_transport_schedule  # None|"ddpm"|"ddim"|"fm"|"progress"|"adaptive"
+        # The family map is APPLIED to the iterate only for an explicit non-DDPM
+        # schedule; otherwise the reverse update is the verbatim (byte-identical)
+        # DDPM line and `_rho_sched` just records the constant family for the plot.
+        _ts_active = _ts_mode in ("progress", "ddim", "fm", "adaptive")
+        # "adaptive": rho_k is chosen per step INSIDE the scan from that step's own
+        # CVaR feasibility-risk + Pi_multi multimodality signals (not precomputable).
+        _ts_adaptive = _ts_mode == "adaptive"
+        _goal_decel = float(self.twogo_goal_decel_dist)  # >0 => decel forward-push to stop at goal
+        _goal_pushback = float(self.twogo_goal_pushback)  # >0 => allow negative ramp (pull back if overshot)
+        _goal_hardstop = bool(self.twogo_goal_hardstop)  # True => hard-clamp forward travel at goal (no overshoot)
+        _goal_hardstop_margin = float(self.twogo_goal_hardstop_margin)  # shrink budget to offset heading leak
+        _dt_f = float(inner.dt)
         Ndiffuse = int(inner.Ndiffuse)
         horizon = int(inner.horizon)
         act_dim = int(inner.act_dim)
@@ -194,6 +274,34 @@ class TwoGOBackendJax:
         alphas_bar = jnp.cumprod(alphas)
         sigmas = jnp.sqrt(1.0 - alphas_bar)
         diffusion_indices = jnp.arange(Ndiffuse - 1, -1, -1, dtype=jnp.int32)
+        # rho_k per-step transport-family schedule (indexed by diffusion idx, aligned
+        # with alphas_bar[idx]/sigmas[idx]). Reverse-progress fraction
+        #   f(idx) = (Ndiffuse-1 - idx)/(Ndiffuse-1) in [0,1]
+        # runs 0 (first reverse step, idx=N-1, high noise) -> 1 (last step, idx=0,
+        # low noise). "progress": DDPM for f<ddim_frac, DDIM for ddim_frac<=f<fm_frac,
+        # FM for f>=fm_frac -- adaptive along the reverse process. Default
+        # (None / scheduler static tag) and "ddpm" => a constant family => the rho_k
+        # plot is flat and (with _ts_active False) the plan is byte-identical.
+        _denom_idx = jnp.maximum(jnp.asarray(float(Ndiffuse - 1), dtype=jnp.float32), 1.0)
+        _frac_by_idx = (jnp.asarray(float(Ndiffuse - 1), dtype=jnp.float32)
+                        - jnp.arange(Ndiffuse, dtype=jnp.float32)) / _denom_idx
+        if _ts_mode == "progress":
+            _f1 = jnp.asarray(self.twogo_transport_ddim_frac, dtype=jnp.float32)
+            _f2 = jnp.asarray(self.twogo_transport_fm_frac, dtype=jnp.float32)
+            _rho_sched = jnp.where(
+                _frac_by_idx >= _f2, 2.0,
+                jnp.where(_frac_by_idx >= _f1, 1.0, 0.0),
+            ).astype(jnp.float32)
+        elif _ts_mode in ("ddpm", "ddim", "fm"):
+            _rho_sched = jnp.full((Ndiffuse,), _fam_map[_ts_mode.upper()], dtype=jnp.float32)
+        elif _ts_mode == "adaptive":
+            # signal-driven: rho_k is chosen per step inside the scan from that
+            # step's CVaR feasibility-risk and Pi_multi multimodality vs the overlay
+            # thresholds delta_k/theta_k. This array is an unused placeholder (the
+            # scan body computes rho_family directly from the live signals).
+            _rho_sched = jnp.zeros((Ndiffuse,), dtype=jnp.float32)
+        else:
+            _rho_sched = jnp.full((Ndiffuse,), _fam_map.get(_fam_tag, 0.0), dtype=jnp.float32)
         denom = jnp.maximum(float(Ndiffuse - 1), 1.0)
         progress_inc = 1.0 - (jnp.arange(Ndiffuse, dtype=jnp.float32) / denom)
         extra_sigmas = inner.action_extra_sigma * (1.0 - progress_inc)
@@ -660,9 +768,26 @@ class TwoGOBackendJax:
                 # the direction only pushes forward, not against obstacle-
                 # avoidance actions in other dims.
                 if _target_is_lowdim:
-                    _target_actions = Ybar_curr.at[:, 0].set(
-                        jnp.asarray(action_limit * 0.8, dtype=jnp.float32)
-                    )
+                    if _goal_decel > 0.0:
+                        # Ramp the forward-push target vx 0.8*limit -> 0 as the
+                        # predicted x approaches goal_x, so the mode decelerates to
+                        # STOP at the goal instead of overshooting. pred_x is the
+                        # cumulative x from the current action vx.
+                        _vx = Ybar_curr[:, 0]
+                        _pred_x = x0_jnp[0] + jnp.cumsum(_vx) * jnp.asarray(_dt_f, dtype=jnp.float32)
+                        # Lower bound -pushback (default 0) lets the target vx go
+                        # negative once pred_x passes goal_x => pull an overshooting
+                        # mode back to the goal instead of coasting past it.
+                        _ramp = jnp.clip(
+                            (target[0] - _pred_x) / jnp.asarray(_goal_decel, dtype=jnp.float32),
+                            jnp.asarray(-_goal_pushback, dtype=jnp.float32), 1.0,
+                        )
+                        _vx_tgt = jnp.asarray(action_limit * 0.8, dtype=jnp.float32) * _ramp
+                        _target_actions = Ybar_curr.at[:, 0].set(_vx_tgt)
+                    else:
+                        _target_actions = Ybar_curr.at[:, 0].set(
+                            jnp.asarray(action_limit * 0.8, dtype=jnp.float32)
+                        )
                 else:
                     _target_actions = target
                 task_dir = _task_direction.direction(Ybar_curr, _target_actions, step_k, hardness_k)
@@ -677,7 +802,51 @@ class TwoGOBackendJax:
                     u_agp = score_base
                     p_noise = noise_extra
                 sigma_eff = gamma * (sigma_k + extra_sigmas[idx])
-                Ybar_tilde = Ybar_weighted + eta_j * u_agp + sigma_eff * p_noise
+                # rho_k = the per-step TRANSPORT FAMILY (deterministic reverse map),
+                # selected by the transport SCHEDULE, INDEPENDENT of sigma_eff (the
+                # noise gate) -- method.tex eq:unified_reverse_update_k separates the
+                # transport family rho_k, the effective stochasticity sigma_eff, and
+                # the tangent geometry. DDPM snaps the clean iterate to the reward-
+                # weighted estimate Ybar_weighted (= tau-hat_{1|k}); DDIM/FM take the
+                # gentler probability-flow step that retains a noise-scaled fraction
+                # d_k of the current iterate Ybar_curr (prelims.tex eq:ddim/fm_update;
+                # d_k -> 0 as noise -> 0, so the families coincide at the clean end).
+                # With the default DDPM schedule (_ts_active False) Ybar_base is the
+                # verbatim Ybar_weighted => the reverse update is byte-identical.
+                # rho_k family selection. "adaptive": per-step, signal-driven from
+                # this step's CVaR feasibility-risk (cvar) and Pi_multi multimodality
+                # (pi_multi_k) vs the overlay thresholds delta_k / theta_k -- the same
+                # signals as the eq:rho_aware_gate gate, but a SEPARATE decision (the
+                # gate sets sigma_eff; this sets the transport map). Produces any
+                # non-monotonic DDPM/DDIM/FM combination along the trajectory:
+                #   cvar > delta_k            -> DDPM (high risk: stochastic explore)
+                #   else pi_multi_k > theta_k -> DDIM (multimodal: commit deterministically)
+                #   else                      -> FM   (easy/low-risk: smooth refine)
+                # Non-adaptive modes use the precomputed (progress / constant) _rho_sched.
+                if _ts_adaptive:
+                    rho_family = jnp.where(
+                        cvar > delta_k,
+                        0.0,
+                        jnp.where(pi_multi_k > theta_k, 1.0, 2.0),
+                    ).astype(jnp.float32)
+                else:
+                    rho_family = _rho_sched[idx]
+                if _ts_active:
+                    abar_k = alphas_bar[idx]
+                    abar_km1 = jnp.where(
+                        idx >= 1,
+                        alphas_bar[jnp.maximum(idx - 1, 0)],
+                        jnp.asarray(1.0, dtype=jnp.float32),
+                    )
+                    d_k = jnp.sqrt(jnp.clip(
+                        (abar_k * (1.0 - abar_km1)) / (abar_km1 * (1.0 - abar_k) + 1e-12),
+                        0.0, 1.0,
+                    ))
+                    d_fam = jnp.where(rho_family >= 1.0, d_k, 0.0)
+                    Ybar_base = (1.0 - d_fam) * Ybar_weighted + d_fam * Ybar_curr
+                else:
+                    Ybar_base = Ybar_weighted
+                Ybar_tilde = Ybar_base + eta_j * u_agp + sigma_eff * p_noise
 
                 retract_every = jnp.asarray(retract_every_static, dtype=jnp.int32)
                 retract_pass = jnp.equal(jnp.mod(step_k, retract_every), 0)
@@ -702,6 +871,16 @@ class TwoGOBackendJax:
                     Ybar_tilde,
                 )
                 Ybar_next = jnp.clip(Ybar_next, -action_limit, action_limit)
+                if _target_is_lowdim and _goal_hardstop:
+                    # Hard goal-stop: cap cumulative forward travel at the goal so the
+                    # rolled-out x cannot overshoot. budget = goal_x - x0; cumsum of
+                    # vx*dt is the forward travel; minimum(cum, budget) saturates at
+                    # the goal, and the diff zeroes any vx beyond it (the mode stops).
+                    _bud = target[0] - x0_jnp[0] - jnp.asarray(_goal_hardstop_margin, dtype=jnp.float32)
+                    _cum = jnp.cumsum(Ybar_next[:, 0] * jnp.asarray(_dt_f, dtype=jnp.float32))
+                    _cum_cap = jnp.minimum(_cum, _bud)
+                    _vx_cap = jnp.concatenate([_cum_cap[:1], jnp.diff(_cum_cap)]) / jnp.asarray(_dt_f, dtype=jnp.float32)
+                    Ybar_next = Ybar_next.at[:, 0].set(_vx_cap)
 
                 reward_stage_terminal = jnp.mean(rews)
                 m_eff_f = M_eff.astype(jnp.float32)
@@ -741,6 +920,8 @@ class TwoGOBackendJax:
                     params["compute_cost_hat"].astype(jnp.float32),
                     params["nu"].astype(jnp.float32),
                     pi_multi_k.astype(jnp.float32),
+                    rho_family,            # transport regime per step (0/1/2)
+                    sigma_eff,             # actual rho-scaled sigma_eff (not recomputed)
                 )
                 if use_jax_adaptive:
                     return (rng_curr, Ybar_next, gamma, pi_ema_k, carry_sched_new), outputs
@@ -789,6 +970,8 @@ class TwoGOBackendJax:
                 compute_cost_hist,
                 nu_hist,
                 pi_multi_hist,
+                rho_family_hist,
+                rho_sigma_eff_hist,
             ) = scan_out
             return (
                 Ybar_final,
@@ -822,6 +1005,8 @@ class TwoGOBackendJax:
                 compute_cost_hist,
                 nu_hist,
                 pi_multi_hist,
+                rho_family_hist,
+                rho_sigma_eff_hist,
             )
 
         self._twogo_single_jit = jax.jit(_run_single)
@@ -1042,6 +1227,8 @@ class TwoGOBackendJax:
             compute_cost_hist,
             nu_hist,
             pi_multi_hist,
+            rho_family_hist,
+            rho_sigma_eff_hist,
         ) = self._twogo_single_jit(x0_jnp, rng_key, target)
 
         final_actions = jnp.clip(Ybar_final, -self._inner.action_limit, self._inner.action_limit)
@@ -1067,6 +1254,8 @@ class TwoGOBackendJax:
             "v_mean_hist": np.asarray(v_mean_hist, dtype=np.float32),
             "gamma_hist": np.asarray(gamma_hist, dtype=np.float32),
             "sigma_hist": np.asarray(sigma_hist, dtype=np.float32),
+            "rho_family_hist": np.asarray(rho_family_hist, dtype=np.float32),
+            "rho_sigma_eff_hist": np.asarray(rho_sigma_eff_hist, dtype=np.float32),
             "delta_hist": np.asarray(delta_hist, dtype=np.float32),
             "theta_hist": np.asarray(theta_hist, dtype=np.float32),
             "eta_hist": np.asarray(eta_hist, dtype=np.float32),
@@ -1139,6 +1328,8 @@ class TwoGOBackendJax:
             compute_cost_hists,
             nu_hists,
             pi_multi_hists,
+            rho_family_hists,
+            rho_sigma_eff_hists,
         ) = self._twogo_batch_jit(x0_jnp, rng_keys, targets)
 
         final_actions_batch = jnp.clip(Ybar_finals, -self._inner.action_limit, self._inner.action_limit)
@@ -1168,6 +1359,8 @@ class TwoGOBackendJax:
                     "v_mean_hist": np.asarray(v_mean_hists[i], dtype=np.float32),
                     "gamma_hist": np.asarray(gamma_hists[i], dtype=np.float32),
                     "sigma_hist": np.asarray(sigma_hists[i], dtype=np.float32),
+                    "rho_family_hist": np.asarray(rho_family_hists[i], dtype=np.float32),
+                    "rho_sigma_eff_hist": np.asarray(rho_sigma_eff_hists[i], dtype=np.float32),
                     "delta_hist": np.asarray(delta_hists[i], dtype=np.float32),
                     "theta_hist": np.asarray(theta_hists[i], dtype=np.float32),
                     "eta_hist": np.asarray(eta_hists[i], dtype=np.float32),

@@ -101,6 +101,8 @@ class RobotPoseIR:
     body_height: float = 0.78
     arm_tuck_L: float = 0.0
     arm_tuck_R: float = 0.0
+    arm_posture_L: float = 0.0   # p_L: shoulder-pitch posture in [-1, 1]
+    arm_posture_R: float = 0.0   # p_R
     feet: Optional[Dict[str, Tuple[float, float]]] = None
     swing_legs: Tuple[str, ...] = ()
     mode: int = 0
@@ -155,11 +157,14 @@ def corridor_scene_to_ir(scene: Any) -> SceneIR:
 def corridor_states_to_poses(states: np.ndarray) -> List[RobotPoseIR]:
     """Convert a (T, >=7) state array into a list of RobotPoseIR.
 
-    Layout assumed: [x, y, psi, h, psi_torso, a_L, a_R, ...].
+    Layout assumed: [x, y, psi, h, psi_torso, a_L, a_R, p_L, p_R, ...].
+    Posture p_L/p_R (indices 7, 8) are optional — used by the articulated
+    arm drawing to mirror the follower's shoulder-pitch behaviour.
     """
     states = np.asarray(states, dtype=np.float32)
     poses: List[RobotPoseIR] = []
     for s in states:
+        n = s.shape[0]
         poses.append(RobotPoseIR(
             x=float(s[0]), y=float(s[1]),
             yaw=float(s[2]),
@@ -167,6 +172,8 @@ def corridor_states_to_poses(states: np.ndarray) -> List[RobotPoseIR]:
             torso_yaw=float(s[4]),
             arm_tuck_L=float(s[5]),
             arm_tuck_R=float(s[6]),
+            arm_posture_L=float(s[7]) if n > 7 else 0.0,
+            arm_posture_R=float(s[8]) if n > 8 else 0.0,
         ))
     return poses
 

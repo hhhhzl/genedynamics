@@ -1664,6 +1664,44 @@ class ExperimentRunner:
                         viz_plugin.visualize(fig, ax, data_base, viz_cfg)
                         viz_plugin.save(trajectory_dir / "trajectory_best.png", fig, dpi=150, bbox_inches='tight')
                         plt.close(fig)
+                        # Corridor: also emit a style-matched MULTI-MODAL figure +
+                        # GIF (all candidate paths overlaid + the selected mode's
+                        # bodies). Reuses the same plugin so the style matches
+                        # trajectory_best exactly.
+                        if viz_name == 'corridor_trajectory':
+                            planning_result = result.get('result', {}) or {}
+                            # NB: candidate_states may be a numpy array — use an
+                            # explicit None check, not `a or b` (ambiguous truth).
+                            cand_states = planning_result.get('candidate_states')
+                            if cand_states is None:
+                                cand_states = result.get('candidate_states')
+                            if _has_items(cand_states):
+                                data_modes = {**data_base, 'candidate_states': cand_states}
+                                fig_m, ax_m = plt.subplots(1, 1, figsize=(8, 8))
+                                viz_plugin.visualize(fig_m, ax_m, data_modes, viz_cfg)
+                                viz_plugin.save(trajectory_dir / "trajectory_modes.png", fig_m, dpi=150, bbox_inches='tight')
+                                plt.close(fig_m)
+                                max_steps_m = max((max(0, len(c) - 1) for c in cand_states), default=0)
+                                if max_steps_m >= 1:
+                                    import imageio
+                                    temp_frames_m = []
+                                    try:
+                                        for t in range(max_steps_m + 1):
+                                            fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
+                                            viz_plugin.visualize(fig_g, ax_g, {**data_modes, 'partial_until_step': t}, viz_cfg)
+                                            tmp_path = trajectory_dir / f"_gif_modes_{t}.png"
+                                            fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                            plt.close(fig_g)
+                                            temp_frames_m.append(tmp_path)
+                                        if temp_frames_m:
+                                            frames_m = [imageio.v3.imread(p) for p in temp_frames_m]
+                                            imageio.v3.imwrite(trajectory_dir / "trajectory_modes.gif", frames_m, duration=80, loop=0)
+                                    finally:
+                                        for p in temp_frames_m:
+                                            try:
+                                                p.unlink()
+                                            except OSError:
+                                                pass
                         num_steps = max(0, len(traj.states) - 1)
                         if num_steps >= 0:
                             import imageio
@@ -1958,24 +1996,6 @@ class ExperimentRunner:
                         {**viz_config.get(viz_name, {}), 'config': self.config}
                     )
                     output_path = self._get_output_path(result['level'], result['seed']) / f"{viz_name}.png"
-                    plt.tight_layout()
-                    viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
-                    plt.close(fig)
-
-                elif viz_name == 'gate_dynamics':
-                    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-                    viz_plugin.visualize(
-                        fig, axes,
-                        {
-                            'result': result['result'],
-                            'env': env,
-                        },
-                        {**viz_config.get(viz_name, {}), 'config': self.config}
-                    )
-                    out_dir = self._get_output_path(result['level'], result['seed'])
-                    adaptive_dir = out_dir / "adaptive"
-                    adaptive_dir.mkdir(parents=True, exist_ok=True)
-                    output_path = adaptive_dir / "gate_dynamics.png"
                     plt.tight_layout()
                     viz_plugin.save(output_path, fig, dpi=150, bbox_inches='tight')
                     plt.close(fig)
@@ -2386,6 +2406,98 @@ class ExperimentRunner:
             else:
                 ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
             fig.savefig(adaptive_dir / f"{name}.png", dpi=150, bbox_inches='tight')
+            plt.close(fig)
+
+        # --- rho_k transport family (DDPM/DDIM/FM) + sigma_eff in one figure ----
+        # Two SEPARATE knobs scheduled together (method.tex eq:unified_reverse_update_k,
+        # lines 228-237): rho_k is the transport FAMILY (the deterministic reverse map),
+        # selected per step by the transport schedule (here adaptive from the CVaR
+        # feasibility-risk + Pi_multi multimodality signals); sigma_eff is the effective
+        # reverse NOISE, set by the gate. rho_k is NOT derived from sigma_eff.
+        def _best_row(h):
+            if h is None:
+                return None
+            a = np.asarray(h, dtype=np.float64)
+            if a.ndim == 2:
+                a = a[min(int(best_idx), a.shape[0] - 1)]
+            return a.ravel()
+
+        rho_fam = _best_row(planning_result.get('rho_family_hist',
+                                                 planning_result.get('all_rho_family_hist')))
+        rho_sig = _best_row(planning_result.get('rho_sigma_eff_hist',
+                                                 planning_result.get('all_rho_sigma_eff_hist')))
+        if rho_fam is not None and rho_sig is not None and np.any(np.isfinite(rho_fam)):
+            Kp = min(len(rho_fam), len(rho_sig))
+            xr = np.arange(Kp)
+            fig, ax1 = plt.subplots(1, 1, figsize=(9, 5))
+            ax1.step(xr, rho_fam[:Kp], where='mid', color='#d62728', linewidth=2.2,
+                     label=r'$\rho_k$ (transport family)')
+            ax1.set_yticks([0, 1, 2])
+            ax1.set_yticklabels(['DDPM', 'DDIM', 'FM'], fontsize=14)
+            ax1.set_ylim(-0.3, 2.3)
+            set_diffusion_axis(ax1, Kp)
+            ax1.set_ylabel(r'$\rho_k$ transport family', fontsize=16, color='#d62728')
+            ax2 = ax1.twinx()
+            ax2.plot(xr, rho_sig[:Kp], color='#1f77b4', linewidth=2.0,
+                     label=r'$\sigma_{k,\mathrm{eff}}$')
+            ax2.set_ylabel(r'$\sigma_{k,\mathrm{eff}}$', fontsize=16, color='#1f77b4')
+            ax2.tick_params(axis='y', labelsize=14)
+            ax1.set_title(r'Transport family $\rho_k$ and effective noise $\sigma_{k,\mathrm{eff}}$',
+                          fontsize=18, fontweight='bold')
+            h1, lab1 = ax1.get_legend_handles_labels()
+            h2, lab2 = ax2.get_legend_handles_labels()
+            ax1.legend(h1 + h2, lab1 + lab2, loc='upper right', fontsize=12)
+            fig.savefig(adaptive_dir / "rho_sigma.png", dpi=150, bbox_inches='tight')
+            plt.close(fig)
+
+        # --- Route ambiguity: Pi_route (multimodality proxy) vs threshold theta --
+        # The transport-aware gate's multimodality test (method.tex eq:rho_aware_gate):
+        # Pi_route(tau_k) compared against the per-step threshold theta_{route,k}.
+        pi_route = _best_row(planning_result.get('pi_multi_hist',
+                                                 planning_result.get('all_pi_multi_hist')))
+        theta_r = _best_row(planning_result.get('theta_hist',
+                                                planning_result.get('all_theta_hist')))
+        if pi_route is not None and theta_r is not None and np.any(np.isfinite(pi_route)):
+            Kp = min(len(pi_route), len(theta_r))
+            xr = np.arange(Kp)
+            fig, ax1 = plt.subplots(1, 1, figsize=(9, 5))
+            ax1.plot(xr, pi_route[:Kp], color='#d62728', linewidth=2.2,
+                     label=r'$\Pi_{\mathrm{route}}$ (ambiguity proxy)')
+            ax1.plot(xr, theta_r[:Kp], color='#1f77b4', linewidth=2.0, linestyle='--',
+                     label=r'$\theta_{\mathrm{route},k}$ (threshold)')
+            set_diffusion_axis(ax1, Kp)
+            ax1.set_ylabel('Route ambiguity / threshold', fontsize=16)
+            ax1.set_title(r'Route ambiguity proxy $\Pi_{\mathrm{route}}$ vs threshold $\theta$',
+                          fontsize=18, fontweight='bold')
+            ax1.legend(loc='upper right', fontsize=12)
+            fig.savefig(adaptive_dir / "route_ambiguity.png", dpi=150, bbox_inches='tight')
+            plt.close(fig)
+
+        # --- Feasibility: violation rate (v_rate) & CVaR ------------------------
+        # The transport-aware gate's feasibility-risk test (method.tex eq:rho_aware_gate):
+        # CVaR_alpha of the per-step violation, alongside the mean violation rate.
+        vr = _best_row(planning_result.get('v_rate_hist',
+                                            planning_result.get('all_v_rate_hist')))
+        cv = _best_row(planning_result.get('cvar_hist',
+                                           planning_result.get('all_cvar_hist')))
+        if vr is not None and cv is not None and np.any(np.isfinite(vr)):
+            Kp = min(len(vr), len(cv))
+            xr = np.arange(Kp)
+            fig, ax1 = plt.subplots(1, 1, figsize=(9, 5))
+            ax1.plot(xr, vr[:Kp], color='#1f77b4', linewidth=2.0,
+                     label=r'$v_{\mathrm{rate}}$ (violation rate)')
+            ax1.set_ylabel(r'$v_{\mathrm{rate}}$', fontsize=16, color='#1f77b4')
+            set_diffusion_axis(ax1, Kp)
+            ax2 = ax1.twinx()
+            ax2.plot(xr, cv[:Kp], color='#d62728', linewidth=2.0, linestyle='--',
+                     label=r'$\mathrm{CVaR}_{\alpha}$')
+            ax2.set_ylabel(r'$\mathrm{CVaR}_{\alpha}$', fontsize=16, color='#d62728')
+            ax2.tick_params(axis='y', labelsize=14)
+            ax1.set_title('Feasibility: violation rate & CVaR', fontsize=18, fontweight='bold')
+            h1, lab1 = ax1.get_legend_handles_labels()
+            h2, lab2 = ax2.get_legend_handles_labels()
+            ax1.legend(h1 + h2, lab1 + lab2, loc='upper right', fontsize=12)
+            fig.savefig(adaptive_dir / "feasibility.png", dpi=150, bbox_inches='tight')
             plt.close(fig)
 
         def _nan_to_none(obj):

@@ -58,6 +58,13 @@ _FORWARDED_KEYS = (
     # generic
     "n_ghosts",
     "ghost_alpha_min", "ghost_alpha_max",
+    # matplotlib_top paper figure
+    "body_shape", "arm_style",
+    "ghost_color", "ghost_cmap",
+    "highlight",
+    "show_heading_arrows", "show_colorbar",
+    "axis_fontsize", "tick_fontsize",
+    "show_title", "show_legend", "show_obstacle_labels",
     # iso backend
     "camera_yaw_deg", "camera_pitch_deg", "auto_resize_fig",
     # pyrender backend
@@ -115,6 +122,24 @@ class CorridorTrajectoryVisualizationPlugin(VisualizationPlugin):
         poses = corridor_states_to_poses(states)
         extras = _build_corridor_extras(env, states)
         extras = _merge_yaml_extras(extras, config or {})
+
+        # Runtime (non-yaml) knobs the framework passes via `data`:
+        #   partial_until_step / gif_style -> growing animation frames
+        #   mode_paths / candidate_states  -> multi-modal overlay
+        if data.get("partial_until_step") is not None:
+            extras["partial_until_step"] = int(data["partial_until_step"])
+        if data.get("gif_style") is not None:
+            extras["gif_style"] = bool(data["gif_style"])
+        mode_paths = data.get("mode_paths")
+        if mode_paths is None and data.get("candidate_states") is not None:
+            mode_paths = []
+            for cs in data["candidate_states"]:
+                arr = np.asarray([np.asarray(s, dtype=np.float32).ravel()
+                                  for s in cs], dtype=np.float32)
+                if arr.ndim == 2 and arr.shape[0] >= 2 and arr.shape[1] >= 2:
+                    mode_paths.append(arr[:, :2])
+        if mode_paths:
+            extras["mode_paths"] = mode_paths
 
         renderer = (config or {}).get("renderer", "matplotlib_top")
         if renderer == "matplotlib_top":

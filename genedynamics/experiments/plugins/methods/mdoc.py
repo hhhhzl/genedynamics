@@ -17,6 +17,7 @@ from genedynamics.core.constraints.action_filters import (
     QPBasedCBFFilter,
     ClosedFormCBFFilterJointLift,
     QPBasedCBFFilterJointLift,
+    CorridorCBFFilter,
 )
 from genedynamics.core.constraints.action_filters.task_specific.cbf_stepping import SteppingCBFFilter
 from ...framework.base import MethodPlugin
@@ -47,6 +48,11 @@ class MDOCMethodPlugin(MethodPlugin):
             constraint_filter = QPBasedCBFFilterJointLift()
         elif mode == "cbf_stepping":
             constraint_filter = SteppingCBFFilter()
+        elif mode == "cbf_corridor":
+            # Humanoid corridor (14D state, 9D action): per-body closed-form CBF
+            # over torso + L/R arm, with 2D SDF gradient lifted to 9D action
+            # via env.jax_model_transition autodiff. Existing modes left unchanged.
+            constraint_filter = CorridorCBFFilter()
         else:
             constraint_filter = NoOpConstraintFilter()
 

@@ -46,6 +46,7 @@ class MDOCBackendJax:
         constraint_filter: Optional[ConstraintFilter] = None,
         obstacles: Any = None,
         noise_sampler: Any = None,
+        transport: Any = None,
         **kwargs: Any,
     ):
         # Support both old-style (direct params) and new-style (solver object) initialization
@@ -120,6 +121,18 @@ class MDOCBackendJax:
         if noise_sampler is None and solver is not None:
             noise_sampler = getattr(solver, "noise_sampler", None)
         self.noise_sampler = noise_sampler
+
+        # Optional pluggable reverse transport (DDPM/DDIM/FM/...). When None
+        # (the default) the solver runs the VERBATIM inline recombination
+        # ``Ybar_next = Ybar_weighted`` (the reward-weighted clean estimate, MDOC's
+        # weighted-mean/MCSA reverse form), so the traced graph and float output
+        # are byte-identical to the pre-transport code. A transport object is
+        # consulted only on the explicit ``else`` branch. DDPM is the sigma=0
+        # special case of this weighted-mean recombination.
+        # See genedynamics.solvers.common.transport.base.ReverseTransport.
+        if transport is None and solver is not None:
+            transport = getattr(solver, "transport", None)
+        self.transport = transport
 
         self._build_jax_functions()
 
@@ -354,8 +367,30 @@ class MDOCBackendJax:
                 weights = jax.nn.softmax(logp0)
                 Ybar_weighted = jnp.einsum("n,nij->ij", weights, Y0s_f)
 
-                # Refinement update
-                Ybar_next = Ybar_weighted
+                # Refinement update (swappable reverse transport; None => verbatim).
+                if self.transport is None:
+                    # VERBATIM default recombination (byte-identical to the
+                    # pre-transport code). DO NOT refactor this line.
+                    Ybar_next = Ybar_weighted
+                else:
+                    # Swappable reverse transport (static Python branch). eps_k
+                    # materialised for DDIM/FM; abar_k = cumulative alpha at step.
+                    abar_k = alphas_bar[idx]
+                    Yi = Ybar_curr * jnp.sqrt(abar_k)
+                    eps_k = (Yi - jnp.sqrt(abar_k) * Ybar_weighted) / jnp.sqrt(
+                        jnp.maximum(1.0 - abar_k, 1e-8)
+                    )
+                    Ybar_next = self.transport.step(
+                        tau_k=Yi,
+                        tau1_k=Ybar_weighted,
+                        eps_k=eps_k,
+                        score_g=None,
+                        sched={
+                            "abar_k": abar_k,
+                            "alpha_k": alphas[idx],
+                            "abar_km1": alphas_bar[idx - 1],
+                        },
+                    )
 
                 # Filter the mean too
                 Ybar_next = self.constraint_filter.apply_actions(
@@ -559,12 +594,32 @@ class MDOCBackendJax:
                 logp0 = (rews - rew_mean) / (rew_std * T_k)
                 weights = jax.nn.softmax(logp0)
                 Ybar_weighted = jnp.einsum("n,nij->ij", weights, Y0s_f)
-                Ybar_next = Ybar_weighted
+                if self.transport is None:
+                    # VERBATIM default recombination (byte-identical to the
+                    # pre-transport code). DO NOT refactor this line.
+                    Ybar_next = Ybar_weighted
+                else:
+                    abar_k = alphas_bar[idx]
+                    Yi = Ybar_curr * jnp.sqrt(abar_k)
+                    eps_k = (Yi - jnp.sqrt(abar_k) * Ybar_weighted) / jnp.sqrt(
+                        jnp.maximum(1.0 - abar_k, 1e-8)
+                    )
+                    Ybar_next = self.transport.step(
+                        tau_k=Yi,
+                        tau1_k=Ybar_weighted,
+                        eps_k=eps_k,
+                        score_g=None,
+                        sched={
+                            "abar_k": abar_k,
+                            "alpha_k": alphas[idx],
+                            "abar_km1": alphas_bar[idx - 1],
+                        },
+                    )
                 Ybar_next = self.constraint_filter.apply_actions(
                     x0_jnp, Ybar_next, env=self.env, obstacles=self.obstacles,
                     schedule_state=sched_state, schedule_params=sched_params,
                 )
-                
+
                 return (rng_curr, Ybar_next), (jnp.mean(rews), Ybar_next, Y0s_f)
             
             Ybar_init = jnp.zeros((self.horizon, self.act_dim), dtype=jnp.float32)

@@ -92,6 +92,20 @@ class TwoGOMethodPlugin(MethodPlugin):
             twogo_probe_b=config.get("twogo_probe_b", None),
             twogo_probe_m_cap=config.get("twogo_probe_m_cap", None),
             twogo_overlay=config.get("twogo_overlay", None),
+            # Goal-deceleration distance (m); >0 ramps the forward-push vx to 0 near
+            # the goal so modes stop instead of overshooting (SSR task_success).
+            twogo_goal_decel_dist=float(config.get("twogo_goal_decel_dist", 0.0)),
+            # Goal push-back gain; >0 lets the decel ramp reverse to pull overshooting
+            # modes back to the goal (default 0 => verbatim decel). Kills zone_c overshoot.
+            twogo_goal_pushback=float(config.get("twogo_goal_pushback", 0.0)),
+            # Hard goal-stop; True => clamp forward travel at goal (kills zone_c overshoot).
+            twogo_goal_hardstop=bool(config.get("twogo_goal_hardstop", False)),
+            # rho_k transport-family schedule (transport knob, SEPARATE from sigma_eff).
+            # None/"ddpm"=constant DDPM (byte-identical); "adaptive"=per-step signal-driven
+            # (CVaR risk + Pi_multi); "progress"/"ddim"/"fm" also available.
+            twogo_transport_schedule=config.get("twogo_transport_schedule", None),
+            twogo_transport_ddim_frac=float(config.get("twogo_transport_ddim_frac", 1.0 / 3.0)),
+            twogo_transport_fm_frac=float(config.get("twogo_transport_fm_frac", 2.0 / 3.0)),
         )
         solver.env = env
         return solver

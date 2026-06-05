@@ -1,0 +1,7 @@
+# Writeup §12 manipulation / loco-manipulation prompts.
+a soft gripper-like crawling robot
+a soft scoop-shaped robot for pushing objects
+a soft robot body with front gripping appendages
+a soft crawling robot with flexible front arms
+a low-profile soft robot that can push a block
+a soft-bodied creature with wide contact surface and side fins

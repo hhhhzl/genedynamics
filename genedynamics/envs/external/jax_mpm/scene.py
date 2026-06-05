@@ -147,6 +147,12 @@ class SceneData(NamedTuple):
     n_particles: int
     n_actuators: int
     n_voxels: int
+    # Robotization output: (n_actuators, 3) muscle direction per actuator group.
+    # Defaults to None for backward-compat with old call sites; rollout falls
+    # back to lift-push pattern when missing.
+    fiber_dirs: jnp.ndarray = None
+    # Optional per-particle Young's modulus override (None → uniform E0).
+    E_per_particle: jnp.ndarray = None
 
 
 # ---------------------------------------------------------------------------
@@ -154,67 +160,43 @@ class SceneData(NamedTuple):
 # ---------------------------------------------------------------------------
 
 
-def build_scene(cfg: MPMConfig) -> SceneData:
-    """Build a soft box with actuators assigned by X-bin.
+def build_scene_from_spec(spec, cfg: MPMConfig) -> SceneData:
+    """Convert a SoftBodySpec (numpy) into the JAX SceneData consumed by rollouts.
 
-    Actuator 0 is front (largest X), actuator n-1 is back. A traveling-wave
-    controller (phase along actuator index) therefore produces a locomotion
-    gait along +X.
+    This is the canonical scene constructor — `build_scene(cfg)` below is a
+    thin wrapper that calls the default robotization first.
     """
-    sx, sy, sz = cfg.box_size
-    ox, oy, oz = cfg.box_origin
-    s = cfg.particle_spacing
-    nx = max(1, int(sx / s))
-    ny = max(1, int(sy / s))
-    nz = max(1, int(sz / s))
-    rx = sx / nx
-    ry = sy / ny
-    rz = sz / nz
-
-    # Generate particles on a regular grid centred inside each sub-cell.
-    i_idx = np.arange(nx, dtype=np.float32)
-    j_idx = np.arange(ny, dtype=np.float32)
-    k_idx = np.arange(nz, dtype=np.float32)
-    ii, jj, kk = np.meshgrid(i_idx, j_idx, k_idx, indexing="ij")
-    xs = ox + (ii + 0.5) * rx
-    ys = oy + (jj + 0.5) * ry
-    zs = oz + (kk + 0.5) * rz
-    pts = np.stack([xs.reshape(-1), ys.reshape(-1), zs.reshape(-1)], axis=-1)
-
-    # Actuator group by X-bin (front → back). Keep a thin passive dorsal strip
-    # on top so there's a neutral core (table-top of the body).
-    xs_flat = pts[:, 0]
-    x_min, x_max = xs_flat.min(), xs_flat.max()
-    bin_idx = np.floor(
-        (xs_flat - x_min) / max(x_max - x_min, 1e-6) * cfg.n_actuators
-    ).astype(np.int32)
-    bin_idx = np.clip(bin_idx, 0, cfg.n_actuators - 1)
-
-    # Top 20% of Y becomes passive (−1) so the robot has an inert spine.
-    ys_flat = pts[:, 1]
-    y_top_thresh = np.quantile(ys_flat, 0.80)
-    act_id = np.where(ys_flat >= y_top_thresh, -1, bin_idx).astype(np.int32)
-
-    # Per-particle voxel index (for occupancy-based morphology). The voxel grid
-    # tiles the bounding box uniformly with cfg.voxel_dims cells.
-    vx, vy, vz = cfg.voxel_dims
-    n_voxels = vx * vy * vz
-    zs_flat = pts[:, 2]
-    y_min, y_max = ys_flat.min(), ys_flat.max()
-    z_min, z_max = zs_flat.min(), zs_flat.max()
-    vi = np.clip(np.floor((xs_flat - x_min) / max(x_max - x_min, 1e-6) * vx).astype(np.int32), 0, vx - 1)
-    vj = np.clip(np.floor((ys_flat - y_min) / max(y_max - y_min, 1e-6) * vy).astype(np.int32), 0, vy - 1)
-    vk = np.clip(np.floor((zs_flat - z_min) / max(z_max - z_min, 1e-6) * vz).astype(np.int32), 0, vz - 1)
-    voxel_id = (vi * vy * vz + vj * vz + vk).astype(np.int32)
-
     return SceneData(
-        x0=jnp.asarray(pts, dtype=DTYPE),
-        actuator_id=jnp.asarray(act_id, dtype=jnp.int32),
-        voxel_id=jnp.asarray(voxel_id, dtype=jnp.int32),
-        n_particles=int(pts.shape[0]),
-        n_actuators=int(cfg.n_actuators),
-        n_voxels=int(n_voxels),
+        x0=jnp.asarray(spec.particles_x0, dtype=DTYPE),
+        actuator_id=jnp.asarray(spec.actuator_id, dtype=jnp.int32),
+        voxel_id=jnp.asarray(spec.voxel_id, dtype=jnp.int32),
+        n_particles=int(spec.n_particles),
+        n_actuators=int(spec.n_actuators),
+        n_voxels=int(spec.n_voxels),
+        fiber_dirs=jnp.asarray(spec.fiber_dirs, dtype=DTYPE),
+        E_per_particle=(
+            jnp.asarray(spec.E_per_particle, dtype=DTYPE)
+            if spec.E_per_particle is not None
+            else None
+        ),
     )
+
+
+def build_scene(cfg: MPMConfig) -> SceneData:
+    """Build the default crawling_ground soft body (X-bin actuators, lift-push fibers).
+
+    This is the historical entry point; new code should prefer building a
+    `SoftBodySpec` (via genedynamics.morphology.default_robotize or a future
+    mesh_robotize) and calling build_scene_from_spec(). Kept as a thin shim
+    so existing call sites (jax_mpm_evaluator, adapters) work unchanged.
+
+    Actuator 0 is back (smallest X), actuator n-1 is front. The lift-push
+    fiber pattern (back lifts, front presses) breaks pure-axial peristaltic
+    symmetry and produces a locomotion gait along +X.
+    """
+    from genedynamics.morphology import default_robotize
+    spec = default_robotize(cfg)
+    return build_scene_from_spec(spec, cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +333,15 @@ def grid_op_3d(
     grid_m_in: jnp.ndarray,
     friction: jnp.ndarray,
     cfg: MPMConfig,
+    terrain_height: jnp.ndarray = None,
 ) -> jnp.ndarray:
+    """Grid update: scatter momentum → velocity, gravity, walls, floor friction.
+
+    Phase 2.1: optional ``terrain_height`` of shape (n_grid, n_grid) gives
+    per-(i_x, k_z) world-y floor height. When None, falls back to the legacy
+    flat floor mask (Gj < bound). Friction is applied to any cell whose
+    world-y is below the local floor and whose vertical velocity is downward.
+    """
     inv_m = 1.0 / (grid_m_in + 1e-10)
     v_out = grid_v_in * inv_m[..., None]
     v_out = v_out.at[..., 1].add(-cfg.dt * cfg.gravity)
@@ -369,14 +359,40 @@ def grid_op_3d(
     )
     v_out = jnp.where(walls[..., None], 0.0, v_out)
 
-    # Coulomb friction on the floor.
-    bottom_hit = bottom & (v_out[..., 1] < 0.0)
+    # Floor mask: legacy flat floor OR per-column terrain height.
+    if terrain_height is None:
+        floor_mask = bottom
+    else:
+        n = cfg.n_grid
+        # World-y of each cell: Gj * dx. terrain_height is (n, n) on (i_x, k_z).
+        Gj = jnp.arange(n, dtype=DTYPE)[None, :, None]
+        y_world = Gj * DTYPE(cfg.dx)
+        floor_y = terrain_height[:, None, :]   # broadcast to (n, n, n)
+        below_terrain = y_world < floor_y
+        # Always preserve the absolute lower world-boundary as a hard floor.
+        floor_mask = bottom | below_terrain
+
+    # Coulomb friction wherever the cell is at/below the local floor and moving down.
+    bottom_hit = floor_mask & (v_out[..., 1] < 0.0)
     vn = v_out[..., 1]
     vtx = v_out[..., 0]
     vtz = v_out[..., 2]
-    speed_t = jnp.sqrt(vtx * vtx + vtz * vtz)
+    # speed_t with sqrt-of-sum-plus-eps so the gradient at speed_t=0 is a
+    # well-defined finite (zero) instead of NaN. The forward value at v=0
+    # is sqrt(eps) ≈ 3e-7, which is below any physical threshold.
+    eps_speed = DTYPE(1e-12)
+    speed_t = jnp.sqrt(vtx * vtx + vtz * vtz + eps_speed)
     friction_limit = friction * (-vn)
-    scale = jnp.maximum(speed_t - friction_limit, 0.0) / (speed_t + DTYPE(1e-8))
+    # Safe division: when the cell is moving, scale by max(0, speed - μ|vn|)/speed.
+    # When speed is ~0, force scale=0 (no friction force when no tangential
+    # motion — physically correct). Using jnp.where + a "safe denominator"
+    # is the JAX-friendly idiom for keeping reverse-mode gradients finite at
+    # the singular point (Phase 4 SHAC backprop hits this on every fresh
+    # init carry where v_grid = 0).
+    nonzero_speed = speed_t > DTYPE(1e-6)
+    safe_speed = jnp.where(nonzero_speed, speed_t, DTYPE(1.0))
+    raw_scale = jnp.maximum(speed_t - friction_limit, 0.0) / safe_speed
+    scale = jnp.where(nonzero_speed, raw_scale, DTYPE(0.0))
     floor_v = jnp.stack([vtx * scale, jnp.zeros_like(vn), vtz * scale], axis=-1)
     v_out = jnp.where(bottom_hit[..., None], floor_v, v_out)
     return v_out
@@ -468,6 +484,7 @@ def _env_step(
     muscle_dirs: jnp.ndarray,
     mass_field: jnp.ndarray,
     cfg: MPMConfig,
+    terrain_height: jnp.ndarray = None,
 ):
     """One env step = `substeps_per_env_step` MPM substeps + reward probe."""
     n_sub = cfg.substeps_per_env_step
@@ -483,7 +500,7 @@ def _env_step(
         grid_v, grid_m, F_next, _ = p2g_3d(
             x, v, C, F, E_field, actuator_id, act_t, muscle_dirs, mass_field, cfg
         )
-        grid_v_out = grid_op_3d(grid_v, grid_m, friction, cfg)
+        grid_v_out = grid_op_3d(grid_v, grid_m, friction, cfg, terrain_height=terrain_height)
         x_next, v_next, C_next = g2p_3d(x, grid_v_out, cfg)
         return (x_next, v_next, C_next, F_next), None
 
@@ -502,6 +519,19 @@ def _voxel_mass_field(voxel_occ: jnp.ndarray, scene: SceneData) -> jnp.ndarray:
     return occ[scene.voxel_id]
 
 
+def _fiber_dirs_or_default(scene: SceneData, cfg: MPMConfig) -> jnp.ndarray:
+    """Use scene-supplied fibers if present (new API), else fall back to lift-push."""
+    if scene.fiber_dirs is None:
+        return _muscle_directions(cfg.n_actuators)
+    return scene.fiber_dirs
+
+
+def _E_field_or_default(scene: SceneData, cfg: MPMConfig, E0: float) -> jnp.ndarray:
+    if scene.E_per_particle is None:
+        return jnp.full((scene.n_particles,), DTYPE(E0), dtype=DTYPE)
+    return scene.E_per_particle
+
+
 def rollout_return(
     x_morph: jnp.ndarray,     # (n_voxels,) ∈ [0,1] occupancy per voxel
     phi: jnp.ndarray,          # (phi_dim,) controller params
@@ -510,11 +540,16 @@ def rollout_return(
     cfg: MPMConfig,
     num_env_steps: int,
     E0: float = 1.0,
+    terrain_height: jnp.ndarray = None,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Run one rollout. Returns (blended_reward, final_forward_disp, com_x_traj)."""
-    E_field = jnp.full((scene.n_particles,), DTYPE(E0), dtype=DTYPE)
+    """Run one rollout. Returns (blended_reward, final_forward_disp, com_x_traj).
+
+    Phase 2.1: optional ``terrain_height`` (n_grid, n_grid) makes the floor
+    follow a height field. None → flat floor (backward-compat).
+    """
+    E_field = _E_field_or_default(scene, cfg, E0)
     actuator_id = scene.actuator_id
-    muscle_dirs = _muscle_directions(cfg.n_actuators)
+    muscle_dirs = _fiber_dirs_or_default(scene, cfg)
     mass_field = _voxel_mass_field(x_morph, scene)
 
     carry = _init_carry(scene)
@@ -522,7 +557,10 @@ def rollout_return(
     init_com_x = jnp.sum(scene.x0 * w0[:, None], axis=0)
 
     def body(carry, env_t):
-        return _env_step(carry, env_t, phi, E_field, actuator_id, friction, muscle_dirs, mass_field, cfg)
+        return _env_step(
+            carry, env_t, phi, E_field, actuator_id, friction, muscle_dirs, mass_field, cfg,
+            terrain_height=terrain_height,
+        )
 
     carry, (com_v_hist, com_x_hist) = jax.lax.scan(
         body, carry, jnp.arange(num_env_steps, dtype=jnp.int32)
@@ -554,11 +592,12 @@ def rollout_with_positions(
     cfg: MPMConfig,
     num_env_steps: int,
     E0: float = 1.0,
+    terrain_height: jnp.ndarray = None,
 ):
     """Like `rollout_return` but also returns particle positions per env step (for GIF)."""
-    E_field = jnp.full((scene.n_particles,), DTYPE(E0), dtype=DTYPE)
+    E_field = _E_field_or_default(scene, cfg, E0)
     actuator_id = scene.actuator_id
-    muscle_dirs = _muscle_directions(cfg.n_actuators)
+    muscle_dirs = _fiber_dirs_or_default(scene, cfg)
     mass_field = _voxel_mass_field(x_morph, scene)
     carry = _init_carry(scene)
     w0 = mass_field / (jnp.sum(mass_field) + DTYPE(1e-8))
@@ -566,7 +605,8 @@ def rollout_with_positions(
 
     def body(carry, env_t):
         new_carry, (com_v, com_x) = _env_step(
-            carry, env_t, phi, E_field, actuator_id, friction, muscle_dirs, mass_field, cfg
+            carry, env_t, phi, E_field, actuator_id, friction, muscle_dirs, mass_field, cfg,
+            terrain_height=terrain_height,
         )
         return new_carry, (com_v, com_x, new_carry[0])
 
@@ -583,6 +623,234 @@ def rollout_with_positions(
     return reward, final_disp, com_x_hist, x_hist, mass_field
 
 
+def _env_step_with_manip(
+    carry,
+    env_t: jnp.ndarray,
+    phi: jnp.ndarray,
+    E_field: jnp.ndarray,
+    actuator_id: jnp.ndarray,
+    friction: jnp.ndarray,
+    muscle_dirs: jnp.ndarray,
+    mass_field: jnp.ndarray,
+    cfg: MPMConfig,
+    terrain_height: jnp.ndarray = None,
+    manip_cfg=None,
+):
+    """Variant of `_env_step` that maintains a kinematic AABB box in the carry.
+
+    Carry layout:
+        (x, v, C, F, manip_state)   where manip_state is ManipulandState.
+
+    Per substep: p2g → grid_op (floor + walls + terrain) → box override
+    (apply_box_to_grid) → g2p; manip_state updated by step_manipuland from the
+    grid impulse. Per env step we report (com_v, com_x, manip_pos).
+    """
+    from genedynamics.envs.external.jax_mpm.manipuland import (
+        apply_box_to_grid,
+        step_manipuland,
+    )
+
+    n_sub = cfg.substeps_per_env_step
+    x, v, _, _, _ = carry
+    w = mass_field / (jnp.sum(mass_field) + DTYPE(1e-8))
+    v_com_x = jnp.sum(v[:, 0] * w, axis=0)
+    act_env = compute_actuation(phi, env_t, cfg, v_com_x=v_com_x)
+    act_t = act_env * DTYPE(cfg.act_strength_base) * DTYPE(cfg.actuation_strength_scale)
+
+    def substep(c, _):
+        x, v, C, F, manip_state = c
+        grid_v, grid_m, F_next, _ = p2g_3d(
+            x, v, C, F, E_field, actuator_id, act_t, muscle_dirs, mass_field, cfg
+        )
+        grid_v_floor = grid_op_3d(grid_v, grid_m, friction, cfg, terrain_height=terrain_height)
+        grid_v_box, impulse = apply_box_to_grid(
+            grid_v_floor, grid_m, manip_state, manip_cfg, cfg.n_grid, cfg.dx
+        )
+        manip_state_next = step_manipuland(
+            manip_state, impulse, cfg.dt, cfg.gravity, manip_cfg,
+            terrain_height=terrain_height, n_grid=cfg.n_grid,
+        )
+        x_next, v_next, C_next = g2p_3d(x, grid_v_box, cfg)
+        return (x_next, v_next, C_next, F_next, manip_state_next), None
+
+    carry, _ = jax.lax.scan(substep, carry, jnp.arange(n_sub, dtype=jnp.int32))
+    x, v, _, _, manip_state = carry
+    w = mass_field / (jnp.sum(mass_field) + DTYPE(1e-8))
+    com_v = jnp.sum(v * w[:, None], axis=0)
+    com_x = jnp.sum(x * w[:, None], axis=0)
+    return carry, (com_v, com_x, manip_state.pos)
+
+
+def rollout_return_push(
+    x_morph: jnp.ndarray,
+    phi: jnp.ndarray,
+    friction: jnp.ndarray,
+    scene: SceneData,
+    cfg: MPMConfig,
+    num_env_steps: int,
+    manip_cfg,
+    goal_x: float,
+    *,
+    E0: float = 1.0,
+    terrain_height: jnp.ndarray = None,
+    weights: Tuple[float, float, float, float] = (1.0, 5.0, 0.01, 50.0),
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Push-task rollout. Returns (reward, dist_to_goal_T, com_x_traj, manip_x_traj).
+
+    Reward (writeup §11 Task 2, light-weight version):
+        R = w0 * Δx_obj                   # forward object displacement
+          + w1 * (d_0 - d_T)              # closing distance to goal
+          - w2 * Σ‖u_t‖²                  # control penalty (proxy via φ norm)
+          - w3 * 1[Δx_obj < ε]            # sticky penalty when object never moved
+    """
+    from genedynamics.envs.external.jax_mpm.manipuland import init_manipuland_state
+
+    E_field = _E_field_or_default(scene, cfg, E0)
+    actuator_id = scene.actuator_id
+    muscle_dirs = _fiber_dirs_or_default(scene, cfg)
+    mass_field = _voxel_mass_field(x_morph, scene)
+
+    manip_state0 = init_manipuland_state(manip_cfg, terrain_height=terrain_height, n_grid=cfg.n_grid)
+    x0, v0, C0, F0 = _init_carry(scene)
+    carry = (x0, v0, C0, F0, manip_state0)
+
+    def body(carry, env_t):
+        return _env_step_with_manip(
+            carry, env_t, phi, E_field, actuator_id, friction, muscle_dirs, mass_field, cfg,
+            terrain_height=terrain_height, manip_cfg=manip_cfg,
+        )
+
+    carry, (com_v_hist, com_x_hist, manip_x_hist) = jax.lax.scan(
+        body, carry, jnp.arange(num_env_steps, dtype=jnp.int32),
+    )
+
+    init_obj_x = manip_state0.pos[0]
+    final_obj_x = manip_x_hist[-1, 0]
+    delta_obj_x = final_obj_x - init_obj_x
+
+    goal_x_d = DTYPE(goal_x)
+    d0 = jnp.abs(init_obj_x - goal_x_d)
+    dT = jnp.abs(final_obj_x - goal_x_d)
+    closing = d0 - dT
+
+    w0_, w1_, w2_, w3_ = weights
+    eps_x = DTYPE(1e-3)
+    sticky = jnp.where(jnp.abs(delta_obj_x) < eps_x, DTYPE(1.0), DTYPE(0.0))
+    ctrl_pen = jnp.sum(phi * phi)
+
+    reward = (
+        DTYPE(w0_) * delta_obj_x
+        + DTYPE(w1_) * closing
+        - DTYPE(w2_) * ctrl_pen
+        - DTYPE(w3_) * sticky
+    )
+    return reward, dT, com_x_hist, manip_x_hist
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 (SHAC) — differentiable h-step rollout from arbitrary carry state.
+#
+# SHAC needs a function that:
+#   - starts from a SAVED simulator state (not always _init_carry)
+#   - runs h env steps with the current controller params phi
+#   - returns the rewards-per-step, observations-per-step, and final carry
+#
+# Critically: differentiable in `phi` so jax.grad(loss, argnums=...) works.
+# The non-smooth contact friction in grid_op_3d gives a sub-gradient at
+# threshold points, which is what SHAC's stochastic policy averages over.
+# ---------------------------------------------------------------------------
+
+
+_OBS_DIM = 9   # COM (3) + COM vel (3) + mean speed (1) + sin/cos time (2)
+
+
+def observation_from_carry(
+    carry,
+    env_t: jnp.ndarray,
+    mass_field: jnp.ndarray,
+    horizon: int,
+) -> jnp.ndarray:
+    """Compact obs vector for the SHAC critic. Mass-weighted so ghost
+    particles (occupancy ≈ 0) don't bias the moments.
+
+    Returns (_OBS_DIM,) float32. This is the input dim for critic.MLP.
+    """
+    x, v, _, _ = carry
+    w = mass_field / (jnp.sum(mass_field) + DTYPE(1e-8))
+    com_x = jnp.sum(x * w[:, None], axis=0)         # (3,)
+    com_v = jnp.sum(v * w[:, None], axis=0)         # (3,)
+    speed = jnp.sqrt(jnp.sum(v * v, axis=-1) + DTYPE(1e-12))
+    mean_speed = jnp.sum(speed * w)
+    t_frac = jnp.asarray(env_t, dtype=DTYPE) / DTYPE(max(int(horizon), 1))
+    sin_t = jnp.sin(DTYPE(2.0 * math.pi) * t_frac)
+    cos_t = jnp.cos(DTYPE(2.0 * math.pi) * t_frac)
+    return jnp.stack([
+        com_x[0], com_x[1], com_x[2],
+        com_v[0], com_v[1], com_v[2],
+        mean_speed, sin_t, cos_t,
+    ]).astype(DTYPE)
+
+
+def rollout_h_from_state(
+    initial_carry,                         # (x, v, C, F) jnp tuple
+    initial_t: jnp.ndarray,                # scalar int env-step at start
+    phi: jnp.ndarray,                      # (phi_dim,) controller params
+    h: int,                                # static Python int — short horizon
+    friction: jnp.ndarray,                 # scalar
+    scene: SceneData,
+    cfg: MPMConfig,
+    *,
+    E0: float = 1.0,
+    terrain_height: jnp.ndarray = None,
+    x_morph: jnp.ndarray = None,           # (n_voxels,) occupancy; None → all 1
+    horizon_for_time: int = None,
+):
+    """Run ``h`` env steps from ``initial_carry``; differentiable in ``phi``.
+
+    Returns
+    -------
+    final_carry : (x, v, C, F) tuple (same shape as initial_carry)
+    rewards : (h,) float32 — per-step shaped reward (forward-disp delta - …)
+    observations : (h+1, _OBS_DIM) float32 — obs at the start of each step + terminal
+    """
+    if x_morph is None:
+        x_morph = jnp.ones((scene.n_voxels,), dtype=DTYPE)
+    horizon_for_time = int(horizon_for_time or cfg.env_horizon)
+
+    E_field = _E_field_or_default(scene, cfg, E0)
+    actuator_id = scene.actuator_id
+    muscle_dirs = _fiber_dirs_or_default(scene, cfg)
+    mass_field = _voxel_mass_field(x_morph, scene)
+
+    # Initial COM (for shaped reward delta).
+    w0 = mass_field / (jnp.sum(mass_field) + DTYPE(1e-8))
+    init_com_x = jnp.sum(initial_carry[0] * w0[:, None], axis=0)[0]
+
+    def body(carry_state, dt_step):
+        carry, prev_com_x = carry_state
+        env_t = initial_t + dt_step
+        new_carry, (com_v, com_x) = _env_step(
+            carry, env_t, phi, E_field, actuator_id, friction, muscle_dirs,
+            mass_field, cfg, terrain_height=terrain_height,
+        )
+        # Shaped per-step reward: positive forward COM displacement minus a
+        # tiny control penalty (matches `rollout_return`'s integrated reward
+        # pattern but split per step so SHAC's discounted sum is meaningful).
+        delta_x = com_x[0] - prev_com_x
+        ctrl_pen = DTYPE(1e-4) * jnp.sum(phi * phi)
+        reward = delta_x - ctrl_pen
+        obs = observation_from_carry(new_carry, env_t, mass_field, horizon_for_time)
+        return (new_carry, com_x[0]), (reward, obs)
+
+    init_obs = observation_from_carry(initial_carry, initial_t, mass_field, horizon_for_time)
+    (final_state, _final_com_x), (rewards, obs_seq) = jax.lax.scan(
+        body, (initial_carry, init_com_x), jnp.arange(h, dtype=jnp.int32),
+    )
+    # Stack initial obs + per-step obs so the critic sees s_0..s_h (h+1 entries).
+    observations = jnp.concatenate([init_obs[None, :], obs_seq], axis=0)
+    return final_state, rewards, observations
+
+
 def rollout_return_batch(
     x_morph_batch: jnp.ndarray,    # (B, n_voxels)
     phi_batch: jnp.ndarray,         # (B, phi_dim)
@@ -591,10 +859,50 @@ def rollout_return_batch(
     cfg: MPMConfig,
     num_env_steps: int,
     E0: float = 1.0,
+    terrain_height: jnp.ndarray = None,
 ):
+    """Vmap rollout_return over a batch of (morphology, controller, friction) tuples.
+
+    Phase 2.1: ``terrain_height`` is shared across the batch (a single regime
+    per batch). For per-candidate terrain (Phase 2.2 regime dispatch), call
+    `rollout_return` per regime group and concatenate.
+    """
     def _one(xm, ph, fr):
-        r, disp, _ = rollout_return(xm, ph, fr, scene, cfg, num_env_steps, E0)
+        r, disp, _ = rollout_return(
+            xm, ph, fr, scene, cfg, num_env_steps, E0, terrain_height=terrain_height,
+        )
         return r, disp
 
     rs, disps = jax.vmap(_one)(x_morph_batch, phi_batch, friction_batch)
     return rs, disps
+
+
+def rollout_return_push_batch(
+    x_morph_batch: jnp.ndarray,    # (B, n_voxels)
+    phi_batch: jnp.ndarray,         # (B, phi_dim)
+    friction_batch: jnp.ndarray,    # (B,)
+    scene: SceneData,
+    cfg: MPMConfig,
+    num_env_steps: int,
+    manip_cfg,
+    goal_x: float,
+    *,
+    E0: float = 1.0,
+    terrain_height: jnp.ndarray = None,
+    weights=(1.0, 5.0, 0.01, 50.0),
+):
+    """Vmap rollout_return_push over a (morphology, controller, friction) batch.
+
+    Manipuland config, terrain, and goal are shared across the batch (single
+    regime). Returns (rewards, dist_to_goal_T) — both (B,).
+    """
+    def _one(xm, ph, fr):
+        r, dT, _, _ = rollout_return_push(
+            xm, ph, fr, scene, cfg, num_env_steps,
+            manip_cfg=manip_cfg, goal_x=goal_x,
+            E0=E0, terrain_height=terrain_height, weights=weights,
+        )
+        return r, dT
+
+    rs, dTs = jax.vmap(_one)(x_morph_batch, phi_batch, friction_batch)
+    return rs, dTs

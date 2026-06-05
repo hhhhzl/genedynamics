@@ -94,6 +94,14 @@ class EBMBDBackendJax:
         # See genedynamics.core.prob.NoiseSampler for the protocol.
         self.noise_sampler = getattr(solver, "noise_sampler", None)
 
+        # Optional pluggable reverse transport (DDPM/DDIM/FM/...). When None
+        # (the default) the solver runs the VERBATIM inline DDPM score-form
+        # update, so the traced graph and float output are byte-identical to the
+        # pre-transport code. A transport object is consulted only on the
+        # explicit ``else`` branch. DDPM is the sigma=0 special case.
+        # See genedynamics.solvers.common.transport.base.ReverseTransport.
+        self.transport = getattr(solver, "transport", None)
+
         # Allow constraint scheduler to override barrier params (emerging_barrier)
         if self.scheduler is not None and hasattr(self.scheduler, "constraint_schedulers"):
             try:
@@ -470,15 +478,46 @@ class EBMBDBackendJax:
                 
                 Ybar_weighted = jnp.tensordot(weights, Y0s, axes=([0], [0]))
                 
-                one_minus_alpha_bar = 1.0 - alphas_bar[idx]
-                score_val = (-Yi + sqrt_alpha_bar_i * Ybar_weighted) / one_minus_alpha_bar
-                Yim1 = (Yi + one_minus_alpha_bar * score_val) / jnp.sqrt(alphas[idx])
-                sqrt_alpha_bar_prev = jnp.sqrt(alphas_bar[idx - 1])
-                Ybar_next = Yim1 / sqrt_alpha_bar_prev
-                
+                # Diversity noise drawn here so DDIM/FM can consume it as the
+                # reverse-noise (sigma, z) kick. ``state=`` is unused by the default
+                # normal path, so this is byte-identical to drawing it after Ybar_next.
                 extra_sigma = extra_sigmas_by_idx[idx]
-                noise_extra = self._draw_unit_noise(extra_key, (horizon, act_dim), state=Ybar_next)
-                Ybar_next = Ybar_next + extra_sigma * noise_extra
+                noise_extra = self._draw_unit_noise(extra_key, (horizon, act_dim), state=Ybar_curr)
+                if self.transport is None:
+                    # VERBATIM default DDPM score-form update (byte-identical to
+                    # pre-transport code). DO NOT refactor these lines.
+                    one_minus_alpha_bar = 1.0 - alphas_bar[idx]
+                    score_val = (-Yi + sqrt_alpha_bar_i * Ybar_weighted) / one_minus_alpha_bar
+                    Yim1 = (Yi + one_minus_alpha_bar * score_val) / jnp.sqrt(alphas[idx])
+                    sqrt_alpha_bar_prev = jnp.sqrt(alphas_bar[idx - 1])
+                    Ybar_next = Yim1 / sqrt_alpha_bar_prev
+                    Ybar_next = Ybar_next + extra_sigma * noise_extra
+                else:
+                    # Swappable reverse transport (static Python branch). eps_hat_k
+                    # materialised for DDIM/FM; DDPMTransport reproduces the inline
+                    # default so transport=DDPMTransport() == None is byte-identical.
+                    abar_k = alphas_bar[idx]
+                    eps_k = (Yi - sqrt_alpha_bar_i * Ybar_weighted) / jnp.sqrt(
+                        jnp.maximum(1.0 - abar_k, 1e-8)
+                    )
+                    consumes = getattr(self.transport, "consumes_diversity_noise", False)
+                    step_sigma = extra_sigma if consumes else 0.0
+                    step_z = noise_extra if consumes else None
+                    Ybar_next = self.transport.step(
+                        tau_k=Yi,
+                        tau1_k=Ybar_weighted,
+                        eps_k=eps_k,
+                        score_g=None,
+                        sched={
+                            "abar_k": abar_k,
+                            "alpha_k": alphas[idx],
+                            "abar_km1": alphas_bar[idx - 1],
+                        },
+                        sigma=step_sigma,
+                        z=step_z,
+                    )
+                    if not consumes:
+                        Ybar_next = Ybar_next + extra_sigma * noise_extra
                 Ybar_next = jnp.clip(Ybar_next, -limit, limit)
                 # reward_history: stage + terminal only (for convergence comparison across methods)
                 reward_val = jnp.mean(-total_stage_terminal_cost)
@@ -645,17 +684,41 @@ class EBMBDBackendJax:
             # Weighted average
             Ybar_weighted = jnp.tensordot(weights, Y0s, axes=([0], [0]))
 
-            # Reverse update
-            one_minus_alpha_bar = 1.0 - alphas_bar[idx]
-            score_val = (-Yi + sqrt_alpha_bar_i * Ybar_weighted) / one_minus_alpha_bar
-            Yim1 = (Yi + one_minus_alpha_bar * score_val) / jnp.sqrt(alphas[idx])
-            sqrt_alpha_bar_prev = jnp.sqrt(alphas_bar[idx - 1])
-            Ybar_next = Yim1 / sqrt_alpha_bar_prev
-
-            # Add extra noise (decays to 0)
+            # Reverse update (swappable reverse transport; None => verbatim DDPM).
             extra_sigma = extra_sigmas_by_idx[idx]
-            noise_extra = self._draw_unit_noise(extra_key, (horizon, act_dim), state=Ybar_next)
-            Ybar_next = Ybar_next + extra_sigma * noise_extra
+            noise_extra = self._draw_unit_noise(extra_key, (horizon, act_dim), state=Ybar_curr)
+            if self.transport is None:
+                # VERBATIM default DDPM score-form update (byte-identical to
+                # pre-transport code). DO NOT refactor these lines.
+                one_minus_alpha_bar = 1.0 - alphas_bar[idx]
+                score_val = (-Yi + sqrt_alpha_bar_i * Ybar_weighted) / one_minus_alpha_bar
+                Yim1 = (Yi + one_minus_alpha_bar * score_val) / jnp.sqrt(alphas[idx])
+                sqrt_alpha_bar_prev = jnp.sqrt(alphas_bar[idx - 1])
+                Ybar_next = Yim1 / sqrt_alpha_bar_prev
+                Ybar_next = Ybar_next + extra_sigma * noise_extra
+            else:
+                abar_k = alphas_bar[idx]
+                eps_k = (Yi - sqrt_alpha_bar_i * Ybar_weighted) / jnp.sqrt(
+                    jnp.maximum(1.0 - abar_k, 1e-8)
+                )
+                consumes = getattr(self.transport, "consumes_diversity_noise", False)
+                step_sigma = extra_sigma if consumes else 0.0
+                step_z = noise_extra if consumes else None
+                Ybar_next = self.transport.step(
+                    tau_k=Yi,
+                    tau1_k=Ybar_weighted,
+                    eps_k=eps_k,
+                    score_g=None,
+                    sched={
+                        "abar_k": abar_k,
+                        "alpha_k": alphas[idx],
+                        "abar_km1": alphas_bar[idx - 1],
+                    },
+                    sigma=step_sigma,
+                    z=step_z,
+                )
+                if not consumes:
+                    Ybar_next = Ybar_next + extra_sigma * noise_extra
 
             # Clip
             Ybar_next = jnp.clip(Ybar_next, -limit, limit)

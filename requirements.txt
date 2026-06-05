@@ -54,6 +54,13 @@ qpax==0.0.9
 jaxopt==0.8.5
 qpth
 
+# Deploy: AR scene server (WebSocket broadcast of corridor scene contract)
+websockets>=12
+# Deploy: AR world-model zero-copy wire format (P2 hot path; flatc generates the
+# cross-language code under deploy/ar/schema/generated/). JSON/binary codecs work
+# without it; this is the runtime to use the FlatBuffers codec.
+flatbuffers>=2.0
+
 # Dev tools
 pytest>=9.0.2
 black>=24.3.0

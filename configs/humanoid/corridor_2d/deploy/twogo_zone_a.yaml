@@ -1,0 +1,41 @@
+# Deploy parameters used to produce results/deploy/spark_rl/twogo_zone_a/spark_rl_final_03x.gif.
+# Pair with configs/humanoid/corridor_2d/plan/twogo_zone_a.yaml.
+#
+# Loaded by scripts/tasks/robot/humanoid/sport_mode_corridor.py via the
+#   --deploy-config <this-file>
+# flag. Yaml fields become argparse defaults; CLI flags still override.
+# The render: block at the end is printed back as a ready-to-paste render
+# command after the diagnose run.
+
+plan: twogo_zone_a
+plan_path: results/humanoid/corridor_2d/plan/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json
+
+# Controller / sim cadence (matches spark MuJoCo training)
+control_hz: 50.0
+sim_dt: 0.002          # 1/500
+
+# Body-frame velocity tracking with closed-loop xy P-control
+xy_kp: 1.5
+xy_correction_cap: 0.25        # m/s magnitude cap on xy_kp*err term
+yaw_kp: 0.0
+warmup_sec: 0.8                # linearly ramp cmd 0 -> plan[0].v before tracking begins
+
+# Cmd low-pass filter (off — LPF was harmful in our experiments)
+cmd_lpf_tau: 0.0
+
+# Runtime PD-gain patch matching spark MuJoCo training values
+# (hip kp=100/kd=2, knee kp=150/kd=4, ankle kp=40/kd=2)
+spark_pd_gains: true
+
+# Plan mode selection (null = use planner's pick)
+best_idx: null
+
+# Renderer settings (render_spark_rl_corridor_gif.py)
+render:
+  cam_mode: global
+  cam_azimuth: 90
+  cam_elevation: -45
+  every_n: 4
+  width: 1200
+  height: 600
+  speed: 0.3
