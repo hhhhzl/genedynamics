@@ -20,7 +20,10 @@ struct Quat { w:float; x:float; y:float; z:float; }   // unit quaternion (w,x,y,
 struct Pose { p:Vec3; q:Quat; }                        // expressed in Entity.frame
 
 enum GeomKind:byte { Box = 0, Sphere, Cylinder, Capsule, Usd, Urdf, Path }
-enum EntityType:byte { Obstacle = 0, Wall, Robot, ArmLink, Goal, Path, Occluder }
+// Viewer = an AR device (e.g. headset) tracked in the world frame; its wearer's
+// client uses it to register (and skips drawing it), other clients show it as a
+// collaborator marker. Appended at the END → backward compatible (conventions §6).
+enum EntityType:byte { Obstacle = 0, Wall, Robot, ArmLink, Goal, Path, Occluder, Viewer }
 
 table Geometry {
   kind:GeomKind = Box;

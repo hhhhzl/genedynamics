@@ -39,6 +39,10 @@ Each renderer applies its own map; **verify the sign with one known point.**
 ## 4. Entity identity & revisions
 - `Entity.id` is **stable across frames** — renderers key their GameObjects /
   RealityKit entities by it (create / update / destroy).
+- **`viewer`** entities are AR devices tracked in the world frame (e.g. a headset;
+  `producers/tracker_pose.populate_headset`). A client MUST **not render its own
+  viewer** (it is that client's camera) and instead use its pose to register
+  (ARCHITECTURE §4a); it MAY render *other* viewers as collaborator markers.
 - `Entity.rev` is the producer's monotonic revision at the entity's last change.
 - **Keyframe** (`is_keyframe=true`): the full, self-contained entity set; the
   client replaces its world with it. `removed_ids` is empty.

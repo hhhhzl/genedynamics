@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Tuple
 SCHEMA_VERSION = 2
 
 # Entity / geometry kind vocabularies (mirror the .fbs enums).
-ENTITY_TYPES = ("obstacle", "wall", "robot", "arm_link", "goal", "path", "occluder")
+ENTITY_TYPES = ("obstacle", "wall", "robot", "arm_link", "goal", "path", "occluder", "viewer")
 GEOM_KINDS = ("box", "sphere", "cylinder", "capsule", "usd", "urdf", "path")
 
 

@@ -42,6 +42,29 @@ namespace CorridorTwin
             return new Vector3(-world.y, world.z, world.x);
         }
 
+        // Vicon-world ORIENTATION -> Unity local rotation under the anchor, the
+        // rotational partner of WorldToAnchorLocal. The (-y,z,x) basis change is a
+        // REFLECTION (RH->LH, det=-1), which a quaternion cannot represent directly;
+        // so map the rotated world basis vectors through it and rebuild a proper
+        // Unity rotation with LookRotation (handedness-safe — no quaternion guesswork).
+        // SINGLE SOURCE OF TRUTH: WorldRenderer (draw) and QuestAnchorProvider
+        // (registration) both call this, so placement and registration can never
+        // disagree on the convention.
+        public static Quaternion WorldToAnchorLocalRot(Quaternion worldQuat)
+        {
+            Vector3 fwd = WorldToAnchorLocal(RotateVec(worldQuat, new Vector3(1, 0, 0)));
+            Vector3 up = WorldToAnchorLocal(RotateVec(worldQuat, new Vector3(0, 0, 1)));
+            if (fwd.sqrMagnitude < 1e-9f || up.sqrMagnitude < 1e-9f) return Quaternion.identity;
+            return Quaternion.LookRotation(fwd, up);
+        }
+
+        // Rotate vector v by quaternion q (components frame-agnostic).
+        private static Vector3 RotateVec(Quaternion q, Vector3 v)
+        {
+            var u = new Vector3(q.x, q.y, q.z);
+            return v + 2f * q.w * Vector3.Cross(u, v) + 2f * Vector3.Cross(u, Vector3.Cross(u, v));
+        }
+
         // scene (x,y,z) -> Unity local position under WorldOriginAnchor.
         public Vector3 SceneToAnchorLocal(float x, float y, float z)
         {
