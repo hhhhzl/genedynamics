@@ -82,16 +82,19 @@ then render obstacles as its children using the world→Unity map above.
   Vicon streams the headset world pose; one-time hand-eye calibration ties the
   visionOS world-anchor frame to Vicon. (Fallback: a visionOS world anchor
   dropped at a Vicon-surveyed point.)
-- **Meta Quest 3 / 3S / Pro (OpenXR + Meta XR SDK):** same Vicon-marker-on-headset
-  idea, implemented as `unity/Scripts/QuestAnchorProvider.cs` — feed it the
-  headset's Vicon-world pose via `SetHeadsetPoseWorld(...)`; it solves
-  `anchor = headset_unity ∘ L⁻¹` every sample and EMA-smooths it, so it also
-  corrects Quest's SLAM drift (no fiducial, no passthrough-camera access). The
-  rest of the entity-model client is unchanged; only the XR provider plugin
-  (ARCore → Meta OpenXR) differs. See ARCHITECTURE §4a.
+- **OpenXR headsets — Quest 3/3S/Pro, Pico, Magic Leap 2, Android XR, Vive XR
+  (OpenXR + the vendor's feature group):** same Vicon-marker-on-headset idea,
+  implemented as the **vendor-agnostic** `unity/Scripts/OpenXRAnchorProvider.cs`
+  (`QuestAnchorProvider.cs` is a thin Quest subclass; other vendors attach the
+  base directly). Feed it the headset's Vicon-world pose via
+  `SetHeadsetPoseWorld(...)`; it solves `anchor = headset_unity ∘ L⁻¹` every
+  sample and EMA-smooths it, so it also corrects the headset's SLAM drift (no
+  fiducial, no passthrough-camera access). The rest of the entity-model client is
+  unchanged; only the XR provider plugin (ARCore → the OpenXR feature group)
+  differs. See ARCHITECTURE §4a.
 
 `FrameRegistration` exposes a single `WorldOriginAnchor` Transform; swap the
-registration source (`ARTrackedImageManager` / `QuestAnchorProvider` / Vicon
+registration source (`ARTrackedImageManager` / `OpenXRAnchorProvider` / Vicon
 stream) without touching the renderer.
 
 ## Files
@@ -113,10 +116,13 @@ stream) without touching the renderer.
 5. Build to the device. Point at the fiducial (phone) / start Vicon streaming
    (Vision Pro); obstacles appear locked to the physical space.
 
-## Setup — Meta Quest 3 / 3S / Pro (entity model, OpenXR + Meta XR SDK)
-The entity-model path (`WorldClient` + `WorldRenderer`) on Quest passthrough MR.
-Only the XR provider and the registrant differ from the phone setup above — the
-renderer code is identical (ARCHITECTURE §4a).
+## Setup — OpenXR headsets (Quest 3/3S/Pro shown; Pico / ML2 / Android XR alike)
+The entity-model path (`WorldClient` + `WorldRenderer`) on passthrough MR. Only the
+XR provider and the registrant differ from the phone setup above — the renderer
+code is identical (ARCHITECTURE §4a). Steps below are for Quest; **for another
+OpenXR headset, swap the vendor's OpenXR feature group in step 1–2 and attach
+`OpenXRAnchorProvider` instead of `QuestAnchorProvider` in step 4** — nothing else
+changes.
 
 1. **Packages:** Unity 6 (or 2022.3 LTS) + **Meta XR SDK** (Meta XR Core + the
    OpenXR feature), or the **Unity OpenXR plugin** with the **Meta Quest feature

@@ -15,8 +15,9 @@ namespace CorridorTwin
         public FrameRegistration Frame;
 
         [Tooltip("Optional: the registrant fed by THIS device's own headset (viewer) "
-               + "entity arriving on the stream. Leave unset on non-headset clients.")]
-        public QuestAnchorProvider AnchorProvider;
+               + "entity arriving on the stream — any OpenXRAnchorProvider (Quest/Pico/"
+               + "ML2/Android XR/…). Leave unset on non-headset clients.")]
+        public OpenXRAnchorProvider AnchorProvider;
 
         [Tooltip("This device's own headset entity id (e.g. \"headset/base\", matching "
                + "producers/tracker_pose.populate_headset). When set, that entity is "
@@ -151,7 +152,7 @@ namespace CorridorTwin
         }
 
         // world (RH, z-up) rotation → Unity (LH, y-up) lives in FrameRegistration.
-        // WorldToAnchorLocalRot (shared with QuestAnchorProvider's registration).
+        // WorldToAnchorLocalRot (shared with OpenXRAnchorProvider's registration).
 
         private static Color RgbaToColor(uint rgba)
         {

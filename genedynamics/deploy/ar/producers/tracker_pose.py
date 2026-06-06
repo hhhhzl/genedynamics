@@ -12,7 +12,7 @@ in `frame="world"` (the tracker already provides world poses):
     (ARCHITECTURE §4 occlusion; precise because the pose comes from the tracker), and
   * a ``viewer`` entity (:func:`populate_headset`) for an AR device tracked in the
     same world frame (e.g. a Vicon marker cluster on a Quest). Its pose drives that
-    device's registration — ``QuestAnchorProvider`` reads it off the existing
+    device's registration — ``OpenXRAnchorProvider`` reads it off the existing
     ``WorldSnapshot`` stream and solves ``anchor = headset_unity ∘ L⁻¹`` (ARCHITECTURE
     §4a). The wearer's own client skips drawing it (it IS the camera); every *other*
     client shows it as a collaborator marker. The marker→head mount offset is applied
@@ -121,7 +121,7 @@ def headset_entities(
 
     The headset is just another tracked body (mount offset applied upstream, like
     the robot base). Id is ``"{headset_id}/base"`` — mirror of the robot — and the
-    wearer's ``QuestAnchorProvider.LocalHeadsetId`` matches on it.
+    wearer's ``OpenXRAnchorProvider`` (`WorldRenderer.LocalHeadsetId`) matches on it.
 
     Args:
         qpos: ``[x, y, z, qw, qx, qy, qz]`` in the world frame (the Quest's head

@@ -47,7 +47,7 @@ namespace CorridorTwin
         // REFLECTION (RH->LH, det=-1), which a quaternion cannot represent directly;
         // so map the rotated world basis vectors through it and rebuild a proper
         // Unity rotation with LookRotation (handedness-safe — no quaternion guesswork).
-        // SINGLE SOURCE OF TRUTH: WorldRenderer (draw) and QuestAnchorProvider
+        // SINGLE SOURCE OF TRUTH: WorldRenderer (draw) and OpenXRAnchorProvider
         // (registration) both call this, so placement and registration can never
         // disagree on the convention.
         public static Quaternion WorldToAnchorLocalRot(Quaternion worldQuat)

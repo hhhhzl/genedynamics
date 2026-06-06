@@ -5,6 +5,10 @@ Engine-agnostic (Swift/RealityKit **and** Unity/AR Foundation), multi-device
 edge/distributed-ready. Extends today's `deploy/ar` (`SceneSource` +
 `scene_server`) instead of replacing it.
 
+> **Forward compatibility roadmap:** which *other* ecosystems this can still reach
+> (OpenXR headsets, Unreal, ROS2, transports, non-AR viewers…) is catalogued in
+> `future.md`, with per-item status (done / reachable / red line).
+
 ## 0. The one principle
 
 Everything below follows from **decoupling four layers**, each independently
@@ -187,10 +191,13 @@ unchanged too. Exactly two things differ from the phone path:
    feature / Meta XR SDK** and set the build target to Quest. This is Unity player
    settings, **not code** — `WorldRenderer.cs` imports no XR package.
 2. **Registration** — *who drives* `FrameRegistration.WorldOriginAnchor`. The
-   phone uses `ARTrackedImageManager` on a surveyed fiducial; Quest uses
-   **`QuestAnchorProvider`** (`clients/unity/Scripts/QuestAnchorProvider.cs`),
-   the Vicon-marker-on-headset registrant — same swappable contract (it only
-   writes the one anchor Transform).
+   phone uses `ARTrackedImageManager` on a surveyed fiducial; OpenXR headsets use
+   **`OpenXRAnchorProvider`** (`clients/unity/Scripts/OpenXRAnchorProvider.cs`),
+   the **vendor-agnostic** Vicon-marker-on-headset registrant — same swappable
+   contract (it only writes the one anchor Transform). `QuestAnchorProvider` is a
+   thin Quest-branded subclass; **Pico / Magic Leap 2 / Android XR / Vive XR
+   attach `OpenXRAnchorProvider` directly** — registration is identical, only the
+   OpenXR feature group differs (project settings).
 
 **Registration (mirrors the §4b Vision Pro row — use Vicon, you already have it):**
 put a rigid Vicon marker cluster on the Quest. Vicon then streams the headset's
@@ -198,7 +205,7 @@ world pose; Quest's own tracking gives the headset's Unity-space pose; the ancho
 is the closed form `anchor = headset_unity ∘ L⁻¹`, where `L` is the headset's
 Vicon pose pushed through the same `(-y,z,x)` map the renderer draws with
 (`FrameRegistration.WorldToAnchorLocalRot`, now the single source of truth shared
-by render and registration). `QuestAnchorProvider` solves this every Vicon sample
+by render and registration). `OpenXRAnchorProvider` solves this every Vicon sample
 and **EMA-smooths** the (quasi-static) anchor — which both kills jitter and
 *continuously re-pins to Vicon ground truth*, so holograms never drift off the
 real robot over a session (a one-shot fiducial would). Head motion is rendered by
@@ -214,8 +221,9 @@ access needed**, and robot + headset are natively in one Vicon frame (satisfies 
 > existing stream). Set `LockWhenConverged` if the headset Vicon stream is flaky.
 
 > One Unity codebase still covers the rest: iOS/Android (AR Foundation →
-> ARKit/ARCore), visionOS (PolySpatial), **and Quest (OpenXR/Meta XR)** — only the
-> provider + plugin differ per target.
+> ARKit/ARCore), visionOS (PolySpatial), **and every OpenXR headset — Quest, Pico,
+> Magic Leap 2, Android XR, Vive XR… — via `OpenXRAnchorProvider`** — only the XR
+> feature group + (on phones) the registration provider differ per target.
 
 ---
 
@@ -305,7 +313,8 @@ deploy/ar/
   registration/          # world-origin helpers, tracker-agnostic (Se2Transform lives here)
   clients/
     unity/   # AR Foundation (phone/visionOS) + WorldRenderer/WorldClient;
-             #   QuestAnchorProvider.cs = Quest/Meta XR registrant (§4a)
+             #   OpenXRAnchorProvider.cs = vendor-agnostic OpenXR registrant
+             #   (Quest/Pico/ML2/Android XR); QuestAnchorProvider.cs = Quest subclass (§4a)
     swift/   # RealityKit (Vision Pro)
     web/     # WebXR / three.js
 ```
