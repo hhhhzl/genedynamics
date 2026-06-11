@@ -29,6 +29,7 @@ method_params:
   aug_rho: 1.0
   num_modes: 8
   mode_strategy: multirun
+  twogo_transport_schedule: adaptive
 
   twogo_gate_vrate_threshold: 0.01
   twogo_cvar_alpha: 0.9

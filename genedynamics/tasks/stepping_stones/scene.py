@@ -258,7 +258,7 @@ def sample_stepping_stones_scene(
 ) -> SteppingStonesScene:
     profiles = default_difficulty_profiles()
     bucket = level_to_bucket(level)
-    prof = profiles[bucket]
+    prof = profiles["easy"]
     rng = np.random.default_rng(int(seed))
 
     k_horizon = _sample_int(rng, prof.horizon_k_range)
@@ -350,6 +350,9 @@ def sample_stepping_stones_scene(
     _parts_r = [x for x in (r_l, r_r) if x.size > 0]
     centers = np.concatenate(_parts_c, axis=0).astype(np.float32) if _parts_c else np.zeros((0, 2), dtype=np.float32)
     radii = np.concatenate(_parts_r, axis=0).astype(np.float32) if _parts_r else np.zeros((0,), dtype=np.float32)
+    radius_shrink = {"easy": 0.0, "medium": 0.004, "hard": 0.008}[bucket]
+    if radius_shrink > 0.0 and radii.size > 0:
+        radii = np.maximum(0.01, radii - float(radius_shrink)).astype(np.float32)
 
     lane_m = int(max(0, min(int(lane_tail_margin), 32)))
     k_horizon = max(int(k_horizon), int(max(len(left_xs), len(right_xs)) + lane_m))
@@ -373,4 +376,3 @@ def sample_stepping_stones_scene(
         l_max=float(l_max),
         support_platforms=support_platforms,
     )
-

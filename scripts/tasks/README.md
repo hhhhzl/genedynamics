@@ -22,19 +22,18 @@ Execution scripts organized by task domain.
 
 ## robot/
 
-Quadruped, UAV, acceptance tests.
+Stepping-stones plan → governor → walker. One entry point with subcommands:
+`quadruped/stepping_tones/run_stepping_execution.py`.
 
-| Script | Purpose |
-|--------|---------|
-| `run_quadruped_plan.sh` | MBD + MD-COAS + Go2 plans |
-| `run_stepping_stones_baselines.sh` | Stepping-stones baselines (MBD/MDOC/MD-COAS) |
-| `run_stepping_stones_main.sh` | Stepping-stones full main suite (MBD/MDOC/MD-COAS/2GO) |
-| `run_stepping_stones_ablations.sh` | 2GO ablations on stepping-stones |
-| `run_stepping_stones_smoke.sh` | Stepping-stones smoke checks |
-| `summarize_stepping_stones.py` | Aggregate success/CVaR/time from results |
-| `run_quadruped_quick.py` | One-shot deploy + render |
-| `run_acceptance.sh` | Acceptance tests |
-| `run_closed_loop_validation.sh` | Closed-loop validation acceptance tests |
+| Subcommand | Purpose |
+|------------|---------|
+| `exec --config <yaml>` | Run a deploy config (or `--seed-dir`) through governor+walker; write full `res` (qpos/qvel/ctrl + summary + governed step-stats + executed footholds + ranking) and a GIF |
+| `eval --methods ... --mode both` | Planner-SSR vs execution-SSR across methods/seeds |
+| `validate [--no-sim]` | Staged validation: flat-straight → straight-stones → 2GO → baselines |
+| `viz --res-dir <…/governed>` | Paper figures from an exec result: front-view ghosted motion strip + execution-vs-reference tracking + gait contact/speed diagram (`exec --figures` emits them automatically) |
+
+Needs native MuJoCo for the sim parts — run inside `genedynamics/dev-cpu:torch` (arm64).
+Deploy configs: `configs/quadruped/stepping_stones_2d/deploy/*.yaml`.
 
 ## soft_robot/
 

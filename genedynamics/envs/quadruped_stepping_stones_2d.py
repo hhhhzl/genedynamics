@@ -133,6 +133,10 @@ class QuadrupedSteppingStones2DEnv:
     terminal_reward_weight: float = 300.0
 
     task_terminal_foot_weight: float = 0.55
+    energy_foothold_weight: float = 1.12
+    energy_support_weight: float = 1.08
+    energy_geometry_weight: float = 1.0
+    energy_step_bound_weight: float = 1.0
 
     def __post_init__(self) -> None:
         scene = self.scene
@@ -1353,9 +1357,9 @@ def make_stepping_stones_energy(env: QuadrupedSteppingStones2DEnv) -> LegacyEner
         {
             "task": EnergyTerm(task_energy, 1.0),
             "smooth": EnergyTerm(smooth_energy, 0.92),
-            "foothold": EnergyTerm(foothold_energy, 1.12),
-            "support": EnergyTerm(support_energy, 1.08),
-            "geometry": EnergyTerm(geometry_energy, 1.0),
-            "step_bound": EnergyTerm(step_bound_energy, 1.0),
+            "foothold": EnergyTerm(foothold_energy, float(getattr(env, "energy_foothold_weight", 1.12))),
+            "support": EnergyTerm(support_energy, float(getattr(env, "energy_support_weight", 1.08))),
+            "geometry": EnergyTerm(geometry_energy, float(getattr(env, "energy_geometry_weight", 1.0))),
+            "step_bound": EnergyTerm(step_bound_energy, float(getattr(env, "energy_step_bound_weight", 1.0))),
         }
     )
