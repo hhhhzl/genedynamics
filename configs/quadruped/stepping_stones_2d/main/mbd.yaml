@@ -24,7 +24,7 @@ method_params:
   action_extra_sigma: 0.02
   terminal_energy_weight: 120.0
   guide_weight: 20.0
-  num_modes: 20
+  num_modes: 10
   mode_strategy: multirun
 
 obstacle_levels: [1, 5]

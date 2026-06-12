@@ -47,7 +47,7 @@ obstacle_config:
 
 seeds: [0]
 backend: jax
-device: cpu
+device: cuda
 
 metrics: [corridor_metrics]
 visualizations: [corridor_trajectory, cost, diffusion]
