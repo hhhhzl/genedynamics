@@ -24,7 +24,7 @@ method_params:
   terminal_energy_weight: 120.0
   guide_weight: 20.0
   use_min_over_time: true
-  num_modes: 20
+  num_modes: 10
   mode_strategy: multirun
   # Barrier defaults (single_2d/ebmbd.yaml); tune margin vs stone scale if needed
   mu: 50.0

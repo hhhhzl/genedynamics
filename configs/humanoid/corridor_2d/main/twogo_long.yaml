@@ -16,18 +16,18 @@ env_params:
   psi_torso_dot_max: 0.4
   arm_tuck_rate_max: 1.0
   arm_posture_rate_max: 1.0
-  collision_margin: 0.03
+  collision_margin: 0.05
 
 method: 2go
 method_params:
   show_tqdm: true
   action_extra_sigma: 0.15
   max_constraints_per_point: 32
-  constraint_margin: 0.01
+  constraint_margin: 0.05
   cfs_action_convexifier: cfs_action
   aug_lambda: 0.0
   aug_rho: 1.0
-  num_modes: 8
+  num_modes: 10
   mode_strategy: multirun
 
   twogo_gate_vrate_threshold: 0.01
@@ -58,10 +58,10 @@ method_params:
   twogo_probe_tail_mix: 0.5
   twogo_probe_tail_pool_ratio: 0.25
   twogo_probe_geom_alpha: 0.3
-  twogo_probe_b: 64
+  twogo_probe_b: 128
   twogo_overlay:
     hardness:
-      rho_ref: 100.0
+      rho_ref: 150.0
     constraint:
       kappa0: 1.0
       kappa_rho_gain: 0.01
@@ -82,16 +82,15 @@ obstacle_levels: [1]
 obstacle_config:
   generator: corridor_2d
   robot_radius: 0.20
-  collision_margin: 0.03
+  collision_margin: 0.05
   success_margin: 0.20
   scene_preset: medium
 
 seeds: [0]
 backend: jax
-device: cpu
-
+device: cuda
 metrics: [corridor_metrics]
-visualizations: [corridor_trajectory, cost, adaptive, diffusion]
+visualizations: []
 
 # Per-visualization renderer + style config.
 # corridor_trajectory backends:
@@ -100,25 +99,23 @@ visualizations: [corridor_trajectory, cost, adaptive, diffusion]
 #   pyrender_mesh   — true 3D using G1 STL meshes from mujoco_menagerie
 visualization_config:
   corridor_trajectory:
-    renderer: pyrender_mesh
-    n_ghosts: 8
-    camera_pitch_deg: 62
-    camera_yfov_deg: 36
-    room_height: 1.6
-    front_wall_height: 0.40
-    tall_obstacle_alpha: 0.32
-    short_obstacle_alpha: 0.85
-    ribbon_radius: 0.035
-    ribbon_arrow_len: 0.20
-    ribbon_arrow_radius: 0.09
-    render_width: 1600
-    render_height: 900
+    renderer: matplotlib_top
+    body_shape: capsule
+    arm_style: articulated
+    ghost_color: time
+    n_ghosts: 9
+    highlight: narrowest
+    axis_fontsize: 22
+    tick_fontsize: 16
+    show_title: false
+    show_legend: false
+    show_obstacle_labels: false
 
 scheduler_config:
   type: composite
   constraint_schedulers:
     - type: alm_adaptive
-      margin: 0.03
+      margin: 0.05
       lam0: 0.0
       rho0: 1.0
       nu0: 0.0
@@ -127,7 +124,7 @@ scheduler_config:
       compute_cost_aK: 1.0
       compute_cost_aI: 1.0
       compute_cost_use_qp_gate: true
-      compute_budget_B: 6.0
+      compute_budget_B: 40.0
       compute_budget_time_profile: constant
       compute_budget_time_amp: 2.0
       compute_budget_time_mu: 0.5
@@ -142,7 +139,7 @@ scheduler_config:
       rho_gamma_down: 2.5
       rho_good_steps: 6
       gamma: 2.0
-      rho_max: 100.0
+      rho_max: 150.0
       kappa: 0.9
       r_tol: 5e-4
       v_signal_mode: mean
@@ -177,7 +174,7 @@ scheduler_config:
       use_stochastic_gate: true
   diffusion_schedulers:
     - type: fixed
-      M_k: 2096
+      M_k: 2048
       T_k: 0.1
       Ndiffuse: 200
       beta0: 1e-5
