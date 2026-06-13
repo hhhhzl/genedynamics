@@ -1,16 +1,15 @@
-# ── MD-COAS Zone B: rotated thin wall — CFS-MBD full + ALM adaptive ──
-name: humanoid_corridor_2d_mdcoas_zone_b
-output_dir: results/humanoid/corridor_2d/main/mdcoas_zone_b
+name: humanoid_corridor_2d_mdcoas_zone_b_vx03
+output_dir: results/humanoid/corridor_2d/main/mdcoas_zone_b_vx03
 
 env_name: humanoid_corridor_2d
 env_params:
   dt: 0.25
-  horizon: 20
+  horizon: 50
   scene_preset: zone_b
-  vx_max: 0.8
+  vx_max: 0.3
   vx_min: -0.3
   vy_max: 0.3
-  omega_max: 0.5
+  omega_max: 0.3
   h_dot_max: 0.3
   psi_torso_dot_max: 0.4
   arm_tuck_rate_max: 1.0
@@ -20,13 +19,13 @@ env_params:
 method: cfsmbd_full
 method_params:
   show_tqdm: true
-  action_extra_sigma: 0.05
+  action_extra_sigma: 0.35
   max_constraints_per_point: 16
   constraint_margin: 0.01
   cfs_action_convexifier: cfs_action
   aug_lambda: 0.0
   aug_rho: 1.0
-  num_modes: 8
+  num_modes: 10
   mode_strategy: multirun
 
 obstacle_levels: [1]
@@ -37,9 +36,9 @@ obstacle_config:
   success_margin: 0.20
   scene_preset: zone_b
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4]
 backend: jax
-device: cpu
+device: cuda
 
 metrics: [corridor_metrics]
 visualizations: [corridor_trajectory, cost, adaptive, diffusion]
@@ -124,7 +123,7 @@ scheduler_config:
     - type: fixed
       M_k: 1024
       T_k: 0.3
-      Ndiffuse: 150
+      Ndiffuse: 100
       beta0: 1e-5
       betaT: 1e-2
   constraint_merge_strategy: merge

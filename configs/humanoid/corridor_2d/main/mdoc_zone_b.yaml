@@ -1,16 +1,21 @@
+# vx0.3-aligned baseline — env/sampling base params matched to twogo_zone_b_vx03 (G)
+# for a same-conditions method comparison. Aligned: vx_max 0.3, omega_max 0.3,
+# collision_margin 0.03, action_extra_sigma 0.35, Ndiffuse 100, horizon 50.
+# (horizon 50 is REQUIRED so the goal is reachable at vx=0.3; each method's own
+#  algorithm params are left untouched. viz [] for speed.)
 # ── MDOC Zone B: rotated thin wall, per-step CBF-QP action filter ──
-name: humanoid_corridor_2d_mdoc_zone_b
-output_dir: results/humanoid/corridor_2d/main/mdoc_zone_b
+name: humanoid_corridor_2d_mdoc_zone_b_vx03
+output_dir: results/humanoid/corridor_2d/main/mdoc_zone_b_vx03
 
 env_name: humanoid_corridor_2d
 env_params:
   dt: 0.25
-  horizon: 20
+  horizon: 50
   scene_preset: zone_b
-  vx_max: 0.8
+  vx_max: 0.3
   vx_min: -0.3
   vy_max: 0.3
-  omega_max: 0.5
+  omega_max: 0.3
   h_dot_max: 0.3
   psi_torso_dot_max: 0.4
   arm_tuck_rate_max: 1.0
@@ -20,6 +25,7 @@ env_params:
 method: mdoc
 method_params:
   show_tqdm: true
+  action_extra_sigma: 0.35
   mdoc_constraint_mode: cbf_corridor
   cbf_tau: 0.02
   cbf_eta: 1.2
@@ -27,7 +33,7 @@ method_params:
   base_beta: 0.01
   terminal_energy_weight: 80.0
   guide_weight: 15.0
-  num_modes: 8
+  num_modes: 10
   mode_strategy: multirun
 
   mdoc_viz_style: "cap"
@@ -45,9 +51,9 @@ obstacle_config:
   success_margin: 0.20
   scene_preset: zone_b
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4]
 backend: jax
-device: cpu
+device: cuda
 
 metrics: [corridor_metrics]
 visualizations: [corridor_trajectory, cost, diffusion]
@@ -82,7 +88,7 @@ scheduler_config:
     - type: fixed
       M_k: 1024
       T_k: 0.3
-      Ndiffuse: 150
+      Ndiffuse: 100
       beta0: 1.0e-5
       betaT: 1e-2
   constraint_merge_strategy: merge

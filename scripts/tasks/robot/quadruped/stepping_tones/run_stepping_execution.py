@@ -212,7 +212,7 @@ def cmd_exec(args: argparse.Namespace) -> None:
     def _do(name: str, res: Dict[str, Any]) -> None:
         print("[{}] {}".format(name.upper(), _summ(res)))
         d = save_res(out_dir, name, res, scene)
-        gif = render_gif(d, res, sim_dt=walker_cfg.sim_dt, width=rw, height=rh, max_frames=rmaxf) if render_enabled else None
+        gif = make_motion_gif(d, sim_dt=walker_cfg.sim_dt, width=rw, height=rh, max_frames=rmaxf) if render_enabled else None
         if gif:
             print("  GIF  ->", gif)
         print("  data ->", str(d) + "/  (res.pkl, qpos/qvel/ctrl.npy, result.json)")
@@ -435,11 +435,14 @@ def _paper_style() -> None:
     })
 
 
-def _add_foot_markers(mujoco, scn, res, scene_dict, *, off_tol: float = 0.05) -> None:
-    """Overlay, as translucent 3D geoms: each foot's SWING trajectory (thin green shadow, from
-    ``swing_ref``; NaN = stance) and a translucent red blob at any landing that misses every
+def _add_foot_markers(mujoco, scn, res, scene_dict, *, off_tol: float = 0.05, foot_paths=None) -> None:
+    """Overlay, as translucent 3D geoms: each foot's ACTUAL swing trajectory (thin green shadow,
+    from ``foot_paths`` = FK of the executed qpos, drawn only over swing frames identified by the
+    ``swing_ref`` NaN pattern) and a translucent red blob at any landing that misses every
     support — stones AND the start/goal platforms — matching trajectory_best.png's off-support
-    convention (feet on a platform are valid, not flagged)."""
+    convention (feet on a platform are valid, not flagged). The green arc therefore ends at the
+    real landing (the red blob), so the two are connected. If ``foot_paths`` is None it falls
+    back to the reference swing arc (``swing_ref``)."""
     centers = np.asarray(scene_dict.get("stones_centers", []), dtype=np.float32).reshape(-1, 2)
     radii = np.asarray(scene_dict.get("stones_radii", []), dtype=np.float32).reshape(-1)
     plat = np.asarray(scene_dict.get("support_platforms", []), dtype=np.float32).reshape(-1, 4)
@@ -448,16 +451,19 @@ def _add_foot_markers(mujoco, scn, res, scene_dict, *, off_tol: float = 0.05) ->
     RED = np.array([0.95, 0.12, 0.12, 0.42], dtype=np.float32)     # translucent
 
     swing_ref = res.get("swing_ref", {}) or {}
-    for leg in LEG_ORDER_VIZ:                            # thin green swing-arc shadows
-        arr = np.asarray(swing_ref.get(leg, []), dtype=np.float64)
+    for leg in LEG_ORDER_VIZ:                            # thin green swing-arc shadows (ACTUAL foot path)
+        ref = np.asarray(swing_ref.get(leg, []), dtype=np.float64)
+        act = None if foot_paths is None else np.asarray(foot_paths.get(leg, []), dtype=np.float64)
+        arr = act if (act is not None and act.ndim == 2 and act.shape[0] >= 3) else ref
         if arr.ndim != 2 or arr.shape[0] < 3:
             continue
-        valid = np.isfinite(arr).all(axis=1)
-        for i in range(0, arr.shape[0] - 2, 2):         # subsample x2 to bound geom count
+        nN = arr.shape[0] if ref.ndim != 2 else min(arr.shape[0], ref.shape[0])
+        swing = np.isfinite(ref[:nN]).all(axis=1) if ref.ndim == 2 else np.ones(nN, dtype=bool)
+        for i in range(0, nN - 2, 2):                    # subsample x2 to bound geom count
             if scn.ngeom >= scn.maxgeom - 4:
                 break
             j = i + 2
-            if not (valid[i] and valid[j]) or np.linalg.norm(arr[j] - arr[i]) > 0.4:
+            if not (swing[i] and swing[j]) or np.linalg.norm(arr[j] - arr[i]) > 0.4:
                 continue
             try:
                 g = scn.geoms[scn.ngeom]
@@ -608,10 +614,18 @@ def make_motion_strip(res_dir: Path, *, n_poses: int = 6, width: int = 1280, hei
             result[mask] = (1.0 - w) * result[mask] + w * frames[i][mask]
 
         if do_overlay:                                 # overlay swing arcs + off-support reds
+            # FK the executed qpos to recover each foot's ACTUAL world path (for green arcs).
+            fg = {leg: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, leg) for leg in LEG_ORDER_VIZ}
+            foot_paths = {leg: np.zeros((qp.shape[0], 3), dtype=np.float64) for leg in LEG_ORDER_VIZ}
+            for fi in range(qp.shape[0]):
+                d.qpos[:] = qp[fi, : m.nq]; d.qvel[:] = 0.0
+                mujoco.mj_forward(m, d)
+                for leg in LEG_ORDER_VIZ:
+                    foot_paths[leg][fi] = d.geom_xpos[fg[leg]]
             d.qpos[:] = qp[idx[-1], : m.nq]; d.qvel[:] = 0.0
             mujoco.mj_forward(m, d)
             r.update_scene(d, camera=cam)
-            _add_foot_markers(mujoco, r.scene, res, scene)
+            _add_foot_markers(mujoco, r.scene, res, scene, foot_paths=foot_paths)
             marked = r.render().astype(np.float32)
             mmask = np.abs(marked - frames[-1]).max(axis=2) > 10.0
             result[mmask] = marked[mmask]
@@ -624,10 +638,88 @@ def make_motion_strip(res_dir: Path, *, n_poses: int = 6, width: int = 1280, hei
         Path(tmp).unlink(missing_ok=True)
 
 
+def make_motion_gif(res_dir: Path, *, width: int = 640, height: int = 360, max_frames: int = 700,
+                    sim_dt: float = 0.01, target_fps: float = 8.0, azimuth: float = 130.0,
+                    elevation: float = -18.0, distance: float = 2.8, smooth_base: int = 15,
+                    out: Optional[Path] = None) -> Optional[Path]:
+    """Animated replay with the ORIGINAL following camera (azimuth 130, elev -18, distance 2.8),
+    the ACTUAL swing arcs in green + off-support landings in red (persistent overlay), and NO
+    body trajectory line. ``smooth_base`` (frames) low-passes the DISPLAYED base pose so the
+    static-gait bob/pitch doesn't read as jitter -- a render-only cosmetic; joints, foot arcs and
+    red landings stay the actual executed values. Reads qpos/res/scene from ``res_dir``."""
+    import mujoco, imageio
+    from genedynamics.envs.utils.mujoco_model_generator import create_go2_render_xml_with_trajectory
+    from genedynamics.robots.registry import _get_go2_path
+
+    qp = np.load(res_dir / "qpos.npy")
+    if qp.ndim != 2 or qp.shape[0] == 0:
+        return None
+    scene = json.load(open(res_dir / "stepping_scene.json"))
+    res = pickle.load(open(res_dir / "res.pkl", "rb")) if (res_dir / "res.pkl").exists() else {}
+    model_dir = Path(_get_go2_path()).parent           # tmp must sit beside go2.xml so <include> resolves
+    tmp = str(model_dir / "_gif_temp.xml")
+    create_go2_render_xml_with_trajectory(tmp, trajectory_positions=[], stepping_scene=scene, swing_trajectories=None)
+    try:
+        m = mujoco.MjModel.from_xml_path(tmp)
+        m.vis.global_.offwidth = max(int(m.vis.global_.offwidth), width)
+        m.vis.global_.offheight = max(int(m.vis.global_.offheight), height)
+        d = mujoco.MjData(m)
+        r = mujoco.Renderer(m, height=height, width=width)
+        cam = mujoco.MjvCamera()
+        cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+        cam.azimuth = float(azimuth); cam.elevation = float(elevation); cam.distance = float(distance)
+        # FK the actual foot world paths (for the green swing arcs)
+        fg = {leg: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, leg) for leg in LEG_ORDER_VIZ}
+        foot_paths = {leg: np.zeros((qp.shape[0], 3), dtype=np.float64) for leg in LEG_ORDER_VIZ}
+        for fi in range(qp.shape[0]):
+            d.qpos[:] = qp[fi, : m.nq]; d.qvel[:] = 0.0
+            mujoco.mj_forward(m, d)
+            for leg in LEG_ORDER_VIZ:
+                foot_paths[leg][fi] = d.geom_xpos[fg[leg]]
+        # render-only cosmetic: low-pass the DISPLAYED base pose (pos + quat) so the static-gait
+        # bob/pitch doesn't read as jitter. Joints stay actual; the green arcs / red landings
+        # (drawn from the real qpos) are unaffected.
+        qdisp = qp.copy()
+        W = int(max(1, smooth_base))
+        if W > 1 and qp.shape[0] > W:
+            from scipy.ndimage import uniform_filter1d
+            for c in range(min(7, qp.shape[1])):        # base pos(3) + quat(4); mode='nearest' = no edge blow-up
+                qdisp[:, c] = uniform_filter1d(qp[:, c], size=W, mode="nearest")
+            qn = np.linalg.norm(qdisp[:, 3:7], axis=1, keepdims=True); qn[qn < 1e-9] = 1.0
+            qdisp[:, 3:7] = qdisp[:, 3:7] / qn          # renormalize quaternion
+            qdisp[:, 7:] = qp[:, 7:]                     # keep actual joint angles
+
+        n = qp.shape[0]
+        step = max(1, int(round(1.0 / (sim_dt * max(1e-3, target_fps)))))   # ~12 at dt=0.01 -> ~8 fps
+        if n // step > max_frames:                                          # cap total frames
+            step = int(np.ceil(n / max_frames))
+        idx = np.arange(0, n, step)
+        look_z = float(np.median(qp[:, 2]))                                 # steady camera height (no base bob)
+        frames = []
+        for i in idx:
+            d.qpos[:] = qdisp[i, : m.nq]; d.qvel[:] = 0.0
+            mujoco.mj_forward(m, d)
+            cam.lookat[:] = [float(qdisp[i, 0]), 0.0, look_z]   # follow forward only; steady height & centered
+            r.update_scene(d, camera=cam)
+            _add_foot_markers(mujoco, r.scene, res, scene, foot_paths=foot_paths)
+            frames.append(r.render().astype(np.uint8))
+        out = out or (res_dir / "trajectory_mujoco.gif")
+        imageio.mimsave(str(out), frames, format="GIF", fps=max(1.0, 1.0 / (sim_dt * step)), loop=0)
+        print("  [gif] wrote", out, f"({len(frames)} frames, az={azimuth}, no body line)")
+        return out
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+
+
 def make_all_figures(res_dir: Path, *, sim_dt: float = 0.01, poses: int = 6,
                      width: int = 1280, height: int = 360, azimuth: float = 90.0,
                      elevation: float = -18.0, distance: float = 1.45, orthographic: bool = False,
-                     tracking: bool = True, strip: bool = True, gait: bool = True) -> None:
+                     tracking: bool = True, strip: bool = True, gait: bool = True, gif: bool = False) -> None:
+    if gif:
+        try:
+            make_motion_gif(res_dir, sim_dt=sim_dt)   # original following camera (its own defaults), not the strip camera
+        except Exception as e:
+            print("  [gif] skipped (needs native MuJoCo):", e)
     if tracking:
         try:
             make_tracking_plot(res_dir, sim_dt=sim_dt)
@@ -654,7 +746,8 @@ def cmd_viz(args: argparse.Namespace) -> None:
                      width=int(args.width), height=int(args.height), azimuth=float(args.azimuth),
                      elevation=float(args.elevation), distance=float(args.distance),
                      orthographic=bool(args.ortho),
-                     tracking=not args.no_tracking, strip=not args.no_strip, gait=not args.no_gait)
+                     tracking=not args.no_tracking, strip=not args.no_strip, gait=not args.no_gait,
+                     gif=bool(getattr(args, "gif", False)))
 
 
 # ============================================================================ eval engine (Rec. 4)
@@ -960,6 +1053,7 @@ def main() -> None:
     pf.add_argument("--no-tracking", action="store_true")
     pf.add_argument("--no-strip", action="store_true")
     pf.add_argument("--no-gait", action="store_true")
+    pf.add_argument("--gif", action="store_true", help="also (re)render trajectory_mujoco.gif in the motion_strip style (green arcs + red blobs, no body line)")
     pf.set_defaults(func=cmd_viz)
 
     args = ap.parse_args()

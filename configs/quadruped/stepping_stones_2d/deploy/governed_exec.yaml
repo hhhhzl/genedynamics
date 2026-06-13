@@ -28,18 +28,21 @@ walker:
   swing_height: 0.045
   swing_stance_phase: 0.5
   # body-path tracking (higher closes the goal lag)
-  base_kp_xy: 70.0
-  base_kd_xy: 16.0
+  base_kp_xy: 140.0
+  base_kd_xy: 24.0
+  base_vff_gain: 1.0   # velocity feedforward: cancel base tracking lag so swing feet reach forward targets
   # touchdown / abort backstop (governed path uses a contact-based timeout)
-  touchdown_xy_tol: 0.06
+  touchdown_xy_tol: 0.035   # foot must land within 4cm of target (was 0.06) -> tighter -> stays on support
   abort_after_consecutive_timeouts: 2
+  use_support_platforms: true   # treat start/goal slabs as steppable (do not re-snap platform feet to stones)
 
 # Any GovernorConfig field (optional; geometry defaults follow `walker`).
 governor:
   stride_length: 0.22          # body advance per gait cycle (~ stone pitch)
   swing_step_limit: 0.35       # hard per-swing bound (= l_max)
-  stone_interior_clearance: 0.025
+  stone_interior_clearance: 0.07   # aim deeper into support (was 0.025) -> margin against foot tracking error
   project_to_stones: true
+  use_support_platforms: true   # project footholds onto start/goal slabs, not just stones
 
 render:
   enabled: true

@@ -20,10 +20,10 @@ env_params:
 method: mbd
 method_params:
   show_tqdm: true
-  action_extra_sigma: 0.05
+  action_extra_sigma: 0.15
   terminal_energy_weight: 80.0
   guide_weight: 15.0
-  num_modes: 8
+  num_modes: 10
   mode_strategy: multirun
 
 obstacle_levels: [1]
@@ -34,9 +34,9 @@ obstacle_config:
   success_margin: 0.20
   scene_preset: zone_c
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4]
 backend: jax
-device: cpu
+device: cuda
 
 metrics: [corridor_metrics]
 visualizations: [corridor_trajectory, cost, diffusion]

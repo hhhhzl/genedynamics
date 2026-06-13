@@ -120,6 +120,8 @@ class MinimalFollowerConfig:
     use_base_pd: bool = True
     base_kp_xy: float = 44.0
     base_kd_xy: float = 11.0
+    base_vff_gain: float = 0.0  # velocity feedforward: damp toward gain*v_ref (cancels cruise tracking lag so swing feet reach forward targets). 0.0 == legacy PD
+    use_support_platforms: bool = False  # treat start/goal slabs as safe support (don't re-snap a foot that's on a platform back to a stone)
     base_kp_z: float = 260.0
     base_kd_z: float = 34.0
     base_kp_rp: float = 95.0
@@ -912,6 +914,7 @@ class SteppingWalkFollowerMinimal:
             touchdown_any = False
             swing_ground_contact_any = False
 
+            prev_base_xy_ref = np.asarray(phase.start_mid_xy, dtype=np.float64).reshape(2)
             for sub_global in range(interval_steps):
                 alpha_global = float(sub_global + 1) / float(max(1, interval_steps))
                 alpha_local = alpha_global
@@ -920,6 +923,9 @@ class SteppingWalkFollowerMinimal:
                 edge_s = _smoothstep(alpha_global)
                 base_xy_ref = (1.0 - edge_s) * phase.start_mid_xy + edge_s * phase.goal_mid_xy
                 base_yaw_ref = _interp_angle(phase.start_yaw, phase.goal_yaw, edge_s)
+                base_xy_ref_arr = np.asarray(base_xy_ref, dtype=np.float64).reshape(2)
+                base_vxy_ref = (base_xy_ref_arr - prev_base_xy_ref) / dt
+                prev_base_xy_ref = base_xy_ref_arr
 
                 target_feet = self._build_foot_targets(phase, alpha_s, phase_duration=swing_duration)
                 foot_vel_ref = self._build_foot_velocity_refs(phase, alpha_s, phase_duration=swing_duration)
@@ -927,7 +933,7 @@ class SteppingWalkFollowerMinimal:
                 support_contacts = len(self._ground_contact_legs())
                 base_wrench: Optional[Tuple[np.ndarray, np.ndarray]] = None
                 if self.cfg.use_base_pd:
-                    base_wrench = self._apply_base_pd(base_xy_ref, base_yaw_ref, support_contacts)
+                    base_wrench = self._apply_base_pd(base_xy_ref, base_yaw_ref, support_contacts, base_vxy_ref)
                 else:
                     self.data.qfrc_applied[:] = 0.0
 
@@ -1526,6 +1532,7 @@ class SteppingWalkFollowerMinimal:
         base_xy: np.ndarray,
         base_yaw: float,
         support_contacts: int,
+        base_vxy_ref: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         cfg = self.cfg
         q = self.data.qpos
@@ -1539,8 +1546,10 @@ class SteppingWalkFollowerMinimal:
             support_scale = float(np.clip(float(support_contacts) / 4.0, 0.0, 1.0))
         support_scale = float(max(support_scale, float(np.clip(cfg.base_support_scale_min, 0.0, 1.0))))
 
-        fx = float(cfg.base_kp_xy) * (float(base_xy[0]) - float(q[0])) - float(cfg.base_kd_xy) * float(v[0])
-        fy = float(cfg.base_kp_xy) * (float(base_xy[1]) - float(q[1])) - float(cfg.base_kd_xy) * float(v[1])
+        vffx = 0.0 if base_vxy_ref is None else float(cfg.base_vff_gain) * float(base_vxy_ref[0])
+        vffy = 0.0 if base_vxy_ref is None else float(cfg.base_vff_gain) * float(base_vxy_ref[1])
+        fx = float(cfg.base_kp_xy) * (float(base_xy[0]) - float(q[0])) - float(cfg.base_kd_xy) * (float(v[0]) - vffx)
+        fy = float(cfg.base_kp_xy) * (float(base_xy[1]) - float(q[1])) - float(cfg.base_kd_xy) * (float(v[1]) - vffy)
         z_ref_nom = self._base_height + float(cfg.base_height_offset)
         if bool(cfg.use_dynamic_base_z_ref):
             foot_z = np.zeros((len(LEG_ORDER),), dtype=np.float64)
@@ -1867,6 +1876,10 @@ class SteppingWalkFollowerMinimal:
                 continue
             if (x - c[0]) ** 2 + (y - c[1]) ** 2 <= float(radii[i]) ** 2:
                 return float(self._scene_stone_top_z)
+        if self.cfg.use_support_platforms:
+            for rect in np.asarray(self.stepping_scene.get("support_platforms", []), dtype=np.float64).reshape(-1, 4):
+                if rect[0] <= x <= rect[1] and rect[2] <= y <= rect[3]:
+                    return float(self._scene_stone_top_z)
         if not bool(self.stepping_scene.get("has_river", True)):
             return 0.0
         river_x = self.stepping_scene.get("river_x", [-0.2, 0.2])
@@ -1882,6 +1895,14 @@ class SteppingWalkFollowerMinimal:
         out = np.asarray(point, dtype=np.float64).copy()
         if not self.stepping_scene:
             return out
+
+        # A foot already on a support platform (start/goal slab) is safe -- don't yank it
+        # back onto a stone (that strands the gait at the last stone, short of the goal).
+        if self.cfg.use_support_platforms:
+            for rect in np.asarray(self.stepping_scene.get("support_platforms", []), dtype=np.float64).reshape(-1, 4):
+                if (rect[0] + margin <= out[0] <= rect[1] - margin) and (rect[2] + margin <= out[1] <= rect[3] - margin):
+                    out[2] = max(float(self.cfg.min_foot_z), float(self._scene_stone_top_z))
+                    return out
 
         centers = np.asarray(self.stepping_scene.get("stones_centers", []), dtype=np.float64)
         radii = np.asarray(self.stepping_scene.get("stones_radii", []), dtype=np.float64).reshape(-1)

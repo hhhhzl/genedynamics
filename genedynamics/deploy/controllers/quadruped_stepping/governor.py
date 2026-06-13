@@ -272,6 +272,7 @@ class GovernorConfig:
     swing_step_limit: float = 0.35    # l_max; hard bound on a single swing
     # Foothold projection.
     project_to_stones: bool = True
+    use_support_platforms: bool = False  # also treat start/goal slabs as steppable (lets the gait walk onto the goal platform)
     stone_interior_clearance: float = 0.025   # keep foot this far inside the stone rim
     min_foot_z: float = 0.015
     stone_top_z: float = 0.035
@@ -322,6 +323,15 @@ class SteppingReferenceGovernor:
         n = min(centers.shape[0], radii.shape[0])
         self._centers = centers[:n]
         self._radii = radii[:n]
+        # Support platforms (start/goal slabs): rows [xmin, xmax, ymin, ymax]. These are
+        # steppable too -- without them the gait stops at the last stone and never walks
+        # onto the goal platform (base caps ~0.2 short of the goal).
+        if self.cfg.use_support_platforms:
+            self._platforms = np.asarray(
+                self.scene.get("support_platforms", []), dtype=np.float64
+            ).reshape(-1, 4)
+        else:
+            self._platforms = np.zeros((0, 4), dtype=np.float64)
 
     # ------------------------------------------------------------------
     # Geometry helpers
@@ -343,13 +353,49 @@ class SteppingReferenceGovernor:
         return {leg: (b + R @ tpl[leg]).astype(np.float64) for leg in LEG_ORDER}
 
     def _terrain_z(self, xy: np.ndarray) -> float:
-        if self._centers.shape[0] == 0:
-            return 0.0
-        d2 = np.sum((self._centers - np.asarray(xy, dtype=np.float64).reshape(1, 2)) ** 2, axis=1)
-        i = int(np.argmin(d2))
-        if d2[i] <= float(self._radii[i]) ** 2:
-            return float(self.cfg.stone_top_z)
+        p = np.asarray(xy, dtype=np.float64).reshape(2)
+        if self._centers.shape[0] > 0:
+            d2 = np.sum((self._centers - p.reshape(1, 2)) ** 2, axis=1)
+            i = int(np.argmin(d2))
+            if d2[i] <= float(self._radii[i]) ** 2:
+                return float(self.cfg.stone_top_z)
+        for rect in self._platforms:
+            if rect[0] <= p[0] <= rect[1] and rect[2] <= p[1] <= rect[3]:
+                return float(self.cfg.stone_top_z)
         return 0.0
+
+    def _platform_candidate(
+        self,
+        p: np.ndarray,
+        clr: float,
+        reach_from: Optional[np.ndarray],
+        reach_limit: Optional[float],
+    ) -> Optional[Tuple[np.ndarray, float]]:
+        """Best support-platform projection for target ``p`` as ``(xy_proj, interior_depth)``.
+
+        ``interior_depth`` is signed (>0 = inside the clearance-shrunk rectangle), matching
+        the stone ``interior`` metric so the two can be ranked together. Returns ``None`` if
+        no platform is reachable.
+        """
+        best: Optional[Tuple[np.ndarray, float]] = None
+        for rect in self._platforms:
+            ax0, ax1 = float(rect[0]) + clr, float(rect[1]) - clr
+            ay0, ay1 = float(rect[2]) + clr, float(rect[3]) - clr
+            if ax1 < ax0 or ay1 < ay0:
+                continue
+            q = np.array([min(max(p[0], ax0), ax1), min(max(p[1], ay0), ay1)], dtype=np.float64)
+            if ax0 <= p[0] <= ax1 and ay0 <= p[1] <= ay1:
+                depth = float(min(p[0] - ax0, ax1 - p[0], p[1] - ay0, ay1 - p[1]))
+            else:
+                depth = -float(np.linalg.norm(p - q))
+            if reach_from is not None and reach_limit is not None:
+                rf = np.asarray(reach_from, dtype=np.float64).reshape(2)
+                near = np.array([min(max(rf[0], ax0), ax1), min(max(rf[1], ay0), ay1)], dtype=np.float64)
+                if float(np.linalg.norm(rf - near)) > float(reach_limit) + 1e-9:
+                    continue
+            if best is None or depth > best[1]:
+                best = (q, depth)
+        return best
 
     def _project_to_stone(
         self,
@@ -368,34 +414,45 @@ class SteppingReferenceGovernor:
         returns ``(xy, False, -1)``.
         """
         p = np.asarray(xy, dtype=np.float64).reshape(2)
-        if not self.cfg.project_to_stones or self._centers.shape[0] == 0:
+        if not self.cfg.project_to_stones:
             return p, False, -1
         clr = float(self.cfg.stone_interior_clearance)
-        r_eff_all = np.maximum(0.0, self._radii - clr)
-        delta = p[None, :] - self._centers
-        dist = np.linalg.norm(delta, axis=1)
-        interior = self._radii - dist                       # >0 means inside stone
-        if reach_from is not None and reach_limit is not None:
-            rf = np.asarray(reach_from, dtype=np.float64).reshape(2)
-            d_center = np.linalg.norm(self._centers - rf[None, :], axis=1)
-            reachable = (d_center - r_eff_all) <= float(reach_limit) + 1e-9
-            if not np.any(reachable):
-                return p, False, -1
-            interior = np.where(reachable, interior, -np.inf)
-        best = int(np.argmax(interior))
-        if not np.isfinite(interior[best]):
-            return p, False, -1
-        r_eff = float(r_eff_all[best])
-        if float(dist[best]) <= r_eff:
-            return p, True, best                            # already comfortably inside
-        # snap onto the interior circle of the chosen stone
-        direction = delta[best]
-        norm = float(np.linalg.norm(direction))
-        if norm < 1e-9:
-            return self._centers[best].copy(), True, best
-        proj = self._centers[best] + direction / norm * r_eff
-        on_stone = r_eff > 1e-6
-        return proj.astype(np.float64), bool(on_stone), best
+
+        # --- best stone candidate: (proj, on, idx, interior_depth) ---
+        stone: Optional[Tuple[np.ndarray, bool, int, float]] = None
+        if self._centers.shape[0] > 0:
+            r_eff_all = np.maximum(0.0, self._radii - clr)
+            delta = p[None, :] - self._centers
+            dist = np.linalg.norm(delta, axis=1)
+            interior = self._radii - dist                   # >0 means inside stone
+            if reach_from is not None and reach_limit is not None:
+                rf = np.asarray(reach_from, dtype=np.float64).reshape(2)
+                d_center = np.linalg.norm(self._centers - rf[None, :], axis=1)
+                reachable = (d_center - r_eff_all) <= float(reach_limit) + 1e-9
+                interior = np.where(reachable, interior, -np.inf)
+            best = int(np.argmax(interior))
+            if np.isfinite(interior[best]):
+                r_eff = float(r_eff_all[best])
+                if float(dist[best]) <= r_eff:
+                    stone = (p.copy(), True, best, float(interior[best]))
+                else:
+                    direction = delta[best]
+                    norm = float(np.linalg.norm(direction))
+                    if norm < 1e-9:
+                        stone = (self._centers[best].copy(), True, best, float(interior[best]))
+                    else:
+                        proj = self._centers[best] + direction / norm * r_eff
+                        stone = (proj.astype(np.float64), bool(r_eff > 1e-6), best, float(interior[best]))
+
+        # --- best platform candidate (idx -1) ---
+        plat = self._platform_candidate(p, clr, reach_from, reach_limit)
+
+        # rank stone vs platform by interior depth; prefer being inside something
+        if plat is not None and (stone is None or plat[1] > stone[3]):
+            return plat[0].astype(np.float64), True, -1
+        if stone is not None:
+            return stone[0], stone[1], stone[2]
+        return p, False, -1
 
     def _to_world3(self, xy: np.ndarray) -> np.ndarray:
         xy = np.asarray(xy, dtype=np.float64).reshape(2)

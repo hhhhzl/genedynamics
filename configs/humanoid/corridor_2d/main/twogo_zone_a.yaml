@@ -31,7 +31,7 @@ method_params:
   cfs_action_convexifier: cfs_action
   aug_lambda: 0.0
   aug_rho: 1.0
-  num_modes: 8
+  num_modes: 10
   mode_strategy: multirun
 
   twogo_gate_vrate_threshold: 0.01
@@ -90,7 +90,7 @@ obstacle_config:
   success_margin: 0.20
   scene_preset: zone_a
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4]
 backend: jax
 device: cuda
 

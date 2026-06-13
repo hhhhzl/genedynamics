@@ -23,7 +23,7 @@ method_params:
   action_extra_sigma: 0.05
   terminal_energy_weight: 80.0
   use_min_over_time: true
-  num_modes: 8
+  num_modes: 10
   mode_strategy: multirun
 
 obstacle_levels: [1]
@@ -36,26 +36,24 @@ obstacle_config:
 
 seeds: [0]
 backend: jax
-device: cpu
+device: cuda
 
 metrics: [corridor_metrics]
 visualizations: [corridor_trajectory, cost, diffusion]
 
 visualization_config:
   corridor_trajectory:
-    renderer: pyrender_mesh
-    n_ghosts: 8
-    camera_pitch_deg: 62
-    camera_yfov_deg: 36
-    room_height: 1.6
-    front_wall_height: 0.40
-    tall_obstacle_alpha: 0.32
-    short_obstacle_alpha: 0.85
-    ribbon_radius: 0.035
-    ribbon_arrow_len: 0.20
-    ribbon_arrow_radius: 0.09
-    render_width: 1600
-    render_height: 900
+    renderer: matplotlib_top
+    body_shape: capsule
+    arm_style: articulated
+    ghost_color: time
+    n_ghosts: 9
+    highlight: narrowest
+    axis_fontsize: 22
+    tick_fontsize: 16
+    show_title: false
+    show_legend: false
+    show_obstacle_labels: false
 
 scheduler_config:
   type: composite
