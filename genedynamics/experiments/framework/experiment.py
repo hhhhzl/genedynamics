@@ -1685,7 +1685,7 @@ class ExperimentRunner:
                                             viz_cfg
                                         )
                                         tmp_path = trajectory_dir / f"_gif_best_{label}_{t}.png"
-                                        fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                        fig_g.savefig(tmp_path, dpi=100)
                                         plt.close(fig_g)
                                         temp_frames.append(tmp_path)
                                     if temp_frames:
@@ -1742,7 +1742,7 @@ class ExperimentRunner:
                                             fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
                                             viz_plugin.visualize(fig_g, ax_g, {**data_modes, 'partial_until_step': t}, viz_cfg)
                                             tmp_path = trajectory_dir / f"_gif_modes_{t}.png"
-                                            fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                            fig_g.savefig(tmp_path, dpi=100)
                                             plt.close(fig_g)
                                             temp_frames_m.append(tmp_path)
                                         if temp_frames_m:
@@ -1767,7 +1767,7 @@ class ExperimentRunner:
                                         viz_cfg
                                     )
                                     tmp_path = trajectory_dir / f"_gif_best_{t}.png"
-                                    fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                    fig_g.savefig(tmp_path, dpi=100)
                                     plt.close(fig_g)
                                     temp_frames.append(tmp_path)
                                 if temp_frames:
@@ -1836,7 +1836,7 @@ class ExperimentRunner:
                                     fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
                                     viz_plugin.visualize(fig_g, ax_g, {**data_plan, 'partial_until_step': t}, viz_cfg)
                                     tmp_path = trajectory_dir / f"_gif_modes_plan_{t}.png"
-                                    fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                    fig_g.savefig(tmp_path, dpi=100)
                                     plt.close(fig_g)
                                     temp_frames.append(tmp_path)
                                 if temp_frames:
@@ -1892,7 +1892,7 @@ class ExperimentRunner:
                                         fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
                                         viz_plugin.visualize(fig_g, ax_g, {**data_exec, 'partial_until_step': t}, viz_cfg)
                                         tmp_path = trajectory_dir / f"_gif_modes_exec_{t}.png"
-                                        fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                        fig_g.savefig(tmp_path, dpi=100)
                                         plt.close(fig_g)
                                         temp_frames.append(tmp_path)
                                     if temp_frames:
@@ -1938,7 +1938,7 @@ class ExperimentRunner:
                                         viz_cfg
                                     )
                                     tmp_path = trajectory_dir / f"_gif_modes_{t}.png"
-                                    fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                    fig_g.savefig(tmp_path, dpi=100)
                                     plt.close(fig_g)
                                     temp_frames.append(tmp_path)
                                 if temp_frames:
