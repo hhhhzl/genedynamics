@@ -195,28 +195,16 @@ def load_deploy_config(path: Path) -> dict:
 
 
 def _format_render_hint(deploy_yaml: dict, npz_path: Path, gif_path: Path) -> str:
-    """Build the render command implied by the ``render:`` block of a deploy
-    yaml, so callers know exactly how to reproduce the canonical gif."""
+    """Build the render command (render_deploy_humanoid) that regenerates the full deploy
+    figure set — tracking / sport_mode / motion_strip / trajectory_mujoco.gif — next to the npz."""
     r = (deploy_yaml or {}).get("render") or {}
     parts = [
-        "python scripts/visualizations/render_spark_rl_corridor_gif.py",
+        "python scripts/visualizations/render_deploy_humanoid.py",
         f"  --npz {npz_path}",
-        f"  --out {gif_path}",
+        "  --which all",
     ]
-    if r.get("cam_mode"):
-        parts.append(f"  --cam-mode {r['cam_mode']}")
-    if "cam_azimuth" in r:
-        parts.append(f"  --cam-azimuth {r['cam_azimuth']}")
-    if "cam_elevation" in r:
-        parts.append(f"  --cam-elevation {r['cam_elevation']}")
     if "every_n" in r:
         parts.append(f"  --every-n {r['every_n']}")
-    if "width" in r:
-        parts.append(f"  --width {r['width']}")
-    if "height" in r:
-        parts.append(f"  --height {r['height']}")
-    if "speed" in r:
-        parts.append(f"  --speed {r['speed']}")
     return " \\\n".join(parts)
 
 
@@ -314,6 +302,8 @@ def diagnose(
     control_hz: float = 50.0,
     sim_dt: float = 1.0 / 500.0,
     max_steps: Optional[int] = None,
+    goal_hold_sec: float = 0.0,
+    plan_speed: float = 1.0,
     fall_threshold_m: float = 0.40,
     out_dir: Optional[Path] = None,
     quiet: bool = False,
@@ -329,6 +319,7 @@ def diagnose(
     warmup_sec: float = 0.8,
     cmd_lpf_tau: float = 0.0,
     spark_pd_gains: bool = True,
+    mapper_cfg: Optional[dict] = None,
     use_governor: bool = False,
     corridor_half_width: Optional[float] = None,
     governor_cfg: Optional[dict] = None,
@@ -397,8 +388,14 @@ def diagnose(
         CorridorTrajectoryAdapter,
     )
 
+    # plan_speed<1 stretches the plan in time (slower playback) so the commanded
+    # pace stays within the SparkRL policy's ~0.3 m/s envelope and the tracker
+    # stops lagging ~0.7 m mid-corridor (the main reason twogo stalls short in
+    # tight zones). Execution-only: same trajectory, just played slower; the FF
+    # velocity is scaled by plan_speed below to match.
+    _plan_speed = max(1e-3, float(plan_speed))
     adapter = CorridorTrajectoryAdapter(
-        source_dt=0.25,
+        source_dt=0.25 / _plan_speed,
         target_dt=1.0 / control_hz,
     )
     plan = adapter.load_trajectory_json(plan_path, best_idx=best_idx)
@@ -409,6 +406,18 @@ def diagnose(
     # Decode every frame once so the loop is just an array index lookup.
     schema = plan.schema
     frames = [schema.decode_state(plan.states[i], time_sec=float(plan.times[i])) for i in range(n_plan)]
+    # Goal-hold: the resampled plan ENDS at the goal, but the SparkRL tracker lags
+    # (warmup + tracking), so without holding the goal the rollout stops ~0.5 m
+    # short. Append goal-frame copies so the robot finishes the traverse
+    # (execution-only; the planner is fixed). The XY position P-control keeps
+    # pulling the lagging robot toward the held goal frame until it arrives.
+    if goal_hold_sec and goal_hold_sec > 0.0:
+        n_hold = int(round(float(goal_hold_sec) * control_hz))
+        if n_hold > 0:
+            frames = frames + [frames[-1]] * n_hold
+            n_plan = len(frames)
+            if not quiet:
+                print(f"[diagnose] goal-hold: +{n_hold} frames ({goal_hold_sec:.1f}s) holding the goal")
     plan_xy_full = np.asarray([[f.x, f.y] for f in frames], dtype=np.float64)
 
     # ----- 2. Build IO + controller + upper-body mapper -------------------
@@ -423,6 +432,7 @@ def diagnose(
     )
     from genedynamics.deploy.followers.humanoid.upper_body_mapper import (
         HumanoidUpperBodyMapper,
+        HumanoidUpperBodyMapperConfig,
     )
     from genedynamics.envs.robots.g1 import G1RobotModel
 
@@ -432,7 +442,10 @@ def diagnose(
     if loco_client is None:
         loco_client = SparkRLLocoClient(robot=robot, **(loco_kwargs or {}))
     controller = SportModeController(io=io, loco_client=loco_client)
-    upper_body_mapper = HumanoidUpperBodyMapper()
+    # mapper_cfg lets the deploy tune arm tucking (execution-only) so the wrists
+    # don't swing into side-wall obstacles — the planner is fixed.
+    _mcfg = HumanoidUpperBodyMapperConfig(**mapper_cfg) if mapper_cfg else None
+    upper_body_mapper = HumanoidUpperBodyMapper(_mcfg)
     if not quiet:
         print(
             f"[diagnose] building {type(io).__name__} + SportModeController + "
@@ -630,10 +643,11 @@ def diagnose(
         rate.tick()
         f = frames[k]
         # FF velocity from plan, filtered (plan resampling causes ripple).
-        vxy_world_ff_raw = np.array([f.v_x, f.v_y], dtype=np.float64)
+        # Scale by plan_speed: a slower playback needs proportionally lower FF vel.
+        vxy_world_ff_raw = np.array([f.v_x, f.v_y], dtype=np.float64) * _plan_speed
         vxy_ff_filt = lpf_alpha * vxy_world_ff_raw + (1.0 - lpf_alpha) * vxy_ff_filt
         vxy_world_ff = vxy_ff_filt.copy()
-        omega_ff_filt = lpf_alpha * float(f.omega) + (1.0 - lpf_alpha) * omega_ff_filt
+        omega_ff_filt = lpf_alpha * float(f.omega) * _plan_speed + (1.0 - lpf_alpha) * omega_ff_filt
 
         # XY P-control on planar position. Open-loop velocity replay is
         # what makes SparkRL drift off-plan; adding this closes the loop.

@@ -56,6 +56,12 @@ def main(argv=None) -> int:
     p.add_argument("--domain-id", type=int, default=0)
     p.add_argument("--control-hz", type=float, default=50.0)
     p.add_argument("--max-steps", type=int, default=None)
+    # Validated execution config (matches run_sport_mode_zones defaults): time-scale
+    # the plan so the tracker keeps up, and hold the goal so it finishes the traverse.
+    p.add_argument("--plan-speed", type=float, default=0.5,
+                   help="plan playback speed (<1 slows it so the tracker keeps up; sim-validated 0.5). Start SMALLER on first real runs.")
+    p.add_argument("--goal-hold-sec", type=float, default=5.0,
+                   help="seconds to hold the goal after the plan ends so the lagging robot finishes (sim-validated 5.0)")
     p.add_argument("--out-dir", default="results/g1_corridor/real")
     p.add_argument("--dry-run", action="store_true", help="Assemble + validate without the SDK/robot.")
     args = p.parse_args(argv)
@@ -125,7 +131,9 @@ def main(argv=None) -> int:
         governor_cfg={**GOVERNOR_CFG, "m_track": m_track},
         gov_cmd_lpf=GOV_CMD_LPF, body_sdf_activation_band=GOV_ACTIVATION_BAND,
         body_sdf_lookahead=lookahead, body_sdf_scene=body_sdf_scene,
-        spark_pd_gains=False, max_steps=args.max_steps, out_dir=Path(args.out_dir),
+        spark_pd_gains=False, max_steps=args.max_steps,
+        plan_speed=args.plan_speed, goal_hold_sec=args.goal_hold_sec,
+        out_dir=Path(args.out_dir),
     )
     print_report(result)
     return 0 if result.certified_safe else 1

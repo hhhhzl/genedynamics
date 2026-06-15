@@ -797,42 +797,75 @@ def _build_corridor_scene_overlay_xml(corridor_scene: Optional[Dict[str, Any]]) 
     ])
 
     obstacles = corridor_scene.get("obstacles", [])
+    # Unified obstacle color across ALL zones/shapes: a muted teal — distinct from
+    # the gray-blue corridor walls (0.72 0.75 0.80), see-through (alpha 0.42 lets
+    # the robot + walls behind show), harmonious with the cool MuJoCo scene.
+    OBSTACLE_RGBA = "0.33 0.58 0.60 0.42"
+    obs_zc = 0.5 * wall_height      # obstacles span the same height as the walls
+    obs_zh = 0.5 * wall_height
     for i, obs in enumerate(obstacles):
         if not isinstance(obs, dict):
             continue
         shape = str(obs.get("shape", "box")).lower()
-        z_min = float(obs.get("z_min", 0.0))
-        z_max = float(obs.get("z_max", 2.0))
-        z_center = 0.5 * (z_min + z_max)
-        z_half = max(1e-4, 0.5 * abs(z_max - z_min))
-        rgba = "0.86 0.34 0.28 0.45" if shape == "box" else "0.95 0.72 0.24 0.65"
+
         if shape == "sphere":
             try:
-                cx = float(obs["cx"])
-                cy = float(obs["cy"])
+                cx = float(obs["cx"]); cy = float(obs["cy"])
                 radius = max(1e-4, float(obs["radius"]))
             except Exception:
                 continue
+            z_center = 0.5 * (float(obs.get("z_min", 0.0)) + float(obs.get("z_max", 2.0)))
             geoms.append(
                 f'      <geom name="corridor_obstacle_{i}" type="sphere" pos="{cx:.6f} {cy:.6f} {z_center:.6f}" '
-                f'size="{radius:.6f}" rgba="{rgba}" contype="0" conaffinity="0"/>'
+                f'size="{radius:.6f}" rgba="{OBSTACLE_RGBA}" contype="0" conaffinity="0"/>'
             )
             continue
 
+        if shape == "qc":
+            # Quarter-disk (rounded corner): render the real 90deg pie slice as a fan
+            # of thin rotated boxes, NOT the bbox square. Quadrant from clip_sign (x
+            # side) and sign(cy) (y side), matching _qc_sdf.
+            try:
+                cx = float(obs["cx"]); cy = float(obs["cy"])
+                r = max(1e-4, float(obs["radius"]))
+                clip = float(obs.get("qc_clip_sign", 1.0))
+            except Exception:
+                continue
+            left = clip > 0.0       # region x <= cx
+            below = cy > 0.0        # region y <= cy
+            a0 = {(True, True): 180.0, (True, False): 90.0,
+                  (False, True): 270.0, (False, False): 0.0}[(left, below)]
+            N = 10
+            step = 90.0 / N
+            hw = max(1e-3, r * float(np.sin(np.deg2rad(step) / 2.0)) * 1.25)
+            for k in range(N):
+                th = np.deg2rad(a0 + (k + 0.5) * step)
+                bx = cx + 0.5 * r * float(np.cos(th))
+                by = cy + 0.5 * r * float(np.sin(th))
+                qw = float(np.cos(th / 2.0)); qz = float(np.sin(th / 2.0))
+                geoms.append(
+                    f'      <geom name="corridor_obstacle_{i}_{k}" type="box" '
+                    f'pos="{bx:.6f} {by:.6f} {obs_zc:.6f}" '
+                    f'size="{0.5 * r:.6f} {hw:.6f} {obs_zh:.6f}" '
+                    f'quat="{qw:.6f} 0 0 {qz:.6f}" rgba="{OBSTACLE_RGBA}" '
+                    f'contype="0" conaffinity="0"/>'
+                )
+            continue
+
+        # box (corridor walls/pillars), rendered at wall height, unified color.
         try:
-            x_min = float(obs["x_min"])
-            x_max = float(obs["x_max"])
-            y_min = float(obs["y_min"])
-            y_max = float(obs["y_max"])
+            x_min = float(obs["x_min"]); x_max = float(obs["x_max"])
+            y_min = float(obs["y_min"]); y_max = float(obs["y_max"])
         except Exception:
             continue
-        x_center = 0.5 * (x_min + x_max)
-        y_center = 0.5 * (y_min + y_max)
+        x_center = 0.5 * (x_min + x_max); y_center = 0.5 * (y_min + y_max)
         x_half = max(1e-4, 0.5 * abs(x_max - x_min))
         y_half = max(1e-4, 0.5 * abs(y_max - y_min))
         geoms.append(
-            f'      <geom name="corridor_obstacle_{i}" type="box" pos="{x_center:.6f} {y_center:.6f} {z_center:.6f}" '
-            f'size="{x_half:.6f} {y_half:.6f} {z_half:.6f}" rgba="{rgba}" contype="0" conaffinity="0"/>'
+            f'      <geom name="corridor_obstacle_{i}" type="box" '
+            f'pos="{x_center:.6f} {y_center:.6f} {obs_zc:.6f}" '
+            f'size="{x_half:.6f} {y_half:.6f} {obs_zh:.6f}" rgba="{OBSTACLE_RGBA}" '
+            f'contype="0" conaffinity="0"/>'
         )
 
     start_pos = corridor_scene.get("start_pos")

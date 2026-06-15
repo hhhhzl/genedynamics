@@ -1,11 +1,5 @@
-# vx0.3-aligned baseline — env/sampling base params matched to twogo_zone_b_vx03 (G)
-# for a same-conditions method comparison. Aligned: vx_max 0.3, omega_max 0.3,
-# collision_margin 0.03, action_extra_sigma 0.35, Ndiffuse 100, horizon 50.
-# (horizon 50 is REQUIRED so the goal is reachable at vx=0.3; each method's own
-#  algorithm params are left untouched. viz [] for speed.)
-# ── MDOC Zone B: rotated thin wall, per-step CBF-QP action filter ──
-name: humanoid_corridor_2d_mdoc_zone_b_vx03
-output_dir: results/humanoid/corridor_2d/main/mdoc_zone_b_vx03
+name: humanoid_corridor_2d_mdoc_zone_b
+output_dir: results/humanoid/corridor_2d/main/mdoc_zone_b
 
 env_name: humanoid_corridor_2d
 env_params:

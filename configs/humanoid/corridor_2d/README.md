@@ -259,12 +259,11 @@ python -m genedynamics.experiments.runner configs/humanoid/corridor_2d/plan/twog
 python scripts/tasks/robot/humanoid/sport_mode_corridor.py \
     --deploy-config configs/humanoid/corridor_2d/deploy/twogo_zone_a.yaml \
     --out-dir results/deploy/spark_rl/twogo_zone_a
-# 上面运行结束会打印对应的 render 命令，可以直接 copy 跑：
-python scripts/visualizations/render_spark_rl_corridor_gif.py \
+# 上面运行结束会打印对应的 render 命令，可以直接 copy 跑（出全套图：
+# tracking / sport_mode / motion_strip(绿线) / trajectory_mujoco.gif）：
+python scripts/visualizations/render_deploy_humanoid.py \
     --npz results/deploy/spark_rl/twogo_zone_a/sport_mode.npz \
-    --out results/deploy/spark_rl/twogo_zone_a/spark_rl_final_03x.gif \
-    --cam-mode global --cam-azimuth 90 --cam-elevation -45 \
-    --every-n 4 --width 1200 --height 600 --speed 0.3
+    --which all
 
 # 一次跑 5 个 zone
 python scripts/tasks/robot/humanoid/run_sport_mode_zones.py

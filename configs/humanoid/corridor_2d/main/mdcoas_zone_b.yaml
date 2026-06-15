@@ -1,5 +1,5 @@
-name: humanoid_corridor_2d_mdcoas_zone_b_vx03
-output_dir: results/humanoid/corridor_2d/main/mdcoas_zone_b_vx03
+name: humanoid_corridor_2d_mdcoas_zone_b
+output_dir: results/humanoid/corridor_2d/main/mdcoas_zone_b
 
 env_name: humanoid_corridor_2d
 env_params:

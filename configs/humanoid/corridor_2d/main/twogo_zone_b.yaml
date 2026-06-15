@@ -1,32 +1,5 @@
-# ── 2GO Zone B, vx_max=0.3 (actuator-matched) — best tuned config ("G") ──
-# Forward-speed cap lowered 0.8 -> 0.3 to match the SparkRL executor (+-0.3 m/s).
-#
-# The blocker at 0.3 is NOT horizon (zone_b needs only dx=2.0m; H=50 gives ~3.75m
-# reach and goal_hardstop holds at goal). The real problem: at low vx the planner
-# could not explore the DOWNWARD SIDESTEP needed to thread zone_b's bottom gap (the
-# U-wall blocks the top 60%, y>=-0.16; the body center must dip to y~=-0.48, a narrow
-# ~0.14m band, body = elliptical torso + arms). Three changes vs twogo_zone_b.yaml:
-#   1) Lighter constraint enforcement (zone_a's set): max_constraints_per_point 8,
-#      retract_qp_boost off, retract_qp_every 3, probe_b 32, scheduler p_min 0 /
-#      I 1..10 / topK 1..10, Ndiffuse 100. zone_b's heavy per-step QP projection was
-#      snapping exploring samples back -> 0/8 modes reached. Lightening it -> 8/8 reach.
-#   2) More exploration so more modes COMMIT to the deep dip: action_extra_sigma
-#      0.15->0.35, twogo_task_dir_alpha 0.3->0.1. (Pushing sigma to 0.5 helps at
-#      omega 0.5 but HURTS once omega is lowered -- the noise needs omega to correct it.)
-#   3) Modest safety margin so deep-dippers clear: constraint_margin 0.04, sched margin
-#      0.05. Pushing margin higher (0.05-0.08) made it WORSE (back to 2/8); margin alone
-#      never helps non-dipping modes -> exploration + heading are the real levers.
-#   4) Heading alignment: omega_max 0.5->0.3 (BIGGEST single lever, 3/8->5/8). A low yaw
-#      rate stops modes from twisting the body the WRONG way across the gap (psi>0 ->
-#      wide y-profile -> clip). NOTE: this caps yaw rate -- check the SparkRL executor
-#      allows 0.3 rad/s before deploy.
-#
-# Measured (seed 0): per-mode SSR = 5/8 = 0.625 (vs 0 at the naive 0.3 port, 3/8 before
-# the omega fix); all 8 modes reach; selected (best_idx) trajectory safe + reaches with a
-# healthy 0.083m clearance. Remaining 3 failures are NON-DIPPERS (go up into the wall,
-# y>=0). horizon=50 matches twogo_zone_a. visualizations cleared for speed (re-add to plot).
-name: humanoid_corridor_2d_twogo_zone_b_vx03
-output_dir: results/humanoid/corridor_2d/main/twogo_zone_b_vx03
+name: humanoid_corridor_2d_twogo_zone_b
+output_dir: results/humanoid/corridor_2d/main/twogo_zone_b
 
 env_name: humanoid_corridor_2d
 env_params:

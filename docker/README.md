@@ -80,11 +80,10 @@ python -c "import mujoco; print(mujoco.__version__)"
 python -c "import jax; print(jax.default_backend())"
 ```
 
-6. Run the corridor follower:
+6. Run the corridor follower (SparkRL sport-mode + reference governor):
 
 ```bash
-python3 scripts/tasks/robot/run_humanoid_corridor_g1_wbc.py \
-  --seed-dir results/humanoid/corridor_2d/smoke/twogo_zone_a/level_1/seed_0
+python3 scripts/tasks/robot/humanoid/run_sport_mode_zones.py --zones twogo_zone_a
 ```
 
 ## GPU workflow for Linux + NVIDIA

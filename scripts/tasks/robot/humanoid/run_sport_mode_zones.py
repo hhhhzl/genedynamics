@@ -71,6 +71,15 @@ GOV_ACTIVATION_BAND = 0.08
 # a little approach headroom.
 GOV_LOOKAHEAD = 0.15
 M_TRACK_FALLBACK = 0.02  # Step-4 tightening if the plan carries no derived m_track
+# Goal-hold: the SparkRL tracker lags (warmup + tracking), so without holding the
+# goal after the short-horizon plan ends the robot freezes ~0.5 m short. 5 s of
+# goal-hold lets it finish the traverse (execution-only; the planner is fixed).
+GOAL_HOLD_SEC = 5.0
+# plan_speed<1 time-stretches the plan so the commanded pace stays in the SparkRL
+# policy's ~0.3 m/s envelope; without it the tracker lags ~0.7 m mid-corridor and
+# stalls short in tight zones. 0.5 recovers reach in ALL zones incl. the zone_b
+# U-wall (0.6 left 3 zone_b seeds at ep 0.21-0.25; 0.5 -> all 5 reach 0.13-0.15).
+PLAN_SPEED = 0.5
 
 
 def _plan_field(plan_path: Path, key: str, default: float) -> float:
@@ -130,7 +139,28 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help="Disable the reference governor + Step-1 mode selection (raw open-loop baseline).",
     )
+    # Execution-only arm-tuck overrides (the planner is fixed): draw the wrists in
+    # so they don't swing into side-wall obstacles (see audit_exec_collision.py).
+    p.add_argument("--arm-shoulder-roll-gain", type=float, default=None,
+                   help="HumanoidUpperBodyMapperConfig.arm_tuck_shoulder_roll_gain (default 0.55; lower = less abduction)")
+    p.add_argument("--arm-elbow-base", type=float, default=None,
+                   help="HumanoidUpperBodyMapperConfig.arm_elbow_base (default 0.0; higher = wrists drawn in)")
+    p.add_argument("--arm-elbow-gain", type=float, default=None,
+                   help="HumanoidUpperBodyMapperConfig.arm_tuck_elbow_gain (default 1.10)")
+    p.add_argument("--goal-hold-sec", type=float, default=GOAL_HOLD_SEC,
+                   help=f"seconds to hold the goal after the plan ends so the lagging robot finishes (default {GOAL_HOLD_SEC})")
+    p.add_argument("--plan-speed", type=float, default=PLAN_SPEED,
+                   help=f"plan playback speed; <1 slows it so the tracker keeps up (default {PLAN_SPEED})")
     args = p.parse_args(argv)
+
+    mapper_cfg = {}
+    if args.arm_shoulder_roll_gain is not None:
+        mapper_cfg["arm_tuck_shoulder_roll_gain"] = args.arm_shoulder_roll_gain
+    if args.arm_elbow_base is not None:
+        mapper_cfg["arm_elbow_base"] = args.arm_elbow_base
+    if args.arm_elbow_gain is not None:
+        mapper_cfg["arm_tuck_elbow_gain"] = args.arm_elbow_gain
+    mapper_cfg = mapper_cfg or None
 
     args.out_root.mkdir(parents=True, exist_ok=True)
     overall_status = 0
@@ -167,6 +197,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 gov_cmd_lpf=1.0 if args.no_governor else GOV_CMD_LPF,
                 body_sdf_activation_band=GOV_ACTIVATION_BAND,
                 body_sdf_lookahead=_plan_gov_lookahead(plan_path),
+                mapper_cfg=mapper_cfg,
+                goal_hold_sec=args.goal_hold_sec,
+                plan_speed=args.plan_speed,
             )
         except Exception as exc:  # noqa: BLE001
             print(f"[zones] FAIL {zone}: {exc}", file=sys.stderr)
