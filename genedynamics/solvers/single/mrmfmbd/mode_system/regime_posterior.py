@@ -69,7 +69,57 @@ def risk_sensitive_marginalize_jax(
     return rho_m, q_mc
 
 
-REGIME_POSTERIOR_MODES = ("reward", "risk_sensitive")
+def cvar_marginalize_jax(
+    rewards_mc: "jnp.ndarray",   # (M, C) — M candidates × C regimes
+    log_prior: "jnp.ndarray",    # (C,)
+    alpha: "jnp.ndarray",        # scalar in (0, 1] — CVaR tail level
+) -> Tuple["jnp.ndarray", "jnp.ndarray"]:
+    """CVaR_α regime marginalization (distributionally-robust / adversarial).
+
+    For each candidate, ``rho_m`` is the average reward over the WORST
+    α-probability mass of regimes (the lower tail), and ``q_mc`` is the
+    adversarial regime posterior CVaR induces — all mass on the failing
+    α-tail, p(m)/α each.
+
+    A different robustness knob from `risk_sensitive_marginalize_jax`: that one
+    is the KL-ball (entropic) DRO posterior q ∝ p·exp(-R/τ_r); CVaR is the
+    {q ≤ p/α} ambiguity set, a hard tail average with a crisp "worst α-fraction"
+    reading. Computed by the exact discrete formula: sort regimes ascending,
+    take the probability mass that overlaps the worst-α quantile.
+
+    Limits
+    ------
+    - α → 0 : worst-regime objective (max-min), q → one-hot worst regime
+    - α = 1 : prior-mean over regimes, q → p(m)
+
+    Same return signature/sign as the other marginalizers (higher rho = more
+    robust), so it is drop-in interchangeable in the MBD weighting math.
+    """
+    if not JAX_AVAILABLE:
+        raise RuntimeError("JAX is required for cvar_marginalize_jax")
+    rewards_mc = jnp.nan_to_num(rewards_mc, nan=-1e6, posinf=1e6, neginf=-1e6)
+    p = jnp.exp(log_prior)
+    p = p / jnp.maximum(jnp.sum(p), jnp.asarray(1e-12, dtype=p.dtype))
+    a = jnp.clip(alpha, jnp.asarray(1e-6, dtype=rewards_mc.dtype), jnp.asarray(1.0, dtype=rewards_mc.dtype))
+
+    def _row(R):
+        order = jnp.argsort(R)                 # ascending: worst regimes first
+        R_s = R[order]
+        p_s = p[order]
+        cum = jnp.cumsum(p_s)
+        cum_before = cum - p_s
+        # Probability mass of each regime that falls inside the worst-α quantile.
+        overlap = jnp.clip(jnp.minimum(cum, a) - cum_before, 0.0, None)
+        w_s = overlap / a                      # adversarial tail weights, Σ = 1
+        cvar = jnp.sum(w_s * R_s)
+        q = jnp.zeros_like(R).at[order].set(w_s)
+        return cvar, q
+
+    rho_m, q_mc = jax.vmap(_row)(rewards_mc)
+    return rho_m, q_mc
+
+
+REGIME_POSTERIOR_MODES = ("reward", "risk_sensitive", "cvar")
 
 
 def validate_mode(mode: str) -> str:

@@ -41,6 +41,16 @@ from .asset_bank import (
     load_spec_npz,
 )
 
+# Stage 6 — unified robotization fronts (point cloud + Gaussian splat).
+from .robotize_common import (
+    finalize_from_voxelization,
+    voxelize_points,
+    gaussians_to_voxelization,
+    normalize_points_to_box,
+)
+from .pc_robotize import robotize_point_cloud
+from .gs_robotize import robotize_gaussians
+
 __all__ = [
     # Phase 0
     "SoftBodySpec",
@@ -65,4 +75,11 @@ __all__ = [
     "prompt_id",
     "save_spec_npz",
     "load_spec_npz",
+    # Stage 6 — unified robotization
+    "finalize_from_voxelization",
+    "voxelize_points",
+    "gaussians_to_voxelization",
+    "normalize_points_to_box",
+    "robotize_point_cloud",
+    "robotize_gaussians",
 ]

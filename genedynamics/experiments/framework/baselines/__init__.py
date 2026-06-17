@@ -10,6 +10,7 @@ from .mrmfmbd_baseline import MRMFMBDBaseline
 from .cmaes_baseline import CMAESBaseline
 from .cem_baseline import CEMBaseline
 from .shac_baseline import SHACBaseline
+from .diffusebot_baseline import DiffuseBotBaseline
 
 from ..baseline_registry import register_baseline
 
@@ -18,5 +19,9 @@ register_baseline(MRMFMBDBaseline())
 register_baseline(CMAESBaseline())
 register_baseline(CEMBaseline())
 register_baseline(SHACBaseline())
+register_baseline(DiffuseBotBaseline())
 
-__all__ = ["MRMFMBDBaseline", "CMAESBaseline", "CEMBaseline", "SHACBaseline"]
+__all__ = [
+    "MRMFMBDBaseline", "CMAESBaseline", "CEMBaseline", "SHACBaseline",
+    "DiffuseBotBaseline",
+]

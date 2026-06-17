@@ -70,6 +70,12 @@ def _safe_import(modname: str) -> None:
 
 _safe_import("genedynamics.morphology.priors.random_shapes")
 _safe_import("genedynamics.morphology.priors.triposg")
+# Table 3 modern priors (lazy mesh adapters; register even when uninstalled).
+_safe_import("genedynamics.morphology.priors.hunyuan3d")
+_safe_import("genedynamics.morphology.priors.trellis")
+_safe_import("genedynamics.morphology.priors.craftsman")
+_safe_import("genedynamics.morphology.priors.meshflow")
+_safe_import("genedynamics.morphology.priors.diffgs")
 
 
 __all__ = [

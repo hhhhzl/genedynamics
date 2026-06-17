@@ -1,6 +1,3 @@
-# Deploy parameters used to produce results/deploy/spark_rl/twogo_zone_d/spark_rl_final_03x.gif.
-# Pair with configs/humanoid/corridor_2d/plan/twogo_zone_d.yaml.
-
 plan: twogo_zone_d
 plan_path: results/humanoid/corridor_2d/plan/twogo_zone_d/level_1/seed_0/trajectory/trajectory.json
 
