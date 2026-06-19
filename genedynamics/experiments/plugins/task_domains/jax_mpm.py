@@ -26,7 +26,7 @@ class _JaxMpmTaskSpec:
 
 # Tasks supported by the jax_mpm backend. Add entries here as new ones come online.
 # Phase 2.2 added "locomotion" (terrain bank) and "push" (terrain + manipuland).
-_TASKS = ("crawling_ground", "locomotion", "push")
+_TASKS = ("crawling_ground", "locomotion", "push", "carry")
 
 
 class JaxMpmTaskDomainProvider:
@@ -52,6 +52,8 @@ class JaxMpmTaskDomainProvider:
             num_modes = 12   # 4 terrains × 3 frictions (writeup §10.3 train)
         elif task_id == "push":
             num_modes = 36   # 4 terrains × 3 frictions × 3 masses
+        elif task_id == "carry":
+            num_modes = 36   # 4 terrains (incl. slopes) × 3 frictions × 3 masses
         else:
             num_modes = 4
         return _JaxMpmTaskSpec(

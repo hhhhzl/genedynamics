@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
-from ..baseline import BaselineConfig, BaselineResult, BaselineProtocol
+from genedynamics.experiments.framework.baseline import BaselineConfig, BaselineResult, BaselineProtocol
 
 
 class SHACBaseline(BaselineProtocol):

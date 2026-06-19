@@ -1,0 +1,33 @@
+# G3.1 smoke — DiffuseBot-style gradient co-design baseline (first-order ours).
+# Adam ascent on θ=(x,φ) through the differentiable JAX-MPM rollout.
+# Short horizon + small lr keep contact-rich gradients well-conditioned
+# (README §5: h short, lr small). Smoke: gradients finite (no NaN), reward rises.
+name: diffusebot_g3_1_smoke
+output_dir: results/soft_robot/co_design/smoke/g3_1_diffusebot
+cache_dir: results/soft_robot/co_design/smoke/g3_1_diffusebot_cache
+
+baseline_name: diffusebot
+task_domain: jax_mpm
+task_id: crawling_ground
+seeds: [0]
+save_gif: false
+
+evaluator_runtime:
+  max_workers: 1
+  reward_shaping_weight: 100.0
+  n_grid: 64
+  voxel_dims: [4, 3, 4]
+  act_strength_base: 24.0
+  scale: 50.0
+
+method_params:
+  n_iters: 20
+  lr: 5.0e-3
+  num_env_steps: 64
+  friction: 0.4
+  x_lo: 0.2
+  x_hi: 1.0
+  phi_lo: -0.5
+  phi_hi: 0.5
+  x_mean: 0.6
+  prior_guidance_weight: 0.0

@@ -185,6 +185,17 @@ def keep_largest_component(occ: np.ndarray) -> Tuple[np.ndarray, int]:
     return keep, n_dropped
 
 
+def count_components(occ: np.ndarray) -> int:
+    """Number of 6-connected components in a 3D bool occupancy array (0 if empty).
+    1 == DiffuseBot's `geometry_is_cc` accept criterion."""
+    occ = np.asarray(occ, dtype=bool)
+    if not occ.any():
+        return 0
+    measure = _require_skimage()
+    _labels, n = measure.label(occ, connectivity=1, return_num=True)
+    return int(n)
+
+
 def has_ground_support(centers: np.ndarray, floor_y: float = 0.05,
                         tol: float = 0.02) -> bool:
     """True if at least one particle is within ``tol`` of ``floor_y``.

@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 import numpy as np
 
-from ..baseline import BaselineConfig, BaselineResult, BaselineProtocol
+from genedynamics.experiments.framework.baseline import BaselineConfig, BaselineResult, BaselineProtocol
 
 
 class MRMFMBDBaseline(BaselineProtocol):
@@ -76,6 +76,54 @@ class MRMFMBDBaseline(BaselineProtocol):
         phi_lo = float(extra.get("phi_lo", 5.0))
         phi_hi = float(extra.get("phi_hi", 150.0))
         phi_std = float(extra.get("phi_std", 30.0))
+
+        # Stage 2 / G2a: A2 shape-latent decoder. If morph_latent_dim>0 and a
+        # trained decoder dir is given, the optimizer's x-block becomes a shape
+        # latent w ≈ N(0,I); rollout-time occupancy is g(w). Off by default
+        # (morph_latent_dim=0) → legacy voxel-occupancy x-block, unchanged.
+        morph_latent_dim = int(extra.get("morph_latent_dim", 0))
+        morph_decoder_path = str(extra.get("morph_decoder_path", "") or "")
+        morph_decoder = None
+        if morph_latent_dim > 0 and morph_decoder_path:
+            import json
+            import os
+            from genedynamics.solvers.single.mrmfmbd.morph_system.decoder import MorphDecoder
+            from genedynamics.solvers.single.mrmfmbd.morph_system.specs import MorphDecoderConfig
+
+            with open(os.path.join(morph_decoder_path, "decoder_config.json")) as _f:
+                _dcfg = json.load(_f)
+            if int(_dcfg["latent_dim"]) != morph_latent_dim:
+                raise ValueError(
+                    f"morph_latent_dim={morph_latent_dim} != decoder latent_dim="
+                    f"{_dcfg['latent_dim']} at {morph_decoder_path}"
+                )
+            _mcfg = MorphDecoderConfig(
+                latent_dim=int(_dcfg["latent_dim"]),
+                hidden_dim=int(_dcfg["hidden_dim"]),
+                n_voxels=int(_dcfg["n_voxels"]),
+                x_lo=float(_dcfg["x_lo"]),
+                x_hi=float(_dcfg["x_hi"]),
+                beta_kl=float(_dcfg.get("beta_kl", 1e-3)),
+                # Task-2 multi-head co-design fields (saved by train_morph_ae --multihead).
+                decode_actuator=bool(_dcfg.get("decode_actuator", False)),
+                decode_stiffness=bool(_dcfg.get("decode_stiffness", False)),
+                n_actuators=int(_dcfg.get("n_actuators", 0)),
+                e_lo=float(_dcfg.get("e_lo", 0.5)),
+                e_hi=float(_dcfg.get("e_hi", 3.0)),
+            )
+            morph_decoder = MorphDecoder.load(
+                os.path.join(morph_decoder_path, "decoder_params.npz"), _mcfg
+            )
+            # Optimizer x-block is now the latent w ~ N(0, I): override dim,
+            # bounds, and prior so the diffusion samples in latent space. The
+            # decoder's own [x_lo,x_hi] (from decoder_config.json) governs the
+            # produced occupancy and is independent of these latent bounds.
+            x_dim = morph_latent_dim
+            x_lo = float(extra.get("morph_latent_lo", -2.0))
+            x_hi = float(extra.get("morph_latent_hi", 2.0))
+            x_mean_init = float(extra.get("morph_latent_mean", 0.0))
+            x_std = float(extra.get("morph_latent_std", 1.0))
+
         theta_param = ThetaParametrization(
             x_dim=x_dim,
             phi_dim=phi_dim,
@@ -152,6 +200,33 @@ class MRMFMBDBaseline(BaselineProtocol):
                     # activates the writeup §5 robust posterior.
                     regime_posterior_mode=str(extra.get("regime_posterior_mode", "reward")),
                     risk_temperature=float(extra.get("risk_temperature", 1.0)),
+                    # Stage 4 / G2d: CVaR tail level for regime_posterior_mode="cvar".
+                    cvar_alpha=float(extra.get("cvar_alpha", 0.1)),
+                    # Stage 2 / G2a: A2 shape-latent decoder knobs (diagnostics).
+                    morph_latent_dim=morph_latent_dim,
+                    morph_decoder_path=morph_decoder_path,
+                    # Task-2: use the multi-head decoder's actuator/stiffness fields
+                    # (default on; per-head ablation switches).
+                    morph_decoder_actuator=bool(extra.get("morph_decoder_actuator", True)),
+                    morph_decoder_stiffness=bool(extra.get("morph_decoder_stiffness", True)),
+                    # Shape regularizer weight (TV of occupancy → smoother bodies).
+                    shape_weight=float(extra.get("shape_weight", 0.0)),
+                    # Stage 2 / G2b: fold model-free prior log p0(θ) into weights.
+                    use_prior_weight=bool(extra.get("use_prior_weight", False)),
+                    prior_weight=float(extra.get("prior_weight", 1.0)),
+                    # Stage 3 / G2c: multi-fidelity control-variate score estimator.
+                    cv_enabled=bool(extra.get(
+                        "cv_enabled",
+                        str(extra.get("method", "")).lower() == "control_variate",
+                    )),
+                    cv_low_fidelity_level=int(extra.get("cv_low_fidelity_level", 0)),
+                    cv_subset_k=int(extra.get("cv_subset_k", 0)),
+                    nu_max=float(extra.get("nu_max", 0.0)),
+                    cv_low_dt=float(extra.get("cv_low_dt", 0.0)),
+                    # G2c-adaptive: budget-dual high-fi subset allocation (contribution 2).
+                    cv_adaptive=bool(extra.get("cv_adaptive", False)),
+                    cv_budget=float(extra.get("cv_budget", 0.0)),
+                    cv_budget_eta=float(extra.get("cv_budget_eta", 0.5)),
                     # Phase 4.2: SHAC top-K refinement (writeup §8.1). Steps=0 (default) → no-op.
                     shac_refine_steps=int(extra.get("shac_refine_steps", 0)),
                     shac_refine_h=int(extra.get("shac_refine_h", 32)),
@@ -172,6 +247,7 @@ class MRMFMBDBaseline(BaselineProtocol):
                 num_modes=num_modes,
                 seed=config.seed,
                 show_tqdm=extra.get("show_tqdm", False),
+                morph_decoder=morph_decoder,
             )
         else:
             schedule_type = extra.get("schedule_type", "linear")
@@ -252,6 +328,8 @@ class MRMFMBDBaseline(BaselineProtocol):
                 "bridge_history": result.get("bridge_history", []),
                 "mode_responsibilities": result.get("mode_responsibilities", []),
                 "fidelity_history": result.get("fidelity_history", []),
+                # G2c-adaptive: per-block budget-dual allocation diagnostic (Table 4).
+                "cv_adaptive_summary": result.get("cv_adaptive_summary", {}),
                 "final_eval_returns": eval_batch.returns.tolist(),
                 "final_eval_successes": eval_batch.successes.tolist(),
                 "final_eval_failure_codes": list(eval_batch.failure_codes),

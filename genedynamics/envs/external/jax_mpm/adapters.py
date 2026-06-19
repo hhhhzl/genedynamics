@@ -19,7 +19,7 @@ import jax.numpy as jnp
 
 from .scene import (
     MPMConfig, SceneData, build_scene,
-    rollout_return_batch, rollout_return_push_batch,
+    rollout_return_batch, rollout_return_push_batch, rollout_return_carry_batch,
 )
 
 
@@ -111,6 +111,7 @@ def evaluate_batch_request(
             )
             terrain_h = None
             push = False
+            carry = False
             manip_cfg_local = None
         else:
             fid, mode_id = key
@@ -120,7 +121,8 @@ def evaluate_batch_request(
             from .terrain import to_grid as _to_grid
             terrain_h = jnp.asarray(_to_grid(regime.terrain, cfg.n_grid))
             push = (task == "push") and regime.has_manipuland
-            manip_cfg_local = regime.manipuland if push else None
+            carry = (task == "carry") and regime.has_manipuland
+            manip_cfg_local = regime.manipuland if (push or carry) else None
 
         x_b = np.stack([np.asarray(req_list[i].morphology_params, dtype=np.float32) for i in idxs])
         phi_b = np.stack([np.asarray(req_list[i].controller_params, dtype=np.float32) for i in idxs])
@@ -131,6 +133,14 @@ def evaluate_batch_request(
                 x_b, phi_b, fr_b, scene, cfg, num_env_steps,
                 manip_cfg=manip_cfg_local, goal_x=push_goal_x,
                 terrain_height=terrain_h, weights=push_weights,
+            )
+        elif carry:
+            # Carry/transport: object under gravity, body must support + move it.
+            # Returns (reward, dist_to_goal_T); uses carry-specific reward weights.
+            rs, ds = rollout_return_carry_batch(
+                x_b, phi_b, fr_b, scene, cfg, num_env_steps,
+                manip_cfg=manip_cfg_local, goal_x=push_goal_x,
+                terrain_height=terrain_h,
             )
         elif terrain_h is not None:
             # Per-regime terrain — bypass the fidelity-keyed JIT cache (which

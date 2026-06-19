@@ -57,7 +57,7 @@ class JaxMpmEvaluatorConfig:
     # Phase 3: optional pre-robotized SoftBodySpec on disk. When set, the
     # evaluator skips build_scene(cfg) and instead deserializes the spec via
     # load_spec_npz, then calls build_scene_from_spec. Used by configs that
-    # consume mesh-derived bodies (configs/soft_robot/main_v2/crawling_from_mesh.yaml).
+    # consume mesh-derived bodies (configs/soft_robot/co_design/main_v2/crawling_from_mesh.yaml).
     softbody_spec_path: Optional[str] = None
     extra: Dict[str, Any] = field(default_factory=dict)
 
@@ -142,6 +142,10 @@ class JaxMpmRolloutEvaluator:
                 self._regime_bank = make_train_bank(self._mpm_cfg.n_grid, task="push")
             elif kind == "test_push":
                 self._regime_bank = make_test_bank(self._mpm_cfg.n_grid, task="push")
+            elif kind == "train_carry":
+                self._regime_bank = make_train_bank(self._mpm_cfg.n_grid, task="carry")
+            elif kind == "test_carry":
+                self._regime_bank = make_test_bank(self._mpm_cfg.n_grid, task="carry")
             else:
                 raise ValueError(f"Unknown regime_bank_kind: {kind!r}")
 

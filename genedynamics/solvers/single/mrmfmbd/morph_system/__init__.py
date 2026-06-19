@@ -23,8 +23,15 @@ from .decoder import (
     train_vae,
     save_params,
     load_params,
+    # Task-2 multi-head co-design (geometry + actuator + stiffness).
+    init_params_mh,
+    decode_full,
+    decode_actuator_field,
+    decode_stiffness_field,
+    vae_loss_mh,
+    train_vae_mh,
 )
-from .dataset import build_occupancy_dataset
+from .dataset import build_occupancy_dataset, build_morph_dataset
 
 __all__ = [
     "MorphDecoderConfig",
@@ -39,4 +46,12 @@ __all__ = [
     "save_params",
     "load_params",
     "build_occupancy_dataset",
+    # Task-2
+    "init_params_mh",
+    "decode_full",
+    "decode_actuator_field",
+    "decode_stiffness_field",
+    "vae_loss_mh",
+    "train_vae_mh",
+    "build_morph_dataset",
 ]

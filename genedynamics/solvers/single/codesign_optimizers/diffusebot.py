@@ -26,7 +26,7 @@ from typing import Any
 
 import numpy as np
 
-from ..baseline import BaselineConfig, BaselineResult, BaselineProtocol
+from genedynamics.experiments.framework.baseline import BaselineConfig, BaselineResult, BaselineProtocol
 
 
 class DiffuseBotBaseline(BaselineProtocol):

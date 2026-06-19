@@ -104,6 +104,18 @@ def make_train_bank(
                         terrain=t, friction=float(mu),
                         manipuland=ManipulandConfig(mass=float(M)),
                     ))
+    elif task == "carry":
+        # Carry/transport: object falls under gravity (horizontal_only=False) and
+        # must be supported by the body. Regimes cross terrain (incl. slopes) ×
+        # friction × object mass — the writeup §carry mass/slope regime set.
+        for t in _terrain_set_train(n_grid):
+            for mu in frictions:
+                for M in masses:
+                    bank.append(RegimeSpec(
+                        name=f"train__carry__{t.name}__mu{mu:.2f}__M{M:.2f}",
+                        terrain=t, friction=float(mu),
+                        manipuland=ManipulandConfig(mass=float(M), horizontal_only=False),
+                    ))
     else:
         raise ValueError(f"Unknown task {task!r}")
     return bank
@@ -132,6 +144,15 @@ def make_test_bank(
                         name=f"test__{t.name}__mu{mu:.2f}__M{M:.2f}",
                         terrain=t, friction=float(mu),
                         manipuland=ManipulandConfig(mass=float(M)),
+                    ))
+    elif task == "carry":
+        for t in _terrain_set_test(n_grid):
+            for mu in frictions:
+                for M in masses:
+                    bank.append(RegimeSpec(
+                        name=f"test__carry__{t.name}__mu{mu:.2f}__M{M:.2f}",
+                        terrain=t, friction=float(mu),
+                        manipuland=ManipulandConfig(mass=float(M), horizontal_only=False),
                     ))
     else:
         raise ValueError(f"Unknown task {task!r}")

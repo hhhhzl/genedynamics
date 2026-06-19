@@ -25,6 +25,7 @@ Two execution paths:
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -86,6 +87,68 @@ class MBDConfig:
     # tau_r controls the soft-min sharpness; tau_r → 0 = max-min, tau_r → ∞ = uniform.
     regime_posterior_mode: str = "reward"
     risk_temperature: float = 1.0
+    # Phase 2.3 / G2d (Stage 4): CVaR_α tail level for regime_posterior_mode="cvar".
+    # Smaller α → more worst-case (α→0 = max-min over regimes); α=1 = prior-mean.
+    cvar_alpha: float = 0.1
+    # Phase 2 (Stage 2 / G2a): A2 shape-latent decoder. When morph_latent_dim>0
+    # AND morph_decoder_path is set, the optimizer's x-block is a shape latent
+    # w ∈ R^morph_latent_dim (≈ N(0,I)); rollout-time occupancy is x_morph = g(w)
+    # from a trained MorphDecoder (loaded by the baseline, passed in as
+    # `morph_decoder`). morph_latent_dim=0 (default) → legacy voxel-occupancy
+    # x-block; the decode branch is skipped and behavior is byte-identical.
+    morph_latent_dim: int = 0
+    morph_decoder_path: str = ""
+    # Task-2 (DiffuseBot-aligned co-design fields): when the loaded decoder is
+    # multi-head, also feed its decoded continuous actuator-placement field and
+    # stiffness field into the rollout (DiffuseBot Ψ = {geo, actuator, stiffness},
+    # but optimized GRADIENT-FREE via the shape latent w). Default True → a
+    # multi-head decoder uses both heads; set False to ablate a single head while
+    # keeping the geometry decode. Inert for a legacy occ-only decoder.
+    morph_decoder_actuator: bool = True
+    morph_decoder_stiffness: bool = True
+    # Shape regularizer: subtract shape_weight · TV(occupancy) from each
+    # candidate's reward so the gradient-free search prefers smooth, connected,
+    # plausible bodies over jagged/fragmented sim-exploits (the "ugly body" fix,
+    # complementing the learned-prior weight). 0 (default) → no regularization.
+    shape_weight: float = 0.0
+    # Phase 2 (Stage 2 / G2b): fold the model-free prior log p0(θ) into the
+    # importance weights, i.e. log_w = reward_term + prior_weight·log p0(θ),
+    # completing the MBD posterior softmax(reward + log_prior). With a latent
+    # x-block (G2a, prior N(0,I)) this biases the denoised mean toward low ‖w‖
+    # (well-supported shapes). use_prior_weight=False (default) → reward-only
+    # weights, byte-identical to the legacy path.
+    use_prior_weight: bool = False
+    prior_weight: float = 1.0
+    # Phase 2 (Stage 3 / G2c): multi-fidelity control-variate score estimator.
+    # When cv_enabled, each denoising step evaluates ALL M proposals at a cheap
+    # low fidelity (cv_low_fidelity_level) and a top-K subset at the block's
+    # (high) fidelity, then forms the control-variate corrected reward
+    #   R̃_m = R_lo_m + Δ̄   (Δ̄ = mean_{j∈S}(R_hi_j − R_lo_j)),  R̃_S = R_hi_S
+    # before the importance-weighted mean. This is the JAX mirror of
+    # estimator_system.cv_score_weighted_mean. As K→M, R̃→R_hi exactly. The high
+    # fidelity is used at EVERY step (subset), so fidelity is non-monotone and
+    # the non-decreasing block constraint is relaxed under cv_enabled.
+    # cv_enabled=False (default) → single-fidelity per block, byte-identical.
+    cv_enabled: bool = False
+    cv_low_fidelity_level: int = 0
+    cv_subset_k: int = 0          # 0 → fall back to top_k_fine
+    nu_max: float = 0.0           # BudgetDual cap (diagnostics); 0 → inert
+    # cv_low_dt > 0 selects the PHYSICS-RESOLUTION (substep) fidelity axis for the
+    # low-fi pass: coarse MPM dt at the SAME num_env_steps (cheaper, but reward-
+    # correlated — unlike episode-length truncation, which anti-correlates on the
+    # contact-rich crawling reward). cv_low_dt=0 → episode-length low fidelity
+    # (cv_low_fidelity_level via FIDELITY_STEPS).
+    cv_low_dt: float = 0.0
+    # G2c-adaptive (writeup §6/§7, contribution-2 budget-dual allocation): when
+    # cv_adaptive=True, the high-fi subset size K is set PER fidelity block by the
+    # compute budget via estimator_system.budget.optimal_subset_size(B_eff, M,
+    # c_lo, c_hi_block), and a BudgetDual ν self-regulates realized cost toward the
+    # per-step budget cv_budget across blocks (B_eff = cv_budget/(1+ν)). Coarse
+    # blocks (cheap c_hi) afford a larger K; fine blocks shrink it; persistent
+    # overspend raises ν and shrinks K. cv_adaptive=False → fixed cv_subset_k.
+    cv_adaptive: bool = False
+    cv_budget: float = 0.0        # per-step compute budget B̄ (env-step-substep evals); 0 → auto
+    cv_budget_eta: float = 0.5    # BudgetDual step size on the normalized cost residual
     # Phase 4.2 (writeup §8.1): SHAC local refinement on the top-K candidates
     # AFTER the main MBD reverse loop converges. For each surviving theta
     # (x, phi), runs `shac_refine_steps` of BPTT on the controller portion
@@ -156,6 +219,7 @@ class MRMFMBDBackendMBD:
         mode_log_priors: Optional[List[float]] = None,
         seed: int = 0,
         show_tqdm: bool = False,
+        morph_decoder: Optional[Any] = None,
         **kwargs: Any,
     ):
         if not JAX_AVAILABLE:
@@ -170,6 +234,10 @@ class MRMFMBDBackendMBD:
         self.mode_log_priors = mode_log_priors or [0.0] * num_modes
         self.seed = seed
         self.show_tqdm = show_tqdm
+        # Stage 2 / G2a: trained A2 shape-latent decoder (or None for the legacy
+        # voxel-occupancy x-block). When set, the optimizer x-block is a latent w
+        # and rollout-time occupancy is decoder.decode(w).
+        self._morph_decoder = morph_decoder
 
         # Z-symmetry: optimizer sees x_half, mirrored to x_full before rollout.
         # voxel_dims/symmetry are passed via config.extra by the baseline.
@@ -279,7 +347,7 @@ class MRMFMBDBackendMBD:
         self._denoise_jit = jax.jit(self._denoise_impl)
 
         # Per-(num_env_steps) block-runner cache for the JAX-direct fast path.
-        self._block_runner_cache: Dict[int, Any] = {}
+        self._block_runner_cache: Dict[Any, Any] = {}
 
     # --------- JIT kernels (shared) -----------------------------------------
 
@@ -332,6 +400,12 @@ class MRMFMBDBackendMBD:
             elif f > cur_fid:
                 blocks.append((cur_fid, cur_start, cur_len))
                 cur_fid, cur_start, cur_len = f, i, 1
+            elif self.config.cv_enabled:
+                # G2c: control-variate uses both a low and a high fidelity every
+                # step, so the per-block fidelity may legitimately decrease.
+                # Relax the non-decreasing constraint: just start a new block.
+                blocks.append((cur_fid, cur_start, cur_len))
+                cur_fid, cur_start, cur_len = f, i, 1
             else:
                 raise ValueError(
                     f"MBD fidelity ladder must be non-decreasing in reverse-step order; "
@@ -343,7 +417,15 @@ class MRMFMBDBackendMBD:
     # --------- Softzoo-compat path: external rollouts -----------------------
 
     def _expand_x_np(self, x_opt: np.ndarray) -> np.ndarray:
-        """Expand optimizer's x (possibly half) to full voxel occupancy for rollout."""
+        """Expand optimizer's x to full voxel occupancy for rollout.
+
+        With an A2 decoder (G2a) the x-block is a shape latent w → decode to
+        occupancy. Otherwise (legacy) it is occupancy, possibly the z-symmetric
+        half that gets mirrored to the full grid.
+        """
+        if self._morph_decoder is not None:
+            w = jnp.asarray(np.asarray(x_opt, dtype=np.float32))
+            return np.asarray(self._morph_decoder.decode(w), dtype=np.float32)
         if self._z_sym and self._voxel_dims is not None:
             vx, vy, vz = self._voxel_dims
             vz_half = vz // 2
@@ -417,8 +499,13 @@ class MRMFMBDBackendMBD:
             and hasattr(ev, "_mode_friction")
         )
 
-    def _make_block_runner(self, num_env_steps: int):
+    def _make_block_runner(self, num_env_steps: int, cv_k_override: Optional[int] = None):
         """Build a jitted scan runner for blocks of this num_env_steps.
+
+        cv_k_override (G2c-adaptive): per-block high-fi subset size. When None,
+        falls back to the static `cv_subset_k`/top_k_cap. The adaptive block
+        driver passes a budget-derived K here so each fidelity block recompiles
+        once per distinct K (host-side int → JIT-safe top_k/gather shape).
 
         Captures scene/cfg/friction_table via closure; returns a function with
         signature:
@@ -446,17 +533,21 @@ class MRMFMBDBackendMBD:
         )
         log_prior_c = self._log_prior_c
 
-        # Phase 2.3: pick the marginalizer once at trace time. Both branches
-        # return (R_m (M,), w_c (M, C)) with identical sign convention so the
-        # rest of the scan body is agnostic to the choice.
+        # Phase 2.3 / G2d: pick the marginalizer once at trace time. All branches
+        # return (R_m (M,), w_c (M, C)) with identical sign convention (higher R_m
+        # = better) so the rest of the scan body is agnostic to the choice.
         from genedynamics.solvers.single.mrmfmbd.mode_system.regime_posterior import (
             risk_sensitive_marginalize_jax,
+            cvar_marginalize_jax,
             validate_mode,
         )
         validate_mode(self.config.regime_posterior_mode)
-        risk_mode = (self.config.regime_posterior_mode == "risk_sensitive")
+        regime_mode = str(self.config.regime_posterior_mode)
         tau_r = jnp.asarray(
             max(float(self.config.risk_temperature), 1e-8), dtype=jnp.float32
+        )
+        cvar_alpha = jnp.asarray(
+            min(max(float(self.config.cvar_alpha), 1e-6), 1.0), dtype=jnp.float32
         )
 
         # Phase 1.3: JM2D-style inner refinement (Alg 2, Table 3 of CoRL'25 paper).
@@ -464,8 +555,45 @@ class MRMFMBDBackendMBD:
         inner_steps = max(int(self.config.inner_denoise_steps), 0)
         inner_shrink = float(self.config.inner_denoise_shrink)
 
+        # Stage 2 / G2a: A2 shape-latent decoder. When set, the x-block is a
+        # latent w and rollout-time occupancy is decoder.decode_batch(w). Takes
+        # precedence over z-symmetry (the A2/mesh path is full-grid, no mirror).
+        morph_decoder = self._morph_decoder
+
+        # Stage 2 / G2b: model-free prior term in the importance weight. Captured
+        # as jnp constants (theta_prior.log_prob_batch dispatches on a concrete-
+        # array attr that jit tracers lack, so we inline its exact JAX formula).
+        use_prior_weight = bool(self.config.use_prior_weight)
+        prior_weight = jnp.asarray(float(self.config.prior_weight), dtype=jnp.float32)
+        prior_mean = jnp.asarray(self.theta_prior._mean, dtype=jnp.float32)
+        prior_log_std = jnp.asarray(self.theta_prior._log_std, dtype=jnp.float32)
+        _log2pi = jnp.asarray(float(np.log(2.0 * np.pi)), dtype=jnp.float32)
+
+        def _log_prior_batch(Y0s_in: jnp.ndarray) -> jnp.ndarray:
+            # log N(θ; mean, diag(exp(log_std)^2)) per candidate — identical to
+            # ThetaPrior.log_prob_batch's JAX branch.
+            diff = Y0s_in - prior_mean
+            return -0.5 * jnp.sum(
+                jnp.square(diff / jnp.exp(prior_log_std)) + 2.0 * prior_log_std + _log2pi,
+                axis=-1,
+            )
+
+        # Stage 3 / G2c: control-variate multi-fidelity captures. The low fidelity
+        # is a fixed cheap level; the high fidelity is this block's num_env_steps.
+        cv_enabled = bool(self.config.cv_enabled)
+        from genedynamics.envs.external.jax_mpm.adapters import FIDELITY_STEPS as _FS
+        cv_low_env_steps = int(_FS.get(int(self.config.cv_low_fidelity_level), _FS[min(_FS)]))
+        if cv_k_override is not None:
+            cv_k = int(cv_k_override)
+        else:
+            cv_k = int(self.config.cv_subset_k) or top_k_cap
+        cv_k = max(1, min(cv_k, M))
+        # Physics-resolution low fidelity (preferred): coarse dt, same env-steps.
+        cv_low_dt = float(self.config.cv_low_dt)
+        cfg_lo = dataclasses.replace(cfg, dt=cv_low_dt) if cv_low_dt > 0.0 else cfg
+
         # Z-symmetry: optimizer x_dim is half; mirror to full before rollout.
-        z_sym = self._z_sym
+        z_sym = self._z_sym and (morph_decoder is None)
         if z_sym and self._voxel_dims is not None:
             vx, vy, vz = self._voxel_dims
             vz_half = vz // 2
@@ -481,29 +609,103 @@ class MRMFMBDBackendMBD:
             Y = center[None, :] + sigma_eff * self._scale[None, :] * eps
             return self._clip_theta_jnp(Y)
 
-        # Inline rollout + mode marginalization. Returns (rewards_mc, R_m).
-        def _rollout_and_marginalize(Y0s_in: jnp.ndarray):
+        # Task-2: whether to feed the decoder's continuous actuator / stiffness
+        # FIELDS into the rollout (only for a multi-head decoder; gated by knob).
+        morph_use_act = (morph_decoder is not None
+                         and getattr(morph_decoder, "has_actuator", False)
+                         and bool(self.config.morph_decoder_actuator))
+        morph_use_stiff = (morph_decoder is not None
+                           and getattr(morph_decoder, "has_stiffness", False)
+                           and bool(self.config.morph_decoder_stiffness))
+        morph_codesign = morph_use_act or morph_use_stiff
+
+        # x-block → morphology Ψ. Geometry always; actuator/stiffness fields only
+        # for a multi-head (Task-2) decoder → (occ, aw_voxel|None, E_voxel|None).
+        def _decode_morph(Y0s_in: jnp.ndarray):
             x_opt = Y0s_in[:, :x_dim]
-            if z_sym:
-                x_full = _mirror_z_voxels(x_opt, vx, vy, vz_half)  # (M, x_dim_full)
-            else:
-                x_full = x_opt
-            x_flat = jnp.repeat(x_full, C, axis=0)             # (M*C, x_dim_full)
-            phi_flat = jnp.repeat(Y0s_in[:, x_dim:], C, axis=0)  # (M*C, phi_dim)
-            fr_flat = jnp.tile(friction_table, M)              # (M*C,)
+            if morph_codesign:
+                occ, act, stiff = morph_decoder.decode_full_batch(x_opt)
+                return occ, (act if morph_use_act else None), (stiff if morph_use_stiff else None)
+            if morph_decoder is not None:
+                return morph_decoder.decode_batch(x_opt), None, None    # (M, n_voxels)
+            elif z_sym:
+                return _mirror_z_voxels(x_opt, vx, vy, vz_half), None, None
+            return x_opt, None, None
+
+        def _marginalize(rewards_mc_local: jnp.ndarray):
+            if regime_mode == "risk_sensitive":
+                return risk_sensitive_marginalize_jax(rewards_mc_local, log_prior_c, tau_r)
+            if regime_mode == "cvar":
+                return cvar_marginalize_jax(rewards_mc_local, log_prior_c, cvar_alpha)
+            return _s1_marginalize_jax(rewards_mc_local, log_prior_c, T_mode)
+
+        def _rollout_at(x_full: jnp.ndarray, phi_block: jnp.ndarray,
+                        n_rows: int, env_steps: int, scene_cfg=cfg,
+                        aw_voxel=None, E_voxel=None) -> jnp.ndarray:
+            x_flat = jnp.repeat(x_full, C, axis=0)               # (n_rows*C, x_dim_full)
+            phi_flat = jnp.repeat(phi_block, C, axis=0)          # (n_rows*C, phi_dim)
+            fr_flat = jnp.tile(friction_table, n_rows)           # (n_rows*C,)
+            aw_flat = jnp.repeat(aw_voxel, C, axis=0) if aw_voxel is not None else None
+            ev_flat = jnp.repeat(E_voxel, C, axis=0) if E_voxel is not None else None
             rs, _disps = rollout_return_batch(
-                x_flat, phi_flat, fr_flat, scene, cfg, num_env_steps
+                x_flat, phi_flat, fr_flat, scene, scene_cfg, env_steps,
+                actuator_weight_voxel_batch=aw_flat, E_voxel_batch=ev_flat,
             )
-            rewards_mc_local = rs.reshape(M, C)
-            if risk_mode:
-                R_m_local, w_c_local = risk_sensitive_marginalize_jax(
-                    rewards_mc_local, log_prior_c, tau_r
-                )
+            return rs.reshape(n_rows, C)
+
+        # Shape regularizer: penalize jagged/fragmented occupancy (total variation
+        # over the voxel grid) so the search prefers smooth, connected, plausible
+        # bodies. Subtracted from each candidate's marginalized reward. Enabled
+        # only with a known voxel grid whose size matches the occupancy width.
+        shape_weight = float(self.config.shape_weight)
+        _sg = self._voxel_dims
+        occ_width = int(morph_decoder.cfg.n_voxels) if morph_decoder is not None else int(x_dim_full)
+        shape_enabled = shape_weight > 0.0 and _sg is not None and (occ_width == int(np.prod(_sg)))
+
+        def _shape_penalty(occ_flat: jnp.ndarray) -> jnp.ndarray:   # (M, n_vox) -> (M,)
+            svx, svy, svz = _sg
+            g = occ_flat.reshape(occ_flat.shape[0], svx, svy, svz)
+            tv = (jnp.abs(g[:, 1:] - g[:, :-1]).sum(axis=(1, 2, 3))
+                  + jnp.abs(g[:, :, 1:] - g[:, :, :-1]).sum(axis=(1, 2, 3))
+                  + jnp.abs(g[:, :, :, 1:] - g[:, :, :, :-1]).sum(axis=(1, 2, 3)))
+            return tv / float(svx * svy * svz)
+
+        # Inline rollout + mode marginalization. Returns (rewards_mc, R_m, w_c).
+        def _rollout_and_marginalize(Y0s_in: jnp.ndarray):
+            x_full, aw_v, ev_v = _decode_morph(Y0s_in)
+            phi_block = Y0s_in[:, x_dim:]
+            pen = shape_weight * _shape_penalty(x_full) if shape_enabled else None
+            if not cv_enabled:
+                rewards_mc_local = _rollout_at(x_full, phi_block, M, num_env_steps,
+                                               aw_voxel=aw_v, E_voxel=ev_v)
+                R_m_local, w_c_local = _marginalize(rewards_mc_local)
+                if pen is not None:
+                    R_m_local = R_m_local - pen
+                return rewards_mc_local, R_m_local, w_c_local
+            # ---- G2c: control-variate multi-fidelity score -------------------
+            # LOW: all M proposals at the cheap fidelity. Physics-resolution axis
+            # (coarse dt, full env-steps) when cv_low_dt>0, else episode-length.
+            if cv_low_dt > 0.0:
+                R_lo_mc = _rollout_at(x_full, phi_block, M, num_env_steps, cfg_lo,
+                                      aw_voxel=aw_v, E_voxel=ev_v)
             else:
-                R_m_local, w_c_local = _s1_marginalize_jax(
-                    rewards_mc_local, log_prior_c, T_mode
-                )
-            return rewards_mc_local, R_m_local, w_c_local
+                R_lo_mc = _rollout_at(x_full, phi_block, M, cv_low_env_steps,
+                                      aw_voxel=aw_v, E_voxel=ev_v)
+            R_lo_m, w_c_lo = _marginalize(R_lo_mc)               # (M,), (M, C)
+            # HIGH: top-K (by low-fi reward) at the block's fine fidelity.
+            _, sub_idx = jax.lax.top_k(R_lo_m, cv_k)             # (cv_k,)
+            aw_sub = aw_v[sub_idx] if aw_v is not None else None
+            ev_sub = ev_v[sub_idx] if ev_v is not None else None
+            R_hi_mc = _rollout_at(x_full[sub_idx], phi_block[sub_idx], cv_k, num_env_steps,
+                                  aw_voxel=aw_sub, E_voxel=ev_sub)
+            R_hi_m_sub, _ = _marginalize(R_hi_mc)                # (cv_k,)
+            # Control-variate corrected high-fidelity reward per proposal.
+            delta_bar = jnp.mean(R_hi_m_sub - R_lo_m[sub_idx])
+            R_tilde = R_lo_m + delta_bar
+            R_tilde = R_tilde.at[sub_idx].set(R_hi_m_sub)
+            if pen is not None:
+                R_tilde = R_tilde - pen
+            return R_lo_mc, R_tilde, w_c_lo
 
         # Reward-weighted mean only — no tau noise / no clip yet (those happen
         # after the inner refinement loop completes).
@@ -511,6 +713,9 @@ class MRMFMBDBackendMBD:
             R_mean = jnp.mean(R_m_in)
             R_std = jnp.maximum(jnp.std(R_m_in), jnp.asarray(1e-4, dtype=R_m_in.dtype))
             log_w = (R_m_in - R_mean) / (R_std * T_k)
+            # G2b: complete the MBD posterior weight with the model-free prior.
+            if use_prior_weight:
+                log_w = log_w + prior_weight * _log_prior_batch(Y0s_in)
             w = jax.nn.softmax(log_w)
             Yb = jnp.einsum("m,md->d", w, Y0s_in)
             return Yb, w
@@ -579,10 +784,13 @@ class MRMFMBDBackendMBD:
 
         return run_block
 
-    def _get_block_runner(self, num_env_steps: int):
-        if num_env_steps not in self._block_runner_cache:
-            self._block_runner_cache[num_env_steps] = self._make_block_runner(num_env_steps)
-        return self._block_runner_cache[num_env_steps]
+    def _get_block_runner(self, num_env_steps: int, cv_k: Optional[int] = None):
+        key = (num_env_steps, cv_k)
+        if key not in self._block_runner_cache:
+            self._block_runner_cache[key] = self._make_block_runner(
+                num_env_steps, cv_k_override=cv_k
+            )
+        return self._block_runner_cache[key]
 
     # --------- Ybar init ----------------------------------------------------
 
@@ -632,11 +840,46 @@ class MRMFMBDBackendMBD:
         fidelity_history: List[int] = []
         block_wall_times: List[float] = []
 
+        # G2c-adaptive (writeup §6/§7, contribution-2 budget-dual allocation):
+        # set the high-fi subset size K PER fidelity block from the compute budget
+        # via estimator_system.budget, with a BudgetDual ν self-regulating realized
+        # cost toward B̄ across blocks. cv_adaptive=False → fixed cv_subset_k (legacy).
+        cv_adaptive = bool(self.config.cv_enabled) and bool(self.config.cv_adaptive)
+        cv_k_history: List[int] = []
+        cv_nu_history: List[float] = []
+        cv_realized_history: List[float] = []
+        if cv_adaptive:
+            from genedynamics.solvers.single.mrmfmbd.estimator_system.budget import (
+                BudgetDual, optimal_subset_size, realized_cost,
+            )
+            _cfg = self.evaluator._mpm_cfg
+            _sub_hi = int(_cfg.substeps_per_env_step)
+            _cv_low_dt = float(self.config.cv_low_dt)
+            _sub_lo = max(1, int(round(_cfg.frame_dt / _cv_low_dt))) if _cv_low_dt > 0.0 else _sub_hi
+            _cv_low_env_steps = int(FIDELITY_STEPS.get(
+                int(self.config.cv_low_fidelity_level), FIDELITY_STEPS[min(FIDELITY_STEPS)]))
+            _fine_steps = int(FIDELITY_STEPS[max(FIDELITY_STEPS)])
+            # per-step compute budget B̄ in substep-evals over the M-proposal sweep.
+            B_bar = float(self.config.cv_budget)
+            if B_bar <= 0.0:  # auto: low-fi sweep + ~half-M fine corrections at the finest block.
+                _c_lo_fine = (_cv_low_env_steps * _sub_hi) if _cv_low_dt == 0.0 else (_fine_steps * _sub_lo)
+                B_bar = M * _c_lo_fine + (M // 2) * (_fine_steps * _sub_hi)
+            dual = BudgetDual(nu=0.0, eta=float(self.config.cv_budget_eta), target=1.0)
+
         wall_start = time.perf_counter()
 
         for (fid, start, length) in blocks:
             num_env_steps = int(FIDELITY_STEPS.get(fid, FIDELITY_STEPS[max(FIDELITY_STEPS)]))
-            runner = self._get_block_runner(num_env_steps)
+            if cv_adaptive:
+                c_hi = float(num_env_steps * _sub_hi)
+                c_lo = float(num_env_steps * _sub_lo) if _cv_low_dt > 0.0 \
+                    else float(_cv_low_env_steps * _sub_hi)
+                B_eff = B_bar / (1.0 + dual.nu)
+                cv_k_blk = max(1, min(optimal_subset_size(B_eff, M, c_lo, c_hi), M))
+                runner = self._get_block_runner(num_env_steps, cv_k_blk)
+            else:
+                cv_k_blk = None
+                runner = self._get_block_runner(num_env_steps)
 
             # Reverse-step index i = start..start+length-1 maps to idx = K-1-i.
             # sigmas/taus/Ts are indexed by `idx` (the original DDPM step idx).
@@ -660,6 +903,17 @@ class MRMFMBDBackendMBD:
             for key in stitched:
                 stitched[key].append(np.asarray(out[key]))
             fidelity_history.extend([fid] * length)
+
+            if cv_adaptive:
+                realized = realized_cost(M, cv_k_blk, c_lo, c_hi)
+                dual.update(realized / B_bar)   # ν ← max(0, ν + η·(realized/B̄ − 1)); BudgetDual Eq 23
+                cv_k_history.extend([cv_k_blk] * length)
+                cv_nu_history.extend([float(dual.nu)] * length)
+                cv_realized_history.extend([float(realized)] * length)
+                if self.show_tqdm:
+                    print(f"[MBD][cv-adaptive] fid={fid} c_hi={c_hi:.0f} c_lo={c_lo:.0f} "
+                          f"K={cv_k_blk}/{M} realized={realized:.0f} B̄={B_bar:.0f} nu={dual.nu:.3f}",
+                          flush=True)
 
         # Concatenate per-step arrays in reverse order (matches old bridge_history).
         per_step: Dict[str, np.ndarray] = {
@@ -689,6 +943,10 @@ class MRMFMBDBackendMBD:
                 entry["alm_budget_pen"] = float(
                     self._alm_nu_schedule_np[idx] * self._alm_cost_const
                 )
+            if cv_k_history:
+                entry["cv_k"] = int(cv_k_history[i])
+                entry["cv_nu"] = float(cv_nu_history[i])
+                entry["cv_realized_cost"] = float(cv_realized_history[i])
             bridge_history.append(entry)
         mode_resp_history = per_step["w_c_mean"]
 
@@ -749,6 +1007,15 @@ class MRMFMBDBackendMBD:
             },
             # Phase 4.2: SHAC refinement diagnostic (writeup §8.1).
             "shac_summary": shac_summary,
+            # G2c-adaptive: budget-dual multi-fidelity allocation diagnostic.
+            # per_block_K is in block order (coarse→fine as built by _build_fid_blocks).
+            "cv_adaptive_summary": {
+                "active": bool(cv_adaptive),
+                "budget_B": float(B_bar) if cv_adaptive else 0.0,
+                "per_step_K": list(cv_k_history),
+                "per_step_nu": list(cv_nu_history),
+                "per_step_realized": list(cv_realized_history),
+            },
         }
 
     def _shac_refine_topk(

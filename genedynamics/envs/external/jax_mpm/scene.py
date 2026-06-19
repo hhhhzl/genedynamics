@@ -604,15 +604,26 @@ def rollout_return(
     num_env_steps: int,
     E0: float = 1.0,
     terrain_height: jnp.ndarray = None,
+    actuator_weight_voxel: jnp.ndarray = None,   # (n_voxels, n_actuators) co-designed actuator field
+    E_voxel: jnp.ndarray = None,                 # (n_voxels,) co-designed stiffness field
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Run one rollout. Returns (blended_reward, final_forward_disp, com_x_traj).
 
     Phase 2.1: optional ``terrain_height`` (n_grid, n_grid) makes the floor
     follow a height field. None → flat floor (backward-compat).
+
+    Task-2: optional per-voxel ``actuator_weight_voxel`` / ``E_voxel`` are the
+    co-designed actuator-placement and stiffness fields decoded from the shape
+    latent w. They are gathered to per-particle via ``scene.voxel_id`` and
+    OVERRIDE the scene's fixed fields. None → use the scene's (legacy path).
     """
     E_field = _E_field_or_default(scene, cfg, E0)
     actuator_id = scene.actuator_id
     actuator_weight = _actuator_weight_or_none(scene)
+    if E_voxel is not None:
+        E_field = E_voxel[scene.voxel_id]
+    if actuator_weight_voxel is not None:
+        actuator_weight = actuator_weight_voxel[scene.voxel_id]
     muscle_dirs = _fiber_dirs_or_default(scene, cfg)
     mass_field = _voxel_mass_field(x_morph, scene)
 
@@ -929,20 +940,41 @@ def rollout_return_batch(
     num_env_steps: int,
     E0: float = 1.0,
     terrain_height: jnp.ndarray = None,
+    actuator_weight_voxel_batch: jnp.ndarray = None,   # (B, n_voxels, n_actuators) or None
+    E_voxel_batch: jnp.ndarray = None,                 # (B, n_voxels) or None
 ):
     """Vmap rollout_return over a batch of (morphology, controller, friction) tuples.
 
     Phase 2.1: ``terrain_height`` is shared across the batch (a single regime
     per batch). For per-candidate terrain (Phase 2.2 regime dispatch), call
     `rollout_return` per regime group and concatenate.
+
+    Task-2: ``actuator_weight_voxel_batch`` / ``E_voxel_batch`` carry the
+    per-candidate co-designed actuator / stiffness fields (vmapped alongside the
+    morphology). None → the scene's fixed fields (legacy path, vmap unchanged).
     """
-    def _one(xm, ph, fr):
+    if actuator_weight_voxel_batch is None and E_voxel_batch is None:
+        def _one(xm, ph, fr):
+            r, disp, _ = rollout_return(
+                xm, ph, fr, scene, cfg, num_env_steps, E0, terrain_height=terrain_height,
+            )
+            return r, disp
+        return jax.vmap(_one)(x_morph_batch, phi_batch, friction_batch)
+
+    aw_ax = 0 if actuator_weight_voxel_batch is not None else None
+    ev_ax = 0 if E_voxel_batch is not None else None
+
+    def _one_codesign(xm, ph, fr, aw, ev):
         r, disp, _ = rollout_return(
             xm, ph, fr, scene, cfg, num_env_steps, E0, terrain_height=terrain_height,
+            actuator_weight_voxel=aw, E_voxel=ev,
         )
         return r, disp
 
-    rs, disps = jax.vmap(_one)(x_morph_batch, phi_batch, friction_batch)
+    rs, disps = jax.vmap(_one_codesign, in_axes=(0, 0, 0, aw_ax, ev_ax))(
+        x_morph_batch, phi_batch, friction_batch,
+        actuator_weight_voxel_batch, E_voxel_batch,
+    )
     return rs, disps
 
 
