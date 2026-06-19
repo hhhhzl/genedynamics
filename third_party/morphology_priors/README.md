@@ -6,32 +6,38 @@ Each prior produces an **asset bank** that the robotization layer
 output only has to reduce to **voxel occupancy** on a fixed grid
 (`morphology/robotize_common.py:finalize_from_voxelization`).
 
-## Results — Table 3 (measured 2026-06-18, RTX A5000)
+## Results — Table 3 (DiffuseBot-aligned robotization, 2026-06-19, RTX A5000)
 
-Same 10-prompt set × 3 samples, robotized on the fixed 3×3×3 MBD grid. **gen-s** =
-mean s/asset; shape/connectivity/diversity from `morphology/shape_metrics.py` (CPU);
-**loco-R** = mean best locomotion reward over the bank (morphology fixed + short CEM
-controller search, `analysis/table3_loco_reward.py`). Full writeup + figures:
+Same 10-prompt set × 3 samples, robotized at **DiffuseBot's actual resolution** —
+particle-based, box `[0.10,0.06,0.10]`, `particle_spacing=1/512`, **`n_grid=128`**,
+voxel/actuator grid `[13,8,13]` (= DiffuseBot's MPM footprint), 10 actuators; bodies are
+~0.8–6k particles. **gen-s** = mean s/asset; shape/connectivity/diversity from
+`shape_metrics.py` (CPU); **loco-R** = mean best locomotion reward over the bank (short
+CEM controller search, `analysis/table3_loco_reward.py`). Full writeup, the toy-grid
+retraction, and the DiffuseBot-source derivation:
 [`results/soft_robot/co_design/table3/TABLE3.md`](../../results/soft_robot/co_design/table3/TABLE3.md).
 
 | prior | representation | gen-s ↓ | Robot% | 1-CC | solidity | symmetry | diversity | **loco-R** |
 |---|---|---|---|---|---|---|---|---|
-| **Point-E** | point-cloud | 18.7 | 0.77 | 1.00 | 0.908 | 0.952 | 2.410 | **4.80** |
-| **Shap-E** | implicit-SDF | 10.0 | 0.90 | 1.00 | 0.909 | 0.979 | 2.015 | 1.96 |
-| **TRELLIS-text** | structured-voxel | 12.7 | 1.00 | 1.00 | 0.904 | 0.971 | 2.156 | 0.18 |
-| **SplatFlow** | 3D-Gaussian | 41.5 | 1.00 | 1.00 | 0.985 | 0.852 | 2.788 | **−3.01** |
-| random_shapes (baseline) | procedural | 0.007 | — | 1.00 | 1.000 | 0.995 | 2.841 | 0.40 |
-| TripoSG (image arm) | image/mesh | — | — | 1.00 | 0.857 | 0.962 | 2.348 | 2.78 |
+| **Shap-E** | implicit-SDF | 10.0 | 1.00 | 1.00 | 0.999 | 0.836 | 8.96 | **4.00** |
+| **TripoSG** (image arm) | image/mesh | — | 1.00 | 1.00 | 1.000 | 0.898 | 9.68 | 3.94 |
+| **Point-E** | point-cloud | 18.7 | 1.00 | 1.00 | 0.928 | 0.855 | 9.29 | 3.92 |
+| **TRELLIS-text** | structured-voxel | 12.7 | 1.00 | 1.00 | 0.982 | 0.854 | 9.73 | 3.19 |
+| random_shapes (baseline) | procedural | 0.007 | 1.00 | 1.00 | 1.000 | 0.987 | 17.67 | 2.33 |
+| **SplatFlow** | 3D-Gaussian | 41.5 | 1.00 | 1.00 | 0.971 | 0.503 | 10.43 | **−1.21** |
 
-**Key finding** — the text axis now spans all **4 major 3D representations**, and the
-result is counter-intuitive: **generation fidelity, robotization success, shape
-regularity, and cost all FAIL to predict locomotion.** The two highest-fidelity,
-100%-robotizable priors (TRELLIS structured-voxel 0.18; SplatFlow 3DGS −3.01) are the
-two **worst** locomotors, while the oldest/messiest point-cloud prior (Point-E, 77%
-robotization) is the **best** (4.80). So a prior chosen by any cheap proxy would be
-chosen exactly wrong → the **reward column is indispensable**. (Caveat: fixed 3×3×3 grid
-+ short CEM budget; detailed surfaces may collapse toward uniform fills at this
-resolution — finer-grid follow-up pending.)
+**⚠️ Retraction:** an earlier version robotized onto a **3×3×3 = 27-voxel** grid (~53
+particles), which is *not* how DiffuseBot robotizes. It produced a misleading "Point-E
+dramatically wins, high-fidelity priors fail" ranking (TRELLIS 0.18, SplatFlow −3.01).
+That was a **resolution artifact** — discarded.
+
+**Corrected finding** — at DiffuseBot-faithful robotization the point-cloud / SDF /
+structured-voxel priors are **comparable** (loco-R 3.2–4.0) and **all beat random**
+(2.33); TRELLIS jumps 0.18→3.19. The one real outlier is **SplatFlow (3DGS, −1.21)** —
+not from fidelity but from **asymmetry** (symmetry 0.50 vs ≥0.84): the multi-view
+Gaussian shell, even opacity-filtered + filled, yields lopsided streaky bodies. Cost
+still fails to predict loco-R (Shap-E cheapest text prior & best-tier), so the reward
+column matters — but the strong "anti-fidelity" story is **retracted**.
 
 ## Selection decision (2026-06-18): text-to-3D PRIMARY, image/mesh/3DGS pluggable
 
