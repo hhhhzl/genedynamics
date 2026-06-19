@@ -62,6 +62,7 @@ def main(argv=None) -> int:
     ap.add_argument("--pop", type=int, default=32)
     ap.add_argument("--elite", type=int, default=8)
     ap.add_argument("--friction", type=float, default=1.0)
+    ap.add_argument("--n-grid", type=int, default=128, help="MPM background grid (DiffuseBot uses 128)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="")
     args = ap.parse_args(argv)
@@ -76,7 +77,7 @@ def main(argv=None) -> int:
     for j, i in enumerate(idx):
         spec = load_spec_npz(files[i])
         cfg = MPMConfig(voxel_dims=tuple(int(v) for v in spec.voxel_dims),
-                        n_grid=64, shaping_weight=100.0, act_strength_base=24.0, scale=50.0)
+                        n_grid=args.n_grid, shaping_weight=100.0, act_strength_base=24.0, scale=50.0)
         scene = build_scene_from_spec(spec, cfg)
         phi_dim = int(cfg.n_actuators * cfg.n_sin_waves + 4 * cfg.n_actuators)
         r = _cem_controller(scene, cfg, phi_dim, env_steps=args.env_steps,
