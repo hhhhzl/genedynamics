@@ -4,6 +4,9 @@
 > 配套：`configs/soft_robot/README.md`（Phase 0–5 runbook，工程级）、记忆 `project_softrobot_codesign_paper.md`。
 > 约定：CPU 优先；3D-gen 推理与全量 sweep 走 GPU/RunPod。
 
+> **进度（2026-06-17，pip RTX A5000；详见 `docs/soft_robot_gpu_runbook.md` G0–G3）：** 环境/基线就绪（return 11.78 复现 + gif），Stage 1–5/7 的 **GPU+code 接线全部完成**且非侵入（legacy 路径 byte-identical，43 单测全绿）：Stage 1 全 rollout 等价（Δ 5.9e-5）、Stage 2 A2 decoder+prior 接 hot-loop、Stage 3 CV 估计器+解非递减（**见下方 fidelity-轴发现**）、Stage 4 CVaR 接 marginalizer（worst-mode +0.905）、Stage 5 DiffuseBot 梯度 smoke、Stage 7 carry **接线完成但 physics 待开发**（见下）。**剩下的全是"出数"（sweep）+ Stage 6 资产 + Stage 8 渲染/出图。** 两个执行发现见 Stage 3 / Stage 7。
+> 注：`data/{asset_banks,morph_decoders}/loco_cpu` 在 GPU 盒上原缺失（zip 未带 gitignored 的 `data/`），已用 Stage 2 三脚本重建（30 assets，decoder MSE 8e-4）。pip 环境另需 `pip uninstall pin` + `pip install scikit-image`。
+
 ---
 
 ## Part A — 对话与决策记录
@@ -13,7 +16,7 @@
 - **目标**：升级为顶会全文，**四个贡献全压上**：
   1. **Gradient-free joint co-design**：simulator-reward 的 Monte-Carlo score，不需要可微仿真（对比 DiffuseBot 的梯度 guidance）。
   2. **Multi-fidelity control-variate score estimator**：把"自适应选保真度"升级为有方差/预算分析的估计器。
-  3. **Modern-prior robotization 研究**：统一 `{mesh, SDF, point-cloud, Gaussian-splat} → SoftBodySpec` + TripoSG / Hunyuan3D-2 / TRELLIS / CraftsMan3D / DiffGS / MeshFlow 横评。
+  3. **Modern-prior robotization 研究**：统一 `{mesh, SDF, point-cloud, Gaussian-splat} → SoftBodySpec` + 多 prior 横评。**候选锁定（2026-06-18，text 主轴 + image/A2 可插）**：text 线 = Point-E / Shap-E / TRELLIS-text / **TRELLIS.2-O-Voxel**(CVPR'26,2512.14692,开源 occupancy-native) / **DiffGS**(NeurIPS'24,3DGS latent diffusion,Gaussian-probability≈occupancy,A2 basis 优选) / **Turbo3D**(CVPR'25,text→3DGS<1s) / SplatFlow / UVGS；image/mesh/A2-latent 臂 = **MeshFlow**(CVPR'26 Highlight,MeshVAE 紧凑 latent=A2 `g(w)` 优选,**非 text:image/pc/uncond**) + TripoSG(G4 已通,image)。理论依据:gradient-free → prior 不需可微,只需归约到 occupancy;DiffuseBot 默认 text-conditioned Point-E(`point_e.py:39`)→ text apples-to-apples。**4DGS 不做**(运动学先验与协同设计的控制器冗余);3DGS 空壳→`gs_robotize` 要填实(DiffGS 表示缓解)。
   4. **Regime DRO / CVaR robustness**：固定温度 risk → 自适应对抗 regime posterior。
 - **baseline & 工程参考**：DiffuseBot（位于 `../DiffuseBot`，大写 D；DiffTaichi MPM + PointE）。
 
@@ -57,7 +60,7 @@
 - 你的：mesh → 离散 voxelize → `SoftBodySpec{particles_x0, actuator_id(硬1-of-K,几何派生), voxel_id, fiber_dirs(固定), E_per_particle=None}`；JAX MPM；robotize 不可微。
 - 兼容性三轴：
   - **① 几何：✅ 兼容**（都归约到栅格 occupancy；DiffuseBot 的 pc→SDF→occupancy 可作为 `pc_robotize` 变体）。
-  - **② actuator：⚠️ 部分不兼容**——DiffuseBot 把 actuator placement 当**连续 co-design 场**，你是**几何派生的硬规则**。忠实复刻要把 `scene.py` 的 `A=act·outer(d,d)`（硬索引）改成 `A=Σ_i w_i·act_i·outer(d_i,d_i)`（加权和）。
+  - **② actuator：✅ 已对齐（Task-2，2026-06-18）**——`scene.py` 的加权和 `A=Σ_i w_i·act_i·outer(d_i,d_i)`（Stage 1 已建）+ **多头 decoder `g(w)` 输出连续 actuator 场**（softmax/voxel×K）、由 gradient-free MBD 联合采样的 latent w 决定（DiffuseBot 用可微梯度，我们无梯度）。见 Stage 2 Task-2 行。
   - **③ material：⚠️ 需要 A2 stiffness 场**（你现在 `E_per_particle=None`）。
 - 关键洞察：**迁移 = SoftBodySpec 的超集扩展，不是重写**；且"扩连续 actuator+stiffness 场"和"做 A2"是同一块工作，**做一次吃两个**。
 
@@ -66,7 +69,7 @@
   1. gradient-free 是护城河——纯可微就是在 DiffuseBot 主场和它打，丢了差异点。
   2. 可微会**打断 multi-fidelity 贡献**——不同保真度的梯度不可比；gradient-free 才是多保真的前提。
   3. contact-rich 梯度病态（符号会错、易 NaN）；MC score 更稳。
-- **怎么真正比 DiffuseBot 强**（都不需要可微）：成本（multi-fidelity Pareto）、鲁棒（regime CVaR）、通用（任意 sim 当 oracle）、可靠（contact 上 MC 更稳）；唯一落后的"设计空间丰富度"用 **A2（连续 actuator+stiffness 场）**补平。
+- **怎么真正比 DiffuseBot 强**（都不需要可微）：成本（multi-fidelity Pareto）、鲁棒（regime CVaR）、通用（任意 sim 当 oracle）、可靠（contact 上 MC 更稳）；唯一落后的"设计空间丰富度"用 **A2（连续 actuator+stiffness 场）**补平 → **✅ 已落地（Task-2，多头 decoder，见 Stage 2）**。
 - **架构**：zeroth-order 全局（morphology+regime+fidelity）+ first-order 局部 polish（已有 MBD+SHAC）。可选新颖贡献：reliability-weighted `Ŝ=(1−β)·Ŝ_MC+β·∇R`。
 - **重要**：把"可微版 ours"（MC score 换成 `∇R`）做出来当 **ablation/baseline**（你要打败的对象）——因为 JAX MPM 已可微，几乎免费，且是"为什么选 gradient-free"的科学实锤。
 
@@ -101,7 +104,7 @@
 
 **5 条扩展 recipe（来自实读架构）**：
 1. **新增配置旋钮**：YAML `method_params`(dict) → `BaselineConfig.extra`(原样透传) → `MRMFMBDBaseline.run()` 里 `extra.get(key, default)` 读出 → 写进 typed **`MBDConfig`** 字段 → backend 读 `self.config.field`。**新旋钮 = MBDConfig 加字段 + baseline 里 `extra.get`**，不要在中途插逻辑。
-2. **新增 baseline**：实现 `BaselineProtocol`（`name` 属性 + `run(config, evaluator, task_spec, *, x_dim, phi_dim, **kwargs) -> BaselineResult`），在 `baselines/__init__.py` `register_baseline(...)`。
+2. **新增优化器（co-design solver）**：⚠️ **已重构（2026-06-18）——`experiments/.../baselines/` 目录已删，不再有 `BaselineProtocol` dispatch。** 现在:通用算法(cem，将来 cmaes)= `solvers/single/<name>` 的通用 `Solver(dynamics,energy)`，由 `codesign_runner` 套 `(dynamics,energy)` env 桥(`envs/external/jax_mpm/codesign_env.py`)跑;co-design 专属优化器(mrmfmbd/shac/diffusebot)放 `solvers/single/codesign_optimizers/`，在 `solvers/single/codesign_solvers.py` `register_codesign_solver(name, run_fn)`。experiment 通过 `codesign_runner.run_codesign(name, ...)` 按名跑。优化器 run 签名 `run(config, evaluator, task_spec, *, x_dim, phi_dim) -> result` 不变。
 3. **新增 system 子包**：`specs.py`（`@dataclass(frozen=True)` + 可变 Config + `default_*_config()` 工厂）+ `__init__.py`（导出）+ 逻辑模块；**baseline 构造预建实例传给 backend**（mirror `fidelity_system` / `mode_system`）。
 4. **扩 `SoftBodySpec` 字段**：加 `Optional[np.ndarray] = None` → `build_scene_from_spec` 里 `if not None` 守卫 → `SceneData` NamedTuple 加同名可选字段 → rollout kernel 接线。**`E_per_particle` 就是现成同款模板，照抄即可**。
 5. **扩 rollout 输入**：`RolloutRequest` 有 `extra: dict`，新字段走 `extra` 不破坏签名；fast path（`_scene/_mpm_cfg/_mode_friction`）与 slow path（`evaluate_batch`）两条都要兼容。
@@ -133,7 +136,7 @@
 |---|---|---|---|
 | **Table 1** 主表 | 11 methods × 3 tasks × 5 seeds | `main_v2/*` + baselines | 全部 |
 | **Table 2** controller-only | 固定形态、扫控制器优化器 | `controller_only_*`（待建） | 1 |
-| **Table 3** prior 横评 | 4–6 priors × 2 tasks × 5 seeds | `crawling_from_mesh.yaml` | 3 |
+| **Table 3** prior 横评 | 4–6 priors × 2 tasks × 5 seeds；列 = RobotizationSuccess + single_cc_rate(DiffuseBot) + solidity/symmetry/sa_to_volume/cavity(shape 质量) + diversity + prior-NLL + 下游 reward | `crawling_from_mesh.yaml` + `analysis/table3_metrics.py` | 3 |
 | **Table 4** fidelity ablation | 7 fidelity 方案 × 5 seeds | `crawling_alm.yaml` 旋钮 | 2 |
 | **Fig regime** | 跨 regime 热图 / worst-case | `locomotion_terrain.yaml` | 4 |
 | **Fig evolution** | co-design 演化网格（DiffuseBot 风格） | 渲染器 | 1 |
@@ -186,77 +189,90 @@ Table 1 的 11 methods（`configs/soft_robot/README.md` §3.3 已列）：Random
 
 ### Stage 0 — 骨架与基线 ✅ 已完成
 - [x] **已完成**：`crawling_ground` 端到端 MBD co-design 已跑通，**report 的数值就是这一步的结果**（4×3×4 voxel crawling + 多 regime + fidelity ladder）。无需重做。
-- [ ] `[GPU]` 仅剩：确认 RunPod/GPU 通道（`runpod` 分支）——记录"GPU 出数"环境与代码/结果同步方式（后续所有跑 sim 的 Stage 都依赖它）。
+- [x] `[GPU]` ✅ GPU 通道确认：pip RTX A5000（JAX 0.6.2 gpu），`crawling_ground.yaml` 全跑通 return 11.78 / 36min·seed / gif。环境修复见顶部进度注。
 
-### Stage 1 — SoftBodySpec 扩展（服务 A2 + DiffuseBot，一次做完）✅ CPU 部分完成
+### Stage 1 — SoftBodySpec 扩展（服务 A2 + DiffuseBot，一次做完）✅ 完成（CPU + GPU 等价性）
 > **实现发现**：stiffness 其实**早已 wired**——`_E_field_or_default` 已把 `scene.E_per_particle` 喂进 `E_field`→`_stress_and_J` 的 `E`。所以 Stage 1 只新增 `actuator_weight`。全部 **opt-in**：`actuator_weight=None` 时代码路径字节不变。
 - [x] `[CPU]` `genedynamics/morphology/protocols.py`：加 `SoftBodySpec.actuator_weight:(N,K)`（`Optional=None`，照 `E_per_particle` 模板；缺省由 one-hot 退化）。
 - [x] `[CPU]` `scene.py`：`SceneData.actuator_weight` 字段 + `build_scene_from_spec` 透传 + 新增 `_stress_and_J_weighted`（`A=Σ_i w_i·act_i·outer(d_i,d_i)`）；opt-in 串过 `_p2g_single`/`p2g_3d`/`_env_step`/`_env_step_with_manip` + 全部 4 个单体 rollout（batch 走 vmap 自动覆盖）。stiffness 接 `E_per_particle`（已 wired）。
 - [x] `[CPU]` kernel 单测 `test/unit/test_actuator_weight_stress.py`（7 passed）：one-hot == 硬索引、passive 行 == 无 eigen-stress、连续权重 == 手算和；外加 `p2g_3d` 分支接线验证（max diff 2e-11）。默认 `build_scene` 仍正常。
-- [ ] `[GPU]` 全 rollout 等价性：one-hot 全 rollout 必须复现旧 crawling 结果（不破坏现有行为）。
+- [x] `[GPU]` ✅ 全 rollout 等价性（G1）：one-hot 全 rollout == legacy，max|Δreward|=5.9e-5 < 1e-4（5 组随机 x,φ；`scripts/.../co_design/smoke/g1_rollout_equivalence.py`）。
 - 产出：连续 actuator + stiffness 设计空间。服务：贡献1（设计空间对齐）、A2、DiffuseBot 迁移。
 
-### Stage 2 — A2：shape-latent decoder + joint MF/MB headline（贡献1+6）✅ CPU 核心完成
-> 模块 `genedynamics/solvers/single/mrmfmbd/morph_system/`（mirror `fidelity_system`/`mode_system`：`specs.py`+`decoder.py`+`dataset.py`+`__init__`）。decoder 纯 JAX、jittable（hot-loop ready）。当前 decode 只输出 occupancy；stiffness/actuator_weight 头是同一 decoder 的干净扩展（接 Stage 1 的字段），wiring A2 material/actuator co-design 时再加。
-- [x] `[CPU]` asset bank：`build_asset_bank.py --prior random_shapes` + `robotize_bank.py --voxel-dims 3,3,3` → `data/asset_banks/loco_cpu`（18 assets，RobotizationSuccess 100%）。
+### Stage 2 — A2：shape-latent decoder + joint MF/MB headline（贡献1+6）✅ 接线完成（剩出数）
+> 模块 `genedynamics/solvers/single/mrmfmbd/morph_system/`（mirror `fidelity_system`/`mode_system`：`specs.py`+`decoder.py`+`dataset.py`+`__init__`）。decoder 纯 JAX、jittable（hot-loop ready）。~~当前 decode 只输出 occupancy~~ **✅ Task-2 已扩成多头**：`g(w)→{occupancy, actuator 场(softmax/n_voxels×K), stiffness}`，接 Stage 1 的 `actuator_weight`/`E_per_particle` 字段，见下方 Task-2 行。
+- [x] `[CPU]` asset bank：`build_asset_bank.py --prior random_shapes` + `robotize_bank.py --voxel-dims 3,3,3` → `data/asset_banks/loco_cpu`（RobotizationSuccess 100%）。**注：GPU 盒上 `data/` 缺失，已重建为 30 assets（3 prompts × 10）。**
 - [x] `[CPU]` tiny β-VAE（纯 JAX + 手写 Adam，env 无 optax）：`train_morph_ae.py` 在 bank 的 occupancy(27) 上学 latent `w`(8) → `data/morph_decoders/loco_cpu`（μ-recon MSE 7e-4）。N(0,I) latent 让 MBD prior 项 = 标准正态 `-½‖w‖²`。
 - [x] `[CPU]` decoder `g(w)→occupancy[x_lo,x_hi]` 模块 + 单测 `test/unit/test_morph_decoder.py`（4 passed：形状/范围、jit+vmap、训练降 loss+重建、latent≈N(0,I)）。
-- [ ] `[GPU+code]` 把 decoder 插到 `mrmfmbd_mbd_jax.py` rollout 前（`x_dim`→`latent_dim`，rollout 前 `x_morph=g(w)`）——改动 x→occ 映射，**需 rollout 验证，配 GPU smoke 一起做**。
-- [ ] `[GPU+code]` 把 `theta_prior.py` 的 `log_prob_batch` 折进 `_weighted_mean`（w 块设 N(0,I)）——同属 hot-loop 改动，配 GPU smoke。
-- [ ] `[GPU]` 出数：joint(w,ϕ) vs uniform-prior baseline，证明"learned prior > 平凡高斯"。
-- 产出：headline joint MF/MB（CPU 侧 prior+decoder 已就绪）。服务：贡献1、Table 1 Ours、Table 3。
+- [x] `[GPU+code]` ✅ G2a：decoder 插 `mrmfmbd_mbd_jax.py` rollout 前。旋钮 `morph_latent_dim`/`morph_decoder_path`；baseline 把 x-block 改成 latent、构造 `MorphDecoder` 传入 backend；`_rollout_and_marginalize` 里 `x_full=decoder.decode_batch(w)`。smoke：x-block=8，occ∈[0.2,1]，reward 有限；legacy 精确复现。
+- [x] `[GPU+code]` ✅ G2b：`log_prob_batch` 折进 `_weighted_mean`（旋钮 `use_prior_weight`/`prior_weight`，latent prior N(0,I)）。tracer 不能走 `log_prob_batch` 的 concrete-array 分支，故内联其 JAX 公式。smoke：权重偏低‖w‖、ESS 健康；regression 精确。
+- [ ] `[GPU]` 出数：joint(w,ϕ) vs uniform-prior baseline，证明"learned prior > 平凡高斯"。**（剩"出数"，接线已完成）**
+- [x] `[GPU+code]` ✅ **Task-2：DiffuseBot 连续 actuator(+stiffness) co-design 场对齐**（关 Q4②/Q5 唯一落后轴，gradient-free 实现）。多头 decoder `g(w)→{occ, actuator(n_voxels×K softmax), stiffness}`（`decoder.py` `init_params_mh`/`decode_full`/`train_vae_mh`；旋钮 `decode_actuator`/`decode_stiffness`/`n_actuators`）→ 解出的场经 `scene.voxel_id` gather 成 per-particle、override Stage-1 的 `actuator_weight`/`E_per_particle`（`rollout_return(_batch)` 加 `actuator_weight_voxel`/`E_voxel`，None→legacy）→ backend `_decode_morph` 穿接 CV 高低保真两路（旋钮 `morph_decoder_actuator/stiffness`，默认开，可逐头 ablate）。**单个 gradient-free 的 w 联合控制 geometry+actuator+stiffness**（= DiffuseBot Ψ 但无梯度）。数据：`build_morph_dataset`（per-voxel actuator 直方图 + 归一 stiffness）；`train_morph_ae.py --multihead` 训出 `data/morph_decoders/loco_cpu_mh`（occ MSE 8e-4，actuator argmax acc 0.40=4×随机）。验证 `scripts/.../co_design/smoke/task2_actuator_codesign.py` A/B/C 全过（decoder 出真放置场 / 场改 rollout reward Δ0.072 / e2e backend actuator ON≠OFF，legacy occ-only 无头）；25 单测回归 + CV 路径不破。
+- 产出：headline joint MF/MB（CPU 侧 prior+decoder 已就绪）+ DiffuseBot-对齐的连续 Ψ co-design。服务：贡献1、Table 1 Ours、Table 3。
 
-### Stage 3 — 贡献2：multi-fidelity control-variate 估计器 ✅ CPU 核心完成
+### Stage 3 — 贡献2：multi-fidelity control-variate 估计器 ✅ 接线 + dual-ν 自适应闭环已实现（⚠️见 fidelity 发现；剩出数）
 > 模块 `genedynamics/solvers/single/mrmfmbd/estimator_system/`（mirror `fidelity_system`）。**任务无关**（只吃 reward 数组+costs），第二域可零成本复用。差分（control-variate）实现：`R̃_m = R_hi_m`（m∈S）/ `R_lo_m + Δ̄`（否则），喂 softmax 加权均值——精确端点（K=M→R_hi，K=0→R_lo）。
 - [x] `[CPU]` 独立模块：`corrected_rewards`/`cv_score_weighted_mean`/`optimal_subset_size`/`BudgetDual`（dual-ν，Eq 23）+ 诊断。
 - [x] `[CPU]` 合成 reward 单测 `test/unit/test_cv_estimator.py`（7 passed）：无偏、等高保真数方差 <0.25×纯高保真、**固定预算下 CV score MSE < 单保真度**、预算可行性、dual-ν 跟踪、诊断（corr>0.9/var_reduction>0.5）。
 - [x] `[CPU]` `estimator_system` 任务无关化（设计即满足）。
-- [ ] `[GPU+code]` 解开 `mrmfmbd_mbd_jax.py` 的"fidelity 非递减"约束（high-fidelity 可早用）——hot-loop，配 smoke。
-- [ ] `[GPU+code]` CV 估计器 + dual-ν 接进核心 score（JAX 镜像 + `nu_max` 联通）——hot-loop，配 smoke。
-- [ ] `[GPU]` 出数：Table 4 fidelity ablation（adaptive vs fixed-low/mid/high vs coarse-to-fine）。
+- [x] `[GPU+code]` ✅ G2c：解开"fidelity 非递减"约束（`cv_enabled` 时 `_build_fid_blocks` 不 raise，允许非单调）。
+- [x] `[GPU+code]` ✅ G2c：CV 估计器 JAX 镜像进 scan（旋钮 `cv_enabled`/`method:control_variate`；`_rollout_and_marginalize` 低保真全 M + 高保真 top-K 子集 → `corrected_rewards`）。
+- [x] `[GPU+code]` ✅ G2c-adaptive：**dual-ν/BudgetDual 自适应 K 分配已实现**（旋钮 `cv_adaptive`/`cv_budget`/`cv_budget_eta`）。逐 fidelity block 用 `optimal_subset_size(B_eff,M,c_lo,c_hi_block)` 按算力预算算可负担 K，`BudgetDual` ν 用 realized-cost 反馈自调 `B_eff=B̄/(1+ν)`；host-side 闭环、block runner 按 (steps,cv_k) 缓存→JIT 安全；诊断 → `cv_adaptive_summary`(per_step_K/nu/realized) + bridge_history(`cv_k`/`cv_nu`)。smoke `g2c_adaptive_budget.py` Part A(逻辑:便宜 block K=16/16、精细砍到 8/16；紧预算 ν=0.438) + Part B(真 backend:fid2 精细 K=4/8,distinct=[4,8],legacy 不变) 全过。
+- [ ] `[GPU]` 出数：Table 4 fidelity ablation（adaptive vs fixed-low/mid/high vs coarse-to-fine）。**（接线 + 自适应闭环完成，剩"出数"sweep）**
 - [ ] `[GPU]`（可选/appendix）generality：同一估计器搬到 `double_integrator_box`/`drone_box_3d` trajectory-opt。
 - 服务：贡献2（核心子贡献）、Table 4、Fig fidelity。
+> ### ⚠️ 执行发现（fidelity 轴 — 关系到贡献2/Table 4 的成败）
+> **实现里的 fidelity ladder 是"按 episode 长度"（`FIDELITY_STEPS={0:30,1:100,2:200}` env-steps），这是错的轴。** crawling reward 终值由 `100·final_disp` 主导，短 episode 与 200-step reward **反相关**（corr(30,200)≈−0.4）→ control-variate 低保真是坏 proxy，CV **无增益甚至更差**（实测 CV MSE 0.115 > 单保真 0.078）。**正确轴 = 物理分辨率（substep/MPM `dt`）**：同 episode、粗 `dt=1e-3`（8 substep vs 16，便宜 2×）corr +0.66 → CV **跑赢单保真 3.8×**（MSE 0.072 vs 0.273，matched budget）。已加 `cv_low_dt` 旋钮走此轴，g2c smoke 默认用它。**Table 4 主 fidelity 轴必须是物理分辨率，不是 episode 长度**（且别太粗：`dt=1.5e-3` corr 掉到 0.15，逼近 CFL）。把 episode-length-fidelity 当 ablation 的反例也有价值。
 
-### Stage 4 — 贡献4：CVaR / DRO regime posterior ✅ CPU 核心完成
+### Stage 4 — 贡献4：CVaR / DRO regime posterior ✅ 接线完成（剩出数）
 > 扩展 `mode_system/regime_posterior.py`，不改现有函数。现有 `risk_sensitive_marginalize_jax` = KL-ball（entropic）对抗 posterior `q∝p·exp(-R/τ_r)`；新增 `cvar_marginalize_jax` = `{q≤p/α}` 歧义集的 **CVaR_α**（最坏 α 比例硬尾平均，精确离散公式）。同签名 drop-in，`REGIME_POSTERIOR_MODES` 加 `"cvar"`。
 - [x] `[CPU]` `cvar_marginalize_jax(rewards_mc, log_prior, alpha)`→`(rho_m, q_mc)`：sort+overlap 精确离散 CVaR + 对抗 regime posterior（尾部 p/α）。
 - [x] `[CPU]` 合成 reward 单测 `test/unit/test_cvar_regime.py`（7 passed）：α=1→prior-mean、α→0→worst-regime、单调、min≤rho≤mean、q 集中低 reward、CVaR(α→0)≈entropic(τ→0)。
-- [ ] `[GPU+code]` 把 `"cvar"` 接进 `mrmfmbd_mbd_jax.py` 的 marginalizer 分派（+ `cvar_alpha` 旋钮，类比 `risk_temperature`）——hot-loop，配 smoke。
-- [ ] `[GPU]` 出数：跨 regime 热图 + worst-mode 提升 vs mode-blind MBD。
+- [x] `[GPU+code]` ✅ G2d：`"cvar"` 接进 marginalizer 分派（`risk_mode` 布尔→3-way `regime_mode` 派发 + `cvar_alpha` 旋钮）。mechanism 在真 per-regime MPM reward 上验证：CVaR(0.3) rho 收到各候选 worst-regime 值、q 集中最差 regime（4/4 候选 argmax q==argmin R）。
+- [ ] `[GPU]` 出数：跨 regime 热图 + worst-mode 提升 vs mode-blind MBD。**接线完成；tiny smoke 已见 worst-mode +0.905 vs reward 模式（单 seed 示意，正式数靠 sweep）。**
 - 服务：贡献4、Fig regime、Table 1 robustness 列。
 
-### Stage 5 — DiffuseBot baseline 迁移（apples-to-apples）✅ CPU 部分完成
+### Stage 5 — DiffuseBot baseline 迁移（apples-to-apples）✅ smoke 通过（剩忠实版 + 出数）
 > `baselines/diffusebot_baseline.py`：自包含 Adam 梯度上升 over θ=(x,φ)，`jax.value_and_grad` 穿可微 `rollout_return`（DiffuseBot 梯度 guidance 类比 + first-order ablation）。单 mode + 单（fine）fidelity（DiffuseBot 设定）。pc→occupancy 非神经版 = 已有的 `robotize_point_cloud`（Stage 6），形态 init 走 `morphology` 旋钮。`prior_guidance_weight` = embedding-guidance 的廉价代理。
 - [x] `[CPU]` `DiffuseBotBaseline`(BaselineProtocol) + 注册（`list_baselines()` 现含 `diffusebot`）。
 - [x] `[CPU]` 梯度 guidance：`jax.value_and_grad(R)` 穿 JAX MPM + 手写 Adam + clip + best-tracking（env 无 optax）。
 - [x] `[CPU]` 单测 `test/unit/test_diffusebot_baseline.py`（2：注册可查、无 JAX-MPM evaluator 时 run() loudly raise）。
-- [ ] `[GPU]` smoke（tiny config）：梯度版能跑、梯度不 NaN（参考 README §5）。
+- [x] `[GPU]` ✅ G3.1 smoke（`configs/soft_robot/co_design/smoke/g3_1_diffusebot.yaml`，h=64/lr=5e-3）：梯度穿 MPM、grad norm 1.03 finite（无 NaN/Inf），reward 0.0004→1.104 随 iter 上升。
 - [ ] `[GPU]`（可选忠实版）port 神经 SDF-solidify + PointE prior 推理。
 - [ ] `[GPU]` 出数：Table 1 "DiffuseBot-style" 行 + "first-order ours" ablation。
 - 服务：贡献1（gradient-free vs gradient-based 实锤）、Table 1。
 
-### Stage 6 — 贡献3：modern-prior + 统一 robotize ✅ CPU 部分完成
+### Stage 6 — 贡献3：modern-prior + 统一 robotize ✅ **Table 3 完成（4 种文本表示齐 + reward 列）**
 > 统一 robotize：抽出共享尾巴 `morphology/robotize_common.py:finalize_from_voxelization`（复用 mesh 的 stage helpers，**不动 mesh_robotize 已验证路径**，无循环导入）。pc/gs 各产一个 `VoxelizationResult` → 同一尾巴 → 同一 `SoftBodySpec`。adapters 用共享 `priors/_lazy_mesh.py`（DRY，非 5× 复制 triposg，各 ~15 行）。
 - [x] `[CPU]` `pc_robotize.robotize_point_cloud`（点云→occupancy，纯 numpy）+ `gs_robotize.robotize_gaussians`（高斯密度阈值→occupancy）；都走 finalize 共享尾巴。
 - [x] `[CPU]` prior adapters：`hunyuan3d`/`trellis`/`craftsman`/`meshflow`/`diffgs`（lazy，照 `_lazy_mesh` 基类）+ 在 `priors/__init__` 注册；`list_priors()` 现 7 个。
 - [x] `[CPU]` 单测：`test/unit/test_unified_robotize.py`（4：pc/gs 合成数据→有效 spec、少点软失败、pc≈gs 结构一致）+ `test_prior_adapters.py`（8：全注册、未装则 `MissingDependencyError`+install hint、random_shapes 真采样）。共 12 passed。
-- [ ] `[GPU]` 关 Gap A：clone TripoSG + 各 prior 权重，离线生成 asset bank（每 prior）。
-- [ ] `[GPU]` robotize_bank 统计每 prior 的 RobotizationSuccess / 多样性 / 下游 reward / 稳定性。
-- [ ] `[GPU]` 出数：Table 3 prior 横评。
+- [x] `[GPU]` ✅ Gap A 管线打通：TripoSG（隔离 venv）image→mesh→robotize→可仿真软体端到端通。`data/asset_banks/triposg`（8 assets，**RobotizationSuccess 87.5%**），triposg body GPU rollout reward +0.50 finite。合并 decoder `data/morph_decoders/mixed`（37 样本，MSE 0.0011）。详见 runbook G4 + ⚠️ 集成发现。
+- [x] `[CPU]` ✅ **Table-3 shape/连通/多样性指标模块**（`morphology/shape_metrics.py` + `compute_shape_metrics`/`connectivity_metrics`/`diversity_metrics`/`prior_reconstruction_error`；单测 `test/unit/test_shape_metrics.py` 7 passed）。列：
+  - **连通（吸收 DiffuseBot `geometry_is_cc`）**：`single_cc_rate`、mean `n_components`、`largest_cc_fraction`。
+  - **shape 质量（治"太丑/topology 不对"）**：`solidity`(凸性)、`bilateral_symmetry`、`sa_to_volume`(锯齿度)、`cavity_count`(空洞)。
+  - **多样性**：mean pairwise occupancy L2(防 mode-collapse)。
+  - **★ prior-NLL**：A2 decoder encode→decode MSE = in-distribution 度("看着像不像真软体"的原理化指标，且与 learned-prior 贡献同源)。
+  - 聚合脚本 `scripts/.../co_design/analysis/table3_metrics.py`(per-prior 出一行 + JSON)；loco_cpu 实测 single_cc=1.0/solidity=1.0/sym=0.99/diversity=2.84/prior-NLL=0.137。
+- [x] `[GPU+code]` ✅ **shape 正则（治丑 body）**：`MBDConfig.shape_weight` → `_rollout_and_marginalize` 把 `shape_weight·TV(occupancy)` 从每候选 reward 里减掉(softmax 自动下调高-TV 丑 body)；默认 0=legacy。配合 learned-prior `prior_weight`(G2b)双管。smoke `shape_quality.py` Part B 过(TV penalty 流入 + 平滑<锯齿)。
+- [x] `[CPU+code]` ✅ **DiffuseBot-strict 连通 robotize**：`MeshRobotizeConfig.require_single_component`(默认 False=保留最大块；True=`n_components>1` 直接 reject = DiffuseBot `geometry_is_cc`)+ `RobotizeReport.n_components` + `sdf.count_components`。smoke `shape_quality.py` Part C 过。
+- [x] `[GPU]` ✅ **Table 3 出数完成（2026-06-18）**：text 轴跑齐 **4 大 3D 表示** — Point-E(点云) / Shap-E(隐式SDF) / TRELLIS-text(结构化体素) / **SplatFlow(3DGS)** + random_shapes 基线 + TripoSG image 臂。每 prior 10 prompt×3，3×3×3 网格 robotize。列含 **gen-time + loco-R reward**。表/图/json 见 `results/soft_robot/co_design/table3/`（`TABLE3.md`、`table3_final.json`、两张 DiffuseBot 风格 gallery）。
+  - **SplatFlow 接通**：非显存(全模型 15.5/24 GB);三 bug = HF 缓存路径错位(主因,反复重下撑爆 `/`)+ variant fp16 + `cfg=true`(否则 `clean_ray_latent` 未赋值)。submodule 保持纯净,改动存 `prior_adapters/splatflow_fp16_fromconfig.patch`。gaussian→robotize 先滤 opacity>0.5+去离群。详见 SETUP.md。
+  - **★ 核心发现**：fidelity / robotizability / 规整度 / 成本**四个廉价代理全不预测 locomotion** — 最高保真的 TRELLIS(loco 0.18)+SplatFlow(−3.01)最差,最糙最老的 Point-E(4.80)最好 → **reward 列不可省**。(caveat：固定 3×3×3 + 短 CEM；细网格 follow-up 待办。)
 - 服务：贡献3、Table 3、Fig prior 质性网格。
 
-### Stage 7 — Loco-Manipulation 任务 ✅ CPU 部分完成
+### Stage 7 — Loco-Manipulation 任务 ✅ carry wiring 完成；⚠️ carry physics 待开发（push 可用）
 > Carry 核心写进 `scene.py`（与 push 同处）：`carry_reward`（forward transport + closing + 接触稳定 `G_T` − drop penalty，纯 jnp）+ `rollout_return_carry`/`_batch`（mirror push，`manip_cfg.horizontal_only=False` → 物体受重力、body 必须托运）。
 - [x] `[CPU]` `carry_reward`（jnp 纯函数，`G_T = mean_t 1[obj_y≥carry_y_min]`）+ `rollout_return_carry`/`rollout_return_carry_batch`（mirror push 的 scan）。
 - [x] `[CPU]` 单测 `test/unit/test_carry_reward.py`（4：carried>dropped、G_T∈[0,1]、forward 增 reward、drop penalty 生效）。
-- [ ] `[GPU+config]` 把 `carry` 接进 evaluator task_id 分派 + `carry.yaml`（mirror push，flip horizontal_only）+ regime bank。
-- [ ] `[GPU]` smoke 验证 Carry 形态依赖（无凹腔的体应失败）。
-- [ ] `[CPU]`（stretch）建 **Grasp/Scoop**：捕获-搬运 reward + 形态需长出 gripper。
+- [x] `[GPU+config]` ✅ G3.2 wiring：`carry` 接进 `adapters.py` 分派（→`rollout_return_carry_batch`）+ `tasks/regime.py`（`task="carry"`，train 36 / test 60，`horizontal_only=False`）+ evaluator `train_carry`/`test_carry` + task domain `_TASKS`/num_modes=36 + `configs/soft_robot/co_design/main_v2/carry.yaml`。co-design 端到端跑通，legacy 精确不变。
+- [ ] ⚠️ `[GPU]` smoke 验证 Carry 形态依赖 —— **做不出来，carry physics 待开发（非 wiring）**：manipuland 的 y 在 init **自动 snap 到 terrain（地板），不是 body 顶** → 物体永远落地（`G_T=0`，好/坏体无区分）；init 到 body 上方/内部则**接触爆炸**（obj_y→2729）。`carry_reward` 本身正确（4 单测过）。需补**物体稳定停在软体上的 manipuland 耦合 + 几何**（object-on-body init / scoop-lift）。**建议：carry 进主表前先补此项；loco-manip 表先用 push 撑。**
+- [ ] `[CPU]`（stretch）建 **Grasp/Scoop**：捕获-搬运 reward + 形态需长出 gripper。（与上面 carry physics 是同一块工作）
 - [ ] `[GPU]` 出数：loco-manip 表（push / carry [/ grasp]），跨 object 质量/摩擦/尺寸 regime。
 - 服务：贡献1/3/4 的 loco-manip showcase、Table loco-manip。
 
 ### Stage 8 — 渲染器 + 出表出图（关 Gap B）
-- [ ] `[CPU]` 写 `scripts/visualizations/render_soft_robot_checkpoints.py`（PyVista 起步，粒子点云着色 by actuator）。注：脚本本身 CPU 写；**出图时的 re-rollout（重跑 (x_k,ϕ_k) 取粒子位置）→ GPU**。
+- [ ] `[CPU]` 写 `scripts/visualizations/soft_robot/co_design/render_soft_robot_checkpoints.py`（PyVista 起步，粒子点云着色 by actuator）。注：脚本本身 CPU 写；**出图时的 re-rollout（重跑 (x_k,ϕ_k) 取粒子位置）→ GPU**。
 - [ ] `[CPU]` 写 `make_table1.py` / `make_table4.py` / `make_figure3.py` / `make_figure_pipeline.py`（README §3.8 缺的）。
 - [ ] `[CPU]` 复用现有 `analyze_*` / `compare_*` 脚本聚合多 seed。
 - 服务：所有 Fig/Table 出图。
