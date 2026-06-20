@@ -130,10 +130,18 @@ class MRMFMBDBaseline(BaselineProtocol):
             x_bounds=(x_lo, x_hi),
             phi_bounds=(phi_lo, phi_hi),
         )
+        # Prior-seeded init (contribution 3 → 1): all methods start from the SAME
+        # 3D-prior body. morph_init_path is a .npy latent w0 (encoded TripoSG body).
+        x_mean_vec = np.full(x_dim, x_mean_init, dtype=np.float32)
+        _minit = str(extra.get("morph_init_path", "") or "")
+        if _minit:
+            _w0 = np.load(_minit).astype(np.float32).ravel()
+            if _w0.shape[0] == x_dim:
+                x_mean_vec = _w0
         theta_prior = ThetaPrior(
             theta_param,
             ThetaPriorConfig(
-                x_mean=np.full(x_dim, x_mean_init, dtype=np.float32),
+                x_mean=x_mean_vec,
                 phi_mean=np.full(phi_dim, (phi_lo + phi_hi) / 2.0, dtype=np.float32),
                 x_std=x_std,
                 phi_std=phi_std,

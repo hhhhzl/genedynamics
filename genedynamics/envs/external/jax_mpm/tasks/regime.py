@@ -20,6 +20,7 @@ from ..terrain import (
     ridge_terrain,
     gap_terrain,
     mixed_terrain,
+    hurdle_terrain,
 )
 from ..manipuland import ManipulandConfig
 
@@ -116,6 +117,32 @@ def make_train_bank(
                         terrain=t, friction=float(mu),
                         manipuland=ManipulandConfig(mass=float(M), horizontal_only=False),
                     ))
+    elif task == "hurdling":
+        # DiffuseBot Hurdling: every regime places a hurdle obstacle ahead of the
+        # spawn (varied height/position) × friction. Reward objective="hurdling".
+        for hc, hh in ((0.52, 1.6), (0.55, 2.0), (0.58, 2.4)):
+            t = hurdle_terrain(n_grid, center=hc, height=hh * 0.02)
+            for mu in frictions:
+                bank.append(RegimeSpec(name=f"train__hurdle_{hc:.2f}__mu{mu:.2f}",
+                                       terrain=t, friction=float(mu)))
+    elif task == "gripping":
+        # DiffuseBot Gripping: grasp + lift a gravity-loaded object on flat ground;
+        # regimes cross object mass × friction. Reward objective="gripping".
+        for mu in frictions:
+            for M in masses:
+                bank.append(RegimeSpec(
+                    name=f"train__grip__mu{mu:.2f}__M{M:.2f}",
+                    terrain=flat_terrain(n_grid), friction=float(mu),
+                    manipuland=ManipulandConfig(mass=float(M), horizontal_only=False)))
+    elif task == "carry_terrain":
+        # OURS loco-manipulation: carry a gravity-loaded object OVER uneven terrain.
+        for t in _terrain_set_train(n_grid):
+            for mu in frictions:
+                for M in masses:
+                    bank.append(RegimeSpec(
+                        name=f"train__carryT__{t.name}__mu{mu:.2f}__M{M:.2f}",
+                        terrain=t, friction=float(mu),
+                        manipuland=ManipulandConfig(mass=float(M), horizontal_only=False)))
     else:
         raise ValueError(f"Unknown task {task!r}")
     return bank
@@ -154,6 +181,10 @@ def make_test_bank(
                         terrain=t, friction=float(mu),
                         manipuland=ManipulandConfig(mass=float(M), horizontal_only=False),
                     ))
+    elif task in ("hurdling", "gripping", "carry_terrain"):
+        # held-out eval for the newer tasks: reuse the train-bank construction at
+        # the test-friction set (distinct frictions = the held-out axis).
+        return make_train_bank(n_grid, task=task, frictions=frictions, masses=masses)
     else:
         raise ValueError(f"Unknown task {task!r}")
     return bank

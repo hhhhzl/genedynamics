@@ -606,6 +606,7 @@ def rollout_return(
     terrain_height: jnp.ndarray = None,
     actuator_weight_voxel: jnp.ndarray = None,   # (n_voxels, n_actuators) co-designed actuator field
     E_voxel: jnp.ndarray = None,                 # (n_voxels,) co-designed stiffness field
+    objective: str = "crawling",                 # DiffuseBot task: crawling|balancing|landing|hurdling
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Run one rollout. Returns (blended_reward, final_forward_disp, com_x_traj).
 
@@ -628,6 +629,15 @@ def rollout_return(
     mass_field = _voxel_mass_field(x_morph, scene)
 
     carry = _init_carry(scene)
+    # DiffuseBot Passive-Dynamics initial conditions:
+    #   landing  → spawn elevated so the body DROPS and must settle softly.
+    #   balancing→ apply a horizontal velocity perturbation the body must resist.
+    if objective == "landing":
+        _x0, _v0, _C0, _F0 = carry
+        carry = (_x0 + jnp.asarray([0.0, 0.08, 0.0], DTYPE), _v0, _C0, _F0)
+    elif objective == "balancing":
+        _x0, _v0, _C0, _F0 = carry
+        carry = (_x0, _v0.at[:, 0].add(DTYPE(0.5)), _C0, _F0)
     w0 = mass_field / (jnp.sum(mass_field) + DTYPE(1e-8))
     init_com_x = jnp.sum(scene.x0 * w0[:, None], axis=0)
 
@@ -653,9 +663,33 @@ def rollout_return(
     # cfg.backward_penalty_weight > 0 (smoothness variant).
     backward_sum = jnp.sum(jnp.maximum(-com_v_hist[:, 0], 0.0))
     smooth_pen = DTYPE(cfg.backward_penalty_weight) * backward_sum
-    reward = (per_step_forward_disp
-              + DTYPE(cfg.shaping_weight) * final_disp
-              - mass_penalty - smooth_pen)
+
+    if objective == "crawling":
+        # forward locomotion (DiffuseBot Crawling) — time-ahead + final displacement.
+        reward = (per_step_forward_disp + DTYPE(cfg.shaping_weight) * final_disp
+                  - mass_penalty - smooth_pen)
+    elif objective == "balancing":
+        # DiffuseBot Passive-Dynamics "balance": stay put — penalize horizontal
+        # COM drift (x,z) and loss of height (y) over the whole episode.
+        drift = jnp.sum(jnp.abs(com_x_hist[:, 0] - init_com_x[0])
+                        + jnp.abs(com_x_hist[:, 2] - init_com_x[2]))
+        height_drop = jnp.maximum(init_com_x[1] - com_x_hist[-1, 1], 0.0)
+        reward = -(drift + DTYPE(cfg.shaping_weight) * height_drop) - mass_penalty
+    elif objective == "landing":
+        # DiffuseBot Passive-Dynamics "landing": settle softly — minimize total
+        # COM speed over the episode and the final velocity (no bouncing away).
+        speed = jnp.sum(jnp.linalg.norm(com_v_hist, axis=1))
+        final_speed = jnp.linalg.norm(com_v_hist[-1])
+        reward = -(speed + DTYPE(cfg.shaping_weight) * final_speed) - mass_penalty
+    elif objective == "hurdling":
+        # DiffuseBot Locomotion "hurdle": move forward AND clear height — reward
+        # forward displacement + peak COM height (jump over the hurdle).
+        peak_h = jnp.max(com_x_hist[:, 1] - init_com_x[1])
+        reward = (final_disp + DTYPE(cfg.shaping_weight) * peak_h
+                  - mass_penalty - smooth_pen)
+    else:
+        reward = (per_step_forward_disp + DTYPE(cfg.shaping_weight) * final_disp
+                  - mass_penalty - smooth_pen)
     return reward, final_disp, com_x_hist
 
 
@@ -942,6 +976,7 @@ def rollout_return_batch(
     terrain_height: jnp.ndarray = None,
     actuator_weight_voxel_batch: jnp.ndarray = None,   # (B, n_voxels, n_actuators) or None
     E_voxel_batch: jnp.ndarray = None,                 # (B, n_voxels) or None
+    objective: str = "crawling",                       # DiffuseBot task objective
 ):
     """Vmap rollout_return over a batch of (morphology, controller, friction) tuples.
 
@@ -957,6 +992,7 @@ def rollout_return_batch(
         def _one(xm, ph, fr):
             r, disp, _ = rollout_return(
                 xm, ph, fr, scene, cfg, num_env_steps, E0, terrain_height=terrain_height,
+                objective=objective,
             )
             return r, disp
         return jax.vmap(_one)(x_morph_batch, phi_batch, friction_batch)
@@ -967,7 +1003,7 @@ def rollout_return_batch(
     def _one_codesign(xm, ph, fr, aw, ev):
         r, disp, _ = rollout_return(
             xm, ph, fr, scene, cfg, num_env_steps, E0, terrain_height=terrain_height,
-            actuator_weight_voxel=aw, E_voxel=ev,
+            actuator_weight_voxel=aw, E_voxel=ev, objective=objective,
         )
         return r, disp
 
@@ -1047,6 +1083,25 @@ def carry_reward(
     return reward, dT, carried_frac
 
 
+def grip_reward(
+    manip_xyz: jnp.ndarray,        # (T, 3) object trajectory
+    init_pos: jnp.ndarray,         # (3,) object start
+    *,
+    lift_min: float = 0.12,
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """DiffuseBot Gripping reward (objective="grasp", reward_mode="last_step_height"):
+    grasp + LIFT the object — reward its final height gain plus the fraction of the
+    rollout it stays lifted (grasp stability). Returns (reward, neg_final_height, lifted_frac)
+    to match the (reward, dist, aux) signature of carry_reward.
+    """
+    obj_y = manip_xyz[:, 1]
+    final_gain = obj_y[-1] - init_pos[1]
+    peak_gain = jnp.max(obj_y) - init_pos[1]
+    lifted_frac = jnp.mean((obj_y >= DTYPE(lift_min)).astype(obj_y.dtype))
+    reward = DTYPE(50.0) * final_gain + DTYPE(10.0) * peak_gain + DTYPE(5.0) * lifted_frac
+    return reward, -obj_y[-1], lifted_frac
+
+
 def rollout_return_carry(
     x_morph: jnp.ndarray,
     phi: jnp.ndarray,
@@ -1062,6 +1117,7 @@ def rollout_return_carry(
     weights: Tuple[float, float, float, float] = (1.0, 3.0, 5.0, 50.0),
     carry_y_min: float = 0.10,
     floor_y: float = 0.05,
+    objective: str = "carry",   # "carry"/"carry_terrain" → transport; "gripping" → grasp-lift
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Carry rollout. ``manip_cfg`` should have ``horizontal_only=False`` so the
     object is gravity-loaded and the body must carry it. Returns
@@ -1088,10 +1144,13 @@ def rollout_return_carry(
     carry, (com_v_hist, com_x_hist, manip_xyz_hist) = jax.lax.scan(
         body, carry, jnp.arange(num_env_steps, dtype=jnp.int32),
     )
-    reward, dT, _carried = carry_reward(
-        manip_xyz_hist, init_pos, goal_x=goal_x, weights=weights,
-        carry_y_min=carry_y_min, floor_y=floor_y,
-    )
+    if objective == "gripping":
+        reward, dT, _aux = grip_reward(manip_xyz_hist, init_pos)
+    else:
+        reward, dT, _carried = carry_reward(
+            manip_xyz_hist, init_pos, goal_x=goal_x, weights=weights,
+            carry_y_min=carry_y_min, floor_y=floor_y,
+        )
     return reward, dT, com_x_hist, manip_xyz_hist
 
 
@@ -1110,6 +1169,7 @@ def rollout_return_carry_batch(
     weights: Tuple[float, float, float, float] = (1.0, 3.0, 5.0, 50.0),
     carry_y_min: float = 0.10,
     floor_y: float = 0.05,
+    objective: str = "carry",
 ):
     """Vmap rollout_return_carry over a (morphology, controller, friction) batch.
     Returns (rewards, dist_to_goal_T), both (B,)."""
@@ -1118,7 +1178,7 @@ def rollout_return_carry_batch(
             xm, ph, fr, scene, cfg, num_env_steps,
             manip_cfg=manip_cfg, goal_x=goal_x,
             E0=E0, terrain_height=terrain_height, weights=weights,
-            carry_y_min=carry_y_min, floor_y=floor_y,
+            carry_y_min=carry_y_min, floor_y=floor_y, objective=objective,
         )
         return r, dT
 

@@ -69,9 +69,15 @@ class SoftRobotCoDesignDynamics(DynamicsModel):
         num_env_steps: int = 200,
         z_sym: bool = False,
         voxel_dims: Optional[Tuple[int, int, int]] = None,
+        morph_decoder: Any = None,
     ):
         self.scene = scene
         self.cfg = cfg
+        # A2 shape-latent decoder: when set, the x-block is a latent w and
+        # rollout-time occupancy is g(w) — so a GENERAL solver (CEM/CMA-ES) on
+        # the env bridge searches the SAME 32-d latent as MRMFMBD/DiffuseBot
+        # (fair Table-1 comparison), not the raw 1352-d occupancy.
+        self._morph_decoder = morph_decoder
         self.x_opt_dim = int(x_opt_dim)
         self.phi_dim = int(phi_dim)
         self.act_dim = int(x_opt_dim + phi_dim)          # D — read by the solver backend
@@ -90,6 +96,8 @@ class SoftRobotCoDesignDynamics(DynamicsModel):
         return jnp.clip(self._mean + self._scale * jnp.asarray(a), self._lo, self._hi)
 
     def _x_full(self, x_opt):
+        if self._morph_decoder is not None:
+            return jnp.asarray(self._morph_decoder.decode(x_opt))   # w -> occupancy g(w)
         if self.z_sym:
             vx, vy, vz = self.voxel_dims
             h = x_opt.reshape(vx, vy, vz // 2)
@@ -140,6 +148,8 @@ def build_codesign_problem(
     num_env_steps: int = 200,
     z_sym: bool = False,
     voxel_dims: Optional[Tuple[int, int, int]] = None,
+    morph_decoder: Any = None,
+    morph_init: Optional[np.ndarray] = None,
 ):
     """Build (dynamics, energy, x0) for a soft-robot co-design problem.
 
@@ -147,7 +157,12 @@ def build_codesign_problem(
     .solve(x0, horizon=1)``. Returns the dynamics (which exposes ``action_to_theta``
     so callers can map the solver's best action back to the design theta).
     """
-    theta_mean = np.concatenate([np.full(x_opt_dim, x_mean), np.full(phi_dim, phi_mean)]).astype(np.float32)
+    x_mean_block = np.full(x_opt_dim, x_mean, dtype=np.float32)
+    if morph_init is not None:
+        _mi = np.asarray(morph_init, np.float32).ravel()
+        if _mi.shape[0] == x_opt_dim:
+            x_mean_block = _mi   # prior-seeded init (e.g. encoded TripoSG latent w0)
+    theta_mean = np.concatenate([x_mean_block, np.full(phi_dim, phi_mean)]).astype(np.float32)
     theta_scale = np.concatenate([
         np.full(x_opt_dim, (x_hi - x_lo) / 2.0),
         np.full(phi_dim, (phi_hi - phi_lo) / 2.0),
@@ -158,5 +173,6 @@ def build_codesign_problem(
         scene, cfg, x_opt_dim=x_opt_dim, phi_dim=phi_dim,
         theta_mean=theta_mean, theta_scale=theta_scale, theta_lo=theta_lo, theta_hi=theta_hi,
         friction=friction, num_env_steps=num_env_steps, z_sym=z_sym, voxel_dims=voxel_dims,
+        morph_decoder=morph_decoder,
     )
     return dyn, codesign_energy(), np.zeros(1, dtype=np.float32)

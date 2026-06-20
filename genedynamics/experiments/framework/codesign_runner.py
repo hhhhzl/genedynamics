@@ -98,6 +98,10 @@ def _ensure_registered() -> None:
     register_codesign_solver("cem", _general_solver_run(
         CEMSolver, dict(num_samples=32, num_iterations=6, elite_frac=0.25,
                         init_std=0.8, min_std=0.1, action_limit=3.0)))
+    from genedynamics.solvers.single.cmaes.cmaes import CMAESSolver
+    register_codesign_solver("cmaes", _general_solver_run(
+        CMAESSolver, dict(num_samples=32, num_iterations=6, elite_frac=0.5,
+                          sigma0=0.8, min_std=0.05, action_limit=3.0)))
     # Specialized co-design solvers (mrmfmbd / shac / diffusebot) register
     # themselves on import; pull them in here as they are migrated.
     try:
@@ -154,7 +158,30 @@ def codesign_problem_from_evaluator(evaluator, *, x_dim, phi_dim, method_params)
     mp = dict(method_params or {})
     voxel_dims = mp.get("voxel_dims")
     z_sym = str(mp.get("morphology_symmetry", "")).lower() == "z"
-    if voxel_dims is not None and z_sym:
+
+    # A2 decoder: when method_params request the latent path, the GENERAL solver
+    # (CEM/CMA-ES) optimizes the SAME 32-d latent w as MRMFMBD/DiffuseBot (fair
+    # Table-1: same morphology search space; only the OPTIMIZER differs).
+    morph_decoder = None
+    morph_latent_dim = int(mp.get("morph_latent_dim", 0))
+    dpath = str(mp.get("morph_decoder_path", "") or "")
+    x_lo, x_hi, x_mean = float(mp.get("x_lo", 0.2)), float(mp.get("x_hi", 1.0)), float(mp.get("x_mean", 0.6))
+    if morph_latent_dim > 0 and dpath:
+        import json as _json, os as _os
+        from genedynamics.solvers.single.mrmfmbd.morph_system.decoder import MorphDecoder
+        from genedynamics.solvers.single.mrmfmbd.morph_system.specs import MorphDecoderConfig
+        _dc = _json.load(open(_os.path.join(dpath, "decoder_config.json")))
+        _mc = MorphDecoderConfig(latent_dim=int(_dc["latent_dim"]), hidden_dim=int(_dc["hidden_dim"]),
+            n_voxels=int(_dc["n_voxels"]), x_lo=float(_dc["x_lo"]), x_hi=float(_dc["x_hi"]),
+            beta_kl=float(_dc.get("beta_kl", 1e-3)), decode_actuator=bool(_dc.get("decode_actuator", False)),
+            decode_stiffness=bool(_dc.get("decode_stiffness", False)), n_actuators=int(_dc.get("n_actuators", 0)))
+        morph_decoder = MorphDecoder.load(_os.path.join(dpath, "decoder_params.npz"), _mc)
+        x_opt_dim = morph_latent_dim
+        z_sym = False
+        x_lo = float(mp.get("morph_latent_lo", -2.0)); x_hi = float(mp.get("morph_latent_hi", 2.0))
+        x_mean = float(mp.get("morph_latent_mean", 0.0))
+        voxel_dims = tuple(voxel_dims) if voxel_dims is not None else None
+    elif voxel_dims is not None and z_sym:
         vx, vy, vz = (int(v) for v in voxel_dims)
         x_opt_dim = vx * vy * (vz // 2)
     else:
@@ -164,15 +191,21 @@ def codesign_problem_from_evaluator(evaluator, *, x_dim, phi_dim, method_params)
     friction = float(evaluator._mode_friction[0]) if getattr(evaluator, "_mode_friction", None) else 0.5
     num_env_steps = int(mp.get("num_env_steps", getattr(evaluator._mpm_cfg, "env_horizon", 200)))
 
+    # prior-seeded init: load the latent w0 (encoded 3D-prior body, e.g. TripoSG).
+    morph_init = None
+    _minit = str(mp.get("morph_init_path", "") or "")
+    if _minit:
+        import numpy as _np
+        morph_init = _np.load(_minit).astype(_np.float32).ravel()
+
     dynamics, energy, x0 = build_codesign_problem(
         evaluator._scene, evaluator._mpm_cfg,
         x_opt_dim=x_opt_dim, phi_dim=int(phi_dim),
-        x_lo=float(mp.get("x_lo", 0.2)), x_hi=float(mp.get("x_hi", 1.0)),
-        x_mean=float(mp.get("x_mean", 0.6)),
+        x_lo=x_lo, x_hi=x_hi, x_mean=x_mean,
         phi_lo=float(mp.get("phi_lo", -0.5)), phi_hi=float(mp.get("phi_hi", 0.5)),
         phi_mean=float(mp.get("phi_mean", 0.0)),
         friction=friction, num_env_steps=num_env_steps,
-        z_sym=z_sym, voxel_dims=voxel_dims,
+        z_sym=z_sym, voxel_dims=voxel_dims, morph_decoder=morph_decoder, morph_init=morph_init,
     )
     return dynamics, energy, x0, x_opt_dim
 

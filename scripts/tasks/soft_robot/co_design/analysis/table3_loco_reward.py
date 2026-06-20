@@ -63,6 +63,8 @@ def main(argv=None) -> int:
     ap.add_argument("--elite", type=int, default=8)
     ap.add_argument("--friction", type=float, default=1.0)
     ap.add_argument("--n-grid", type=int, default=128, help="MPM background grid (DiffuseBot uses 128)")
+    ap.add_argument("--max-particles", type=int, default=0,
+                    help="cap particles/body (subsample) so a UNIFORM pop fits + counts are comparable; 0=off")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="")
     args = ap.parse_args(argv)
@@ -76,6 +78,24 @@ def main(argv=None) -> int:
     rewards = []
     for j, i in enumerate(idx):
         spec = load_spec_npz(files[i])
+        # Fair protocol: cap particles so every prior uses the SAME CEM pop and
+        # the geometries are size-comparable (dense priors otherwise have 100x
+        # more particles than sparse ones). Seeded subsample of all per-particle
+        # fields; sparse bodies below the cap are untouched.
+        if args.max_particles and spec.particles_x0.shape[0] > args.max_particles:
+            import dataclasses
+            rng = np.random.default_rng(args.seed + i)
+            sel = rng.choice(spec.particles_x0.shape[0], size=args.max_particles, replace=False)
+            # NOTE: subsample ONLY per-particle (N,) fields. fiber_dirs is
+            # per-ACTUATOR (n_actuators, 3) — must NOT be indexed by particle.
+            spec = dataclasses.replace(
+                spec,
+                particles_x0=np.asarray(spec.particles_x0)[sel],
+                actuator_id=np.asarray(spec.actuator_id)[sel],
+                voxel_id=np.asarray(spec.voxel_id)[sel],
+                E_per_particle=(np.asarray(spec.E_per_particle)[sel]
+                                if spec.E_per_particle is not None else None),
+            )
         cfg = MPMConfig(voxel_dims=tuple(int(v) for v in spec.voxel_dims),
                         n_grid=args.n_grid, shaping_weight=100.0, act_strength_base=24.0, scale=50.0)
         scene = build_scene_from_spec(spec, cfg)

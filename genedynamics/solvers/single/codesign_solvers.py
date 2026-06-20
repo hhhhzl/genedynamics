@@ -46,15 +46,16 @@ def _wrap_optimizer(optimizer_cls):
 
 
 def _register() -> None:
-    from genedynamics.solvers.single.codesign_optimizers.mrmfmbd import MRMFMBDBaseline
-    from genedynamics.solvers.single.codesign_optimizers.cmaes import CMAESBaseline
-    from genedynamics.solvers.single.codesign_optimizers.shac import SHACBaseline
-    from genedynamics.solvers.single.codesign_optimizers.diffusebot import DiffuseBotBaseline
+    from genedynamics.solvers.single.mrmfmbd.codesign import MRMFMBDBaseline
+    from genedynamics.solvers.single.shac.codesign import SHACBaseline
+    from genedynamics.solvers.single.diffusebot.codesign import DiffuseBotBaseline
 
     register_codesign_solver("mrmfmbd", _wrap_optimizer(MRMFMBDBaseline))
-    register_codesign_solver("cmaes", _wrap_optimizer(CMAESBaseline))
     register_codesign_solver("shac", _wrap_optimizer(SHACBaseline))
     register_codesign_solver("diffusebot", _wrap_optimizer(DiffuseBotBaseline))
+    # NOTE: CMA-ES is NOT here — it is a GENERAL solver (solvers/single/cmaes/)
+    # registered in codesign_runner via _general_solver_run + the env bridge,
+    # exactly like CEM.
 
 
 _register()

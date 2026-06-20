@@ -133,19 +133,13 @@ class JaxMpmRolloutEvaluator:
             from genedynamics.envs.external.jax_mpm.tasks import (
                 make_train_bank, make_test_bank,
             )
+            # Generic "train_<task>" / "test_<task>" → make_{train,test}_bank(task).
+            # Covers locomotion / push / carry / hurdling / gripping / carry_terrain.
             kind = str(self.config.regime_bank_kind)
-            if kind == "train_locomotion":
-                self._regime_bank = make_train_bank(self._mpm_cfg.n_grid, task="locomotion")
-            elif kind == "test_locomotion":
-                self._regime_bank = make_test_bank(self._mpm_cfg.n_grid, task="locomotion")
-            elif kind == "train_push":
-                self._regime_bank = make_train_bank(self._mpm_cfg.n_grid, task="push")
-            elif kind == "test_push":
-                self._regime_bank = make_test_bank(self._mpm_cfg.n_grid, task="push")
-            elif kind == "train_carry":
-                self._regime_bank = make_train_bank(self._mpm_cfg.n_grid, task="carry")
-            elif kind == "test_carry":
-                self._regime_bank = make_test_bank(self._mpm_cfg.n_grid, task="carry")
+            if kind.startswith("train_"):
+                self._regime_bank = make_train_bank(self._mpm_cfg.n_grid, task=kind[len("train_"):])
+            elif kind.startswith("test_"):
+                self._regime_bank = make_test_bank(self._mpm_cfg.n_grid, task=kind[len("test_"):])
             else:
                 raise ValueError(f"Unknown regime_bank_kind: {kind!r}")
 
