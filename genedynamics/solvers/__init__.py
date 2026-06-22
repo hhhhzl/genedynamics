@@ -25,6 +25,7 @@ from genedynamics.solvers.single.cfsmbd.cfsmbd import CFSMBDSolver
 from genedynamics.solvers.single.twogo.twogo import TwoGOSolver
 from genedynamics.solvers.single.mppi.mppi import MPPISolver, run_mppi
 from genedynamics.solvers.single.cem.cem import CEMSolver, run_cem
+from genedynamics.solvers.single.dial.dial import DIALMPCSolver
 
 __all__ = [
     # Base classes
@@ -44,6 +45,8 @@ __all__ = [
     # CEM
     "CEMSolver",
     "run_cem",
+    # DIAL-MPC
+    "DIALMPCSolver",
 ]
 
 # Note: Configuration Args classes have been moved to configs/<env_name>/<solver>.py

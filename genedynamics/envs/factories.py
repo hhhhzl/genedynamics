@@ -33,115 +33,24 @@ from genedynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
 
 
 def make_env(name: str, **kwargs):
-    """
-    Factory function to create environments using the registry system.
-    
-    Args:
-        name: Environment name (e.g., "double_integrator_box", "double_integrator_box_2d")
-        **kwargs: Additional environment parameters
-        
-    Returns:
-        Environment instance
-        
+    """Create an environment by registry name.
+
+    Registry-only dispatch (domain subpackages register via
+    ``@register_environment`` / ``register_environment_factory`` on import).
+    The former make_env if/elif chain was removed once every name was covered
+    by the registry (P6).
+
     Raises:
-        ValueError: If environment name is not recognized
+        ValueError: if ``name`` is not registered (message lists available names).
     """
-    # Try to use registry first
-    try:
-        from genedynamics.core.registry.environments import get_environment_registry
-        registry = get_environment_registry()
-        env_class = registry.get_class(name)
-        if env_class is not None:
-            return registry.create(name, **kwargs)
-    except (ImportError, AttributeError):
-        # Registry not available, fall back to hardcoded logic
-        pass
-    
-    # Fallback to hardcoded logic for backward compatibility
-    if name == "double_integrator_box":
-        from genedynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
-        return DoubleIntegratorBoxEnv(**kwargs)
-    elif name == "double_integrator_box_2d":
-        from genedynamics.envs.double_integrator_box_2d import DoubleIntegratorBox2DEnv
-        return DoubleIntegratorBox2DEnv(**kwargs)
-    elif name == "single_integrator_box_2d":
-        from genedynamics.envs.single_integrator_box_2d import SingleIntegratorBox2DEnv
-        return SingleIntegratorBox2DEnv(**kwargs)
-    elif name == "quadruped_stepping_stones_2d":
-        from genedynamics.envs.quadruped_stepping_stones_2d import QuadrupedSteppingStones2DEnv
-        return QuadrupedSteppingStones2DEnv(**kwargs)
-    elif name == "humanoid_corridor_2d":
-        from genedynamics.envs.humanoid_corridor_2d import HumanoidCorridor2DEnv
-        return HumanoidCorridor2DEnv(**kwargs)
-    elif name == "drone_box_3d":
-        from genedynamics.envs.drone_box_3d import DroneBox3DEnv
-        return DroneBox3DEnv(**kwargs)
-    elif name == "drone_full_3d":
-        from genedynamics.envs.drone_full_3d import DroneFull3DEnv
-        return DroneFull3DEnv(**kwargs)
-    elif name == "drone_full_3d_physics":
-        from genedynamics.envs.drone_full_3d_physics import DroneFull3DPhysicsEnv
-        return DroneFull3DPhysicsEnv(**kwargs)
-    elif name == "drone_full_3d_mujoco":
-        from genedynamics.envs.drone_full_3d_mujoco import DroneFull3DMujocoEnv
-        return DroneFull3DMujocoEnv(**kwargs)
-    elif name == "drone_full_3d_mjx":
-        from genedynamics.envs.drone_full_3d_mjx import DroneFull3DMjxEnv
-        return DroneFull3DMjxEnv(**kwargs)
-    elif name == "drone_full_3d_isaac":
-        from genedynamics.envs.drone_full_3d_isaac import DroneFull3DIsaacEnv
-        return DroneFull3DIsaacEnv(**kwargs)
-    elif name == "quadruped_flat_physics":
-        from genedynamics.envs.quadruped_base_physics import QuadrupedFlatPhysicsEnv
-        return QuadrupedFlatPhysicsEnv(**kwargs)
-    elif name == "quadruped_rough_physics":
-        from genedynamics.envs.quadruped_base_physics import QuadrupedRoughPhysicsEnv
-        return QuadrupedRoughPhysicsEnv(**kwargs)
-    elif name == "quadruped_push_physics":
-        from genedynamics.envs.quadruped_base_physics import QuadrupedPushPhysicsEnv
-        return QuadrupedPushPhysicsEnv(**kwargs)
-    elif name == "quadruped_go2_physics":
-        from genedynamics.envs.quadruped_base_physics import QuadrupedGo2PhysicsEnv
-        return QuadrupedGo2PhysicsEnv(**kwargs)
-    elif name == "quadruped_flat_mjx":
-        from genedynamics.envs.quadruped_mjx import QuadrupedAntMjxEnv
-        return QuadrupedAntMjxEnv(**kwargs)
-    elif name == "quadruped_go2_mjx":
-        from genedynamics.envs.quadruped_mjx import QuadrupedGo2MjxEnv
-        return QuadrupedGo2MjxEnv(**kwargs)
-    elif name == "quadruped_go2_brax":
-        from genedynamics.envs.brax_env import make_brax_go2
-        return make_brax_go2(**kwargs)
-    elif name == "humanoid_run_brax":
-        from genedynamics.envs.brax_env import make_brax_humanoid_run
-        return make_brax_humanoid_run(**kwargs)
-    elif name == "humanoid_simplified_physics":
-        from genedynamics.envs.humanoid_base_physics import HumanoidBasePhysicsEnv
-        return HumanoidBasePhysicsEnv(**kwargs)
-    elif name == "humanoid_g1_physics":
-        from genedynamics.envs.humanoid_base_physics import HumanoidG1PhysicsEnv
-        return HumanoidG1PhysicsEnv(**kwargs)
-    elif name == "humanoid_simplified_mjx":
-        from genedynamics.envs.humanoid_mjx import HumanoidSimplifiedMjxEnv
-        return HumanoidSimplifiedMjxEnv(**kwargs)
-    elif name == "humanoid_g1_mjx":
-        from genedynamics.envs.humanoid_mjx import HumanoidG1MjxEnv
-        return HumanoidG1MjxEnv(**kwargs)
-    else:
-        available = []
-        try:
-            from genedynamics.core.registry.environments import get_environment_registry
-            registry = get_environment_registry()
-            available = registry.list_available()
-        except (ImportError, AttributeError):
-            pass
-        if available:
-            raise ValueError(
-                f"Unknown environment name: {name}. "
-                f"Available environments: {available}"
-            )
-        else:
-            raise ValueError(f"Unknown environment name: {name}")
+    from genedynamics.core.registry.environments import get_environment_registry
+    registry = get_environment_registry()
+    if registry.get_class(name) is not None:
+        return registry.create(name, **kwargs)
+    available = sorted(registry.list_available())
+    raise ValueError(
+        f"Unknown environment name: {name}. Available environments: {available}"
+    )
 
 
 def make_env_adapter(
@@ -169,34 +78,31 @@ def make_env_adapter(
 
 
 def make_energy(env_name: str) -> LegacyEnergyFunctional:
-    """
-    Factory function to create energy functionals for environments using the registry system.
-    
-    Args:
-        env_name: Environment name
-        
-    Returns:
-        LegacyEnergyFunctional instance
-        
+    """Create an energy functional by registry name (registry-only dispatch).
+
+    The former hardcoded if/elif was relocated verbatim into
+    ``_make_energy_fallback`` and registered by name in
+    ``energy_registrations.py`` (P6), so dispatch is registry-only.
+
     Raises:
-        ValueError: If environment name is not recognized
+        ValueError: if no energy is registered for ``env_name``.
     """
-    # Try to use energy registry first
-    try:
-        from genedynamics.core.registry.energy import get_energy_registry
-        registry = get_energy_registry()
-        # Check if registered (has factory or class)
-        if registry.is_registered(env_name):
-            # Use registry.create which handles factories automatically
-            return registry.create(env_name)
-    except (ImportError, AttributeError, TypeError):
-        # Registry not available or error, fall back to hardcoded logic
-        pass
-    except ValueError:
-        # Not found in registry, fall back to hardcoded defaults
-        pass
-    
-    # Fallback to hardcoded logic for backward compatibility
+    from genedynamics.core.registry.energy import get_energy_registry
+    registry = get_energy_registry()
+    if registry.is_registered(env_name):
+        return registry.create(env_name)
+    available = sorted(registry.list_available())
+    raise ValueError(
+        f"Unknown energy for environment: {env_name}. Available: {available}"
+    )
+
+
+def _make_energy_fallback(env_name: str) -> LegacyEnergyFunctional:
+    """Legacy hardcoded energy bodies (relocated verbatim from make_energy).
+
+    Registered by name into the energy registry in energy_registrations.py; not
+    called directly. Kept as-is to preserve exact energy behaviour.
+    """
     if env_name == "double_integrator_box":
         def task_energy(x, u, ctx):
             pos = x[0]
@@ -447,14 +353,14 @@ def make_energy(env_name: str) -> LegacyEnergyFunctional:
             "box": EnergyTerm(box_energy, 0.1),
         })
     elif env_name == "quadruped_stepping_stones_2d":
-        from genedynamics.envs.quadruped_stepping_stones_2d import (
+        from genedynamics.envs.domains.quadruped.stepping_stones import (
             QuadrupedSteppingStones2DEnv,
             make_stepping_stones_energy,
         )
 
         return make_stepping_stones_energy(QuadrupedSteppingStones2DEnv())
     elif env_name == "humanoid_corridor_2d":
-        from genedynamics.envs.humanoid_corridor_2d import (
+        from genedynamics.envs.domains.humanoid.corridor import (
             HumanoidCorridor2DEnv,
             make_corridor_energy,
         )

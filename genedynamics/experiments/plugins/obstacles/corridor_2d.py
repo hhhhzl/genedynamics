@@ -211,7 +211,7 @@ class Corridor2DObstacleGeneratorPlugin(ObstacleGeneratorPlugin):
         target_pos: np.ndarray,
         config: Dict[str, Any],
     ) -> ObstacleManager:
-        from genedynamics.envs.humanoid_corridor_2d import HumanoidCorridor2DEnv
+        from genedynamics.envs.domains.humanoid.corridor import HumanoidCorridor2DEnv
         preset = config.get("scene_preset", "medium")
         env = HumanoidCorridor2DEnv(scene_preset=preset)
         scene = env.scene

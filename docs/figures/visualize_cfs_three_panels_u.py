@@ -19,7 +19,7 @@ from matplotlib.collections import LineCollection
 from matplotlib.patches import Circle, Ellipse, Polygon
 from matplotlib.path import Path as MplPath
 
-from genedynamics.envs.single_integrator_box_2d import SingleIntegratorBox2DEnv
+from genedynamics.envs.domains.toy.single_integrator_box_2d import SingleIntegratorBox2DEnv
 from genedynamics.envs.obstacles.base import ObstacleManager
 from genedynamics.envs.obstacles.convex import BoxObstacle
 from genedynamics.core.constraints.action_filters.cfs_qp_full import CFSQPFullFilter

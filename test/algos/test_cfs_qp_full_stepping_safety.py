@@ -35,7 +35,7 @@ from genedynamics.envs.obstacles.stepping_stones import (
     foot_stepping_violation_np,
     make_stepping_stones_obstacles,
 )
-from genedynamics.envs.quadruped_stepping_stones_2d import (
+from genedynamics.envs.domains.quadruped.stepping_stones import (
     LEG_ORDER,
     QuadrupedSteppingStones2DEnv,
 )

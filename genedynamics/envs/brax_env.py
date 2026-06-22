@@ -99,7 +99,7 @@ class BraxFlatEnv:
 
 def make_brax_go2(**kwargs) -> BraxFlatEnv:
     """Quadruped Go2 with Brax positional physics (self-contained, no third_party)."""
-    from genedynamics.envs.quadruped_brax import QuadrupedGo2BraxEnv
+    from genedynamics.envs.domains.quadruped.brax import QuadrupedGo2BraxEnv
     env = QuadrupedGo2BraxEnv()
     brax_kw = {k: v for k, v in kwargs.items() if k in ("target", "horizon")}
     return BraxFlatEnv(env, **brax_kw)
@@ -107,7 +107,7 @@ def make_brax_go2(**kwargs) -> BraxFlatEnv:
 
 def make_brax_humanoid_run(**kwargs) -> BraxFlatEnv:
     """Humanoid run with Brax positional physics (self-contained, no third_party)."""
-    from genedynamics.envs.humanoid_brax import HumanoidRunBraxEnv
+    from genedynamics.envs.domains.humanoid.brax import HumanoidRunBraxEnv
     env = HumanoidRunBraxEnv()
     brax_kw = {k: v for k, v in kwargs.items() if k in ("target", "horizon")}
     return BraxFlatEnv(env, **brax_kw)

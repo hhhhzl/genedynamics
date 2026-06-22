@@ -37,7 +37,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from genedynamics.deploy.ar.scene_source import SceneSource  # noqa: E402
-from genedynamics.envs.humanoid_corridor_2d import register_corridor_scene_preset  # noqa: E402
+from genedynamics.envs.domains.humanoid.corridor import register_corridor_scene_preset  # noqa: E402
 
 # 2GO template config whose env/method/scheduler settings produced the
 # validated zone plans. We reuse it verbatim and only swap the scene + output.
@@ -176,7 +176,7 @@ def replan_from_scene(
     # Governor calibration: pick the executed-safe best_idx + derive m_track and
     # bake them in, so the plan certifies under the runtime governor (Step 1/3/4).
     if calibrate:
-        from genedynamics.envs.humanoid_corridor_2d import corridor_scene_to_dict
+        from genedynamics.envs.domains.humanoid.corridor import corridor_scene_to_dict
         from genedynamics.deploy.followers.governor.reference_selector import PolicyEnvelope
         from scripts.tasks.robot.humanoid.governor_calibrate import calibrate as _gov_calibrate
 

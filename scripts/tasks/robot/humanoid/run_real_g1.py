@@ -73,7 +73,7 @@ def main(argv=None) -> int:
 
     # ----- body_sdf_scene (the AR obstacles the governor avoids) --------------
     from genedynamics.deploy.ar.scene_source import SceneSource
-    from genedynamics.envs.humanoid_corridor_2d import corridor_scene_to_dict
+    from genedynamics.envs.domains.humanoid.corridor import corridor_scene_to_dict
     if args.scene_file:
         src = SceneSource.from_file(args.scene_file, T_world_scene=t_world_scene)
     else:
