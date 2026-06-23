@@ -50,6 +50,22 @@ _LOWSTATE_TOPIC = "rt/lowstate"
 _LOWCMD_TOPIC = "rt/lowcmd"
 _ARM_LOWSTATE_TOPIC = "rt/lowstate"  # arm joints share the lowstate channel on G1
 
+# G1 sport-mode FSM ids (this firmware's convention, per CMU SPARK's g1_real_agent).
+# NOTE: the pip SDK's *named* LocoClient methods use DIFFERENT ids
+# (``Start()`` -> 500, ``Squat2StandUp()`` -> 706) which this G1 rejects as
+# "Invalid FSM ID" — so the bring-up drives the generic ``SetFsmId()`` with these.
+_G1_FSM_DAMP = 1
+_G1_FSM_LOCK_STAND = 4     # stand up and lock (the stand-up step)
+_G1_FSM_MAIN_MODE = 200    # walk-ready main control mode (LocoClient.Move works here)
+
+# G1 arm control while sport mode runs the legs: publish LowCmd_ to ``rt/arm_sdk``
+# (coexists with sport, unlike ``rt/lowcmd`` which would fight it). A weight on the
+# special kNotUsedJoint slot (index 29 for G1-29dof) blends arm_sdk authority over
+# the arms; 1.0 = arm_sdk fully owns them. Mirrors CMU SPARK's g1_real_agent.
+_ARM_SDK_TOPIC = "rt/arm_sdk"
+_ARM_SDK_WEIGHT_IDX = 29
+_ARM_SDK_WEIGHT = 1.0
+
 
 class UnitreeG1RobotIO(BaseRobotIO):
     """Real-hardware :class:`RobotIO` for the Unitree G1.
@@ -108,10 +124,20 @@ class UnitreeG1RobotIO(BaseRobotIO):
                 LowState_ as HgLowState,
             )
             from unitree_sdk2py.utils.crc import CRC
-            from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient as SdkLocoClient
-            from unitree_sdk2py.g1.motion_switcher.motion_switcher_client import (
-                MotionSwitcherClient,
+            from unitree_sdk2py.idl.default import (
+                unitree_hg_msg_dds__LowCmd_ as DefaultHgLowCmd,
             )
+            from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient as SdkLocoClient
+            try:
+                # Current SDK layout (unitree_sdk2_python ≥ 1.0.1).
+                from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
+                    MotionSwitcherClient,
+                )
+            except ImportError:
+                # Older SDK exposed it under g1.* (e.g. the robot's unitree_sdk2-main).
+                from unitree_sdk2py.g1.motion_switcher.motion_switcher_client import (
+                    MotionSwitcherClient,
+                )
         except ImportError as exc:  # pragma: no cover - exercised only on dev boxes
             raise ImportError(
                 "UnitreeG1RobotIO requires the Unitree SDK (unitree_sdk2py). "
@@ -135,6 +161,7 @@ class UnitreeG1RobotIO(BaseRobotIO):
             "HgLowCmd": HgLowCmd,
             "HgLowState": HgLowState,
             "CRC": CRC(),
+            "DefaultHgLowCmd": DefaultHgLowCmd,
             "SdkLocoClient": SdkLocoClient,
             "MotionSwitcherClient": MotionSwitcherClient,
         }
@@ -168,6 +195,10 @@ class UnitreeG1RobotIO(BaseRobotIO):
         self._lowcmd_pub = ChannelPublisher(_LOWCMD_TOPIC, HgLowCmd)
         self._lowcmd_pub.Init()
 
+        # Arm control channel (coexists with sport-mode leg control); see _send_arm_sdk.
+        self._arm_sdk_pub = ChannelPublisher(_ARM_SDK_TOPIC, HgLowCmd)
+        self._arm_sdk_pub.Init()
+
         self._motion_switcher = MotionSwitcherClient()
         self._motion_switcher.Init()
 
@@ -195,7 +226,12 @@ class UnitreeG1RobotIO(BaseRobotIO):
                 self._motion_switcher.ReleaseMode()
                 self._motion_switcher.SelectMode("ai")  # G1 low-level mode tag
             elif mode == "sport":
-                self._motion_switcher.SelectMode("normal")
+                # SPARK's high-level path does NOT touch MotionSwitcher — the sport
+                # ("loco") service is driven directly via the LocoClient FSM. On this
+                # G1, SelectMode("normal") returns code 7004; skip it. The actual
+                # stand-up happens in _bring_up_sport() via SetFsmId (LockStand 4 ->
+                # MainMode 200) when the IO is reset.
+                pass
             elif mode == "damp":
                 self._motion_switcher.SelectMode("damp")
             else:
@@ -203,6 +239,38 @@ class UnitreeG1RobotIO(BaseRobotIO):
         except Exception as exc:  # pragma: no cover
             # Don't crash on first connect — surfaces as degraded health.
             print(f"[UnitreeG1RobotIO] WARN: switch to {mode!r} failed: {exc}")
+
+    def _bring_up_sport(self) -> None:
+        """Stand the G1 up into walk-ready MainMode via the sport FSM.
+
+        Sequence (mirrors CMU SPARK's ``g1_real_agent`` bring-up):
+        ``<current> -> LockStand(4) -> MainMode(200)``, driven through the
+        generic ``SetFsmId`` (the pip SDK's ``Start()``/``Squat2StandUp()`` use
+        wrong ids for this firmware, returning "Invalid FSM ID"). After MainMode
+        the legs accept ``LocoClient.Move``.
+
+        NOTE: matches SPARK but is UNVERIFIED on hardware — validate on the robot
+        (it should stand+lock on ``SetFsmId(4)``, then accept ``Move`` in MainMode).
+        If ``SetFsmId(4)`` is rejected by the firmware, put the robot into
+        LockStand via the remote/App first; this then advances it to MainMode.
+        """
+        loco = self._loco_client
+        try:
+            code, cur = loco.GetFsmId()
+            print(f"[UnitreeG1RobotIO] sport bring-up: FSM before = {cur} (code={code})")
+        except Exception as exc:  # pragma: no cover
+            print(f"[UnitreeG1RobotIO] WARN: GetFsmId failed: {exc}")
+        for target in (_G1_FSM_LOCK_STAND, _G1_FSM_MAIN_MODE):
+            try:
+                ret = loco.SetFsmId(target)
+                print(f"[UnitreeG1RobotIO] sport bring-up: SetFsmId({target}) -> {ret}")
+            except Exception as exc:  # pragma: no cover
+                print(f"[UnitreeG1RobotIO] WARN: SetFsmId({target}) failed: {exc}")
+            time.sleep(1.5)
+        try:
+            loco.BalanceStand(0)  # static balance once in MainMode
+        except Exception:  # pragma: no cover
+            pass
 
     # ------------------------------------------------------------------
     # BaseRobotIO hooks
@@ -224,10 +292,7 @@ class UnitreeG1RobotIO(BaseRobotIO):
                 "Check network_interface / SDK / power."
             )
         if self.msc_mode == "sport":
-            try:
-                self._loco_client.BalanceStand(0)
-            except Exception:  # pragma: no cover
-                pass
+            self._bring_up_sport()
         self._last_step_t = time.monotonic()
 
     def _read_state(self, t: float) -> RobotState:
@@ -296,11 +361,13 @@ class UnitreeG1RobotIO(BaseRobotIO):
         elif cmd.kind in ("joint_pos", "torque"):
             self._send_lowcmd(cmd)
         elif cmd.kind == "mixed":
-            # Legs go through the high-level loco client; upper body via lowcmd.
+            # Legs go through the high-level loco client (sport mode); the upper
+            # body goes via the rt/arm_sdk channel (coexists with sport), NOT
+            # rt/lowcmd — which would fight sport-mode arm control.
             if cmd.loco_cmd is not None:
                 self._send_loco(cmd)
             if cmd.joint_pos is not None or cmd.joint_torque is not None:
-                self._send_lowcmd(cmd, upper_body_only=True)
+                self._send_arm_sdk(cmd)
         else:  # pragma: no cover
             raise ValueError(f"UnitreeG1RobotIO does not handle kind={cmd.kind!r}")
 
@@ -338,10 +405,14 @@ class UnitreeG1RobotIO(BaseRobotIO):
     def _send_lowcmd(self, cmd: ControlCommand, *, upper_body_only: bool = False) -> None:
         spec = self.spec
         n = spec.num_actuated
-        HgLowCmd = self._sdk_modules["HgLowCmd"]
         crc = self._sdk_modules["CRC"]
 
-        msg = HgLowCmd()
+        # Default factory: the IDL LowCmd_ requires all fields, so a no-arg
+        # ``HgLowCmd()`` raises on this SDK version. rt/lowcmd needs mode_machine.
+        msg = self._sdk_modules["DefaultHgLowCmd"]()
+        msg.mode_pr = 0
+        ls = self._lowstate
+        msg.mode_machine = int(getattr(ls, "mode_machine", 0)) if ls is not None else 0
 
         q_target = np.zeros(n, dtype=np.float64)
         if cmd.joint_pos is not None:
@@ -390,6 +461,55 @@ class UnitreeG1RobotIO(BaseRobotIO):
             self._lowcmd_pub.Write(msg)
         except Exception as exc:  # pragma: no cover
             print(f"[UnitreeG1RobotIO] WARN: lowcmd publish failed: {exc}")
+
+    def _send_arm_sdk(self, cmd: ControlCommand) -> None:
+        """Publish upper-body (waist + arms) targets via the G1 ``rt/arm_sdk``
+        channel, which coexists with sport-mode leg control.
+
+        Mirrors CMU SPARK's ``g1_real_agent``: a weight on the special
+        ``kNotUsedJoint`` slot (index 29) blends arm_sdk authority over the arms
+        (1.0 = arm_sdk fully controls them); the per-joint q/kp/kd set the
+        targets. Published to ``rt/arm_sdk`` (NOT ``rt/lowcmd``) so it does not
+        fight sport mode; no CRC / mode_machine needed on this channel.
+        """
+        spec = self.spec
+        n = spec.num_actuated
+        msg = self._sdk_modules["DefaultHgLowCmd"]()
+        # arm_sdk authority weight on the kNotUsedJoint slot.
+        msg.motor_cmd[_ARM_SDK_WEIGHT_IDX].q = float(_ARM_SDK_WEIGHT)
+
+        q_target = np.zeros(n, dtype=np.float64)
+        if cmd.joint_pos is not None:
+            jp = np.asarray(cmd.joint_pos, dtype=np.float64).reshape(-1)
+            q_target[: jp.size] = jp[:n]
+        kp = (
+            np.asarray(cmd.kp, dtype=np.float64).reshape(-1)
+            if cmd.kp is not None else self._default_kp
+        )
+        kd = (
+            np.asarray(cmd.kd, dtype=np.float64).reshape(-1)
+            if cmd.kd is not None else self._default_kd
+        )
+
+        upper_set = set(spec.waist_joints) | set(spec.left_arm_joints) | set(spec.right_arm_joints)
+        for i, name in enumerate(spec.actuated_joints):
+            if name not in upper_set:
+                continue
+            aid = spec.actuator_id.get(name)
+            if aid is None:
+                continue
+            mc = msg.motor_cmd[int(aid)]
+            # SPARK leaves motor_cmd.mode at default for arm_sdk (the weight slot
+            # gates authority). Set mode=1 here if your firmware requires it.
+            mc.q = float(q_target[i])
+            mc.dq = 0.0
+            mc.tau = 0.0
+            mc.kp = float(kp[i] if i < kp.size else 0.0)
+            mc.kd = float(kd[i] if i < kd.size else 0.0)
+        try:
+            self._arm_sdk_pub.Write(msg)
+        except Exception as exc:  # pragma: no cover
+            print(f"[UnitreeG1RobotIO] WARN: arm_sdk publish failed: {exc}")
 
     # ------------------------------------------------------------------
     # Diagnostics

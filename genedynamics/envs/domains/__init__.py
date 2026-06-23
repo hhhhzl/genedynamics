@@ -11,7 +11,7 @@ registry — matching the previous lazy if/elif behaviour — without breaking
 ``import genedynamics.envs``.
 """
 
-for _mod in ("toy", "drone", "quadruped", "humanoid"):
+for _mod in ("toy", "drone", "quadruped", "humanoid", "manipulation"):
     try:
         __import__(f"genedynamics.envs.domains.{_mod}")
     except Exception:

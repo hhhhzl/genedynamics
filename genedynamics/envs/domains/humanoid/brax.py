@@ -29,11 +29,11 @@ def _get_humanoid_model_path() -> Path:
     """Path to bundled humanoidrun MJCF."""
     # parents[2] == genedynamics/envs (this file is envs/domains/humanoid/brax.py)
     env_dir = Path(__file__).resolve().parents[2]
-    path = env_dir / "assets" / "brax" / "humanoidrun.xml"
+    path = env_dir / "assets" / "humanoid_run" / "humanoidrun.xml"
     if not path.exists():
         raise FileNotFoundError(
-            f"Humanoid Brax model not found at {path}. "
-            "Ensure genedynamics/envs/assets/brax/humanoidrun.xml exists."
+            f"humanoid_run model not found at {path}. "
+            "Ensure genedynamics/envs/assets/humanoid_run/humanoidrun.xml exists."
         )
     return path
 

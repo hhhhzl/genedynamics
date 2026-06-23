@@ -69,3 +69,13 @@ try:
     register_environment_factory("humanoid_h1_push_crate", _make_h1_push_crate)
 except Exception:
     pass
+
+try:  # humanoid box pushing (contact manifold)
+    from . import box_push_brax as _bp
+
+    def _make_humanoid_box_push(**kw):
+        return _bp.HumanoidBoxPushEnv(_bp.HumanoidBoxPushConfig(**kw))
+
+    register_environment_factory("humanoid_box_push", _make_humanoid_box_push)
+except Exception:
+    pass

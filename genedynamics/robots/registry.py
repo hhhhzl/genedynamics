@@ -182,12 +182,12 @@ def _get_g1_path() -> Optional[str]:
 def _get_h1_path(scene: str = "mjx_scene_h1_walk.xml") -> Optional[str]:
     """Unitree H1 MJX scene, vendored into genedynamics (mjx-compatible).
 
-    Menagerie has no mjx-friendly H1; we vendor dial-mpc's H1 mjx scenes under
-    genedynamics/envs/assets/dial/unitree_h1/. ``scene`` selects the variant
+    Menagerie has no mjx-friendly H1; the H1 mjx scenes are vendored under
+    genedynamics/envs/assets/unitree_h1/. ``scene`` selects the variant
     (mjx_scene_h1_walk.xml / mjx_scene_h1_loco.xml / mjx_scene_h1_push_crate.xml).
     """
     p = (Path(__file__).resolve().parent.parent
-         / "envs" / "assets" / "dial" / "unitree_h1" / scene)
+         / "envs" / "assets" / "unitree_h1" / scene)
     if p.exists():
         return str(p)
     try:  # legacy fallback: dial_mpc package if installed

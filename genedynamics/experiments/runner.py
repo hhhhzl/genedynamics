@@ -243,6 +243,13 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(EpisodeOutcomeMetricsPlugin(), 'metric')
     runner.register_plugin(SteppingStonesMetricsPlugin(), 'metric')
     runner.register_plugin(CorridorMetricsPlugin(), 'metric')
+    # General-metrics plugins (shared evaluation library + a tiny per-task
+    # extractor). brax tasks; the factories construct without importing brax.
+    from genedynamics.experiments.plugins.metrics.extractors import (
+        arm_surface_scan_metrics_plugin, humanoid_box_push_metrics_plugin,
+    )
+    runner.register_plugin(arm_surface_scan_metrics_plugin(), 'metric')
+    runner.register_plugin(humanoid_box_push_metrics_plugin(), 'metric')
 
     # Visualization plugins
     runner.register_plugin(TrajectoryVisualizationPlugin(), 'visualization')

@@ -8,8 +8,8 @@ physics base the DIAL h1/go2 task envs (``domains/humanoid/h1_brax.py``,
 which the genedynamics DIAL backend rolls out via ``env.step`` (reading
 ``state.reward``) -- the stable physics path validated against dial-mpc.
 
-Assets are vendored under ``genedynamics/envs/assets/dial/<robot>/`` so this is
-self-contained (no dial_mpc runtime dependency).
+Assets are vendored under ``genedynamics/envs/assets/<robot>/`` so this is
+self-contained (no external robot-model runtime dependency).
 """
 
 from __future__ import annotations
@@ -34,15 +34,15 @@ except ImportError:  # pragma: no cover - brax optional; envs that use this base
     PipelineEnv = object
 
 
-_ASSET_ROOT = Path(__file__).resolve().parent / "assets" / "dial"
+_ASSET_ROOT = Path(__file__).resolve().parent / "assets"
 
 
 def get_model_path(robot_name: str, model_name: str) -> Path:
-    """Vendored DIAL robot MJCF path (mirrors dial_mpc.utils.io_utils)."""
+    """Vendored robot MJCF path (organized by robot: ``assets/<robot>/<model>``)."""
     p = _ASSET_ROOT / robot_name / model_name
     if not p.exists():
         raise FileNotFoundError(
-            f"DIAL asset not found: {p}. Expected under {_ASSET_ROOT}/{robot_name}/."
+            f"asset not found: {p}. Expected under {_ASSET_ROOT}/{robot_name}/."
         )
     return p
 
@@ -137,3 +137,16 @@ class BaseEnv(PipelineEnv):
         tau = self._config.kp * q_err - self._config.kd * qd
         tau = jnp.clip(tau, self.joint_torque_range[:, 0], self.joint_torque_range[:, 1])
         return tau
+
+    # --- MDAC constraint hook (default no-op) ------------------------------
+    # Constrained envs override this to expose the manifold residual the MDAC
+    # solver reads (soft-feasibility / geometry). It receives the full
+    # brax ``State`` (so it can read both ``state.pipeline_state`` for the clean
+    # predicted kinematics AND ``state.info`` for env-carried context such as
+    # surface coordinates) and is evaluated on that clean state — never
+    # differentiated through the mjx rollout. Returns (h, g): equality residual h
+    # (== 0 feasible) and inequality residual g (<= 0 feasible). The unconstrained
+    # default returns zero-width arrays, so MDAC degenerates to DIAL.
+    def constraint_residual(self, state, action, ctx=None):
+        z = jnp.zeros((0,), dtype=jnp.float32)
+        return z, z

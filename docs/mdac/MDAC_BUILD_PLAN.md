@@ -67,8 +67,8 @@ Everything below is built and verified. MDAC composes these — it does not rebu
 | Geometry-shaped score injection | transport | `solvers/common/transport/base.py::ReverseTransport.step` reserved `score_g` seam (None everywhere today — **MDAC is its first consumer**); 2GO scan `twogo_jax.py` as reference analog |
 | DDPM/DDIM/FM updates | transport | `transport/backends/{ddpm_jax.py,ddim_jax.py,fm_jax.py}`; per-step `sched` dict `{abar_k, abar_km1, alpha_k}` |
 | Augmented-Lagrangian rollout | cfsmbd | `cfsmbd/backends/cfsmbd_jax.py::rollout_augmented_reward_and_v` (L364), `aug_lambda/aug_rho`, `ALMAdaptiveScheduler` |
-| RL prior net (jit-able) | SHAC | SHAC JAX `init_mlp`/`mlp_apply`; deploy `PolicyArtifact`; `mrmfmbd theta_prior` add-to-logw pattern |
-| Experiment/baseline/metrics | plugins | `MethodPlugin`/`MetricsPlugin`/`EnvironmentPlugin`/`BaselineProtocol`; `corridor._cvar`; `ExperimentRunner.run_all`; pre-registered MPPI/CEM/DIAL/2GO |
+| Prior injection seams (reused by the NEW shared priors pkg, §4.4) | core/prob, transport, mrmfmbd, SHAC | `core/prob/noise_sampler.py::NoiseSampler` (L42) consumed by mbd/mppi/cfsmbd/ebmbd backends via `noise_sampler=` + `_draw_unit_noise`; `transport/base.py::ReverseTransport.step` `score_g` seam (L62); `mrmfmbd/theta_prior.py::ThetaPrior` (L92, `log_prob_batch`/`sample`, add-to-logw at `mrmfmbd_posterior_jax.py:349`) — to be **lifted** to the shared pkg; SHAC `critic.py::init_mlp`/`mlp_apply` (L26-50) jit MLP |
+| Experiment / baseline / metrics framework | experiments | `experiments/framework/base.py` (Method/Environment/Metrics/ObstacleGenerator/Visualization Plugins L19-273, `BaselineProtocol`); `framework/registry.py::PluginRegistry` (L12); `framework/experiment.py::ExperimentRunner.run_all/run_single_experiment` (L78-711); `framework/config.py::ExperimentConfig` (L22) YAML; `experiments/runner.py::register_all_plugins` (L191-266); pre-registered methods mbd/mdoc/ebmbd/cfsmbd/**2go**/mrmfmbd (MPPI/CEM/DIAL **not yet** MethodPlugins — see §6) |
 
 ### 2.6 ⚠️ VALIDATED FINDING that drives the whole design
 
@@ -109,80 +109,126 @@ U_km1    = linearized_retraction(U_raw, ...)                    # eq:linearized_
 Ybar     = U_km1.reshape(...).at[0].set(Ybar_i[0])             # re-pin node-0
 ```
 
-### 3.3 File layout (new)
+### 3.3 File layout (IMPLEMENTED — reuse, do NOT hand-roll)
+
+> **Hard lesson (2026-06-22).** The first attempt hand-wrote `feasibility.py /
+> schedule.py / manifold_geometry.py / constraint_spec.py / strategy_base.py`
+> under `mdac/core/`. **All deleted** — they duplicated upstream machinery. MDAC
+> is a THIN compose-solver in the mdoc/twogo high-performance pattern; the math
+> lives upstream and is reused. New construction goes upstream first, then the
+> solver imports it.
+
 ```
 genedynamics/solvers/single/mdac/
   __init__.py
-  mdac.py                      # thin solver shell, register_solver("mdac"), config surface (DIAL-default fields)
-  backend_impl.py              # to_unified_backend; DialBackend-style Protocol conformance
+  mdac.py            # MDACSolver: DIAL/mdoc-style shell, brax substrate + node-spline,
+                     #   instantiates seams (transport/constraint_filter/noise_sampler),
+                     #   register_solver("mdac"), solve() == RecedingHorizonController (bridge)
+  backend_impl.py    # to_unified_backend; MdacBackend Protocol
   backends/
-    mdac_jax.py                # MdacBackendJax: WarmStartPlanner native + reverse strategy "mdac"
+    mdac_jax.py      # MdacBackendJax: jit + lax.scan reverse-diffuse, vmap rollout over
+                     #   Nsample (mdoc/twogo pattern). Reuses dial make_sigma_control /
+                     #   make_traj_diffuse_factors / NodeSpline / env_rollout. Composes the
+                     #   seams; seams off => byte-identical DIAL. Native WarmStartPlanner.
   core/
-    schedule.py                # coupled (σ_k,ρ_k,κ_k,λ_{ψ,k},ᾱ_k) ScheduleStep pytree; wraps genemetry ScheduleOverlay
-    feasibility.py             # stack_residual, soft_feasibility_cost, importance_logw, mb_score, al_update, adaptive_beta
-    manifold_geometry.py       # build_metric, geometry_shaped_score, tangent_noise, linearized_retraction (wrap genemetry)
-    constraint_spec.py         # ConstraintSpec + reduced_constraints; jac_mode ∈ {clean_state, reduced_autodiff, fd_node}
-    primitive_layout.py        # PrimitiveSpec, svec2sym/sym2svec, stiffness_log_to_pd (eigh expm), unpack_primitive, metric_GK
-    strategy_base.py           # ReverseStrategy registry (mppi | dial | mdac | pegasus)
-    method_registry.py         # MethodFlags + METHOD_TABLE + resolve_method (fairness self-check: same (M,H,K))
-  priors/
-    rl_prior.py                # RLPrior: act/rollout/logp_of_sequence from saved meta (SHAC MLP, jit-safe)
-    diffusion_prior.py         # s_θ conditioned diffusion (omega_mf>0); via transport score_g seam
-    elite_buffer.py            # elite optimized-U buffer → s_θ training data
-  envs/                        # MDAC constrained envs live here or under genedynamics/envs/ (see §6)
+    method_registry.py   # MethodFlags + METHOD_TABLE single-flag ablations + assert_fair.
+                         #   ONLY solver-local module (config, not reusable math).
 ```
+
+**Everything else is REUSED, not rebuilt** (the seams `mdac_jax.py` composes):
+
+| MDAC need | Upstream module reused | Pattern from |
+|---|---|---|
+| soft-feasibility / iALM | augmented reward `J − (λ·mean[g]₊ + ρ/2·mean[g]₊²)` via `aug_lambda/aug_rho` + the env `constraint_residual` hook (`env_rollout.build_brax_rollout_augmented`); optional `_batched_alm_adaptive` λ/ρ | **cfsmbd / mdcoas** (`rollout_augmented_reward_and_v`) — **NOT mdoc** |
+| action-space ConstraintFilter (separate from iALM) | `core/constraints/action_filters` `ConstraintFilter`/`NoOpConstraintFilter` (CFS-QP/CBF projection) | **mdoc** (`apply_actions_batch` per step) |
+| DDPM/DDIM/FM adaptive reverse | `solvers/common/transport/backends` `AdaptiveTransport` (+ ddpm/ddim/fm) | **mdoc/2go** `transport=` seam (None=verbatim) |
+| metric + tangent projection + retraction | `genemetry` `SdfManifold.geometry/project`, `ops/jax_ops.{build_active_rows,project_complement_batch}`, `retraction/cfs.CfsRetraction` | **2go** (dense space, per-step vmap) |
+| coupled annealing | `genemetry/schedule/overlay.ScheduleOverlay.compute → OverlayParams(kappa,delta,sigma,theta,eta)` | **2go** |
+| candidate noise | `core/prob.NoiseSampler` | mbd/mdoc/cfsmbd `noise_sampler=` |
+| **NEW** position-stiffness SPD primitive | `genedynamics/core/control/stiffness.py` (UPSTREAM, not solver-private) | — (the one genuinely-new piece) |
+
+**Priors are NOT under `mdac/`.** The RL prior `p_ψ`, learned diffusion prior `s_θ`, and elite buffer are shared infra in `genedynamics/learning/priors/` (§4.4), consumed via a `prior=` seam (M6).
 
 ---
 
-## 4. The 5 components to build
+## 4. The 5 components — REUSE map (do NOT hand-roll)
 
-For each: **math (eq)** · **reuse** · **new (file)** · **gate**.
+> **The components are not "built" — they are composed from the upstream modules
+> in the §3.3 table.** Below, "reuse" names the exact upstream call; "new" is
+> empty for everything except §4.1 (the SPD primitive, which lives upstream in
+> `core/control/`). The first attempt hand-wrote §4.2/§4.3/§4.5 under `mdac/core/`
+> and was deleted — that math already exists in `core/constraints`, `genemetry`,
+> and `transport`. Keep the math (eq) below as the equation-level reference for
+> *what the upstream call must compute*, not as a spec for new files.
 
 ### 4.1 Position-stiffness SPD primitive
 **Math.** `u_h=(r_h,K_h,ν_h)` (eq:position_stiffness_u); `K_h=exp(S_h)`, `S_h=S_h^T` (eq:stiffness_log_param) — sample over symmetric `S_h`, execute SPD `K_h`. Low-level map `a_h=π_low(s_h,u_h;c)` (impedance/WBC) then `F=f(s_h,a_h)` (eq lines 26-34). `action_size` (= `PrimitiveSpec.total_width`) is the single coupling point that widens the diffusion tensor.
-**Reuse.** `env.action_size → MBDPI.nu` auto-coupling; SHAC eigh patterns; genemetry block-diagonal metric assembly.
-**New.** `mdac/core/primitive_layout.py`: `svec2sym/sym2svec` (round-trip), `stiffness_log_to_pd` (`K=expm(S)` via `eigh`), `unpack_primitive`, `metric_GK_nodewise` (`G_K=blkdiag(0,…,W_S,…,0)`, eq line 471-475); `act2impedance_tau` in the env's impedance branch.
-**Gate (Track A).** `svec2sym(sym2svec(M))==M` for d∈{3,6}; `K=expm(...)` SPD and `jax.grad` finite; `action_size` regression — torque/position envs unchanged, impedance env returns `total_width` and `MBDPI(env).nu` catches the widened width.
+**Reuse.** `env.action_size → MBDPI.nu` auto-coupling.
+**New — UPSTREAM (done):** `genedynamics/core/control/stiffness.py` (NOT solver-private): `svec2sym/sym2svec` (round-trip), `stiffness_log_to_pd` (`K=expm(S)` via `eigh`), `unpack_primitive`, `PrimitiveSpec.total_width`, `metric_GK_diag(_full)`. The env impedance branch (`act2impedance_tau`) is M7.
+**Gate (done, fedguide).** `svec2sym(sym2svec(M))==M` for d∈{3,6}; `K=expm(...)` SPD + `jax.grad` finite; `action_size` layout (`test_mdac_primitive.py`, 9 pass).
 
 ### 4.2 Soft-feasibility (augmented-Lagrangian) weighting
 **Math.** `J̃_k=J_cl+λ_k^T r+(ρ_k/2)‖r‖²` (eq:soft_feasibility_cost); `r=[h ; [g]_+]` (eq:constraint_residual); `log w_{k,m}=−(1/β_k)J̃_k+λ_{ψ,k}log p_ψ` (eq:importance_weight); softmax weights; `β=temp·rews.std()`. **Sign trap:** `J_cl=−rews.mean(-1)` (DIAL maximizes reward, AL is a cost). `λ_k`,`ρ_k` annealed across reverse steps (early lenient, late strict).
-**Reuse.** `cfsmbd_jax.py::rollout_augmented_reward_and_v` (L364), `aug_lambda/aug_rho`, `ALMAdaptiveScheduler`.
-**New.** `mdac/core/feasibility.py`: `stack_residual`, `soft_feasibility_cost`, `importance_logw`, `mb_score`, `al_update`, `adaptive_beta`. `base_env.constraint_residual` default-empty + per-env override.
-**Gate (Track A unit; Track B e2e).** `use_soft_feasibility=False` allclose with DIAL; `h=g=0 ⇒ J̃==J_cl`; relu gating; violation ⇒ `J̃↑` & weight↓; `al_update` ρ geometric growth. E2e: residual `‖r‖` decreases within reverse steps; foot penetration below DIAL; `Nsample=2048` no NaN.
+**Reuse (cfsmbd/mdcoas — NOT mdoc).** the cfsmbd AL pattern `rollout_augmented_reward_and_v` (L364), `aug_lambda/aug_rho`. **New (done):** `env_rollout.build_brax_rollout_augmented(env, aug_lambda, aug_rho)` folds `−(λ·mean[g]₊ + ρ/2·mean[g]₊²)` into the brax reward, reading `[g]_+` from the env `constraint_residual` hook (default no-op ⇒ 0 penalty ⇒ byte-identical plain rollout). `aug_lambda/aug_rho` are MDAC config. (Separate from the `constraint_filter` seam, which is mdoc's action-space filter.) `ALMAdaptiveScheduler` (adaptive λ/ρ) is optional/future.
+**Gate (done, docker).** AL-off == DIAL **byte-identical** on real brax (0.00e+00); AL-on drives a synthetic violation 2.556→0.000; closed-loop 1.997→0.000 (`test_mdac_al_docker.py`, `test_mdac_m5_docker.py`).
 
 ### 4.3 Constraint-manifold geometry: metric `G_k` + tangent projection `P_M^G` + retraction
 **Math.** `G_k=I+ρ_k J_C^T W_C J_C+κ_k J_tr^T W_tr J_tr+G_K` (eq:method_metric); `Ŝ_{M,k}=P_M^{G_k}(U_k)·G_k^{-1}·Ŝ_k` (eq:geometry_shaped_score); `P_M^G=I−G^{-1}J_C^T(J_C G^{-1}J_C^T)^† J_C` (eq:metric_tangent_projection); `ε_{M,k}=P_M^{G_k}ε_k` (eq:tangent_noise); retraction QP `argmin ½‖U−U^raw‖²_{G_k} s.t. C=0, K=exp(S)` solved by 1-2 linearized steps (eq:linearized_retraction). **`J_C` is evaluated on clean predicted states** (`jac_mode='clean_state'`): differentiate only through the constant spline matrix + analytic kinematics/contact Jacobian — **never through the mjx rollout**.
-**Reuse.** `genemetry/ops/backends/jax_ops.py::project_complement_batch` (Woodbury/Cholesky), `build_active_rows`, top-k active rows; `genemetry/retraction/cfs.py::CfsRetraction.retract`; `genemetry/schedule/overlay.py::ScheduleOverlay`; 2GO `twogo_jax.py` geometry-shaped reverse as the working analog; transport `score_g` seam.
-**New.** `mdac/core/manifold_geometry.py`: `build_metric`, `geometry_shaped_score` (P·G⁻¹·Ŝ via Woodbury/Schur + Cholesky + Tikhonov `proj_reg`, solve not pinv), `tangent_noise`, `linearized_retraction`, `spd_woodbury_solve`. `mdac/core/constraint_spec.py`: `ConstraintSpec`+`reduced_constraints`, `jac_mode` (`clean_state` default, `reduced_autodiff`/`fd_node` fallbacks); hybrid-mode static `mode_mask` + host-side `select_mode`.
-**Gate (Track A).** projection idempotent `‖P(P(v))−P(v)‖<1e-5`; tangency `‖J_C P(v)‖<1e-5`; Woodbury==dense-pinv (1e-5); `G_K` only moves S coords; retraction lowers `‖C‖`; `use_manifold=False` byte-identical DIAL; no-op spec == weighted mean; `DDPM(σ=0)==DDIM(η=0)`. **(Track B)** **zero `pipeline_step` in the jaxpr** of the `J_C` computation.
+**Reuse (genemetry — NOT hand-rolled).** `manifold/sdf.SdfManifold.geometry(a_geom, topk, eps)` (build active rows + metric_sys/tan_sys) + `.project(v, bundle, mode='metric'|'tangent')` (`ops/jax_ops.project_complement_batch`, Cholesky/Woodbury); `retraction/cfs.CfsRetraction.retract`; `schedule/overlay.ScheduleOverlay`. 2GO `twogo_jax.py` is the working analog (dense space, per-step vmap).
+**New (done):** the geometry seam in `mdac_jax.py` — when the env/solver supplies `geometry_fn(state, Ybar_nodes, t0) -> a_geom (Hnode+1, nu)` (analogous to 2GO `_constraint_geometry_time_jit`), the backend calls `SdfManifold.geometry/project` on the update direction (+ optional `CfsRetraction`). No `geometry_fn` ⇒ skipped ⇒ DIAL. `mdac_topk_active`(clamped ≤Hnode+1)/`mdac_eps_stab`/`mdac_geom_gain` config.
+**Gate (done, docker).** geometry-on runs on real brax (jit+vmap+scan over brax States), differs from geometry-off (max|Δ|=0.687), and suppresses the constrained direction (mean|u[:,0]| 0.431→0.123) — `test_mdac_geometry_docker.py`. **TODO (M7):** spatial-obstacle `geometry_fn` (SDF grad→control, clean-state Jacobian, no mjx backprop) + `CfsRetraction` filter_fn for corridor/stepping/contact.
 
-### 4.4 Model-free RL prior `p_ψ`
-**Math.** Warm-start `U^init=λ_shift·U^shift+(1−λ_shift)·U^rl` (eq:rl_warm_start); log-prior term `+λ_{ψ,k}·log p_ψ` (eq:importance_weight); prior `p_ψ(U)=Π_h π_ψ(u_h|ô_h,c)` (eq:rl_prior_horizon). Optional `s_θ`: elite optimized-`U` buffer → conditioned diffusion → `Ŝ_k=ω^mb Ŝ^mb+ω^mf s_θ` (eq:joint_score; minimal `ω^mf=0`). PPO (humanoid) / SAC (manipulator).
-**Reuse.** SHAC JAX MLP (`init_mlp`/`mlp_apply`); deploy `PolicyArtifact`; `mrmfmbd theta_prior` add-to-logw; transport `score_g` seam for `s_θ`.
-**New.** `mdac/priors/rl_prior.py` (`RLPrior`: act/rollout/logp_of_sequence from saved meta, jit-safe Gaussian+tanh logp); `_get_obs_from_pipeline` info-free obs path (so `logp_of_sequence` is jit-safe); `mdac/priors/diffusion_prior.py`; `mdac/priors/elite_buffer.py`; `train_rl_prior.py`. Warm-start mix + `λ_ψ` schedule wired into `replan`/reverse scan.
-**Gate (Track A logp math; Track B e2e).** `use_rl_prior=False, λ_ψ0=0, ω_mf=0` bitwise-equal to §4.2 result; `jit(reverse_once)` compiles with `use_rl_prior=True` (proves obs has no `info` dependency); warm-start endpoints (`λ_shift=0→U_rl`, `=1→U_shift`); `logp` minus batch-max no collapse. **`s_θ` strictly after minimal-prior elite collection.**
+### 4.4 Model-free / learned priors — **SHARED infra** (`genedynamics/learning/priors/`), consumed by MDAC
+
+> **This is NOT an MDAC-private component.** The RL prior `p_ψ`, the learned diffusion prior `s_θ`, and the elite buffer are general — any solver (mbd / cfsmbd / twogo / mppi / future) can consume them through one `prior=` seam. So they are built as a new top-level package and MDAC is simply the first heavy consumer. (Hoisted out of the old `mdac/priors/` nesting.)
+
+**Math (MDAC's usage).** Warm-start `U^init=λ_shift·U^shift+(1−λ_shift)·U^rl` (eq:rl_warm_start); log-prior term `+λ_{ψ,k}·log p_ψ` in each candidate log-weight (eq:importance_weight); prior factorizes `p_ψ(U)=Π_h π_ψ(u_h|ô_h,c)` (eq:rl_prior_horizon). Optional `s_θ`: elite optimized-`U` buffer → conditioned diffusion → fused score `Ŝ_k=ω^mb Ŝ^mb+ω^mf s_θ` (eq:joint_score; minimal impl `ω^mf=0`). Train PPO (humanoid) / SAC (manipulator).
+
+**IMPLEMENTED — `genedynamics/learning/priors/` (multi-backend, like the solvers).** The RL prior keeps the multi-backend architecture; the **jax backend integrates brax's training** (decision 2026-06-22).
+```
+genedynamics/learning/priors/
+  base.py            # Prior protocol (output_dim · act · logp_of_sequence · warm_start);
+                     # DiffusionPrior(Prior): + score(x,t) -> transport score_g
+  registry.py        # register_prior / make_prior("rl"|"diffusion")  (codesign reserved)
+  elite_buffer.py    # EliteBuffer: add / topk / sample(elite_frac) -> s_theta data
+  rl/                # multi-backend RL policy prior
+    rl_prior.py      #   RLPrior orchestrator (backend dispatch, like solvers)
+    backend_impl.py  #   RLPriorBackend Protocol
+    backends/brax_jax.py   # BraxRLPrior: brax PPO networks + params; act via make_inference_fn;
+                           #   logp_of_sequence = sum_t dist.log_prob(logits, inverse_postprocess(a));
+                           #   warm_start = policy mean tiled to (n_warm_nodes, A). brax lazy-imported.
+  diffusion/         # multi-backend learned s_theta
+    diffusion_prior.py     # LearnedDiffusionPrior orchestrator
+    backends/jax.py        # JaxDiffusionPrior: DDPM score-MLP; score(x,t)=-eps/sqrt(1-abar);
+                           #   train(elite data); warm_start via ancestral sampling. Pure jax.
+genedynamics/learning/train_rl_prior.py   # brax PPO train -> (params, config); build_rl_prior(...)
+```
+**Reuse:** `core/prob/noise_sampler` (the additive-seam pattern the `prior=` seam mirrors); `transport.step` `score_g` (conduit for `s_θ.score`); brax `make_ppo_networks`/`make_inference_fn`/`NormalTanhDistribution` (jax RL backend). **Deferred:** lift `mrmfmbd/theta_prior.ThetaPrior`→`CoDesignPrior` (touches mrmfmbd; back-compat shim); the `λ_ψ·log p_ψ` log-weight term (needs obs-from-rollout plumbing) — only the **warm-start mix** is wired so far.
+
+**The seam (MDAC, additive — `None ⇒ byte-identical DIAL).** `MDACSolver(prior=, prior_lambda_shift=)`; `MdacBackendJax.replan` mixes `U_init = λ_shift·U_shift + (1−λ_shift)·U_rl` (eq:rl_warm_start) when a prior is present. Kept MDAC-local (does NOT touch the shared `base_solver`, honoring "don't touch the MBD algorithm").
+
+**Gate (done).** fedguide (`test_mdac_priors.py`): registry, EliteBuffer, jax diffusion `score`/`train`/`warm_start` + protocol conformance, prior-seam additive safety (`prior=None` Δ=0; `λ_shift=1` identity; `λ_shift=0` changes the plan). docker (`test_mdac_prior_docker.py`): brax tiny-PPO → `RLPrior` → `warm_start (Hnode+1, A)` + `act (A,)` finite; MDAC-with-prior ≠ MDAC-without on real brax. **`s_θ` training-from-elites is scaffolded; the full PPO/SAC sweep + `ω_mf>0` path is follow-up.**
 
 ### 4.5 Generalized reverse (DDPM/DDIM/FM) + coupled annealing
 **Math.** Clean proposal `Ũ~N(U_k/√ᾱ_k,(1/ᾱ_k−1)Σ_k)` (eq:method_clean_proposal — the `√ᾱ` rescale DIAL lacks). DDPM raw update `U_{k-1}^raw=(1/√α_k)(U_k+(1−ᾱ_k)Ŝ_{M,k})+σ_k ε_{M,k}` (eq:ddpm_control_update); DDIM/flow via predicted clean `Û_{1,k}` (eq:ddim_control_update); `σ_k>0` diffusion, `σ_k=0` flow. Coupled schedule `(σ_k↓, ρ_k↑, κ_k↑, λ_{ψ,k}↓)` (eq:coupled_schedule, eq:schedule_trend), `ᾱ_k∈(0,1]↑`, `1-ᾱ` clipped from 0.
-**Reuse.** transport `ddpm_jax/ddim_jax/fm_jax` + `sched` dict; DIAL `make_sigma_control`/`make_traj_diffuse_factors`; genemetry `ScheduleOverlay`/`OverlayConfig`.
-**New.** `mdac/core/schedule.py`: `ScheduleStep` (7-leaf pytree: `σ,ρ,κ,λ_ψ,ᾱ_k,ᾱ_{k-1},lam`), `build_schedule` (synthesizes DIAL's missing `ᾱ` base, couples genemetry overlay). Unified `ddpm_or_ddim(U_k,S_M,epsM,ᾱ_k,ᾱ_{k-1},σ,ddim_eta)` in `strategy_base`.
-**Gate (Track A).** `DDPM(σ=0)==DDIM(η=0)`; schedule monotone trends asserted; `1-ᾱ` clipped; with all-default (DIAL) config, reverse reduces to DIAL weighted mean byte-identically.
+**Reuse (NOT new).** `transport=` seam → `AdaptiveTransport` (+ `ddpm_jax/ddim_jax/fm_jax`); call `transport.step(tau_k,tau1_k,eps_k,score_g,sched={abar_k,alpha_k,abar_km1})` (mdoc_jax.py:383 pattern); `None` ⇒ verbatim weighted mean (DIAL). Schedule via genemetry `ScheduleOverlay.compute(margin,rho,eta_base)`; DIAL `make_sigma_control`/`make_traj_diffuse_factors` for the sampling noise. **No `mdac/core/schedule.py`, no `strategy_base.py`** — those were deleted.
+**Gate.** `transport=None` ⇒ byte-identical DIAL (regression); `DDPM(σ=0)==DDIM(η=0)` is the upstream transport's own gate, not MDAC's to re-prove.
 
 ---
 
 ## 5. Milestone plan
 
-Current state: **DIAL done, bridge done, env_rollout done, node-spline done, reverse-strategy seam done.** Track A = hardware-free (fedguide x86, unit-testable, no mjx). Track B = needs native arm64 / GPU (mjx rollout). **MPPI/DIAL byte-golden is a BLOCKING regression at every milestone.**
+Current state: **DIAL done, bridge done, env_rollout done, node-spline done.** **M0-M4 DONE in the corrected reuse architecture (2026-06-22):** MDAC = a thin compose-solver in the mdoc/twogo high-perf pattern (`mdac_jax.py` = jit + lax.scan reverse-diffuse, vmap rollout) that reuses the upstream seams (§3.3 table); the only-new piece (SPD primitive) is upstream in `core/control/stiffness.py`. **15 mdac tests + 29 dial/bridge regression pass; seams-off == DialBackendJax byte-identical (≤1e-5).** Track A = hardware-free (fedguide x86). Track B = native arm64 / GPU (mjx). **DIAL byte-golden is a BLOCKING regression at every milestone.**
 
-| M | Goal | Track | Exit criterion |
-|---|---|---|---|
-| **M0** | Scaffold `solvers/single/mdac/`; `register_solver("mdac")`; DIAL-default config fields; `ReverseStrategy` registry (mppi/dial reproduced); `ScheduleStep`; freeze golden `.npy` (`go2_walk`, `h1_loco`). | A (scaffold) + B (golden freeze) | golden `us[]/rews[]` within 1e-5 of DIAL with all MDAC switches off; registry mppi/dial parity. |
-| **M1** | §4.1 primitive (`primitive_layout.py`) + impedance env branch as wiring proof. | A | svec round-trip; `K=expm` SPD + grad finite; `action_size` regression. |
-| **M2** | §4.5 schedule (`schedule.py`) + generalized reverse in `strategy_base`. | A | `DDPM(σ=0)==DDIM(η=0)`; default config == DIAL byte-identical. |
-| **M3** | §4.2 feasibility (`feasibility.py`) + `base_env.constraint_residual`. | A (unit) | sign/relu/violation tests; `use_soft_feasibility=False` allclose DIAL. |
-| **M4** | §4.3 geometry (`manifold_geometry.py`, `constraint_spec.py`, hybrid mode). **Core math.** | A (math) + B (jaxpr) | idempotence/tangency/Woodbury==pinv/`G_K`/retraction-lowers-`‖C‖`; `use_manifold=False` byte-identical DIAL; **zero `pipeline_step` in `J_C` jaxpr**. |
-| **M5** | Wire M2-M4 into `mdac_jax.reverse_once` (the §3.2 step); `MdacBackendJax` implements `WarmStartPlanner`; run through `RecedingHorizonController`. | B | On a **constrained** task, MDAC differs from DIAL (manifold active); on **unconstrained** dial task, byte-identical DIAL; no NaN at `Nsample=2048`. |
-| **M6** | §4.4 RL prior `RLPrior` + warm-start mix + `λ_ψ` schedule; then PPO/SAC train + elite buffer + `s_θ`. | B (env) + A (logp math) | `use_rl_prior=False` bitwise-equal M5; `jit` compiles with prior on; warm-start endpoints; `s_θ` after elite collection. |
+| M | Goal | Status |
+|---|---|---|
+| **M0** | Scaffold `solvers/single/mdac/`; `register_solver("mdac")`; DIAL-default config; `method_registry` (MethodFlags + single-flag ablations + `assert_fair`); `MdacBackendJax` = jit+vmap+scan kernel; native `WarmStartPlanner`. | **DONE** — seams-off `plan()` ≤1e-5 byte-identical to `DialBackendJax`. |
+| **M1** | §4.1 SPD primitive **upstream** `core/control/stiffness.py` (not solver-private). | **DONE** — svec round-trip; `K=expm` SPD + grad finite; `action_size` regression (9 tests). |
+| **M2** | §4.5 reverse via the `transport=` seam (`AdaptiveTransport` reuse), schedule via `ScheduleOverlay`. | **DONE (wired)** — `transport=None`⇒DIAL; DDPM seam routes + runs. Full DDIM/FM annealing tuning = on constrained task (Track B). |
+| **M3** | §4.2 soft-feasibility via the `constraint_filter=` seam (`core/constraints`, mdoc pattern). | **DONE (wired)** — NoOp⇒DIAL byte-identical; filter seam invoked + changes result. *Brax-reward AL (cfsmbd pattern) via `env.constraint_residual` = TODO for constrained brax tasks.* |
+| **M4** | §4.3 geometry via the genemetry seam (`SdfManifold.geometry/project` + `CfsRetraction`, 2go pattern), gated on env `geometry_fn`. | **DONE (wired)** — no `geometry_fn`⇒skipped⇒DIAL; with injected manifold the projection routes through genemetry (CPU smoke). Constrained-env e2e = Track B. |
+| **M5** | Run the bridge-wired `solve()` on a **constrained** task (corridor/stepping/contact) + golden freeze; verify manifold-active ≠ DIAL there, byte-identical DIAL on unconstrained. | **bridge wired**; needs native arm64/mjx + a constrained env with a `geometry_fn` / AL residual. |
+| **M6** | §4.4 **shared** `genedynamics/learning/priors/` pkg (Prior/DiffusionPrior/RLPrior/EliteBuffer/registry) + `prior=` seam on the base solver (additive, all solvers); lift mrmfmbd `theta_prior`→`CoDesignPrior`; wire MDAC warm-start mix + `λ_ψ`; then PPO/SAC train + elite buffer + `s_θ`. | A (pkg + logp math + additive-safety regression) + B (train) | `prior=None` bitwise-equal M5 **for every seamed solver**; `jit` compiles with prior on; warm-start endpoints; `make_prior` round-trips; `CoDesignPrior`==old mrmfmbd; `s_θ` after elite collection. |
 | **M7** | Exp envs (§6): humanoid box-push SE(2) + arm surface-scan; `surface_geometry.py` (NURBS). | B (envs) + A (NURBS math) | face one-hot→contact point; residual sign tests; `J` monotone toward goal; `mppi` 50 steps moves toward goal, fall_rate=0, no NaN. |
 | **M8** | Baseline/ablation harness (`method_registry.py`) + eval (metrics, CVaR95, violation rates, RQ1-5 sweep, bootstrap CI, LaTeX tables). | A (registry/metrics) + B (runs) | fairness self-check (same `(M,H,K)`); 8 ablations each bypass exactly one component; metrics unit tests; aggregate emits table + plots. |
 
@@ -192,16 +238,53 @@ Current state: **DIAL done, bridge done, env_rollout done, node-spline done, rev
 
 ## 6. Experiments & baselines
 
-**Where MDAC differs from DIAL/MBD/2GO/cfsmbd: only on constrained, contact-rich tasks** (§2.6). Two task families from `idea.txt`, plus the existing constrained corridor/stepping-stones as fast iteration substrates.
+MDAC differs from DIAL/MBD/2GO/cfsmbd **only on constrained, contact-rich tasks** (§2.6) — so every experiment is constrained. Experiments are NOT bespoke scripts: the repo has a **plugin + runner framework** that wires `env × method × metrics × obstacles × seeds × levels` and aggregates. Build MDAC's experiments AS plugins on it.
 
-- **Exp I — Surface-contact manipulation** (`idea.txt` 670-782): 7-DoF arm scanning NURBS surfaces. Primitive `u^arm=(Δξ,Δη,Δψ,S_h,F^d_n)`; impedance law; constraints surface-attach `h_surf`, normal-align `h_normal`, force bounds `g_force`; surfaces S1-S4 (planar→unseen NURBS). Metrics: surface/normal/force tracking, force violation rate, **force CVaR95**, contact loss, coverage, stiffness smoothness, energy, runtime.
-- **Exp II — Humanoid box pushing** (`idea.txt` 784-954): humanoid pushes SE(2) box to goal under hand-object + foot-ground contact, balance, friction, non-tip. Hybrid manifold `M_hum` (box-ground/hand-box face-select/stance-foot); inequalities `g_bal,g_fric,g_tip`. Levels H1-H4 (double-support → walk-and-push → unjamming with face selection). Metrics: box-goal success, fall rate, hand contact loss/slip, friction violation, tip/balance margin, force CVaR95, energy.
+### 6.1 The framework (architecture map)
+| Piece | File:line | Role |
+|---|---|---|
+| Plugin ABCs | `experiments/framework/base.py:19-273` | `MethodPlugin` (`create_planner(env,energy,cfg)`, `plan(planner,x0,rng)→{states,actions,candidate_*}`, `name`); `EnvironmentPlugin` (`create_env`/`create_energy`/`get_state_dim`/`extract_position`/`name`); `MetricsPlugin` (`compute(traj,env,obstacles,constraints,**kw)→dict`, `name`); `ObstacleGeneratorPlugin` (`generate(level,seed,start,target,cfg)`); `VisualizationPlugin`; `BaselineProtocol` |
+| Registry | `experiments/framework/registry.py::PluginRegistry:12-117` | 5 plugin kinds: method / environment / metric / visualization / obstacle_generator |
+| Runner | `experiments/framework/experiment.py::ExperimentRunner:78-711` | `run_all()` (L683) = `for level: for seed: run_single_experiment` → env→start/target→obstacles→energy→constraints→scheduler→`create_planner`→`plan`→best-candidate select→Trajectory→metrics→viz→save |
+| Config | `experiments/framework/config.py::ExperimentConfig:22-183` | YAML: `name, output_dir, env_name, env_params, method, method_params, obstacle_levels, obstacle_config, seeds, backend, metrics, visualizations, constraint_config, scheduler_config` |
+| Central registration | `experiments/runner.py::register_all_plugins:191-266` | where every plugin is registered; **run** `python -m genedynamics.experiments.runner <config.yaml>` |
+| Output | `results/<name>/` | `experiments/level_*_seed_*.json` (traj+metrics) · `summary.json` (per-level mean/std/min/max + CVaR95) · `report.html` |
 
-**Baselines** (`idea.txt` 961-980), **all run through the shared bridge via `SolverPlannerAdapter`** (no per-baseline plumbing): PPO/SAC (±learned stiffness), SRL-VIC, ATACOM-style RL, MPPI, DIAL-MPC-style annealing, PegasusFlow/WBFO sampling, RL+CBF/ISSA. MDAC is the only one with all of {MF prior, MB rollout, manifold safety}. **Fairness:** all sampling methods optimize the same `U`, same `F`, same `(M,H,K)`; DIAL/MPPI ablate tangent-projection+retraction but keep the sample budget (enforced by `method_registry` self-check).
+**Already-registered methods** (`runner.py:199-212`): `mbd, mbd3d, mdoc, ebmbd, cfsmbd, cfsmbd_full, 2go, mrmfmbd, d3il_unified` (+ `dpcc/safediffuser` conditional). **`mppi`/`cem`/`dial` solvers exist but are NOT yet MethodPlugins** (§6.3). Existing metrics: `ssr, obstacle_density, nonconvexity, episode_outcome, stepping_stones, corridor` (`runner.py:240-245`). Existing constrained envs/generators: corridor, stepping-stones (2D), D3IL avoiding — the **fast iteration substrates** before the contact-rich `idea.txt` tasks.
 
-**Ablations** (`idea.txt` 993-1011), each bypassing exactly one component: w/o stiffness · fixed stiffness · w/o RL prior · w/o MB rollout · w/o tangent projection · w/o retraction · w/o adaptive schedule · Euclidean stiffness (vs log-SPD). Each maps to one config flag in `MethodFlags`.
+### 6.2 Recipe — add a new task (EnvironmentPlugin)
+1. **Env class** — implement the brax/flat env (reward, constraints, primitive width via `action_size`). Constrained envs must expose the SDF/manifold residual the solver reads (`base_env.constraint_residual`, §4.2).
+2. **Plugin** — `experiments/plugins/environments/<task>.py`: subclass `EnvironmentPlugin`; `name` (== `env_name` in yaml), `create_env(cfg)` (→ `make_env(self.name, **cfg)` or direct), `create_energy()`, `get_state_dim()`, `extract_position(state)`. Template: `plugins/environments/single_integrator_2d.py:12-69`.
+3. **Register** — import in `plugins/environments/__init__.py` + `runner.register_plugin(<Plugin>(), 'environment')` at `runner.py:215-237`.
+4. **Obstacles** — reuse `box2d/box3d` (set `obstacle_config.generator`), or new `ObstacleGeneratorPlugin` (`plugins/obstacles/box2d.py:17-72`). For contact tasks the "obstacle" is the constraint manifold (surface / box / contact set).
+5. **Metrics** — reuse, or new `MetricsPlugin` (§6.4).
+6. **Config + run** — write `configs/<task>.yaml`; `python -m genedynamics.experiments.runner configs/<task>.yaml`.
 
-**Metrics framing:** report **task success** AND **constraint/contact/force/balance violation** (rate + CVaR95) — the latter is where MDAC beats sequential safety filters (RQ3) and fixed stiffness (RQ2).
+### 6.3 Recipe — add a baseline (solver → MethodPlugin)
+1. **Plugin** — `experiments/plugins/methods/<m>.py`: subclass `MethodPlugin`; `create_planner(env,energy,cfg)` builds the solver from `cfg` (Nsample/Ndiffuse/horizon/...); `plan(planner,x0,rng)` returns the normalized `{states,actions,candidate_*}` dict. Template: `plugins/methods/mbd.py:16-100`, `twogo.py:20-115`.
+2. **Receding/MPC** — for closed-loop, wrap with the shared bridge in `plan()`: `SolverPlannerAdapter(solver, horizon, warm_start_kwarg=...)` → `RecedingHorizonController(adapter, step_fn=dyn.step, n_steps, n_diffuse_init, n_diffuse).run(x0,rng)` (`solvers/common/receding_horizon.py:196-276`). **This is how every sampling baseline gets the same MPC treatment with zero per-baseline plumbing** — DIAL native, the rest via the adapter.
+3. **Register** — `runner.py:199-212`.
+4. **Fairness self-check** — same env+energy (all via the EnvironmentPlugin), same `horizon`, same sample budget `(M,H,K)`, accept `rng_key`. Enforce with `mdac/core/method_registry.py::resolve_method` (same `(M,H,K)` across methods; ablations only toggle one flag).
+
+### 6.4 MDAC's experiments mapped onto the framework
+- **Exp I — Surface-contact manipulation** (`idea.txt` 670-782). **NEW** `ArmSurfaceScanPlugin` (`plugins/environments/arm_surface_scan.py`) + `ArmSurfaceScanEnv` + `SurfaceCoverageEnergy`. 7-DoF arm; primitive `u^arm=(Δξ,Δη,Δψ,S_h,F^d_n)`; impedance law; constraints surface-attach `h_surf`, normal-align `h_normal`, force bounds `g_force`; surfaces S1–S4 (planar→unseen NURBS via `surface_geometry.py`).
+- **Exp II — Humanoid box pushing** (`idea.txt` 784-954). Try to **reuse** `plugins/environments/humanoid.py` (HumanoidMjx) with `env_params.task_type=box_push` + the vendored `humanoid_h1_push_crate` scene (§2.4 — already has the box body); else NEW `HumanoidBoxPushPlugin`. Hybrid manifold `M_hum` (box-ground / hand-box face-select / stance-foot); `g_bal,g_fric,g_tip`; levels H1–H4 (double-support → walk-and-push → unjamming with face selection).
+- **Fast substrates** before contact tasks: the existing constrained `corridor` / `stepping_stones` 2D envs — run MDAC vs DIAL/2GO there first to validate the manifold path (cheap, Track-A-adjacent).
+
+### 6.5 Baselines (`idea.txt` 961-980) — status on this framework
+| Baseline | Status | Build |
+|---|---|---|
+| MPPI, DIAL-MPC, CEM | solver exists, **no MethodPlugin** | thin `plugins/methods/{mppi,dial,cem}.py` (§6.3); DIAL native bridge, MPPI/CEM via `SolverPlannerAdapter` |
+| 2GO, cfsmbd, mdoc, ebmbd | **registered** | reuse as-is (geometry/constraint baselines) |
+| PPO, SAC (± learned stiffness) | **new** | `plugins/methods/{ppo,sac}.py` wrapping the §4.4 `RLPrior` policy as a standalone controller |
+| SRL-VIC, ATACOM-RL, PegasusFlow/WBFO, RL+CBF/ISSA | **new** | one MethodPlugin each (`plugins/methods/`) |
+
+MDAC is the only method with all of {MF prior, MB rollout, manifold safety}. **Fairness:** all sampling methods optimize the same `U`, same `F`, same `(M,H,K)`; DIAL/MPPI ablate tangent-projection+retraction but keep the sample budget.
+
+### 6.6 Ablations & metrics
+- **Ablations** (`idea.txt` 993-1011): one config per bypassed component, each toggling exactly ONE `MethodFlags` field in `method_params` (read in `create_planner`): w/o stiffness · fixed stiffness · w/o RL prior · w/o MB rollout · w/o tangent projection · w/o retraction · w/o adaptive schedule · Euclidean (vs log-SPD) stiffness. The `method_registry` fairness self-check guarantees only the toggled flag differs.
+- **Metrics** — NEW `MDACMetricsPlugin` (`plugins/metrics/mdac_metrics.py`) returning, per run: **task success** (goal within margin) AND **constraint/contact/force/balance violation** as both **rate** and **CVaR95** (force-CVaR95, friction-cone, tip/balance margin, fall rate, contact loss/slip, coverage, stiffness smoothness, energy, runtime). Reuse `corridor._cvar` for CVaR95; the runner already aggregates mean/std/min/max + CVaR per level. The violation/CVaR columns are where MDAC beats sequential safety filters (RQ3) and fixed stiffness (RQ2) — report them alongside success, never success alone.
+- **Worked end-to-end reference** (the smallest full loop to copy): `single_integrator_box_2d` + `mbd` — env plugin `plugins/environments/single_integrator_2d.py`, method `plugins/methods/mbd.py`, obstacles `plugins/obstacles/box2d.py`, a `configs/*.yaml`, `python -m genedynamics.experiments.runner <cfg>` → `results/.../{experiments,summary.json,report.html}`.
 
 ---
 

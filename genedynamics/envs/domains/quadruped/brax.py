@@ -31,11 +31,11 @@ def _get_go2_model_path() -> Path:
     """Path to bundled Go2 MJCF (position actuators, MJX-compatible collisions)."""
     # parents[2] == genedynamics/envs (this file is envs/domains/quadruped/brax.py)
     env_dir = Path(__file__).resolve().parents[2]
-    path = env_dir / "assets" / "brax" / "unitree_go2" / "go2_position.xml"
+    path = env_dir / "assets" / "unitree_go2" / "go2_position.xml"
     if not path.exists():
         raise FileNotFoundError(
-            f"Go2 Brax model not found at {path}. "
-            "Ensure genedynamics/envs/assets/brax/unitree_go2/ exists."
+            f"Go2 model not found at {path}. "
+            "Ensure genedynamics/envs/assets/unitree_go2/ exists."
         )
     return path
 

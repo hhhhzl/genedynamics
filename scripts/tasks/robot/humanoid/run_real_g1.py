@@ -88,8 +88,8 @@ def main(argv=None) -> int:
             from genedynamics.deploy.localization.vicon_shm_plugin import ViconShmPlugin
             return ViconShmPlugin({})
         if args.localization == "ros2":
-            from genedynamics.deploy.localization.ros2_odometry_plugin import Ros2OdometryLocalizationPlugin
-            return Ros2OdometryLocalizationPlugin({"topic": "/odom"})
+            from genedynamics.deploy.localization.ros2_odometry_plugin import ROS2OdometryPlugin
+            return ROS2OdometryPlugin({"odom_topic": "/odom"})
         from scripts.tasks.robot.humanoid.run_twin_server import _FixedPoseLocalization
         return _FixedPoseLocalization(src.scene and [*src.scene.start_pos, 0.0, 1.0, 0.0, 0.0, 0.0])
 
