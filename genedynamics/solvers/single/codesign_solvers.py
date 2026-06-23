@@ -47,10 +47,16 @@ def _wrap_optimizer(optimizer_cls):
 
 def _register() -> None:
     from genedynamics.solvers.single.mrmfmbd.codesign import MRMFMBDBaseline
+    from genedynamics.solvers.single.mrmfmbd_ablation.codesign import MRMFMBDAblationBaseline
     from genedynamics.solvers.single.shac.codesign import SHACBaseline
     from genedynamics.solvers.single.diffusebot.codesign import DiffuseBotBaseline
 
     register_codesign_solver("mrmfmbd", _wrap_optimizer(MRMFMBDBaseline))
+    # Frozen legacy engine for the paper's Q2/Q3 ablations (Stage 1 of the
+    # theory-faithful refactor): fixed fidelity ladder / control-variate /
+    # reward+cvar regime modes / post-hoc SHAC / mean certification. Selected by
+    # `baseline_name: mrmfmbd_ablation` (+ optional method_params.ablation_mode).
+    register_codesign_solver("mrmfmbd_ablation", _wrap_optimizer(MRMFMBDAblationBaseline))
     register_codesign_solver("shac", _wrap_optimizer(SHACBaseline))
     register_codesign_solver("diffusebot", _wrap_optimizer(DiffuseBotBaseline))
     # NOTE: CMA-ES is NOT here — it is a GENERAL solver (solvers/single/cmaes/)

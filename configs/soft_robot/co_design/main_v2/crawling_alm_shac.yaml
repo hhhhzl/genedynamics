@@ -120,7 +120,7 @@ method_params:
   inner_denoise_steps: 0
   inner_denoise_shrink: 0.5
 
-  regime_posterior_mode: reward
+  regime_posterior_mode: risk_sensitive   # method default (Stage 2): robust regime objective
   risk_temperature: 1.0
 
   # === Phase 4.2: SHAC local refinement (writeup §8.1) ====================

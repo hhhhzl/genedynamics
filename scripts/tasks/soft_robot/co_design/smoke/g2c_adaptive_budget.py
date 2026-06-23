@@ -28,7 +28,7 @@ import sys
 
 import numpy as np
 
-from genedynamics.solvers.single.mrmfmbd.estimator_system.budget import (
+from genedynamics.solvers.single.mrmfmbd_ablation.estimator_system.budget import (
     BudgetDual, optimal_subset_size, realized_cost,
 )
 from genedynamics.envs.external.jax_mpm.adapters import FIDELITY_STEPS
@@ -97,8 +97,8 @@ def part_b() -> bool:
             JaxMpmTaskDomainProvider,
         )
         from genedynamics.experiments.framework.baseline import BaselineConfig
-        from genedynamics.solvers.single.codesign_optimizers.mrmfmbd import (
-            MRMFMBDBaseline,
+        from genedynamics.solvers.single.mrmfmbd_ablation.codesign import (
+            MRMFMBDAblationBaseline as MRMFMBDBaseline,
         )
     except Exception as e:  # pragma: no cover
         print(f"[skip] imports unavailable: {e!r}")

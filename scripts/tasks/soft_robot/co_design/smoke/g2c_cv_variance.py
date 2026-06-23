@@ -24,10 +24,10 @@ import jax.numpy as jnp
 
 from genedynamics.experiments.plugins.task_domains.jax_mpm import JaxMpmTaskDomainProvider
 from genedynamics.envs.external.jax_mpm.scene import rollout_return_batch
-from genedynamics.solvers.single.mrmfmbd.estimator_system.control_variate import (
+from genedynamics.solvers.single.mrmfmbd_ablation.estimator_system.control_variate import (
     cv_score_weighted_mean, weighted_mean, softmax_weights, estimator_diagnostics,
 )
-from genedynamics.solvers.single.mrmfmbd.estimator_system.budget import (
+from genedynamics.solvers.single.mrmfmbd_ablation.estimator_system.budget import (
     optimal_subset_size, single_fidelity_pool, realized_cost,
 )
 

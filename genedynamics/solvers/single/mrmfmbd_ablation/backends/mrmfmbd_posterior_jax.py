@@ -46,7 +46,7 @@ except ImportError:
     MODE_SYSTEM_AVAILABLE = False
 
 try:
-    from genedynamics.solvers.single.mrmfmbd.fidelity_system import (
+    from genedynamics.solvers.single.mrmfmbd_ablation.fidelity_system import (
         BlockFidelityLadder,
         create_fidelity_ladder,
         FidelitySystemConfig,

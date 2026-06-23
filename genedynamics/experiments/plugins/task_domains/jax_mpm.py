@@ -93,7 +93,11 @@ class JaxMpmTaskDomainProvider:
         )
         runtime_keys = ("dt", "gravity", "scale", "p_vol", "friction_coeff",
                         "actuation_strength_scale", "act_strength_base",
-                        "mode_friction", "backward_penalty_weight")
+                        "mode_friction", "backward_penalty_weight",
+                        # per-mode regime axes (slope via gravity tilt / mass / init)
+                        "mode_slope_deg", "mode_mass_scale", "mode_init_vel",
+                        # open-loop trajectory controller
+                        "controller_kind", "n_control_nodes", "n_actuators", "env_horizon")
         runtime_config = {k: kwargs[k] for k in runtime_keys if k in kwargs}
         voxel_dims = kwargs.get("voxel_dims")
         if voxel_dims is not None:

@@ -66,6 +66,9 @@ class SoftRobotCoDesignDynamics(DynamicsModel):
         theta_lo: np.ndarray,
         theta_hi: np.ndarray,
         friction: float = 0.5,
+        friction_table: Optional[np.ndarray] = None,
+        risk_temperature: float = 1.0,
+        regime_agg: str = "risk",
         num_env_steps: int = 200,
         z_sym: bool = False,
         voxel_dims: Optional[Tuple[int, int, int]] = None,
@@ -83,6 +86,12 @@ class SoftRobotCoDesignDynamics(DynamicsModel):
         self.act_dim = int(x_opt_dim + phi_dim)          # D — read by the solver backend
         self.state_dim = 1                                # 1-state carries the reward
         self.friction = float(friction)
+        # Multi-regime risk objective (fair Table-1): when friction_table is set,
+        # the energy is the risk-sensitive rho over ALL regimes (not single-mode),
+        # so CEM/CMA-ES optimize the SAME robust objective our method does.
+        self._friction_table = jnp.asarray(np.asarray(friction_table, np.float32)) if friction_table is not None else None
+        self._risk_tau = float(risk_temperature)
+        self._regime_agg = str(regime_agg)   # 'risk' (rho) or 'mean' over regimes
         self.num_env_steps = int(num_env_steps)
         self._mean = jnp.asarray(theta_mean, jnp.float32)
         self._scale = jnp.asarray(theta_scale, jnp.float32)
@@ -105,15 +114,28 @@ class SoftRobotCoDesignDynamics(DynamicsModel):
         return x_opt
 
     def jax_transition(self, state, action):
-        """(state, a) -> 1-state carrying the MPM reward. Pure JAX; jit/vmap-able."""
+        """(state, a) -> 1-state carrying the reward (single-mode) OR the
+        risk-sensitive rho over regimes when friction_table is set. jit/vmap-able."""
         theta = self.action_to_theta(action)
         x_full = self._x_full(theta[: self.x_opt_dim])
         phi = theta[self.x_opt_dim:]
-        r, _disp, _com = rollout_return(
-            x_full, phi, jnp.asarray(self.friction, jnp.float32),
-            self.scene, self.cfg, self.num_env_steps,
-        )
-        return jnp.reshape(r, (1,))
+        if self._friction_table is None:
+            r, _disp, _com = rollout_return(
+                x_full, phi, jnp.asarray(self.friction, jnp.float32),
+                self.scene, self.cfg, self.num_env_steps)
+            return jnp.reshape(r, (1,))
+        # Risk-sensitive objective rho = -tau_r*logsumexp_m(log p(m) - R_m/tau_r),
+        # uniform p(m) (normalized) -> same robust objective as the method's rho_H.
+        def _one(fr):
+            r, _, _ = rollout_return(x_full, phi, fr, self.scene, self.cfg, self.num_env_steps)
+            return r
+        R = jax.vmap(_one)(self._friction_table)                  # (C,)
+        if self._regime_agg == "mean":
+            agg = jnp.mean(R)                                     # risk-NEUTRAL mean over regimes
+        else:
+            tau = jnp.maximum(jnp.asarray(self._risk_tau, jnp.float32), 1e-8)
+            agg = -tau * (jax.scipy.special.logsumexp(-R / tau) - jnp.log(R.shape[0]))
+        return jnp.reshape(agg, (1,))
 
     # DynamicsModel abstract API ------------------------------------------------
     def step(self, x, u):
@@ -145,6 +167,9 @@ def build_codesign_problem(
     phi_hi: float,
     phi_mean: float = 0.0,
     friction: float = 0.5,
+    friction_table: Optional[np.ndarray] = None,
+    risk_temperature: float = 1.0,
+    regime_agg: str = "risk",
     num_env_steps: int = 200,
     z_sym: bool = False,
     voxel_dims: Optional[Tuple[int, int, int]] = None,
@@ -172,7 +197,8 @@ def build_codesign_problem(
     dyn = SoftRobotCoDesignDynamics(
         scene, cfg, x_opt_dim=x_opt_dim, phi_dim=phi_dim,
         theta_mean=theta_mean, theta_scale=theta_scale, theta_lo=theta_lo, theta_hi=theta_hi,
-        friction=friction, num_env_steps=num_env_steps, z_sym=z_sym, voxel_dims=voxel_dims,
-        morph_decoder=morph_decoder,
+        friction=friction, friction_table=friction_table, risk_temperature=risk_temperature,
+        regime_agg=regime_agg,
+        num_env_steps=num_env_steps, z_sym=z_sym, voxel_dims=voxel_dims, morph_decoder=morph_decoder,
     )
     return dyn, codesign_energy(), np.zeros(1, dtype=np.float32)

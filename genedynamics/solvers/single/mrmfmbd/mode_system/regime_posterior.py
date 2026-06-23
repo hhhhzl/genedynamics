@@ -69,6 +69,34 @@ def risk_sensitive_marginalize_jax(
     return rho_m, q_mc
 
 
+def risk_sensitive_marginalize_np(returns_mc, log_prior, tau_r):
+    """Host (numpy) risk-sensitive aggregation — mirror of the JAX version above.
+
+    Used for high-fidelity certification rho_H (new_version.txt
+    eq:high_fidelity_risk): given a candidate's per-regime returns R[m], return
+
+        rho = -tau_r * logsumexp_m( log p(m) - R[m] / tau_r ),
+
+    a soft-min over regimes (higher = more robust). Accepts ``returns_mc`` of
+    shape (C,) -> scalar, or (..., C) -> (...). tau_r -> 0 reproduces worst-mode
+    min_m R; tau_r -> inf reproduces the prior-mean over regimes.
+    """
+    import numpy as _np
+    R = _np.nan_to_num(_np.asarray(returns_mc, dtype=_np.float64),
+                       nan=-1e6, posinf=1e6, neginf=-1e6)
+    lp = _np.asarray(log_prior, dtype=_np.float64)
+    # Normalize the prior so sum_m p(m) = 1 (theory uses a probability p(m)); this
+    # makes tau_r -> inf give the true prior-mean instead of a -tau*log(C) blowup,
+    # and the certification value directly comparable across candidates.
+    _mlp = lp.max()
+    lp = lp - (_np.log(_np.sum(_np.exp(lp - _mlp))) + _mlp)
+    tau = max(float(tau_r), 1e-8)
+    log_terms = lp - R / tau
+    mx = log_terms.max(axis=-1, keepdims=True)
+    lse = (_np.log(_np.sum(_np.exp(log_terms - mx), axis=-1, keepdims=True)) + mx).squeeze(-1)
+    return -tau * lse
+
+
 def cvar_marginalize_jax(
     rewards_mc: "jnp.ndarray",   # (M, C) — M candidates × C regimes
     log_prior: "jnp.ndarray",    # (C,)

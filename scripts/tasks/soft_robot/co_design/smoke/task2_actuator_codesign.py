@@ -103,7 +103,7 @@ def part_b() -> bool:
 def _run_backend(actuator_on: bool, decoder_path: str):
     from genedynamics.experiments.plugins.task_domains.jax_mpm import JaxMpmTaskDomainProvider
     from genedynamics.experiments.framework.baseline import BaselineConfig
-    from genedynamics.solvers.single.codesign_optimizers.mrmfmbd import MRMFMBDBaseline
+    from genedynamics.solvers.single.mrmfmbd.codesign import MRMFMBDBaseline
     prov = JaxMpmTaskDomainProvider()
     ev = prov.create_evaluator(".", voxel_dims=VOXEL_DIMS, n_grid=64,
                                reward_shaping_weight=100.0, act_strength_base=24.0,

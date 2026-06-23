@@ -19,20 +19,6 @@ evaluator_runtime:
   scale: 50.0
   mode_friction: [0.45]           # single-mode = mean; cmaes has no mode marginalization
 
-scheduler_config:
-  # CMA-ES doesn't use the diffusion schedule directly, but the baseline
-  # reads Ndiffuse × M_k × num_modes as the total rollout budget for fair
-  # comparison against MRMFMBD main (100 × 32 × 4 = 12800 rollouts).
-  type: composite
-  diffusion_schedulers:
-    - type: fixed
-      M_k: 32
-      T_k: 0.5
-      Ndiffuse: 100
-      beta0: 1.0e-4
-      betaT: 2.0e-2
-  diffusion_merge_strategy: merge
-
 method_params:
   num_modes: 1                # no mode marginalization
   popsize: 32                 # K·M·num_modes/(popsize·num_modes) = 100 generations

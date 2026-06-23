@@ -20,17 +20,6 @@ evaluator_runtime:
   scale: 50.0
   mode_friction: [0.45]           # single-mode = mean; cem has no mode marginalization
 
-scheduler_config:
-  type: composite
-  diffusion_schedulers:
-    - type: fixed
-      M_k: 32
-      T_k: 0.5
-      Ndiffuse: 100
-      beta0: 1.0e-4
-      betaT: 2.0e-2
-  diffusion_merge_strategy: merge
-
 method_params:
   num_modes: 1
   popsize: 32

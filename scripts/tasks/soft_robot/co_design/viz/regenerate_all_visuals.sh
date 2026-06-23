@@ -11,15 +11,15 @@ set -u
 cd /workspace/genedynamics
 
 DIFF_CONFIGS=(
-  "configs/soft_robot/main/crawling_ground.yaml"
-  "configs/soft_robot/main/crawling_ground_smooth.yaml"
-  "configs/soft_robot/ablation/no_mode_marginalization.yaml"
-  "configs/soft_robot/ablation/no_fidelity_ladder_env30.yaml"
-  "configs/soft_robot/ablation/no_fidelity_ladder_env100.yaml"
+  "configs/soft_robot/co_design/main/crawling_ground.yaml"
+  "configs/soft_robot/co_design/main/crawling_ground_smooth.yaml"
+  "configs/soft_robot/co_design/ablation/no_mode_marginalization.yaml"
+  "configs/soft_robot/co_design/ablation/no_fidelity_ladder_env30.yaml"
+  "configs/soft_robot/co_design/ablation/no_fidelity_ladder_env100.yaml"
 )
 BASELINE_CONFIGS=(
-  "configs/soft_robot/baselines/cmaes_crawling.yaml"
-  "configs/soft_robot/baselines/cem_crawling.yaml"
+  "configs/soft_robot/co_design/baselines/cmaes_crawling.yaml"
+  "configs/soft_robot/co_design/baselines/cem_crawling.yaml"
 )
 
 echo "=== Regenerating 3D crawling_best.gif for ALL runs ==="
@@ -39,8 +39,8 @@ echo "=== Baseline runs: morphology + controller + reward curves ==="
 cd /workspace/genedynamics/scripts/tasks/soft_robot/co_design/analysis
 PYTHONPATH="/workspace/genedynamics/scripts/tasks/soft_robot/co_design/analysis:$PYTHONPATH" \
   python analyze_baseline_run.py \
-    /workspace/genedynamics/configs/soft_robot/baselines/cmaes_crawling.yaml \
-    /workspace/genedynamics/configs/soft_robot/baselines/cem_crawling.yaml \
+    /workspace/genedynamics/configs/soft_robot/co_design/baselines/cmaes_crawling.yaml \
+    /workspace/genedynamics/configs/soft_robot/co_design/baselines/cem_crawling.yaml \
   2>&1 | grep -E "^\s*\[|cross-mode|reward_vs|^===" | head -40
 
 echo ""

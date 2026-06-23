@@ -126,6 +126,11 @@ scheduler_config:
 method_params:
   backend: mbd
   num_modes: 4
+  # Method default: risk-sensitive robust regime objective (Stage 2 of the
+  # theory-faithful refactor, new_version.txt eq:regime_risk_objective). Explicit
+  # for clarity; "reward"/"cvar" are ablation-only (run via mrmfmbd_ablation).
+  regime_posterior_mode: risk_sensitive
+  risk_temperature: 1.0
   num_fidelity_levels: 3
   fidelity_ladder_type: geometric
   fidelity_step_ratio: 1.5

@@ -53,7 +53,7 @@ def part_b() -> bool:
     import jax
     from genedynamics.experiments.plugins.task_domains.jax_mpm import JaxMpmTaskDomainProvider
     from genedynamics.experiments.framework.baseline import BaselineConfig
-    from genedynamics.solvers.single.codesign_optimizers.mrmfmbd import MRMFMBDBaseline
+    from genedynamics.solvers.single.mrmfmbd.codesign import MRMFMBDBaseline
     prov = JaxMpmTaskDomainProvider()
     ev = prov.create_evaluator(".", voxel_dims=[3, 3, 3], n_grid=64, reward_shaping_weight=100.0,
                                act_strength_base=24.0, scale=50.0, task="crawling_ground")

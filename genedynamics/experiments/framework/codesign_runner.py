@@ -189,6 +189,11 @@ def codesign_problem_from_evaluator(evaluator, *, x_dim, phi_dim, method_params)
         voxel_dims = tuple(voxel_dims) if voxel_dims is not None else None
 
     friction = float(evaluator._mode_friction[0]) if getattr(evaluator, "_mode_friction", None) else 0.5
+    # Fair Table-1: optimize the SAME multi-regime risk objective our method does.
+    _risk = bool(mp.get("risk_codesign", False))
+    _nmodes = int(mp.get("num_modes", 4))
+    _ftab = (np.asarray(evaluator._mode_friction, np.float32)[:_nmodes]
+             if (_risk and getattr(evaluator, "_mode_friction", None) is not None) else None)
     num_env_steps = int(mp.get("num_env_steps", getattr(evaluator._mpm_cfg, "env_horizon", 200)))
 
     # prior-seeded init: load the latent w0 (encoded 3D-prior body, e.g. TripoSG).
@@ -204,8 +209,10 @@ def codesign_problem_from_evaluator(evaluator, *, x_dim, phi_dim, method_params)
         x_lo=x_lo, x_hi=x_hi, x_mean=x_mean,
         phi_lo=float(mp.get("phi_lo", -0.5)), phi_hi=float(mp.get("phi_hi", 0.5)),
         phi_mean=float(mp.get("phi_mean", 0.0)),
-        friction=friction, num_env_steps=num_env_steps,
-        z_sym=z_sym, voxel_dims=voxel_dims, morph_decoder=morph_decoder, morph_init=morph_init,
+        friction=friction, friction_table=_ftab,
+        risk_temperature=float(mp.get("risk_temperature", 1.0)),
+        regime_agg=str(mp.get("regime_agg", "risk")),
+        num_env_steps=num_env_steps, z_sym=z_sym, voxel_dims=voxel_dims, morph_decoder=morph_decoder, morph_init=morph_init,
     )
     return dynamics, energy, x0, x_opt_dim
 
