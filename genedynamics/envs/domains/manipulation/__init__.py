@@ -12,10 +12,11 @@ try:
         return _panda.PandaSurfaceScanEnv(_panda.PandaSurfaceScanConfig(level=level, **kw))
 
     register_environment_factory("manipulator_surface_scan", _make_panda_surface_scan)
-    # convenience level aliases
-    register_environment_factory(
-        "manipulator_surface_scan_plane", lambda **kw: _make_panda_surface_scan(level="plane", **kw))
-    register_environment_factory(
-        "manipulator_surface_scan_ellipsoid", lambda **kw: _make_panda_surface_scan(level="ellipsoid", **kw))
+    # convenience surface-family aliases (descriptive names): plane / cylinder
+    # (analytic), convex / bumpy (NURBS), unseen (NURBS + domain randomization).
+    for _fam in ("plane", "cylinder", "convex", "bumpy", "unseen"):
+        register_environment_factory(
+            f"manipulator_surface_scan_{_fam}",
+            (lambda lv: lambda **kw: _make_panda_surface_scan(level=lv, **kw))(_fam))
 except Exception:
     pass

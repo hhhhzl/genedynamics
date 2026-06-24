@@ -191,38 +191,46 @@ class MdacBackendJax:
         self._alphas = 1.0 - betas
         self._alphas_bar = jnp.cumprod(self._alphas)
 
-        # per-reverse-step coupled-annealing multipliers (sigma/rho/kappa).
-        self._sigma_mult, self._rho_mult, self._kappa_mult = self._adaptive_mults(self.Ndiffuse_init)
-
-    def _adaptive_mults(self, K: int):
-        """Coupled-annealing multipliers (eq:coupled_schedule) across reverse
-        steps: rho_k UP (AL tightens), kappa_k UP (geometry tracking tightens).
-        sigma_k DOWN is ALREADY in the base DIAL noise schedule
-        (``make_traj_diffuse_factors``), so sigma_mult stays 1.0 here — adaptive
-        only adds the rho/kappa coupling on top (double-annealing sigma would
-        collapse the candidate spread). kappa is the genemetry
-        ``ScheduleOverlay.constraint_overlay`` (its actual purpose — reused like
-        2GO); rho is driven geometrically. All-ones when off (=> byte-identical)."""
-        import numpy as np
-        ones = jnp.ones((max(K, 1),), jnp.float32)
-        if not self.use_adaptive_schedule or K < 2:
-            return ones, ones, ones
-        p = np.arange(K) / float(K - 1)
-        rho = 3.0 ** p                                        # rho UP (1 -> 3)
-        try:
+        # --- adaptive schedule overlay (genemetry, built EXACTLY like 2GO,
+        # twogo_jax.py:130-134). Per reverse step we feed the overlay a (margin,
+        # rho) read off the CURRENT iterate's constraint state and take kappa to
+        # modulate the geometry — same as 2GO's `overlay.compute(margin, rho_k,
+        # eta).kappa`. The sampling sigma stays the base DIAL schedule and aug_rho
+        # stays constant (2GO does NOT route the schedule into either: it samples
+        # with a separate `sigmas[idx]` and keeps `aug_rho_const`). Because margin/
+        # rho track the runtime feasibility (which rises and falls), the schedule
+        # is NON-MONOTONIC across reverse steps. All 1.0 when off => byte-identical.
+        _cfg = getattr(solver, "config", {}) if solver is not None else {}
+        self._constraint_fn = getattr(self._env, "mdac_constraint", None)
+        self._overlay = None
+        self._kappa_ref = 1.0
+        if self.use_adaptive_schedule:
             from genedynamics.genemetry.schedule.overlay import ScheduleOverlay
-            from genedynamics.genemetry.schedule.config import OverlayConfig
-            cfg = OverlayConfig()
-            ov = ScheduleOverlay(config=cfg)                  # genemetry, reused like 2GO
-            zero = jnp.asarray(0.0, jnp.float32)
-            kap = np.asarray([float(np.asarray(ov.constraint_overlay(
-                zero, jnp.asarray(cfg.rho_ref * float(r), jnp.float32))[0])) for r in rho])
-            kappa_mult = kap / (kap[0] + 1e-9)                # kappa UP (constraint overlay)
-        except Exception:                                     # robust direct anneal
-            kappa_mult = 2.0 ** p
-        return (ones,                                         # sigma: base schedule owns it
-                jnp.asarray(rho, jnp.float32),
-                jnp.asarray(kappa_mult, jnp.float32))
+            from genedynamics.genemetry.schedule.config import resolve_overlay_config
+            self._overlay_cfg = resolve_overlay_config(
+                _cfg.get("mdac_overlay", None), rho_ref_default=max(self.aug_rho, 1.0))
+            self._overlay = ScheduleOverlay(config=self._overlay_cfg, backend="jax")
+            kap_ref, _ = self._overlay.constraint_overlay(
+                jnp.asarray(0.0, jnp.float32), jnp.asarray(self.aug_rho, jnp.float32))
+            self._kappa_ref = float(np.asarray(kap_ref))
+
+    def _kappa_mult(self, state, Ybar_curr):
+        """Geometry kappa multiplier for this reverse step (2GO overlay usage).
+        margin/rho are read off the CURRENT iterate's clean-state constraint
+        (no mjx): rho rises with the current infeasibility, so via the genemetry
+        `constraint_overlay(margin, rho) -> kappa` the geometry tracking tightens
+        when infeasible and relaxes when feasible — NON-MONOTONIC across steps.
+        Returns 1.0 (no-op) when adaptive is off or the env has no constraint."""
+        if self._overlay is None or self._constraint_fn is None:
+            return jnp.float32(1.0)
+        c = self._constraint_fn(state, Ybar_curr)             # clean-state residual (no mjx)
+        if c.size == 0:
+            return jnp.float32(1.0)
+        viol = jnp.mean(jnp.abs(c))                           # current infeasibility (>=0)
+        margin = -viol                                        # signed feasibility margin
+        rho = self.aug_rho * (1.0 + viol)                     # AL hardness rises with violation
+        kappa, _ = self._overlay.constraint_overlay(margin, rho)
+        return kappa / (self._kappa_ref + 1e-9)
 
     # --- rollout / step builders (reuse the shared brax layer; mjx-gated) -----
     def _build_rollout_from_solver(self, solver: Any) -> Optional[RolloutFn]:
@@ -283,20 +291,12 @@ class MdacBackendJax:
         # idx_init counts down so the transport abar schedule denoises late->clean.
         idx_init = jnp.clip(jnp.asarray(self.Ndiffuse_init - 1, jnp.int32) - k,
                             0, self._alphas_bar.shape[0] - 1)
-        # coupled-annealing multipliers for this reverse step (all 1.0 when off
-        # => byte-identical DIAL): sigma down (explore less), rho up (tighter AL),
-        # kappa up (stronger geometry tracking).
-        ki = jnp.clip(k, 0, self._sigma_mult.shape[0] - 1)
-        sigma_mult = self._sigma_mult[ki]
-        rho_mult = self._rho_mult[ki]
-        kappa_mult = self._kappa_mult[ki]
-
         rng, sub = jax.random.split(rng)
         _, y_rng = jax.random.split(sub)                          # DIAL split pattern
         # cast to the carry dtype so the replan scan carry stays type-consistent
         # (and byte-identical to DIAL) regardless of the jax x64 config.
         eps = self._draw_noise(y_rng, (self.Nsample, Hn1, nu), state=Ybar_curr).astype(Ybar_curr.dtype)
-        Y0s = eps * (noise_scale * sigma_mult)[None, :, None] + Ybar_curr[None]
+        Y0s = eps * noise_scale[None, :, None] + Ybar_curr[None]  # base DIAL sampling schedule
         Y0s = Y0s.at[:, 0].set(Ybar_curr[0])                      # pin node-0
         Y0s = jnp.concatenate([Y0s, Ybar_curr[None]], axis=0)     # append incumbent
         Y0s = jnp.clip(Y0s, -self.action_limit, self.action_limit)
@@ -314,11 +314,12 @@ class MdacBackendJax:
                 schedule_params={},
             )
 
-        # AL-augmented rollout takes (aug_lambda, aug_rho) at call time so rho can
-        # follow the coupled-annealing schedule (rho up). Plain/injected rollout
-        # keeps the (state, us, t0) signature => byte-identical DIAL.
+        # AL-augmented rollout takes (aug_lambda, aug_rho) at call time. aug_rho is
+        # kept CONSTANT (2GO uses a constant aug_rho_const; the schedule modulates
+        # geometry, not the AL penalty). Plain/injected rollout keeps the
+        # (state, us, t0) signature => byte-identical DIAL.
         if self._augmented:
-            rewss = self._rollout_fn(state, us, t0, self.aug_lambda, self.aug_rho * rho_mult)
+            rewss = self._rollout_fn(state, us, t0, self.aug_lambda, self.aug_rho)
         else:
             rewss = self._rollout_fn(state, us, t0)               # (Nsample+1, Hsample+1) — vmap rollout
         rew_incumbent = rewss[-1].mean()
@@ -338,6 +339,10 @@ class MdacBackendJax:
             bundle = self.manifold.geometry(a_geom, self.topk_active, self.eps_stab)
             u_dir = Ybar_weighted - Ybar_curr                     # node-space update dir
             u_proj = self.manifold.project(u_dir, bundle, mode="metric")
+            # adaptive-schedule kappa (genemetry overlay, 2GO usage): scales the
+            # geometry tracking by the current feasibility -> NON-MONOTONIC; 1.0
+            # when adaptive off => unchanged.
+            kappa_mult = self._kappa_mult(state, Ybar_curr)
             Ybar_weighted = Ybar_curr + (self.geom_gain * kappa_mult) * u_proj
             if self.retraction is not None:
                 Ybar_weighted = self.retraction.retract(

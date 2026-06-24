@@ -99,5 +99,9 @@ def test_solver_registered_and_method_flags():
     )
     assert get_solver_registry().get_class("mdac") is MDACSolver
     assert all(getattr(resolve_method("mdac"), f) for f in resolve_method("mdac").__dataclass_fields__)
-    assert not any(getattr(resolve_method("dial"), f) for f in resolve_method("dial").__dataclass_fields__)
+    # dial_nostiff = the true all-off anchor (byte-identity); dial is the fair
+    # baseline (shares the position-stiffness primitive, MDAC solver seams off).
+    assert not any(getattr(resolve_method("dial_nostiff"), f) for f in resolve_method("dial_nostiff").__dataclass_fields__)
+    dial = resolve_method("dial")
+    assert dial.use_stiffness and not dial.use_tangent_projection and not dial.use_soft_feasibility
     assert_single_flag_ablation("mdac", "mdac_no_tangent")

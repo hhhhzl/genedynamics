@@ -54,9 +54,13 @@ _ARM_LOWSTATE_TOPIC = "rt/lowstate"  # arm joints share the lowstate channel on 
 # NOTE: the pip SDK's *named* LocoClient methods use DIFFERENT ids
 # (``Start()`` -> 500, ``Squat2StandUp()`` -> 706) which this G1 rejects as
 # "Invalid FSM ID" — so the bring-up drives the generic ``SetFsmId()`` with these.
+_G1_FSM_ZERO_TORQUE = 0
 _G1_FSM_DAMP = 1
 _G1_FSM_LOCK_STAND = 4     # stand up and lock (the stand-up step)
 _G1_FSM_MAIN_MODE = 200    # walk-ready main control mode (LocoClient.Move works here)
+# Legal forward FSM path up to MainMode, keyed by current id. VERIFIED on hardware
+# 2026-06-23 (0→1→4→200 stands the G1 up and reaches walk-ready; Move then steps).
+_G1_FSM_PATH_TO_MAIN = {0: (1, 4, 200), 1: (4, 200), 2: (4, 200), 3: (4, 200), 4: (200,), 200: ()}
 
 # G1 arm control while sport mode runs the legs: publish LowCmd_ to ``rt/arm_sdk``
 # (coexists with sport, unlike ``rt/lowcmd`` which would fight it). A weight on the
@@ -243,30 +247,28 @@ class UnitreeG1RobotIO(BaseRobotIO):
     def _bring_up_sport(self) -> None:
         """Stand the G1 up into walk-ready MainMode via the sport FSM.
 
-        Sequence (mirrors CMU SPARK's ``g1_real_agent`` bring-up):
-        ``<current> -> LockStand(4) -> MainMode(200)``, driven through the
+        Walks the legal forward FSM path from the CURRENT state up to MainMode
+        (e.g. ZeroTorque(0)→Damp(1)→LockStand(4, stands up)→MainMode(200)), via the
         generic ``SetFsmId`` (the pip SDK's ``Start()``/``Squat2StandUp()`` use
-        wrong ids for this firmware, returning "Invalid FSM ID"). After MainMode
-        the legs accept ``LocoClient.Move``.
-
-        NOTE: matches SPARK but is UNVERIFIED on hardware — validate on the robot
-        (it should stand+lock on ``SetFsmId(4)``, then accept ``Move`` in MainMode).
-        If ``SetFsmId(4)`` is rejected by the firmware, put the robot into
-        LockStand via the remote/App first; this then advances it to MainMode.
+        wrong ids for this firmware). Mirrors CMU SPARK's ``g1_real_agent`` bring-up.
+        VERIFIED on hardware 2026-06-23 (stand + Move). After MainMode the legs
+        accept ``LocoClient.Move``.
         """
         loco = self._loco_client
         try:
-            code, cur = loco.GetFsmId()
-            print(f"[UnitreeG1RobotIO] sport bring-up: FSM before = {cur} (code={code})")
+            _, cur = loco.GetFsmId()
         except Exception as exc:  # pragma: no cover
-            print(f"[UnitreeG1RobotIO] WARN: GetFsmId failed: {exc}")
-        for target in (_G1_FSM_LOCK_STAND, _G1_FSM_MAIN_MODE):
+            print(f"[UnitreeG1RobotIO] WARN: GetFsmId failed: {exc}; assuming ZeroTorque")
+            cur = _G1_FSM_ZERO_TORQUE
+        seq = _G1_FSM_PATH_TO_MAIN.get(cur, (_G1_FSM_LOCK_STAND, _G1_FSM_MAIN_MODE))
+        print(f"[UnitreeG1RobotIO] sport bring-up from FSM {cur}: {seq}")
+        for target in seq:
             try:
                 ret = loco.SetFsmId(target)
-                print(f"[UnitreeG1RobotIO] sport bring-up: SetFsmId({target}) -> {ret}")
+                print(f"[UnitreeG1RobotIO] SetFsmId({target}) -> {ret}")
             except Exception as exc:  # pragma: no cover
                 print(f"[UnitreeG1RobotIO] WARN: SetFsmId({target}) failed: {exc}")
-            time.sleep(1.5)
+            time.sleep(2.0)
         try:
             loco.BalanceStand(0)  # static balance once in MainMode
         except Exception:  # pragma: no cover

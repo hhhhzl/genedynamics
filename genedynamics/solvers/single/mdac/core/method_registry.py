@@ -41,6 +41,11 @@ class MethodFlags:
 # Named methods -> the single flag(s) they flip relative to full MDAC.
 # An ablation flips exactly one; baselines flip the minimal consistent set.
 _FULL = MethodFlags()
+# fair sampling baseline: shares the position-stiffness primitive + MB rollout,
+# only the MDAC manifold / prior / anneal seams removed.
+_BASELINE = replace(_FULL, use_rl_prior=False, use_soft_feasibility=False,
+                    use_tangent_projection=False, use_retraction=False,
+                    use_adaptive_schedule=False)
 METHOD_TABLE: Dict[str, MethodFlags] = {
     "mdac": _FULL,
     # --- single-flag ablations (idea.txt 993-1011) ---
@@ -53,10 +58,16 @@ METHOD_TABLE: Dict[str, MethodFlags] = {
     "mdac_no_tangent": replace(_FULL, use_tangent_projection=False),
     "mdac_no_retraction": replace(_FULL, use_retraction=False),
     "mdac_no_anneal": replace(_FULL, use_adaptive_schedule=False),
-    # --- baselines that live in the same sampler (degenerate strategies) ---
-    "dial": _FULL.off(),
-    "mbd": _FULL.off(),
-    "mppi": _FULL.off(),
+    # --- baselines in the same sampler. idea.txt §Baselines: they "optimize over
+    # the same control sequence U" -> they SHARE the position-stiffness primitive
+    # (use_stiffness on); only the MDAC manifold/prior/anneal seams are removed.
+    # The solver-level seams (softfeas/tangent/retraction/prior/anneal) are all
+    # off, so the reverse-diffusion is still DIAL-equivalent (byte-identity gate
+    # is solver-level, independent of the env stiffness chart).
+    "dial": _BASELINE,
+    "mbd": _BASELINE,
+    "mppi": _BASELINE,
+    "dial_nostiff": _FULL.off(),       # true all-off anchor (no shared primitive)
 }
 
 

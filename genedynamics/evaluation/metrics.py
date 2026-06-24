@@ -267,6 +267,21 @@ def force_tracking_error(force, force_des) -> float:
 
 
 @metric
+def force_tracking_error_tracked(force, force_des, mask) -> float:
+    """RMS force error, scored ONLY over steps where ``mask`` is truthy (e.g. the EE is
+    on the scan path). Force tracking is meaningful only while actually doing the task;
+    a controller that sits off the path gets a trivially steady force that should not
+    count. Returns NaN when there are no on-task steps (it never tracked the surface)."""
+    f, fd = _arr(force).ravel(), _arr(force_des).ravel()
+    m = _arr(mask).ravel().astype(bool)
+    n = min(f.size, fd.size, m.size)
+    if n == 0 or not m[:n].any():
+        return float("nan")
+    f, fd, m = f[:n], fd[:n], m[:n]
+    return float(np.sqrt(np.mean((f[m] - fd[m]) ** 2)))
+
+
+@metric
 def force_violation_rate(force, f_min: float = 0.0, f_max: float = np.inf) -> float:
     """Fraction of steps the contact force is outside ``[f_min, f_max]``."""
     f = _arr(force).ravel()

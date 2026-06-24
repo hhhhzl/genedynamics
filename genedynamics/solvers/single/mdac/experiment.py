@@ -13,8 +13,11 @@ no-op):
   use_retraction         -> solver gets the CFS retraction (genemetry
                            ``CfsRetraction`` + ``env.mdac_constraint`` filter,
                            wired like 2GO); lives in the geometry path
-  use_adaptive_schedule  -> backend couples rho_k / kappa_k up across reverse
-                           steps (genemetry ``ScheduleOverlay``)
+  use_adaptive_schedule  -> backend reads (margin, rho) off the current iterate's
+                           constraint each reverse step and feeds the genemetry
+                           ``ScheduleOverlay`` (2GO usage) for a kappa that scales
+                           the geometry tracking — NON-monotonic; aug_rho and the
+                           sampling sigma are left untouched (as in 2GO)
   use_rl_prior           -> solver gets the ``prior`` (else None)
 
 All methods share one CFG so the sample budget ``(Nsample, Hsample, Ndiffuse)``
@@ -46,14 +49,26 @@ def stiffness_mode_for(method: str, flags) -> str:
 
 
 def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
-              prior: Any = None, aug_lambda: float = 2.0, aug_rho: float = 200.0,
+              surface_seed: int = 0, use_base: bool = False, prior: Any = None,
+              aug_lambda: float = 2.0, aug_rho: float = 200.0,
               backend: Any = None, **cfg: Any) -> Tuple[Any, MDACSolver]:
-    """Build (env, MDACSolver) for ``method``, routing its flags to env + solver."""
+    """Build (env, MDACSolver) for ``method``, routing its flags to env + solver.
+
+    ``level`` selects the task family (arm S1-S4 / humanoid H1/H2/H4);
+    ``surface_seed`` selects the random NURBS (arm S2-S4) or the humanoid H2 DR
+    draw; ``use_base`` opens the humanoid H4-B 15D primitive (+v_base)."""
     flags = resolve_method(method)
     backend = backend or get_backend("jax")
     env_kw = {"stiffness_mode": stiffness_mode_for(method, flags)}
-    if level is not None and task == ARM_TASK:
-        env_kw["level"] = level
+    if task == ARM_TASK:
+        env_kw["surface_seed"] = surface_seed              # selects NURBS (S2-S4) + DR
+        if level is not None:
+            env_kw["level"] = level
+    elif task == HUMANOID_TASK:
+        env_kw["use_base"] = use_base                      # H4-B (+v_base)
+        env_kw["dr_seed"] = surface_seed                   # H2 domain-randomization draw
+        if level is not None:
+            env_kw["level"] = level
     env = make_env(task, **env_kw)
     geometry_fn = env.mdac_geometry_fn if flags.use_tangent_projection else None
     # CFS retraction (genemetry CfsRetraction + MDAC filter_fn, wired like 2GO);

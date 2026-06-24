@@ -49,7 +49,8 @@ def _plan(env, sol, x0, rng):
 
 def _check_task(task, level=None):
     rng = jax.random.PRNGKey(0)
-    prior = _ConstPrior(CFG["Hnode"] + 1, 25)
+    nu = make_mdac(task, "mdac", level=level, **CFG)[0].action_size   # per-task primitive dim
+    prior = _ConstPrior(CFG["Hnode"] + 1, nu)
     env0, full = make_mdac(task, "mdac", level=level, prior=prior, **CFG)
     x0 = env0.reset(jax.random.PRNGKey(1))
     base = _plan(env0, full, x0, rng)

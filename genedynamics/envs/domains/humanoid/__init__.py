@@ -77,5 +77,11 @@ try:  # humanoid box pushing (contact manifold)
         return _bp.HumanoidBoxPushEnv(_bp.HumanoidBoxPushConfig(**kw))
 
     register_environment_factory("humanoid_box_push", _make_humanoid_box_push)
+    # task-level aliases (descriptive names): double_support (fixed feet/face),
+    # heavy_dr (+ domain randomization), unjam (box-unjamming + contact-face select).
+    for _lv in ("double_support", "heavy_dr", "unjam"):
+        register_environment_factory(
+            f"humanoid_box_push_{_lv}",
+            (lambda lv: lambda **kw: _make_humanoid_box_push(level=lv, **kw))(_lv))
 except Exception:
     pass
