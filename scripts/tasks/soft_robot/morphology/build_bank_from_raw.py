@@ -27,7 +27,7 @@ import sys
 
 import numpy as np
 
-from genedynamics.morphology import (
+from genedynamics.learning.priors.morphology import (
     MeshRobotizeConfig, robotize_mesh, robotize_point_cloud, robotize_gaussians,
     save_spec_npz,
 )

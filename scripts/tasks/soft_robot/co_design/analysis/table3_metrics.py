@@ -27,7 +27,7 @@ import sys
 
 import numpy as np
 
-from genedynamics.morphology.shape_metrics import (
+from genedynamics.learning.priors.morphology.shape_metrics import (
     compute_shape_metrics, diversity_metrics, prior_reconstruction_error,
     occupancy_grid_from_voxel_id,
 )

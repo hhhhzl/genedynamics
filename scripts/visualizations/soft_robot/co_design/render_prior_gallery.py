@@ -25,7 +25,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 
-from genedynamics.morphology.asset_bank import load_spec_npz
+from genedynamics.learning.priors.morphology.asset_bank import load_spec_npz
 
 REPR = {"pointe": "point-cloud", "shape": "implicit-SDF", "trellis": "structured-voxel",
         "random": "procedural", "triposg": "image/mesh"}

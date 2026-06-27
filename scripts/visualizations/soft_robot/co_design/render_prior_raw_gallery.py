@@ -53,7 +53,7 @@ def _load_points_colors(path, n_sample=4096):
                 pts = pts[m < np.quantile(m, 0.92)]
             return pts, _height_rgb(pts)
         if "voxel_id" in d.files:                       # robotized fallback
-            from genedynamics.morphology.asset_bank import load_spec_npz
+            from genedynamics.learning.priors.morphology.asset_bank import load_spec_npz
             pts = np.asarray(load_spec_npz(path).particles_x0, np.float32)
             return pts, _height_rgb(pts)
     import trimesh

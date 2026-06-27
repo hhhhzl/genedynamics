@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(
     os.path.dirname(__file__), "..", "..", "..", "..",
 )))
 
-from genedynamics.morphology import (
+from genedynamics.learning.priors.morphology import (
     AssetBank,
     MeshRobotizeConfig,
     robotize_mesh,

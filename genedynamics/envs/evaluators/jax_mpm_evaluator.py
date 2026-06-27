@@ -106,7 +106,7 @@ class JaxMpmRolloutEvaluator:
         # back into mpm_cfg so downstream code (occupancy mass field, x_dim
         # derivation in the baseline) sees a single source of truth.
         if self.config.softbody_spec_path:
-            from genedynamics.morphology import load_spec_npz
+            from genedynamics.learning.priors.morphology import load_spec_npz
             from genedynamics.envs.external.jax_mpm.scene import build_scene_from_spec
             spec = load_spec_npz(self.config.softbody_spec_path)
             if tuple(spec.voxel_dims) != tuple(self._mpm_cfg.voxel_dims):

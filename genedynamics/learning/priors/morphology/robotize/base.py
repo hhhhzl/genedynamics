@@ -12,7 +12,7 @@ from typing import Tuple
 
 import numpy as np
 
-from .protocols import SoftBodySpec
+from ..spec import SoftBodySpec
 
 
 def lift_push_fiber_pattern(n_actuators: int) -> np.ndarray:

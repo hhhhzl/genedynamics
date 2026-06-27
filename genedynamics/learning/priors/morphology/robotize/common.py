@@ -21,8 +21,8 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from .protocols import SoftBodySpec
-from .mesh_robotize import (
+from ..spec import SoftBodySpec
+from .mesh import (
     MeshRobotizeConfig,
     RobotizeReport,
     partition_actuators,

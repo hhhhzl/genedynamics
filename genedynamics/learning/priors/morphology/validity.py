@@ -13,7 +13,7 @@ from typing import List
 
 import numpy as np
 
-from .protocols import SoftBodySpec
+from .spec import SoftBodySpec
 
 
 @dataclass(frozen=True)

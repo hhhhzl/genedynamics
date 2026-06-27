@@ -200,7 +200,7 @@ def build_scene(cfg: MPMConfig) -> SceneData:
     """Build the default crawling_ground soft body (X-bin actuators, lift-push fibers).
 
     This is the historical entry point; new code should prefer building a
-    `SoftBodySpec` (via genedynamics.morphology.default_robotize or a future
+    `SoftBodySpec` (via genedynamics.learning.priors.morphology.default_robotize or a future
     mesh_robotize) and calling build_scene_from_spec(). Kept as a thin shim
     so existing call sites (jax_mpm_evaluator, adapters) work unchanged.
 
@@ -208,7 +208,7 @@ def build_scene(cfg: MPMConfig) -> SceneData:
     fiber pattern (back lifts, front presses) breaks pure-axial peristaltic
     symmetry and produces a locomotion gait along +X.
     """
-    from genedynamics.morphology import default_robotize
+    from genedynamics.learning.priors.morphology import default_robotize
     spec = default_robotize(cfg)
     return build_scene_from_spec(spec, cfg)
 

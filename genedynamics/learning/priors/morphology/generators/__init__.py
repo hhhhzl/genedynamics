@@ -7,7 +7,7 @@ entry points — to keep the dependency graph obvious.
 
 Usage
 -----
-    from genedynamics.morphology.priors import get_prior
+    from genedynamics.learning.priors.morphology.generators import get_prior
     prior = get_prior("random_shapes", n_actuators_hint=10)
     meshes = prior.sample("worm-like crawling robot", n=4, seed=0)
 """
@@ -68,14 +68,14 @@ def _safe_import(modname: str) -> None:
         raise
 
 
-_safe_import("genedynamics.morphology.priors.random_shapes")
-_safe_import("genedynamics.morphology.priors.triposg")
+_safe_import("genedynamics.learning.priors.morphology.generators.random_shapes")
+_safe_import("genedynamics.learning.priors.morphology.generators.triposg")
 # Table 3 modern priors (lazy mesh adapters; register even when uninstalled).
-_safe_import("genedynamics.morphology.priors.hunyuan3d")
-_safe_import("genedynamics.morphology.priors.trellis")
-_safe_import("genedynamics.morphology.priors.craftsman")
-_safe_import("genedynamics.morphology.priors.meshflow")
-_safe_import("genedynamics.morphology.priors.diffgs")
+_safe_import("genedynamics.learning.priors.morphology.generators.hunyuan3d")
+_safe_import("genedynamics.learning.priors.morphology.generators.trellis")
+_safe_import("genedynamics.learning.priors.morphology.generators.craftsman")
+_safe_import("genedynamics.learning.priors.morphology.generators.meshflow")
+_safe_import("genedynamics.learning.priors.morphology.generators.diffgs")
 
 
 __all__ = [

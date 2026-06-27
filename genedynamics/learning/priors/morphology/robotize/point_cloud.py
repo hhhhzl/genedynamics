@@ -14,9 +14,9 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from .protocols import SoftBodySpec
-from .mesh_robotize import MeshRobotizeConfig, RobotizeReport
-from .robotize_common import (
+from ..spec import SoftBodySpec
+from .mesh import MeshRobotizeConfig, RobotizeReport
+from .common import (
     normalize_points_to_box,
     voxelize_points,
     finalize_from_voxelization,

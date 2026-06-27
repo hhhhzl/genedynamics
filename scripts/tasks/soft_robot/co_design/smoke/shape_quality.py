@@ -23,7 +23,7 @@ import numpy as np
 
 def part_a() -> bool:
     print("=" * 70 + "\nPart A — shape metrics flag good vs ugly bodies\n" + "=" * 70)
-    from genedynamics.morphology.shape_metrics import compute_shape_metrics
+    from genedynamics.learning.priors.morphology.shape_metrics import compute_shape_metrics
     cube = np.ones((3, 3, 3), bool)
     specks = np.zeros((4, 4, 4), bool); specks[::2, ::2, ::2] = True
     mc, ms = compute_shape_metrics(cube), compute_shape_metrics(specks)
@@ -85,8 +85,8 @@ def part_c() -> bool:
     print("\n" + "=" * 70 + "\nPart C — DiffuseBot-strict single-CC robotize\n" + "=" * 70)
     try:
         import trimesh
-        from genedynamics.morphology.mesh_robotize import robotize_mesh, MeshRobotizeConfig
-        from genedynamics.morphology.sdf import (
+        from genedynamics.learning.priors.morphology.robotize.mesh import robotize_mesh, MeshRobotizeConfig
+        from genedynamics.learning.priors.morphology.robotize.sdf import (
             count_components, voxelize_mesh, normalize_mesh_to_box,
         )
     except Exception as e:

@@ -33,8 +33,8 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from .protocols import SoftBodySpec
-from .robotize import lift_push_fiber_pattern  # reuse the back-lift / front-press pattern
+from ..spec import SoftBodySpec
+from .base import lift_push_fiber_pattern  # reuse the back-lift / front-press pattern
 from .sdf import (
     repair_mesh,
     normalize_mesh_to_box,

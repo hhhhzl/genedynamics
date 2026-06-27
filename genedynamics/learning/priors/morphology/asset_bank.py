@@ -30,8 +30,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from .protocols import SoftBodySpec
-from .mesh_robotize import RobotizeReport, MeshRobotizeConfig
+from .spec import SoftBodySpec
+from .robotize.mesh import RobotizeReport, MeshRobotizeConfig
 
 
 SCHEMA_VERSION = 1
@@ -180,7 +180,7 @@ class BankManifest:
             raise ValueError(
                 f"manifest schema_version={d['schema_version']} newer than "
                 f"current code SCHEMA_VERSION={SCHEMA_VERSION}; "
-                f"upgrade genedynamics.morphology.asset_bank"
+                f"upgrade genedynamics.learning.priors.morphology.asset_bank"
             )
         prior = d.get("prior") or {}
         return cls(

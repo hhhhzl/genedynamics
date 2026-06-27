@@ -12,16 +12,16 @@ Phase 3 additions (mesh-based pipeline):
 - save_spec_npz / load_spec_npz — single-asset round trip
 
 Sub-packages:
-- genedynamics.morphology.priors — registry of 3D generative priors
+- genedynamics.learning.priors.morphology.generators — 3D generative shape models
                                     (random_shapes, triposg, ...)
 """
 
-from .protocols import SoftBodySpec
-from .robotize import default_robotize, lift_push_fiber_pattern
+from .spec import SoftBodySpec
+from .robotize.base import default_robotize, lift_push_fiber_pattern
 from .validity import ValidityReport, check_spec
 
 # Phase 3 — keep these imports lightweight (pure numpy + lazy-loaded heavy deps).
-from .mesh_robotize import (
+from .robotize.mesh import (
     MeshRobotizeConfig,
     RobotizeReport,
     robotize_mesh,
@@ -42,14 +42,14 @@ from .asset_bank import (
 )
 
 # Stage 6 — unified robotization fronts (point cloud + Gaussian splat).
-from .robotize_common import (
+from .robotize.common import (
     finalize_from_voxelization,
     voxelize_points,
     gaussians_to_voxelization,
     normalize_points_to_box,
 )
-from .pc_robotize import robotize_point_cloud
-from .gs_robotize import robotize_gaussians
+from .robotize.point_cloud import robotize_point_cloud
+from .robotize.gaussian import robotize_gaussians
 
 # Table-3 — shape/topology + connectivity quality metrics (co-design eval).
 from .shape_metrics import (

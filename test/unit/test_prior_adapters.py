@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from genedynamics.morphology.priors import (
+from genedynamics.learning.priors.morphology.generators import (
     list_priors,
     get_prior,
     MissingDependencyError,

@@ -25,7 +25,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from genedynamics.morphology.asset_bank import load_spec_npz
+from genedynamics.learning.priors.morphology.asset_bank import load_spec_npz
 from genedynamics.envs.external.jax_mpm.scene import (
     MPMConfig, build_scene_from_spec, rollout_return_batch,
 )

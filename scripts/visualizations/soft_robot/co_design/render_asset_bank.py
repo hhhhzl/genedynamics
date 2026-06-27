@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import numpy as np
 
-from genedynamics.morphology.asset_bank import load_spec_npz
+from genedynamics.learning.priors.morphology.asset_bank import load_spec_npz
 
 
 def main() -> int:

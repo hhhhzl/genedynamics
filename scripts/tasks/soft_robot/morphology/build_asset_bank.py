@@ -34,8 +34,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(
     os.path.dirname(__file__), "..", "..", "..", "..",
 )))
 
-from genedynamics.morphology import AssetBank
-from genedynamics.morphology.priors import get_prior, list_priors, MissingDependencyError
+from genedynamics.learning.priors.morphology import AssetBank
+from genedynamics.learning.priors.morphology.generators import get_prior, list_priors, MissingDependencyError
 
 
 log = logging.getLogger("build_asset_bank")
@@ -134,7 +134,7 @@ def main(argv: List[str] = None) -> int:
         existing_prompt_texts = {p.text for p in bank.manifest.prompts}
         for p in prompts:
             if p not in existing_prompt_texts:
-                from genedynamics.morphology.asset_bank import PromptEntry, prompt_id as _pid
+                from genedynamics.learning.priors.morphology.asset_bank import PromptEntry, prompt_id as _pid
                 bank.manifest.prompts.append(PromptEntry(id=_pid(p), text=p))
     else:
         bank = AssetBank.create(

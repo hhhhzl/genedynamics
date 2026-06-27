@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from genedynamics.morphology import (
+from genedynamics.learning.priors.morphology import (
     MeshRobotizeConfig,
     robotize_point_cloud,
     robotize_gaussians,

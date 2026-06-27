@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from genedynamics.morphology.shape_metrics import (
+from genedynamics.learning.priors.morphology.shape_metrics import (
     compute_shape_metrics, connectivity_metrics, diversity_metrics,
     occupancy_grid_from_voxel_id, occupancy_grid_from_occ,
 )
