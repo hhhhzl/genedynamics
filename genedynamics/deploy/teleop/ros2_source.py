@@ -36,7 +36,7 @@ __all__ = ["ROS2TwistSource"]
 
 _ROS2_AVAILABLE = False
 try:
-    import rclpy  # noqa: F401
+    import rclpy  
     _ROS2_AVAILABLE = True
 except ImportError:
     pass

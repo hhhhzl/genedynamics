@@ -546,7 +546,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        import jax  # noqa: F401
+        import jax  
     except ImportError:
         print("JAX not installed; run with pytest or install jax.")
         raise SystemExit(1)

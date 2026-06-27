@@ -33,7 +33,7 @@ from typing import Any, Optional, Tuple
 from genedynamics.core import get_backend
 from genedynamics.envs.factories import make_env
 from genedynamics.solvers.single.mdac.mdac import MDACSolver
-from genedynamics.solvers.single.mdac.core.method_registry import resolve_method
+from genedynamics.solvers.single.mdac.core.method_registry import resolve_method, METHOD_TABLE
 
 ARM_TASK = "manipulator_surface_scan"
 HUMANOID_TASK = "humanoid_box_push"
@@ -91,6 +91,81 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
     return env, solver
 
 
+# --- baseline dispatcher: method -> (env, runner) on the SAME brax env + budget ---------
+def _build_env(task, method, level, surface_seed, use_base, env_overrides):
+    """Build the (medium-aware) env for a NON-MDAC baseline. Baselines SHARE the
+    position-stiffness primitive (idea.txt) -> stiffness_mode='log_spd'."""
+    env_kw = {"stiffness_mode": "log_spd"}
+    if task == ARM_TASK:
+        env_kw["surface_seed"] = surface_seed
+        if level is not None:
+            env_kw["level"] = level
+    elif task == HUMANOID_TASK:
+        env_kw["use_base"] = use_base
+        env_kw["dr_seed"] = surface_seed
+        if level is not None:
+            env_kw["level"] = level
+    if env_overrides:
+        env_kw.update({k: v for k, v in env_overrides.items() if k != "stiffness_mode"})
+    return make_env(task, **env_kw)
+
+
+def _build_baseline_solver(method, env, backend, **cfg):
+    """Construct the NON-MDAC baseline solver (its OWN registered solver: mppi/pegasusflow/
+    atacom/issa) on the brax env. Each exposes ``run_receding(x0, n_steps, rng)`` natively."""
+    Hsample = int(cfg.get("Hsample", 16))
+    Hnode = int(cfg.get("Hnode", 4))
+    Nsample = int(cfg.get("Nsample", 2048))
+    Ndiffuse = int(cfg.get("Ndiffuse", 2))
+    Ndiffuse_init = int(cfg.get("Ndiffuse_init", 10))
+    action_limit = float(cfg.get("action_limit", 1.0))
+    seed = int(cfg.get("seed", 0))
+    if method == "mppi":
+        from genedynamics.solvers.single.mppi.mppi import MPPISolver
+        return MPPISolver(env, None, backend, Hsample=Hsample, Hnode=Hnode, Nsample=Nsample,
+                          Ndiffuse=Ndiffuse, Ndiffuse_init=Ndiffuse_init,
+                          noise_sigma=float(cfg.get("noise_sigma", 0.3)),
+                          lambda_=float(cfg.get("lambda_", 1.0)), action_limit=action_limit, seed=seed)
+    if method == "pegasusflow":
+        from genedynamics.solvers.single.pegasusflow.pegasusflow import PegasusFlowSolver
+        return PegasusFlowSolver(env, Hsample=Hsample, Hnode=Hnode, Nsample=Nsample,
+                                 temp_sample=float(cfg.get("temp_sample", 0.1)), Ndiffuse=Ndiffuse,
+                                 Ndiffuse_init=Ndiffuse_init, action_limit=action_limit, seed=seed)
+    if method in ("atacom", "issa"):
+        # RL baselines (trained brax policy, engine in learning/): ISSA = raw-action policy +
+        # AdamBA safe-set projection at deploy; ATACOM = a manifold-resident tangent-space policy
+        # (its ckpt is trained on the AtacomEnvWrapper, action_size = nu - n_f, NOT shared w/ ISSA).
+        from genedynamics.learning.train_rl_policy import load_policy, build_policy_act
+        ckpt = cfg.get("policy_ckpt")
+        if ckpt is None:
+            raise ValueError(f"'{method}' needs a trained 'policy_ckpt' "
+                             f"(run scripts/tasks/robot/arm/train_rl_baseline.py "
+                             f"{'--atacom ' if method == 'atacom' else ''}first)")
+        act_fn = build_policy_act(*load_policy(ckpt))
+        if method == "atacom":
+            from genedynamics.solvers.single.atacom.atacom import AtacomSolver
+            return AtacomSolver(env, act_fn, action_limit=action_limit, seed=seed)
+        from genedynamics.solvers.single.issa.issa import IssaSolver
+        return IssaSolver(env, act_fn, action_limit=action_limit, seed=seed)
+    raise NotImplementedError(f"baseline method '{method}' not recognized")
+
+
+def make_controller(task, method="mdac", *, level=None, surface_seed=0, use_base=False,
+                    prior=None, aug_lambda=2.0, aug_rho=200.0, backend=None,
+                    env_overrides=None, **cfg):
+    """Build ``(env, runner)`` for ANY method on the SAME brax env at the SAME budget:
+    an MDAC variant (``MDACSolver`` via ``make_mdac``), a sampling baseline (``mppi`` /
+    ``pegasusflow``), or an RL baseline (``atacom`` / ``issa``). All expose
+    ``runner.run_receding(x0, n_steps, rng) -> RecedingHorizonResult``."""
+    if method in METHOD_TABLE:                       # MDAC variant (incl. dial/mbd/anchors)
+        return make_mdac(task, method, level=level, surface_seed=surface_seed, use_base=use_base,
+                         prior=prior, aug_lambda=aug_lambda, aug_rho=aug_rho, backend=backend,
+                         env_overrides=env_overrides, **cfg)
+    env = _build_env(task, method, level, surface_seed, use_base, env_overrides)
+    backend = backend or get_backend("jax")
+    return env, _build_baseline_solver(method, env, backend, **cfg)
+
+
 def metrics_plugin_for(task: str):
     """The general metrics plugin for a task (shared library + task extractor)."""
     from genedynamics.experiments.plugins.metrics.extractors import (
@@ -100,4 +175,5 @@ def metrics_plugin_for(task: str):
             else humanoid_box_push_metrics_plugin())
 
 
-__all__ = ["ARM_TASK", "HUMANOID_TASK", "stiffness_mode_for", "make_mdac", "metrics_plugin_for"]
+__all__ = ["ARM_TASK", "HUMANOID_TASK", "stiffness_mode_for", "make_mdac",
+           "make_controller", "metrics_plugin_for"]

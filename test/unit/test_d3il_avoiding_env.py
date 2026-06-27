@@ -7,11 +7,11 @@ import pytest
 def test_d3il_avoiding_env_start_and_reset():
     """Ensure the vendored D3IL avoiding env can start and reset."""
     try:
-        import pybullet  # noqa: F401
+        import pybullet  
     except ImportError:
         pytest.skip("pybullet not available")
     try:
-        import pinocchio  # noqa: F401
+        import pinocchio  
     except ImportError:
         pytest.skip("pinocchio not available")
 

@@ -41,7 +41,7 @@ def main() -> int:
         BaselineExperimentConfig,
     )
     from genedynamics.experiments.framework.baseline_registry import list_baselines
-    import genedynamics.experiments.framework.baselines  # noqa: F401 — trigger registration
+    import genedynamics.experiments.framework.baselines   — trigger registration
 
     if args.seed is not None:
         data["seeds"] = [args.seed]

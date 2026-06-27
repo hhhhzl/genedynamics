@@ -31,7 +31,7 @@ try:
     from twin import Entity as _E  # type: ignore
     from twin import Geometry as _G  # type: ignore
     from twin import Pose as _P  # type: ignore
-    from twin import Quat as _Q  # type: ignore  # noqa: F401 (struct used via CreatePose)
+    from twin import Quat as _Q  # type: ignore   (struct used via CreatePose)
     from twin import Vec3 as _V3  # type: ignore
     from twin import WorldSnapshot as _WS  # type: ignore
     _AVAILABLE = True

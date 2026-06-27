@@ -101,18 +101,23 @@ def arm_surface_scan_signals(trajectory, env, obstacles, constraints, **kw) -> D
     def per_step(e, s, u):
         h, _ = e.constraint_residual(s, u)
         _, s_vec, f_cmd = e._unpack(u)                     # physical stiffness svec + commanded force
-        # REAL normal contact force from the mjx probe-hfield contact (not a proxy);
-        # in_contact = a nonzero physical contact force.
-        f_real = e._contact_force(s.pipeline_state)
+        xi, eta = s.info["xi"], s.info["eta"]
+        # contact force at the scan coords: real mjx contact (rigid/soft) or the Winkler
+        # reaction (hybrid). in_contact = a nonzero contact force.
+        f_real = e._contact_force_at(s.pipeline_state, xi, eta)
         in_contact = (f_real > 0.5).astype(jnp.float32)
         # on_surface = the EE is doing the scan properly: on the path (|h_surf| small) AND
         # actually pressing (in contact). Force-tracking precision is only defined while
         # pressing on-path -- a baseline that sits off the path, or a contact-loss step
         # (force=0, scored separately by contact_loss_rate), must not skew force tracking.
         on_surface = ((jnp.linalg.norm(h[:3]) < e._config.track_tol) & (f_real > 0.5)).astype(jnp.float32)
+        # surface deformation = penetration; k_surf = local surface stiffness (spatial on hybrid).
+        pen = e._penetration_at(s.pipeline_state, xi, eta)
+        k_surf = e._k_surf_fn(xi, eta)
         ee = s.pipeline_state.site_xpos[e._ee_site]
         return {"ee": ee, "h": h, "stiffness": s_vec, "on_surface": on_surface[None],
-                "force": f_real[None], "force_cmd": f_cmd[None], "contact": in_contact[None]}
+                "force": f_real[None], "force_cmd": f_cmd[None], "contact": in_contact[None],
+                "penetration": pen[None], "k_surf": k_surf[None]}
 
     d = _roll_brax(env, _x0(env, kw), actions, per_step)
     cfg = env._config
@@ -126,6 +131,8 @@ def arm_surface_scan_signals(trajectory, env, obstacles, constraints, **kw) -> D
         "stiffness": d["stiffness"], "force": d["force"].reshape(-1),
         "force_cmd": d["force_cmd"].reshape(-1), "in_contact": d["contact"].reshape(-1),
         "on_surface": d["on_surface"].reshape(-1),
+        "deformation": d["penetration"].reshape(-1),   # per-step surface deformation (soft/hybrid)
+        "k_surf": d["k_surf"].reshape(-1),              # local surface stiffness (spatial on hybrid)
         "force_des": np.full(h.shape[0], f_target),
         "f_min": float(getattr(cfg, "f_min", 0.0)), "f_max": float(getattr(cfg, "f_max", 0.0)),
         "seconds": float(kw.get("planning_time", 0.0)),
@@ -144,6 +151,11 @@ ARM_METRICS = [
      "bind": {"force": "force", "force_des": "force_des", "mask": "on_surface"}},
     {"name": "force_violation_rate", "as": "force_violation_rate", "bind": {"force": "force_cmd"}},
     {"name": "cvar", "as": "force_cvar95", "bind": {"x": "force"}},   # worst-case high force tail
+    # soft/hybrid medium: surface deformation + compliant-contact transients (~0 on rigid).
+    "deformation_depth", "deformation_peak",
+    {"name": "cvar", "as": "deformation_cvar95", "bind": {"x": "deformation"}},
+    "force_overshoot", "contact_chatter",
+    "stiffness_adaptation_corr",        # RQ2: commanded-K vs local k_surf (hybrid spatial map)
     "control_smoothness", "stiffness_smoothness", "energy", "runtime",
 ]
 

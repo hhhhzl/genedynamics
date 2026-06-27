@@ -1,0 +1,44 @@
+# ── Arm surface-scan · impedance control · HYBRID surface (spatial stiffness map) ──
+# Shared base for the HYBRID-medium comparison: the surface is a FLAT plane with a FIXED
+# spatially-varying stiffness map k(ξ,η) (per environment: stripes / center hard / center
+# soft). mjx's per-geom solref can't express a spatial map, so hybrid uses a model-based
+# Winkler foundation (probe non-collidable + analytic reaction k(ξ,η)·penetration). The
+# RQ2 payoff metric `stiffness_adaptation_corr` rewards a controller that stiffens on hard
+# regions and softens on soft. Mirrors rigid/soft: `<env>/<role>/<method>.yaml`.
+#
+# Each env folder is a stiffness MAP on the plane geometry: env_params.level = plane (the
+# geometry), the top-level `level` in each method yaml = the scenario LABEL (for the
+# per-environment comparison table), and env_params.stiffness_map (per env _base) = the map.
+
+task: manipulator_surface_scan
+
+seeds: [0, 1]
+n_steps: 14
+
+env_params:
+  medium: hybrid
+  level: plane               # geometry is a flat plane; the stiffness MAP (per env) varies
+  k_hard: 8000.0             # hard-region Winkler stiffness (N/m) -> small sink
+  k_soft: 2000.0             # soft-region Winkler stiffness -> large sink
+  dt: 0.02
+  f_target: 45.0
+  f_min: 0.0
+  f_max: 60.0
+  contact_depth: 0.025
+
+method_params:
+  Hsample: 16
+  Hnode: 4
+  Nsample: 2048
+  Ndiffuse_init: 10
+  Ndiffuse: 2
+  temp_sample: 0.06
+  action_limit: 1.0
+  dt: 0.02
+  ctrl_dt: 0.02
+  seed: 0
+  aug_lambda: 2.0
+  aug_rho: 200.0
+
+metrics: [arm_surface_scan]
+backend: jax

@@ -181,7 +181,7 @@ class CMAESBaseline(BaselineProtocol):
         reward-vs-generation against diffusion baselines.
         """
         try:
-            import cma  # noqa: F401
+            import cma  
             return self._run_cma_package(
                 population_objective, x0, sigma0, lo, hi, popsize, max_generations,
                 gen_history=gen_history,

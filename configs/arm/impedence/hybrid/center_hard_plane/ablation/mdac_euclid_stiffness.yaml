@@ -1,0 +1,8 @@
+# Ablation: EUCLIDEAN stiffness (log_spd off -> diag softplus).
+# environment: center_hard_plane (hybrid center_hard map on plane)
+base: ../_base.yaml
+
+level: center_hard_plane
+method: mdac_euclid_stiffness
+name: arm_impedence_hybrid_center_hard_plane_mdac_euclid_stiffness
+output_dir: results/arm/impedence/hybrid/center_hard_plane/ablation/mdac_euclid_stiffness

@@ -5,6 +5,6 @@ Importing the modules runs their registry registration, exposing the env names
 ``single_integrator_box_2d`` via the environment registry.
 """
 
-from . import double_integrator_box  # noqa: F401
-from . import double_integrator_box_2d  # noqa: F401
-from . import single_integrator_box_2d  # noqa: F401
+from . import double_integrator_box  
+from . import double_integrator_box_2d  
+from . import single_integrator_box_2d  

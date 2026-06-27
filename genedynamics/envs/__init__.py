@@ -18,7 +18,7 @@ except ImportError:
 # (decorator-based registration). Broad guard: domain backends may fail to
 # import on minimal installs — those names just stay absent (as before).
 try:
-    import genedynamics.envs.domains  # noqa: F401
+    import genedynamics.envs.domains  
 except Exception:
     pass
 

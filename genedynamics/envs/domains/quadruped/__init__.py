@@ -35,7 +35,7 @@ try:
 except Exception:
     pass
 try:
-    from . import brax as _brax  # noqa: F401  (class module; crashes on CPU-only -> skipped)
+    from . import brax as _brax
 except Exception:
     pass
 

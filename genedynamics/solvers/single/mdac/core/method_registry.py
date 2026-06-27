@@ -66,7 +66,10 @@ METHOD_TABLE: Dict[str, MethodFlags] = {
     # is solver-level, independent of the env stiffness chart).
     "dial": _BASELINE,
     "mbd": _BASELINE,
-    "mppi": _BASELINE,
+    # "mppi" as an MDAC flag-degeneration is the same _BASELINE as dial; it is renamed
+    # "dial_anchor" so the name "mppi" frees up for the standalone brax MPPI baseline
+    # (a NEW registered solver dispatched by make_controller, not an MDAC flag-set).
+    "dial_anchor": _BASELINE,
     "dial_nostiff": _FULL.off(),       # true all-off anchor (no shared primitive)
 }
 

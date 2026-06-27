@@ -1,7 +1,7 @@
 """Backend implementations for the DIAL solver."""
 
 try:
-    from . import dial_jax  # noqa: F401
+    from . import dial_jax  
 except ImportError:
     pass
 

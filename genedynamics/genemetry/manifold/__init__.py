@@ -7,7 +7,7 @@ Auto-registers available backends on import.
 from genedynamics.genemetry.manifold.sdf import SdfManifold
 
 try:
-    from genedynamics.genemetry.manifold.backends import sdf_jax  # noqa: F401
+    from genedynamics.genemetry.manifold.backends import sdf_jax  
 except ImportError:
     pass
 

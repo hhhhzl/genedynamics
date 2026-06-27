@@ -776,16 +776,20 @@ class DPCCBackendTorch:
             ee_xy = np.asarray(pos, dtype=np.float32).reshape(-1)[:2]
             err = target - ee_xy
             if float(np.linalg.norm(err)) <= tol:
-                break            J = np.asarray(robot.getJacobian(q), dtype=np.float32)
+                break
+            J = np.asarray(robot.getJacobian(q), dtype=np.float32)
             J_xy = J[:2, :7]
             JJt = J_xy @ J_xy.T
             step_xy = np.linalg.solve(JJt + lam * np.eye(2, dtype=np.float32), err)
             dq = J_xy.T @ step_xy
-            q = q + dq.astype(np.float32)            if hasattr(robot, "joint_pos_min") and hasattr(robot, "joint_pos_max"):
+            q = q + dq.astype(np.float32)
+            if hasattr(robot, "joint_pos_min") and hasattr(robot, "joint_pos_max"):
                 qmin = np.asarray(robot.joint_pos_min, dtype=np.float32).reshape(-1)[:7]
                 qmax = np.asarray(robot.joint_pos_max, dtype=np.float32).reshape(-1)[:7]
                 q = np.clip(q, qmin, qmax)
-        return q.astype(np.float32)    def _get_current_robot_q(self) -> Optional[np.ndarray]:
+        return q.astype(np.float32)
+
+    def _get_current_robot_q(self) -> Optional[np.ndarray]:
         robot, _quat = self._get_robot_and_quat()
         if robot is None:
             return None
@@ -796,7 +800,9 @@ class DPCCBackendTorch:
                 return None
             return q.copy()
         except Exception:
-            return None    def _get_robot_and_quat(self) -> Tuple[Any, np.ndarray]:
+            return None
+
+    def _get_robot_and_quat(self) -> Tuple[Any, np.ndarray]:
         quat_default = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
         inner = getattr(getattr(self.env, "_task_env", None), "_env", None)
         robot = getattr(inner, "robot", None) if inner is not None else None

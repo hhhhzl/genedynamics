@@ -125,7 +125,7 @@ class IsaacLabRobotIO(BaseRobotIO):
         simulation_app = launcher.app
 
         import gymnasium as gym
-        import omni.isaac.lab_tasks  # noqa: F401 — registers Isaac Lab tasks
+        import omni.isaac.lab_tasks
 
         env = gym.make(task_name, num_envs=1, device=device)
         return env, simulation_app

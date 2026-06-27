@@ -1,0 +1,8 @@
+# MDAC (main) — full method: log-SPD stiffness + AL soft-feas + tangent projection + CFS retraction + coupled anneal.
+# environment: stripes_plane (hybrid stripes map on plane)
+base: ../_base.yaml
+
+level: stripes_plane
+method: mdac
+name: arm_impedence_hybrid_stripes_plane_mdac
+output_dir: results/arm/impedence/hybrid/stripes_plane/main/mdac

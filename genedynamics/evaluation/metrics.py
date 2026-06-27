@@ -297,6 +297,55 @@ def contact_loss_rate(in_contact) -> float:
 
 
 @metric
+def deformation_depth(deformation) -> float:
+    """Mean surface deformation (probe penetration depth) over the scan — ~0 on a rigid
+    surface, > 0 on a soft/compliant medium."""
+    a = _arr(deformation).ravel()
+    return float(np.mean(a)) if a.size else 0.0
+
+
+@metric
+def deformation_peak(deformation) -> float:
+    """Worst-case (max) surface deformation over the scan."""
+    a = _arr(deformation).ravel()
+    return float(np.max(a)) if a.size else 0.0
+
+
+@metric
+def force_overshoot(force, force_des) -> float:
+    """Peak force above the desired target ``max(0, max(force - force_des))`` — contact-onset
+    / boundary over-press, which a compliant (soft) surface makes easy to overshoot."""
+    f, fd = _arr(force).ravel(), _arr(force_des).ravel()
+    n = min(f.size, fd.size)
+    return float(max(0.0, np.max(f[:n] - fd[:n]))) if n else 0.0
+
+
+@metric
+def contact_chatter(in_contact) -> float:
+    """Number of contact make/break transitions (0<->1) — contact instability / bounce,
+    worse on soft / wet surfaces. Lower is steadier."""
+    a = _arr(in_contact).ravel()
+    if a.size < 2:
+        return 0.0
+    return float(np.sum(np.abs(np.diff((a > 0.5).astype(np.float64))) > 0.5))
+
+
+@metric(higher_is_better=True)
+def stiffness_adaptation_corr(stiffness, k_surf) -> float:
+    """Correlation between the commanded stiffness magnitude and the local surface stiffness
+    along the path — > 0 means the controller stiffens on hard regions and softens on soft
+    (the RQ2 stiffness-adaptation payoff, meaningful on a HYBRID spatial-stiffness map). 0
+    when either is constant (no spatial signal to adapt to, e.g. rigid/soft)."""
+    s = _arr(stiffness)
+    s = np.linalg.norm(s.reshape(s.shape[0], -1), axis=1) if s.ndim > 1 else s.ravel()
+    k = _arr(k_surf).ravel()
+    n = min(s.size, k.size)
+    if n < 2 or np.std(s[:n]) < 1e-9 or np.std(k[:n]) < 1e-9:
+        return 0.0
+    return float(np.corrcoef(s[:n], k[:n])[0, 1])
+
+
+@metric
 def tangential_slip(slip_speed) -> float:
     """Mean tangential slip speed at the contact."""
     a = _arr(slip_speed).ravel()

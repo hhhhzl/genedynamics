@@ -288,7 +288,7 @@ def main() -> int:
             BaselineExperimentPlatform,
             BaselineExperimentConfig,
         )
-        import genedynamics.experiments.framework.baselines  # noqa: F401
+        import genedynamics.experiments.framework.baselines  
 
         cfg = BaselineExperimentConfig(
             baseline_name=data.get("baseline_name", "mrmfmbd"),

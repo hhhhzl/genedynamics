@@ -56,6 +56,7 @@ except Exception:  # pragma: no cover
 
 from genedynamics.core.control.stiffness import PrimitiveSpec, stiffness_log_to_pd
 from genedynamics.core.coverage import surface_geometry as sg
+from genedynamics.core.contact.elastic_foundation import stiffness_field
 
 _ASSET = (Path(__file__).resolve().parents[2] / "assets" / "franka_panda" / "panda_arm.xml")
 _HOME_QPOS = jnp.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.5, 0.78], dtype=jnp.float32)
@@ -75,11 +76,13 @@ def _ee_home_fk():
     return np.asarray(d0.site_xpos[sid])
 
 
-def _build_contact_model(surface, ee0, n, depth, friction, solref):
+def _build_contact_model(surface, ee0, n, depth, friction, solref, collidable=True):
     """Place the analytic surface so its scan-start point sits ``depth`` below the
-    home EE, triangulate its heights into a mujoco HFIELD, and inject it + a
-    collidable EE probe into the Panda model -> a REAL contact model (mjx
-    sphere-hfield). Returns (MjModel, placed Surface)."""
+    home EE, triangulate its heights into a mujoco HFIELD, and inject it (+ a
+    collidable EE probe when ``collidable``) into the Panda model -> a REAL contact model
+    (mjx sphere-hfield). For the hybrid medium ``collidable=False`` keeps the probe
+    non-collidable (the model-based Winkler reaction is applied in the impedance torque
+    instead, since mjx can't do a per-cell spatial stiffness). Returns (MjModel, surface)."""
     p0 = np.asarray(sg.point(surface, 0.1, 0.5))
     surface = sg.translate(surface, np.array([ee0[0] - p0[0], ee0[1] - p0[1], (ee0[2] - depth) - p0[2]]))
     g = np.linspace(0.0, 1.0, n)
@@ -90,7 +93,9 @@ def _build_contact_model(surface, ee0, n, depth, friction, solref):
     rx, ry = (float(X.max()) - float(X.min())) / 2, (float(Y.max()) - float(Y.min())) / 2
     hdata = ((Z - zlo) / elev).T.reshape(-1).astype(np.float32)        # mujoco hfield: [row=y, col=x]
 
-    xml = open(_ASSET).read().replace('contype="0" conaffinity="0" />', 'contype="1" conaffinity="1" />', 1)
+    xml = open(_ASSET).read()
+    if collidable:                                                     # rigid/soft: real mjx probe-hfield contact
+        xml = xml.replace('contype="0" conaffinity="0" />', 'contype="1" conaffinity="1" />', 1)
     asset = f'<asset><hfield name="surf" nrow="{n}" ncol="{n}" size="{rx:.5f} {ry:.5f} {elev:.5f} 0.05"/></asset>'
     hgeom = (f'<geom name="surf" type="hfield" hfield="surf" pos="{cx:.5f} {cy:.5f} {zlo:.5f}" '
              f'contype="1" conaffinity="1" friction="{friction:.3f} 0.01 0.001" solref="{solref}"/>')
@@ -144,6 +149,19 @@ class PandaSurfaceScanConfig:
     s_scale: float = 2.0            # normalized svec [-1,1] -> log-stiffness offset (exp(3.3..7.3))
     # stiffness chart: "log_spd" K=exp(S) | "euclid" diag softplus | "fixed" K_ref | "none" I
     stiffness_mode: str = "log_spd"
+    # contact MEDIUM: "rigid" (mjx hfield, default — byte-identical to before) | "soft"
+    # (compliant contact = a softer solref derived from soft_stiffness, so the probe sinks
+    # into the surface under the press = real deformation) | "hybrid" (spatial stiffness
+    # map — added with the geometry/impedance layer later). Medium-gated, so rigid is unchanged.
+    medium: str = "rigid"
+    soft_stiffness: float = 1.5e3       # soft-medium contact stiffness -> solref time const
+                                        # (lower = softer = more penetration / deformation)
+    # hybrid medium: a fixed SPATIAL stiffness map (mjx per-geom solref can't do this, so
+    # hybrid uses a model-based Winkler foundation — probe non-collidable + analytic reaction
+    # k_map(ξ,η)·penetration). stiffness_map: uniform | stripes | center_hard | center_soft.
+    stiffness_map: str = "uniform"
+    k_hard: float = 8.0e3               # hard-region Winkler stiffness (N/m) -> small sink
+    k_soft: float = 2.0e3               # soft-region Winkler stiffness -> large sink
     # domain randomization (S4): surface stiffness + contact friction
     surface_stiffness: float = 1.0e4    # default ~rigid (negligible sink)
     friction: float = 1.0
@@ -177,10 +195,25 @@ class PandaSurfaceScanEnv(PipelineEnv):
             ks = float(jax.random.uniform(rk, minval=lo, maxval=hi))
             solref = f"{0.02 * (1.0e4 / ks):.4f} 1"
 
+        # contact MEDIUM = soft: a softer (more compliant) contact via a solref time
+        # constant derived from soft_stiffness (same ks->solref map as the unseen DR), so
+        # the probe penetrates more under the same force = surface deformation. Applied to
+        # ALL surface families. (hybrid's spatial stiffness map needs the geometry/impedance
+        # layer, added later; rigid leaves solref untouched.)
+        if str(cfg.medium).lower() == "soft":
+            solref = f"{0.02 * (1.0e4 / max(cfg.soft_stiffness, 1.0)):.4f} 1"
+
+        # contact medium: rigid/soft use the REAL mjx probe-hfield contact; hybrid uses a
+        # model-based Winkler reaction (probe non-collidable) for its spatial stiffness map.
+        self._medium = str(cfg.medium).lower()
+        self._map_kind = str(cfg.stiffness_map).lower()
+        self._k_hard, self._k_soft = jnp.float32(cfg.k_hard), jnp.float32(cfg.k_soft)
+
         # build the REAL contact model: analytic surface -> mjx hfield, EE -> probe.
         surface = sg.surface_for_level(cfg.level, cfg.surface_seed)
         ee0 = _ee_home_fk()
-        mj, self.surface = _build_contact_model(surface, ee0, cfg.hfield_n, cfg.contact_depth, mu, solref)
+        mj, self.surface = _build_contact_model(surface, ee0, cfg.hfield_n, cfg.contact_depth,
+                                                mu, solref, collidable=(self._medium != "hybrid"))
         sys = mjcf.load_model(mj)
         n_frames = max(1, int(round(cfg.dt / cfg.timestep)))
         super().__init__(sys=sys, backend="mjx", n_frames=n_frames)
@@ -193,7 +226,12 @@ class PandaSurfaceScanEnv(PipelineEnv):
         diag_idx = jnp.cumsum(jnp.arange(_STIFF_D, 0, -1)) - jnp.arange(_STIFF_D, 0, -1)
         self._s_ref = jnp.zeros((self.spec.stiff_width,), jnp.float32).at[diag_idx].set(cfg.s_ref_diag)
         self._mu = jnp.float32(mu)
-        self._k_surf = jnp.float32(cfg.surface_stiffness)   # kept for obs/back-compat
+        # representative contact stiffness (obs/back-compat): soft -> soft_stiffness;
+        # hybrid -> mean(k_hard,k_soft); rigid -> surface_stiffness.
+        self._k_surf = jnp.float32(
+            cfg.soft_stiffness if self._medium == "soft"
+            else 0.5 * (cfg.k_hard + cfg.k_soft) if self._medium == "hybrid"
+            else cfg.surface_stiffness)
 
     # --- real contact normal force at the EE probe (mjx contact) ---
     def _contact_force(self, ps) -> jnp.ndarray:
@@ -206,6 +244,46 @@ class PandaSurfaceScanEnv(PipelineEnv):
         # so this stays a python loop over the (small, static) contact buffer.
         fn = jnp.array([_mjx_support.contact_force(self._mjx_model, ps, i)[0] for i in range(n)])
         return jnp.sum(jnp.where(on_probe & (c.dist < 0), jnp.abs(fn), 0.0))
+
+    # --- surface deformation: probe penetration depth into the (compliant) surface ---
+    def _penetration(self, ps) -> jnp.ndarray:
+        """Deepest probe penetration into the surface (mjx contact ``dist`` < 0 = the
+        surface yielding under the press). 0 on rigid contact, > 0 on a soft medium —
+        the per-step deformation signal the soft metrics consume."""
+        c = ps.contact
+        if c is None or c.dist.shape[0] == 0:
+            return jnp.float32(0.0)
+        on_probe = (c.geom[:, 0] == self._probe_geom) | (c.geom[:, 1] == self._probe_geom)
+        pen = jnp.where(on_probe & (c.dist < 0), -c.dist, 0.0)
+        return jnp.max(pen)
+
+    # --- hybrid medium: model-based Winkler foundation (spatial stiffness map) ---
+    # mjx solref is per-geom only, so a SPATIAL stiffness map is realized analytically:
+    # the probe is non-collidable and the surface reacts with k(ξ,η)·penetration (applied
+    # in the impedance torque). Dispatch keeps rigid/soft on the real mjx contact.
+    def _k_surf_fn(self, xi, eta) -> jnp.ndarray:
+        """Local surface stiffness k(ξ,η) from the fixed stiffness map (hybrid)."""
+        return stiffness_field(self._map_kind, xi, eta, self._k_hard, self._k_soft)
+
+    def _winkler_at(self, ps, xi, eta):
+        """Probe penetration δ below the rest surface and the Winkler reaction
+        F = k(ξ,η)·max(0,δ) at the scan coords (hybrid, no mjx contact)."""
+        _, n_s, p_d, _ = self._desired_pose(xi, eta)
+        p_h = ps.site_xpos[self._ee_site]
+        delta = jnp.maximum(jnp.dot(p_d - p_h, n_s), 0.0)
+        return self._k_surf_fn(xi, eta) * delta, delta
+
+    def _contact_force_at(self, ps, xi, eta) -> jnp.ndarray:
+        """Normal contact force: real mjx contact (rigid/soft) or the Winkler reaction (hybrid)."""
+        if self._medium == "hybrid":
+            return self._winkler_at(ps, xi, eta)[0]
+        return self._contact_force(ps)
+
+    def _penetration_at(self, ps, xi, eta) -> jnp.ndarray:
+        """Surface deformation: mjx penetration (rigid/soft) or the Winkler δ (hybrid)."""
+        if self._medium == "hybrid":
+            return self._winkler_at(ps, xi, eta)[1]
+        return self._penetration(ps)
 
     # --- action is the MDAC primitive, not the 7 joint torques ---
     @property
@@ -272,7 +350,7 @@ class PandaSurfaceScanEnv(PipelineEnv):
     # Translational impedance K_t(S) on position + FIXED k_orient on orientation +
     # an F_n feedforward pressing into the surface. Coulomb friction is now REAL
     # (the mjx probe-hfield contact), so no controller-side tangential cap.
-    def _impedance_tau(self, ps, n_s, p_d, R_d, s_vec, F_n, force_int):
+    def _impedance_tau(self, ps, n_s, p_d, R_d, s_vec, F_n, force_int, k_local=None):
         cfg = self._config
         K_t = self._stiffness(s_vec)                            # 3×3 translational SPD
         p_h, R_h, jacp, jacr, lin_v, ang_v = self._ee_kin(ps)
@@ -283,12 +361,20 @@ class PandaSurfaceScanEnv(PipelineEnv):
         # regulates the slowly-varying following disturbance while tracking a curved
         # surface (the part pure proportional lags on the stiff contact). Weight stays in
         # the dynamics -> stable contact on curves (unlike full grav comp, which floats).
-        F_meas = self._contact_force(ps)
+        # contact-force readback: real mjx contact (rigid/soft) OR the model-based Winkler
+        # reaction k(ξ,η)·δ (hybrid — probe non-collidable, so the reaction is added below).
+        if k_local is not None:
+            delta = jnp.maximum(jnp.dot(p_d - p_h, n_s), 0.0)
+            F_meas = k_local * delta
+        else:
+            F_meas = self._contact_force(ps)
         g_ee = jnp.linalg.solve(jacp.T @ jacp + 1e-6 * jnp.eye(3), jacp.T @ ps.qfrc_bias[:_N_DOF])
         g_n = jnp.dot(g_ee, n_s)                              # arm-weight normal force at EE
         F_eff = jnp.clip(F_n - g_n + cfg.kp_force * (F_n - F_meas) + force_int,
                          cfg.f_min - cfg.f_cmd_pad, cfg.f_max + cfg.f_cmd_pad)
         f_pos = K_t @ (p_d - p_h) - cfg.d_damp * lin_v - F_eff * n_s  # press INTO surface (-n_s)
+        if k_local is not None:
+            f_pos = f_pos + F_meas * n_s                      # Winkler surface reaction (out, +n_s)
         m_rot = cfg.k_orient * self._orient_err(R_h, R_d) - cfg.d_damp * ang_v
         # PARTIAL gravity/coriolis compensation: full comp makes the arm weightless
         # and it floats off; zero comp makes it lean hard (~20 N). A small residual
@@ -324,6 +410,9 @@ class PandaSurfaceScanEnv(PipelineEnv):
         # the desired pose (surface point/normal/orientation) is fixed for the control
         # period -> compute it ONCE, not per substep (avoids 4x the NURBS surface eval).
         _, n_s, p_d, R_d = self._desired_pose(xi, eta)
+        # hybrid: the local surface stiffness for the model-based Winkler reaction (held for
+        # the control period). None for rigid/soft (real mjx contact, no manual reaction).
+        k_local = self._k_surf_fn(xi, eta) if self._medium == "hybrid" else None
 
         # FAST INNER FORCE/IMPEDANCE SERVO: recompute the controller (and the force
         # integral) EVERY physics substep instead of holding one torque open-loop for the
@@ -334,22 +423,24 @@ class PandaSurfaceScanEnv(PipelineEnv):
         if cfg.fast_force_loop:
             def _substep(carry, _):
                 ps_i, fint = carry
-                tau_i = self._impedance_tau(ps_i, n_s, p_d, R_d, S_vec, F_n, fint)
+                tau_i = self._impedance_tau(ps_i, n_s, p_d, R_d, S_vec, F_n, fint, k_local)
                 ps_i = self._pipeline.step(self.sys, ps_i, tau_i, self._debug)
-                fint = jnp.clip(fint + cfg.ki_force * (F_n - self._contact_force(ps_i)),
+                fint = jnp.clip(fint + cfg.ki_force * (F_n - self._contact_force_at(ps_i, xi, eta)),
                                 -cfg.force_int_max, cfg.force_int_max)
                 return (ps_i, fint), None
             (ps, force_int), _ = jax.lax.scan(
                 _substep, (state.pipeline_state, state.info["force_int"]), (), self._n_frames)
         else:
             force_int = state.info["force_int"]
-            tau = self._impedance_tau(state.pipeline_state, n_s, p_d, R_d, S_vec, F_n, force_int)
+            tau = self._impedance_tau(state.pipeline_state, n_s, p_d, R_d, S_vec, F_n, force_int, k_local)
             ps = self.pipeline_step(state.pipeline_state, tau)
-            force_int = jnp.clip(force_int + cfg.ki_force * (F_n - self._contact_force(ps)),
+            force_int = jnp.clip(force_int + cfg.ki_force * (F_n - self._contact_force_at(ps, xi, eta)),
                                  -cfg.force_int_max, cfg.force_int_max)
 
         reward = self._reward(ps, xi, eta, F_n, S_vec, state.info["prev_s"], state.info["step"])
-        info = {"xi": xi, "eta": eta, "psi": psi, "prev_s": S_vec,
+        # MERGE (not replace) so brax training wrappers' info keys (steps/truncation/
+        # episode_metrics/...) survive the step; a no-op for the unwrapped MDAC/baseline path.
+        info = {**state.info, "xi": xi, "eta": eta, "psi": psi, "prev_s": S_vec,
                 "step": state.info["step"] + 1, "force_int": force_int}
         obs = self._get_obs(ps, info)
         return state.replace(pipeline_state=ps, obs=obs, reward=reward,
@@ -399,7 +490,7 @@ class PandaSurfaceScanEnv(PipelineEnv):
         R_h = ps.site_xmat[self._ee_site].reshape(3, 3)
         xi_s, eta_s = self._target(step)
         path = (xi - xi_s) ** 2 + (eta - eta_s) ** 2
-        force = (self._contact_force(ps) - cfg.f_target) ** 2   # REAL contact-force tracking
+        force = (self._contact_force_at(ps, xi, eta) - cfg.f_target) ** 2   # contact-force tracking
         normal = jnp.sum((R_h[:, 2] + n_s) ** 2)
         kreg = jnp.sum((s_vec - self._s_ref) ** 2)
         dk = jnp.sum((s_vec - prev_s) ** 2)
@@ -410,7 +501,7 @@ class PandaSurfaceScanEnv(PipelineEnv):
         p_h = ps.site_xpos[self._ee_site]
         return jnp.concatenate([ps.qpos, ps.qvel, p_h,
                                 jnp.array([info["xi"], info["eta"], info["psi"],
-                                           self._contact_force(ps), self._mu])])
+                                           self._contact_force_at(ps, info["xi"], info["eta"]), self._mu])])
 
     # --- MDAC soft-feasibility: h_surf (eq 727) + h_normal (eq 731) + g_force ---
     def constraint_residual(self, state, action, ctx=None):

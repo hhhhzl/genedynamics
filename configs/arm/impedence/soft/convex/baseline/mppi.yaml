@@ -1,0 +1,8 @@
+# MPPI (baseline) — same sampler + position-stiffness primitive; MDAC seams OFF (solver-level DIAL-equivalent).
+# environment: convex (S2 convex NURBS) · SOFT medium (compliant contact)
+base: ../../_base.yaml
+
+level: convex
+method: mppi
+name: arm_impedence_soft_convex_mppi
+output_dir: results/arm/impedence/soft/convex/baseline/mppi

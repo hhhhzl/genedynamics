@@ -35,7 +35,7 @@ import numpy as np
 import jax
 
 from genedynamics.solvers.single.mdac.experiment import (
-    make_mdac, metrics_plugin_for, ARM_TASK, HUMANOID_TASK,
+    make_controller, metrics_plugin_for, ARM_TASK, HUMANOID_TASK,
 )
 from genedynamics.solvers.single.mdac.config import discover_configs
 from genedynamics.solvers.single.mdac.core.method_registry import assert_fair
@@ -89,8 +89,8 @@ def _budget(cfg: Dict[str, Any]) -> Tuple[int, int, int]:
 def _run_one(cfg: Dict[str, Any], level: str, seed: int) -> Dict[str, Any]:
     task, method = cfg["task"], cfg["method"]
     mk, sampling = _solver_cfg(cfg)
-    env, sol = make_mdac(task, method, level=level, surface_seed=seed, prior=None,
-                         env_overrides=cfg.get("env_params"), **mk, **sampling)
+    env, sol = make_controller(task, method, level=level, surface_seed=seed, prior=None,
+                               env_overrides=cfg.get("env_params"), **mk, **sampling)
     x0 = env.reset(jax.random.PRNGKey(seed))
     t0 = time.time()
     res = sol.run_receding(x0, int(cfg["n_steps"]), jax.random.PRNGKey(1000 + seed))

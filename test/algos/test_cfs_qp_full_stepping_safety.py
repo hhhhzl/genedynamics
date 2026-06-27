@@ -746,7 +746,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        import jax  # noqa: F401
+        import jax  
     except Exception:
         print("JAX is required to run this script.")
         raise SystemExit(1)

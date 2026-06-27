@@ -8,7 +8,7 @@ from __future__ import annotations
 
 
 def test_diffusebot_baseline_registered():
-    import genedynamics.experiments.framework.baselines as B  # noqa: F401  (registers)
+    import genedynamics.experiments.framework.baselines as B    (registers)
     from genedynamics.experiments.framework.baseline_registry import (
         has_baseline,
         get_baseline,

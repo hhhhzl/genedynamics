@@ -1,0 +1,8 @@
+# Ablation: EUCLIDEAN stiffness (log_spd off -> diag softplus, not K=exp(S)).
+# environment: convex (S2 convex NURBS) · SOFT medium (compliant contact)
+base: ../../_base.yaml
+
+level: convex
+method: mdac_euclid_stiffness
+name: arm_impedence_soft_convex_mdac_euclid_stiffness
+output_dir: results/arm/impedence/soft/convex/ablation/mdac_euclid_stiffness

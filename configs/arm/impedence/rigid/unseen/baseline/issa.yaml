@@ -1,0 +1,10 @@
+# ISSA (RL baseline) — trained policy + implicit-safe-set AdamBA projection onto the env inequality g (zero-violation). idea.txt: RL+CBF/ISSA.
+# environment: unseen · uses the per-medium PPO policy (train scripts/tasks/robot/arm/train_rl_baseline.py).
+base: ../../_base.yaml
+
+level: unseen
+method: issa
+name: arm_impedence_rigid_unseen_issa
+output_dir: results/arm/impedence/rigid/unseen/baseline/issa
+method_params:
+  policy_ckpt: results/arm/impedence/rigid/_policies/sac.pkl
