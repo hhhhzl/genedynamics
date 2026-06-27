@@ -1,0 +1,8 @@
+# Ablation: NO CFS retraction (use_retraction off -> no linearized projection onto {C(U)=0}).
+# environment: convex (S2 convex NURBS) · SOFT medium (compliant contact)
+base: ../../_base.yaml
+
+level: convex
+method: mdac_no_retraction
+name: arm_impedence_soft_convex_mdac_no_retraction
+output_dir: results/arm/impedence/soft/convex/ablation/mdac_no_retraction

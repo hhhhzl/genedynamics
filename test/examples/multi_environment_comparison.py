@@ -18,7 +18,7 @@ def main():
     
     # Example 1: Native environment
     try:
-        from genedynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
+        from genedynamics.envs.domains.toy.double_integrator_box import DoubleIntegratorBoxEnv
         
         native_env = DoubleIntegratorBoxEnv()
         state, info = native_env.reset()
@@ -41,7 +41,7 @@ def main():
     # Example 3: Unified adapter
     try:
         from genedynamics.envs.adapters.unified_adapter import UnifiedEnvAdapter
-        from genedynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
+        from genedynamics.envs.domains.toy.double_integrator_box import DoubleIntegratorBoxEnv
         
         native_env = DoubleIntegratorBoxEnv()
         unified_adapter = UnifiedEnvAdapter(native_env)

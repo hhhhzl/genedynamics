@@ -1,0 +1,8 @@
+# Ablation: NO position-stiffness primitive (use_stiffness off -> K = I).
+# environment: bumpy (S3 bumpy NURBS)
+base: ../../_base.yaml
+
+level: bumpy
+method: mdac_no_stiffness
+name: arm_impedence_rigid_bumpy_mdac_no_stiffness
+output_dir: results/arm/impedence/rigid/bumpy/ablation/mdac_no_stiffness

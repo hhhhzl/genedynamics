@@ -70,7 +70,7 @@ def main(argv: List[str] = None) -> int:
     )
 
     try:
-        import trimesh  # noqa: F401
+        import trimesh  
     except ImportError:
         log.error("trimesh is required (pip install trimesh)")
         return 2

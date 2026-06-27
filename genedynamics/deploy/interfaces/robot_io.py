@@ -10,9 +10,9 @@ observers, the pipeline loop) consumes :class:`RobotState` and emits
 
 Concrete implementations live under ``deploy/io/``:
 
-* ``MujocoRobotIO``  — wraps :mod:`genedynamics.envs.humanoid_base_physics`
-* ``MjxRobotIO``     — wraps :mod:`genedynamics.envs.humanoid_mjx` (default)
-* ``BraxRobotIO``    — wraps :mod:`genedynamics.envs.humanoid_brax`
+* ``MujocoRobotIO``  — wraps :mod:`genedynamics.envs.domains.humanoid.physics`
+* ``MjxRobotIO``     — wraps :mod:`genedynamics.envs.domains.humanoid.mjx` (default)
+* ``BraxRobotIO``    — wraps :mod:`genedynamics.envs.domains.humanoid.brax`
 * ``UnitreeG1RobotIO`` — real Unitree G1 SDK
 * ``StubRobotIO``    — no-op for tests
 """

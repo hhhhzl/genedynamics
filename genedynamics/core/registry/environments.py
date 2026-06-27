@@ -36,10 +36,62 @@ def register_env(
     _environment_registry.register(name, env_class, factory)
 
 
+def register_environment(name: str, *aliases: str):
+    """
+    Class decorator: register an environment class under ``name`` (+ aliases).
+
+    Co-locates registration with the class definition so the domain-subpackage
+    layout dispatches via the registry instead of a make_env if/elif chain.
+
+    Examples:
+        >>> @register_environment("quadruped_go2_mjx")
+        ... class QuadrupedGo2MjxEnv: ...
+        >>> @register_environment("quadruped_go2_mjx_trot", "quadruped_go2_dial")
+        ... class QuadrupedGo2TrotMjxEnv(QuadrupedGo2MjxEnv): ...
+    """
+    def deco(cls):
+        _environment_registry.register(name, cls)
+        for a in aliases:
+            _environment_registry.register(a, cls)
+        return cls
+    return deco
+
+
+def register_environment_factory(
+    name: str,
+    factory: Callable[..., EnvType],
+    *aliases: str,
+) -> None:
+    """
+    Register an environment produced by a factory function (e.g. brax helpers
+    like ``make_brax_go2``) under ``name`` (+ aliases). ``BaseRegistry.create``
+    already prefers the factory over the placeholder class.
+    """
+    _environment_registry.register(name, object, factory=factory)
+    for a in aliases:
+        _environment_registry.register(a, object, factory=factory)
+
+
+def register_unavailable_environment(name: str, exc: Exception) -> None:
+    """Register a placeholder for an env whose optional backend failed to import.
+
+    The placeholder raises ``ImportError`` when instantiated (``make_env``), so
+    callers that ``try: make_env(...) except ImportError: skip`` keep skipping
+    when an optional backend (mujoco / isaac / brax / mjx) is absent — preserving
+    the behaviour of the former make_env if/elif (which surfaced the ImportError).
+    """
+    msg = f"Environment '{name}' is unavailable (optional backend failed to import): {exc}"
+
+    def _factory(**_kwargs):
+        raise ImportError(msg)
+
+    _environment_registry.register(name, object, factory=_factory)
+
+
 def get_environment_registry() -> BaseRegistry[EnvType]:
     """
     Get the global environment registry.
-    
+
     Returns:
         Environment registry instance
     """

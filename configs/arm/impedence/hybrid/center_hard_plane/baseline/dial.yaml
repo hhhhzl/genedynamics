@@ -1,0 +1,8 @@
+# DIAL (baseline) — same sampler + position-stiffness primitive; MDAC manifold/prior/anneal seams OFF.
+# environment: center_hard_plane (hybrid center_hard map on plane)
+base: ../_base.yaml
+
+level: center_hard_plane
+method: dial
+name: arm_impedence_hybrid_center_hard_plane_dial
+output_dir: results/arm/impedence/hybrid/center_hard_plane/baseline/dial

@@ -7,7 +7,7 @@ Auto-registers available backends on import.
 from genedynamics.genemetry.gate.multimodal import MultimodalGate
 
 try:
-    from genedynamics.genemetry.gate.backends import multimodal_jax  # noqa: F401
+    from genedynamics.genemetry.gate.backends import multimodal_jax  
 except ImportError:
     pass
 

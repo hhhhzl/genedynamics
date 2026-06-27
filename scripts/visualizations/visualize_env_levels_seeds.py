@@ -116,7 +116,7 @@ def plot_one_cell(
     if obstacles is not None and len(obstacles) > 0:
         draw_obstacles(ax, obstacles)
 
-    # Start: 按数据坐标画半径为 robot_radius 的圆（真实尺度），中心加小点便于辨认
+    # Start: robot_radius 的圆 + 中心点
     circle_start = mpatches.Circle(
         (float(start_2d[0]), float(start_2d[1])),
         radius=robot_radius,

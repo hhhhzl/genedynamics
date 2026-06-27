@@ -118,7 +118,7 @@ class LazyMeshPrior(MorphologyPrior):
 
     def sample(self, prompt: str, n: int = 1, *, seed: int = 0, **kwargs: Any) -> List[Any]:
         try:
-            import trimesh  # noqa: F401
+            import trimesh  
         except ImportError as exc:
             raise MissingDependencyError(
                 "trimesh is required to materialize prior output",

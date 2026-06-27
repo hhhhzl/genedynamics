@@ -1,0 +1,8 @@
+# MPPI (baseline) — same sampler + position-stiffness primitive; MDAC seams OFF (solver-level DIAL-equivalent).
+# environment: plane (S1 analytic plane)
+base: ../../_base.yaml
+
+level: plane
+method: mppi
+name: arm_impedence_rigid_plane_mppi
+output_dir: results/arm/impedence/rigid/plane/baseline/mppi

@@ -14,7 +14,7 @@ is shared, unchanged, by:
 
 There is deliberately **no second obstacle definition** anywhere: the
 contract's ``obstacles`` come verbatim from
-:func:`genedynamics.envs.humanoid_corridor_2d.corridor_scene_to_dict`.
+:func:`genedynamics.envs.domains.humanoid.corridor.corridor_scene_to_dict`.
 
 Every mutation bumps :attr:`revision` so a server can tell when to push.
 """
@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from genedynamics.envs.humanoid_corridor_2d import (
+from genedynamics.envs.domains.humanoid.corridor import (
     CorridorObstacle,
     CorridorScene,
     corridor_scene_to_dict,

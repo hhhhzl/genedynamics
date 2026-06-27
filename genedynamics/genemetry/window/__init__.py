@@ -7,7 +7,7 @@ Auto-registers available backends on import.
 from genedynamics.genemetry.window.sliding import SlidingWindow
 
 try:
-    from genedynamics.genemetry.window.backends import multimodality_numpy  # noqa: F401
+    from genedynamics.genemetry.window.backends import multimodality_numpy  
 except ImportError:
     pass
 

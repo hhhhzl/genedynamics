@@ -18,6 +18,10 @@ from genedynamics.core.contact.cbf_terms import (
     force_bound_rows,
     penetration_bound_rows,
 )
+from genedynamics.core.contact.elastic_foundation import (
+    stiffness_field,
+    winkler_force,
+)
 
 __all__ = [
     "ContactModel",
@@ -27,4 +31,6 @@ __all__ = [
     "RigidWithFrictionContact",
     "force_bound_rows",
     "penetration_bound_rows",
+    "stiffness_field",
+    "winkler_force",
 ]

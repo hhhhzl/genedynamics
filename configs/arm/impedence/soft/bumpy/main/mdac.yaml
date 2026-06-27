@@ -1,0 +1,8 @@
+# MDAC (main) — full method: log-SPD stiffness + AL soft-feas + tangent projection + CFS retraction + coupled anneal.
+# environment: bumpy (S3 bumpy NURBS) · SOFT medium (compliant contact)
+base: ../../_base.yaml
+
+level: bumpy
+method: mdac
+name: arm_impedence_soft_bumpy_mdac
+output_dir: results/arm/impedence/soft/bumpy/main/mdac

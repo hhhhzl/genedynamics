@@ -13,7 +13,7 @@ Vision Pro / 举 iPad 看到对齐的全息障碍。
 
 | 角色 | 机器 | 跑什么 | 关键软件 |
 |---|---|---|---|
-| **Vicon 机** | 动捕主机 | Vicon Tracker + 写共享内存 `mocap_state_shm` | Vicon Tracker/Nexus |
+| **动捕机** | 动捕主机 | Motive(NatNet 流)+ `natnet_ros2` 驱动 + `natnet_shm_writer`(写 `mocap_state_shm`) | ROS2 + `natnet_ros2`(本仓库 writer) |
 | **孪生服务机** | 任意 Linux/Mac(可与机器人机同台) | `run_twin_server.py`(world_ws :8766) | conda `fedguide` + `websockets` |
 | **机器人机** | 连 G1 的 Linux | `run_real_g1.py`(governor + 真机 IO) | `unitree_sdk2py` + 本仓库 |
 | **规划机** | 任意(可与上同台) | `replan_from_scene.py`(2GO,Docker) | Docker `genedynamics/dev-cpu:torch` |
@@ -25,6 +25,17 @@ Vision Pro / 举 iPad 看到对齐的全息障碍。
 ---
 
 ## 1. 软件安装(按机器,一次性)
+
+**动捕机(ROS2)** — 装好 ROS2(如 humble)+ `natnet_ros2` 驱动:
+```bash
+# 在 ROS2 工作空间里
+git clone https://github.com/L2S-lab/natnet_ros2 src/natnet_ros2
+colcon build --packages-select natnet_ros2 && source install/setup.bash
+python -m pip install numpy scipy        # natnet_shm_writer 的 finite-diff 用
+```
+> 本仓库的 `natnet_shm_writer` 只在**这台 ROS2 机**上跑;它把 NatNet 位姿写进
+> `mocap_state_shm`,下游(孪生服务机/机器人机)**不需要 rclpy**,仍用
+> `--localization vicon` 读共享内存。详见 §A7。
 
 **孪生服务机(fedguide)**
 ```bash
@@ -97,9 +108,35 @@ zone_d:走廊长 4.0m、半宽 0.8m、start=(0.5,0)、goal=(3.5,0)。
 3. 用标定杆探它的**中心点**和**+x 边方向**两个点,算出 fiducial 在 Vicon 世界系的位姿 `T_world_fiducial`(同 A4 方法:中心给平移,边方向给 yaw;若竖立还需记法向)。记下。
    > AR 客户端会"看到"这张图算出它在设备系的位姿,再用 `T_world_fiducial` 反推出世界原点 —— 见 Part B 各选项的"配准"。
 
-## A7 软件环境就绪 + 共享内存验证
-1. **起 Vicon 写 shm 进程**(把 `g1_base` 6DoF 写进 `mocap_state_shm`,结构 `q13d` = int64 utime + 13 float64:pos3 + quat4 + vel3 + omega3;**quat 分量顺序以 `genedynamics/deploy/localization/vicon_shm_plugin.py` 的定义为准**,务必和写进程一致)。
-2. 在**机器人机**验证读得到:
+## A7 动捕接入(NatNet / `natnet_ros2`)+ 共享内存验证
+
+> 本项目动捕走 **NatNet 协议**(OptiTrack/Motive),用 [`natnet_ros2`](https://github.com/L2S-lab/natnet_ros2)
+> 把刚体位姿发成 `geometry_msgs/PoseStamped`(话题 `/<刚体名>/pose`,单位**米**)。
+> 我们用本仓库的 `natnet_shm_writer` 把它桥接进 `mocap_state_shm`,**ROS2 只活在动捕机这一侧**,
+> 下游照旧 `--localization vicon` 读共享内存——无需在 fedguide / 机器人机装 rclpy。
+> (若你的动捕是 **Vicon DataStream(非 NatNet)**,改用 `vicon_shm_plugin.py` 里的
+> `ViconDemoWriter`(需 `pyvicon_datastream`,注意它是 mm→需 ÷1000);其余完全一致。)
+
+**坐标/单位约定(配错则下游整体被旋转/缩放,务必核对):**
+- Motive → Streaming 设置:**Up Axis = Z**、**单位 = 米**(NatNet/ROS 直接发米,writer **不再 ÷1000**)。
+- 世界系:右手系、z 朝上、x 朝前、y 朝左(`ar/schema/conventions.md` §1)。
+- 在 Motive 里把 G1 骨盆刚体的**枢轴(pivot)设在骨盆中心、+x = 机器人正前方**(同 §A5);
+  这样发布的位姿无需再补 mount 偏移。刚体命名 `g1_base` → 话题 `/g1_base/pose`。
+
+1. **起 NatNet → shm 桥接(动捕机,ROS2 env)**:
+   ```bash
+   # ① 起 natnet_ros2 驱动(serverIP=Motive 主机, clientIP=本机, serverType=multicast/unicast)
+   ros2 launch natnet_ros2 natnet_ros2.launch.py    # 或按其 README 配 config/initiate.yaml
+   # 验证:话题在发
+   ros2 topic echo /g1_base/pose --once
+   # ② 起本仓库的桥接,把 /g1_base/pose 写进 mocap_state_shm
+   python -m genedynamics.deploy.localization.natnet_shm_writer --rigid-body g1_base
+   ```
+   看到 `subscribing /g1_base/pose … → shm 'mocap_state_shm'` 且开始周期性打印 `pos=(…)` 即成功。
+   写入结构 `q13d` = int64 utime(µs) + 13 float64:pos3 + quat_xyzw4 + vel3 + omega3
+   (vel/omega 由位姿有限差分得到;噪声大可加 `--vel-lpf 0.2`;pivot 离地可加 `--z-offset`)。
+   **quat 顺序、字节布局已和 `vicon_shm_plugin.py` 对齐**,无需手工核对。
+2. 在**机器人机**验证读得到: 
    ```bash
    python -c "from genedynamics.deploy.localization.vicon_shm_plugin import ViconShmPlugin; \
    p=ViconShmPlugin({}); import time; time.sleep(0.3); print('state=',p.get_state(),'health=',p.health())"
@@ -288,10 +325,11 @@ s.socket=c.wrap_socket(s.socket,server_side=True); s.serve_forever()"
 
 > 约定:`TWS` = A4 测得的 `"x0 y0 yaw0"`;`TWIN_IP` = 孪生服务机 IP。
 
-## C1 起 Vicon + 共享内存(Vicon 机)
-1. 开 Vicon Tracker,确认 `g1_base`(和 fiducial 若用刚体)被稳定追踪、无丢帧。
-2. 启动写 shm 进程 → `mocap_state_shm` 有数据。
-3. **验证**(机器人机):跑 A7 第 2 步那段 `ViconShmPlugin` 检查,`health()=ok`、移动机器人 pose 变化。
+## C1 起动捕 + 共享内存(动捕机,ROS2)
+1. 开 Motive,确认 `g1_base`(和 fiducial 若用刚体)被稳定追踪、无丢帧;Streaming = **Z-up / 米**。
+2. 起 `natnet_ros2` 驱动 → `ros2 topic echo /g1_base/pose --once` 能看到位姿。
+3. 起桥接 `python -m genedynamics.deploy.localization.natnet_shm_writer --rigid-body g1_base` → `mocap_state_shm` 有数据。
+4. **验证**(机器人机):跑 A7 第 2 步那段 `ViconShmPlugin` 检查,`health()=ok`、移动机器人 pose 变化。
 
 ## C2 起孪生服务(孪生服务机)
 ```bash
@@ -349,7 +387,10 @@ docker run --rm -v "$PWD:/work" -w /work genedynamics/dev-cpu:torch \
 # E. 故障排查
 | 现象 | 排查 |
 |---|---|
-| `ViconShmPlugin` 读不到 | shm 写进程没起 / 名字不是 `mocap_state_shm` |
+| `ViconShmPlugin` 读不到 | `natnet_shm_writer` 没起 / shm 名不是 `mocap_state_shm` / 上游 `natnet_ros2` 没发位姿(先 `ros2 topic echo /g1_base/pose`) |
+| `natnet_shm_writer` 收不到位姿 | 话题名 ≠ `/<刚体名>/pose`(用 `ros2 topic list` 核对)/ QoS 不匹配(发布端是 reliable 就加 `--reliable`)/ serverIP·clientIP·multicast-unicast 配错 |
+| 姿态被旋转 90° / 上下颠倒 | Motive Streaming 不是 **Z-up**(改成 Z-up);或刚体 pivot 朝向不对(§A5) |
+| 位置数值差 1000 倍 | 走了 Vicon DataStream(mm)路径却没 ÷1000;NatNet 路径本就发米,用 `natnet_shm_writer` 即可 |
 | AR 收不到流 | `TWIN_IP`/端口、防火墙、`run_twin_server` 是否在跑 |
 | AR 障碍漂移/不对齐 | fiducial 实际尺寸填错 / A6 的 `T_world_fiducial` 量不准 |
 | 机器人起点不对 | 没摆在 start / `--t-world-scene` 填错(重核 A4) |
@@ -362,6 +403,7 @@ docker run --rm -v "$PWD:/work" -w /work genedynamics/dev-cpu:torch \
 | 孪生服务 | `scripts/tasks/robot/humanoid/run_twin_server.py` → `ws://TWIN_IP:8766/` |
 | 重规划 | `scripts/tasks/robot/humanoid/replan_from_scene.py`(Docker) |
 | 实机运行 | `scripts/tasks/robot/humanoid/run_real_g1.py`(`--dry-run` 先验) |
+| 动捕桥接 | `python -m genedynamics.deploy.localization.natnet_shm_writer --rigid-body g1_base`(NatNet→shm,ROS2 机) |
 | 坐标变换 | `genedynamics/deploy/localization/scene_frame_plugin.py`(world→scene) |
 | 契约/约定 | `genedynamics/deploy/ar/schema/{world.fbs, conventions.md}` |
 | AR 客户端 | `genedynamics/deploy/ar/clients/{swift, unity, web}/` |

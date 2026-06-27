@@ -1,0 +1,8 @@
+# MDAC (main) — full method: log-SPD stiffness + AL soft-feas + tangent projection + CFS retraction + coupled anneal.
+# environment: unseen (S4 unseen NURBS + domain randomization)
+base: ../../_base.yaml
+
+level: unseen
+method: mdac
+name: arm_impedence_rigid_unseen_mdac
+output_dir: results/arm/impedence/rigid/unseen/main/mdac
