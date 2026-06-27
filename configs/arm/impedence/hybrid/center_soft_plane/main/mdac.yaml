@@ -1,0 +1,8 @@
+# MDAC (main) — full method: log-SPD stiffness + AL soft-feas + tangent projection + CFS retraction + coupled anneal.
+# environment: center_soft_plane (hybrid center_soft map on plane)
+base: ../_base.yaml
+
+level: center_soft_plane
+method: mdac
+name: arm_impedence_hybrid_center_soft_plane_mdac
+output_dir: results/arm/impedence/hybrid/center_soft_plane/main/mdac

@@ -11,12 +11,12 @@ def test_d3il_avoiding_import_and_reset_step_optional():
     and has D3IL vendored/submodule available under third_party/.
     """
     try:
-        import gym  # noqa: F401
+        import gym  
     except Exception:
         pytest.skip("classic gym not installed")
 
     try:
-        import mujoco  # noqa: F401
+        import mujoco  
     except Exception:
         pytest.skip("mujoco not installed")
 

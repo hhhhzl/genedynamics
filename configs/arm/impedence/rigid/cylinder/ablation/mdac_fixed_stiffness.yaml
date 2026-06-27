@@ -1,0 +1,8 @@
+# Ablation: FIXED stiffness (log_spd off -> K = K_ref, S block ignored).
+# environment: cylinder (S1 analytic cylinder)
+base: ../../_base.yaml
+
+level: cylinder
+method: mdac_fixed_stiffness
+name: arm_impedence_rigid_cylinder_mdac_fixed_stiffness
+output_dir: results/arm/impedence/rigid/cylinder/ablation/mdac_fixed_stiffness

@@ -1,0 +1,47 @@
+# ── Arm surface-scan · impedance control · RIGID surface ──────────────────────
+# Shared base for the Panda contact-scan comparison (idea.txt Exp I). The sampling
+# budget + seeds + horizon live HERE so every method (baseline / main / ablation)
+# in every environment runs at an IDENTICAL budget (assert_fair): a fair comparison
+# differs only by the method's component flags, never by the compute budget.
+#
+# The experiment is subdivided BY ENVIRONMENT (surface family): each method yaml
+# lives under  <environment>/<role>/<method>.yaml  (environment ∈ {plane, cylinder,
+# convex, bumpy, unseen}; role ∈ {baseline, main, ablation}), sets its own `level`
+# + `method` + `output_dir`, and inherits everything below via `base: ../../_base.yaml`.
+#
+# NOTE: `stiffness_mode` is DERIVED from the method (none / log_spd / euclid /
+# fixed) — do not set it in env_params; the method's flags own it.
+
+task: manipulator_surface_scan
+
+seeds: [0, 1]
+n_steps: 14
+
+# env: PandaSurfaceScanEnv (rigid contact — real mjx hfield surface + EE probe).
+# `level` (the surface family) is set per-environment by each method yaml.
+env_params:
+  dt: 0.02
+  f_target: 45.0            # firm scan press (the contact force the controller tracks)
+  f_min: 0.0
+  f_max: 60.0
+  contact_depth: 0.025      # surface this far below the home EE (starts near contact)
+  contact_solref: "0.08 1"  # compliant-rigid contact (lower force variance on curves)
+
+# sampling budget (DIAL-aligned) — SHARED by ALL methods so the comparison is fair.
+# Hsample/Nsample/Ndiffuse* go to the solver; aug_lambda/aug_rho are the AL weights.
+method_params:
+  Hsample: 16
+  Hnode: 4
+  Nsample: 2048
+  Ndiffuse_init: 10
+  Ndiffuse: 2
+  temp_sample: 0.06
+  action_limit: 1.0
+  dt: 0.02
+  ctrl_dt: 0.02
+  seed: 0
+  aug_lambda: 2.0
+  aug_rho: 200.0
+
+metrics: [arm_surface_scan]
+backend: jax

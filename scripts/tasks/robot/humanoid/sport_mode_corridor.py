@@ -143,7 +143,7 @@ def _infer_corridor_scene_meta(plan_path: Path) -> Optional[dict]:
     if not scene_preset:
         return None
     try:
-        from genedynamics.envs.humanoid_corridor_2d import (
+        from genedynamics.envs.domains.humanoid.corridor import (
             corridor_scene_to_dict,
             resolve_corridor_scene_preset,
         )

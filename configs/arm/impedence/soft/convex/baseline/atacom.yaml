@@ -1,0 +1,10 @@
+# ATACOM (RL baseline) — trained policy + tangent/GN projection onto the env constraint manifold {C=0} (reuses manifold_residual). idea.txt: RL-on-manifold.
+# environment: convex · uses the per-medium PPO policy (train scripts/tasks/robot/arm/train_rl_baseline.py).
+base: ../../_base.yaml
+
+level: convex
+method: atacom
+name: arm_impedence_soft_convex_atacom
+output_dir: results/arm/impedence/soft/convex/baseline/atacom
+method_params:
+  policy_ckpt: results/arm/impedence/soft/_policies/atacom_sac.pkl

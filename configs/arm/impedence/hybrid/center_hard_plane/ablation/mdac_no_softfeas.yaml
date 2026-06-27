@@ -1,0 +1,8 @@
+# Ablation: NO soft-feasibility (use_soft_feasibility off).
+# environment: center_hard_plane (hybrid center_hard map on plane)
+base: ../_base.yaml
+
+level: center_hard_plane
+method: mdac_no_softfeas
+name: arm_impedence_hybrid_center_hard_plane_mdac_no_softfeas
+output_dir: results/arm/impedence/hybrid/center_hard_plane/ablation/mdac_no_softfeas

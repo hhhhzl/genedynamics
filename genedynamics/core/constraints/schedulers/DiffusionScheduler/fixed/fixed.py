@@ -5,8 +5,8 @@ All diffusion parameters are constant regardless of diffusion step.
 Useful for fixed sample size and temperature experiments.
 """
 
-from typing import Optional, Dict, Any  # noqa: F401
-import numpy as np  # noqa: F401
+from typing import Optional, Dict, Any  
+import numpy as np  
 
 from genedynamics.core.constraints.schedulers.DiffusionScheduler.base import DiffusionScheduler
 from genedynamics.core.constraints.core.types import ScheduleState

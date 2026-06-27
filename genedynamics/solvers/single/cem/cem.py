@@ -33,7 +33,7 @@ except Exception:
 # Backend registry helpers
 # ============================================================================
 try:
-    from genedynamics.solvers.single.cem.backends import cem_jax, cem_numpy  # noqa: F401
+    from genedynamics.solvers.single.cem.backends import cem_jax, cem_numpy  
 except ImportError:
     pass
 

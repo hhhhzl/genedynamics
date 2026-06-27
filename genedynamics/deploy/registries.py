@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from genedynamics.core.registry.base import BaseRegistry
+from genedynamics.registry_base import BaseRegistry
 
 __all__ = [
     "io_registry",

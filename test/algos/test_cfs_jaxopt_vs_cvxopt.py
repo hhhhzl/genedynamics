@@ -15,7 +15,7 @@ from genedynamics.envs.obstacles.convex import BoxObstacle
 from genedynamics.core.types import Trajectory
 from genedynamics.core.constraints.core.types import ScheduleState
 from genedynamics.experiments.common.constraints import create_constraint_pipeline
-from genedynamics.envs.single_integrator_box_2d import SingleIntegratorBox2DEnv
+from genedynamics.envs.domains.toy.single_integrator_box_2d import SingleIntegratorBox2DEnv
 
 
 def test_cfs_with_solver(solver_name: str, use_jit: bool = False):

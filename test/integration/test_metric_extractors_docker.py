@@ -1,0 +1,77 @@
+"""Arm + humanoid signal extractors -> general metrics, on real brax (docker).
+
+Each extractor rolls its brax env over executed actions to recover per-step
+signals (EE pose / box x / contact residual / com / stiffness), then the SHARED
+general metrics are computed via GeneralMetricsPlugin. Validates that both MDAC
+tasks report general metrics through tiny task-specific extractors.
+
+Invoke (from repo root):
+  docker run --rm -v $(pwd):/workspace -w /workspace --user $(id -u):$(id -g) \
+    -e HOME=/tmp -e MUJOCO_GL=egl -e PYTHONPATH=/workspace genedynamics/dev-cpu:torch \
+    bash -lc "pip install -q 'setuptools<81' jax_cosmo >/dev/null 2>&1; \
+              python test/integration/test_metric_extractors_docker.py"
+"""
+
+import numpy as np
+import jax
+import jax.numpy as jnp
+
+from genedynamics.envs.factories import make_env
+from genedynamics.experiments.plugins.metrics.extractors import (
+    arm_surface_scan_metrics_plugin, ARM_METRICS,
+    humanoid_box_push_metrics_plugin, HUMANOID_METRICS,
+)
+
+
+class _Traj:
+    def __init__(self, actions):
+        self.states = []
+        self.actions = actions
+
+
+def _exec(env, x0, n=6, scale=0.2, key=0):
+    """Execute n small random actions, returning the executed action list."""
+    acts = []
+    s = x0
+    rng = jax.random.PRNGKey(key)
+    for _ in range(n):
+        rng, k = jax.random.split(rng)
+        u = scale * jax.random.normal(k, (env.action_size,))
+        s = env.step(s, u)
+        acts.append(np.asarray(u))
+    return acts
+
+
+def _check(name, plugin, env, expect_keys):
+    x0 = env.reset(jax.random.PRNGKey(1))
+    traj = _Traj(_exec(env, x0))
+    out = plugin.compute(traj, env, None, None, x0=x0, planning_time=0.123)
+    have = set(out)
+    missing = [k for k in expect_keys if k not in have]
+    finite = all(np.all(np.isfinite(np.asarray(v))) for v in out.values()
+                 if isinstance(v, (int, float, np.floating, np.ndarray)))
+    ok = (not missing) and finite and out.get("runtime") == 0.123
+    print(f"[{name}] metrics={sorted(have)}")
+    print(f"[{name}] missing={missing} finite={finite} -> {'PASS' if ok else 'FAIL'}")
+    return ok
+
+
+def main():
+    ok = []
+    expect_arm = {"equality_residual_rms", "force_tracking_error", "control_smoothness",
+                  "stiffness_smoothness", "energy", "runtime"}
+    ok.append(_check("arm", arm_surface_scan_metrics_plugin(),
+                     make_env("manipulator_surface_scan"), expect_arm))
+
+    expect_hum = {"goal_error", "max_violation", "violation_rate", "violation_cvar",
+                  "equality_residual_rms", "balance_margin", "control_smoothness",
+                  "stiffness_smoothness", "energy", "runtime"}
+    ok.append(_check("humanoid", humanoid_box_push_metrics_plugin(),
+                     make_env("humanoid_box_push"), expect_hum))
+
+    print("RESULT:", "ALL PASS" if all(ok) else "FAILED")
+    return 0 if all(ok) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

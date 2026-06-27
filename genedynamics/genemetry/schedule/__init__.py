@@ -15,12 +15,12 @@ from genedynamics.genemetry.schedule.config import (
 )
 
 try:
-    from genedynamics.genemetry.schedule.backends import overlay_jax  # noqa: F401
+    from genedynamics.genemetry.schedule.backends import overlay_jax  
 except ImportError:
     pass
 
 try:
-    from genedynamics.genemetry.schedule.backends import overlay_numpy  # noqa: F401
+    from genedynamics.genemetry.schedule.backends import overlay_numpy  
 except ImportError:
     pass
 

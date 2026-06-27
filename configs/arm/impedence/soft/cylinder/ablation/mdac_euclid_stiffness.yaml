@@ -1,0 +1,8 @@
+# Ablation: EUCLIDEAN stiffness (log_spd off -> diag softplus, not K=exp(S)).
+# environment: cylinder (S1 analytic cylinder) · SOFT medium (compliant contact)
+base: ../../_base.yaml
+
+level: cylinder
+method: mdac_euclid_stiffness
+name: arm_impedence_soft_cylinder_mdac_euclid_stiffness
+output_dir: results/arm/impedence/soft/cylinder/ablation/mdac_euclid_stiffness

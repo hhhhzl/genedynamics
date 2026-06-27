@@ -7,7 +7,7 @@ Auto-registers available backends on import.
 from genedynamics.genemetry.step.agp import AgpStep
 
 try:
-    from genedynamics.genemetry.step.backends import agp_numpy  # noqa: F401
+    from genedynamics.genemetry.step.backends import agp_numpy  
 except ImportError:
     pass
 

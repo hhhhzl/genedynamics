@@ -93,14 +93,14 @@ from genedynamics.genemetry.schedule.config import (
 # -- Auto-register available backends ----------------------------------
 # Each sub-package __init__ handles its own backend imports; importing
 # the sub-packages here triggers registration.
-import genedynamics.genemetry.ops  # noqa: F401
-import genedynamics.genemetry.manifold  # noqa: F401
-import genedynamics.genemetry.retraction  # noqa: F401
-import genedynamics.genemetry.gate  # noqa: F401
-import genedynamics.genemetry.window  # noqa: F401
-import genedynamics.genemetry.pipeline  # noqa: F401
-import genedynamics.genemetry.step  # noqa: F401
-import genedynamics.genemetry.schedule  # noqa: F401
+import genedynamics.genemetry.ops  
+import genedynamics.genemetry.manifold  
+import genedynamics.genemetry.retraction  
+import genedynamics.genemetry.gate  
+import genedynamics.genemetry.window  
+import genedynamics.genemetry.pipeline  
+import genedynamics.genemetry.step  
+import genedynamics.genemetry.schedule  
 
 __all__ = [
     # Types
