@@ -10,7 +10,6 @@ from .mrmfmbd import MRMFMBDSolver
 from .types import FidelityLevel, ModeRegime, MRMFMBDResult
 from .protocols import FidelitySimulator, ModeMarginalizer
 from .theta_prior import ThetaParametrization, ThetaPrior, ThetaPriorConfig
-from .backends import MRMFMBDPosteriorBackendJax, PosteriorBridgeConfig
 
 # Mode + Fidelity systems
 from .mode_system import (
@@ -51,8 +50,6 @@ __all__ = [
     "ThetaParametrization",
     "ThetaPrior",
     "ThetaPriorConfig",
-    "MRMFMBDPosteriorBackendJax",
-    "PosteriorBridgeConfig",
     # Mode system
     "ModeSpec",
     "ModeSystemConfig",

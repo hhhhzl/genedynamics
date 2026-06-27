@@ -26,7 +26,26 @@ class _JaxMpmTaskSpec:
 
 # Tasks supported by the jax_mpm backend. Add entries here as new ones come online.
 # Phase 2.2 added "locomotion" (terrain bank) and "push" (terrain + manipuland).
-_TASKS = ("crawling_ground", "locomotion", "push")
+# DiffuseBot task suite (their Table): Passive Dynamics {balancing, landing},
+# Locomotion {crawling_ground(=Crawling), hurdling}, Manipulation {gripping,
+# push(=Moving a Box)}. Plus OUR two loco-manipulation tasks {carry, carry_terrain}.
+_TASKS = (
+    "crawling_ground",   # DiffuseBot: Crawling (forward locomotion)
+    "locomotion",        # forward over a terrain bank
+    "hurdling",          # DiffuseBot: Hurdling (forward + clear height)
+    "balancing",         # DiffuseBot: Balancing (passive — stay put)
+    "landing",           # DiffuseBot: Landing (passive — settle softly)
+    "gripping",          # DiffuseBot: Gripping (grasp + lift a manipuland)
+    "push",              # DiffuseBot: Moving a Box (push manipuland to goal)
+    "carry",             # OURS loco-manipulation: carry a manipuland
+    "carry_terrain",     # OURS loco-manipulation: carry over uneven terrain
+)
+# Manipulation tasks need the manipuland branch in adapters; passive/locomotion
+# tasks pass a reward `objective` string through to rollout_return.
+_OBJECTIVE = {
+    "crawling_ground": "crawling", "locomotion": "crawling",
+    "hurdling": "hurdling", "balancing": "balancing", "landing": "landing",
+}
 
 
 class JaxMpmTaskDomainProvider:
@@ -48,12 +67,13 @@ class JaxMpmTaskDomainProvider:
         # num_modes scales with regime bank size for the new tasks; mrmfmbd
         # plumbing reads .num_modes for the marginalizer, which then folds the
         # full bank into the importance weight.
-        if task_id == "locomotion":
+        if task_id in ("locomotion", "hurdling"):
             num_modes = 12   # 4 terrains × 3 frictions (writeup §10.3 train)
-        elif task_id == "push":
-            num_modes = 36   # 4 terrains × 3 frictions × 3 masses
+        elif task_id in ("push", "carry", "gripping", "carry_terrain"):
+            num_modes = 36   # 4 terrains × 3 frictions × 3 masses (manipuland tasks)
         else:
-            num_modes = 4
+            num_modes = 4    # crawling_ground / balancing / landing
+        objective = _OBJECTIVE.get(task_id, "crawling")
         return _JaxMpmTaskSpec(
             task_id=task_id, x_dim=int(x_dim), phi_dim=int(phi_dim),
             num_modes=int(num_modes),
@@ -73,7 +93,11 @@ class JaxMpmTaskDomainProvider:
         )
         runtime_keys = ("dt", "gravity", "scale", "p_vol", "friction_coeff",
                         "actuation_strength_scale", "act_strength_base",
-                        "mode_friction", "backward_penalty_weight")
+                        "mode_friction", "backward_penalty_weight",
+                        # per-mode regime axes (slope via gravity tilt / mass / init)
+                        "mode_slope_deg", "mode_mass_scale", "mode_init_vel",
+                        # open-loop trajectory controller
+                        "controller_kind", "n_control_nodes", "n_actuators", "env_horizon")
         runtime_config = {k: kwargs[k] for k in runtime_keys if k in kwargs}
         voxel_dims = kwargs.get("voxel_dims")
         if voxel_dims is not None:

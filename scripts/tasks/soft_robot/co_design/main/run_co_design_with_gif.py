@@ -279,7 +279,7 @@ def main() -> int:
             f"This GIF runner only supports task_domain=jax_mpm, got {task_domain!r}."
         )
 
-    output_dir = Path(data.get("output_dir", "results/soft_robot"))
+    output_dir = Path(data.get("output_dir", "results/soft_robot/co_design"))
     if not output_dir.is_absolute():
         output_dir = root / output_dir
 
@@ -288,7 +288,7 @@ def main() -> int:
             BaselineExperimentPlatform,
             BaselineExperimentConfig,
         )
-        import genedynamics.experiments.framework.baselines  
+        import genedynamics.solvers.single.codesign_solvers  # noqa: F401 — register co-design solvers
 
         cfg = BaselineExperimentConfig(
             baseline_name=data.get("baseline_name", "mrmfmbd"),

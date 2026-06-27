@@ -16,12 +16,15 @@ from .base import (
 from .config import ExperimentConfig
 from .experiment import ExperimentRunner
 from .registry import PluginRegistry
+# `baseline.py` keeps the co-design optimizer interface (Config/Result/Protocol)
+# used by the relocated optimizers in solvers/single/codesign_optimizers/.
 from .baseline import BaselineProtocol, BaselineConfig, BaselineResult
-from .baseline_registry import (
-    BaselineRegistry,
-    register_baseline,
-    get_baseline,
-    list_baselines,
+from .codesign_runner import (
+    run_codesign,
+    register_codesign_solver,
+    get_codesign_solver,
+    list_codesign_solvers,
+    CoDesignResult,
 )
 from .baseline_platform import BaselineExperimentPlatform, BaselineExperimentConfig
 from .task_domain_provider import (
@@ -43,10 +46,11 @@ __all__ = [
     "BaselineProtocol",
     "BaselineConfig",
     "BaselineResult",
-    "BaselineRegistry",
-    "register_baseline",
-    "get_baseline",
-    "list_baselines",
+    "run_codesign",
+    "register_codesign_solver",
+    "get_codesign_solver",
+    "list_codesign_solvers",
+    "CoDesignResult",
     "BaselineExperimentPlatform",
     "BaselineExperimentConfig",
     "TaskDomainProvider",

@@ -51,6 +51,16 @@ from .robotize_common import (
 from .pc_robotize import robotize_point_cloud
 from .gs_robotize import robotize_gaussians
 
+# Table-3 — shape/topology + connectivity quality metrics (co-design eval).
+from .shape_metrics import (
+    compute_shape_metrics,
+    connectivity_metrics,
+    diversity_metrics,
+    prior_reconstruction_error,
+    occupancy_grid_from_voxel_id,
+    occupancy_grid_from_occ,
+)
+
 __all__ = [
     # Phase 0
     "SoftBodySpec",
@@ -82,4 +92,11 @@ __all__ = [
     "normalize_points_to_box",
     "robotize_point_cloud",
     "robotize_gaussians",
+    # Table-3 — shape metrics
+    "compute_shape_metrics",
+    "connectivity_metrics",
+    "diversity_metrics",
+    "prior_reconstruction_error",
+    "occupancy_grid_from_voxel_id",
+    "occupancy_grid_from_occ",
 ]

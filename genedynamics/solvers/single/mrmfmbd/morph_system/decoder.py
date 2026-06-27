@@ -72,6 +72,137 @@ def decode(params: Params, w: jnp.ndarray, cfg: MorphDecoderConfig) -> jnp.ndarr
 
 
 # ---------------------------------------------------------------------------
+# Task-2: multi-head decoder — one latent w → morphology Ψ = {geometry,
+# actuator, stiffness} (DiffuseBot Eq 1). The actuator head is the continuous
+# per-voxel actuator-placement co-design FIELD (softmax over K groups); a single
+# gradient-free MBD sample of w jointly sets geometry + actuator + stiffness.
+# ---------------------------------------------------------------------------
+
+
+def enc_in_dim(cfg: MorphDecoderConfig) -> int:
+    """Encoder input width: [occ] (+ [actuator flat] + [stiffness] when enabled)."""
+    n = int(cfg.n_voxels)
+    d = n
+    if getattr(cfg, "decode_actuator", False):
+        d += n * int(cfg.n_actuators)
+    if getattr(cfg, "decode_stiffness", False):
+        d += n
+    return d
+
+
+def init_params_mh(key, cfg: MorphDecoderConfig) -> Params:
+    """Multi-head VAE params. Encoder ingests the full Ψ feature; decoder shares
+    one hidden layer and branches into occ / actuator / stiffness heads."""
+    d, h, n = int(cfg.latent_dim), int(cfg.hidden_dim), int(cfg.n_voxels)
+    K = int(cfg.n_actuators)
+    ks = jax.random.split(key, 8)
+
+    def glorot(k, shape):
+        lim = jnp.sqrt(6.0 / float(sum(shape)))
+        return jax.random.uniform(k, shape, minval=-lim, maxval=lim)
+
+    p = {
+        "enc_w1": glorot(ks[0], (enc_in_dim(cfg), h)), "enc_b1": jnp.zeros((h,)),
+        "enc_mu_w": glorot(ks[1], (h, d)), "enc_mu_b": jnp.zeros((d,)),
+        "enc_lv_w": glorot(ks[2], (h, d)), "enc_lv_b": jnp.zeros((d,)),
+        "dec_w1": glorot(ks[3], (d, h)), "dec_b1": jnp.zeros((h,)),
+        "dec_out_w": glorot(ks[4], (h, n)), "dec_out_b": jnp.zeros((n,)),
+    }
+    if getattr(cfg, "decode_actuator", False):
+        p["dec_act_w"] = glorot(ks[5], (h, n * K))
+        p["dec_act_b"] = jnp.zeros((n * K,))
+    if getattr(cfg, "decode_stiffness", False):
+        p["dec_stiff_w"] = glorot(ks[6], (h, n))
+        p["dec_stiff_b"] = jnp.zeros((n,))
+    return p
+
+
+def _dec_hidden(params: Params, w: jnp.ndarray) -> jnp.ndarray:
+    return jnp.tanh(w @ params["dec_w1"] + params["dec_b1"])
+
+
+def decode_actuator_field(params: Params, w: jnp.ndarray, cfg: MorphDecoderConfig) -> jnp.ndarray:
+    """w → (n_voxels, n_actuators) softmax per-voxel actuator-placement field."""
+    n, K = int(cfg.n_voxels), int(cfg.n_actuators)
+    logits = (_dec_hidden(params, w) @ params["dec_act_w"] + params["dec_act_b"]).reshape(n, K)
+    return jax.nn.softmax(logits, axis=-1)
+
+
+def decode_stiffness_field(params: Params, w: jnp.ndarray, cfg: MorphDecoderConfig) -> jnp.ndarray:
+    """w → (n_voxels,) per-voxel stiffness (Young's modulus) in [e_lo, e_hi]."""
+    s = jax.nn.sigmoid(_dec_hidden(params, w) @ params["dec_stiff_w"] + params["dec_stiff_b"])
+    return cfg.e_lo + (cfg.e_hi - cfg.e_lo) * s
+
+
+def decode_full(params: Params, w: jnp.ndarray, cfg: MorphDecoderConfig):
+    """w → (occ in [x_lo,x_hi], actuator (n,K) or None, stiffness (n,) or None).
+    The actuator / stiffness fields are returned only when the params carry the
+    corresponding head (a multi-head decoder); else None (legacy occ-only)."""
+    occ = decode(params, w, cfg)
+    act = decode_actuator_field(params, w, cfg) if "dec_act_w" in params else None
+    stiff = decode_stiffness_field(params, w, cfg) if "dec_stiff_w" in params else None
+    return occ, act, stiff
+
+
+def feature_mh(occ01: jnp.ndarray, act: jnp.ndarray, stiff01: jnp.ndarray,
+               cfg: MorphDecoderConfig) -> jnp.ndarray:
+    """Concatenate the Ψ feature [occ01, actuator_flat, stiff01] for the encoder."""
+    parts = [occ01]
+    if getattr(cfg, "decode_actuator", False):
+        parts.append(act.reshape(*act.shape[:-2], -1))
+    if getattr(cfg, "decode_stiffness", False):
+        parts.append(stiff01)
+    return jnp.concatenate(parts, axis=-1)
+
+
+def vae_loss_mh(params: Params, batch: Dict[str, jnp.ndarray], key, cfg: MorphDecoderConfig):
+    """Multi-head β-VAE loss: occ MSE + actuator cross-entropy + stiffness MSE + β·KL.
+    batch holds occ (B,n)∈[0,1], act (B,n,K) simplex, stiff (B,n)∈[0,1]."""
+    occ = batch["occ"]
+    feat = feature_mh(occ, batch.get("act"), batch.get("stiff"), cfg)
+    mu, logvar = encode(params, feat)
+    eps = jax.random.normal(key, mu.shape)
+    z = mu + jnp.exp(0.5 * logvar) * eps
+    hdn = jnp.tanh(z @ params["dec_w1"] + params["dec_b1"])
+
+    occ_rec = jax.nn.sigmoid(hdn @ params["dec_out_w"] + params["dec_out_b"])
+    occ_loss = jnp.mean((occ_rec - occ) ** 2)
+    loss = occ_loss
+    if getattr(cfg, "decode_actuator", False):
+        n, K = int(cfg.n_voxels), int(cfg.n_actuators)
+        logits = (hdn @ params["dec_act_w"] + params["dec_act_b"]).reshape(*occ.shape[:-1], n, K)
+        logp = jax.nn.log_softmax(logits, axis=-1)
+        loss = loss - jnp.mean(jnp.sum(batch["act"] * logp, axis=-1))   # cross-entropy
+    if getattr(cfg, "decode_stiffness", False):
+        stiff_rec = jax.nn.sigmoid(hdn @ params["dec_stiff_w"] + params["dec_stiff_b"])
+        loss = loss + jnp.mean((stiff_rec - batch["stiff"]) ** 2)
+    kl = -0.5 * jnp.mean(jnp.sum(1.0 + logvar - mu ** 2 - jnp.exp(logvar), axis=-1))
+    return loss + cfg.beta_kl * kl, (occ_loss, kl)
+
+
+def train_vae_mh(dataset: Dict[str, np.ndarray], cfg: MorphDecoderConfig, *,
+                 steps: int = 2000, lr: float = 1e-2, seed: int = 0):
+    """Full-batch multi-head β-VAE training. dataset: {occ,(act),(stiff)} np arrays."""
+    batch = {k: jnp.asarray(np.asarray(v, dtype=np.float32)) for k, v in dataset.items()}
+    key = jax.random.PRNGKey(int(seed))
+    key, ik = jax.random.split(key)
+    params = init_params_mh(ik, cfg)
+    m, v = _adam_init(params)
+    loss_and_grad = jax.jit(
+        jax.value_and_grad(lambda p, k: vae_loss_mh(p, batch, k, cfg), has_aux=True)
+    )
+    history: List[Tuple[int, float, float, float]] = []
+    every = max(1, int(steps) // 10)
+    for t in range(1, int(steps) + 1):
+        key, sk = jax.random.split(key)
+        (loss, (rl, kl)), grads = loss_and_grad(params, sk)
+        params, m, v = _adam_step(params, grads, m, v, t, lr=lr)
+        if t == 1 or t % every == 0:
+            history.append((t, float(loss), float(rl), float(kl)))
+    return params, history
+
+
+# ---------------------------------------------------------------------------
 # VAE loss + hand-rolled Adam training
 # ---------------------------------------------------------------------------
 
@@ -159,6 +290,13 @@ class MorphDecoder:
         self.params = params
         self.cfg = cfg
         self._decode = jax.jit(lambda w: decode(self.params, w, cfg))
+        # Task-2 multi-head: only present when the saved params carry the heads.
+        self.has_actuator = "dec_act_w" in params
+        self.has_stiffness = "dec_stiff_w" in params
+        if self.has_actuator:
+            self._decode_act = jax.jit(lambda w: decode_actuator_field(self.params, w, cfg))
+        if self.has_stiffness:
+            self._decode_stiff = jax.jit(lambda w: decode_stiffness_field(self.params, w, cfg))
 
     def decode(self, w) -> jnp.ndarray:
         """w: (latent_dim,) → occupancy (n_voxels,) in [x_lo, x_hi]."""
@@ -167,6 +305,16 @@ class MorphDecoder:
     def decode_batch(self, W) -> jnp.ndarray:
         """W: (B, latent_dim) → (B, n_voxels)."""
         return jax.vmap(self._decode)(jnp.asarray(W, dtype=jnp.float32))
+
+    def decode_full_batch(self, W):
+        """W: (B, latent_dim) → (occ (B,n_voxels), actuator (B,n,K) or None,
+        stiffness (B,n) or None). The actuator/stiffness fields are present only
+        for a multi-head decoder; legacy occ-only decoders return None for them."""
+        W = jnp.asarray(W, dtype=jnp.float32)
+        occ = jax.vmap(self._decode)(W)
+        act = jax.vmap(self._decode_act)(W) if self.has_actuator else None
+        stiff = jax.vmap(self._decode_stiff)(W) if self.has_stiffness else None
+        return occ, act, stiff
 
     def reconstruct(self, x) -> jnp.ndarray:
         """Encode-decode round trip in [0,1] (for recon diagnostics)."""

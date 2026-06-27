@@ -32,6 +32,15 @@ class MorphDecoderConfig:
     x_lo, x_hi : float physical occupancy range fed to the rollout as x_morph.
     beta_kl    : float VAE KL weight (β-VAE); keeps the latent ≈ N(0, I) so the
                        MBD prior term log p(w) is a clean standard-normal.
+
+    Task-2 (DiffuseBot-aligned continuous co-design fields): when enabled, the
+    SAME latent w also decodes the morphology Ψ = {geometry, actuator, stiffness}
+    (DiffuseBot Eq 1) — a multi-head decoder so a single gradient-free MBD sample
+    of w jointly controls geometry occupancy, the continuous per-voxel actuator
+    placement field (softmax over n_actuators), and per-voxel stiffness.
+    decode_actuator/decode_stiffness : bool   add the actuator / stiffness head.
+    n_actuators : int   K = #actuator groups (actuator head output is n_voxels×K).
+    e_lo, e_hi  : float physical Young's-modulus range for the stiffness head.
     """
 
     latent_dim: int = 8
@@ -40,6 +49,12 @@ class MorphDecoderConfig:
     x_lo: float = 0.2
     x_hi: float = 1.0
     beta_kl: float = 1e-3
+    # Task-2 multi-head co-design fields (off by default → legacy occ-only decoder).
+    decode_actuator: bool = False
+    decode_stiffness: bool = False
+    n_actuators: int = 0
+    e_lo: float = 0.5
+    e_hi: float = 3.0
     extra: Dict[str, Any] = field(default_factory=dict)
 
 

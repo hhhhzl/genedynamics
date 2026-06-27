@@ -1,7 +1,7 @@
 """Focused 4-method comparison: MRMFMBD main vs Diff(1m,env=200) vs CMA-ES env=200 vs CEM env=200.
 
 Produces:
-  - results/soft_robot/compare_4_methods.png  — reward curves (left: per-iter; right: per-compute)
+  - results/soft_robot/co_design/compare_4_methods.png  — reward curves (left: per-iter; right: per-compute)
   - Console summary table with per-mode disp, mean, CV, worst-case, wall-time
 """
 from __future__ import annotations
@@ -18,16 +18,16 @@ from genedynamics.envs.external.jax_mpm.scene import MPMConfig, build_scene, rol
 
 RUNS = [
     ("MRMFMBD main (mode marginalization + fidelity ladder, 4-mode)",
-     "/workspace/genedynamics/results/soft_robot/main/crawling_ground/results.json",
+     "/workspace/genedynamics/results/soft_robot/co_design/main/crawling_ground/results.json",
      "#d62728"),
     ("Diff 1-mode, env=200 (no mode marginalization + fidelity ladder)",
-     "/workspace/genedynamics/results/soft_robot/ablation/no_mode_no_fidelity_env200/results.json",
+     "/workspace/genedynamics/results/soft_robot/co_design/ablation/no_mode_no_fidelity_env200/results.json",
      "#8c564b"),
     ("CMA-ES env=200",
-     "/workspace/genedynamics/results/soft_robot/baselines/cmaes_crawling_env200/results.json",
+     "/workspace/genedynamics/results/soft_robot/co_design/baselines/cmaes_crawling_env200/results.json",
      "#6a3d9a"),
     ("CEM env=200",
-     "/workspace/genedynamics/results/soft_robot/baselines/cem_crawling_env200/results.json",
+     "/workspace/genedynamics/results/soft_robot/co_design/baselines/cem_crawling_env200/results.json",
      "#17becf"),
 ]
 FRICTIONS = [0.3, 0.4, 0.5, 0.6]
@@ -124,7 +124,7 @@ def main():
         fontsize=12, weight="bold", y=1.01,
     )
     fig.tight_layout()
-    out = "/workspace/genedynamics/results/soft_robot/compare_4_methods.png"
+    out = "/workspace/genedynamics/results/soft_robot/co_design/compare_4_methods.png"
     fig.savefig(out, dpi=160, bbox_inches="tight")
     plt.close(fig)
     print(f"saved {out}\n")

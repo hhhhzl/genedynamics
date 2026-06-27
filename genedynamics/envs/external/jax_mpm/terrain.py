@@ -137,6 +137,21 @@ def ridge_terrain(
     return TerrainSpec(name="ridge", height=h.astype(np.float32))
 
 
+def hurdle_terrain(
+    n: int = 64,
+    center: float = 0.55,
+    half_width: float = 0.035,
+    height: float = 2.0 * SAFE_AMP,
+) -> TerrainSpec:
+    """DiffuseBot Hurdling obstacle: a tall, narrow transverse wall ahead of the
+    robot start that it must clear to advance. Like ridge_terrain but taller and
+    placed forward of the spawn (center≈0.55) so it is a genuine hurdle."""
+    X, _ = _xz_meshgrid(n)
+    band = np.abs(X - center) < half_width
+    h = np.where(band, height * (1.0 - np.abs(X - center) / max(half_width, 1e-6)), 0.0)
+    return TerrainSpec(name="hurdle", height=h.astype(np.float32))
+
+
 def gap_terrain(
     n: int = 64,
     center: float = 0.5,

@@ -19,7 +19,7 @@ import jax.numpy as jnp
 
 from .scene import (
     MPMConfig, SceneData, build_scene,
-    rollout_return_batch, rollout_return_push_batch,
+    rollout_return_batch, rollout_return_push_batch, rollout_return_carry_batch,
 )
 
 
@@ -45,6 +45,13 @@ def _get_batched_fn(scene: SceneData, cfg: MPMConfig, num_env_steps: int):
 
 # Fidelity level → env step count (coarse=30, medium=100, fine=200).
 FIDELITY_STEPS = {0: 30, 1: 100, 2: 200}
+
+# DiffuseBot task → reward objective for the (non-manipuland) rollout. Manipulation
+# tasks (push/carry/gripping/carry_terrain) are handled by their own branches.
+_TASK_OBJECTIVE = {
+    "crawling_ground": "crawling", "locomotion": "crawling",
+    "hurdling": "hurdling", "balancing": "balancing", "landing": "landing",
+}
 
 
 def evaluate_batch_request(
@@ -111,6 +118,7 @@ def evaluate_batch_request(
             )
             terrain_h = None
             push = False
+            carry = False
             manip_cfg_local = None
         else:
             fid, mode_id = key
@@ -120,7 +128,13 @@ def evaluate_batch_request(
             from .terrain import to_grid as _to_grid
             terrain_h = jnp.asarray(_to_grid(regime.terrain, cfg.n_grid))
             push = (task == "push") and regime.has_manipuland
-            manip_cfg_local = regime.manipuland if push else None
+            # carry / gripping / carry_terrain all use the manipuland-transport
+            # rollout (object under gravity; body supports + moves it). gripping
+            # is DiffuseBot's grasp-and-lift, carry_terrain is OUR loco-manip.
+            carry = (task in ("carry", "gripping", "carry_terrain")) and regime.has_manipuland
+            manip_cfg_local = regime.manipuland if (push or carry) else None
+        # passive / locomotion reward objective (crawling | balancing | landing | hurdling)
+        objective = _TASK_OBJECTIVE.get(task, "crawling")
 
         x_b = np.stack([np.asarray(req_list[i].morphology_params, dtype=np.float32) for i in idxs])
         phi_b = np.stack([np.asarray(req_list[i].controller_params, dtype=np.float32) for i in idxs])
@@ -132,13 +146,29 @@ def evaluate_batch_request(
                 manip_cfg=manip_cfg_local, goal_x=push_goal_x,
                 terrain_height=terrain_h, weights=push_weights,
             )
+        elif carry:
+            # Carry/transport: object under gravity, body must support + move it.
+            # Returns (reward, dist_to_goal_T); uses carry-specific reward weights.
+            rs, ds = rollout_return_carry_batch(
+                x_b, phi_b, fr_b, scene, cfg, num_env_steps,
+                manip_cfg=manip_cfg_local, goal_x=push_goal_x,
+                terrain_height=terrain_h,
+                objective=("gripping" if task == "gripping" else "carry"),
+            )
         elif terrain_h is not None:
             # Per-regime terrain — bypass the fidelity-keyed JIT cache (which
             # keys on env-step count alone) and call rollout_return_batch
             # directly. JAX will trace once per (n_env_steps, terrain.shape).
             rs, ds = rollout_return_batch(
                 x_b, phi_b, fr_b, scene, cfg, num_env_steps,
-                terrain_height=terrain_h,
+                terrain_height=terrain_h, objective=objective,
+            )
+        elif objective != "crawling":
+            # balancing / landing / hurdling on flat floor — route through the
+            # direct batch fn with the task objective (the cached fast-path fn
+            # below is crawling-only).
+            rs, ds = rollout_return_batch(
+                x_b, phi_b, fr_b, scene, cfg, num_env_steps, objective=objective,
             )
         else:
             fn = _get_batched_fn(scene, cfg, num_env_steps)

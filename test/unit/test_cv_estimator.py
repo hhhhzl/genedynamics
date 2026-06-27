@@ -19,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from genedynamics.solvers.single.mrmfmbd.estimator_system import (
+from genedynamics.solvers.single.mrmfmbd_ablation.estimator_system import (
     corrected_rewards,
     cv_score_weighted_mean,
     softmax_weights,

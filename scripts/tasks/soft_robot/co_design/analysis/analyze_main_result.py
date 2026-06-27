@@ -26,7 +26,7 @@ from genedynamics.envs.external.jax_mpm.scene import (
 )
 
 
-RESULTS_DIR = "/workspace/genedynamics/results/soft_robot/main/crawling_ground"
+RESULTS_DIR = "/workspace/genedynamics/results/soft_robot/co_design/main/crawling_ground"
 VOXEL_DIMS = (4, 3, 4)
 N_ACT = 10
 K_SIN = 4

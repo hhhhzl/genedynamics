@@ -3,7 +3,7 @@
 Run co-design experiment from YAML config.
 
 Uses BaselineExperimentPlatform. Any registered baseline can be used.
-Example: python scripts/tasks/soft_robot/co_design/main/run_co_design.py configs/soft_robot/main/crawling_ground.yaml
+Example: python scripts/tasks/soft_robot/co_design/main/run_co_design.py configs/soft_robot/co_design/main/crawling_ground.yaml
 """
 
 from __future__ import annotations
@@ -40,8 +40,8 @@ def main() -> int:
         BaselineExperimentPlatform,
         BaselineExperimentConfig,
     )
-    from genedynamics.experiments.framework.baseline_registry import list_baselines
-    import genedynamics.experiments.framework.baselines   — trigger registration
+    from genedynamics.experiments.framework.codesign_runner import list_codesign_solvers
+    import genedynamics.solvers.single.codesign_solvers  # noqa: F401 — register co-design solvers
 
     if args.seed is not None:
         data["seeds"] = [args.seed]
@@ -53,7 +53,7 @@ def main() -> int:
         task_domain=data.get("task_domain", "jax_mpm"),
         task_id=data.get("task_id", "crawling_ground"),
         seeds=data.get("seeds", [0]),
-        output_dir=data.get("output_dir", "results/soft_robot"),
+        output_dir=data.get("output_dir", "results/soft_robot/co_design"),
         cache_dir=data.get("cache_dir", data.get("checkpoint_dir")),
         scheduler_config=data.get("scheduler_config"),
         method_params=data.get("method_params", {}),
@@ -62,9 +62,9 @@ def main() -> int:
         save_gif=data.get("save_gif", False),
     )
 
-    if config.baseline_name not in list_baselines():
+    if config.baseline_name not in list_codesign_solvers():
         print(f"Error: Baseline '{config.baseline_name}' not found.")
-        print(f"Available: {list_baselines()}")
+        print(f"Available: {list_codesign_solvers()}")
         return 1
 
     if args.dry_run:

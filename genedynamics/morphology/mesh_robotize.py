@@ -41,6 +41,7 @@ from .sdf import (
     voxelize_mesh,
     voxel_centers,
     keep_largest_component,
+    count_components,
     has_ground_support,
     VoxelizationResult,
 )
@@ -80,6 +81,10 @@ class MeshRobotizeConfig:
     min_filled_cells: int = 64
     min_active_frac: float = 0.05
     require_ground_support: bool = True
+    # DiffuseBot-strict connectivity: reject bodies that voxelize into more than
+    # one 6-connected component (DiffuseBot resamples until `geometry_is_cc`).
+    # Default False → our lenient "keep largest component" behavior (unchanged).
+    require_single_component: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +100,8 @@ class RobotizeReport:
     failure_reasons: List[str] = field(default_factory=list)
     n_filled_cells: int = 0
     n_dropped_for_connectivity: int = 0
+    # Pre-prune 6-connected component count (1 = DiffuseBot `geometry_is_cc`).
+    n_components: int = 1
     actuator_coverage: float = 0.0
     n_actuators_used: int = 0
     body_diameter: float = 0.0
@@ -236,6 +243,16 @@ def robotize_mesh(
         )
 
     # 4. Connectivity — keep largest 6-connected component.
+    n_comp = count_components(vox.occupancy)
+    # DiffuseBot-strict: reject anything that is not a single component upfront.
+    if cfg.require_single_component and n_comp > 1:
+        fails.append(f"not single-connected (n_components={n_comp}); "
+                     f"require_single_component=True (DiffuseBot geometry_is_cc)")
+        return None, RobotizeReport(
+            success=False, failure_reasons=fails,
+            n_filled_cells=int(vox.n_filled), n_components=n_comp,
+            body_diameter=diameter,
+        )
     occ_kept, n_dropped = keep_largest_component(vox.occupancy)
     vox_kept = VoxelizationResult(occupancy=occ_kept, origin=vox.origin, pitch=vox.pitch)
     centers = voxel_centers(vox_kept)
@@ -247,6 +264,7 @@ def robotize_mesh(
             failure_reasons=fails,
             n_filled_cells=int(centers.shape[0]),
             n_dropped_for_connectivity=n_dropped,
+            n_components=n_comp,
             body_diameter=diameter,
         )
 
@@ -294,6 +312,7 @@ def robotize_mesh(
         failure_reasons=[],
         n_filled_cells=int(centers.shape[0]),
         n_dropped_for_connectivity=n_dropped,
+        n_components=n_comp,
         actuator_coverage=active_frac,
         n_actuators_used=n_actuators_used,
         body_diameter=diameter,
