@@ -26,9 +26,9 @@ torques directly.
 
 ``constraint_residual`` exposes the full eq:humanoid_manifold (clean / mjx-kin
 state, no mjx backprop): h_box, h_hand, h_hand_R, h_foot (eq) + g_bal, g_fric,
-g_tip (ineq), feeding the MDAC soft-feasibility (AL) seam. The clean-state MDAC
-geometry proxy is the constant-stiffness + force-target manifold (primitive-only);
-the physics-coupled contact / balance go through the AL.
+g_tip (ineq), feeding the soft-feasibility (AL) seam. The general ``manifold_residual``
+/ ``manifold_geometry`` hooks expose the clean-state constant-stiffness + force-target
+manifold (primitive-only); the physics-coupled contact / balance go through the AL.
 
 Levels: H1 double-support fixed face/feet; H2 + domain randomization (hand
 friction + box slide frictionloss); H4 box-unjamming with relaxed contact-face
@@ -301,20 +301,23 @@ class HumanoidBoxPushEnv(UnitreeH1PushCrateEnv):
     def constraint_residual(self, state, action, ctx=None):
         return self._manifold(state.pipeline_state, action, state.info)
 
-    # --- MDAC clean-state geometry proxy (primitive only; no mjx) ---
-    # Constant-stiffness + force-target manifold; contact/balance go to the AL.
-    def _mdac_res_node(self, u):
+    # --- clean-state constraint-manifold geometry (primitive only; no mjx) ---
+    # General env hooks (any manifold-aware solver may call them): the clean-state
+    # constant-stiffness + force-target manifold; the physics-coupled contact / balance
+    # go to the AL. ``manifold_residual`` is the flattened residual C(U) over a
+    # node-control trajectory; ``manifold_geometry`` its tangent geometry ∂(½‖C‖²)/∂U.
+    def _manifold_res_node(self, u):
         s0, s1 = self.spec.s_slice.start, self.spec.s_slice.stop
         f_span = max(self._bcfg.f_max - self._bcfg.f_min, 1e-6)
         dS = self._bcfg.s_scale * u[s0:s1]
         F = self._force_cmd(u[self.spec.nu_slice][0])
         return jnp.concatenate([dS, jnp.array([(F - self._bcfg.f_target) / f_span])])
 
-    def mdac_constraint(self, state, Ybar_nodes):
-        return jax.vmap(self._mdac_res_node)(Ybar_nodes).reshape(-1)
+    def manifold_residual(self, state, Ybar_nodes):
+        return jax.vmap(self._manifold_res_node)(Ybar_nodes).reshape(-1)
 
-    def mdac_geometry_fn(self, state, Ybar_nodes, t0):
-        sq = lambda u: 0.5 * jnp.sum(self._mdac_res_node(u) ** 2)
+    def manifold_geometry(self, state, Ybar_nodes, t0):
+        sq = lambda u: 0.5 * jnp.sum(self._manifold_res_node(u) ** 2)
         return jax.vmap(jax.grad(sq))(Ybar_nodes)
 
     def _get_obs(self, ps, info) -> jax.Array:

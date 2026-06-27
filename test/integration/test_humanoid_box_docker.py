@@ -4,7 +4,7 @@ Validates the rebuilt contact-semantic primitive + π_low + full manifold:
   * action_size == 12 (H1/H2/H4-A) and 15 (H4-B, use_base);
   * each level constructs, reset, step(random) finite;
   * constraint_residual -> h(11)=[h_box;h_hand;h_hand_R;h_foot] + g(3)=[g_bal;g_fric;g_tip];
-  * mdac_geometry_fn -> (Hnode+1, nu);
+  * manifold_geometry -> (Hnode+1, nu);
   * face selection (H4): different j logits -> different contact target;
     fixed rear face for H1;
   * H2 domain randomization (hand friction / box frictionloss) varies across seeds;
@@ -38,7 +38,7 @@ def _check_level(level, use_base=False, want_nu=12):
     s1 = env.step(x0, a)
     finite = bool(jnp.all(jnp.isfinite(s1.obs)) and jnp.isfinite(s1.reward))
     h, g = env.constraint_residual(x0, a)
-    ag = env.mdac_geometry_fn(x0, jnp.zeros((CFG["Hnode"] + 1, env.action_size)), 0.0)
+    ag = env.manifold_geometry(x0, jnp.zeros((CFG["Hnode"] + 1, env.action_size)), 0.0)
     ok = (env.action_size == want_nu and finite and h.shape == (11,) and g.shape == (3,)
           and ag.shape == (CFG["Hnode"] + 1, want_nu))
     tag = f"{level}{'(+base)' if use_base else ''}"

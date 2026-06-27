@@ -10,8 +10,8 @@
 |---|---|---|---|
 | 位置-刚度原语(K=exp S) | `use_stiffness` / `log_spd_stiffness` | ✅ active | env `stiffness_mode`(none/log_spd/euclid/fixed) |
 | 软可行性 AL(soft-feasibility) | `use_soft_feasibility` | ✅ active | `build_brax_rollout_augmented` + `aug_rho` |
-| 几何切投影 | `use_tangent_projection` | ✅ active | env `mdac_geometry_fn`(clean-state,无 mjx) |
-| CFS 回缩 | `use_retraction` | ✅ active | genemetry `CfsRetraction` + `env.mdac_constraint` filter(**像 2GO 一样接**) |
+| 几何切投影 | `use_tangent_projection` | ✅ active | env `manifold_geometry`(clean-state,无 mjx) |
+| CFS 回缩 | `use_retraction` | ✅ active | genemetry `CfsRetraction` + `env.manifold_residual` filter(**像 2GO 一样接**) |
 | 耦合退火(rho↑/kappa↑) | `use_adaptive_schedule` | ✅ active | genemetry `ScheduleOverlay`(sigma↓ 归 base schedule) |
 | RL prior(warm-start mix) | `use_rl_prior` | ✅ seam active | `prior=` 传入即生效(**RQ4 真数字还需训练真 PPO prior**) |
 | MB rollout | `use_mb_rollout` | inert-by-design | 并行核本身就是 MB rollout 加权均值,关掉无意义 |
@@ -97,8 +97,8 @@ docker 跑(`genedynamics/dev-cpu:torch`)。**公平性**:所有 method 用同一
 
 所有组件已接 + docker 验证 active(`test_mdac_ablation_docker.py`),harness = `solvers/single/mdac/experiment.py::make_mdac(task, method)`(flag → env `stiffness_mode` + solver `geometry_fn`/`retraction`/`prior`/`aug`):
 
-1. ✅ **geometry_fn(RQ3):** arm/humanoid env 的 `mdac_geometry_fn`(clean-state ∂(½‖C‖²)/∂U,纯 primitive 无 mjx;物理耦合的 surface/balance 走 AL)。
-2. ✅ **CFS 回缩:** `make_mdac_retraction(env)` = genemetry `CfsRetraction(backend="jax", filter_fn=...)`,filter 在 `env.mdac_constraint` 上做线性化投影(像 2GO)。
+1. ✅ **geometry_fn(RQ3):** arm/humanoid env 的 `manifold_geometry`(clean-state ∂(½‖C‖²)/∂U,纯 primitive 无 mjx;物理耦合的 surface/balance 走 AL)。
+2. ✅ **CFS 回缩:** `make_mdac_retraction(env)` = genemetry `CfsRetraction(backend="jax", filter_fn=...)`,filter 在 `env.manifold_residual` 上做线性化投影(像 2GO)。
 3. ✅ **flag-driven stiffness(RQ2):** env `stiffness_mode`(none/log_spd/euclid/fixed)。
 4. ✅ **耦合退火:** backend `_adaptive_mults`(rho↑/kappa↑,kappa 来自 genemetry `ScheduleOverlay`;sigma↓ 归 base schedule)。
 5. ⬜ **RL prior 真训练(RQ4 唯一待办):** seam 已验证(`prior=` 生效),但要真数字得用 M6 `train_rl_prior` 在每个 env 上训 brax PPO,再把策略当 prior 传进 `make_mdac(..., prior=policy)`。

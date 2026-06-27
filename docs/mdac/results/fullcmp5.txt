@@ -1,6 +1,0 @@
-plane   mdac : REAL  40.8+/-11.8 force_RMS  12.5 surf_track 0.0152 contact 13/14 [206s]
-plane   dial : REAL  39.8+/-11.6 force_RMS  12.7 surf_track 0.0240 contact 13/14 [189s]
-convex  mdac : REAL  47.2+/-21.0 force_RMS  21.1 surf_track 0.0121 contact 13/14 [256s]
-convex  dial : REAL  50.2+/- 6.3 force_RMS   8.2 surf_track 0.0481 contact 14/14 [226s]
-bumpy   mdac : REAL  36.6+/-15.5 force_RMS  17.6 surf_track 0.0102 contact 12/14 [239s]
-bumpy   dial : REAL  42.9+/-12.1 force_RMS  12.3 surf_track 0.0370 contact 13/14 [220s]

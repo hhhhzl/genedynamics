@@ -10,7 +10,7 @@ manifold ``{C(U)=0}`` via a linearized (Gauss-Newton) CFS step
 
     dU = - J_C^T (J_C J_C^T + reg I)^{-1} C(U),   U <- U + gain * dU
 
-``C = env.mdac_constraint(state, U)`` is analytic (no mjx rollout, §7.4), so
+``C = env.manifold_residual(state, U)`` is analytic (no mjx rollout, §7.4), so
 ``J_C`` is an autodiff Jacobian with no physics backprop. The filter_fn signature
 matches `CfsRetractionJax` exactly: ``(state, trajectory, sched_state,
 sched_params) -> filtered_trajectory``.
@@ -27,13 +27,13 @@ from genedynamics.genemetry.retraction.cfs import CfsRetraction
 
 
 def make_mdac_cfs_filter(env: Any, *, n_iters: int = 1, reg: float = 1e-6, gain: float = 1.0):
-    """CFS filter_fn for MDAC: linearized projection onto ``env.mdac_constraint``.
+    """CFS filter_fn for MDAC: linearized projection onto ``env.manifold_residual``.
     Same call shape as cfsmbd's ``_filter_actions_single_jit``."""
     def filter_fn(state, trajectory, sched_state, sched_params):
         shape = trajectory.shape
 
         def C(u):
-            return env.mdac_constraint(state, u.reshape(shape))
+            return env.manifold_residual(state, u.reshape(shape))
 
         U = trajectory.reshape(-1)
         for _ in range(int(n_iters)):

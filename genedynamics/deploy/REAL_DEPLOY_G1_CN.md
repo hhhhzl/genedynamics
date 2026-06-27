@@ -1,323 +1,386 @@
-# G1 走廊 2GO 上实机操作步骤（M0–M5）
+# G1 走廊 2GO · 实机 + AR 部署手册
 
-把 humanoid corridor 的 2GO 规划轨迹部署到**真 Unitree G1**的实战 runbook。
-分 M0–M5 六个阶段,**每阶段有明确的进入条件、操作命令、验收标准、回退方式**。
-原则:**先在 sim 把一切验通,再换 IO 上真机,全程 governor 兜底,逐步放开速度。**
-
-> 现状(2026-06-14):M0–M4 的**软件**已就绪并验过(`diagnose()` IO 可插拔、AR 场景服务、动捕 frame glue、`run_real_g1.py --dry-run`)。本文聚焦**操作步骤**;M5 需要真硬件。
-
-> **本文 vs `ar/instruction.md` 的分工**:本文是**分阶段安全闸门计划**(M0→M5,先 sim 验通再换 IO,逐步放速,每阶段有进入条件/验收/回退),适合**真机首次 bring-up 的安全顺序**。`ar/instruction.md` 是**AR 实验的逐步操作手册**(动捕地面标定、四种 AR 客户端的 build、每次实验启动顺序、排查)。**两者配合用**:按本文的 M0–M5 闸门走;到 M3(定位)/M5(障碍+AR)的**具体操作**(怎么贴坐标系、测 `T_world_scene`、起 `run_twin_server`、AR 配准)直接照 `ar/instruction.md` 的 Part A/B/C。本文覆盖**真实障碍**路径;纯 AR(虚拟障碍)路径以 `ar/instruction.md` 为准。
-
----
-
-## 0. 验证过的部署配置(不要乱改)
-
-sim 里 twogo 四个 zone × 5 seed 全部 **eSSR=1.00**(不摔 AND 全身无碰 AND 到达≤0.20)的配置,已写进 `run_sport_mode_zones.py` 默认值:
-
-| 参数 | 值 | 作用 |
-|---|---|---|
-| `PLAN_SPEED` | **0.5** | 把参考轨迹 time-scale 到 SparkRL ~0.3 m/s 能力内,tracker 不再落后卡住 |
-| `GOAL_HOLD_SEC` | **5.0** | plan 放完后继续追终点,让滞后的机器人走完 |
-| 手臂收拢 | shoulder_roll **0.15** / elbow_base **0.60** | 手腕不擦侧墙(`HumanoidUpperBodyMapperConfig` 默认) |
-| governor | 开 | body-SDF 运行时安全网(`m_track`、activation_band） |
-| `xy_kp` / `xy_correction_cap` | 1.5 / 0.25 | 位置闭环把开环速度复现变成位置跟踪 |
-
-这套配置**已是 `run_sport_mode_zones.py` / `run_real_g1.py` 的默认值**(`PLAN_SPEED=0.5`、`GOAL_HOLD_SEC=5.0`、轻收手在 mapper 默认),无需手动传。
-
-> **部署哪个方法?用 twogo。** 同一套执行配置下,5 方法的部署 eSSR(不摔 AND 全身真实几何无碰 AND 到达):**twogo 1.00** > mdcoas 0.70 > mdoc 0.60 > ebmbd 0.40 > mbd 0.25。twogo 四个 zone 全满分,且优势在**全身可执行性**(脚/腿/臂都不擦),正是真机最看重的。
+> **重写于 2026-06-23,基于真机 bring-up 实测。** 机器人**起身 / 站立 / 行走已在硬件上验证通过**;走廊全程 + 收臂 + 动捕闭环 + AR 闭环为**待验证**(本文逐项标注)。这是从零到跑通的完整 runbook。
 >
-> **运行时机器人会"慢走 + 走完后多走 ~5s"**(plan_speed 0.5 + goal-hold)——这是刻意的(让 tracker 跟得上、走到终点),**别误以为卡住或失控**;首次可把 `--plan-speed` 调更小(0.35)更稳。
-
-> ⚠️ **sim eSSR=1.00 ≠ 真机 1.00**。sim 用 MuJoCo 完美真值定位、sim 训的策略。真机有定位噪声/延迟、策略 sim-to-real gap、接触/摩擦差异。本流程的目的就是**安全地跨过这道 gap**。
+> 控制路线已确定并实测:**高层 sport(不是低层 lowcmd)** —— 腿走 `LocoClient.Move`(sport 内置 RL 步态),臂走 `rt/arm_sdk`,起身走 sport FSM `SetFsmId(4)→(200)`。参考 CMU SPARK `g1_real_agent`。
 
 ---
 
-## 0.5 你的机器与网络拓扑(1 台 Mac + G1,照 Unitree「External PC」接线)
+## 0. 总览:三台设备 + 一个原理
 
-> **2026-06-22 实测更新**:**拓扑 A(Mac 原生直连)已端到端验证通过**(通信/读状态全通,见 §0.6),比 B 省事,**优先走 A**。本节下面"推荐 B"是基于装包难度的事前判断;实测 A 只需把 CycloneDDS 在 macOS 源码编译一次即可,且**真机走高层 sport(腿 `LocoClient.Move` + 臂 `rt/arm_sdk`,对齐 SPARK),不依赖机载 PC**。详细实测路径、踩的坑、确定路线见 **§0.6**。
-
-你的实际硬件:**一台 Mac**(装 Docker,跑实验/规划)+ **G1 本体**(自带机载 Linux 上位机)。Mac 与机器人用**网线直连**。
-
-### 拓扑决策:控制进程跑在哪台机器?
-
-`run_real_g1.py` 的**真机路径**需要 `mujoco`(取作动器规格)+ `jax`(import 链上需要,运行时不算)+ `unitree_sdk2py` + DDS 直连机器人;**governor/执行本身是纯 numpy**(已核实,无 jax/brax)。两种放法:
-
-| | **B. 机载上位机控制(推荐)** | A. Mac 直接控制(备选) |
-|---|---|---|
-| 控制进程跑在 | 机器人**机载 Linux PC**(arm64) | Mac **原生 arm64 env** |
-| DDS 到 `.161` | 机内本地网,稳 | 跨网线,需对网卡/防火墙 |
-| 依赖 | Jetson 装 `mujoco`+`jax[cpu]`+`scipy`+`unitree_sdk2py`(都有 arm64) | macOS 上 `unitree_sdk2py` 官方不支持,风险高 |
-| 用 Docker? | — | **不行**:Docker Desktop on Mac 跑不了到机器人的 DDS 多播 |
-| 用 fedguide? | — | **不行**:fedguide 是 Rosetta x86_64,跑不了 arm64 `mujoco` |
-| Mac 的角色 | 规划(Docker)+ scp plan + SSH 进去运行 | 规划 + 控制都在 Mac |
-
-**推荐 B**:Mac 只做离线规划(Docker)产出 `trajectory.json`,scp 到机器人,SSH 进机载 PC 在那儿跑控制。理由:DDS 本地最稳、依赖都能在 arm64 Linux 装、避开 macOS-SDK / Docker-DDS / Rosetta-mujoco 三个坑。**下面默认按 B。**
-
-### 在哪台机器跑什么
-
-| 机器 | 跑什么 | 命令/产物 |
-|---|---|---|
-| **Mac(Docker `dev-cpu:torch`)** | M0 sim 复核、M1 标定、规划/重规划 | 产出 `…/trajectory.json` |
-| **Mac(终端)** | 配网、`ping`、`ssh`、`scp` plan 到机器人 | 见下 |
-| **机器人机载 PC(SSH 进)** | M2 dry-run、M4 龙门空跑、M5 落地(`run_real_g1.py` 真机路径) | `--network-interface eth0` |
-| (可选)动捕机 | `natnet_ros2` + `natnet_shm_writer` → `mocap_state_shm` | 见 `ar/instruction.md` §A7 |
-
-> `--dry-run` 在真机路径 import **之前**就返回,所以 dry-run 可在**任意机器**(含 Mac/Docker/fedguide)跑;**真机运行只能在控制机(机载 PC)上**。
-
-### 接线 + 配网(照 Unitree「External PC Commanding」图)
-
-1. 网线:Mac ↔ G1。
-2. Mac 有线网卡设**静态 IP**:`192.168.123.222`(同网段任一,避开 `.161`),掩码 `255.255.255.0`。
-   - macOS:系统设置 → 网络 →(USB/雷电网卡)→ 详细信息 → TCP/IP → 手动 → IP `192.168.123.222` / 子网 `255.255.255.0`。
-3. 验证能通:`ping 192.168.123.161`(机器人主控板默认 IP)。**ping 不通别往下走**(查网线/IP/网卡名)。
-
-### 穿梭进机器人(SSH + scp)
-
-机载上位机(开发计算单元)在机内网,IP 视型号而定(常见 `192.168.123.164`,用户名 `unitree`;**以你机器实际为准**——可 `for i in 161 162 164 18; do ping -c1 -W1 192.168.123.$i; done` 探活)。
-
-```bash
-# 1) 在 Mac 上:把标定好的 plan 拷进机器人
-scp results/.../trajectory.json unitree@192.168.123.164:~/plans/zone_a.json
-# 2) SSH 进机载 PC
-ssh unitree@192.168.123.164
-# 3)(机载 PC,首次)取仓库 + 装依赖
-#    git clone <本仓库> && cd enerdynamics      # 或从 Mac rsync 过去
-#    pip install mujoco "jax[cpu]" scipy numpy unitree_sdk2py
-# 4)(机载 PC)dry-run 验证 import/接线/frame(不碰电机)
-python scripts/tasks/robot/humanoid/run_real_g1.py \
-  --plan ~/plans/zone_a.json --preset zone_a --dry-run
+你的真实拓扑:
 ```
+[iPhone]    Unity→Xcode AR app  ── WiFi ──► 连 Mac 孪生服务
 
-> **备选拓扑 A(Mac 控制)**:跳过 SSH/scp,在 Mac **原生 arm64** env(**非** fedguide、**非** Docker)装 `mujoco`+`jax`+`unitree_sdk2py`;`--network-interface` 填 **Mac 网卡名**(如 `en7`,`ifconfig` 查,**不是** `eth0`)。能否在 macOS 跑通 `unitree_sdk2py` 需自行验证。
-
----
-
-## 0.6 实机 bring-up 实测记录与确定路线(2026-06-22)
-
-> 首次真机 bring-up(Mac + G1 网线直连)。**结论:拓扑 A 的通信链路全部验证通过;机器人最终没走起来,根因是 FSM id 用错了 ——pip SDK 的 `500/706`,而本机器人(按 SPARK)用 `LockStand=4 / MainMode=200`,从没进可行走态。读 SPARK 源码后路线已修正为「高层 sport」(腿 `LocoClient.Move`、臂 `rt/arm_sdk`),不是低层 lowcmd。** 下面是验过的环境、踩的坑、和确定的正确路线。
-
-### A. 已验证通过 ✅(拓扑 A:Mac 原生直连)
-- **网络**:Mac 网卡(本机是 USB 网卡 `en7`)设静态 `192.168.123.222`(掩码 `255.255.255.0`/24;实测填成 /16 也通,但建议 /24),`ping 192.168.123.161` 通 ~0.6ms;机载上位机 `192.168.123.164`(Ubuntu 20.04 aarch64,SSH 开,但本路线用不到它)。
-- **CycloneDDS 在 macOS 必须源码编译**(无 `cyclonedds==0.10.2` 的 mac 轮子、无 brew formula;`unitree_sdk2py` 硬 pin 这个版本):
-  ```bash
-  git clone --depth 1 -b 0.10.2 https://github.com/eclipse-cyclonedds/cyclonedds /tmp/cdds
-  cmake -S /tmp/cdds -B /tmp/cdds/build -DCMAKE_INSTALL_PREFIX=$HOME/g1/cyclonedds -DBUILD_IDLC=ON -DCMAKE_BUILD_TYPE=Release
-  cmake --build /tmp/cdds/build --target install -j4   # 产出 libddsc + idlc
-  ```
-- **原生 arm64 venv**(homebrew py3.12;`fedguide` 是 Rosetta x86,装不了 arm mujoco,必须独立 venv)+ 依赖:
-  ```bash
-  /opt/homebrew/bin/python3 -m venv $HOME/g1/venv
-  CYCLONEDDS_HOME=$HOME/g1/cyclonedds $HOME/g1/venv/bin/pip install "cyclonedds==0.10.2"
-  CYCLONEDDS_HOME=$HOME/g1/cyclonedds $HOME/g1/venv/bin/pip install "git+https://github.com/unitreerobotics/unitree_sdk2_python.git"
-  $HOME/g1/venv/bin/pip install "mujoco" "numpy<2" scipy "jax[cpu]"
-  ```
-  > `unitree_sdk2py` 不在 PyPI,从 git 装(import 名 `unitree_sdk2py`)。
-- **运行环境变量(每次必带)**:`CYCLONEDDS_HOME=$HOME/g1/cyclonedds DYLD_LIBRARY_PATH=$HOME/g1/cyclonedds/lib`;网卡 Mac 上是 `en7`(机载 PC 上才是 `eth0`)。
-- **通信只读自检通过**:订阅 `rt/lowstate` 收到实时 IMU + 35 路电机(索引 **0–28 为活动关节**,29–34 为手部/保留全 0),`mode_machine=5` → Mac↔G1 DDS 完全打通。
-- **自由度对齐**:打包 MJCF `third_party/mujoco_menagerie/unitree_g1/scene.xml` = **29 作动器**(腿12+腰3+臂14),与真机活动的 0–28 一一对应。sport 高层不用逐关节映射;低层 lowcmd 按索引 0–28 直接对应。
-- SDK 符号在 macOS 原生全部导入成功;`MotionSwitcherClient` 在新版 SDK 位于 `comm.motion_switcher`(旧版 `g1.motion_switcher`)—— `unitree_g1_io` 已改为两条路径都兼容。
-- 测试脚本放在 `~/g1/`(`lowcmd_hold.py` 等),非仓库内容。
-
-### B. 没走起来的根因 ❌(读了 SPARK 源码后修正)
-1. **FSM id 用错了 —— 首要根因。** 今天用的是 **pip 版 SDK**:`Start()=SetFsmId(500)`、`Squat2StandUp()=706`。但 **SPARK(你们这台机器的权威参考)用的 FSM id 是:`Damp=1`、`Squat=2`、`Sit=3`、`LockStand(起身锁定)=4`、`MainMode(可行走主控)=200`**。`500/706` 对本固件是 "Invalid FSM ID"(7302)→ 被拒(`None`)→ 机器人一直停在 Damp(1),从没进 MainMode(200)。**不是控制模式问题,是 FSM id 不对 + 没走起身序列。**
-2. **SPARK 用高层 sport,不是低层 lowcmd**(`level="low"` 在 SPARK 里直接 `NotImplementedError`)。它的实机控制 = **腿:`LocoClient.Move(vx,vy,vyaw)`(sport 内置 RL 步态);手臂:`rt/arm_sdk` 通道**(不是 `rt/lowcmd`)。所以"走低层"是之前带偏了 —— genedynamics 的 `RealLocoClient`(sport)方向本来就对。
-3. SPARK vendored 了自己的 loco client,**补上了 pip SDK 没有的 `GetFsmId`**,据此读当前 FSM 再按 `…→LockStand(4)→MainMode(200)` 切。它 TODO 提示"先手动 LockStand",原因:pip SDK 没 GetFsmId + 它自动切换有个 `code==0` 拿来比元组的 bug;**不代表必须遥控器**。
-4. 昨天试的 lowcmd 那条线对 SPARK/本机器人**根本不是主路**;它"没反应"同样是因为机器人没进 MainMode、没使能。
-
-### C. 确定的正确路线(下次照此走 —— 高层 sport,对齐 SPARK)
-1. **拓扑 A:Mac 原生直连**(已验证);不用机载 PC / Docker。
-2. **高层 sport(不是 lowcmd)**:腿用 sport 内置 RL 步态,手臂用 arm_sdk。
-   - 用 **SPARK 的 loco client**(`spark/module/spark_agent/spark_agent/real/g1/loco/g1_loco_client.py`,带 `GetFsmId` + 正确 FSM id),或把它搬进我们仓库。
-   - **起身序列(纯 SDK,可能不用遥控器)**:`GetFsmId` 读当前 → `SetFsmId(4)`(LockStand,站起来锁定)→ `SetFsmId(200)`(MainMode,进可行走态)。**今天从没试过 4/200,只试了错的 500/706。**
-   - **腿(走廊行走)**:`LocoClient.Move(vx,vy,vyaw, continuous_move=True)`;**手臂**:发 `rt/arm_sdk`(配 `kNotUsedJoint` 权重位 `motor_cmd[kNotUsedJoint].q = weight²`),**不要**发 `rt/lowcmd`。
-3. **遥控器:不一定需要。** 先试纯 SDK 的 `SetFsmId(4)→(200)`;若被拒(固件要求),再用遥控器/App 把它弄到 LockStand,SDK 再接管到 MainMode。
-4. **验证阶梯(修订)**:通信只读 ✅ → `SetFsmId(4)`(看是否站起来锁定)→ `SetFsmId(200)`(进 MainMode)→ `Move` 小速度(脚承重、龙门防摔)→ 走廊。
-   > 注:sport 行走需脚承重才迈步(接触门控);龙门**完全离地只能测站,测不了走**。
-
-### D. 仓库代码现状(deploy 已覆盖 SPARK 实机功能)
-- **✅ 已做(本次,`unitree_g1_io.py`):**
-  - `_bring_up_sport()`:起身序列 `GetFsmId → SetFsmId(4) LockStand → SetFsmId(200) MainMode`,接进 `_reset_robot`(sport);sport 不再调失败的 `SelectMode("normal")`。
-  - 手臂改走 `rt/arm_sdk`(`_send_arm_sdk`,带 `kNotUsedJoint=29` 权重位 + 默认工厂构造),不再发 `rt/lowcmd`(避免和 sport 冲突)。
-  - 修 `LowCmd_()` 无参构造 bug(改用 `unitree_hg_msg_dds__LowCmd_` 默认工厂)+ `rt/lowcmd` 补 `mode_machine`。
-  - 早先:`MotionSwitcherClient` import 双路径兼容;`--localization ros2` 类名/键名;`BaseRegistry` 挪 `genedynamics/registry_base`。
-  - **⇒ `run_real_g1.py` 现在 reset 就会自己 `4→200` 起身、腿走 `Move`、臂走 `arm_sdk`,代码层面已自给自足。**
-- **⏳ 待在机器人上验证(全未验证):** FSM `4/200` 是否真起身;`Move` 是否迈步;`arm_sdk` 是否收臂。若 `SetFsmId(4)` 被固件拒,遥控器/App 先到 LockStand,再让它进 200。
-- **可选微调(若上机不对):** `arm_sdk` 的 `motor_cmd.mode`(SPARK 留默认 0,官方 arm_sdk 例子设 1)。
-
-### E. 下次最短复现(环境 `~/g1` 已在则跳过安装)
-```bash
-# 1) Mac en7 = 192.168.123.222/24；ping 192.168.123.161 通
-# 2) 只读通信自检（订阅 rt/lowstate 看 IMU + 电机）
-# 3) 用 SPARK 的 loco client（带 GetFsmId + 正确 FSM id）起身：
-#    GetFsmId 读当前 → SetFsmId(4) 起身锁定 → SetFsmId(200) 进 MainMode
-#    （被拒就用遥控器/App 先到 LockStand，再 SDK 切 200）
-# 4) LocoClient.Move(vx=0.1,0,0, continuous_move=True) 小速度试走（脚承重 + 龙门防摔）
-# 5) 手臂如需控制：发 rt/arm_sdk（不要 rt/lowcmd）
+[Mac]  算法/控制(~/g1 原生 env)
+   └─ 网线 en7 ─► [交换机] ─┬─► [G1 机器人  192.168.123.161]
+                            └─► [动捕主机 Motive  192.168.0.77]
+                                  NatNet 多播,直接发,无 ROS
 ```
+> Mac 一张 `en7`(设 /16)同时够到机器人(`.123.x`)和动捕(`.0.x`),两者在同一以太段。**动捕走有线 NatNet,不是 WiFi、不是 ROS。** 详细动捕接入 + 踩坑见 [`localization/mocap.md`](localization/mocap.md)。
 
-参考:SPARK `module/spark_agent/spark_agent/real/g1/g1_real_agent.py`;宇树 G1 SDK 文档;`unitree_sdk2_python` Issue #43(勿进 debug 模式)。
+**原理 —— 共享数字孪生:** 一份 `SceneSource`(唯一障碍源)+ 一个**动捕世界系** + 一个 `T_world_scene`。**AR 渲染的障碍 = governor 避的障碍 = 同一物理位置。** 机器人靠**自身动捕定位 + 共享障碍几何**"感知"虚拟障碍 —— 没有视觉感知栈,障碍是虚拟的。
 
----
+**机器分工:**
 
-## M0 — sim 复核(必过,纯软件)
-
-**进入条件**:有目标 zone 的 plan(`results/humanoid/corridor_2d/main/twogo_zone_<z>/level_1/seed_<s>/trajectory/trajectory.json`)。
-
-**操作**(docker `genedynamics/dev-cpu:torch`):
-```bash
-# 单 zone 部署 + 看 certified + reach
-python scripts/tasks/robot/humanoid/run_sport_mode_zones.py \
-  --zones results/humanoid/corridor_2d/main/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json \
-  --out-root results/humanoid/corridor_2d/deploy/governed/twogo_zone_a/level_1 --plot
-# 全身几何 + reach 审计(真实 G1 link vs 障碍 SDF)
-python scripts/tasks/robot/humanoid/audit_exec_collision.py \
-  --deploy-root results/humanoid/corridor_2d/deploy/governed --zones twogo_zone_a
-```
-
-**验收**:该 seed `eSSR=Y`(不摔 + `true_sdf≥0` + `endpoint≤0.20`)。看一眼 `trajectory_mujoco.gif` / `motion_strip.png` 确认姿态正常。
-
-**回退**:不过就别上真机;先调 `plan_speed`(更慢)、换 seed、或回 M0 的规划侧。
-
----
-
-## M1 — plan 标定 + 准备(纯软件)
-
-真机执行的是**烤进 trajectory.json 的 `best_idx`(执行安全模式)+ `m_track`**。新规划/重规划的 plan 是未标定的,必须先标定。
-
-**操作**:
-```bash
-# 对要部署的 zone/seed 标定(Step-1 选执行最安全的 mode,Step-4 推 m_track)
-docker run ... genedynamics/dev-cpu:torch \
-  python scripts/tasks/robot/humanoid/governor_calibrate.py --zones twogo_zone_a
-# 若障碍是 AR/现场实测的,用 replan_from_scene 重规划 + 标定到该场景
-python scripts/tasks/robot/humanoid/replan_from_scene.py --preset zone_a --scene-file <ar_scene.json>
-```
-
-**验收**:`trajectory.json` 里 `best_idx_source` 非空、`m_track` 有值;标定报告 `CERTIFIED`。
-
-> 提醒:tight 场景(如 zone_d)执行间隙受 SparkRL ±0.3 m/s 限制,`m_track` 最优≈0.08(再大 governor 会把机器人挤离轨迹);**首次上实机选最容易的 zone_a**。
-
----
-
-## M2 — dry-run 接线校验(无硬件)
-
-不接机器人,验证真机 IO / 定位 / governor 的接线和 frame 变换都对。
-
-**操作**:
-```bash
-python scripts/tasks/robot/humanoid/run_real_g1.py \
-  --plan <calibrated trajectory.json> \
-  --preset zone_a \
-  --localization vicon \
-  --t-world-scene 0 0 0 \
-  --dry-run
-```
-`run_real_g1.py` 组装 `UnitreeG1RobotIO + RealLocoClient + SceneFrameLocalization(vicon, T_world_scene) → diagnose(governor)`,SDK 是 lazy import,`--dry-run` 不碰硬件。
-
-**验收**:dry-run 打印 wiring OK、plan/scene/frame 参数无误、无异常。
-
-**前置软件**:真机还需 `unitree_sdk2py`(机载 PC 装好);动捕侧 `natnet_ros2` 驱动 + 本仓库 `natnet_shm_writer` 往 `mocap_state_shm` 写 `q13d`(见 `ar/instruction.md` §A7)。
-
----
-
-## M3 — 定位 bring-up(接动捕 NatNet,不动腿)
-
-> **flag 名说明**:`--localization vicon` 是**历史遗留名**,实际语义是"读 `mocap_state_shm`"——不管那块共享内存是 Vicon DataStream 还是 **NatNet(`natnet_shm_writer`)** 写的,flag 都用 `vicon`。你的系统是 NatNet,起 `natnet_ros2`+`natnet_shm_writer` 即可,命令仍写 `--localization vicon`。
-
-**进入条件**:G1 在**动捕捕捉区**,身上贴好 marker(在 Motive 里建成刚体 `g1_base`),`T_world_scene`(动捕世界→场景坐标的 x/y/yaw)已标定。
-
-**操作**:
-1. 启动 `natnet_ros2` 驱动 + `natnet_shm_writer`(`ar/instruction.md` §A7),确认 `mocap_state_shm` 在更新(`python -m genedynamics.deploy.localization.natnet_shm_writer --rigid-body g1_base`)。
-2. 先用 `--localization mock` 跑通流程,再切 `--localization vicon`(= 读上一步的 `mocap_state_shm`)。
-3. 静止状态下打印 `SceneFrameLocalization` 输出的 **scene-frame base pose**,人工比对机器人实际站位(应与 plan 起点一致)。
-4. (可选)起 AR 数字孪生:`run_twin_server.py`,在 AR 端/网页看障碍+机器人位姿是否对齐。
-
-**验收**:静止时 scene-frame pose 与真实站位误差 < 几 cm(取决于 tracker 精度,OptiTrack/NatNet 通常 <1cm);手动挪机器人,pose 跟着动且方向对。
-
-**回退**:定位不准 → 重标 `T_world_scene` / 检查 marker / 标定坐标系手性映射。**定位不过坚决不放腿。**
-
----
-
-## M4 — 吊装/龙门低速测试(放腿,空场,有保护)
-
-**进入条件**:M2 dry-run 过。机器人**吊装或龙门悬挂**(脚能瞬间离地)、**空场无障碍**、**物理 e-stop 在手**。M3(动捕)**非必须**——先做无动捕的 mock 空跑(看步态/通信/急停),动捕好了再做闭环。
-
-> 所有命令都在**机载 PC**(SSH 进去)上跑;`--network-interface` 填机载 PC 连内部 DDS 网的网卡(常见 `eth0`,`ifconfig` 确认)。
-
-### M4.a 先跑通(无动捕,mock 空跑)— 推荐第一步
-不接动捕,只验:能否**站立平衡 → 起步 → 步态正常 → governor cmd 平滑 → 急停可用**。
-```bash
-python scripts/tasks/robot/humanoid/run_real_g1.py \
-  --plan ~/plans/zone_a.json --preset zone_a \
-  --localization mock \
-  --plan-speed 0.35 --max-steps 40 \
-  --network-interface eth0 \
-  --out-dir results/g1_corridor/real
-```
-- `--localization mock`:base 固定在起点、**不闭环**。**预期是原地/开环迈步,不是沿走廊行进**——空跑就是看这个,**别误判为卡住/失控**。
-- 盯:`pelvis_z`(别塌)、迈步对称、loco cmd 不饱和、**急停能瞬停**。**任何异常立即 e-stop**。
-- 稳了再逐步:`--max-steps` 加长 → `--plan-speed` 往 `0.5` 收。
-
-### M4.b 再跑(接动捕 NatNet,闭环空跑)
-动捕起好(`ar/instruction.md` §A7,`mocap_state_shm` 在更新)、`T_world_scene` 标好后,换成闭环位置跟踪:
-```bash
-python scripts/tasks/robot/humanoid/run_real_g1.py \
-  --plan ~/plans/zone_a.json --preset zone_a \
-  --localization vicon --t-world-scene <x> <y> <yaw> \
-  --plan-speed 0.35 --max-steps 80 \
-  --network-interface eth0 \
-  --out-dir results/g1_corridor/real
-```
-- **从极慢开始**:`--plan-speed` 先 `0.35`、`--max-steps` 设小,先验证站立→起步→几步跟踪。
-- 逐步放开:`max_steps` 加长 → `plan_speed` 往 0.5 收 → 走完全程。
-- 全程盯:pelvis_z(别塌)、tracking 误差、governor 是否在乱动、cmd 是否饱和。
-
-**验收**:空场低速能站稳、按 plan 走、不摔;落地数据 `sport_mode.json` 的 `fell_over=false`、tracking 合理。
-
-**回退**:抖/塌/跟不上 → 降 `plan_speed`、降 `xy_kp`、回 sim 重调;**任何异常立即 e-stop**。这一步是 sim-to-real 重调的主战场(`plan_speed / xy_kp / goal_hold / m_track` 都可能要在真机上重整定)。
-
----
-
-## M5 — 落地部署(着地,真/AR 障碍,全程 governor 兜底)
-
-**进入条件**:M4 空场低速稳定、全程无摔、参数在真机上重调收敛。
-
-**操作**:
-1. **空场着地全程**:先在地面、无障碍跑完整条 plan,确认着地动力学 OK。
-2. **加障碍**:
-   - 真实障碍:按 `corridor_scene` 几何在**动捕世界系**摆好,`--t-world-scene` 对齐。
-   - AR 障碍(共享数字孪生):`--scene-file <ar_scene.json>`,障碍只在虚拟世界,机器人靠**自身定位 + governor 感知**避让(无感知栈)。
-3. **governor 是运行时安全网**:遇到未规划/移动的障碍,`diagnose(body_sdf_scene=...)` 注入场景,governor 在 ±0.3 m/s 横向能力内 steer 避让(M3 验证过:盲跟会撞进 −0.27m,governor 避到 +0.004m)。
-4. 一次一个 zone,从 **zone_a(最易)→ c → d → b(U 墙最难)**;每个 zone 先单 seed 再扩。
-
-**验收**:着地、真/AR 障碍下走完,`certified_safe`、不摔、endpoint 到位;多次重复稳定。
-
-**安全红线(全程)**:
-- e-stop 常备,操作员手不离;
-- 速度只升不跳,异常先降速再排查;
-- governor 必须开(它是唯一运行时避障兜底,别关);
-- tight 场景(zone_d/b)执行间隙薄(~+0.08m 上限),留足物理安全距离 / 先用软障碍。
-
----
-
-## 关键文件 / 模块
-
-| 用途 | 路径 |
+| 机器 | 跑什么 |
 |---|---|
+| **Mac** | 控制(`run_real_g1`)+ 孪生服务(`run_twin_server`)+ **动捕直连解析(`natnet_shm_writer --natnet`)** + 规划(Docker,离线) |
+| **动捕主机** | **只跑 Motive**(NatNet 多播直接发,无 ROS、无桥) |
+| **iPhone** | Unity ARKit AR app(连 Mac 的孪生服务渲染) |
+| **G1** | 网线连 Mac;sport 高层被 SDK 驱动 |
+
+---
+
+## 1. 一次性:Mac 原生环境 + 网络
+
+### 1.1 为什么是 Mac 原生(不用 Docker / fedguide / 机载 PC)
+真机控制要 `unitree_sdk2py` + `mujoco`(arm64)+ DDS 直连机器人。`fedguide` 是 Rosetta x86(跑不了 arm64 mujoco);Docker-on-Mac 跑不了到机器人的 DDS 多播;机载 PC 没外网 + py3.8。→ 用一个独立的 **Mac 原生 arm64 venv(`~/g1/venv`)+ 源码编译的 CycloneDDS**。
+
+### 1.2 装(一次性)
+**CycloneDDS**(macOS 上 `cyclonedds==0.10.2` 无轮子、无 brew formula,而 `unitree_sdk2py` 硬 pin 这个版本 → 必须源码编译):
+```bash
+git clone --depth 1 -b 0.10.2 https://github.com/eclipse-cyclonedds/cyclonedds /tmp/cdds
+cmake -S /tmp/cdds -B /tmp/cdds/build -DCMAKE_INSTALL_PREFIX=$HOME/g1/cyclonedds -DBUILD_IDLC=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build /tmp/cdds/build --target install -j4    # 产出 libddsc + idlc
+```
+**venv + 依赖**(homebrew py3.12 原生 arm64):
+```bash
+/opt/homebrew/bin/python3 -m venv $HOME/g1/venv
+CYCLONEDDS_HOME=$HOME/g1/cyclonedds $HOME/g1/venv/bin/pip install "cyclonedds==0.10.2"
+CYCLONEDDS_HOME=$HOME/g1/cyclonedds $HOME/g1/venv/bin/pip install "git+https://github.com/unitreerobotics/unitree_sdk2_python.git"
+$HOME/g1/venv/bin/pip install "mujoco" "numpy<2" scipy "jax[cpu]" "websockets>=12" "flatbuffers>=2.0"
+```
+**每次运行必带的环境变量**(建议做成 shell 别名):
+```bash
+export CYCLONEDDS_HOME=$HOME/g1/cyclonedds DYLD_LIBRARY_PATH=$HOME/g1/cyclonedds/lib
+```
+
+### 1.3 网络
+- 网线 Mac↔G1。Mac 的 USB 网卡(本机是 **`en7`**)设静态 IP:
+  ```bash
+  sudo networksetup -setmanual "USB 10/100/1000 LAN" 192.168.123.222 255.255.255.0   # 路由器留空
+  ```
+  验证:`ping 192.168.123.161`(机器人主控板)通。`--network-interface en7`(Mac 上是 en7,机载 PC 上才是 eth0)。
+- **Mac 的 WiFi 接实验室网**(够到动捕主机 + iPhone)。
+
+---
+
+## 2. 已验证 vs 待验证(诚实清单)
+
+✅ **已在硬件验证(2026-06-23):**
+- Mac↔G1 DDS 通信:读 `rt/lowstate`(35 路电机,**0–28 为活动关节**,29–34 手部/保留;`mode_machine=5`)。
+- **起身**:`GetFsmId → SetFsmId(4)[LockStand,站起锁定] → SetFsmId(200)[MainMode,可行走]`。
+  - ⚠️ **pip SDK 的 `Start()`=SetFsmId(500)、`Squat2StandUp()`=706 是错的 id**,本固件拒(Invalid FSM ID 7302)。**必须用通用 `SetFsmId` + `4`/`200`**(SPARK 的 id)。
+- **站立平衡**:MainMode 下机器人"活的",会自主小幅踏步保持平衡 —— **正常,不是失控**。
+- **行走**:`Move(vx)` 迈步。**脚必须承重**(sport 步态接触门控,完全离地只会站不会走)。`vx=0.1` 太慢只原地碎步;`0.2+` 明显向前迈步。
+- **动捕直连(2026-06-24,无机器人):** `Motive NatNet 多播 → natnet_shm_writer --natnet → mocap_state_shm → ViconShmPlugin` 端到端读出 G1 base 位姿(毫米级稳定)。**全程无 ROS。** 详见 [`localization/mocap.md`](localization/mocap.md)。
+
+⏳ **待验证:**
+- `run_real_g1` 全程走廊(起身 + governor + 走 + 收臂一起跑)。
+- **arm_sdk 收臂**(第一次真机);若乱甩,调 `arm_sdk` 的 `motor_cmd.mode`(SPARK 留默认 0,官方 arm_sdk 例子设 1)。
+- **动捕闭环**:机器人 + 动捕一起,`run_real_g1 --localization vicon`(修掉 mock 开环转身飘逸);含刚体 +x 朝向校验。
+- AR 闭环(iPhone 注册 + 机器人绕虚拟障碍)。
+
+**deploy 已覆盖的代码**(`genedynamics/deploy/io/unitree_g1_io.py`):`_bring_up_sport()`(按当前 FSM 走 `…→4→200`,已修为完整路径)、`_send_arm_sdk()`(`rt/arm_sdk` + `kNotUsedJoint=29` 权重位)、`LowCmd_` 默认工厂构造 + `mode_machine`。所以 `run_real_g1` 不用改,reset 自动起身、腿 Move、臂 arm_sdk。
+
+---
+
+## 3. 机器人运动验证阶梯(每次开机照走)
+
+> **安全(实验室无 e-stop):所有运动在你自己终端跑(Ctrl-C 在手),机器人吊龙门 / 自承重,手放电源开关附近。** 运动指令用 1 秒自动过期的速度,脚本一停机器人 ~1s 内停。
+
+环境 + 网络就绪(`ping .161` 通)后:
+
+### 3.0 只读通信自检(无运动)
+```bash
+$HOME/g1/venv/bin/python - <<'PY'
+import time
+from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber
+from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
+ChannelFactoryInitialize(0, "en7")
+got={}; ChannelSubscriber("rt/lowstate", LowState_).Init(lambda m: got.__setitem__('m',m), 10)
+t=time.time()
+while time.time()-t<10 and 'm' not in got: time.sleep(0.2)   # 刚上电要等 DDS 服务起来(~数十秒)
+m=got.get('m')
+print("lowstate:", "OK" if m else "无(机器人还没启动完?)", "| mode_machine=", m.mode_machine if m else None)
+from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
+lc=LocoClient(); lc.SetTimeout(3.0); lc.Init(); print("current FSM:", lc.GetFsmId())
+PY
+```
+> 刚上电时 `ping` 先通,但 `rt/lowstate` 的运动服务要几十秒才起 —— **收不到先等一会再试**。
+
+### 3.1 起身(`~/g1/bringup_test.py`,每步等回车)
+开机机器人在 **ZeroTorque(FSM 0,软)**。脚踩地有空间 / 吊龙门:
+```bash
+$HOME/g1/venv/bin/python $HOME/g1/bringup_test.py
+```
+它读当前 FSM,走 `0→1→4→200`(每步回车确认)。**`SetFsmId(4)` 那步机器人发力站起来。** 到 `FSM 200` = 成功。放软:`… bringup_test.py --damp`。
+> ⚠️ 自承重站着时**别直接 `--damp`**(一软腿就塌);要放软先把它降到支撑/吊住。
+
+### 3.2 小步走(`~/g1/move_test.py`)
+**脚要承重**(接触门控)。已在 MainMode 则跳过起身,直接 Move:
+```bash
+$HOME/g1/venv/bin/python $HOME/g1/move_test.py --vx 0.2 --sec 3.0
+```
+看是否从"原地碎步"变"明显向前迈步"。还不迈 → `--vx 0.3`。
+
+### 3.3 全程 `run_real_g1`(起身 + governor + 走 + 收臂)
+```bash
+$HOME/g1/venv/bin/python scripts/tasks/robot/humanoid/run_real_g1.py \
+    --plan results/humanoid/corridor_2d/main/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json \
+    --preset zone_a --localization mock --network-interface en7 \
+    --plan-speed 0.35 --max-steps 150
+```
+- `--localization mock` = 无动捕,固定起点位姿驱动 governor → 先验**软件全链**(起身 + governor + Move + arm_sdk)。
+- reset 自动 `4→200` 起身(已在 MainMode 则 no-op)。
+- **⚠️ 盯手臂第一次收拢:平稳收向收拢姿态 = 好;乱甩 = 立刻 Ctrl-C**(然后调 arm_sdk 的 mode)。
+
+---
+
+## 4. 动捕(NatNet)接入 —— 直连,无 ROS
+
+> **2026-06-24 端到端实测通过。完整步骤 + 踩坑全记录见 [`localization/mocap.md`](localization/mocap.md);这里是要点。**
+
+数据流:`Motive(NatNet 多播,Z-up,Rigid Bodies)→ Mac en7 → natnet_shm_writer --natnet → mocap_state_shm → --localization vicon`。**Motive 直接发 NatNet,Mac 直接解析,全程无 ROS、无 UDP 桥**(之前的 `mocap_udp_bridge.py` / `natnet_ros2` 路线对本套设置作废)。
+
+### 4.1 网络(临时,重启重做)
+```bash
+sudo networksetup -setmanual "USB 10/100/1000 LAN" 192.168.0.100 255.255.0.0  # /16 同时够到动捕+机器人
+sudo route -n add -host 239.255.42.99 -interface en7                          # 多播路由掰到有线口
+ping 192.168.0.77   # Motive 主机通
+```
+⚠️ **别把 Mac 设成 `.0.77`(撞 Motive 自己);多播路由这条必加**(macOS 默认走 WiFi,不加 en7 收不到包)。
+
+### 4.2 Motive 侧(持久,一次配好)
+Settings → Streaming:**Enable** / **Local Interface=`192.168.0.77`**(朝 Mac 那张网卡,关键) / **Multicast** / **Rigid Bodies=ON** / **Up Axis=Z**。在 Motive 里给 G1 建刚体(`+x = 机器人前向`,原点在骨盆),记下它的 **Streaming ID(本机 = `5`)**。
+
+### 4.3 跑订阅 + 验证
+```bash
+# 写 shm（一直跑）
+PYTHONPATH=<repo> $HOME/g1/venv/bin/python -m genedynamics.deploy.localization.natnet_shm_writer \
+    --natnet --local-ip 192.168.0.100 --server 192.168.0.77 --rigid-body-id 5
+# 验证（机器人真正读的那条路）
+python -c "from genedynamics.deploy.localization.vicon_shm_plugin import ViconShmPlugin; \
+import time,numpy as np; p=ViconShmPlugin({}); time.sleep(0.3); print(np.round(p.get_state()[0],3))"
+```
+站着不动读到稳定位姿 = 闭环就绪。之后 `run_twin_server` / `run_real_g1` 用 `--localization vicon`。
+> **无线?** Motive 改 `Unicast` + 加 `--unicast` 即可,**仅调试用;真机闭环用有线**(WiFi 抖动/丢包会劣化控制)。见 [`localization/mocap.md`](localization/mocap.md) §5。
+
+### 4.4 `T_world_scene`(场景系 ↔ 动捕世界系)
+**Motive 世界原点已固定(你已确认)—— 不去改它**,只把"场景系"和它对上。两条:
+- **对齐法(最省事 → `TWS = "0 0 0"`,不用量):** 去 Motive 里看世界原点的位置和 +x 方向,**贴地面走廊时让场景原点 O 压在 Motive 原点上、中线 +x 对齐 Motive +x**。
+- **两点法(场景不方便压在 Motive 原点时):** 放一个反光 marker 到 O 读 Motive 世界坐标 `(X0,Y0)`、放场景 (1,0) 读 `(X1,Y1)` → `x0=X0, y0=Y0, yaw0=atan2(Y1-Y0, X1-X0)`,传 `--t-world-scene x0 y0 yaw0`(**孪生和真机用同一个**)。
+- 量点用一个 marker 读 Motive 坐标即可,**不是用校准杆(那是校相机的)**。
+
+---
+
+## 5. AR(iPhone Unity→Xcode)接入
+
+### 5.1 让机器人"吃"AR 障碍
+`run_twin_server` 渲染的 scene 和 `run_real_g1` 吃的 scene **必须同一份**(同一 `SceneSource`):
+- **静态障碍**:两边传**同一个 `--preset`**(如 `zone_a`)。
+- **改过 / 动态**:把孪生当前 contract 存成 JSON → `run_real_g1 --scene-file <ar_scene.json>`。
+
+governor 经 `body_sdf_scene = corridor_scene_to_dict(scene)` 自动避(`run_real_g1` 已接好,见 [run_real_g1.py](../../scripts/tasks/robot/humanoid/run_real_g1.py) 第 77–81 行)。**机器人是解析感知:共享几何 + 自身动捕定位 → governor 收紧命令包络横向 steer。没有视觉栈。**
+
+### 5.2 把 AR 标定到机器人起始位(详细)
+
+> **先记住一句、别焦虑:AR 注册误差只影响"看着准不准",不影响机器人避不避。** 机器人靠**动捕定位 + 共享障碍列表**避障,跟 AR 对齐**无关**(见 [ar/clients/README.md](ar/clients/README.md))。所以注册"差不多对上"就够,不必追求完美。
+
+**坐标链(因你确认 Motive 原点 = 场景原点而大幅简化):**
+- Motive 世界原点 = 场景原点 O、+x 沿走廊 → **`T_world_scene` 恒等(`"0 0 0"`),场景坐标 = 世界坐标**。
+- 障碍在 contract 里是**场景=世界坐标**;渲染时按世界→Unity 轴映射 **`(-y, z, x)`**(一次 RH→LH 翻转,都在 [ar/clients/unity/Scripts/FrameRegistration.cs](ar/clients/unity/Scripts/FrameRegistration.cs))。
+- **AR 要做的只有一件:把 `WorldOriginAnchor` 放到"动捕世界原点(=场景原点 O)在 iPhone AR 会话里的位姿"**。障碍是它的子物体,自动跟着对齐。
+
+iPhone(Unity→Xcode ARKit)有两条注册路 —— **A 是你现在的路、最快;B 最稳(动捕室推荐升级)。**
+
+#### 方法 A — fiducial 图像注册(你现在的 Unity ARKit 路,最快)
+原理:放一张**已知世界位姿**的打印图,ARKit 认出它 → 反推世界原点。**因 TWS 恒等,最干净的是把 fiducial 正好贴在场景原点 O。**
+1. **打印 fiducial**:高对比、纹理丰富、**非对称**的图(当 ARKit Reference Image),A3 裱硬板,量出实际宽高(米)。
+2. **贴在原点 O、压平、对齐场景轴**(图 +x 沿走廊 +x,图平面贴地)→ 这样 **fiducial 世界位姿 = 世界原点本身(`T_world_fiducial` 恒等)**。
+   - O 处不便放图就放别处,但要知道它的世界位姿 —— 最省事:**给图板也贴 marker,在 Motive 里当刚体**,Motive 直接给 `T_world_fiducial`。
+3. **Unity 工程**(AR Foundation + ARKit XR Plugin + Newtonsoft Json):
+   - `AR Session` + `XR Origin (AR)`;加 `ARTrackedImageManager` + Reference Image Library(放这张图、填实际尺寸)。
+   - 空物体 `CorridorTwin` 挂:`WorldClient`(`Url = ws://<Mac的WiFi_IP>:8766/`)、`FrameRegistration`(`WorldOriginAnchor` 拖一个空子物体)、`WorldRenderer`(`Client`/`Frame` 连好,occluder 材质)。
+4. **写一个注册脚本**(仓库只有 OpenXR/Quest 的,iPhone 这条要你自己加,给骨架):在 `trackedImagesChanged` 里,认到图就把 `WorldOriginAnchor` 设成图的位姿:
+   ```csharp
+   // ARKitImageRegistration.cs —— 挂在带 ARTrackedImageManager 的物体上
+   public FrameRegistration Frame;          // 它的 WorldOriginAnchor 我们来设
+   public string FiducialName = "corridor_origin";
+   void Apply(ARTrackedImage img) {
+       if (img.referenceImage.name != FiducialName) return;
+       if (img.trackingState != TrackingState.Tracking) return;
+       // fiducial 贴在世界原点 O → 它在 AR 里的位姿 ≈ 世界原点的位姿
+       Frame.WorldOriginAnchor.SetPositionAndRotation(img.transform.position, img.transform.rotation);
+       // 若 fiducial 不在 O：anchor = imgPose * inverse(T_world_fiducial)
+   }
+   ```
+   - ⚠️ **唯一要调的是"朝向约定"**:ARKit 给的图朝向,和我们 世界轴(x前/y左/z上)+ Unity 映射 `(-y,z,x)` 之间,可能差一个**固定旋转**(取决于图怎么贴、ARKit 图坐标约定)。**先按上面跑,看 AR 障碍是不是整体转了个角**;转了就在 rotation 上乘一个固定补偿(贴图时让图 +x 对齐走廊 +x 能把它降到最小)。
+5. iPhone 和 Mac 同 WiFi → 开 app → **对准 fiducial 一下**完成注册 → 障碍锁地面。
+
+#### 方法 B — iPhone 当动捕刚体(最稳,推荐升级 —— 真正"直接用世界原点")
+不用 fiducial、不漂、连续校正:
+1. iPhone 贴 3–4 个 marker,Motive 建刚体(如 `ar_phone`,本地原点=相机)→ NatNet 直接发它世界位姿(同 §4 直连方式读取)。
+2. 把这个位姿喂给孪生服务的 `populate_headset`([ar/producers/tracker_pose.py](ar/producers/tracker_pose.py))→ 它作为 `viewer` 实体(`headset/base`)随同一条流推给客户端。
+3. Unity 端用现成的 [ar/clients/unity/Scripts/OpenXRAnchorProvider.cs](ar/clients/unity/Scripts/OpenXRAnchorProvider.cs) —— 它**厂商无关、只依赖一个 Camera + FrameRegistration,iPhone 的 AR 相机也能用**:`HeadPoseSource` = AR 相机,`Frame` = FrameRegistration。它每帧解 `anchor = camera_unity ∘ L⁻¹` 并 EMA 平滑 → **连续把全息钉到动捕真值,自动校正 ARKit 漂移**。
+4. `WorldRenderer` 的 `AnchorProvider` 连它、`LocalHeadsetId = headset/base`(自己那台不画自己的代理)。
+- 代价:多一步把 iPhone 动捕位姿喂进来;好处:长时间不漂、亚毫米,比一次性 fiducial 稳。
+
+#### 验证对齐
+- 站到起点绿十字(场景 (0.5,0)):AR 的起点标记 / 中线墙应和地面胶带重合,**偏差 < 几 cm**。
+- 沿中线走,AR 中线跟着;AR 墙立在 x=1.7–2.0。
+- 偏大 → fiducial 贴歪 / 尺寸填错 / 朝向补偿没加(方法 A),或 iPhone 刚体没喂进来(方法 B)。
+- 再说一遍:**注册误差只是视觉的,机器人避障不受它影响** —— 演示对齐差几 cm 完全能跑。
+
+### 5.3 撞上 AR 障碍会摔么? —— **不会因虚拟障碍物理摔**
+- 障碍是虚拟的,**无物理接触**,撞不到全息影像、绊不倒。
+- governor **提前 steer 避开**(实测:盲跟冲进 −0.267m,governor 感知后避到 +0.004m)。
+- 万一避不够 → 机器人**穿过**虚拟障碍(仍不摔),**唯一后果是日志 body-SDF 违例**(`certified_safe=False`),是软 / 逻辑失败。
+- 真摔风险来自**步态不稳 / sim-to-real**,与虚拟障碍无关。
+- ⚠️ tight 场景(zone_d/b)执行间隙上限 ~**+0.08m**(`m_track≈0.08`);**首次选最宽的 zone_a**。
+- **这正是 AR 的价值:安全测避障 —— 失败只是日志,不撞坏机器人。**
+
+---
+
+## 6. 动捕闭环联调(从 mock 台阶到 vicon)
+
+> **跑完整走廊前,先单独验证"动捕 → 闭环"这一跳。** `mock` 是**开环**(固定起点位姿,转身后机器人飘出走廊);`vicon` 是**闭环**(真实位姿)。但闭环还有**另一个飘逸源:刚体朝向**——本节核心就是把它校掉。
+
+### 6.1 前置(网络 + 两进程就绪)
+- en7 设 **/16**:`sudo networksetup -setmanual "USB 10/100/1000 LAN" 192.168.0.100 255.255.0.0` → `ping 192.168.0.77`(动捕)和 `ping 192.168.123.161`(机器人)都通;多播路由加好(§4.1)。
+- **终端 A**:`natnet_shm_writer --natnet …`(一直跑,写 shm)。
+- **终端 B**:`ViconShmPlugin({}).get_state()` 能读到稳定位姿(§4.3)。
+
+### 6.2 刚体 +x 朝向校验(关键,首次必做)
+**为什么:** 刚体本体 **+x 必须 = 机器人前进方向**。否则流里的 `yaw` 与真实朝向差一个常量 α → governor 把"机体系速度命令"整体转了 α → 机器人走斜 / 飘(这是 mock 开环之外的**第二个飘逸源**)。
+
+**怎么测(走一小段,比对"位移朝向"和"刚体 yaw"):** 存成 `~/g1/heading_check.py`,`PYTHONPATH=<repo>` 跑:
+```python
+import time, math, numpy as np
+from genedynamics.deploy.localization.vicon_shm_plugin import ViconShmPlugin
+
+def yaw_deg(pose):                       # pose=[x,y,z, qw,qx,qy,qz]（z-up）
+    w,x,y,z = pose[3],pose[4],pose[5],pose[6]
+    return math.degrees(math.atan2(2*(w*z+x*y), 1-2*(y*y+z*z)))
+
+p = ViconShmPlugin({})
+def read():
+    pose,_ = p.get_state(); return np.array(pose[:2]), yaw_deg(pose)
+
+t0=time.time(); P=[]; Y=[]                # 静态 2s：起点 + yaw
+while time.time()-t0<2.0:
+    xy,yw=read(); P.append(xy); Y.append(yw); time.sleep(0.05)
+p0=np.mean(P,axis=0); yaw0=float(np.mean(Y))
+print(f"[静态] 位置=({p0[0]:+.3f},{p0[1]:+.3f})  yaw_world={yaw0:+.1f}°")
+input("→ 让机器人【朝走廊 +x】向前走 ~0.5m（另开终端: move_test.py --vx 0.2 --sec 3），走完按回车…")
+
+far=p0.copy(); d=0.0; t0=time.time()      # 取离起点最远的一帧
+while time.time()-t0<1.0:
+    xy,_=read()
+    if np.linalg.norm(xy-p0)>d: d=np.linalg.norm(xy-p0); far=xy
+    time.sleep(0.05)
+disp=far-p0; dist=float(np.linalg.norm(disp))
+if dist<0.15:
+    print(f"⚠️ 只走了 {dist:.2f}m，太短不可靠，重来（走够 0.3m+）"); raise SystemExit
+heading=math.degrees(math.atan2(disp[1],disp[0]))
+delta=(heading-yaw0+180)%360-180
+print(f"[行走] 位移=({disp[0]:+.3f},{disp[1]:+.3f}) |{dist:.2f}m|  位移朝向={heading:+.1f}°")
+print(f"刚体 +x 与机器人前向偏差 Δ = {delta:+.1f}°  →  " +
+      ("✅ 对齐(|Δ|<10°)" if abs(delta)<10 else "⚠️ 不对齐：Motive 转正刚体朝向，或把 Δ 折进 --t-world-scene 的 yaw"))
+print(f"若机器人此刻就朝场景 +x 站：--t-world-scene 的 yaw 设为 {math.radians(yaw0):+.3f} rad（={yaw0:+.1f}°）")
+```
+**判读:** `|Δ|<~10°` → 对齐,OK;`Δ≈常量` → 去 Motive 把刚体朝向转正(最好),或把 Δ 折进 `--t-world-scene` 的 yaw;`Δ≈±90/180°` → 刚体建歪,重建朝向。脚本最后一行给的 `yaw0` 是 §6.3 注册的输入。
+
+### 6.3 注册 `T_world_scene`(把机器人摆到场景起点)
+机器人**物理摆在场景起点**(zone_a:`(0.5,0)`)、**朝场景 +x**,让它的世界位姿映射到 scene `(0.5,0,0)`:
+- **(a) Motive 原点=场景原点**(你已定)→ 物理把机器人摆到对应世界点,`--t-world-scene 0 0 0`。
+- **(b) 机器人就地不便挪** → 用读到的世界位姿 `(Xr,Yr,yaw_r)` 反算:`yaw0=yaw_r`;`(x0,y0)=(Xr,Yr) − R(yaw0)·(0.5,0)`,传 `--t-world-scene x0 y0 yaw0`。
+- 公式 / 两点法细节见 §4.4。
+
+### 6.4 live frame-glue 核对(不动电机,读真实动捕)
+用 `run_real_g1` 同款 `SceneFrameLocalization` 读**实时**动捕,确认机器人在场景里的位姿对:
+```python
+import time, math
+from genedynamics.deploy.localization.vicon_shm_plugin import ViconShmPlugin
+from genedynamics.deploy.localization.scene_frame_plugin import SceneFrameLocalization
+TWS={"x":0.0,"y":0.0,"yaw":0.0}          # 改成你的 --t-world-scene
+loc=SceneFrameLocalization(ViconShmPlugin({}), TWS)
+for _ in range(6):
+    pose,_=loc.get_state(); w,x,y,z=pose[3],pose[4],pose[5],pose[6]
+    yaw=math.degrees(math.atan2(2*(w*z+x*y),1-2*(y*y+z*z)))
+    print(f"scene pose=({pose[0]:+.3f},{pose[1]:+.3f})  yaw_scene={yaw:+.1f}°")
+    time.sleep(0.3)
+```
+机器人摆在场景起点朝 +x 时,应读到 **≈ `(0.5, 0)`、`yaw_scene≈0°`**。对不上 → TWS 没设对 / 机器人没摆正 / 刚体朝向没校(回 §6.2)。
+> `run_real_g1 --dry-run` 是用**固定起点**验 frame-glue **数学**(不读 shm);本脚本是验**实时动捕→场景**的真实映射,两者互补。
+
+### 6.5 首次闭环跑(最小,无障碍)
+确认 §6.2/§6.4 都过后,跑最小闭环(先别上 AR/障碍):
+```bash
+# 终端A：writer 一直跑（§4.3）
+# 终端B：
+$HOME/g1/venv/bin/python scripts/tasks/robot/humanoid/run_real_g1.py \
+    --plan results/humanoid/corridor_2d/main/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json \
+    --preset zone_a --localization vicon --t-world-scene 0 0 0 \
+    --network-interface en7 --plan-speed 0.3 --max-steps 150
+```
+- **安全**:龙门 / 手扶,Ctrl-C 在手,手放电源(同 §3 红线)。
+- **看什么**:不再像 mock 那样转身飘出走廊 —— 机器人按**真实动捕位姿**闭环跟踪;`Pelvis z range` 是真实高度(不再恒定 0.793)。
+- 顺了再进 §7 完整 zone_a(加 AR + 中线墙)。
+
+---
+
+## 7. zone_a 端到端(动捕室全流程)
+
+**zone_a 几何:** 走廊长 **4.0m**、宽 **1.6m**(墙 y=±0.8);起点**场景 (0.5,0)**、终点 (3.5,0);**一道中线薄墙** x∈[1.7,2.0]、y≈0(机器人要侧绕)。
+
+> **首次先过 §6 联调**(刚体 +x 朝向校验 + 最小闭环跑)——本节是在此基础上加 AR + 中线墙的完整流程。
+
+1. **贴地面场景系**:红十字定 O(0,0);粉线/激光拉 +x 中线 4m,每 0.5m 标刻度;**起点绿十字 x=0.5 + 朝 +x 箭头**;终点蓝十字 x=3.5;**障碍位置**标 x=1.7–2.0(不放实物);两壁 y=±0.8 参考线。
+2. **`TWS`**:Motive 原点已固定 → 贴地面时让场景 O 对齐它(`TWS="0 0 0"`),或两点法量(§4.4)。
+3. **把 G1 放进捕捉区、启动 Motive** → NatNet 多播自动推刚体 pose(记下 streaming ID,本机=`5`)。
+4. **动捕订阅(Mac)**:`natnet_shm_writer --natnet --local-ip 192.168.0.100 --server 192.168.0.77 --rigid-body-id 5`(详见 §4 / [`localization/mocap.md`](localization/mocap.md))。
+5. **孪生**:Mac `run_twin_server.py --preset zone_a --t-world-scene <TWS> --localization vicon`。
+6. **iPhone**:连 `ws://<Mac>:8766/` + fiducial 注册 → 看到全息走廊 + 中线墙锁在地面 x=1.85 处。
+7. **干跑核 frame glue**(不动电机):`run_real_g1.py --plan <…twogo_zone_a…trajectory.json> --preset zone_a --t-world-scene <TWS> --localization vicon --dry-run` → 应打印 `world start → scene pose (0.500, 0.000)`。
+8. **落地跑**:机器人踩绿十字朝 +x,去掉 `--dry-run`(留 `--plan-speed 0.35 --max-steps` 先短):真机**侧绕中线墙**走,AR 同步显示绕开,occluder 让真机正确遮挡墙。
+
+> 计划来源:`results/humanoid/corridor_2d/main/twogo_zone_a/level_1/seed_*/trajectory/trajectory.json`(已有)。重规划 / 标定到 AR 场景:Docker 跑 `replan_from_scene.py` / `governor_calibrate.py`(`m_track` 实测最优 ≈0.08;未标定时 run_real_g1 回退 0.08)。
+
+---
+
+## 8. 安全 / 故障排查 / 速查
+
+### 安全红线
+- **无 e-stop**:运动你自己终端跑、Ctrl-C 在手、手放电源;首次吊龙门 / 自承重 + 防摔。
+- 自承重站着时**别突然 Damp**(会塌);先支撑。
+- 速度只升不跳;先验最易 zone_a;tight 场景(zone_d/b)留足物理裕度。
+- arm_sdk 第一次跑盯手臂,乱甩立刻 Ctrl-C。
+
+### 故障排查
+| 现象 | 排查 |
+|---|---|
+| `ping .161` 不通 | 网线 / en7 静态 IP(`192.168.123.222/24`) |
+| `ping` 通但读不到 `rt/lowstate` | 机器人还没启动完,等几十秒再试 |
+| `SetFsmId(4)/(200)` 被拒 | 确认用的是 **4/200**(不是 pip 的 500/706);或遥控器/App 先到 LockStand |
+| 站起来但 Move 不迈步 | **脚没承重**(接触门控)/ vx 太小(提到 0.2–0.3) |
+| `--localization mock` 跑 run_real_g1 第 1 步就 `Fell over` | mock 无真高度、报 z=0 → 摔倒检测误判;**已修**(mock 报 0.793 站立高度)。真机用 `vicon` 是真高度。verdict 里 "SparkRL policy diverged" 是 sim 文案,真机忽略 |
+| 手臂乱甩 | arm_sdk 的 `motor_cmd.mode`(SPARK 0 / 官方例子 1)—— 改 `_send_arm_sdk` |
+| `--localization vicon` 读不到 | `natnet_shm_writer --natnet` 没起 / Motive **Local Interface 选错** / **Rigid Bodies 没开** / 多播路由没加(`route add 239.255.42.99 en7`)→ 按 [`localization/mocap.md`](localization/mocap.md) §2 分层探针 |
+| AR 障碍漂移 / 不对齐 | `T_world_scene` 或 fiducial 世界位姿量不准 |
+| 干跑 pose 不是 (0.5,0) | `T_world_scene` 错 / 机器人没摆在起点 / 刚体方向错 |
+
+### 速查
+| 项 | 值 |
+|---|---|
+| Mac 原生 env | `~/g1/venv`;`CYCLONEDDS_HOME=$HOME/g1/cyclonedds DYLD_LIBRARY_PATH=$HOME/g1/cyclonedds/lib` |
+| 网卡 | Mac `en7`(192.168.123.222);机器人 `.161` |
+| 起身 FSM | `GetFsmId → SetFsmId(4) → SetFsmId(200)`(LockStand → MainMode) |
+| 起身/走 脚本 | `~/g1/bringup_test.py`、`~/g1/move_test.py` |
+| 动捕订阅 | `natnet_shm_writer --natnet --local-ip 192.168.0.100 --server 192.168.0.77 --rigid-body-id 5`(详见 [`localization/mocap.md`](localization/mocap.md))|
 | 真机入口 | `scripts/tasks/robot/humanoid/run_real_g1.py`(`--dry-run` 先验) |
-| sim 执行 + governor | `scripts/tasks/robot/humanoid/run_sport_mode_zones.py` → `sport_mode_corridor.diagnose()` |
-| 标定(Step-1/4) | `scripts/tasks/robot/humanoid/governor_calibrate.py` |
-| AR 重规划到场景 | `scripts/tasks/robot/humanoid/replan_from_scene.py` |
-| AR 数字孪生服务 | `scripts/tasks/robot/humanoid/run_twin_server.py` |
-| eSSR / 碰撞审计 | `scripts/tasks/robot/humanoid/audit_exec_collision.py` |
-| 真机 IO | `genedynamics/deploy/io/unitree_g1_io.py` + `controllers/sport_mode/real_loco_client.py` |
-| 定位(scene frame) | `genedynamics/deploy/localization/{scene_frame_plugin,vicon_shm_plugin}.py` |
-| AR 架构 | `genedynamics/deploy/ar/ARCHITECTURE.md` |
-
-## 真机还缺的硬件件(M5 前置)
-- G1 本体 + `unitree_sdk2py`(机载/上位机);
-- NatNet/OptiTrack 动捕(`natnet_ros2`)+ 本仓库 `natnet_shm_writer` 往 `mocap_state_shm` 写 `q13d`(见 `ar/instruction.md` §A7);
-- `T_world_scene` 标定;
-- (AR 可选)AR 端(Vision Pro / Android tablet)接 `run_twin_server`。
-
-> sim 已验证"配置正确性"(twogo eSSR 1.00);真机就绪 = 走完 M3(定位)→M4(吊装低速重调)→M5(着地+障碍)。**不要跳级。**
+| 孪生服务 | `scripts/tasks/robot/humanoid/run_twin_server.py` → `ws://<Mac>:8766/` |
+| 真机 IO | `genedynamics/deploy/io/unitree_g1_io.py`(`_bring_up_sport` / `_send_arm_sdk`) |
+| 计划 | `results/humanoid/corridor_2d/main/twogo_zone_a/.../trajectory.json` |
+| 参考 | CMU SPARK `g1_real_agent`(`enerdynamics/spark/`);Unitree G1 SDK 文档 |

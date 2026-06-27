@@ -1,0 +1,8 @@
+# Ablation: NO coupled anneal (use_adaptive_schedule off -> fixed schedule, no feasibility-coupled rho/kappa).
+# environment: cylinder (S1 analytic cylinder)
+base: ../../_base.yaml
+
+level: cylinder
+method: mdac_no_anneal
+name: arm_impedence_rigid_cylinder_mdac_no_anneal
+output_dir: results/arm/impedence/rigid/cylinder/ablation/mdac_no_anneal

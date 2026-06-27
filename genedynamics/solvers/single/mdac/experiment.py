@@ -9,9 +9,9 @@ no-op):
   use_soft_feasibility   -> backend uses the AL-augmented rollout (aug_rho)
   use_stiffness / log_spd_stiffness -> env ``stiffness_mode``
                            (none / log_spd / euclid / fixed)
-  use_tangent_projection -> solver gets the env's ``mdac_geometry_fn`` (else None)
+  use_tangent_projection -> solver gets the env's ``manifold_geometry`` (else None)
   use_retraction         -> solver gets the CFS retraction (genemetry
-                           ``CfsRetraction`` + ``env.mdac_constraint`` filter,
+                           ``CfsRetraction`` + ``env.manifold_residual`` filter,
                            wired like 2GO); lives in the geometry path
   use_adaptive_schedule  -> backend reads (margin, rho) off the current iterate's
                            constraint each reverse step and feeds the genemetry
@@ -51,12 +51,15 @@ def stiffness_mode_for(method: str, flags) -> str:
 def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
               surface_seed: int = 0, use_base: bool = False, prior: Any = None,
               aug_lambda: float = 2.0, aug_rho: float = 200.0,
-              backend: Any = None, **cfg: Any) -> Tuple[Any, MDACSolver]:
+              backend: Any = None, env_overrides: Optional[dict] = None,
+              **cfg: Any) -> Tuple[Any, MDACSolver]:
     """Build (env, MDACSolver) for ``method``, routing its flags to env + solver.
 
     ``level`` selects the task family (arm S1-S4 / humanoid H1/H2/H4);
     ``surface_seed`` selects the random NURBS (arm S2-S4) or the humanoid H2 DR
-    draw; ``use_base`` opens the humanoid H4-B 15D primitive (+v_base)."""
+    draw; ``use_base`` opens the humanoid H4-B 15D primitive (+v_base).
+    ``env_overrides`` (the yaml ``env_params``) forwards physical/task env config
+    to ``make_env``; ``stiffness_mode`` is method-derived and cannot be overridden."""
     flags = resolve_method(method)
     backend = backend or get_backend("jax")
     env_kw = {"stiffness_mode": stiffness_mode_for(method, flags)}
@@ -69,8 +72,10 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
         env_kw["dr_seed"] = surface_seed                   # H2 domain-randomization draw
         if level is not None:
             env_kw["level"] = level
+    if env_overrides:                                      # yaml env_params (method owns stiffness_mode)
+        env_kw.update({k: v for k, v in env_overrides.items() if k != "stiffness_mode"})
     env = make_env(task, **env_kw)
-    geometry_fn = env.mdac_geometry_fn if flags.use_tangent_projection else None
+    geometry_fn = env.manifold_geometry if flags.use_tangent_projection else None
     # CFS retraction (genemetry CfsRetraction + MDAC filter_fn, wired like 2GO);
     # lives inside the geometry path, so it needs the tangent projection on too.
     retraction = None

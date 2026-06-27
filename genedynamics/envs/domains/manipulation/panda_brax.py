@@ -16,7 +16,9 @@ scalability ablation, not the main primitive.
 The in-env impedance law (π_low, eq 698–724) reconstructs the desired pose from
 ``p_s(ξ,η)`` / normal ``n_s`` and maps the primitive to joint torques ``τ=Jᵀ F``.
 Reward ``= −J_arm`` (eq:arm_cost). ``constraint_residual`` exposes ``h_surf,
-h_normal`` (eq) and ``g_force`` (ineq) to the MDAC soft-feasibility (AL) seam.
+h_normal`` (eq) and ``g_force`` (ineq) to the soft-feasibility (AL) seam; the
+general ``manifold_residual`` / ``manifold_geometry`` hooks expose the clean-state
+path/force manifold for tangent-projection / retraction solvers.
 
 REAL contact (sim-to-real): the analytic surface ``p_s(ξ,η)`` is triangulated into
 a mujoco HFIELD geom injected into the Panda model, and the EE probe sphere is made
@@ -359,14 +361,18 @@ class PandaSurfaceScanEnv(PipelineEnv):
         t = self._xi0 + jnp.clip(step.astype(jnp.float32) * self._config.scan_rate, 0.0, self._config.scan_span)
         return t, self._eta0
 
-    # --- MDAC geometry/retraction: clean-state path/force manifold (no mjx) ---
-    # The manifold the geometry shapes toward: surface coords (h_surf) AND the desired
-    # normal force F_n -> f_target. Putting the force on the manifold is what lets MDAC's
-    # tangent denoising + retraction actively reduce FORCE error vs a reward-only
-    # baseline (idea.txt RQ3). This is VALID now because the controller is closed-loop
-    # force-controlled (kp_force): the commanded F_n equals the REAL contact force, so
-    # driving the command to f_target drives the real force to f_target.
-    def _mdac_res_node(self, u, xi0, eta0, xi_t, eta_t):
+    # --- constraint-manifold geometry: clean-state path/force manifold (no mjx) ---
+    # General env hooks (any manifold-aware solver may call them): the clean-state
+    # manifold C(U)=0 this task exposes is "on the scan path AND at f_target force" —
+    # surface coords (h_surf) plus the desired normal force F_n -> f_target.
+    # ``manifold_residual`` is the flattened residual C(U) over a node-control
+    # trajectory; ``manifold_geometry`` is its tangent geometry ∂(½‖C‖²)/∂U. Putting
+    # the force on the manifold is what lets a tangent-denoising / retraction solver
+    # actively reduce FORCE error vs a reward-only baseline (idea.txt RQ3). VALID
+    # because the controller is closed-loop force-controlled (kp_force): the commanded
+    # F_n equals the REAL contact force, so driving the command to f_target drives the
+    # real force to f_target.
+    def _manifold_res_node(self, u, xi0, eta0, xi_t, eta_t):
         cfg = self._config
         f_span = max(cfg.f_max - cfg.f_min, 1e-6)
         r = u[self.spec.r_slice]
@@ -376,15 +382,15 @@ class PandaSurfaceScanEnv(PipelineEnv):
         F_n = self._force_cmd(nu_raw[0])
         return jnp.array([xi - xi_t, eta - eta_t, (F_n - cfg.f_target) / f_span])
 
-    def mdac_constraint(self, state, Ybar_nodes):
+    def manifold_residual(self, state, Ybar_nodes):
         xi0, eta0 = state.info["xi"], state.info["eta"]
         xi_t, eta_t = self._target(state.info["step"])
-        return jax.vmap(lambda u: self._mdac_res_node(u, xi0, eta0, xi_t, eta_t))(Ybar_nodes).reshape(-1)
+        return jax.vmap(lambda u: self._manifold_res_node(u, xi0, eta0, xi_t, eta_t))(Ybar_nodes).reshape(-1)
 
-    def mdac_geometry_fn(self, state, Ybar_nodes, t0):
+    def manifold_geometry(self, state, Ybar_nodes, t0):
         xi0, eta0 = state.info["xi"], state.info["eta"]
         xi_t, eta_t = self._target(state.info["step"])
-        sq = lambda u: 0.5 * jnp.sum(self._mdac_res_node(u, xi0, eta0, xi_t, eta_t) ** 2)
+        sq = lambda u: 0.5 * jnp.sum(self._manifold_res_node(u, xi0, eta0, xi_t, eta_t) ** 2)
         return jax.vmap(jax.grad(sq))(Ybar_nodes)
 
     def _reward(self, ps, xi, eta, F_n, s_vec, prev_s, step):

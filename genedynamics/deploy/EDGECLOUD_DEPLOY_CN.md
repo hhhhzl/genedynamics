@@ -138,7 +138,9 @@ edgecloud 的边缘有两套形态,各有取舍:
 - **NO_EGRESS 数据治理 / Kata 机密计算**:敏感数据锁本地、不可信代码强隔离。
 - **W3 desired-state + reconcile**:声明式"机器人 X 应跑策略 Y",自动收敛。
 - **边缘自治 + 云边隧道(SuperEdge/KubeEdge 后端)**:机器人断网时控制/安全 pod 不被驱逐(边缘自治)、节点互检不误杀;隧道让你从外部够到 NAT 后的机器人做运维。代价是 K8s-on-robot,重于瘦 agent —— 详见 §6.6。
-- 🔑 **AR 数字孪生天然合流**:之前定的 AR transport 就是"发 FlatBuffers WorldSnapshot 到 NATS subject" —— **edgecloud 的 NATS 总线正好是那层**,把 `run_twin_server` 桥到它,部署+AR+队列统一一张网。
+- 🔑 **AR + 动捕数字孪生天然合流**:AR transport 既定就是"发 FlatBuffers WorldSnapshot 到 NATS subject",**edgecloud 的 NATS 总线正好是那层**,把 `run_twin_server` 桥上去,部署+AR+遥测统一一张网。**动捕也能接进来**:加一个 `NatNet→NATS` producer(复用 P1/P2 的 `producers/`/`world_state`),把动捕位姿发成一个 subject(如 `world.mocap.g1`)→ 机器人、AR 多端、dashboard 都订阅,**不用每个消费者各自连一遍 NatNet**。
+  - ⚠️ **两条边界(直接回答"机器人↔mac↔mocap 还会这么麻烦吗"):** ① **物理网络 edgecloud 不管**(它是应用层编排)—— IP/掩码/多播路由/Motive Local Interface 那套坑(见 [`localization/mocap.md`](localization/mocap.md))**还得配一次**,不会因为上了 NATS 就消失;NATS 省的是"数据分发"的麻烦(发一次大家订),不是"物理联网"的麻烦。② **控制环的定位仍走 Mac 本地直连 `NatNet→shm`**(最低延迟),NATS 只做"扇出"(多消费者 / 跨网段 / 监控 / AR),**绝不进 120Hz 平衡/行走环**(多一跳 NATS = 多一份延迟抖动,和 WiFi 同理,见延迟红线 §5)。
+  - 落地形态:控制用定位保持现状(`natnet_shm_writer --natnet → shm → --localization vicon`);**同时**可选发一份到 NATS 给 AR/监控/其它机器人。需 edgecloud 就绪(属 P3,此前刻意推迟到它 ready)。
 
 ---
 

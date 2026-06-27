@@ -201,7 +201,7 @@ class MdacBackendJax:
         # rho track the runtime feasibility (which rises and falls), the schedule
         # is NON-MONOTONIC across reverse steps. All 1.0 when off => byte-identical.
         _cfg = getattr(solver, "config", {}) if solver is not None else {}
-        self._constraint_fn = getattr(self._env, "mdac_constraint", None)
+        self._constraint_fn = getattr(self._env, "manifold_residual", None)
         self._overlay = None
         self._kappa_ref = 1.0
         if self.use_adaptive_schedule:

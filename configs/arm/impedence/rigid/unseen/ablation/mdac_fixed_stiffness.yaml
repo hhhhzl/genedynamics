@@ -1,0 +1,8 @@
+# Ablation: FIXED stiffness (log_spd off -> K = K_ref, S block ignored).
+# environment: unseen (S4 unseen NURBS + domain randomization)
+base: ../../_base.yaml
+
+level: unseen
+method: mdac_fixed_stiffness
+name: arm_impedence_rigid_unseen_mdac_fixed_stiffness
+output_dir: results/arm/impedence/rigid/unseen/ablation/mdac_fixed_stiffness

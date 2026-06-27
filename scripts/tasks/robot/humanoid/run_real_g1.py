@@ -55,6 +55,10 @@ def main(argv=None) -> int:
     p.add_argument("--network-interface", default="eth0")
     p.add_argument("--domain-id", type=int, default=0)
     p.add_argument("--control-hz", type=float, default=50.0)
+    p.add_argument("--loco-rate-hz", type=float, default=10.0,
+                   help="Max rate to republish the velocity command to the loco RPC. The call is "
+                        "BLOCKING; republishing every control step floods the channel and stalls the "
+                        "loop (the walk-3s/stop-5s symptom). 10 Hz + the 1.5s command duration is smooth.")
     p.add_argument("--max-steps", type=int, default=None)
     # Validated execution config (matches run_sport_mode_zones defaults): time-scale
     # the plan so the tracker keeps up, and hold the goal so it finishes the traverse.
@@ -91,7 +95,11 @@ def main(argv=None) -> int:
             from genedynamics.deploy.localization.ros2_odometry_plugin import ROS2OdometryPlugin
             return ROS2OdometryPlugin({"odom_topic": "/odom"})
         from scripts.tasks.robot.humanoid.run_twin_server import _FixedPoseLocalization
-        return _FixedPoseLocalization(src.scene and [*src.scene.start_pos, 0.0, 1.0, 0.0, 0.0, 0.0])
+        # z = G1 nominal standing pelvis height: mock has no real base height, and the
+        # fall detector reads pelvis z — z=0 would false-trigger "fell over" on a robot
+        # that is actually standing (sport MainMode). Real localization (vicon) supplies
+        # the true height.
+        return _FixedPoseLocalization(src.scene and [*src.scene.start_pos, 0.793, 1.0, 0.0, 0.0, 0.0])
 
     if args.dry_run:
         import numpy as np
@@ -123,7 +131,7 @@ def main(argv=None) -> int:
         msc_mode="sport", control_period_s=1.0 / args.control_hz,
         torque_safety_margin=0.85, localization=loc,
     )
-    loco = RealLocoClient(nominal_step_period=0.6, rate_limit_hz=args.control_hz)
+    loco = RealLocoClient(nominal_step_period=0.6, rate_limit_hz=args.loco_rate_hz)
 
     result = diagnose(
         plan, io=io, loco_client=loco, control_hz=args.control_hz,

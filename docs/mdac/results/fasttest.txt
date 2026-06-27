@@ -1,4 +1,0 @@
-plane  fast=True : REAL  44.8+/- 2.0N  RMSvs45   2.0  |h_surf|  0.98cm
-plane  fast=False: REAL  45.7+/- 6.8N  RMSvs45   6.8  |h_surf|  1.25cm
-convex fast=True : REAL  34.7+/-17.5N  RMSvs45  20.3  |h_surf|  3.58cm
-convex fast=False: REAL  42.4+/-31.6N  RMSvs45  31.7  |h_surf|  4.04cm

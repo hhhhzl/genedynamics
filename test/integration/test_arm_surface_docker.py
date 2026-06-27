@@ -6,7 +6,7 @@ Validates the rebuilt 10D arm primitive + NURBS surface families:
     construct, reset, step finite;
   * constraint_residual -> h(6) [h_surf;h_normal] + g(2) [g_force], and g_force is
     NON-vacuous (nu=+1 commands a force above f_max -> g[0]>0);
-  * mdac_geometry_fn returns (Hnode+1, nu);
+  * manifold_geometry returns (Hnode+1, nu);
   * S4 domain randomization (surface stiffness / friction) varies across seeds;
   * MDAC ablations (no_softfeas / no_stiffness / no_tangent) still change the plan.
 
@@ -36,7 +36,7 @@ def _check_family(fam):
     s1 = env.step(x0, a)
     finite = bool(jnp.all(jnp.isfinite(s1.obs)) and jnp.isfinite(s1.reward))
     h, g = env.constraint_residual(x0, a)
-    ag = env.mdac_geometry_fn(x0, jnp.zeros((CFG["Hnode"] + 1, env.action_size)), 0.0)
+    ag = env.manifold_geometry(x0, jnp.zeros((CFG["Hnode"] + 1, env.action_size)), 0.0)
     ok = (env.action_size == 10 and finite and h.shape == (6,) and g.shape == (2,)
           and ag.shape == (CFG["Hnode"] + 1, 10))
     print(f"  [{fam:8s}] action={env.action_size} finite={finite} h={h.shape} g={g.shape} "

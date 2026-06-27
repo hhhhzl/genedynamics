@@ -55,6 +55,17 @@ class ViconShmPlugin(BaseLocalizationPlugin):
                 f"Shared memory '{self._shm_name}' not found. "
                 "Start Vicon writer process first."
             )
+        # We are a READER attaching to a writer-owned segment. Python's
+        # multiprocessing.resource_tracker unlinks every SharedMemory a process
+        # touched when that process exits — even one it merely attached to
+        # (bpo-38119) — which would tear the live shm out from under the writer
+        # the moment any reader (the controller, a probe, register_start) exits.
+        # Unregister so a reader never destroys the writer's shm.
+        try:
+            from multiprocessing import resource_tracker
+            resource_tracker.unregister(self._shm._name, "shared_memory")
+        except Exception:
+            pass
 
     def get_state(self) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         if self._shm is None:

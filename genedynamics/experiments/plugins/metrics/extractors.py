@@ -105,10 +105,11 @@ def arm_surface_scan_signals(trajectory, env, obstacles, constraints, **kw) -> D
         # in_contact = a nonzero physical contact force.
         f_real = e._contact_force(s.pipeline_state)
         in_contact = (f_real > 0.5).astype(jnp.float32)
-        # on_surface = the EE is actually tracking the scan target (|h_surf| small) -- so
-        # force tracking is evaluated only where the arm is doing the scan, not where a
-        # baseline sits off the path with a trivially steady force.
-        on_surface = (jnp.linalg.norm(h[:3]) < e._config.track_tol).astype(jnp.float32)
+        # on_surface = the EE is doing the scan properly: on the path (|h_surf| small) AND
+        # actually pressing (in contact). Force-tracking precision is only defined while
+        # pressing on-path -- a baseline that sits off the path, or a contact-loss step
+        # (force=0, scored separately by contact_loss_rate), must not skew force tracking.
+        on_surface = ((jnp.linalg.norm(h[:3]) < e._config.track_tol) & (f_real > 0.5)).astype(jnp.float32)
         ee = s.pipeline_state.site_xpos[e._ee_site]
         return {"ee": ee, "h": h, "stiffness": s_vec, "on_surface": on_surface[None],
                 "force": f_real[None], "force_cmd": f_cmd[None], "contact": in_contact[None]}
@@ -142,6 +143,7 @@ ARM_METRICS = [
     {"name": "force_tracking_error_tracked", "as": "force_tracking_error_tracked",
      "bind": {"force": "force", "force_des": "force_des", "mask": "on_surface"}},
     {"name": "force_violation_rate", "as": "force_violation_rate", "bind": {"force": "force_cmd"}},
+    {"name": "cvar", "as": "force_cvar95", "bind": {"x": "force"}},   # worst-case high force tail
     "control_smoothness", "stiffness_smoothness", "energy", "runtime",
 ]
 

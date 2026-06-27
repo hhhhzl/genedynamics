@@ -35,6 +35,21 @@ Stepping-stones plan → governor → walker. One entry point with subcommands:
 Needs native MuJoCo for the sim parts — run inside `genedynamics/dev-cpu:torch` (arm64).
 Deploy configs: `configs/quadruped/stepping_stones_2d/deploy/*.yaml`.
 
+### arm/
+
+Franka-Panda surface-scan (MDAC, idea.txt Exp I) render/plot scripts. Run from the
+repo root in `genedynamics/dev-cpu:torch`; outputs go to `results/arm/impedence/rigid/`.
+
+| Script | Purpose |
+|--------|---------|
+| `render_scan.py <level>` | 3D matplotlib GIF: surface mesh + Panda chain + EE scan path |
+| `mujoco_render.py <level>` | Paper-level mujoco mp4/gif (full visual Panda + true analytic surface mesh) |
+| `brax_html_render.py <level>` | brax-native interactive HTML render |
+| `plot_force_time.py` | Force-vs-time (f_min/f_max/f_target bands) from the saved per-run series |
+
+Experiment configs: `configs/arm/impedence/rigid/<environment>/<role>/*.yaml`
+(driven by `genedynamics/solvers/single/mdac/run_experiment.py`).
+
 ## soft_robot/
 
 MRMFMBD soft-robot co-design (jax_mpm backend). Organized under `co_design/`:

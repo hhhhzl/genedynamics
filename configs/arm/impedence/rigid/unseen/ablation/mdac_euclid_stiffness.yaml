@@ -1,0 +1,8 @@
+# Ablation: EUCLIDEAN stiffness (log_spd off -> diag softplus, not K=exp(S)).
+# environment: unseen (S4 unseen NURBS + domain randomization)
+base: ../../_base.yaml
+
+level: unseen
+method: mdac_euclid_stiffness
+name: arm_impedence_rigid_unseen_mdac_euclid_stiffness
+output_dir: results/arm/impedence/rigid/unseen/ablation/mdac_euclid_stiffness
