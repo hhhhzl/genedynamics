@@ -15,29 +15,34 @@ from __future__ import annotations
 
 from typing import Any
 
-import jax
 import jax.numpy as jnp
 
 from genedynamics.solvers.single.atacom.backends.atacom_jax import (
     make_atacom_transform, atacom_null_dim, init_slack,
 )
 
+try:                                       # subclass brax Wrapper so brax's training wrappers
+    from brax.envs.base import Wrapper as _BraxWrapper   # (.unwrapped/.sys/__getattr__ delegation)
+except Exception:                          # pragma: no cover - fedguide has no brax; atacom is docker-only
+    _BraxWrapper = object
 
-class AtacomEnvWrapper:
-    """Wrap a brax arm env so the policy acts in the constraint-manifold tangent space."""
+
+class AtacomEnvWrapper(_BraxWrapper):
+    """Wrap a brax arm env so the policy acts in the constraint-manifold tangent space.
+
+    Subclasses brax ``Wrapper``: ``observation_size`` / ``unwrapped`` / ``sys`` / attribute
+    delegation come from the base; we override the action space (the tangent dim), ``reset``
+    (seed the slack), and ``step`` (run the ATACOM transform). So brax PPO/SAC ``train`` can
+    wrap it with its own ``EpisodeWrapper`` / ``VmapWrapper`` / ``AutoResetWrapper`` unchanged.
+    """
 
     def __init__(self, env: Any, *, Kc: float = 1.0, action_limit: float = 1.0) -> None:
-        self.env = env
+        self.env = env                                       # (brax Wrapper just stores self.env)
         self._nu = int(env.action_size)
         self._null = atacom_null_dim(env)
         self.alpha_max = float(action_limit)
         dt = float(getattr(getattr(env, "_config", None), "dt", 0.02))
         self._transform = make_atacom_transform(env, Kc=Kc, time_step=dt, action_limit=action_limit)
-
-    # brax-env duck-typed surface (reset/step/observation_size/action_size)
-    @property
-    def observation_size(self) -> int:
-        return int(self.env.observation_size)
 
     @property
     def action_size(self) -> int:
