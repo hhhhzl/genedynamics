@@ -1,0 +1,22 @@
+{
+  "_help": "Zone C (faithful to CorridorScene.zone_c). A central squeeze (0.6m gap) with tapered entry/exit. The env's smooth quarter-circle tapers are approximated here as their bounding boxes (a stepped wall) since AR primitives have no quarter-circle. Edit + SAVE = live reload.",
+
+  "site": "zone_c",
+
+  "markers": [
+    { "id": "start", "pos": [0.5, 0.0, 0.05], "radius": 0.08, "color": "3388FF99" },
+    { "id": "goal",  "pos": [3.5, 0.0, 0.05], "radius": 0.08, "color": "33CC6699" }
+  ],
+
+  "obstacles": [
+    { "id": "squeeze_L",   "shape": "box", "pos": [2.0,  0.55, 0.5], "half": [0.5, 0.25, 0.5], "color": "DD773366" },
+    { "id": "squeeze_R",   "shape": "box", "pos": [2.0, -0.55, 0.5], "half": [0.5, 0.25, 0.5], "color": "DD773366" },
+    { "id": "qc_L_entry",  "shape": "box", "pos": [1.25,  0.55, 0.5], "half": [0.25, 0.25, 0.5], "color": "DD773366" },
+    { "id": "qc_R_entry",  "shape": "box", "pos": [1.25, -0.55, 0.5], "half": [0.25, 0.25, 0.5], "color": "DD773366" },
+    { "id": "qc_L_exit",   "shape": "box", "pos": [2.75,  0.55, 0.5], "half": [0.25, 0.25, 0.5], "color": "DD773366" },
+    { "id": "qc_R_exit",   "shape": "box", "pos": [2.75, -0.55, 0.5], "half": [0.25, 0.25, 0.5], "color": "DD773366" },
+
+    { "id": "wall_lo", "shape": "box", "pos": [2.0, -0.8, 0.5], "half": [2.0, 0.02, 0.5], "color": "8899AA33" },
+    { "id": "wall_hi", "shape": "box", "pos": [2.0,  0.8, 0.5], "half": [2.0, 0.02, 0.5], "color": "8899AA33" }
+  ]
+}

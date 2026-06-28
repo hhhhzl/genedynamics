@@ -3,10 +3,8 @@
 
   "site": "my_room",
 
-  "robot": { "pos": [0.5, 0.0, 0.65], "yaw_deg": 0, "moving": true, "path_to_x": 3.5, "radius": 0.18, "height": 1.3, "color": "4488CC66" },
-
   "markers": [
-    { "id": "start", "pos": [0.5, 0.0, 0.05], "radius": 0.08, "color": "33CC6688" },
+    { "id": "start", "pos": [0.5, 0.0, 0.05], "radius": 0.08, "color": "3388FF88" },
     { "id": "goal",  "pos": [3.5, 0.0, 0.05], "radius": 0.08, "color": "3366CC88" }
   ],
 
@@ -14,7 +12,7 @@
     { "id": "ball_L1", "shape": "sphere", "pos": [1.6,  0.25, 0.9], "radius": 0.12, "color": "CC554455" },
     { "id": "ball_R1", "shape": "sphere", "pos": [2.4, -0.25, 0.9], "radius": 0.12, "color": "CC554455" },
 
-    { "id": "wall_lo", "shape": "box", "pos": [2.0, -0.8, 0.5], "half": [2.0, 0.02, 0.5], "yaw_deg": 0, "color": "8899AA33" },
-    { "id": "wall_hi", "shape": "box", "pos": [2.0,  0.8, 0.5], "half": [2.0, 0.02, 0.5], "yaw_deg": 0, "color": "8899AA33" }
+    { "id": "wall_lo", "shape": "box", "pos": [2.0, -0.8, 0.3], "half": [2.0, 0.02, 0.3], "yaw_deg": 0, "color": "8899AA33" },
+    { "id": "wall_hi", "shape": "box", "pos": [2.0,  0.8, 0.3], "half": [2.0, 0.02, 0.3], "yaw_deg": 0, "color": "8899AA33" }
   ]
 }

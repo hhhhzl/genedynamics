@@ -1,0 +1,17 @@
+{
+  "_help": "Zone A (faithful to envs/humanoid_corridor_2d.py CorridorScene.zone_a). One small central wall, wide passages both sides. Edit + SAVE = live reload. x=forward, y=left, z=up (meters). color RRGGBBAA; last 2 hex = alpha.",
+
+  "site": "zone_a",
+
+  "markers": [
+    { "id": "start", "pos": [0.5, 0.0, 0.05], "radius": 0.08, "color": "3388FF99" },
+    { "id": "goal",  "pos": [3.5, 0.0, 0.05], "radius": 0.08, "color": "33CC6699" }
+  ],
+
+  "obstacles": [
+    { "id": "lateral_wall", "shape": "box", "pos": [1.85, 0.0, 0.5], "half": [0.15, 0.05, 0.5], "color": "DD773366" },
+
+    { "id": "wall_lo", "shape": "box", "pos": [2.0, -0.8, 0.5], "half": [2.0, 0.02, 0.5], "color": "8899AA33" },
+    { "id": "wall_hi", "shape": "box", "pos": [2.0,  0.8, 0.5], "half": [2.0, 0.02, 0.5], "color": "8899AA33" }
+  ]
+}

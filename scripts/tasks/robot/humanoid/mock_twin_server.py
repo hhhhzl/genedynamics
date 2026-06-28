@@ -127,10 +127,16 @@ def _robot_entities(cfg, rev, t):
     rad, h = r.get("radius", 0.18), r.get("height", 1.3)
     base = _entity("g1/base", "robot", (x, y0, z0), _geom("cylinder", radius=rad, height=h),
                    _color(r.get("color"), "robot"), rev, q=q)
-    occ = _entity("g1/occluder", "occluder", (x, y0, z0 + 0.05),
-                  _geom("cylinder", radius=rad + 0.05, height=h + 0.1), _C["occluder"], rev, q=q,
-                  meta='{"render":"depth_only"}')
-    return [base, occ]
+    ents = [base]
+    # The occluder is an invisible depth-only proxy so a REAL robot can hide the
+    # holograms behind it. In the mock (virtual moving robot) it just carves a
+    # moving hole in the walls, so it's OFF by default — set robot.occluder=true
+    # in the room json only when you actually have a real robot to occlude with.
+    if r.get("occluder"):
+        ents.append(_entity("g1/occluder", "occluder", (x, y0, z0 + 0.05),
+                            _geom("cylinder", radius=rad + 0.05, height=h + 0.1), _C["occluder"], rev, q=q,
+                            meta='{"render":"depth_only"}'))
+    return ents
 
 
 def _snapshot(cfg, entities, is_keyframe, rev, removed=None):
@@ -221,13 +227,29 @@ def main(argv=None):
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("--hz", type=float, default=30.0)
-    ap.add_argument("--scene", type=Path, default=here / "room.json",
-                    help="layout JSON (live-reloaded). Default: room.json next to this script.")
-    ap.add_argument("--preset", default="zone_d", help="(accepted for parity)")
+    ap.add_argument("--scene", type=Path, default=None,
+                    help="explicit layout JSON (live-reloaded). Overrides --preset.")
+    ap.add_argument("--preset", default=None,
+                    help="scene name -> loads room_<preset>.json next to this script (e.g. zone_a).")
     ap.add_argument("--localization", default="mock", help="(accepted for parity)")
     args = ap.parse_args(argv)
+
+    # Resolve which layout file to serve:
+    #   --scene <path>      explicit (wins)
+    #   --preset zone_a     -> room_zone_a.json (if it exists)
+    #   (neither)           -> room.json
+    if args.scene is not None:
+        scene = args.scene
+    elif args.preset:
+        cand = here / f"room_{str(args.preset).strip().lower()}.json"
+        scene = cand if cand.exists() else here / "room.json"
+        if not cand.exists():
+            print(f"[mock_twin] room_{args.preset}.json not found; falling back to room.json", flush=True)
+    else:
+        scene = here / "room.json"
+
     try:
-        asyncio.run(_main(args.host, args.port, args.hz, args.scene))
+        asyncio.run(_main(args.host, args.port, args.hz, scene))
     except KeyboardInterrupt:
         print("\n[mock_twin] stopped", flush=True)
 

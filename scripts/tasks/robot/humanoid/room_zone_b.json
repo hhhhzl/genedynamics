@@ -1,0 +1,17 @@
+{
+  "_help": "Zone B (faithful to CorridorScene.zone_b). A U-wall hanging from the top wall blocks ~60%, leaving a gap at the bottom. Edit + SAVE = live reload. x=forward, y=left, z=up (meters). color RRGGBBAA; last 2 hex = alpha.",
+
+  "site": "zone_b",
+
+  "markers": [
+    { "id": "start", "pos": [1.0, 0.10, 0.05], "radius": 0.08, "color": "3388FF99" },
+    { "id": "goal",  "pos": [3.0, 0.25, 0.05], "radius": 0.08, "color": "33CC6699" }
+  ],
+
+  "obstacles": [
+    { "id": "u_wall", "shape": "box", "pos": [1.875, 0.32, 0.5], "half": [0.075, 0.48, 0.5], "color": "DD773366" },
+
+    { "id": "wall_lo", "shape": "box", "pos": [2.0, -0.8, 0.5], "half": [2.0, 0.02, 0.5], "color": "8899AA33" },
+    { "id": "wall_hi", "shape": "box", "pos": [2.0,  0.8, 0.5], "half": [2.0, 0.02, 0.5], "color": "8899AA33" }
+  ]
+}
