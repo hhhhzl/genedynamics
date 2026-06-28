@@ -69,7 +69,85 @@ def risk_sensitive_marginalize_jax(
     return rho_m, q_mc
 
 
-REGIME_POSTERIOR_MODES = ("reward", "risk_sensitive")
+def risk_sensitive_marginalize_np(returns_mc, log_prior, tau_r):
+    """Host (numpy) risk-sensitive aggregation — mirror of the JAX version above.
+
+    Used for high-fidelity certification rho_H (new_version.txt
+    eq:high_fidelity_risk): given a candidate's per-regime returns R[m], return
+
+        rho = -tau_r * logsumexp_m( log p(m) - R[m] / tau_r ),
+
+    a soft-min over regimes (higher = more robust). Accepts ``returns_mc`` of
+    shape (C,) -> scalar, or (..., C) -> (...). tau_r -> 0 reproduces worst-mode
+    min_m R; tau_r -> inf reproduces the prior-mean over regimes.
+    """
+    import numpy as _np
+    R = _np.nan_to_num(_np.asarray(returns_mc, dtype=_np.float64),
+                       nan=-1e6, posinf=1e6, neginf=-1e6)
+    lp = _np.asarray(log_prior, dtype=_np.float64)
+    # Normalize the prior so sum_m p(m) = 1 (theory uses a probability p(m)); this
+    # makes tau_r -> inf give the true prior-mean instead of a -tau*log(C) blowup,
+    # and the certification value directly comparable across candidates.
+    _mlp = lp.max()
+    lp = lp - (_np.log(_np.sum(_np.exp(lp - _mlp))) + _mlp)
+    tau = max(float(tau_r), 1e-8)
+    log_terms = lp - R / tau
+    mx = log_terms.max(axis=-1, keepdims=True)
+    lse = (_np.log(_np.sum(_np.exp(log_terms - mx), axis=-1, keepdims=True)) + mx).squeeze(-1)
+    return -tau * lse
+
+
+def cvar_marginalize_jax(
+    rewards_mc: "jnp.ndarray",   # (M, C) — M candidates × C regimes
+    log_prior: "jnp.ndarray",    # (C,)
+    alpha: "jnp.ndarray",        # scalar in (0, 1] — CVaR tail level
+) -> Tuple["jnp.ndarray", "jnp.ndarray"]:
+    """CVaR_α regime marginalization (distributionally-robust / adversarial).
+
+    For each candidate, ``rho_m`` is the average reward over the WORST
+    α-probability mass of regimes (the lower tail), and ``q_mc`` is the
+    adversarial regime posterior CVaR induces — all mass on the failing
+    α-tail, p(m)/α each.
+
+    A different robustness knob from `risk_sensitive_marginalize_jax`: that one
+    is the KL-ball (entropic) DRO posterior q ∝ p·exp(-R/τ_r); CVaR is the
+    {q ≤ p/α} ambiguity set, a hard tail average with a crisp "worst α-fraction"
+    reading. Computed by the exact discrete formula: sort regimes ascending,
+    take the probability mass that overlaps the worst-α quantile.
+
+    Limits
+    ------
+    - α → 0 : worst-regime objective (max-min), q → one-hot worst regime
+    - α = 1 : prior-mean over regimes, q → p(m)
+
+    Same return signature/sign as the other marginalizers (higher rho = more
+    robust), so it is drop-in interchangeable in the MBD weighting math.
+    """
+    if not JAX_AVAILABLE:
+        raise RuntimeError("JAX is required for cvar_marginalize_jax")
+    rewards_mc = jnp.nan_to_num(rewards_mc, nan=-1e6, posinf=1e6, neginf=-1e6)
+    p = jnp.exp(log_prior)
+    p = p / jnp.maximum(jnp.sum(p), jnp.asarray(1e-12, dtype=p.dtype))
+    a = jnp.clip(alpha, jnp.asarray(1e-6, dtype=rewards_mc.dtype), jnp.asarray(1.0, dtype=rewards_mc.dtype))
+
+    def _row(R):
+        order = jnp.argsort(R)                 # ascending: worst regimes first
+        R_s = R[order]
+        p_s = p[order]
+        cum = jnp.cumsum(p_s)
+        cum_before = cum - p_s
+        # Probability mass of each regime that falls inside the worst-α quantile.
+        overlap = jnp.clip(jnp.minimum(cum, a) - cum_before, 0.0, None)
+        w_s = overlap / a                      # adversarial tail weights, Σ = 1
+        cvar = jnp.sum(w_s * R_s)
+        q = jnp.zeros_like(R).at[order].set(w_s)
+        return cvar, q
+
+    rho_m, q_mc = jax.vmap(_row)(rewards_mc)
+    return rho_m, q_mc
+
+
+REGIME_POSTERIOR_MODES = ("reward", "risk_sensitive", "cvar")
 
 
 def validate_mode(mode: str) -> str:

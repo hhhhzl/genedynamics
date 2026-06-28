@@ -127,7 +127,7 @@ class TestUnifiedAdapter:
             from genedynamics.envs.adapters.unified_adapter import UnifiedEnvAdapter
             
             # Test with native environment
-            from genedynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
+            from genedynamics.envs.domains.toy.double_integrator_box import DoubleIntegratorBoxEnv
             
             native_env = DoubleIntegratorBoxEnv()
             adapter = UnifiedEnvAdapter(native_env)
@@ -144,7 +144,7 @@ class TestUnifiedAdapter:
         """Test UnifiedEnvAdapter with obstacles."""
         try:
             from genedynamics.envs.adapters.unified_adapter import UnifiedEnvAdapter
-            from genedynamics.envs.double_integrator_box import DoubleIntegratorBoxEnv
+            from genedynamics.envs.domains.toy.double_integrator_box import DoubleIntegratorBoxEnv
             
             # Use 2D obstacles for 2D environment
             obstacles = [

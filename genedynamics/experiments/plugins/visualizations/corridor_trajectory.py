@@ -30,7 +30,7 @@ except Exception:  # pyrender / OpenGL may be unavailable on some systems
 
 
 def _build_corridor_extras(env: Any, states: np.ndarray) -> Dict[str, Any]:
-    from genedynamics.envs.humanoid_corridor_2d import (
+    from genedynamics.envs.domains.humanoid.corridor import (
         TORSO_A, TORSO_B, TORSO_CROUCH_EXTRA,
         H_NOMINAL, H_MIN, H_MAX,
         ARM_REACH_OPEN, ARM_REACH_TUCKED,

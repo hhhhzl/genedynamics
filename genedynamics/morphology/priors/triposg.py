@@ -125,7 +125,7 @@ class TripoSGPrior(MorphologyPrior):
           - image (PIL.Image.Image): for image-conditioned variants
         """
         try:
-            import trimesh  # noqa: F401 — ensure trimesh is present for output
+            import trimesh
         except ImportError as exc:
             raise MissingDependencyError(
                 "trimesh is required to materialize TripoSG output",

@@ -62,7 +62,7 @@ class CFSQPPerStepFilter(ConstraintFilter):
         """Lazy initialization of CFS action convexifier (registry by convexifier_name)."""
         if self._cfs_action_convexifier is None:
             if self.convexifier_name == "cfs_action_joint":
-                import genedynamics.core.constraints.convexify.cfs.action_joint_lift  # noqa: F401
+                import genedynamics.core.constraints.convexify.cfs.action_joint_lift  
             from genedynamics.core.constraints.core.registry import get_registry
             registry = get_registry()
             impl_class = registry.get("convexifier", self.convexifier_name, "numpy")

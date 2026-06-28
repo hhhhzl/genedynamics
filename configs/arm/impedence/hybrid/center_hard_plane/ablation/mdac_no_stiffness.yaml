@@ -1,0 +1,8 @@
+# Ablation: NO position-stiffness primitive (use_stiffness off -> K = I).
+# environment: center_hard_plane (hybrid center_hard map on plane)
+base: ../_base.yaml
+
+level: center_hard_plane
+method: mdac_no_stiffness
+name: arm_impedence_hybrid_center_hard_plane_mdac_no_stiffness
+output_dir: results/arm/impedence/hybrid/center_hard_plane/ablation/mdac_no_stiffness

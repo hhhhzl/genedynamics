@@ -1,16 +1,15 @@
-# ── 2GO Zone A only: thin center wall (multimodal: left or right) ──
 name: humanoid_corridor_2d_twogo_zone_b
 output_dir: results/humanoid/corridor_2d/main/twogo_zone_b
 
 env_name: humanoid_corridor_2d
 env_params:
   dt: 0.25
-  horizon: 20
+  horizon: 50
   scene_preset: zone_b
-  vx_max: 0.8
+  vx_max: 0.3
   vx_min: -0.3
   vy_max: 0.3
-  omega_max: 0.5
+  omega_max: 0.3
   h_dot_max: 0.3
   psi_torso_dot_max: 0.4
   arm_tuck_rate_max: 1.0
@@ -22,13 +21,13 @@ method_params:
   show_tqdm: true
   twogo_transport_schedule: adaptive
   twogo_goal_hardstop: true
-  action_extra_sigma: 0.15
-  max_constraints_per_point: 32
-  constraint_margin: 0.01
+  action_extra_sigma: 0.35
+  max_constraints_per_point: 8
+  constraint_margin: 0.04
   cfs_action_convexifier: cfs_action
   aug_lambda: 0.0
   aug_rho: 1.0
-  num_modes: 8
+  num_modes: 10
   mode_strategy: multirun
 
   twogo_gate_vrate_threshold: 0.01
@@ -44,22 +43,22 @@ method_params:
   twogo_enable_local_gating: true
   twogo_gate_ema_beta: 0.7
   twogo_gate_risk_theta: 0.05
-  twogo_task_dir_alpha: 0.3
+  twogo_task_dir_alpha: 0.1
   twogo_cluster_reweight_alpha: 0.0
   twogo_cluster_retract_mu: 0.0
   twogo_enable_sample_tail: true
   twogo_enable_agp_batch: false
   twogo_use_jax_scan_core: true
-  twogo_retract_qp_boost: true
+  twogo_retract_qp_boost: false
   twogo_enable_geometry: true
   twogo_stability_eps: 1e-6
   twogo_gamma_init: 1.0
-  twogo_retract_qp_every: 1
+  twogo_retract_qp_every: 3
   twogo_probe_enable: true
   twogo_probe_tail_mix: 0.5
   twogo_probe_tail_pool_ratio: 0.25
   twogo_probe_geom_alpha: 0.3
-  twogo_probe_b: 512
+  twogo_probe_b: 32
   twogo_overlay:
     hardness:
       rho_ref: 500.0
@@ -87,9 +86,9 @@ obstacle_config:
   success_margin: 0.20
   scene_preset: zone_b
 
-seeds: [0]
+seeds: [0, 1, 2, 3, 4]
 backend: jax
-device: cpu
+device: cuda
 
 metrics: [corridor_metrics]
 visualizations: [corridor_trajectory, cost, adaptive, diffusion]
@@ -113,7 +112,7 @@ scheduler_config:
   type: composite
   constraint_schedulers:
     - type: alm_adaptive
-      margin: 0.02
+      margin: 0.05
       lam0: 0.0
       rho0: 1.0
       nu0: 0.0
@@ -161,20 +160,20 @@ scheduler_config:
       eta_eps_plus: 0.01
       eta_eps_minus: 0.003
       eta_c_eps: 0.01
-      p_min: 0.5
+      p_min: 0.0
       p_max: 1.0
       eps_min: 1e-5
       eps_max: 1e-2
-      I_min: 10
-      I_max: 25
-      topK_min: 10
-      topK_max: 32
+      I_min: 1
+      I_max: 10
+      topK_min: 1
+      topK_max: 10
       use_stochastic_gate: true
   diffusion_schedulers:
     - type: fixed
       M_k: 1024
       T_k: 0.3
-      Ndiffuse: 150
+      Ndiffuse: 100
       beta0: 1e-5
       betaT: 1e-2
   constraint_merge_strategy: merge

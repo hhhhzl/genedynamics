@@ -14,6 +14,17 @@ namespace CorridorTwin
         public WorldClient Client;
         public FrameRegistration Frame;
 
+        [Tooltip("Optional: the registrant fed by THIS device's own headset (viewer) "
+               + "entity arriving on the stream — any OpenXRAnchorProvider (Quest/Pico/"
+               + "ML2/Android XR/…). Leave unset on non-headset clients.")]
+        public OpenXRAnchorProvider AnchorProvider;
+
+        [Tooltip("This device's own headset entity id (e.g. \"headset/base\", matching "
+               + "producers/tracker_pose.populate_headset). When set, that entity is "
+               + "NOT drawn (it's the camera) and its pose is forwarded to AnchorProvider. "
+               + "OTHER devices leave their own id here, so they still see this headset.")]
+        public string LocalHeadsetId = "";
+
         [Tooltip("Render this far behind the latest state (s). ~1.5–2 network periods "
                + "hides jitter and keeps interpolation between two real samples.")]
         public double InterpolationDelay = 0.08;
@@ -61,6 +72,14 @@ namespace CorridorTwin
 
         private void Upsert(EntityMsg e)
         {
+            // This device's own headset is the camera, not a hologram: forward its
+            // world pose to the registrant and never draw it (ARCHITECTURE §4a).
+            if (!string.IsNullOrEmpty(LocalHeadsetId) && e.Id == LocalHeadsetId)
+            {
+                if (AnchorProvider != null) AnchorProvider.SetHeadsetPoseWorld(e.PosWorld, e.QuatWorld);
+                return;
+            }
+
             if (!_states.TryGetValue(e.Id, out var st))
             {
                 st = new EntityState { Id = e.Id };
@@ -86,7 +105,7 @@ namespace CorridorTwin
             var go = ObtainObject(id, st);
             if (go == null) return;
             go.transform.localPosition = FrameRegistration.WorldToAnchorLocal(pWorld);
-            go.transform.localRotation = WorldRotToUnity(qWorld);
+            go.transform.localRotation = FrameRegistration.WorldToAnchorLocalRot(qWorld);
         }
 
         private GameObject ObtainObject(string id, EntityState st)
@@ -132,23 +151,8 @@ namespace CorridorTwin
             }
         }
 
-        // ---- world (RH, z-up) rotation → Unity (LH, y-up) -------------------
-        // Map the rotated basis vectors through the position axis map and rebuild
-        // with LookRotation (handedness-safe). `q` holds the WORLD quaternion.
-        private static Quaternion WorldRotToUnity(Quaternion q)
-        {
-            Vector3 fwd = FrameRegistration.WorldToAnchorLocal(RotateWorldVec(q, new Vector3(1, 0, 0)));
-            Vector3 up = FrameRegistration.WorldToAnchorLocal(RotateWorldVec(q, new Vector3(0, 0, 1)));
-            if (fwd.sqrMagnitude < 1e-9f || up.sqrMagnitude < 1e-9f) return Quaternion.identity;
-            return Quaternion.LookRotation(fwd, up);
-        }
-
-        // Rotate vector v by quaternion q (components frame-agnostic).
-        private static Vector3 RotateWorldVec(Quaternion q, Vector3 v)
-        {
-            var u = new Vector3(q.x, q.y, q.z);
-            return v + 2f * q.w * Vector3.Cross(u, v) + 2f * Vector3.Cross(u, Vector3.Cross(u, v));
-        }
+        // world (RH, z-up) rotation → Unity (LH, y-up) lives in FrameRegistration.
+        // WorldToAnchorLocalRot (shared with OpenXRAnchorProvider's registration).
 
         private static Color RgbaToColor(uint rgba)
         {

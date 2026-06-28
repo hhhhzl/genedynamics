@@ -7,13 +7,13 @@ set -u
 cd /workspace/genedynamics
 
 RUNS=(
-  "main:configs/soft_robot/main/crawling_ground.yaml"
-  "no_mode_marg:configs/soft_robot/ablation/no_mode_marginalization.yaml"
-  "no_fid_env30:configs/soft_robot/ablation/no_fidelity_ladder_env30.yaml"
-  "no_fid_env100:configs/soft_robot/ablation/no_fidelity_ladder_env100.yaml"
-  "main_smooth:configs/soft_robot/main/crawling_ground_smooth.yaml"
-  "cmaes:configs/soft_robot/baselines/cmaes_crawling.yaml"
-  "cem:configs/soft_robot/baselines/cem_crawling.yaml"
+  "main:configs/soft_robot/co_design/main/crawling_ground.yaml"
+  "no_mode_marg:configs/soft_robot/co_design/ablation/no_mode_marginalization.yaml"
+  "no_fid_env30:configs/soft_robot/co_design/ablation/no_fidelity_ladder_env30.yaml"
+  "no_fid_env100:configs/soft_robot/co_design/ablation/no_fidelity_ladder_env100.yaml"
+  "main_smooth:configs/soft_robot/co_design/main/crawling_ground_smooth.yaml"
+  "cmaes:configs/soft_robot/co_design/baselines/cmaes_crawling.yaml"
+  "cem:configs/soft_robot/co_design/baselines/cem_crawling.yaml"
 )
 
 mkdir -p results/soft_robot

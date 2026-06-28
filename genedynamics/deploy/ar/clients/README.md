@@ -82,9 +82,20 @@ then render obstacles as its children using the world→Unity map above.
   Vicon streams the headset world pose; one-time hand-eye calibration ties the
   visionOS world-anchor frame to Vicon. (Fallback: a visionOS world anchor
   dropped at a Vicon-surveyed point.)
+- **OpenXR headsets — Quest 3/3S/Pro, Pico, Magic Leap 2, Android XR, Vive XR
+  (OpenXR + the vendor's feature group):** same Vicon-marker-on-headset idea,
+  implemented as the **vendor-agnostic** `unity/Scripts/OpenXRAnchorProvider.cs`
+  (`QuestAnchorProvider.cs` is a thin Quest subclass; other vendors attach the
+  base directly). Feed it the headset's Vicon-world pose via
+  `SetHeadsetPoseWorld(...)`; it solves `anchor = headset_unity ∘ L⁻¹` every
+  sample and EMA-smooths it, so it also corrects the headset's SLAM drift (no
+  fiducial, no passthrough-camera access). The rest of the entity-model client is
+  unchanged; only the XR provider plugin (ARCore → the OpenXR feature group)
+  differs. See ARCHITECTURE §4a.
 
 `FrameRegistration` exposes a single `WorldOriginAnchor` Transform; swap the
-registration source without touching the renderer.
+registration source (`ARTrackedImageManager` / `OpenXRAnchorProvider` / Vicon
+stream) without touching the renderer.
 
 ## Files
 | File | Role |
@@ -104,6 +115,41 @@ registration source without touching the renderer.
 4. Set `SceneClient.Url` to `ws://<server-host>:8765/ws`.
 5. Build to the device. Point at the fiducial (phone) / start Vicon streaming
    (Vision Pro); obstacles appear locked to the physical space.
+
+## Setup — OpenXR headsets (Quest 3/3S/Pro shown; Pico / ML2 / Android XR alike)
+The entity-model path (`WorldClient` + `WorldRenderer`) on passthrough MR. Only the
+XR provider and the registrant differ from the phone setup above — the renderer
+code is identical (ARCHITECTURE §4a). Steps below are for Quest; **for another
+OpenXR headset, swap the vendor's OpenXR feature group in step 1–2 and attach
+`OpenXRAnchorProvider` instead of `QuestAnchorProvider` in step 4** — nothing else
+changes.
+
+1. **Packages:** Unity 6 (or 2022.3 LTS) + **Meta XR SDK** (Meta XR Core + the
+   OpenXR feature), or the **Unity OpenXR plugin** with the **Meta Quest feature
+   group**. Plus `com.unity.nuget.newtonsoft-json` (used by `WorldClient`).
+2. **Player settings:** build target **Android**; XR Plug-in Management → Android →
+   enable **OpenXR** + the **Meta Quest** feature group; enable the **Passthrough**
+   OpenXR feature; graphics API **Vulkan**; min API level per Meta's docs.
+3. **Scene:** add an **XR Origin** (its Main Camera is the Quest head pose) and
+   enable a passthrough layer for MR. Add an empty GameObject to serve as
+   `FrameRegistration.WorldOriginAnchor` (the provider drives its world pose;
+   entities render as its children).
+4. **`CorridorTwin` GameObject:** attach `WorldClient`, `FrameRegistration`,
+   `WorldRenderer`, **and `QuestAnchorProvider`**. Wire in the Inspector:
+   - `WorldRenderer`: `Client`→`WorldClient`, `Frame`→`FrameRegistration`,
+     `AnchorProvider`→`QuestAnchorProvider`, `LocalHeadsetId`→this device's id
+     (`headset/base`, matching `populate_headset`'s default).
+   - `QuestAnchorProvider`: `Frame`→`FrameRegistration`, `HeadPoseSource`→the XR
+     head Camera (defaults to `Camera.main`). Leave `LockWhenConverged` off to keep
+     correcting Quest SLAM drift.
+   - `FrameRegistration.WorldOriginAnchor`→the empty GameObject from step 3.
+5. **Endpoint:** set `WorldClient.Url` to `ws://<server-host>:8766/` (the
+   `transport/world_ws.py` stream).
+6. **Server side:** each tick, call
+   `tracker_pose.populate_headset(world, vicon, headset_id="headset")` so the
+   headset's `viewer` entity (`headset/base`) rides the same stream the obstacles do.
+7. **Deploy** (`adb install`) to the Quest. With Vicon streaming the headset
+   marker, `QuestAnchorProvider` converges the anchor and obstacles lock to the room.
 
 > The robot side is unaffected by any of this — it consumes the same contract
 > directly. This client is purely the human-facing visualization layer.

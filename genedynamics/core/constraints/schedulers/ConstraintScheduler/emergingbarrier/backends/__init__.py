@@ -5,7 +5,7 @@ Currently mirrors the base (fixed) behavior; can be extended for JAX later.
 """
 
 try:
-    from . import emergingbarrier_numpy  # noqa: F401
+    from . import emergingbarrier_numpy  
 except ImportError:
     pass
 

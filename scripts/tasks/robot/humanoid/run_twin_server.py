@@ -60,8 +60,8 @@ def make_localization(kind: str, config: Optional[dict] = None):
         from genedynamics.deploy.localization.vicon_shm_plugin import ViconShmPlugin
         return ViconShmPlugin(config)
     if kind == "ros2":
-        from genedynamics.deploy.localization.ros2_odometry_plugin import Ros2OdometryLocalizationPlugin
-        return Ros2OdometryLocalizationPlugin(config)
+        from genedynamics.deploy.localization.ros2_odometry_plugin import ROS2OdometryPlugin
+        return ROS2OdometryPlugin(config)
     raise ValueError(f"unknown localization kind {kind!r}")
 
 

@@ -76,7 +76,7 @@ class RuntimeBackendManager:
             enable_cache = bool(kwargs.pop("enable_compilation_cache", True))
             if enable_cache:
                 try:
-                    import jax  # noqa: F401
+                    import jax  
                     from jax.experimental import compilation_cache as _cc
 
                     cache_dir = kwargs.pop("compilation_cache_dir", None)

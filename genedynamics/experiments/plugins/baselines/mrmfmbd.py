@@ -37,11 +37,13 @@ class MRMFMBDBaseline(BaselineProtocol):
             ThetaParametrization,
             ThetaPrior,
             ThetaPriorConfig,
-            MRMFMBDPosteriorBackendJax,
-            PosteriorBridgeConfig,
             ModeMarginalizer,
             default_mode_system_config,
             create_fidelity_ladder,
+        )
+        from genedynamics.solvers.single.mrmfmbd_ablation.backends import (
+            MRMFMBDPosteriorBackendJax,
+            PosteriorBridgeConfig,
         )
 
         theta_param = ThetaParametrization(

@@ -7,7 +7,7 @@ JAX manifold helpers shared by geometry-aware solvers.
     ``genedynamics.genemetry`` directly.
 """
 
-from genedynamics.genemetry.ops.backends.jax_ops import (  # noqa: F401
+from genedynamics.genemetry.ops.backends.jax_ops import (  
     build_active_rows,
     project_complement_batch,
 )

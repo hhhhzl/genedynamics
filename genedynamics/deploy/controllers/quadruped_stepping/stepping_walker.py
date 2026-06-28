@@ -96,6 +96,7 @@ class MinimalFollowerConfig:
     sim_dt: float = 0.01
     phase_steps: int = 36
     settle_steps: int = 30
+    goal_hold_steps: int = 40  # governed path only: hold final pose so the base-PD body settles to goal
 
     # Geometry / nominal posture
     step_width: float = 0.28
@@ -119,6 +120,8 @@ class MinimalFollowerConfig:
     use_base_pd: bool = True
     base_kp_xy: float = 44.0
     base_kd_xy: float = 11.0
+    base_vff_gain: float = 0.0  # velocity feedforward: damp toward gain*v_ref (cancels cruise tracking lag so swing feet reach forward targets). 0.0 == legacy PD
+    use_support_platforms: bool = False  # treat start/goal slabs as safe support (don't re-snap a foot that's on a platform back to a stone)
     base_kp_z: float = 260.0
     base_kd_z: float = 34.0
     base_kp_rp: float = 95.0
@@ -472,6 +475,7 @@ class SteppingWalkFollowerMinimal:
         timeout_streak = 0
         low_support_counter = 0
         interval_stats: List[Dict[str, Any]] = []
+        executed_footholds: List[Dict[str, Any]] = []
 
         intervals = self._mode_intervals(modes, n_seg)
         s_cum = self._build_path_arclen(mids_xy)
@@ -686,6 +690,18 @@ class SteppingWalkFollowerMinimal:
                     "timed_out": bool(interval_timed_out),
                 }
             )
+            # Symmetric executed-foothold logging (purely additive; no control change) so
+            # raw and governed rollouts are scored on the SAME executed-foothold criterion.
+            for leg in phase.swing_legs:
+                landed = self._current_foot_pos(leg)
+                executed_footholds.append(
+                    {
+                        "step": int(interval_idx),
+                        "leg": str(leg),
+                        "landed_xy": [float(landed[0]), float(landed[1])],
+                        "landed_z": float(landed[2]),
+                    }
+                )
             if interval_timed_out:
                 timeout_streak += 1
             else:
@@ -736,9 +752,444 @@ class SteppingWalkFollowerMinimal:
             "debug": debug_hist,
             "swing_ref": {leg: np.asarray(vals, dtype=np.float64) for leg, vals in swing_ref_hist.items()},
             "interval_stats": interval_stats,
+            "executed_footholds": executed_footholds,
             "summary": summary,
             "terminated": terminated,
             "termination_reason": term_reason,
+        }
+
+    # ------------------------------------------------------------------
+    # Governed gait reference (Rec. 2/3): clean hook for the stepping
+    # reference governor.  Each StepPhase is ONE physical step (walk: one
+    # swing leg; the other three are frozen stance anchors).  Reuses the
+    # same low-level control + touchdown/timeout logic as ``follow_plan``;
+    # ``follow_plan`` itself is left untouched.
+    # ------------------------------------------------------------------
+    def _make_phase_state_governed(
+        self,
+        *,
+        swing_legs: Tuple[str, ...],
+        stance_legs: Tuple[str, ...],
+        mid0: np.ndarray,
+        mid1: np.ndarray,
+        yaw0: float,
+        yaw1: float,
+        swing_goal_world: Dict[str, np.ndarray],
+        stance_anchor_world: Dict[str, np.ndarray],
+        clearance_extra: float = 0.0,
+    ) -> PhaseState:
+        swing_start = {leg: self._current_foot_pos(leg) for leg in swing_legs}
+        swing_goal: Dict[str, np.ndarray] = {}
+        swing_coeff: Dict[str, np.ndarray] = {}
+        for leg in swing_legs:
+            g = np.asarray(swing_goal_world[leg], dtype=np.float64).reshape(-1).copy()
+            if g.shape[0] < 3:
+                g = np.array([g[0], g[1], self._terrain_height_at(g[:2])], dtype=np.float64)
+            # Re-project onto the safe stone interior for robustness, then set terrain Z.
+            if self.stepping_scene:
+                g[:2] = self._project_to_safe_support(g)[:2]
+            g[2] = max(float(self.cfg.min_foot_z), float(self._terrain_height_at(g[:2])))
+            apex_z = max(
+                float(self.cfg.min_foot_z),
+                float(max(swing_start[leg][2], g[2]) + max(self.cfg.swing_height, float(clearance_extra))),
+            )
+            swing_coeff[leg] = self._swing_poly_coeff(swing_start[leg], g, apex_z=float(apex_z))
+            swing_goal[leg] = g
+        stance_anchor: Dict[str, np.ndarray] = {}
+        for leg in stance_legs:
+            a = np.asarray(stance_anchor_world[leg], dtype=np.float64).reshape(-1).copy()
+            if a.shape[0] < 3:
+                a = np.array([a[0], a[1], 0.0], dtype=np.float64)
+            stance_anchor[leg] = self._stance_anchor_target(a)
+        return PhaseState(
+            swing_legs=tuple(swing_legs),
+            stance_legs=tuple(stance_legs),
+            start_mid_xy=np.asarray(mid0, dtype=np.float64).reshape(2).copy(),
+            goal_mid_xy=np.asarray(mid1, dtype=np.float64).reshape(2).copy(),
+            start_yaw=float(yaw0),
+            goal_yaw=float(yaw1),
+            swing_start=swing_start,
+            swing_goal=swing_goal,
+            swing_coeff=swing_coeff,
+            stance_anchor=stance_anchor,
+        )
+
+    def follow_gait_reference(
+        self,
+        gait_ref: Any,
+        *,
+        max_steps: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Execute a governed :class:`GaitReference` (duck-typed: ``.phases`` with
+        ``swing_legs / stance_legs / body_mid_start / body_mid_goal / yaw_start /
+        yaw_goal / foot_goal``).
+
+        Returns the same result structure as :meth:`follow_plan`, plus a ``governed``
+        block (per-step stats, executed footholds, governor diagnostics) used by the
+        config-driven exec-SSR runner.
+        """
+        phases = list(getattr(gait_ref, "phases", []) or [])
+        if max_steps is not None:
+            phases = phases[: int(max_steps)]
+        if len(phases) == 0:
+            out = self._empty_rollout()
+            out["governed"] = {"used": True, "n_steps": 0, "step_stats": [], "executed_footholds": []}
+            return out
+
+        qpos_hist: List[np.ndarray] = []
+        qvel_hist: List[np.ndarray] = []
+        ctrl_hist: List[np.ndarray] = []
+        rpy_hist: List[np.ndarray] = []
+        contact_hist: List[List[str]] = []
+        debug_hist: List[Dict[str, Any]] = []
+        swing_ref_hist: Dict[str, List[np.ndarray]] = {leg: [] for leg in LEG_ORDER}
+
+        p0 = phases[0]
+        self._set_base_pose(np.asarray(p0.body_mid_start, dtype=np.float64).reshape(2), float(p0.yaw_start))
+
+        # Posture-holding warm-up: stand cleanly on all four feet (base PD + stance control)
+        # rather than a zero-torque settle, which lets the legs splay before the gait engages.
+        hold_phase = self._make_phase_state_governed(
+            swing_legs=(), stance_legs=LEG_ORDER,
+            mid0=p0.body_mid_start, mid1=p0.body_mid_start,
+            yaw0=p0.yaw_start, yaw1=p0.yaw_start,
+            swing_goal_world={},
+            stance_anchor_world={leg: self._current_foot_pos(leg) for leg in LEG_ORDER},
+        )
+        hold_dur = max(float(self.cfg.sim_dt), float(self.cfg.settle_steps) * float(self.cfg.sim_dt))
+        for _ in range(int(max(0, self.cfg.settle_steps))):
+            support_contacts = len(self._ground_contact_legs())
+            if self.cfg.use_base_pd:
+                base_wrench = self._apply_base_pd(p0.body_mid_start, float(p0.yaw_start), support_contacts)
+            else:
+                self.data.qfrc_applied[:] = 0.0
+                base_wrench = None
+            tf = self._build_foot_targets(hold_phase, 1.0, phase_duration=hold_dur)
+            fvr = self._build_foot_velocity_refs(hold_phase, 1.0, phase_duration=hold_dur)
+            ctrl = self._compose_leg_torques(phase=hold_phase, target_feet=tf, foot_vel_ref=fvr, base_wrench=base_wrench)
+            self.data.ctrl[:] = ctrl
+            self.mujoco.mj_step(self.model, self.data)
+            self._update_contact_measurements()
+
+        # Stance anchors start at the robot's *actual* feet (no startup yank), then get
+        # frozen to the governed stone targets once a leg has stepped onto its stone.
+        executed_anchor: Dict[str, np.ndarray] = {leg: self._current_foot_pos(leg) for leg in LEG_ORDER}
+
+        dt = float(self.cfg.sim_dt)
+        terminated = False
+        term_reason: Optional[str] = None
+        timeout_streak = 0
+        low_support_counter = 0
+        step_stats: List[Dict[str, Any]] = []
+        executed_footholds: List[Dict[str, Any]] = []
+
+        for step_idx, ph in enumerate(phases):
+            swing_legs = tuple(ph.swing_legs)
+            stance_legs = tuple(ph.stance_legs)
+            swing_goal_world = {leg: np.asarray(ph.foot_goal[leg], dtype=np.float64) for leg in swing_legs}
+            stance_anchor_world = {leg: executed_anchor[leg] for leg in stance_legs}
+            phase = self._make_phase_state_governed(
+                swing_legs=swing_legs,
+                stance_legs=stance_legs,
+                mid0=ph.body_mid_start,
+                mid1=ph.body_mid_goal,
+                yaw0=ph.yaw_start,
+                yaw1=ph.yaw_goal,
+                swing_goal_world=swing_goal_world,
+                stance_anchor_world=stance_anchor_world,
+            )
+
+            interval_steps = max(1, int(self.cfg.phase_steps))
+            phase_duration = max(dt, float(interval_steps) * dt)
+            swing_duration = phase_duration
+            if bool(self.cfg.swing_use_stance_gate):
+                stance_phase = float(np.clip(self.cfg.swing_stance_phase, 0.0, 0.95))
+                swing_duration = phase_duration * max(1.0 - stance_phase, 1e-6)
+
+            touchdown_counter = {leg: 0 for leg in swing_legs}
+            touchdown_latched = {leg: False for leg in swing_legs}
+            hold_counter = 0
+            timeout_counter = 0
+            interval_timed_out = False
+            touchdown_any = False
+            swing_ground_contact_any = False
+
+            prev_base_xy_ref = np.asarray(phase.start_mid_xy, dtype=np.float64).reshape(2)
+            for sub_global in range(interval_steps):
+                alpha_global = float(sub_global + 1) / float(max(1, interval_steps))
+                alpha_local = alpha_global
+                alpha_s = self._swing_time_from_phase(alpha_local)
+
+                edge_s = _smoothstep(alpha_global)
+                base_xy_ref = (1.0 - edge_s) * phase.start_mid_xy + edge_s * phase.goal_mid_xy
+                base_yaw_ref = _interp_angle(phase.start_yaw, phase.goal_yaw, edge_s)
+                base_xy_ref_arr = np.asarray(base_xy_ref, dtype=np.float64).reshape(2)
+                base_vxy_ref = (base_xy_ref_arr - prev_base_xy_ref) / dt
+                prev_base_xy_ref = base_xy_ref_arr
+
+                target_feet = self._build_foot_targets(phase, alpha_s, phase_duration=swing_duration)
+                foot_vel_ref = self._build_foot_velocity_refs(phase, alpha_s, phase_duration=swing_duration)
+
+                support_contacts = len(self._ground_contact_legs())
+                base_wrench: Optional[Tuple[np.ndarray, np.ndarray]] = None
+                if self.cfg.use_base_pd:
+                    base_wrench = self._apply_base_pd(base_xy_ref, base_yaw_ref, support_contacts, base_vxy_ref)
+                else:
+                    self.data.qfrc_applied[:] = 0.0
+
+                ctrl = self._compose_leg_torques(
+                    phase=phase,
+                    target_feet=target_feet,
+                    foot_vel_ref=foot_vel_ref,
+                    base_wrench=base_wrench,
+                )
+                self.data.ctrl[:] = ctrl
+                self.mujoco.mj_step(self.model, self.data)
+                self._update_contact_measurements()
+                ctrl_hist.append(ctrl.copy())
+                for leg in LEG_ORDER:
+                    if leg in phase.swing_legs:
+                        swing_ref_hist[leg].append(np.asarray(target_feet[leg], dtype=np.float64).copy())
+                    else:
+                        swing_ref_hist[leg].append(np.array([np.nan, np.nan, np.nan], dtype=np.float64))
+
+                for leg in phase.swing_legs:
+                    if touchdown_latched[leg]:
+                        continue
+                    if self._strong_touchdown_ready(leg):
+                        touchdown_latched[leg] = True
+                        touchdown_counter[leg] = int(self.cfg.touchdown_stable_steps)
+                    elif self._touchdown_candidate_ready(leg, target_feet[leg]):
+                        touchdown_counter[leg] += 1
+                    else:
+                        if leg in self._ground_contact_legs():
+                            touchdown_counter[leg] = max(
+                                0, touchdown_counter[leg] - int(self.cfg.touchdown_counter_decay_on_contact)
+                            )
+                        else:
+                            touchdown_counter[leg] = 0
+                    if touchdown_counter[leg] >= int(self.cfg.touchdown_stable_steps):
+                        touchdown_latched[leg] = True
+
+                touchdown_all = all(
+                    touchdown_latched[leg] or touchdown_counter[leg] >= int(self.cfg.touchdown_stable_steps)
+                    for leg in phase.swing_legs
+                ) if phase.swing_legs else True
+                touchdown_any = touchdown_any or any(bool(v) for v in touchdown_latched.values())
+
+                rpy = _quat_to_rpy_wxyz(self.data.qpos[3:7])
+                contacts = self._ground_contact_legs()
+                swing_ground_contact_any = swing_ground_contact_any or any(leg in contacts for leg in phase.swing_legs)
+                swing_ground_contact_all = all(leg in contacts for leg in phase.swing_legs) if phase.swing_legs else True
+                hold_ready = bool(touchdown_all)
+                if bool(self.cfg.allow_early_switch_on_contact):
+                    hold_ready = hold_ready or (
+                        bool(swing_ground_contact_all)
+                        and alpha_local >= float(np.clip(self.cfg.early_switch_contact_alpha_min, 0.0, 1.0))
+                    )
+                if hold_ready:
+                    hold_counter += 1
+                else:
+                    hold_counter = 0
+
+                qpos_hist.append(self.data.qpos.copy())
+                qvel_hist.append(self.data.qvel.copy())
+                rpy_hist.append(rpy.copy())
+                contact_hist.append(contacts)
+                debug_hist.append(
+                    {
+                        "segment": int(step_idx),
+                        "interval": int(step_idx),
+                        "substep": int(sub_global),
+                        "phase_alpha": alpha_global,
+                        "swing_legs": phase.swing_legs,
+                        "stance_legs": phase.stance_legs,
+                        "base_xy_ref": base_xy_ref.copy(),
+                        "base_yaw_ref": base_yaw_ref,
+                        "base_rpy": rpy.copy(),
+                        "normal_force": {leg: float(self._normal_force_by_leg[leg]) for leg in LEG_ORDER},
+                        "contact_surface": {leg: str(self._contact_surface_by_leg[leg]) for leg in LEG_ORDER},
+                        "touchdown_latched": touchdown_latched.copy(),
+                        "touchdown_timeout_counter": int(timeout_counter),
+                        "governed": True,
+                    }
+                )
+
+                if support_contacts < int(self.cfg.base_support_contact_min):
+                    low_support_counter += 1
+                else:
+                    low_support_counter = 0
+                if low_support_counter >= int(max(1, self.cfg.support_contact_abort_steps)):
+                    terminated = True
+                    term_reason = "support_contact_abort"
+                    break
+
+                if np.max(np.abs(rpy[:2])) > float(self.cfg.roll_pitch_abort_rad):
+                    terminated = True
+                    term_reason = "roll_pitch_abort"
+                    break
+
+                if not touchdown_all:
+                    if alpha_local >= float(np.clip(self.cfg.touchdown_timeout_alpha, 0.0, 1.0)):
+                        timeout_counter += 1
+                    else:
+                        timeout_counter = 0
+                else:
+                    timeout_counter = 0
+                # End-of-phase backstop: in the governed path each step is exactly
+                # ``phase_steps`` substeps, so the alpha-tail counter above can rarely reach
+                # ``touchdown_timeout_steps`` (unlike follow_plan, whose multi-edge intervals
+                # are long).  Use a CONTACT-based success contract: a step only "times out"
+                # if the swing foot made NO ground contact at all during the step (a genuine
+                # whiff -- e.g. the multi-metre raw swing this fix targets).  A foot that
+                # contacted but did not complete the strict force/tangent/xy latch is a
+                # successful step (the base-PD-driven body keeps advancing upright), matching
+                # the permissive-touchdown contract the flat-straight case relied on.
+                end_of_phase_timeout = (
+                    sub_global == interval_steps - 1
+                    and not touchdown_all
+                    and not swing_ground_contact_any
+                )
+                if timeout_counter >= int(max(1, self.cfg.touchdown_timeout_steps)) or end_of_phase_timeout:
+                    interval_timed_out = True
+                    if bool(self.cfg.force_interval_end_on_touchdown_timeout):
+                        break
+                    terminated = True
+                    term_reason = "touchdown_timeout_abort"
+                    break
+
+                if (
+                    bool(self.cfg.allow_early_switch)
+                    and bool(touchdown_all)
+                    and hold_counter >= int(self.cfg.post_touchdown_hold_steps)
+                ):
+                    break
+
+            # Commit: freeze stance anchors of the legs that just swung to their governed
+            # stone targets (executed-foothold reference), regardless of touchdown quality.
+            for leg in swing_legs:
+                landed = self._current_foot_pos(leg)
+                executed_anchor[leg] = phase.swing_goal[leg].copy()
+                executed_footholds.append(
+                    {
+                        "step": int(step_idx),
+                        "leg": str(leg),
+                        "target_xy": [float(phase.swing_goal[leg][0]), float(phase.swing_goal[leg][1])],
+                        "landed_xy": [float(landed[0]), float(landed[1])],
+                        "landed_z": float(landed[2]),
+                        "track_err_xy": float(np.linalg.norm(landed[:2] - phase.swing_goal[leg][:2])),
+                        "touchdown": bool(touchdown_latched.get(leg, False)),
+                    }
+                )
+
+            step_stats.append(
+                {
+                    "step": int(step_idx),
+                    "swing_legs": list(swing_legs),
+                    "touchdown_any": bool(touchdown_any),
+                    "swing_contact_any": bool(swing_ground_contact_any),
+                    "timed_out": bool(interval_timed_out),
+                }
+            )
+            if interval_timed_out:
+                timeout_streak += 1
+            else:
+                timeout_streak = 0
+            if timeout_streak >= int(max(1, self.cfg.abort_after_consecutive_timeouts)):
+                terminated = True
+                term_reason = "consecutive_touchdown_timeouts"
+
+            if terminated:
+                break
+
+        # Goal-hold: once the gait completes, hold the final pose (all-stance, base PD to
+        # the final goal) for a few steps so the base-PD-driven body settles onto the goal
+        # instead of stopping short by its tracking lag.
+        if not terminated and int(self.cfg.goal_hold_steps) > 0 and len(phases) > 0:
+            pf = phases[-1]
+            goal_hold_phase = self._make_phase_state_governed(
+                swing_legs=(), stance_legs=LEG_ORDER,
+                mid0=pf.body_mid_goal, mid1=pf.body_mid_goal,
+                yaw0=pf.yaw_goal, yaw1=pf.yaw_goal,
+                swing_goal_world={},
+                stance_anchor_world={leg: executed_anchor[leg] for leg in LEG_ORDER},
+            )
+            hold_dur = max(dt, float(self.cfg.goal_hold_steps) * dt)
+            goal_mid = np.asarray(pf.body_mid_goal, dtype=np.float64).reshape(2)
+            for _ in range(int(self.cfg.goal_hold_steps)):
+                support_contacts = len(self._ground_contact_legs())
+                if self.cfg.use_base_pd:
+                    base_wrench = self._apply_base_pd(goal_mid, float(pf.yaw_goal), support_contacts)
+                else:
+                    self.data.qfrc_applied[:] = 0.0
+                    base_wrench = None
+                tf = self._build_foot_targets(goal_hold_phase, 1.0, phase_duration=hold_dur)
+                fvr = self._build_foot_velocity_refs(goal_hold_phase, 1.0, phase_duration=hold_dur)
+                ctrl = self._compose_leg_torques(phase=goal_hold_phase, target_feet=tf,
+                                                 foot_vel_ref=fvr, base_wrench=base_wrench)
+                self.data.ctrl[:] = ctrl
+                self.mujoco.mj_step(self.model, self.data)
+                self._update_contact_measurements()
+                ctrl_hist.append(ctrl.copy())
+                qpos_hist.append(self.data.qpos.copy())
+                qvel_hist.append(self.data.qvel.copy())
+                rpy_hist.append(_quat_to_rpy_wxyz(self.data.qpos[3:7]))
+                contact_hist.append(self._ground_contact_legs())
+                for leg in LEG_ORDER:
+                    swing_ref_hist[leg].append(np.array([np.nan, np.nan, np.nan], dtype=np.float64))
+
+        goal_xy = np.asarray(phases[-1].body_mid_goal, dtype=np.float64).reshape(2)
+        if len(qpos_hist) > 0:
+            base_xy_end = np.asarray(qpos_hist[-1][:2], dtype=np.float64)
+            base_xy_start = np.asarray(qpos_hist[0][:2], dtype=np.float64)
+            goal_error_xy = float(np.linalg.norm(base_xy_end - goal_xy))
+            progress_xy = float(np.linalg.norm(base_xy_end - base_xy_start))
+        else:
+            goal_error_xy = float("nan")
+            progress_xy = 0.0
+        rpy_arr = np.asarray(rpy_hist, dtype=np.float64) if len(rpy_hist) > 0 else np.zeros((0, 3), dtype=np.float64)
+        step_timeout_ratio = (
+            float(np.mean([1.0 if bool(x["timed_out"]) else 0.0 for x in step_stats])) if step_stats else 0.0
+        )
+        n_steps_completed = len(step_stats)
+        summary = {
+            "goal_error_xy": goal_error_xy,
+            "base_progress_xy": progress_xy,
+            "pitch_abs_max": float(np.max(np.abs(rpy_arr[:, 1]))) if rpy_arr.size > 0 else 0.0,
+            "roll_abs_max": float(np.max(np.abs(rpy_arr[:, 0]))) if rpy_arr.size > 0 else 0.0,
+            "interval_count": int(n_steps_completed),
+            "interval_timeout_ratio": float(step_timeout_ratio),
+            "touchdown_any_ratio": float(np.mean([1.0 if bool(x["touchdown_any"]) else 0.0 for x in step_stats]))
+            if step_stats else 0.0,
+            "swing_contact_any_ratio": float(np.mean([1.0 if bool(x["swing_contact_any"]) else 0.0 for x in step_stats]))
+            if step_stats else 0.0,
+            "steps_completed": int(n_steps_completed),
+            "steps_planned": int(len(phases)),
+        }
+
+        return {
+            "qpos": np.asarray(qpos_hist),
+            "qvel": np.asarray(qvel_hist),
+            "ctrl": np.asarray(ctrl_hist),
+            "base_rpy": np.asarray(rpy_hist),
+            "contact_legs": contact_hist,
+            "debug": debug_hist,
+            "swing_ref": {leg: np.asarray(vals, dtype=np.float64) for leg, vals in swing_ref_hist.items()},
+            "interval_stats": step_stats,
+            "summary": summary,
+            "terminated": terminated,
+            "termination_reason": term_reason,
+            "governed": {
+                "used": True,
+                "gait": str(getattr(gait_ref, "gait", "walk")),
+                "n_steps": int(len(phases)),
+                "steps_completed": int(n_steps_completed),
+                "step_stats": step_stats,
+                "executed_footholds": executed_footholds,
+                "diagnostics": dict(getattr(gait_ref, "diagnostics", {}) or {}),
+                "max_swing_distance": float(getattr(gait_ref, "max_swing_distance", 0.0)),
+                "source_candidate_idx": int(getattr(gait_ref, "source_candidate_idx", -1)),
+            },
         }
 
     # ------------------------------------------------------------------
@@ -1081,6 +1532,7 @@ class SteppingWalkFollowerMinimal:
         base_xy: np.ndarray,
         base_yaw: float,
         support_contacts: int,
+        base_vxy_ref: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         cfg = self.cfg
         q = self.data.qpos
@@ -1094,8 +1546,10 @@ class SteppingWalkFollowerMinimal:
             support_scale = float(np.clip(float(support_contacts) / 4.0, 0.0, 1.0))
         support_scale = float(max(support_scale, float(np.clip(cfg.base_support_scale_min, 0.0, 1.0))))
 
-        fx = float(cfg.base_kp_xy) * (float(base_xy[0]) - float(q[0])) - float(cfg.base_kd_xy) * float(v[0])
-        fy = float(cfg.base_kp_xy) * (float(base_xy[1]) - float(q[1])) - float(cfg.base_kd_xy) * float(v[1])
+        vffx = 0.0 if base_vxy_ref is None else float(cfg.base_vff_gain) * float(base_vxy_ref[0])
+        vffy = 0.0 if base_vxy_ref is None else float(cfg.base_vff_gain) * float(base_vxy_ref[1])
+        fx = float(cfg.base_kp_xy) * (float(base_xy[0]) - float(q[0])) - float(cfg.base_kd_xy) * (float(v[0]) - vffx)
+        fy = float(cfg.base_kp_xy) * (float(base_xy[1]) - float(q[1])) - float(cfg.base_kd_xy) * (float(v[1]) - vffy)
         z_ref_nom = self._base_height + float(cfg.base_height_offset)
         if bool(cfg.use_dynamic_base_z_ref):
             foot_z = np.zeros((len(LEG_ORDER),), dtype=np.float64)
@@ -1422,6 +1876,10 @@ class SteppingWalkFollowerMinimal:
                 continue
             if (x - c[0]) ** 2 + (y - c[1]) ** 2 <= float(radii[i]) ** 2:
                 return float(self._scene_stone_top_z)
+        if self.cfg.use_support_platforms:
+            for rect in np.asarray(self.stepping_scene.get("support_platforms", []), dtype=np.float64).reshape(-1, 4):
+                if rect[0] <= x <= rect[1] and rect[2] <= y <= rect[3]:
+                    return float(self._scene_stone_top_z)
         if not bool(self.stepping_scene.get("has_river", True)):
             return 0.0
         river_x = self.stepping_scene.get("river_x", [-0.2, 0.2])
@@ -1437,6 +1895,14 @@ class SteppingWalkFollowerMinimal:
         out = np.asarray(point, dtype=np.float64).copy()
         if not self.stepping_scene:
             return out
+
+        # A foot already on a support platform (start/goal slab) is safe -- don't yank it
+        # back onto a stone (that strands the gait at the last stone, short of the goal).
+        if self.cfg.use_support_platforms:
+            for rect in np.asarray(self.stepping_scene.get("support_platforms", []), dtype=np.float64).reshape(-1, 4):
+                if (rect[0] + margin <= out[0] <= rect[1] - margin) and (rect[2] + margin <= out[1] <= rect[3] - margin):
+                    out[2] = max(float(self.cfg.min_foot_z), float(self._scene_stone_top_z))
+                    return out
 
         centers = np.asarray(self.stepping_scene.get("stones_centers", []), dtype=np.float64)
         radii = np.asarray(self.stepping_scene.get("stones_radii", []), dtype=np.float64).reshape(-1)

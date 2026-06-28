@@ -16,16 +16,16 @@ from genedynamics.envs.external.jax_mpm.scene import MPMConfig, build_scene, rol
 
 RUNS = [
     ("MRMFMBD main (mode marginalization + fidelity ladder ladder 30→100→200)",
-     "/workspace/genedynamics/results/soft_robot/main/crawling_ground/results.json",
+     "/workspace/genedynamics/results/soft_robot/co_design/main/crawling_ground/results.json",
      "#d62728"),
     ("fixed env=30 (no fidelity ladder)",
-     "/workspace/genedynamics/results/soft_robot/ablation/no_fidelity_ladder_env30/results.json",
+     "/workspace/genedynamics/results/soft_robot/co_design/ablation/no_fidelity_ladder_env30/results.json",
      "#1f77b4"),
     ("fixed env=100 (no fidelity ladder)",
-     "/workspace/genedynamics/results/soft_robot/ablation/no_fidelity_ladder_env100/results.json",
+     "/workspace/genedynamics/results/soft_robot/co_design/ablation/no_fidelity_ladder_env100/results.json",
      "#2ca02c"),
     ("fixed env=200 (no fidelity ladder)",
-     "/workspace/genedynamics/results/soft_robot/ablation/no_fidelity_ladder_env200/results.json",
+     "/workspace/genedynamics/results/soft_robot/co_design/ablation/no_fidelity_ladder_env200/results.json",
      "#ff7f0e"),
 ]
 FRICTIONS = [0.3, 0.4, 0.5, 0.6]
@@ -147,7 +147,7 @@ def main():
         fontsize=12, weight="bold", y=1.01,
     )
     fig.tight_layout()
-    out = "/workspace/genedynamics/results/soft_robot/fidelity_ablation_comparison.png"
+    out = "/workspace/genedynamics/results/soft_robot/co_design/fidelity_ablation_comparison.png"
     fig.savefig(out, dpi=160, bbox_inches="tight")
     plt.close(fig)
     print(f"saved {out}\n")

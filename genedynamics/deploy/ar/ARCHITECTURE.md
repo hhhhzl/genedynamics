@@ -5,6 +5,10 @@ Engine-agnostic (Swift/RealityKit **and** Unity/AR Foundation), multi-device
 edge/distributed-ready. Extends today's `deploy/ar` (`SceneSource` +
 `scene_server`) instead of replacing it.
 
+> **Forward compatibility roadmap:** which *other* ecosystems this can still reach
+> (OpenXR headsets, Unreal, ROS2, transports, non-AR viewers…) is catalogued in
+> `future.md`, with per-item status (done / reachable / red line).
+
 ## 0. The one principle
 
 Everything below follows from **decoupling four layers**, each independently
@@ -167,6 +171,60 @@ schema code + the ICD.
   robot's tracked world pose (URDF/proxy mesh); each engine renders it with an
   invisible depth-write material → real robot correctly occludes virtual walls.
 
+### 4a. Meta / Quest target (OpenXR + Meta XR SDK)
+
+**Default headset target: Meta Quest 3 / 3S / Pro** (passthrough MR). These are
+real MR devices — 6-DoF inside-out tracking + color passthrough — so they render
+world-locked holograms exactly like Vision Pro. **Ray-Ban / Ray-Ban Display are
+NOT a target**: a monocular HUD with no 3rd-party 6-DoF or spatial-render runtime
+can't lock holograms to space. That's a hardware/SDK limit, not an engine choice.
+
+**ARCore and Quest are different runtimes — not a migration path.** ARCore is the
+Android-*phone* runtime; Quest is **OpenXR + Meta XR SDK**. Quest does not call
+ARCore. The point of this architecture is that you target each runtime as a leaf
+of the SAME tree: **STATE / SCHEMA / TRANSPORT and the entire RENDER adapter
+(`WorldRenderer` + `WorldClient` + `EntityState` + the `(-y,z,x)` basis map) are
+unchanged.** Quest is Android, so the WebSocket / WebTransport last-mile is
+unchanged too. Exactly two things differ from the phone path:
+
+1. **XR provider plugin** — swap the *ARCore XR Plugin* for the **Meta OpenXR
+   feature / Meta XR SDK** and set the build target to Quest. This is Unity player
+   settings, **not code** — `WorldRenderer.cs` imports no XR package.
+2. **Registration** — *who drives* `FrameRegistration.WorldOriginAnchor`. The
+   phone uses `ARTrackedImageManager` on a surveyed fiducial; OpenXR headsets use
+   **`OpenXRAnchorProvider`** (`clients/unity/Scripts/OpenXRAnchorProvider.cs`),
+   the **vendor-agnostic** Vicon-marker-on-headset registrant — same swappable
+   contract (it only writes the one anchor Transform). `QuestAnchorProvider` is a
+   thin Quest-branded subclass; **Pico / Magic Leap 2 / Android XR / Vive XR
+   attach `OpenXRAnchorProvider` directly** — registration is identical, only the
+   OpenXR feature group differs (project settings).
+
+**Registration (mirrors the §4b Vision Pro row — use Vicon, you already have it):**
+put a rigid Vicon marker cluster on the Quest. Vicon then streams the headset's
+world pose; Quest's own tracking gives the headset's Unity-space pose; the anchor
+is the closed form `anchor = headset_unity ∘ L⁻¹`, where `L` is the headset's
+Vicon pose pushed through the same `(-y,z,x)` map the renderer draws with
+(`FrameRegistration.WorldToAnchorLocalRot`, now the single source of truth shared
+by render and registration). `OpenXRAnchorProvider` solves this every Vicon sample
+and **EMA-smooths** the (quasi-static) anchor — which both kills jitter and
+*continuously re-pins to Vicon ground truth*, so holograms never drift off the
+real robot over a session (a one-shot fiducial would). Head motion is rendered by
+Quest's low-latency on-device tracking, so the Vicon stream's network latency only
+feeds the slow drift correction — harmless. **No fiducial, no passthrough-camera
+access needed**, and robot + headset are natively in one Vicon frame (satisfies §1).
+
+> **Mount offset lives upstream.** The marker→head-frame rigid offset is a
+> producer/calibration concern (handled like the robot base in
+> `producers/tracker_pose.py`), so the Unity provider stays clean: it consumes a
+> headset pose *already in the Vicon world frame* via `SetHeadsetPoseWorld(...)`,
+> transport-agnostic (dedicated headset-pose WS, or a `headset/<id>` entity on the
+> existing stream). Set `LockWhenConverged` if the headset Vicon stream is flaky.
+
+> One Unity codebase still covers the rest: iOS/Android (AR Foundation →
+> ARKit/ARCore), visionOS (PolySpatial), **and every OpenXR headset — Quest, Pico,
+> Magic Leap 2, Android XR, Vive XR… — via `OpenXRAnchorProvider`** — only the XR
+> feature group + (on phones) the registration provider differ per target.
+
 ---
 
 ## 4b. Frame of record & registration — tracker-agnostic
@@ -242,7 +300,7 @@ deploy/ar/
   world_state.py         # general WorldState (entities + per-entity rev)   [generalizes SceneSource]
   producers/
     corridor.py          # SceneSource as a producer
-    tracker_pose.py      # robot/headset world poses from any BaseLocalizationPlugin (vicon/optitrack/slam/vio/fiducial)
+    tracker_pose.py      # robot base+occluder AND viewer headset world poses from any BaseLocalizationPlugin
     ros2.py              # bridge ROS2 topics → entities
   encoders/
     json_codec.py        # debug/browser (today's contract)
@@ -254,9 +312,11 @@ deploy/ar/
     zenoh_gw.py          # backbone bridge (edge/distributed)
   registration/          # world-origin helpers, tracker-agnostic (Se2Transform lives here)
   clients/
-    unity/   
-    swift/   
-    web/ # per-engine adapters
+    unity/   # AR Foundation (phone/visionOS) + WorldRenderer/WorldClient;
+             #   OpenXRAnchorProvider.cs = vendor-agnostic OpenXR registrant
+             #   (Quest/Pico/ML2/Android XR); QuestAnchorProvider.cs = Quest subclass (§4a)
+    swift/   # RealityKit (Vision Pro)
+    web/     # WebXR / three.js
 ```
 
 **Migration (each phase ships value, nothing thrown away):**

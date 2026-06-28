@@ -22,19 +22,33 @@ Execution scripts organized by task domain.
 
 ## robot/
 
-Quadruped, UAV, acceptance tests.
+Stepping-stones plan → governor → walker. One entry point with subcommands:
+`quadruped/stepping_tones/run_stepping_execution.py`.
+
+| Subcommand | Purpose |
+|------------|---------|
+| `exec --config <yaml>` | Run a deploy config (or `--seed-dir`) through governor+walker; write full `res` (qpos/qvel/ctrl + summary + governed step-stats + executed footholds + ranking) and a GIF |
+| `eval --methods ... --mode both` | Planner-SSR vs execution-SSR across methods/seeds |
+| `validate [--no-sim]` | Staged validation: flat-straight → straight-stones → 2GO → baselines |
+| `viz --res-dir <…/governed>` | Paper figures from an exec result: front-view ghosted motion strip + execution-vs-reference tracking + gait contact/speed diagram (`exec --figures` emits them automatically) |
+
+Needs native MuJoCo for the sim parts — run inside `genedynamics/dev-cpu:torch` (arm64).
+Deploy configs: `configs/quadruped/stepping_stones_2d/deploy/*.yaml`.
+
+### arm/
+
+Franka-Panda surface-scan (MDAC, idea.txt Exp I) render/plot scripts. Run from the
+repo root in `genedynamics/dev-cpu:torch`; outputs go to `results/arm/impedence/rigid/`.
 
 | Script | Purpose |
 |--------|---------|
-| `run_quadruped_plan.sh` | MBD + MD-COAS + Go2 plans |
-| `run_stepping_stones_baselines.sh` | Stepping-stones baselines (MBD/MDOC/MD-COAS) |
-| `run_stepping_stones_main.sh` | Stepping-stones full main suite (MBD/MDOC/MD-COAS/2GO) |
-| `run_stepping_stones_ablations.sh` | 2GO ablations on stepping-stones |
-| `run_stepping_stones_smoke.sh` | Stepping-stones smoke checks |
-| `summarize_stepping_stones.py` | Aggregate success/CVaR/time from results |
-| `run_quadruped_quick.py` | One-shot deploy + render |
-| `run_acceptance.sh` | Acceptance tests |
-| `run_closed_loop_validation.sh` | Closed-loop validation acceptance tests |
+| `render_scan.py <level>` | 3D matplotlib GIF: surface mesh + Panda chain + EE scan path |
+| `mujoco_render.py <level>` | Paper-level mujoco mp4/gif (full visual Panda + true analytic surface mesh) |
+| `brax_html_render.py <level>` | brax-native interactive HTML render |
+| `plot_force_time.py` | Force-vs-time (f_min/f_max/f_target bands) from the saved per-run series |
+
+Experiment configs: `configs/arm/impedence/rigid/<environment>/<role>/*.yaml`
+(driven by `genedynamics/solvers/single/mdac/run_experiment.py`).
 
 ## soft_robot/
 

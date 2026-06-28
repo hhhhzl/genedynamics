@@ -1,0 +1,96 @@
+# Learned closed-loop controller co-design — the new-theory MAIN line
+# (new_version.txt §IV-A). Combines, on the production-aligned grid:
+#   * A2 latent morphology  : gradient-free co-design of geometry (+ actuator
+#     placement field) through a shape latent w (loco_big_l32 decoder, n_grid=128,
+#     [13,8,13] voxels), with the MANDATORY model-free prior + hard validity I(z).
+#   * Learned closed-loop controller : z^MB = c, a fixed MLP policy pi conditioned
+#     on [proprio, psi(t), e_x, c], refined IN-LOOP by per-candidate SHAC with an
+#     ONLINE td-lambda critic V_psi.
+#   * Risk-sensitive regime robustness + budgeted ADAPTIVE multi-fidelity (the
+#     fidelity is chosen per step by argmax[V_hat(ell) - nu C_ell], not a ladder).
+# The sinusoid controller / fixed-fidelity / reward-mode variants are ablations
+# (run via mrmfmbd_ablation or controller_type: sinusoid).
+name: mrmfmbd_crawling_learned
+output_dir: results/soft_robot/co_design/main_v2/crawling_learned
+cache_dir: results/soft_robot/co_design/main_v2/crawling_learned_cache
+
+baseline_name: mrmfmbd
+task_domain: jax_mpm
+task_id: crawling_ground
+seeds: [0]
+save_gif: false
+
+evaluator_runtime:
+  max_workers: 1
+  reward_shaping_weight: 100.0
+  n_grid: 128
+  voxel_dims: [13, 8, 13]
+  act_strength_base: 24.0
+  scale: 50.0
+
+scheduler_config:
+  type: composite
+  diffusion_schedulers:
+    - type: fixed
+      M_k: 32
+      T_k: 0.5
+      Ndiffuse: 100
+      beta0: 1.0e-4
+      betaT: 2.0e-2
+  diffusion_merge_strategy: merge
+
+method_params:
+  backend: mbd
+  num_modes: 4
+  # Stage 2: risk-sensitive robust regime objective (rho_H certification too).
+  regime_posterior_mode: risk_sensitive
+  risk_temperature: 1.0
+  reward_temperature_min: 0.05
+  tau_frac: 0.05
+  top_k_fine: 5
+  fine_fidelity_level: 2
+  show_tqdm: true
+
+  # --- Stage 3: budgeted adaptive multi-fidelity (V_hat coeffs + dual step) ---
+  vhat_a1: 1.0
+  vhat_a2: 1.0
+  vhat_a3: 0.5
+  vhat_a4: 1.0
+  fidelity_eta_nu: 0.05
+
+  # --- A2 latent morphology (gradient-free geometry + actuator-placement field) ---
+  morphology_symmetry: ""
+  voxel_dims: [13, 8, 13]
+  morph_latent_dim: 32
+  morph_decoder_path: data/morph_decoders/loco_big_l32
+  morph_decoder_actuator: true
+  morph_decoder_stiffness: false
+  morph_latent_lo: -2.0
+  morph_latent_hi: 2.0
+  morph_latent_mean: 0.0
+  morph_latent_std: 1.0
+
+  # --- Stage 4: unified weight (mandatory MF prior + hard validity I(z)) ---
+  mf_prior_weight: 0.2
+  validity_enabled: true
+  validity_min_occupied_frac: 0.03
+  validity_connect_iters: 40
+
+  # --- Stage 5: learned closed-loop controller + in-loop SHAC + online critic ---
+  controller_type: learned
+  controller_latent_dim: 24
+  controller_hidden: 32
+  controller_embed_dim: 8
+  eta_c: 1.0e-3
+  shac_h: 16
+  lambda_prox: 1.0
+  critic_enabled: true
+  critic_hidden: 32
+  critic_lr: 1.0e-3
+  td_lambda: 0.95
+  # Differentiable-physics (SHAC) policy WARMUP: pretrain beta/E_chi/V_psi on
+  # sampled morphologies before diffusion (no dataset; data = sim rollouts).
+  policy_warmup_steps: 200
+  policy_lr: 3.0e-3
+  warmup_batch: 16
+  warmup_h: 40

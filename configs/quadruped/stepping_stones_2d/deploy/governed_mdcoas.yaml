@@ -1,0 +1,51 @@
+name: quadruped_stepping_stones_governed_mdcoas
+# Plan -> stepping reference governor -> walker (follow_gait_reference) execution.
+# Run with: scripts/tasks/robot/quadruped/stepping_tones/run_stepping_execution.py exec --config <this>
+
+output_dir: results/quadruped/stepping_stones_2d/deploy/governed/mdcoas
+exec_mode: both              # governed | raw | both  (raw = follow_plan baseline, expected to fail)
+
+robot_type: quadruped
+model_id: go2
+
+env_params:
+  # Planner output to execute (expects trajectory/trajectory.json with candidate_states + best_idx).
+  plan_seed_dir: results/quadruped/stepping_stones_2d/smoke/mdcoas/level_1/seed_0
+  # Scene reconstruction (used if the seed dir has no execution_results.stepping_scene).
+  l_max: 0.35
+  stance_width: 0.30
+  start_mid: [-1.25, 0.0]
+  goal_mid: [1.25, 0.0]
+
+# Any MinimalFollowerConfig field. Values below are the sim-validated execution config.
+walker:
+  gait: walk
+  sim_dt: 0.01
+  phase_steps: 36
+  step_width: 0.30
+  settle_steps: 30
+  goal_hold_steps: 40
+  swing_height: 0.045
+  swing_stance_phase: 0.5
+  # body-path tracking (higher closes the goal lag)
+  base_kp_xy: 140.0
+  base_kd_xy: 24.0
+  base_vff_gain: 1.0   # velocity feedforward: cancel base tracking lag so swing feet reach forward targets
+  # touchdown / abort backstop (governed path uses a contact-based timeout)
+  touchdown_xy_tol: 0.035   # foot must land within 4cm of target (was 0.06) -> tighter -> stays on support
+  abort_after_consecutive_timeouts: 2
+  use_support_platforms: true   # treat start/goal slabs as steppable (do not re-snap platform feet to stones)
+
+# Any GovernorConfig field (optional; geometry defaults follow `walker`).
+governor:
+  stride_length: 0.22          # body advance per gait cycle (~ stone pitch)
+  swing_step_limit: 0.35       # hard per-swing bound (= l_max)
+  stone_interior_clearance: 0.07   # aim deeper into support (was 0.025) -> margin against foot tracking error
+  project_to_stones: true
+  use_support_platforms: true   # project footholds onto start/goal slabs, not just stones
+
+render:
+  enabled: true
+  width: 480
+  height: 360
+  max_frames: 120

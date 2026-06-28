@@ -1,0 +1,104 @@
+"""JAX RL-prior backend — brax.training integration.
+
+Wraps a brax PPO/SAC policy network (the JAX backend uses brax's training
+integration, per the structure decision). Holds the brax `PPONetworks` +
+trained `params` (normalizer + policy) and exposes the `Prior` surface:
+
+  act(obs)            -> brax `make_inference_fn` policy (mode if deterministic)
+  logp_of_sequence    -> sum_t dist.log_prob(logits_t, inverse_postprocess(a_t))
+                         (jit-safe: depends only on obs/action, not state.info)
+  warm_start(state)   -> policy mean action at state.obs, tiled to (n_warm_nodes, A)
+
+brax is imported lazily (only when this backend is INSTANTIATED) so the priors
+package imports fine on fedguide (jax, no brax); training/inference run in the
+docker brax image.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Optional, Sequence
+
+import jax
+import jax.numpy as jnp
+
+
+class BraxRLPrior:
+    """brax PPO-network policy prior (JAX)."""
+
+    def __init__(
+        self,
+        *,
+        observation_size: int,
+        action_size: int,
+        params: Any,                              # (normalizer_params, policy_params[, value_params])
+        n_warm_nodes: int = 5,
+        normalize_observations: bool = True,
+        policy_hidden_layer_sizes: Sequence[int] = (32, 32, 32, 32),
+        distribution_type: str = "tanh_normal",
+        deterministic: bool = True,
+        obs_key: str = "state",
+    ) -> None:
+        from brax.training.agents.ppo import networks as ppo_networks
+        from brax.training.acme import running_statistics
+
+        preprocess = (
+            running_statistics.normalize
+            if normalize_observations else (lambda x, y: x)
+        )
+        self._nets = ppo_networks.make_ppo_networks(
+            observation_size=observation_size,
+            action_size=action_size,
+            preprocess_observations_fn=preprocess,
+            policy_hidden_layer_sizes=tuple(policy_hidden_layer_sizes),
+            distribution_type=distribution_type,
+        )
+        self._dist = self._nets.parametric_action_distribution
+        self._policy_apply = self._nets.policy_network.apply
+        self._make_policy = ppo_networks.make_inference_fn(self._nets)
+        self.params = params
+        self.output_dim = int(action_size)
+        self.n_warm_nodes = int(n_warm_nodes)
+        self.deterministic = bool(deterministic)
+        self._obs_key = obs_key
+
+    # --- helpers ---
+    def _norm_pol(self):
+        return (self.params[0], self.params[1])
+
+    def _logits(self, obs):
+        n, p = self._norm_pol()
+        return self._policy_apply(n, p, obs)
+
+    @staticmethod
+    def _obs_of(state, key):
+        obs = getattr(state, "obs", state)
+        if isinstance(obs, dict):
+            obs = obs.get(key, next(iter(obs.values())))
+        return jnp.asarray(obs)
+
+    # --- Prior surface ---
+    def act(self, obs, *, key: Optional[Any] = None, deterministic: Optional[bool] = None) -> Any:
+        det = self.deterministic if deterministic is None else deterministic
+        policy = self._make_policy(self.params, deterministic=det)
+        if key is None:
+            key = jax.random.PRNGKey(0)
+        action, _ = policy(jnp.asarray(obs), key)
+        return action
+
+    def logp_of_sequence(self, obs_seq, act_seq) -> Any:
+        """sum_t log pi(a_t | o_t). `obs_seq`:(H,obs), `act_seq`:(H,A) postprocessed."""
+        def step_logp(o, a):
+            logits = self._logits(o)
+            raw = self._dist.inverse_postprocess(a)
+            return self._dist.log_prob(logits, raw)
+        return jnp.sum(jax.vmap(step_logp)(jnp.asarray(obs_seq), jnp.asarray(act_seq)))
+
+    def warm_start(self, state) -> Any:
+        """Policy mean action at the current obs, tiled across the warm nodes
+        -> `U^rl` of shape (n_warm_nodes, action_size) (eq:rl_warm_start)."""
+        obs = self._obs_of(state, self._obs_key)
+        a = self.act(obs, deterministic=True)
+        return jnp.tile(a[None, :], (self.n_warm_nodes, 1))
+
+
+__all__ = ["BraxRLPrior"]

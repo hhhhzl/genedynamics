@@ -38,7 +38,7 @@ __all__ = ["KeyboardSource"]
 
 _PYNPUT_AVAILABLE = False
 try:
-    from pynput import keyboard as _pynput_kbd  # noqa: F401
+    from pynput import keyboard as _pynput_kbd  
     _PYNPUT_AVAILABLE = True
 except ImportError:
     pass

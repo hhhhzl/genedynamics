@@ -16,8 +16,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from .baseline import BaselineConfig, BaselineResult
-from .baseline_registry import get_baseline
+from .codesign_runner import get_codesign_solver, list_codesign_solvers
 from .task_domain_provider import get_task_domain_provider
 from ..common.engineering import (
     CheckpointManager,
@@ -162,7 +161,7 @@ class BaselineExperimentPlatform:
         if self._logger:
             self._logger.log("run_start", seed=seed, config_hash=self.config.config_hash())
 
-        baseline = get_baseline(self.config.baseline_name)
+        run_fn = get_codesign_solver(self.config.baseline_name)
 
         x_dim = getattr(task_spec, "x_dim", 3)
         phi_dim = getattr(task_spec, "phi_dim", 4)
@@ -176,20 +175,15 @@ class BaselineExperimentPlatform:
         # baseline can apply morphology symmetry without knowing the evaluator.
         if voxel_dims is not None and "voxel_dims" not in method_params:
             method_params["voxel_dims"] = list(voxel_dims)
-        bl_config = BaselineConfig(
-            task_id=self.config.task_id,
-            seed=seed,
-            extra=method_params,
-            scheduler=scheduler,
-        )
+        solver_cfg = {"seed": seed, "scheduler": scheduler, "method_params": method_params}
 
         t0 = time.perf_counter()
         result = None
         try:
-            result = baseline.run(
-                bl_config,
+            result = run_fn(
                 evaluator,
                 task_spec,
+                solver_cfg,
                 x_dim=x_dim,
                 phi_dim=phi_dim,
             )
@@ -207,8 +201,8 @@ class BaselineExperimentPlatform:
             try:
                 with open(seed_path, "w") as f:
                     json.dump(self._serialize_results([out])[0], f, indent=2)
-            except Exception:
-                pass
+            except Exception as _e:
+                print(f"[warn] per-seed result save failed: {_e!r}", flush=True)
             if self._logger:
                 self._logger.log("run_complete", seed=seed, return_=result.return_, wall_time=wall_time)
                 self._logger.flush()
@@ -282,6 +276,26 @@ class BaselineExperimentPlatform:
         return results
 
     def _serialize_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Convert results to JSON-serializable form. Keep full bridge_history
-        so we can plot MBD reward convergence curves."""
-        return list(results)
+        """Convert results to JSON-serializable form (numpy-safe, recursive).
+
+        Keeps full bridge_history/theta_history so we can plot MBD convergence.
+        Robust to any leaked numpy array / scalar in a co-design solver's result
+        dict (ndarray -> list, np scalar -> python, NaN/Inf -> null)."""
+        def _clean(o):
+            if isinstance(o, dict):
+                return {k: _clean(v) for k, v in o.items()}
+            if isinstance(o, (list, tuple)):
+                return [_clean(v) for v in o]
+            if o is None or isinstance(o, (str, bool, int)):
+                return o
+            if isinstance(o, float):
+                return None if (o != o or o in (float("inf"), float("-inf"))) else o
+            # Any array-like (numpy ndarray, JAX array, np scalar, ...) exposes
+            # tolist(); route through it so nothing leaks an unserializable type.
+            if hasattr(o, "tolist"):
+                try:
+                    return _clean(o.tolist())
+                except Exception:
+                    return str(o)
+            return o
+        return [_clean(r) for r in results]

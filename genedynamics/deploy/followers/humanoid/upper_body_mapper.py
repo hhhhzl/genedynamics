@@ -25,7 +25,14 @@ class HumanoidUpperBodyMapperConfig:
     body_height_nominal: float = 0.75
     body_height_min: float = 0.55
     arm_tuck_elbow_gain: float = 1.10
-    arm_tuck_shoulder_roll_gain: float = 0.55
+    # Lowered 0.55 -> 0.15 so the arms abduct less; combined with arm_elbow_base
+    # this keeps the wrists drawn in toward the body so they don't swing into
+    # side-wall obstacles during execution (the planner is fixed). Tuned on
+    # zone_c (audit_exec_collision): -0.056 (collide) -> +0.060 (clear).
+    arm_tuck_shoulder_roll_gain: float = 0.15
+    # Baseline elbow flexion applied even when the plan does not command a tuck
+    # (a=0), drawing the wrists in. 0.60 rad from the same zone_c tuning.
+    arm_elbow_base: float = 0.60
     arm_posture_pitch_gain: float = 0.45
     arm_posture_yaw_gain: float = 0.35
     through_gap_shoulder_roll_scale: float = 0.72
@@ -86,7 +93,9 @@ class HumanoidUpperBodyMapper:
         prefix = "left" if side == "left" else "right"
         shoulder_roll = float(self.cfg.arm_tuck_shoulder_roll_gain) * (1.0 - a)
         shoulder_roll *= float(1.0 - self.cfg.through_gap_shoulder_roll_scale * narrowness)
-        elbow_target = float(self.cfg.arm_tuck_elbow_gain) * a + float(self.cfg.through_gap_elbow_scale) * narrowness
+        elbow_target = (float(self.cfg.arm_elbow_base)
+                        + float(self.cfg.arm_tuck_elbow_gain) * a
+                        + float(self.cfg.through_gap_elbow_scale) * narrowness)
         return {
             f"{prefix}_shoulder_pitch_joint": float(self.cfg.arm_posture_pitch_gain) * p,
             f"{prefix}_shoulder_roll_joint": roll_sign * shoulder_roll,

@@ -1,0 +1,8 @@
+# Ablation: NO soft-feasibility (use_soft_feasibility off -> no AL weighting of the constraint residual).
+# environment: cylinder (S1 analytic cylinder) · SOFT medium (compliant contact)
+base: ../../_base.yaml
+
+level: cylinder
+method: mdac_no_softfeas
+name: arm_impedence_soft_cylinder_mdac_no_softfeas
+output_dir: results/arm/impedence/soft/cylinder/ablation/mdac_no_softfeas

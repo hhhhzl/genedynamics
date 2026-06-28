@@ -30,7 +30,7 @@ except Exception:
 # Backend registry helpers
 # ============================================================================
 try:
-    from genedynamics.solvers.single.mppi.backends import mppi_jax, mppi_numpy  # noqa: F401
+    from genedynamics.solvers.single.mppi.backends import mppi_jax, mppi_numpy  
 except ImportError:
     pass
 
@@ -68,6 +68,14 @@ class MPPISolver(SamplingSolver):
         lambda_: float = 1.0,
         action_limit: float = 1.0,
         seed: int = 0,
+        # brax sampling-MPC budget (used only on the brax-env path; flat path ignores them)
+        Hsample: int = 16,
+        Hnode: int = 4,
+        Nsample: int = 2048,
+        Ndiffuse: int = 2,
+        Ndiffuse_init: int = 10,
+        rollout_fn: Optional[Any] = None,
+        step_fn: Optional[Any] = None,
         **kwargs,
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -87,16 +95,24 @@ class MPPISolver(SamplingSolver):
                 noise_sigma=noise_sigma,
                 lambda_=lambda_,
                 action_limit=action_limit,
+                Hsample=int(Hsample), Hnode=int(Hnode), Nsample=int(Nsample),
+                Ndiffuse=int(Ndiffuse), Ndiffuse_init=int(Ndiffuse_init),
             )
         )
 
-        self._env_adapter = DynamicsToEnvAdapter(dynamics, dt)
-        if isinstance(energy, LegacyEnergyFunctional):
+        # brax PipelineEnv: roll out env.step directly (no flat-state adapter, like DIAL);
+        # flat-state dynamics keep the DynamicsToEnvAdapter path unchanged.
+        self._is_brax_env = dynamics is not None and hasattr(dynamics, "pipeline_step")
+        self.nu = int(getattr(dynamics, "action_size", 0) or getattr(dynamics, "act_dim", 0))
+        self._rollout_fn, self._step_fn = rollout_fn, step_fn
+        self._env_adapter = None if self._is_brax_env else DynamicsToEnvAdapter(dynamics, dt)
+        if energy is None or isinstance(energy, LegacyEnergyFunctional):
             self._legacy_energy = energy
         else:
             self._legacy_energy = EnergyToLegacyAdapter(energy, dynamics).legacy_energy
 
         self._backend_impl = None
+        self._brax_backend_impl = None
 
     def _get_backend_impl(self):
         if self._backend_impl is None:
@@ -153,6 +169,26 @@ class MPPISolver(SamplingSolver):
         states_list = [np.asarray(s, dtype=np.float32) for s in result["states"]]
 
         return Trajectory(states=states_list, actions=actions_list, info=result)
+
+    # --- brax-native receding-horizon path (arm / box-push comparison) ---
+    # On a brax env, MPPI runs through the SAME shared bridge as DIAL/MDAC using the
+    # path-integral backend (backends/mppi_brax_jax.py), warm-started across steps.
+    def _get_brax_backend_impl(self):
+        if self._brax_backend_impl is None:
+            from genedynamics.solvers.single.mppi.backends.mppi_brax_jax import MPPIBraxBackendJax
+            self._brax_backend_impl = MPPIBraxBackendJax(solver=self)
+        return self._brax_backend_impl
+
+    def make_controller(self, n_steps: int, **kw: Any):
+        from genedynamics.solvers.common.receding_horizon import RecedingHorizonController
+        b = self._get_brax_backend_impl()
+        return RecedingHorizonController(
+            b, step_fn=b._step_fn, n_steps=int(n_steps),
+            n_diffuse_init=int(self.config.get("Ndiffuse_init", 10)),
+            n_diffuse=int(self.config.get("Ndiffuse", 2)), **kw)
+
+    def run_receding(self, x0: Any, n_steps: int, rng: Any, **kw: Any):
+        return self.make_controller(int(n_steps), **kw).run(x0, rng)
 
 
 if register_solver is not None:

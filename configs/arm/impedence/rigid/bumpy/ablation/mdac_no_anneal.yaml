@@ -1,0 +1,8 @@
+# Ablation: NO coupled anneal (use_adaptive_schedule off -> fixed schedule, no feasibility-coupled rho/kappa).
+# environment: bumpy (S3 bumpy NURBS)
+base: ../../_base.yaml
+
+level: bumpy
+method: mdac_no_anneal
+name: arm_impedence_rigid_bumpy_mdac_no_anneal
+output_dir: results/arm/impedence/rigid/bumpy/ablation/mdac_no_anneal

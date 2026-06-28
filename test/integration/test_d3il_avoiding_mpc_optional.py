@@ -9,12 +9,12 @@ def test_d3il_avoiding_edoc_mpc_optional():
     EDOC has been removed. This test is skipped. Use MBD or other planner instead.
     """
     try:
-        import gym  # noqa: F401
+        import gym  
     except Exception:
         pytest.skip("classic gym not installed")
 
     try:
-        import mujoco  # noqa: F401
+        import mujoco  
     except Exception:
         pytest.skip("mujoco not installed")
 
@@ -22,7 +22,7 @@ def test_d3il_avoiding_edoc_mpc_optional():
 
     from genedynamics.envs.external.d3il import D3ILAvoidingEnv, D3ILAvoidingConfig
     from genedynamics.envs.external.d3il.avoiding_plan_env import AvoidingPlanEnv, AvoidingPlanSpec
-    from genedynamics.solvers.single.edoc import EDOCPlanner  # noqa: F401 - EDOC removed
+    from genedynamics.solvers.single.edoc import EDOCPlanner   - EDOC removed
     from genedynamics.core.energy import LegacyEnergyFunctional, EnergyTerm
     import jax.numpy as jnp
 

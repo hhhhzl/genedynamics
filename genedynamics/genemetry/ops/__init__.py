@@ -15,7 +15,7 @@ from genedynamics.genemetry.registry import get_genemetry_registry
 
 # Auto-register JAX backend (if JAX is available)
 try:
-    from genedynamics.genemetry.ops.backends import jax_ops  # noqa: F401
+    from genedynamics.genemetry.ops.backends import jax_ops  
 except ImportError:
     pass
 

@@ -21,21 +21,21 @@ import matplotlib.pyplot as plt
 
 RUNS = {
     "MRMFMBD (main, mode marginalization + fidelity ladder)":
-        "/workspace/genedynamics/results/soft_robot/main/crawling_ground/results.json",
+        "/workspace/genedynamics/results/soft_robot/co_design/main/crawling_ground/results.json",
     "Diff (4m, env=200, no fidelity ladder)":
-        "/workspace/genedynamics/results/soft_robot/ablation/no_fidelity_ladder_env200/results.json",
+        "/workspace/genedynamics/results/soft_robot/co_design/ablation/no_fidelity_ladder_env200/results.json",
     "Diff (4m, env=100, no fidelity ladder)":
-        "/workspace/genedynamics/results/soft_robot/ablation/no_fidelity_ladder_env100/results.json",
+        "/workspace/genedynamics/results/soft_robot/co_design/ablation/no_fidelity_ladder_env100/results.json",
     "Diff (1m, env=200, no mode marginalization + fidelity ladder)":
-        "/workspace/genedynamics/results/soft_robot/ablation/no_mode_no_fidelity_env200/results.json",
+        "/workspace/genedynamics/results/soft_robot/co_design/ablation/no_mode_no_fidelity_env200/results.json",
     "CMA-ES  env=100":
-        "/workspace/genedynamics/results/soft_robot/baselines/cmaes_crawling/results.json",
+        "/workspace/genedynamics/results/soft_robot/co_design/baselines/cmaes_crawling/results.json",
     "CEM     env=100":
-        "/workspace/genedynamics/results/soft_robot/baselines/cem_crawling/results.json",
+        "/workspace/genedynamics/results/soft_robot/co_design/baselines/cem_crawling/results.json",
     "CMA-ES  env=200":
-        "/workspace/genedynamics/results/soft_robot/baselines/cmaes_crawling_env200/results.json",
+        "/workspace/genedynamics/results/soft_robot/co_design/baselines/cmaes_crawling_env200/results.json",
     "CEM     env=200":
-        "/workspace/genedynamics/results/soft_robot/baselines/cem_crawling_env200/results.json",
+        "/workspace/genedynamics/results/soft_robot/co_design/baselines/cem_crawling_env200/results.json",
 }
 COLORS = {
     "MRMFMBD (main, mode marginalization + fidelity ladder)":        "#d62728",
@@ -155,7 +155,7 @@ def main():
         fontsize=13, weight="bold", y=1.01,
     )
     fig.tight_layout()
-    out = "/workspace/genedynamics/results/soft_robot/reward_comparison.png"
+    out = "/workspace/genedynamics/results/soft_robot/co_design/reward_comparison.png"
     fig.savefig(out, dpi=160, bbox_inches="tight")
     plt.close(fig)
     print(f"saved {out}")

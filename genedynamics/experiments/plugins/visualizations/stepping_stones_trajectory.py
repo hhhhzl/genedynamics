@@ -126,7 +126,8 @@ class SteppingStonesTrajectoryVisualizationPlugin(VisualizationPlugin):
         )
         if not (states.ndim == 2 and states.shape[1] >= 3):
             _draw_scene_ir(ax, scene_ir)
-            ax.set_xticks([]); ax.set_yticks([]); ax.grid(True, alpha=0.25)
+            ax.set_xlabel("x (m)", fontsize=26); ax.set_ylabel("y (m)", fontsize=26)
+            ax.tick_params(labelsize=22); ax.grid(False)
             return
 
         body, _yaw, feet, mode = decode_plan_states(
@@ -235,9 +236,10 @@ class SteppingStonesModesVisualizationPlugin(VisualizationPlugin):
                 ax.plot(fp[:, 0], fp[:, 1], color=foot_colors[leg],
                         linewidth=f_lw, alpha=f_a,
                         zorder=2.7 if is_best else 2.2)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.grid(True, alpha=0.25)
+        ax.set_xlabel("x (m)", fontsize=26)
+        ax.set_ylabel("y (m)", fontsize=26)
+        ax.tick_params(labelsize=22)
+        ax.grid(False)
 
     def save(self, output_path: Any, fig: Any, **kwargs: Any) -> None:
         fig.savefig(output_path, dpi=kwargs.get("dpi", 150),

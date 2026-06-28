@@ -55,7 +55,17 @@ def main(argv=None) -> int:
     p.add_argument("--network-interface", default="eth0")
     p.add_argument("--domain-id", type=int, default=0)
     p.add_argument("--control-hz", type=float, default=50.0)
+    p.add_argument("--loco-rate-hz", type=float, default=10.0,
+                   help="Max rate to republish the velocity command to the loco RPC. The call is "
+                        "BLOCKING; republishing every control step floods the channel and stalls the "
+                        "loop (the walk-3s/stop-5s symptom). 10 Hz + the 1.5s command duration is smooth.")
     p.add_argument("--max-steps", type=int, default=None)
+    # Validated execution config (matches run_sport_mode_zones defaults): time-scale
+    # the plan so the tracker keeps up, and hold the goal so it finishes the traverse.
+    p.add_argument("--plan-speed", type=float, default=0.5,
+                   help="plan playback speed (<1 slows it so the tracker keeps up; sim-validated 0.5). Start SMALLER on first real runs.")
+    p.add_argument("--goal-hold-sec", type=float, default=5.0,
+                   help="seconds to hold the goal after the plan ends so the lagging robot finishes (sim-validated 5.0)")
     p.add_argument("--out-dir", default="results/g1_corridor/real")
     p.add_argument("--dry-run", action="store_true", help="Assemble + validate without the SDK/robot.")
     args = p.parse_args(argv)
@@ -67,7 +77,7 @@ def main(argv=None) -> int:
 
     # ----- body_sdf_scene (the AR obstacles the governor avoids) --------------
     from genedynamics.deploy.ar.scene_source import SceneSource
-    from genedynamics.envs.humanoid_corridor_2d import corridor_scene_to_dict
+    from genedynamics.envs.domains.humanoid.corridor import corridor_scene_to_dict
     if args.scene_file:
         src = SceneSource.from_file(args.scene_file, T_world_scene=t_world_scene)
     else:
@@ -82,10 +92,14 @@ def main(argv=None) -> int:
             from genedynamics.deploy.localization.vicon_shm_plugin import ViconShmPlugin
             return ViconShmPlugin({})
         if args.localization == "ros2":
-            from genedynamics.deploy.localization.ros2_odometry_plugin import Ros2OdometryLocalizationPlugin
-            return Ros2OdometryLocalizationPlugin({"topic": "/odom"})
+            from genedynamics.deploy.localization.ros2_odometry_plugin import ROS2OdometryPlugin
+            return ROS2OdometryPlugin({"odom_topic": "/odom"})
         from scripts.tasks.robot.humanoid.run_twin_server import _FixedPoseLocalization
-        return _FixedPoseLocalization(src.scene and [*src.scene.start_pos, 0.0, 1.0, 0.0, 0.0, 0.0])
+        # z = G1 nominal standing pelvis height: mock has no real base height, and the
+        # fall detector reads pelvis z — z=0 would false-trigger "fell over" on a robot
+        # that is actually standing (sport MainMode). Real localization (vicon) supplies
+        # the true height.
+        return _FixedPoseLocalization(src.scene and [*src.scene.start_pos, 0.793, 1.0, 0.0, 0.0, 0.0])
 
     if args.dry_run:
         import numpy as np
@@ -117,7 +131,7 @@ def main(argv=None) -> int:
         msc_mode="sport", control_period_s=1.0 / args.control_hz,
         torque_safety_margin=0.85, localization=loc,
     )
-    loco = RealLocoClient(nominal_step_period=0.6, rate_limit_hz=args.control_hz)
+    loco = RealLocoClient(nominal_step_period=0.6, rate_limit_hz=args.loco_rate_hz)
 
     result = diagnose(
         plan, io=io, loco_client=loco, control_hz=args.control_hz,
@@ -125,7 +139,9 @@ def main(argv=None) -> int:
         governor_cfg={**GOVERNOR_CFG, "m_track": m_track},
         gov_cmd_lpf=GOV_CMD_LPF, body_sdf_activation_band=GOV_ACTIVATION_BAND,
         body_sdf_lookahead=lookahead, body_sdf_scene=body_sdf_scene,
-        spark_pd_gains=False, max_steps=args.max_steps, out_dir=Path(args.out_dir),
+        spark_pd_gains=False, max_steps=args.max_steps,
+        plan_speed=args.plan_speed, goal_hold_sec=args.goal_hold_sec,
+        out_dir=Path(args.out_dir),
     )
     print_report(result)
     return 0 if result.certified_safe else 1

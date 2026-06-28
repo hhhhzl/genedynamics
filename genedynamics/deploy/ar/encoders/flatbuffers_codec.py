@@ -31,7 +31,7 @@ try:
     from twin import Entity as _E  # type: ignore
     from twin import Geometry as _G  # type: ignore
     from twin import Pose as _P  # type: ignore
-    from twin import Quat as _Q  # type: ignore  # noqa: F401 (struct used via CreatePose)
+    from twin import Quat as _Q  # type: ignore   (struct used via CreatePose)
     from twin import Vec3 as _V3  # type: ignore
     from twin import WorldSnapshot as _WS  # type: ignore
     _AVAILABLE = True
@@ -41,7 +41,7 @@ except Exception as _exc:  # pragma: no cover
 
 BINARY = True
 
-_ETYPE = {"obstacle": 0, "wall": 1, "robot": 2, "arm_link": 3, "goal": 4, "path": 5, "occluder": 6}
+_ETYPE = {"obstacle": 0, "wall": 1, "robot": 2, "arm_link": 3, "goal": 4, "path": 5, "occluder": 6, "viewer": 7}
 _GKIND = {"box": 0, "sphere": 1, "cylinder": 2, "capsule": 3, "usd": 4, "urdf": 5, "path": 6}
 _ETYPE_R = {v: k for k, v in _ETYPE.items()}
 _GKIND_R = {v: k for k, v in _GKIND.items()}

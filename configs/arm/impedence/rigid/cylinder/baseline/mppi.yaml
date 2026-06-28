@@ -1,0 +1,8 @@
+# MPPI (baseline) — same sampler + position-stiffness primitive; MDAC seams OFF (solver-level DIAL-equivalent).
+# environment: cylinder (S1 analytic cylinder)
+base: ../../_base.yaml
+
+level: cylinder
+method: mppi
+name: arm_impedence_rigid_cylinder_mppi
+output_dir: results/arm/impedence/rigid/cylinder/baseline/mppi

@@ -1,0 +1,8 @@
+# Ablation: NO metric tangent projection (use_tangent_projection off -> geometry_fn = None).
+# environment: convex (S2 convex NURBS)
+base: ../../_base.yaml
+
+level: convex
+method: mdac_no_tangent
+name: arm_impedence_rigid_convex_mdac_no_tangent
+output_dir: results/arm/impedence/rigid/convex/ablation/mdac_no_tangent

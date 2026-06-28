@@ -57,7 +57,7 @@ class JaxMpmEvaluatorConfig:
     # Phase 3: optional pre-robotized SoftBodySpec on disk. When set, the
     # evaluator skips build_scene(cfg) and instead deserializes the spec via
     # load_spec_npz, then calls build_scene_from_spec. Used by configs that
-    # consume mesh-derived bodies (configs/soft_robot/main_v2/crawling_from_mesh.yaml).
+    # consume mesh-derived bodies (configs/soft_robot/co_design/main_v2/crawling_from_mesh.yaml).
     softbody_spec_path: Optional[str] = None
     extra: Dict[str, Any] = field(default_factory=dict)
 
@@ -91,6 +91,12 @@ class JaxMpmRolloutEvaluator:
                   "backward_penalty_weight"):
             if k in self._runtime_config:
                 mpm_kwargs[k] = float(self._runtime_config[k])
+        # non-float MPMConfig overrides (open-loop trajectory controller etc.)
+        for k in ("n_control_nodes", "n_actuators", "env_horizon"):
+            if k in self._runtime_config:
+                mpm_kwargs[k] = int(self._runtime_config[k])
+        if "controller_kind" in self._runtime_config:
+            mpm_kwargs["controller_kind"] = str(self._runtime_config["controller_kind"])
 
         self._mpm_cfg = MPMConfig(**{k: v for k, v in mpm_kwargs.items()
                                      if k in MPMConfig.__dataclass_fields__})
@@ -125,6 +131,31 @@ class JaxMpmRolloutEvaluator:
         else:
             self._mode_friction = default_mode_friction
 
+        # Per-mode regime axes beyond friction (read by the M3BD marginalizer's
+        # per-mode dispatch). Each stays None unless its runtime_config knob is set
+        # -> the marginalizer falls back to the friction-only path. SLOPE is encoded
+        # as a gravity tilt: incline +theta -> g_vec = [-g*sin, -g*cos, 0] (gravity
+        # resists uphill +x motion), avoiding any terrain-field machinery.
+        import math as _math
+        import numpy as _np
+        self._mode_terrain = None
+        self._mode_gravity = None
+        self._mode_mass_scale = None
+        self._mode_init_vel = None
+        _g = float(getattr(self._mpm_cfg, "gravity", 3.8))
+        _slopes = self._runtime_config.get("mode_slope_deg")
+        if _slopes is not None:
+            self._mode_gravity = _np.asarray(
+                [[-_g * _math.sin(_math.radians(float(t))),
+                  -_g * _math.cos(_math.radians(float(t))), 0.0] for t in _slopes],
+                dtype=_np.float32)
+        _ms = self._runtime_config.get("mode_mass_scale")
+        if _ms is not None:
+            self._mode_mass_scale = _np.asarray([float(m) for m in _ms], dtype=_np.float32)
+        _iv = self._runtime_config.get("mode_init_vel")
+        if _iv is not None:
+            self._mode_init_vel = _np.asarray(_iv, dtype=_np.float32)
+
         # Phase 2.2: optional regime bank. When set, mode_id indexes a list of
         # RegimeSpec (terrain + friction + manipuland) instead of a friction
         # scalar. Defaults to None → legacy crawling_ground behavior.
@@ -133,15 +164,13 @@ class JaxMpmRolloutEvaluator:
             from genedynamics.envs.external.jax_mpm.tasks import (
                 make_train_bank, make_test_bank,
             )
+            # Generic "train_<task>" / "test_<task>" → make_{train,test}_bank(task).
+            # Covers locomotion / push / carry / hurdling / gripping / carry_terrain.
             kind = str(self.config.regime_bank_kind)
-            if kind == "train_locomotion":
-                self._regime_bank = make_train_bank(self._mpm_cfg.n_grid, task="locomotion")
-            elif kind == "test_locomotion":
-                self._regime_bank = make_test_bank(self._mpm_cfg.n_grid, task="locomotion")
-            elif kind == "train_push":
-                self._regime_bank = make_train_bank(self._mpm_cfg.n_grid, task="push")
-            elif kind == "test_push":
-                self._regime_bank = make_test_bank(self._mpm_cfg.n_grid, task="push")
+            if kind.startswith("train_"):
+                self._regime_bank = make_train_bank(self._mpm_cfg.n_grid, task=kind[len("train_"):])
+            elif kind.startswith("test_"):
+                self._regime_bank = make_test_bank(self._mpm_cfg.n_grid, task=kind[len("test_"):])
             else:
                 raise ValueError(f"Unknown regime_bank_kind: {kind!r}")
 

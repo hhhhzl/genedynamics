@@ -5,6 +5,9 @@ Pro / 手机 / 平板 / HoloLens / Quest / 网页）、性能极致、且对接�
 在现有 `deploy/ar`（`SceneSource` + `scene_server`）之上**生长**,不推倒重来。
 
 > 英文版见 `ARCHITECTURE.md`。本版额外说明 **P3 分布式层下沉到你的 `edgecloud` 模块**。
+>
+> **未来兼容生态路线图**(还能接哪些 OpenXR 头显、Unreal、ROS2、传输、非 AR 消费者等,
+> 含逐项状态:已做 / 可达 / 红线外)见 `future.md`。
 
 ## 0. 唯一的原则
 
@@ -93,6 +96,21 @@ table WorldSnapshot { schema_version:uint; site:string; stamp_ns:ulong;
 - **WebXR/three.js** —— 零安装的 Android/网页视图。
 - **真实机器人遮挡(你的 Q3)**:发一个 `Occluder` 实体到机器人**被跟踪的世界位姿**(URDF/代理网格);各引擎用"只写深度、不画颜色"的隐形材质渲染它 → 真实机器人正确遮挡虚拟墙。
 
+### 4a. Meta / Quest 目标(OpenXR + Meta XR SDK)
+
+**默认头显目标:Meta Quest 3 / 3S / Pro**(passthrough MR)。它们是真正的 MR 设备——6-DoF inside-out 跟踪 + 彩色透视——所以能像 Vision Pro 一样渲染世界锁定的全息体。**Ray-Ban / Ray-Ban Display 不是目标**:单目 HUD,无第三方 6-DoF、无空间渲染 runtime,锁不住全息体。这是硬件/SDK 限制,不是引擎选择问题。
+
+**ARCore 和 Quest 是两个不同的 runtime,不是迁移路径。** ARCore 是 Android **手机**端 runtime;Quest 是 **OpenXR + Meta XR SDK**,不调用 ARCore。这套架构的意义在于:你把每个 runtime 当成**同一棵树的叶子**——**STATE / SCHEMA / TRANSPORT 以及整个 RENDER 适配器(`WorldRenderer` + `WorldClient` + `EntityState` + `(-y,z,x)` 基变换)全不变**。Quest 是 Android,所以 WebSocket / WebTransport 末端也不变。相对手机路径**只有两处不同**:
+
+1. **XR provider 插件** —— 把 *ARCore XR Plugin* 换成 **Meta OpenXR feature / Meta XR SDK**,build target 改 Quest。这是 Unity player settings,**不是代码**——`WorldRenderer.cs` 不 import 任何 XR 包。
+2. **配准** —— *谁驱动* `FrameRegistration.WorldOriginAnchor`。手机用 `ARTrackedImageManager` 认 surveyed fiducial;OpenXR 头显用 **`OpenXRAnchorProvider`**(`clients/unity/Scripts/OpenXRAnchorProvider.cs`),即**厂商无关**的"头显贴 Vicon marker"配准器——同一个可替换契约(它只写那一个 anchor Transform)。`QuestAnchorProvider` 是它的薄 Quest 子类;**Pico / Magic Leap 2 / Android XR / Vive XR 直接挂 `OpenXRAnchorProvider`**——配准完全一致,只有 OpenXR feature group 不同(player settings)。
+
+**配准(对应 §4b 表里 Vision Pro 那一行——用你已有的 Vicon):** 头显贴一组刚性 Vicon marker。Vicon 流出头显世界位姿;Quest 自带跟踪给头显在 Unity 里的位姿;anchor 即闭式解 `anchor = headset_unity ∘ L⁻¹`,其中 `L` 是头显 Vicon 位姿过同一个 `(-y,z,x)` 映射(`FrameRegistration.WorldToAnchorLocalRot`,现已成为渲染与配准共用的**单一真源**)。`OpenXRAnchorProvider` 每个 Vicon 样本解一次,并对(准静态的)anchor 做 **EMA 平滑**——既去抖动,又**持续重新钉到 Vicon 真值**,所以一整段会话里全息体都不会漂离真机(一次性 fiducial 会漂)。头部高频运动由 Quest 低延迟本地跟踪渲染,Vicon 流的网络延迟只喂慢速漂移纠正——无害。**不需要 fiducial,也不需要 passthrough 相机权限**,且机器人 + 头显天然在同一个 Vicon 世界系(满足 §1)。
+
+> **安装偏移在上游。** marker→头帧的刚性偏移是生产者/标定的事(在 `producers/tracker_pose.py` 里处理,和机器人 base 一样),所以 Unity 端保持干净:它通过 `SetHeadsetPoseWorld(...)` 消费**已在 Vicon 世界系**的头显位姿,与传输无关(专用 headset-pose WS,或现有流上的一个 `headset/<id>`(`viewer`)实体——见 §1 / `populate_headset`)。Vicon 头显流不稳时把 `LockWhenConverged` 打开。
+
+> 其余生态仍是同一份 Unity 代码:iOS/Android(AR Foundation → ARKit/ARCore)、visionOS(PolySpatial)、**以及所有 OpenXR 头显(Quest、Pico、Magic Leap 2、Android XR、Vive XR…)经 `OpenXRAnchorProvider`**——每个目标只有 XR feature group +(手机上)配准 provider 不同。
+
 ---
 
 ## 4b. 坐标系来源与配准 —— 与跟踪系统无关
@@ -169,7 +187,7 @@ deploy/ar/
   world_state.py         # 通用 WorldState(实体 + 每实体 rev)  [泛化 SceneSource]
   producers/
     corridor.py          # SceneSource 作为生产者
-    tracker_pose.py      # 机器人/头显世界位姿,来自任意 BaseLocalizationPlugin(vicon/optitrack/slam/vio/fiducial)
+    tracker_pose.py      # 机器人 base+occluder 以及 viewer 头显的世界位姿,来自任意 BaseLocalizationPlugin
     ros2.py              # ROS2 话题 → 实体
   encoders/
     json_codec.py        # 调试/浏览器(今天的契约)
@@ -179,10 +197,15 @@ deploy/ar/
     ws_json.py           # == 今天的 scene_server(留作调试/浏览器)
   registration/          # 世界原点助手,与跟踪系统无关(Se2Transform 在此)
   clients/
-    unity/   
-    swift/   
-    web/ # 各引擎适配器
+    unity/   # AR Foundation(手机/visionOS) + WorldRenderer/WorldClient;
+             #   OpenXRAnchorProvider.cs = 厂商无关 OpenXR 配准器
+             #   (Quest/Pico/ML2/Android XR);QuestAnchorProvider.cs = Quest 子类(§4a)
+    swift/   # RealityKit(Vision Pro)
+    web/     # WebXR / three.js
 ```
+
+> **Quest/Meta XR 工程配置清单**见 `clients/README.md` 的 "Setup — Meta Quest"
+> 一节(包/player settings/场景接线/部署),配准原理见 §4a。
 
 **迁移(每阶段都出价值,旧的不丢):**
 - **P0(已完成):** `SceneSource` + `scene_server`(WS+JSON)、`Se2Transform`、Unity 脚手架。

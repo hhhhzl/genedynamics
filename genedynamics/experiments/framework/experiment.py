@@ -150,6 +150,10 @@ class ExperimentRunner:
             **self.config.obstacle_config,
             'env_name': self.config.env_name,
         }
+        if self.config.env_name == 'quadruped_stepping_stones_2d':
+            for key in ('start_mid', 'goal_mid', 'fore_hind_offset', 'stance_width'):
+                if key in self.config.env_params:
+                    obstacle_config_with_env[key] = self.config.env_params[key]
         # 保证 start/goal 为圆心、robot_radius 为半径的圆不在障碍上；失败则重试采样 start
         max_start_retries = 5
         obstacles = None
@@ -176,6 +180,9 @@ class ExperimentRunner:
         physics_backend = env_params_with_obstacles.get('physics_backend', None)
         if physics_backend in ['mujoco', 'mjx', 'isaac', 'brax'] and len(obstacles) > 0:
             env_params_with_obstacles['obstacles'] = obstacles
+        if self.config.env_name == 'quadruped_stepping_stones_2d':
+            env_params_with_obstacles['scene_level'] = int(level)
+            env_params_with_obstacles['scene_seed'] = int(seed)
         # For D3IL avoiding envs: pass obstacle info for MuJoCo scene sync.
         if self.config.env_name in ['d3il_avoiding_9d', 'd3il_avoiding']:
             env_params_with_obstacles['obstacle_level'] = level
@@ -191,6 +198,11 @@ class ExperimentRunner:
                 env_params_with_obstacles['collision_ee_only'] = True
 
         env = env_plugin.create_env(env_params_with_obstacles)
+        if self.config.env_name == 'quadruped_stepping_stones_2d':
+            from genedynamics.envs.obstacles.stepping_stones import make_stepping_stones_obstacles
+            obstacles = make_stepping_stones_obstacles(env.scene)
+            if hasattr(env, 'obstacles'):
+                env.obstacles = obstacles
         energy = env_plugin.create_energy(env) if _accepts_env(env_plugin.create_energy) else env_plugin.create_energy()
         
         # Build SDF texture if needed (for CBF/MDOC/CFS filters that use sample_sdf_and_grad_2d)
@@ -633,6 +645,14 @@ class ExperimentRunner:
         
         # Check if CFS is enabled
         cfs_enabled = bool(constraint_pipeline is not None)
+
+        stepping_scene = None
+        if self.config.env_name == 'quadruped_stepping_stones_2d':
+            try:
+                from genedynamics.tasks.stepping_stones import stepping_scene_to_dict
+                stepping_scene = stepping_scene_to_dict(getattr(env, 'scene', None))
+            except Exception:
+                stepping_scene = None
         
         experiment_result = {
             'level': level,
@@ -647,6 +667,7 @@ class ExperimentRunner:
             'num_union_obstacles': num_union_obstacles,
             'num_primitives_total': num_primitives_total,
             'cfs_enabled': cfs_enabled,
+            'stepping_scene': stepping_scene,
         }
         
         # 12. Generate visualizations
@@ -1246,6 +1267,7 @@ class ExperimentRunner:
     def _compute_modes_metrics(
         self,
         candidate_states_list: list,
+        candidate_actions_list: Optional[list],
         env: Any,
         obstacles: Any,
         constraints: Any,
@@ -1271,6 +1293,13 @@ class ExperimentRunner:
         smoothnesses = []
         geom_smoothnesses = []
         violation_rates = []
+        stepping_metric = None
+        if getattr(self.config, "env_name", None) == "quadruped_stepping_stones_2d":
+            try:
+                from genedynamics.experiments.plugins.metrics.stepping_stones import SteppingStonesMetricsPlugin
+                stepping_metric = SteppingStonesMetricsPlugin()
+            except Exception:
+                stepping_metric = None
 
         target = np.asarray(env.target, dtype=np.float32)
         target_pos = np.asarray(task_spec.extract_position(target), dtype=np.float32).reshape(-1)
@@ -1284,34 +1313,53 @@ class ExperimentRunner:
             if len(states_arr) == 0:
                 continue
 
-            # Safe: no collision (use body-aware SDF when available)
-            safe = True
-            has_body_sdf = callable(getattr(env, '_body_min_sdf_np', None))
-            if has_body_sdf:
-                for s in states_arr:
-                    if env._body_min_sdf_np(s) < 0.0:
-                        safe = False
-                        break
-            elif obstacles is not None and hasattr(obstacles, '__len__') and len(obstacles) > 0:
-                for s in states_arr:
-                    pos = np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1)
-                    sdf = obstacles.sdf(pos)
-                    sdf_val = float(np.asarray(sdf).item() if hasattr(sdf, "item") else sdf)
-                    if sdf_val < robot_radius:
-                        safe = False
-                        break
-                    if obstacles.contains(pos):
-                        safe = False
-                        break
+            if stepping_metric is not None:
+                actions_i = []
+                if candidate_actions_list is not None and i < len(candidate_actions_list):
+                    actions_i = candidate_actions_list[i]
+                try:
+                    mode_metrics = stepping_metric.compute(
+                        Trajectory(states=states_arr, actions=actions_i),
+                        env,
+                        obstacles,
+                        constraints,
+                        planning_result={},
+                        planning_time=0.0,
+                        obstacle_config=self.config.obstacle_config,
+                    )
+                    if bool(mode_metrics.get("success", False)):
+                        ssr_count += 1
+                except Exception:
+                    pass
+            else:
+                # Safe: no collision (use body-aware SDF when available)
+                safe = True
+                has_body_sdf = callable(getattr(env, '_body_min_sdf_np', None))
+                if has_body_sdf:
+                    for s in states_arr:
+                        if env._body_min_sdf_np(s) < 0.0:
+                            safe = False
+                            break
+                elif obstacles is not None and hasattr(obstacles, '__len__') and len(obstacles) > 0:
+                    for s in states_arr:
+                        pos = np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1)
+                        sdf = obstacles.sdf(pos)
+                        sdf_val = float(np.asarray(sdf).item() if hasattr(sdf, "item") else sdf)
+                        if sdf_val < robot_radius:
+                            safe = False
+                            break
+                        if obstacles.contains(pos):
+                            safe = False
+                            break
 
-            # Task success (TaskSpec handles 2D point target and d3il_avoiding line target)
-            final_pos = np.asarray(task_spec.extract_position(states_arr[-1]), dtype=np.float32).reshape(-1)
-            task_success = task_spec.success_criterion(
-                final_pos, target_pos, success_margin, env_name=getattr(self.config, "env_name", None)
-            )
+                # Task success (TaskSpec handles 2D point target and d3il_avoiding line target)
+                final_pos = np.asarray(task_spec.extract_position(states_arr[-1]), dtype=np.float32).reshape(-1)
+                task_success = task_spec.success_criterion(
+                    final_pos, target_pos, success_margin, env_name=getattr(self.config, "env_name", None)
+                )
 
-            if safe and task_success:
-                ssr_count += 1
+                if safe and task_success:
+                    ssr_count += 1
 
             # Length: sum of segment lengths (skip if trajectory has NaN - e.g. Go2 rollout instability)
             positions = np.array([np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1) for s in states_arr])
@@ -1397,12 +1445,15 @@ class ExperimentRunner:
 
         # Modes-based metrics when candidate data exists
         candidate_states_list = []
+        candidate_actions_list = []
         if planning_result is not None:
             cand_states = planning_result.get('candidate_states', [])
             cand_actions = planning_result.get('candidate_actions', [])
             initial_state = planning_result.get('initial_state', None)
             if _has_items(cand_states):
                 candidate_states_list = list(cand_states)
+                if _has_items(cand_actions):
+                    candidate_actions_list = list(cand_actions)
             elif _has_items(cand_actions) and initial_state is not None and hasattr(env, 'rollout_actions'):
                 initial = np.asarray(initial_state, dtype=np.float32)
                 for acts in cand_actions:
@@ -1410,6 +1461,7 @@ class ExperimentRunner:
                     try:
                         states = env.rollout_actions(initial, acts_arr)
                         candidate_states_list.append([np.asarray(s, dtype=np.float32) for s in states])
+                        candidate_actions_list.append(acts_arr)
                     except Exception:
                         pass
 
@@ -1418,7 +1470,7 @@ class ExperimentRunner:
             use_target_line = bool(method_params.get("use_target_line", False))
             num_targets = int(method_params.get("num_targets", 4))
             modes_metrics = self._compute_modes_metrics(
-                candidate_states_list, env, obstacles, constraints, env_plugin,
+                candidate_states_list, candidate_actions_list, env, obstacles, constraints, env_plugin,
                 robot_radius, success_margin,
                 use_target_line=use_target_line,
                 num_targets=num_targets,
@@ -1633,7 +1685,7 @@ class ExperimentRunner:
                                             viz_cfg
                                         )
                                         tmp_path = trajectory_dir / f"_gif_best_{label}_{t}.png"
-                                        fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                        fig_g.savefig(tmp_path, dpi=100)
                                         plt.close(fig_g)
                                         temp_frames.append(tmp_path)
                                     if temp_frames:
@@ -1690,7 +1742,7 @@ class ExperimentRunner:
                                             fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
                                             viz_plugin.visualize(fig_g, ax_g, {**data_modes, 'partial_until_step': t}, viz_cfg)
                                             tmp_path = trajectory_dir / f"_gif_modes_{t}.png"
-                                            fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                            fig_g.savefig(tmp_path, dpi=100)
                                             plt.close(fig_g)
                                             temp_frames_m.append(tmp_path)
                                         if temp_frames_m:
@@ -1715,7 +1767,7 @@ class ExperimentRunner:
                                         viz_cfg
                                     )
                                     tmp_path = trajectory_dir / f"_gif_best_{t}.png"
-                                    fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                    fig_g.savefig(tmp_path, dpi=100)
                                     plt.close(fig_g)
                                     temp_frames.append(tmp_path)
                                 if temp_frames:
@@ -1784,7 +1836,7 @@ class ExperimentRunner:
                                     fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
                                     viz_plugin.visualize(fig_g, ax_g, {**data_plan, 'partial_until_step': t}, viz_cfg)
                                     tmp_path = trajectory_dir / f"_gif_modes_plan_{t}.png"
-                                    fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                    fig_g.savefig(tmp_path, dpi=100)
                                     plt.close(fig_g)
                                     temp_frames.append(tmp_path)
                                 if temp_frames:
@@ -1840,7 +1892,7 @@ class ExperimentRunner:
                                         fig_g, ax_g = plt.subplots(1, 1, figsize=(8, 8))
                                         viz_plugin.visualize(fig_g, ax_g, {**data_exec, 'partial_until_step': t}, viz_cfg)
                                         tmp_path = trajectory_dir / f"_gif_modes_exec_{t}.png"
-                                        fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                        fig_g.savefig(tmp_path, dpi=100)
                                         plt.close(fig_g)
                                         temp_frames.append(tmp_path)
                                     if temp_frames:
@@ -1886,7 +1938,7 @@ class ExperimentRunner:
                                         viz_cfg
                                     )
                                     tmp_path = trajectory_dir / f"_gif_modes_{t}.png"
-                                    fig_g.savefig(tmp_path, dpi=100, bbox_inches='tight')
+                                    fig_g.savefig(tmp_path, dpi=100)
                                     plt.close(fig_g)
                                     temp_frames.append(tmp_path)
                                 if temp_frames:
@@ -2235,14 +2287,13 @@ class ExperimentRunner:
         x = np.arange(n_steps)
         # X-axis: 100, 80, 60, 40, 20, 1 (data goes to 1)
         def set_diffusion_axis(ax, n_steps):
-            tick_labels = [100, 80, 60, 40, 20, 1]
-            tick_positions = [n_steps - k for k in tick_labels if 1 <= k <= n_steps]
-            tick_labels = [k for k in tick_labels if 1 <= k <= n_steps]
-            if not tick_positions:
-                tick_positions = [0, n_steps - 1]
-                tick_labels = [str(n_steps), "1"]
-            ax.set_xticks(tick_positions)
-            ax.set_xticklabels([str(l) for l in tick_labels])
+            # Adaptive ticks scaled to n_steps (fixes the old hard-coded 100 cap for n>100).
+            n = max(1, int(n_steps))
+            labels = sorted({n, 1} | {max(1, int(round(f * n))) for f in (0.8, 0.6, 0.4, 0.2)},
+                            reverse=True)
+            positions = [n - k for k in labels]
+            ax.set_xticks(positions)
+            ax.set_xticklabels([str(k) for k in labels])
             ax.set_xlabel('Diffusion Step')
 
         # cost_best.png: best trajectory cost, smoothed, no grid
@@ -2351,16 +2402,17 @@ class ExperimentRunner:
         integer_metrics = {'topK', 'I_QP'}
 
         def set_diffusion_axis(ax, n_steps):
-            tick_labels = [100, 80, 60, 40, 20, 1]
-            tick_positions = [n_steps - k for k in tick_labels if 1 <= k <= n_steps]
-            tick_labels = [k for k in tick_labels if 1 <= k <= n_steps]
-            if not tick_positions:
-                tick_positions = [0, n_steps - 1]
-                tick_labels = [str(n_steps), "1"]
-            ax.set_xticks(tick_positions)
-            ax.set_xticklabels([str(l) for l in tick_labels], fontsize=18)
-            ax.set_xlabel('Diffusion Step', fontsize=18)
-            ax.tick_params(axis='y', labelsize=18)
+            # Adaptive diffusion-step ticks scaled to n_steps (~6 labels from n down to 1).
+            # Generalises the old hard-coded [100,80,60,40,20,1], which only labelled up to
+            # 100 and left steps >100 unticked / mislabelled.  For n=100 it reproduces it.
+            n = max(1, int(n_steps))
+            labels = sorted({n, 1} | {max(1, int(round(f * n))) for f in (0.8, 0.6, 0.4, 0.2)},
+                            reverse=True)
+            positions = [n - k for k in labels]          # k=n -> pos 0 (left); k=1 -> pos n-1 (right)
+            ax.set_xticks(positions)
+            ax.set_xticklabels([str(k) for k in labels], fontsize=22)
+            ax.set_xlabel('Diffusion Step', fontsize=26)
+            ax.tick_params(axis='y', labelsize=22)
 
         plot_indices = list(range(11)) if is_adaptive else [0, 1, 2, 5, 6, 7, 8, 9, 10]
         x = np.arange(K)
@@ -2433,20 +2485,18 @@ class ExperimentRunner:
             ax1.step(xr, rho_fam[:Kp], where='mid', color='#d62728', linewidth=2.2,
                      label=r'$\rho_k$ (transport family)')
             ax1.set_yticks([0, 1, 2])
-            ax1.set_yticklabels(['DDPM', 'DDIM', 'FM'], fontsize=14)
+            ax1.set_yticklabels(['DDPM', 'DDIM', 'FM'], fontsize=22)
             ax1.set_ylim(-0.3, 2.3)
             set_diffusion_axis(ax1, Kp)
-            ax1.set_ylabel(r'$\rho_k$ transport family', fontsize=16, color='#d62728')
+            ax1.set_ylabel(r'$\rho_k$ transport family', fontsize=26, color='#d62728')
             ax2 = ax1.twinx()
             ax2.plot(xr, rho_sig[:Kp], color='#1f77b4', linewidth=2.0,
                      label=r'$\sigma_{k,\mathrm{eff}}$')
-            ax2.set_ylabel(r'$\sigma_{k,\mathrm{eff}}$', fontsize=16, color='#1f77b4')
-            ax2.tick_params(axis='y', labelsize=14)
-            ax1.set_title(r'Transport family $\rho_k$ and effective noise $\sigma_{k,\mathrm{eff}}$',
-                          fontsize=18, fontweight='bold')
+            ax2.set_ylabel(r'$\sigma_{k,\mathrm{eff}}$', fontsize=26, color='#1f77b4')
+            ax2.tick_params(axis='y', labelsize=22)
             h1, lab1 = ax1.get_legend_handles_labels()
             h2, lab2 = ax2.get_legend_handles_labels()
-            ax1.legend(h1 + h2, lab1 + lab2, loc='upper right', fontsize=12)
+            ax1.legend(h1 + h2, lab1 + lab2, loc='upper right', fontsize=22)
             fig.savefig(adaptive_dir / "rho_sigma.png", dpi=150, bbox_inches='tight')
             plt.close(fig)
 
@@ -2466,10 +2516,8 @@ class ExperimentRunner:
             ax1.plot(xr, theta_r[:Kp], color='#1f77b4', linewidth=2.0, linestyle='--',
                      label=r'$\theta_{\mathrm{route},k}$ (threshold)')
             set_diffusion_axis(ax1, Kp)
-            ax1.set_ylabel('Route ambiguity / threshold', fontsize=16)
-            ax1.set_title(r'Route ambiguity proxy $\Pi_{\mathrm{route}}$ vs threshold $\theta$',
-                          fontsize=18, fontweight='bold')
-            ax1.legend(loc='upper right', fontsize=12)
+            ax1.set_ylabel('Route ambiguity / threshold', fontsize=26)
+            ax1.legend(loc='upper right', fontsize=22)
             fig.savefig(adaptive_dir / "route_ambiguity.png", dpi=150, bbox_inches='tight')
             plt.close(fig)
 
@@ -2486,17 +2534,16 @@ class ExperimentRunner:
             fig, ax1 = plt.subplots(1, 1, figsize=(9, 5))
             ax1.plot(xr, vr[:Kp], color='#1f77b4', linewidth=2.0,
                      label=r'$v_{\mathrm{rate}}$ (violation rate)')
-            ax1.set_ylabel(r'$v_{\mathrm{rate}}$', fontsize=16, color='#1f77b4')
+            ax1.set_ylabel(r'$v_{\mathrm{rate}}$', fontsize=26, color='#1f77b4')
             set_diffusion_axis(ax1, Kp)
             ax2 = ax1.twinx()
             ax2.plot(xr, cv[:Kp], color='#d62728', linewidth=2.0, linestyle='--',
                      label=r'$\mathrm{CVaR}_{\alpha}$')
-            ax2.set_ylabel(r'$\mathrm{CVaR}_{\alpha}$', fontsize=16, color='#d62728')
-            ax2.tick_params(axis='y', labelsize=14)
-            ax1.set_title('Feasibility: violation rate & CVaR', fontsize=18, fontweight='bold')
+            ax2.set_ylabel(r'$\mathrm{CVaR}_{\alpha}$', fontsize=26, color='#d62728')
+            ax2.tick_params(axis='y', labelsize=22)
             h1, lab1 = ax1.get_legend_handles_labels()
             h2, lab2 = ax2.get_legend_handles_labels()
-            ax1.legend(h1 + h2, lab1 + lab2, loc='upper right', fontsize=12)
+            ax1.legend(h1 + h2, lab1 + lab2, loc='upper right', fontsize=22)
             fig.savefig(adaptive_dir / "feasibility.png", dpi=150, bbox_inches='tight')
             plt.close(fig)
 
@@ -2531,6 +2578,13 @@ class ExperimentRunner:
             "v_rate_hist",
             "v_mean_hist",
             "cvar_hist",
+            "rho_family_hist",
+            "rho_sigma_eff_hist",
+            "pi_multi_hist",
+            "theta_hist",
+            "delta_hist",
+            "eta_hist",
+            "sigma_hist",
         ]
         diag_payload: Dict[str, Any] = {"best_idx": best_idx}
         for key in diag_keys:
@@ -2591,6 +2645,8 @@ class ExperimentRunner:
             if isinstance(method_params, dict) and 'num_modes' in method_params:
                 num_modes = int(method_params['num_modes'])
         serializable_result['num_modes'] = num_modes
+        if result.get('stepping_scene') is not None:
+            serializable_result['stepping_scene'] = convert_to_json_serializable(result.get('stepping_scene'))
 
         metrics = result.get('metrics', {})
         

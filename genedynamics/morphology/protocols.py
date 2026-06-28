@@ -44,6 +44,13 @@ class SoftBodySpec:
     E_per_particle : optional (N,) float32
         Per-particle Young's modulus override. None → simulator uses
         a uniform E0 from cfg.
+    actuator_weight : optional (N, n_actuators) float32
+        Continuous per-particle actuation weights w[p, i] over actuator
+        groups. None → simulator derives a hard one-hot from actuator_id
+        (legacy behavior). Used by continuous-actuator co-design (A2) and
+        the DiffuseBot-style baseline, where actuator placement is a
+        co-designed field rather than a geometric rule. The one-hot derived
+        from actuator_id reproduces the legacy eigen-stress exactly.
 
     Notes
     -----
@@ -61,6 +68,7 @@ class SoftBodySpec:
     n_voxels: int
     voxel_dims: Tuple[int, int, int] = (1, 1, 1)
     E_per_particle: Optional[np.ndarray] = None
+    actuator_weight: Optional[np.ndarray] = None  # (N, n_actuators) continuous; None → one-hot(actuator_id)
 
     @property
     def n_particles(self) -> int:

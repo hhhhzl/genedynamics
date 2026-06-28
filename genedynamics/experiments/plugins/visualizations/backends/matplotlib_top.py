@@ -367,8 +367,8 @@ def render_corridor_top(
     a_lo = float(extras.get("ghost_alpha_min", 0.25))
     a_hi = float(extras.get("ghost_alpha_max", 0.6))
     # Publication-style chrome (paper defaults: big fonts, no title/legend/labels).
-    axis_fontsize = float(extras.get("axis_fontsize", 20))
-    tick_fontsize = float(extras.get("tick_fontsize", 16))
+    axis_fontsize = float(extras.get("axis_fontsize", 26))
+    tick_fontsize = float(extras.get("tick_fontsize", 22))
     show_title = bool(extras.get("show_title", False))
     show_legend = bool(extras.get("show_legend", False))
     # mode_paths: optional list of (T,2) xy arrays = other candidate trajectories
@@ -480,7 +480,7 @@ def render_corridor_top(
                      else "min-clearance frame")
             legend_patches.append(
                 mpatches.Patch(color=(0.95, 0.77, 0.06), label=label))
-        ax.legend(handles=legend_patches, loc="upper left", fontsize=6, framealpha=0.7)
+        ax.legend(handles=legend_patches, loc="upper left", fontsize=14, framealpha=0.7)
 
     ax.set_xlabel("x (m)", fontsize=axis_fontsize)
     ax.set_ylabel("y (m)", fontsize=axis_fontsize)
@@ -555,12 +555,15 @@ def render_stepping_top(
       - gif_style (bool)
     """
     extras = extras or {}
+    axis_fontsize = float(extras.get("axis_fontsize", 26))
+    tick_fontsize = float(extras.get("tick_fontsize", 22))
     _draw_stepping_scene(ax, scene)
 
     if not poses:
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.grid(True, alpha=0.25)
+        ax.set_xlabel("x (m)", fontsize=axis_fontsize)
+        ax.set_ylabel("y (m)", fontsize=axis_fontsize)
+        ax.tick_params(labelsize=tick_fontsize)
+        ax.grid(False)
         return
 
     body = np.array([(p.x, p.y) for p in poses], dtype=np.float32)
@@ -662,9 +665,11 @@ def render_stepping_top(
                        color=leg_colors[leg], edgecolor="white",
                        linewidths=0.5, zorder=5.5)
     else:
+        # End/goal star: match the diffusion_steps figures (red '*', plot markersize=15 ~ scatter s=225)
         ax.scatter(body[-1, 0], body[-1, 1], marker="*",
-                   s=90, color="#f04f88", zorder=5)
+                   s=225, color="r", zorder=10)
 
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.grid(True, alpha=0.25)
+    ax.set_xlabel("x (m)", fontsize=axis_fontsize)
+    ax.set_ylabel("y (m)", fontsize=axis_fontsize)
+    ax.tick_params(labelsize=tick_fontsize)
+    ax.grid(False)

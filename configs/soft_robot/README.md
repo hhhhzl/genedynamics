@@ -18,7 +18,13 @@ runs the experimental sweeps that produce the paper's tables and figures.
 | **Phase 4** | SHAC-only baseline (truncated h + critic + Polyak); MBD+SHAC top-K refinement (writeup §8.1); finite-grad guard | ✅ done | [main_v2/shac_only_crawling.yaml](main_v2/shac_only_crawling.yaml), [main_v2/crawling_alm_shac.yaml](main_v2/crawling_alm_shac.yaml), [solvers/single/shac/](../../genedynamics/solvers/single/shac/) |
 | **Phase 5** | Full ablation sweeps (writeup Tables 1-4) + figures + writeup wrap | ⏳ to run | this README §3-§5 |
 
-All v2 configs round-trip through `BaselineConfig`; the legacy `main/crawling_ground.yaml` still works unchanged.
+All configs run through the generic co-design runner, which dispatches the
+`baseline_name` (`mrmfmbd`/`cem`/`cmaes`/`shac`/`diffusebot`) to a **registered
+co-design solver** — there is no `experiments/.../baselines/` layer anymore.
+`cem` is the general `CEMSolver` consuming the co-design `(dynamics, energy)` env
+bridge (`envs/external/jax_mpm/codesign_env.py`); the others live in
+`solvers/single/codesign_optimizers/` and register via `solvers/single/codesign_solvers.py`.
+The legacy `main/crawling_ground.yaml` still works unchanged.
 
 > ⚠ **Two prerequisite gaps** must be closed before Phase 5 sweeps produce the writeup's main artifacts. See **[§1.5 Setup gaps](#15-setup-gaps-must-close-before-phase-5)** below for the exact commands.
 
@@ -71,7 +77,7 @@ What the writeup needs (DiffuseBot Figure 4 style):
 | Mitsuba 3 | `pip install mitsuba` (~200 MB) | 2 days | 9/10, path-traced |
 | Blender (subprocess) | install Blender + py script | 3-4 days | 10/10, what DiffuseBot likely used |
 
-**Recommended first cut** — `scripts/visualizations/render_soft_robot_checkpoints.py`:
+**Recommended first cut** — `scripts/visualizations/soft_robot/co_design/render_soft_robot_checkpoints.py`:
 1. Inputs: `results/<exp>/results_seed_*.json` (Phase 1 already saves `theta_history` of shape `(K, D)`)
 2. For each chosen checkpoint, re-rollout `(x_k, phi_k)` capturing per-particle positions
 3. PyVista off-screen render: particles as point cloud colored by `actuator_id`, programmatic wood plane, key + fill light
@@ -122,19 +128,22 @@ code is all in place; the work is sweeps, aggregation, and plots.
 ### 3.0 — Pre-flight (do this once)
 
 ```bash
-# 1. Sanity: configs parse and the baseline registry sees everything.
+# 1. Sanity: configs parse and the co-design solver registry sees everything.
+#    (Post-refactor: optimizers are REGISTERED SOLVERS, not 'baselines'. The
+#    experiments/.../baselines/ dir + BaselineProtocol dispatch are gone — the
+#    generic runner drives any registered co-design solver by name.)
 python -c "
 import yaml
-from genedynamics.experiments.framework.baselines import (
-    MRMFMBDBaseline, CMAESBaseline, CEMBaseline, SHACBaseline,
-)
+import genedynamics.solvers.single.codesign_solvers  # noqa  (registers mrmfmbd/cmaes/shac/diffusebot)
+from genedynamics.experiments.framework.codesign_runner import list_codesign_solvers
+assert set(['cem','cmaes','shac','diffusebot','mrmfmbd']) <= set(list_codesign_solvers()), list_codesign_solvers()
 for fn in [
-    'configs/soft_robot/main/crawling_ground.yaml',
-    'configs/soft_robot/main_v2/crawling_alm.yaml',
-    'configs/soft_robot/main_v2/locomotion_terrain.yaml',
-    'configs/soft_robot/main_v2/push.yaml',
-    'configs/soft_robot/main_v2/shac_only_crawling.yaml',
-    'configs/soft_robot/main_v2/crawling_alm_shac.yaml',
+    'configs/soft_robot/co_design/main/crawling_ground.yaml',
+    'configs/soft_robot/co_design/main_v2/crawling_alm.yaml',
+    'configs/soft_robot/co_design/main_v2/locomotion_terrain.yaml',
+    'configs/soft_robot/co_design/main_v2/push.yaml',
+    'configs/soft_robot/co_design/main_v2/shac_only_crawling.yaml',
+    'configs/soft_robot/co_design/main_v2/crawling_alm_shac.yaml',
 ]:
     yaml.safe_load(open(fn))
 print('all configs parse OK')
@@ -142,12 +151,12 @@ print('all configs parse OK')
 
 # 2. Single-seed smoke run on the legacy baseline (~5-10 min on a 24GB GPU).
 python scripts/tasks/soft_robot/co_design/main/run_co_design_with_gif.py \
-    configs/soft_robot/main/crawling_ground.yaml
-ls results/soft_robot/main/crawling_ground/   # expect: results.json + .gif
+    configs/soft_robot/co_design/main/crawling_ground.yaml
+ls results/soft_robot/co_design/main/crawling_ground/   # expect: results.json + .gif
 
 # 3. Phase 4 SHAC smoke (~15 min on a 24GB GPU; CPU-OK with smaller h/N).
 python scripts/tasks/soft_robot/co_design/main/run_co_design_with_gif.py \
-    configs/soft_robot/main_v2/shac_only_crawling.yaml
+    configs/soft_robot/co_design/main_v2/shac_only_crawling.yaml
 ```
 
 If any of the above fail, **stop and debug** before running sweeps — the same
@@ -178,12 +187,12 @@ m = json.load(open('data/asset_banks/loco_v1/manifest.json'))
 ok = sorted([a for a in m['assets'] if a['robotized']],
             key=lambda a: -a['report']['n_filled_cells'])[:5]
 for a in ok:
-    cfg = open('configs/soft_robot/main_v2/crawling_from_mesh.yaml').read()
+    cfg = open('configs/soft_robot/co_design/main_v2/crawling_from_mesh.yaml').read()
     cfg = cfg.replace(
         '# softbody_spec_path: data/asset_banks/loco_v1/robotized/<asset_id>.npz',
         f'softbody_spec_path: data/asset_banks/loco_v1/robotized/{a[\"id\"]}.npz',
     )
-    out = f'configs/soft_robot/main_v2/from_mesh_{a[\"id\"]}.yaml'
+    out = f'configs/soft_robot/co_design/main_v2/from_mesh_{a[\"id\"]}.yaml'
     open(out, 'w').write(cfg)
     print(out)
 "
@@ -252,11 +261,11 @@ For each row × {locomotion, push, carry}, run all 5 seeds. Locomotion uses
 ```bash
 # Example: run Method 10 (Ours) on locomotion across 5 seeds.
 python scripts/sweeps/run_sweep.py \
-    configs/soft_robot/main_v2/locomotion_terrain.yaml \
+    configs/soft_robot/co_design/main_v2/locomotion_terrain.yaml \
     --seeds 0,1,2,3,4
 ```
 
-Each successful run writes `results/soft_robot/main_v2/<exp>/results_seed_*.json`.
+Each successful run writes `results/soft_robot/co_design/main_v2/<exp>/results_seed_*.json`.
 
 ### 3.4 — Table 2: Controller-only (writeup §13.2 / Q3)
 
@@ -269,7 +278,7 @@ it, then point the new config at it via `morphology: [...]` in `method_params`.
 # Extract best morphology from a Table 1 result.
 python -c "
 import json, numpy as np
-r = json.load(open('results/soft_robot/main_v2/locomotion_terrain/results_seed_0.json'))
+r = json.load(open('results/soft_robot/co_design/main_v2/locomotion_terrain/results_seed_0.json'))
 x = np.asarray(r['x']).tolist()
 print('morphology:', x)
 " > best_morph.txt
@@ -349,8 +358,8 @@ Missing scripts (need to write):
 
 | Script | Status | Maps to writeup |
 |---|---|---|
-| `scripts/visualizations/render_soft_robot_checkpoints.py` | ❌ not written — see §1.5 Gap B for design | Figure 4 (qualitative evolution grid) |
-| `scripts/visualizations/render_asset_bank.py` | ❌ not written — uses same renderer as Gap B | Figure 2 row 1 (generated 3D asset) |
+| `scripts/visualizations/soft_robot/co_design/render_soft_robot_checkpoints.py` | ❌ not written — see §1.5 Gap B for design | Figure 4 (qualitative evolution grid) |
+| `scripts/visualizations/soft_robot/co_design/render_asset_bank.py` | ❌ not written — uses same renderer as Gap B | Figure 2 row 1 (generated 3D asset) |
 | `make_table1.py` | ❌ not written | Table 1 (wide CSV across all 11 methods × 3 tasks) |
 | `make_table4.py` | ❌ not written | Table 4 (fidelity ablation table) |
 | `make_figure3.py` | ❌ not written | Figure 3 (terrain regime heatmap) |

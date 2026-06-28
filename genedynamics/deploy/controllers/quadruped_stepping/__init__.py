@@ -25,6 +25,16 @@ from genedynamics.deploy.controllers.quadruped_stepping.stepping_walker import (
     SteppingWalkFollowerMinimal,
     load_stepping_plan_from_seed_dir,
 )
+from genedynamics.deploy.controllers.quadruped_stepping.governor import (
+    ExecDiagnostics,
+    ExecGates,
+    diagnose_candidates,
+    diagnose_plan,
+    GaitReference,
+    GovernorConfig,
+    StepPhase,
+    SteppingReferenceGovernor,
+)
 
 __all__ = [
     "QuadrupedSteppingController",
@@ -33,4 +43,14 @@ __all__ = [
     "SteppingWalkFollowerMinimal",
     "LEG_ORDER",
     "load_stepping_plan_from_seed_dir",
+    # execution-aware diagnostics (Rec. 1)
+    "ExecDiagnostics",
+    "ExecGates",
+    "diagnose_plan",
+    "diagnose_candidates",
+    # stepping reference governor (Rec. 2/3)
+    "SteppingReferenceGovernor",
+    "GovernorConfig",
+    "GaitReference",
+    "StepPhase",
 ]

@@ -92,7 +92,7 @@ class SceneParams:
 # CameraPose and ObservationBundle now live in genedynamics.data.types
 # (shared across all dataset adapters). Re-exported here for backward
 # compatibility with existing `from ...mbd3d.types import ObservationBundle`.
-from genedynamics.data.types import CameraPose, ObservationBundle  # noqa: F401
+from genedynamics.data.types import CameraPose, ObservationBundle  
 
 
 @dataclass

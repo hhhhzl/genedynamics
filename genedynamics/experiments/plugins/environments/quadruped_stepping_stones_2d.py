@@ -9,7 +9,7 @@ from typing import Any, Dict
 
 import numpy as np
 
-from genedynamics.envs.quadruped_stepping_stones_2d import (
+from genedynamics.envs.domains.quadruped.stepping_stones import (
     QuadrupedSteppingStones2DEnv,
     make_stepping_stones_energy,
 )
