@@ -1,4 +1,4 @@
-<mujoco model="h1 scene">
+<mujoco model="h1 box-push scene">
   <include file="mjx_h1_calf_hand_body.xml"/>
 
   <statistic center="0 0 1" extent="1.8"/>
@@ -21,10 +21,19 @@
     <light pos="0 0 3.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" size="0 0 0.05" type="plane" contype="2" conaffinity="1" material="groundplane"/>
 
-    <body name="box_body" pos="0 0 0.6">
-      <geom name="static_box" type="box" contype="4" conaffinity="1" size="0.6 0.6 0.6" friction="0.5" material="box_material" rgba="0.87 0.72 0.53 0.55"/>
+    <!-- visual goal LINE on the floor (x = goal); the env reads box_goal_x for the actual target -->
+    <site name="goal_line" pos="0.85 0 0.02" size="0.02 1.0 0.02" type="box" rgba="0.1 0.9 0.2 0.4"/>
+
+    <!-- RIGID crate (DIAL-size ~1 m), planar 3-DoF (x-slide + y-slide + yaw-hinge): translates and
+         rotates in the ground plane, so it can be straight-pushed (L1) and rotated to unjam (L3).
+         Sits on the floor at hand-reach distance so the RIGHT HAND pushes its upper face (z~0.9)
+         while the feet stay planted behind; the legs/shins are behind the crate face. -->
+    <body name="box_body" pos="0 0 0.55">
+      <geom name="static_box" type="box" contype="4" conaffinity="1" size="0.55 0.55 0.55" friction="0.5" material="box_material" rgba="0.87 0.72 0.53 0.6"/>
       <inertial mass="30.0" pos="0 0 0" diaginertia="0.1 0.1 0.1" />
-      <joint type="slide" axis="1 0 0" frictionloss="50.0"/>
+      <joint name="box_x" type="slide" axis="1 0 0" frictionloss="12.0"/>
+      <joint name="box_y" type="slide" axis="0 1 0" frictionloss="20.0"/>
+      <joint name="box_yaw" type="hinge" axis="0 0 1" frictionloss="8.0"/>
     </body>
   </worldbody>
 
@@ -38,7 +47,7 @@
     0
     0 0 0 0
     0 0 0 0
-    1.0
+    0.7 0 0
     "/>
   </keyframe>
 </mujoco>

@@ -173,6 +173,21 @@ class PandaSurfaceScanConfig:
     w_R: float = 1.0
     w_K: float = 0.01
     w_dK: float = 0.01
+    # AL h_surf measures the TANGENTIAL deviation only (project out the normal penetration the
+    # compliant contact naturally has) so soft-feasibility stops fighting the sink. Realized path
+    # (reads pipeline_state) -> not clean-state-limited. Gated (default off = original); on soft
+    # it lifts the AL methods (dial/mdac), validated: it stops the AL penalizing the natural sink.
+    h_surf_tangential: bool = False
+    # Soft-contact manifold (eq:soft_contact_residual): the realized contact residual targets the
+    # DEFORMED contact point S_0 − δ*·n instead of the undeformed surface, with target indentation
+    # δ* = f_target/(k̂+ε_k) and the local stiffness k̂ = F_real/(δ_real+ε_δ) ESTIMATED from the
+    # realized rollout (handles unknown / spatially-varying compliance: soft DR, hybrid maps). The
+    # rigid limit k̂→∞ ⇒ δ*→0 recovers the rigid residual. Replaces the rigid h_surf in the AL seam.
+    soft_contact_manifold: bool = False
+    eps_delta: float = 1.0e-4
+    eps_k: float = 1.0
+    delta_max: float = 0.03         # 0 ≤ δ* ≤ δ_max bound (eq) — caps the indentation target so the
+                                    # out-of-contact estimate (k̂→0) can't blow up the residual
 
 
 class PandaSurfaceScanEnv(PipelineEnv):
@@ -512,6 +527,15 @@ class PandaSurfaceScanEnv(PipelineEnv):
         p_h = ps.site_xpos[self._ee_site]
         R_h = ps.site_xmat[self._ee_site].reshape(3, 3)
         h_surf = p_h - p_d                                  # on-surface (eq 727)
+        if cfg.soft_contact_manifold:                       # soft-contact manifold: aim at the DEFORMED
+            F_real = self._contact_force_at(ps, xi, eta)    # contact S_0 − δ*·n; δ* estimated realized
+            delta_real = self._penetration_at(ps, xi, eta)
+            k_hat = F_real / (delta_real + cfg.eps_delta)   # k̂ = F_real / (δ_real + ε_δ)
+            delta_star = jnp.clip(cfg.f_target / (k_hat + cfg.eps_k), 0.0, cfg.delta_max)  # δ̂*, 0≤δ*≤δ_max
+            delta_star = jnp.where(delta_real > cfg.eps_delta, delta_star, 0.0)   # only IN contact (k̂ valid)
+            h_surf = h_surf + delta_star * n_s              # C_soft = p_h − p_d + δ̂*·n  (eq)
+        elif cfg.h_surf_tangential:                         # #1 (crude): drop the normal penetration
+            h_surf = h_surf - jnp.dot(h_surf, n_s) * n_s    # AL scores only the TANGENTIAL path
         h_normal = R_h[:, 2] + n_s                          # z aligned to -n_s (eq 731)
         h = jnp.concatenate([h_surf, h_normal])             # 6 equalities
         F_n_cmd = self._force_cmd(action[self.spec.nu_slice][0])
