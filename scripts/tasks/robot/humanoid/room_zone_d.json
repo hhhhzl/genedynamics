@@ -1,18 +1,88 @@
 {
-  "_help": "Zone D (faithful to CorridorScene.zone_d). Two small aerial spheres. (The env models them as full-height cylinders for planning, but they are DISPLAYED as aerial balls.) Edit + SAVE = live reload. Radii bumped slightly from the env's 0.06 for visibility.",
-
+  "_help": "AUTO-GENERATED to match the MuJoCo render (render_deploy_humanoid). Walls gray, obstacles teal, start green, goal blue; sizes match the overlay.",
   "site": "zone_d",
-
-  "markers": [
-    { "id": "start", "pos": [0.5, 0.0, 0.05], "radius": 0.08, "color": "3388FF99" },
-    { "id": "goal",  "pos": [3.5, 0.0, 0.05], "radius": 0.08, "color": "33CC6699" }
-  ],
-
   "obstacles": [
-    { "id": "ball_L1", "shape": "sphere", "pos": [2.0,  0.25, 1.0], "radius": 0.10, "color": "CC444466" },
-    { "id": "ball_R1", "shape": "sphere", "pos": [2.5, -0.25, 1.0], "radius": 0.10, "color": "CC444466" },
-
-    { "id": "wall_lo", "shape": "box", "pos": [2.0, -0.8, 0.5], "half": [2.0, 0.02, 0.5], "color": "8899AA33" },
-    { "id": "wall_hi", "shape": "box", "pos": [2.0,  0.8, 0.5], "half": [2.0, 0.02, 0.5], "color": "8899AA33" }
+    {
+      "id": "wall_left",
+      "type": "wall",
+      "shape": "box",
+      "pos": [
+        2.0,
+        0.8125,
+        0.33
+      ],
+      "half": [
+        2.0,
+        0.0125,
+        0.33
+      ],
+      "color": "B8BFCC47"
+    },
+    {
+      "id": "wall_right",
+      "type": "wall",
+      "shape": "box",
+      "pos": [
+        2.0,
+        -0.8125,
+        0.33
+      ],
+      "half": [
+        2.0,
+        0.0125,
+        0.33
+      ],
+      "color": "B8BFCC47"
+    },
+    {
+      "id": "ball_L1",
+      "type": "obstacle",
+      "shape": "sphere",
+      "pos": [
+        2.0,
+        0.25,
+        1.0
+      ],
+      "radius": 0.06,
+      "color": "5494996B"
+    },
+    {
+      "id": "ball_R1",
+      "type": "obstacle",
+      "shape": "sphere",
+      "pos": [
+        2.5,
+        -0.25,
+        1.0
+      ],
+      "radius": 0.06,
+      "color": "5494996B"
+    },
+    {
+      "id": "start",
+      "type": "goal",
+      "shape": "cylinder",
+      "pos": [
+        0.5,
+        0.0,
+        0.005
+      ],
+      "radius": 0.1,
+      "height": 0.01,
+      "color": "2EC76BCC"
+    },
+    {
+      "id": "goal",
+      "type": "goal",
+      "shape": "cylinder",
+      "pos": [
+        3.3,
+        0.0,
+        0.005
+      ],
+      "radius": 0.1,
+      "height": 0.01,
+      "color": "2E94F5CC"
+    }
   ]
 }

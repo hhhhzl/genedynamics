@@ -179,6 +179,7 @@ class Layout:
 
 # ---- server -----------------------------------------------------------------
 _rev = 0
+_scene_version = 0   # bumped whenever ANY client switches the scene -> all clients re-keyframe
 
 
 def _next_rev():
@@ -187,7 +188,13 @@ def _next_rev():
     return _rev
 
 
-async def _handler(ws, layout: Layout, hz: float, t0: float):
+def _resolve_scene(name, here: Path):
+    cand = here / f"room_{str(name).strip().lower()}.json"
+    return cand if cand.exists() else None
+
+
+async def _handler(ws, layout: Layout, hz: float, t0: float, here: Path):
+    global _scene_version
     peer = getattr(ws, "remote_address", ("?", 0))
     print(f"[mock_twin] client connected {peer}", flush=True)
 
@@ -196,28 +203,66 @@ async def _handler(ws, layout: Layout, hz: float, t0: float):
         ents = _static_entities(cfg, _next_rev()) + _robot_entities(cfg, _next_rev(), time.time() - t0)
         return _snapshot(cfg, ents, True, _rev)
 
+    # --- receiver: handle scene-switch commands, e.g. {"scene":"zone_c"} ---
+    async def receiver():
+        global _scene_version
+        try:
+            async for message in ws:
+                try:
+                    cmd = json.loads(message)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                name = cmd.get("scene") or cmd.get("preset") or cmd.get("name")
+                if not name:
+                    continue
+                p = _resolve_scene(name, here)
+                if p is None:
+                    print(f"[mock_twin] switch: room_{name}.json not found", flush=True)
+                    continue
+                layout.path = p
+                layout.reload(force=True)
+                _scene_version += 1   # all sender loops will re-keyframe
+                print(f"[mock_twin] switched -> {layout.cfg.get('site')} (by {peer})", flush=True)
+        except websockets.ConnectionClosed:
+            pass
+
+    recv_task = asyncio.ensure_future(receiver())
+
     await ws.send(json.dumps(keyframe()))
     print(f"[mock_twin] sent keyframe ({layout.cfg.get('site')})", flush=True)
+    last_ver = _scene_version
+    hb = 0
+    hb_every = max(1, int(hz // 4))             # ~4 Hz heartbeat
     try:
         period = 1.0 / max(1.0, hz)
         while True:
             await asyncio.sleep(period)
-            if layout.reload():  # file edited -> push a fresh full keyframe
+            if _scene_version != last_ver:          # a client switched the scene
+                last_ver = _scene_version
                 await ws.send(json.dumps(keyframe()))
-                print("[mock_twin] layout changed -> pushed new keyframe", flush=True)
+            elif layout.reload():                   # file edited live
+                await ws.send(json.dumps(keyframe()))
             else:
                 delta = _robot_entities(layout.cfg, _next_rev(), time.time() - t0)
                 if delta:
                     await ws.send(json.dumps(_snapshot(layout.cfg, delta, False, _rev)))
+                else:
+                    hb += 1                          # heartbeat: wakes the client's receive loop
+                    if hb >= hb_every:               # so it can flush queued commands (scene switch)
+                        hb = 0
+                        await ws.send(json.dumps(_snapshot(layout.cfg, [], False, _rev)))
     except websockets.ConnectionClosed:
         print(f"[mock_twin] client disconnected {peer}", flush=True)
+    finally:
+        recv_task.cancel()
 
 
-async def _main(host, port, hz, scene_path):
+async def _main(host, port, hz, scene_path, here):
     layout = Layout(scene_path)
     t0 = time.time()
-    async with websockets.serve(lambda ws: _handler(ws, layout, hz, t0), host, port):
-        print(f"[mock_twin] serving ws://{host}:{port}/ @ {hz:g} Hz  (edit {scene_path.name} live)", flush=True)
+    async with websockets.serve(lambda ws: _handler(ws, layout, hz, t0, here), host, port):
+        print(f"[mock_twin] serving ws://{host}:{port}/ @ {hz:g} Hz  "
+              f"(start={scene_path.name}; clients can switch with {{\"scene\":\"zone_x\"}})", flush=True)
         await asyncio.Future()
 
 
@@ -249,7 +294,7 @@ def main(argv=None):
         scene = here / "room.json"
 
     try:
-        asyncio.run(_main(args.host, args.port, args.hz, scene))
+        asyncio.run(_main(args.host, args.port, args.hz, scene, here))
     except KeyboardInterrupt:
         print("\n[mock_twin] stopped", flush=True)
 
