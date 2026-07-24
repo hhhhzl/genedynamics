@@ -1,0 +1,21 @@
+plan: mppi_zone_b
+plan_path: results/humanoid/corridor_2d/main/mppi_zone_b/level_1/seed_0/trajectory/trajectory.json
+
+control_hz: 50.0
+sim_dt: 0.002
+xy_kp: 1.5
+xy_correction_cap: 0.25
+yaw_kp: 0.0
+warmup_sec: 0.8
+cmd_lpf_tau: 0.0
+spark_pd_gains: true
+best_idx: null
+
+render:
+  cam_mode: global
+  cam_azimuth: 90
+  cam_elevation: -45
+  every_n: 4
+  width: 1200
+  height: 600
+  speed: 0.3

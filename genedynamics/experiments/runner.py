@@ -34,6 +34,7 @@ from genedynamics.experiments.plugins import (
     D3ILUnifiedMethodPlugin,
     CFSMBDMethodPlugin,
     CFSMBDFullMethodPlugin,
+    MPPIMethodPlugin,
     TwoGOMethodPlugin,
     DPCCMethodPlugin,
     SafeDiffuserMethodPlugin,
@@ -205,6 +206,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(D3ILUnifiedMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDFullMethodPlugin(), 'method')
+    runner.register_plugin(MPPIMethodPlugin(), 'method')
     runner.register_plugin(TwoGOMethodPlugin(), 'method')
     if DPCCMethodPlugin is not None:
         runner.register_plugin(DPCCMethodPlugin(), 'method')
@@ -274,4 +276,3 @@ def register_all_plugins(runner: ExperimentRunner):
 
 if __name__ == "__main__":
     main()
-

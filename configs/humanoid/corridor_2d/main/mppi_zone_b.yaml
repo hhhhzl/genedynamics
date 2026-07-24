@@ -1,0 +1,55 @@
+# MPPI baseline: Zone B U-shaped wall.
+name: humanoid_corridor_2d_mppi_zone_b
+output_dir: results/humanoid/corridor_2d/main/mppi_zone_b
+
+env_name: humanoid_corridor_2d
+env_params:
+  dt: 0.25
+  horizon: 50
+  scene_preset: zone_b
+  vx_max: 0.3
+  vx_min: -0.3
+  vy_max: 0.3
+  omega_max: 0.3
+  h_dot_max: 0.3
+  psi_torso_dot_max: 0.4
+  arm_tuck_rate_max: 1.0
+  arm_posture_rate_max: 1.0
+  collision_margin: 0.03
+
+method: mppi
+method_params:
+  num_samples: 1024
+  num_iterations: 100
+  noise_sigma: 0.35
+  lambda_: 1.0
+  action_limit: 1.0
+
+obstacle_levels: [1]
+obstacle_config:
+  generator: corridor_2d
+  robot_radius: 0.20
+  collision_margin: 0.03
+  success_margin: 0.20
+  scene_preset: zone_b
+
+seeds: [0, 1, 2, 3, 4]
+backend: jax
+device: cuda
+
+metrics: [corridor_metrics]
+visualizations: [corridor_trajectory, cost]
+
+visualization_config:
+  corridor_trajectory:
+    renderer: matplotlib_top
+    body_shape: capsule
+    arm_style: articulated
+    ghost_color: time
+    n_ghosts: 9
+    highlight: narrowest
+    axis_fontsize: 22
+    tick_fontsize: 16
+    show_title: false
+    show_legend: false
+    show_obstacle_labels: false

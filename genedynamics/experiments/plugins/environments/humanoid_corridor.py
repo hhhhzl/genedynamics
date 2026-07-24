@@ -29,7 +29,14 @@ class HumanoidCorridor2DPlugin(EnvironmentPlugin):
         env_kw = {k: v for k, v in config.items() if k != "physics_backend"}
         return make_env(self.name, **env_kw)
 
-    def create_energy(self) -> Any:
+    def create_energy(self, env: Any = None) -> Any:
+        # Bind the energy to the selected zone/long scene. The generic factory
+        # constructs the default medium scene, which gives zone experiments the
+        # wrong goal and corridor geometry.
+        if env is not None:
+            from genedynamics.envs.domains.humanoid.corridor import make_corridor_energy
+
+            return make_corridor_energy(env)
         return make_energy(self.name)
 
     def get_state_dim(self) -> int:

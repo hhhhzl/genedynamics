@@ -32,6 +32,7 @@ from .methods import (
     MDOCMethodPlugin,
     CFSMBDMethodPlugin,
     CFSMBDFullMethodPlugin,
+    MPPIMethodPlugin,
     TwoGOMethodPlugin,
     DPCCMethodPlugin,
     SafeDiffuserMethodPlugin,
@@ -107,6 +108,7 @@ __all__ = [
     'MDOCMethodPlugin',
     'CFSMBDMethodPlugin',
     'CFSMBDFullMethodPlugin',
+    'MPPIMethodPlugin',
     'TwoGOMethodPlugin',
     'DPCCMethodPlugin',
     'SafeDiffuserMethodPlugin',
@@ -160,4 +162,3 @@ __all__ = [
     'SteppingStones2DObstacleGeneratorPlugin',
     'Corridor2DObstacleGeneratorPlugin',
 ]
-

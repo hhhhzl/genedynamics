@@ -86,6 +86,11 @@ DEFAULT_PLAN = (
 
 # Convenience aliases so callers / batch drivers can pass a short name.
 PLAN_ALIASES = {
+    "mppi_long":    "results/humanoid/corridor_2d/main/mppi_long/level_1/seed_0/trajectory/trajectory.json",
+    "mppi_zone_a":  "results/humanoid/corridor_2d/main/mppi_zone_a/level_1/seed_0/trajectory/trajectory.json",
+    "mppi_zone_b":  "results/humanoid/corridor_2d/main/mppi_zone_b/level_1/seed_0/trajectory/trajectory.json",
+    "mppi_zone_c":  "results/humanoid/corridor_2d/main/mppi_zone_c/level_1/seed_0/trajectory/trajectory.json",
+    "mppi_zone_d":  "results/humanoid/corridor_2d/main/mppi_zone_d/level_1/seed_0/trajectory/trajectory.json",
     "twogo_long":   "results/humanoid/corridor_2d/main/twogo_long/level_1/seed_0/trajectory/trajectory.json",
     "twogo_zone_a": "results/humanoid/corridor_2d/main/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json",
     "twogo_zone_b": "results/humanoid/corridor_2d/main/twogo_zone_b/level_1/seed_0/trajectory/trajectory.json",

@@ -11,6 +11,7 @@ from .d3il_unified import D3ILUnifiedMethodPlugin
 from .mdoc import MDOCMethodPlugin
 from .cfsmbd import CFSMBDMethodPlugin
 from .cfsmbd_full import CFSMBDFullMethodPlugin
+from .mppi import MPPIMethodPlugin
 from .twogo import TwoGOMethodPlugin
 try:
     from .dpcc import DPCCMethodPlugin
@@ -31,8 +32,8 @@ __all__ = [
     'MDOCMethodPlugin',
     'CFSMBDMethodPlugin',
     'CFSMBDFullMethodPlugin',
+    'MPPIMethodPlugin',
     'TwoGOMethodPlugin',
     'DPCCMethodPlugin',
     'SafeDiffuserMethodPlugin',
 ]
-

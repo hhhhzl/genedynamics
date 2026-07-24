@@ -7,6 +7,7 @@ cd "$ROOT"
 echo "=== Stepping Stones 2D: main experiments ==="
 for cfg in \
   configs/quadruped/stepping_stones_2d/main/mbd.yaml \
+  configs/quadruped/stepping_stones_2d/main/mppi.yaml \
   configs/quadruped/stepping_stones_2d/main/ebmbd.yaml \
   configs/quadruped/stepping_stones_2d/main/mdoc.yaml \
   configs/quadruped/stepping_stones_2d/main/mdcoas.yaml \

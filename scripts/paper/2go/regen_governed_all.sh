@@ -26,7 +26,7 @@ CFG_DIR="configs/quadruped/stepping_stones_2d/deploy"
 
 MODE="${MODE:-governed}"          # governed | raw | both
 FIGURES="${FIGURES:-1}"           # 1 -> pass --figures (tracking/gait/motion-strip pngs)
-ALGOS="${ALGOS:-ebmbd mbd mdcoas mdoc twogo}"
+ALGOS="${ALGOS:-ebmbd mbd mppi mdcoas mdoc twogo}"
 LEVELS="${LEVELS:-1 5}"
 SEEDS="${SEEDS:-0 1 2 3 4}"
 

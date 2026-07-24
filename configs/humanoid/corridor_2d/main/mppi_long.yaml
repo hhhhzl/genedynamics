@@ -1,0 +1,56 @@
+# MPPI baseline: combined long corridor (zones A+C+D).
+name: humanoid_corridor_2d_mppi_long
+output_dir: results/humanoid/corridor_2d/main/mppi_long
+
+env_name: humanoid_corridor_2d
+env_params:
+  dt: 0.25
+  horizon: 150
+  scene_preset: medium
+  vx_max: 0.3
+  vx_min: -0.3
+  vy_max: 0.3
+  omega_max: 0.5
+  h_dot_max: 0.02
+  psi_torso_dot_max: 0.4
+  arm_tuck_rate_max: 1.0
+  arm_posture_rate_max: 1.0
+  collision_margin: 0.03
+
+method: mppi
+method_params:
+  # Same per-plan sampler/update budget as the long main experiments.
+  num_samples: 2048
+  num_iterations: 200
+  noise_sigma: 0.15
+  lambda_: 1.0
+  action_limit: 1.0
+
+obstacle_levels: [1]
+obstacle_config:
+  generator: corridor_2d
+  robot_radius: 0.20
+  collision_margin: 0.03
+  success_margin: 0.20
+  scene_preset: medium
+
+seeds: [0]
+backend: jax
+device: cuda
+
+metrics: [corridor_metrics]
+visualizations: []
+
+visualization_config:
+  corridor_trajectory:
+    renderer: matplotlib_top
+    body_shape: capsule
+    arm_style: articulated
+    ghost_color: time
+    n_ghosts: 9
+    highlight: narrowest
+    axis_fontsize: 22
+    tick_fontsize: 16
+    show_title: false
+    show_legend: false
+    show_obstacle_labels: false
