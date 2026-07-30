@@ -1,8 +1,8 @@
 """
 Cost vs diffusion-denoising-step curves for the 2GO paper benchmarks.
 
-Six figures, one per benchmark, each overlaying the 5 algorithms
-(MBD, EB-MBD, MDOC, MD-COAS, 2GO):
+Six figures, one per benchmark, each overlaying the 6 algorithms
+(MBD, EB-MBD, MDOC, MD-COAS, MPPI, 2GO):
   S1     -> stepping stones, level 1
   S5     -> stepping stones, level 5
   zone_a/b/c/d -> humanoid corridor 2D
@@ -29,12 +29,13 @@ HUMANOID_ROOT = _ROOT / "results" / "humanoid" / "corridor_2d" / "main"
 STEPPING_OUT = _ROOT / "results" / "quadruped" / "stepping_stones_2d" / "vis"
 HUMANOID_OUT = _ROOT / "results" / "humanoid" / "corridor_2d" / "vis"
 
-ALGOS_ORDER = ["mbd", "ebmbd", "mdoc", "mdcoas", "twogo"]
+ALGOS_ORDER = ["mbd", "ebmbd", "mdoc", "mdcoas", "mppi", "twogo"]
 ALGO_DISPLAY = {
     "mbd": "MBD",
     "ebmbd": "EB-MBD",
     "mdoc": "MDOC",
     "mdcoas": "MD-COAS",
+    "mppi": "MPPI",
     "twogo": "2GO",
 }
 ALGO_COLORS = {
@@ -42,6 +43,7 @@ ALGO_COLORS = {
     "ebmbd": "#9467bd",
     "mdoc": "#2ca02c",
     "mdcoas": "#1f77b4",
+    "mppi": "#E69F00",
     "twogo": "#d62728",
 }
 

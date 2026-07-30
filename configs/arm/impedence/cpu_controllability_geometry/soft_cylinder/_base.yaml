@@ -1,0 +1,7 @@
+base: ../rigid_cylinder/_base.yaml
+
+env_params:
+  medium: soft
+  soft_stiffness: 1500.0
+  h_surf_tangential: true
+  soft_contact_manifold: true

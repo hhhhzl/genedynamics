@@ -27,6 +27,12 @@ def test_rate():
     assert m.rate([False, False]) == 0.0
 
 
+def test_pearson_correlation():
+    assert m.pearson_correlation([0, 1, 2], [0, 2, 4]) == pytest.approx(1.0)
+    assert m.pearson_correlation([0, 1, 2], [4, 2, 0]) == pytest.approx(-1.0)
+    assert m.pearson_correlation([1, 1, 1], [0, 1, 2]) == 0.0
+
+
 # --- success / progress ---
 
 def test_goal_and_success():
@@ -108,6 +114,20 @@ def test_pose_error_and_path_completion():
                                  [[0.0, 0.0], [1.0, 0.0]]) - 0.6) < 1e-6
 
 
+def test_acquisition_aware_path_progress_and_coverage():
+    ref = np.stack([np.linspace(0.0, 1.0, 11), np.zeros(11)], axis=1)
+    pos = np.array([[0.0, 0.0], [0.2, 0.02], [0.4, 0.0], [0.6, 0.2]])
+    valid = np.array([0, 1, 1, 1])
+    # Max progress is independent of tracking tolerance and therefore retains
+    # the farthest valid closest-point projection.
+    assert m.max_path_progress(pos, ref, valid) == pytest.approx(0.6)
+    # Valid points cover neighborhoods around x=.2 and x=.4; the off-path .6
+    # point and acquisition x=0 point do not count.
+    assert m.trajectory_path_coverage(
+        pos, ref, valid, tolerance=0.051
+    ) == pytest.approx(2 / 11)
+
+
 def test_cvar_no_negative_zero():
     import math
     v = m.cvar([0.0, 0.0, 0.0], 0.95, "low")     # low tail of all-zeros -> +0.0, not -0.0
@@ -118,7 +138,10 @@ def test_cvar_no_negative_zero():
 
 def test_registry_and_signals():
     names = m.list_metrics()
-    for n in ["cvar", "goal_error", "violation_cvar", "smoothness", "energy", "fall_rate"]:
+    for n in [
+        "cvar", "pearson_correlation", "goal_error", "violation_cvar",
+        "smoothness", "energy", "fall_rate",
+    ]:
         assert n in names
     assert m.metric_signals("goal_error") == ("final_pos", "target")
     assert m.get_metric("goal_error") is m.goal_error

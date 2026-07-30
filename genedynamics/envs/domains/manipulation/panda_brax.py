@@ -8,10 +8,10 @@ position-stiffness primitive
     u^arm = (Δξ, Δη, Δψ, S_h, F_n^d),   K_h = exp(S_h) ∈ S³₊₊  (3×3 translational)
 
 ``action_size = 10`` via ``core/control.PrimitiveSpec(3, 3, 1)`` (3 surface-coord
-increments + svec(3×3)=6 + 1 force). Orientation stiffness is FIXED (``k_orient``,
-not in the action) — the probe orientation is determined by the surface normal
-``R_d e_z = -n_s``. The 6×6 full task-space stiffness (action 25) is an appendix
-scalability ablation, not the main primitive.
+increments + svec(3×3)=6 + 1 force). The simulated contact probe is spherical,
+so its default orientation stiffness is zero; ``k_orient`` remains available
+only for explicit non-spherical-tool ablations. The 6×6 full task-space
+stiffness (action 25) is an appendix scalability ablation, not the main primitive.
 
 The in-env impedance law (π_low, eq 698–724) reconstructs the desired pose from
 ``p_s(ξ,η)`` / normal ``n_s`` and maps the primitive to joint torques ``τ=Jᵀ F``.
@@ -77,14 +77,24 @@ def _ee_home_fk():
 
 
 def _build_contact_model(surface, ee0, n, depth, friction, solref, collidable=True):
-    """Place the analytic surface so its scan-start point sits ``depth`` below the
-    home EE, triangulate its heights into a mujoco HFIELD, and inject it (+ a
-    collidable EE probe when ``collidable``) into the Panda model -> a REAL contact model
-    (mjx sphere-hfield). For the hybrid medium ``collidable=False`` keeps the probe
-    non-collidable (the model-based Winkler reaction is applied in the impedance torque
-    instead, since mjx can't do a per-cell spatial stiffness). Returns (MjModel, surface)."""
+    """Place the scan start ``depth`` from the home EE along its local normal.
+
+    The controlled EE site is the *centre* of a spherical probe, whose desired
+    position is ``surface_point + probe_radius * normal``.  Aligning only the
+    surface point's x/y with the EE creates a large artificial tangential reset
+    error on tilted cylinder/NURBS patches.  Normal placement preserves the
+    intended contact gap while making the reset error purely normal.
+
+    The translated surface is triangulated into a MuJoCo HFIELD and injected
+    with the collidable probe.  Hybrid contact keeps the probe non-collidable
+    because its spatial Winkler reaction is applied by the impedance layer.
+    """
     p0 = np.asarray(sg.point(surface, 0.1, 0.5))
-    surface = sg.translate(surface, np.array([ee0[0] - p0[0], ee0[1] - p0[1], (ee0[2] - depth) - p0[2]]))
+    n0 = np.asarray(sg.normal(surface, 0.1, 0.5), dtype=np.float64)
+    n0 = n0 * np.sign(n0[2] + 1e-9)
+    n0 = n0 / max(float(np.linalg.norm(n0)), 1e-9)
+    scan_start = np.asarray(ee0, dtype=np.float64) - float(depth) * n0
+    surface = sg.translate(surface, scan_start - p0)
     g = np.linspace(0.0, 1.0, n)
     P = np.array([[np.asarray(sg.point(surface, xi, eta)) for eta in g] for xi in g])  # P[i=xi, j=eta]
     X, Y, Z = P[..., 0], P[..., 1], P[..., 2]
@@ -96,6 +106,18 @@ def _build_contact_model(surface, ee0, n, depth, friction, solref, collidable=Tr
     xml = open(_ASSET).read()
     if collidable:                                                     # rigid/soft: real mjx probe-hfield contact
         xml = xml.replace('contype="0" conaffinity="0" />', 'contype="1" conaffinity="1" />', 1)
+        # MuJoCo combines geom-pair friction using the higher-priority / larger
+        # coefficients. The probe XML otherwise inherits the default mu=1, which
+        # silently overrides every surface friction and unseen-DR draw below 1.
+        # Set both members of the real contact pair to the requested value.
+        xml = xml.replace(
+            'name="probe" type="sphere" size="0.02"',
+            (
+                'name="probe" type="sphere" size="0.02" '
+                f'friction="{friction:.3f} 0.01 0.001"'
+            ),
+            1,
+        )
     asset = f'<asset><hfield name="surf" nrow="{n}" ncol="{n}" size="{rx:.5f} {ry:.5f} {elev:.5f} 0.05"/></asset>'
     hgeom = (f'<geom name="surf" type="hfield" hfield="surf" pos="{cx:.5f} {cy:.5f} {zlo:.5f}" '
              f'contype="1" conaffinity="1" friction="{friction:.3f} 0.01 0.001" solref="{solref}"/>')
@@ -144,7 +166,24 @@ class PandaSurfaceScanConfig:
     # force feedback (kp_force) rejects the weight's contribution so the REAL contact
     # force still tracks the commanded F_n despite the uncompensated weight.
     grav_comp: float = 0.0
-    k_orient: float = 50.0          # FIXED orientation stiffness (not in action)
+    # Optional task-space gravity compensation projected into the surface tangent
+    # plane.  This removes the lateral static load that otherwise displaces a
+    # 200 N/m impedance by several millimetres, while deliberately preserving
+    # the normal component used for passive contact maintenance.  Default zero
+    # preserves all legacy experiments; staged scan configs opt in explicitly.
+    tangent_grav_comp: float = 0.0
+    # Cross-path-only bias cancellation. Positive gain subtracts the estimated
+    # task-space bias along the desired eta tangent, leaving scan and normal
+    # directions unchanged.
+    # Optional surface-tangent integral action for rejecting steady execution
+    # bias without changing the normal contact force. The state is a bounded
+    # Cartesian force (N); default zero preserves legacy impedance behavior.
+    ki_tangent: float = 0.0
+    tangent_int_max: float = 3.0
+    # The contact geom is a sphere, so orientation torque is physically
+    # unnecessary and couples arm rotation into the translational scan response.
+    # Non-spherical tool ablations must opt in explicitly.
+    k_orient: float = 0.0
     s_ref_diag: float = 5.3         # log-stiffness reference (K_ref ≈ exp(5.3) ≈ 200 N/m)
     s_scale: float = 2.0            # normalized svec [-1,1] -> log-stiffness offset (exp(3.3..7.3))
     # stiffness chart: "log_spd" K=exp(S) | "euclid" diag softplus | "fixed" K_ref | "none" I
@@ -173,6 +212,58 @@ class PandaSurfaceScanConfig:
     w_R: float = 1.0
     w_K: float = 0.01
     w_dK: float = 0.01
+    # Optional dimensionless reward scales. Non-positive values preserve the
+    # legacy raw-coordinate / raw-Newton costs exactly.
+    reward_path_scale: float = 0.0
+    reward_force_scale: float = 0.0
+    # Tangential error of the REAL end-effector against the time-indexed scan
+    # reference.  This is deliberately separate from ``w_path``: ``w_path``
+    # scores command coordinates, whereas this term makes a command that races
+    # ahead of the physical probe expensive.  Normal indentation is projected
+    # out so compliant contact is not mistaken for path-tracking failure.
+    # Default zero preserves every legacy experiment.
+    w_realized_path: float = 0.0
+    # Optional realized-risk terms used by the diagnostic objective. Defaults
+    # preserve the original reward byte-for-byte.
+    w_deformation: float = 0.0
+    w_contact_loss: float = 0.0
+    w_force_violation: float = 0.0
+    deformation_safe: float = 0.005
+    deformation_scale: float = 0.005
+    metric_acquisition_steps: int = 5
+    metric_path_tolerance: float = 0.005
+    # CLEAN manifold composition. Full MDAC includes commanded force; the
+    # position-only diagnostic keeps only reliable surface coordinates.
+    clean_manifold_force: bool = True
+    # Realization-reliability gate. These are task parameters because their
+    # signals (EE tracking, contact force, deformation) belong to this env; the
+    # MDAC backend only consumes the resulting action-space gate.
+    geometry_gate_floor: float = 0.02
+    geometry_gate_path_scale: float = 0.02
+    geometry_gate_normal_scale: float = 0.005
+    geometry_gate_eta_path: float = 1.0
+    geometry_gate_eta_normal: float = 1.0
+    geometry_gate_eta_force: float = 2.0
+    geometry_gate_eta_deformation: float = 1.0
+    geometry_gate_eta_contact: float = 2.0
+    # Frozen local realization compensation used by the staged MDAC geometry.
+    # The current real EE tracking bias is expressed in surface coordinates via
+    # the analytic surface Jacobian and held fixed over one MPC horizon. The
+    # hook is opt-in at the method layer; these values do not affect legacy runs.
+    realization_compensation_gain: float = 1.0
+    realization_compensation_max_coord: float = 0.1
+    realization_compensation_reg: float = 1.0e-5
+    realization_compensation_along_weight: float = 1.0
+    realization_compensation_cross_weight: float = 1.0
+    # Short-horizon true-dynamics probe used by the controllability-aware staged
+    # method. Only the two surface-coordinate action channels are perturbed.
+    realization_probe_horizon: int = 5
+    realization_probe_eps: float = 0.02
+    realization_control_gain: float = 1.0
+    realization_control_max_action: float = 0.25
+    realization_control_reg: float = 1.0e-4
+    realization_control_along_weight: float = 1.0
+    realization_control_cross_weight: float = 1.0
     # AL h_surf measures the TANGENTIAL deviation only (project out the normal penetration the
     # compliant contact naturally has) so soft-feasibility stops fighting the sink. Realized path
     # (reads pipeline_state) -> not clean-state-limited. Gated (default off = original); on soft
@@ -202,13 +293,14 @@ class PandaSurfaceScanEnv(PipelineEnv):
 
         # domain randomization (unseen): contact friction + surface compliance.
         mu, solref = cfg.friction, cfg.contact_solref
+        stiffness_draw = float(cfg.surface_stiffness)
         if str(cfg.level).lower() == "unseen":
             rk, rm = jax.random.split(jax.random.PRNGKey(cfg.surface_seed + 9973))
             lo, hi = cfg.s4_friction_range
             mu = float(jax.random.uniform(rm, minval=lo, maxval=hi))
             lo, hi = cfg.s4_stiffness_range            # softer surface -> slower solref time const
-            ks = float(jax.random.uniform(rk, minval=lo, maxval=hi))
-            solref = f"{0.02 * (1.0e4 / ks):.4f} 1"
+            stiffness_draw = float(jax.random.uniform(rk, minval=lo, maxval=hi))
+            solref = f"{0.02 * (1.0e4 / stiffness_draw):.4f} 1"
 
         # contact MEDIUM = soft: a softer (more compliant) contact via a solref time
         # constant derived from soft_stiffness (same ks->solref map as the unseen DR), so
@@ -216,7 +308,15 @@ class PandaSurfaceScanEnv(PipelineEnv):
         # ALL surface families. (hybrid's spatial stiffness map needs the geometry/impedance
         # layer, added later; rigid leaves solref untouched.)
         if str(cfg.medium).lower() == "soft":
-            solref = f"{0.02 * (1.0e4 / max(cfg.soft_stiffness, 1.0)):.4f} 1"
+            # Preserve the held-out compliance draw on unseen surfaces. The old
+            # ordering replaced it with one fixed soft_stiffness value.
+            if str(cfg.level).lower() != "unseen":
+                stiffness_draw = float(cfg.soft_stiffness)
+            solref = f"{0.02 * (1.0e4 / max(stiffness_draw, 1.0)):.4f} 1"
+
+        self._contact_friction = float(mu)
+        self._contact_solref = str(solref)
+        self._contact_stiffness_draw = float(stiffness_draw)
 
         # contact medium: rigid/soft use the REAL mjx probe-hfield contact; hybrid uses a
         # model-based Winkler reaction (probe non-collidable) for its spatial stiffness map.
@@ -238,6 +338,9 @@ class PandaSurfaceScanEnv(PipelineEnv):
         self._ee_site = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_SITE.value, "ee")
         self._ee_body = int(self.sys.site_bodyid[self._ee_site])
         self._probe_geom = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_GEOM.value, "probe")
+        self._surf_geom = mujoco.mj_name2id(
+            mj, mujoco.mjtObj.mjOBJ_GEOM.value, "surf"
+        )
         diag_idx = jnp.cumsum(jnp.arange(_STIFF_D, 0, -1)) - jnp.arange(_STIFF_D, 0, -1)
         self._s_ref = jnp.zeros((self.spec.stiff_width,), jnp.float32).at[diag_idx].set(cfg.s_ref_diag)
         self._mu = jnp.float32(mu)
@@ -311,6 +414,7 @@ class PandaSurfaceScanEnv(PipelineEnv):
             "xi": self._xi0, "eta": self._eta0, "psi": jnp.float32(0.0),
             "prev_s": self._s_ref, "step": jnp.int32(0),
             "force_int": jnp.float32(0.0),     # contact-force integral (admittance state)
+            "tangent_force_int": jnp.zeros((3,), dtype=jnp.float32),
         }
         obs = self._get_obs(ps, info)
         return State(ps, obs, jnp.float32(0.0), jnp.float32(0.0),
@@ -365,7 +469,10 @@ class PandaSurfaceScanEnv(PipelineEnv):
     # Translational impedance K_t(S) on position + FIXED k_orient on orientation +
     # an F_n feedforward pressing into the surface. Coulomb friction is now REAL
     # (the mjx probe-hfield contact), so no controller-side tangential cap.
-    def _impedance_tau(self, ps, n_s, p_d, R_d, s_vec, F_n, force_int, k_local=None):
+    def _impedance_tau(
+        self, ps, n_s, p_d, R_d, s_vec, F_n, force_int,
+        tangent_force_int, k_local=None,
+    ):
         cfg = self._config
         K_t = self._stiffness(s_vec)                            # 3×3 translational SPD
         p_h, R_h, jacp, jacr, lin_v, ang_v = self._ee_kin(ps)
@@ -385,9 +492,28 @@ class PandaSurfaceScanEnv(PipelineEnv):
             F_meas = self._contact_force(ps)
         g_ee = jnp.linalg.solve(jacp.T @ jacp + 1e-6 * jnp.eye(3), jacp.T @ ps.qfrc_bias[:_N_DOF])
         g_n = jnp.dot(g_ee, n_s)                              # arm-weight normal force at EE
-        F_eff = jnp.clip(F_n - g_n + cfg.kp_force * (F_n - F_meas) + force_int,
+        g_tangent = g_ee - g_n * n_s
+        t_cross = R_d[:, 1]
+        g_cross = jnp.dot(g_ee, t_cross) * t_cross
+        # Only the UNCOMPENSATED fraction of the normal gravity load remains
+        # available as passive press. Subtracting the full g_n when
+        # grav_comp>0 double-cancels gravity and makes the probe float off.
+        residual_g_n = (1.0 - cfg.grav_comp) * g_n
+        F_eff = jnp.clip(
+            F_n - residual_g_n
+            + cfg.kp_force * (F_n - F_meas)
+            + force_int,
                          cfg.f_min - cfg.f_cmd_pad, cfg.f_max + cfg.f_cmd_pad)
-        f_pos = K_t @ (p_d - p_h) - cfg.d_damp * lin_v - F_eff * n_s  # press INTO surface (-n_s)
+        f_pos = (
+            K_t @ (p_d - p_h)
+            + tangent_force_int
+            - cfg.d_damp * lin_v
+            - F_eff * n_s
+        )  # press INTO surface (-n_s)
+        # Cancel only the surface-tangent component of the task-space gravity
+        # load.  The normal component remains in the real dynamics and continues
+        # to provide the contact-maintenance bias described above.
+        f_pos = f_pos + cfg.tangent_grav_comp * g_tangent
         if k_local is not None:
             f_pos = f_pos + F_meas * n_s                      # Winkler surface reaction (out, +n_s)
         m_rot = cfg.k_orient * self._orient_err(R_h, R_d) - cfg.d_damp * ang_v
@@ -437,26 +563,64 @@ class PandaSurfaceScanEnv(PipelineEnv):
         # MPC-rate loop is too slow for). The MPC command (xi, eta, S_vec, F_n) is held.
         if cfg.fast_force_loop:
             def _substep(carry, _):
-                ps_i, fint = carry
-                tau_i = self._impedance_tau(ps_i, n_s, p_d, R_d, S_vec, F_n, fint, k_local)
+                ps_i, fint, tint = carry
+                tau_i = self._impedance_tau(
+                    ps_i, n_s, p_d, R_d, S_vec, F_n, fint, tint, k_local
+                )
                 ps_i = self._pipeline.step(self.sys, ps_i, tau_i, self._debug)
                 fint = jnp.clip(fint + cfg.ki_force * (F_n - self._contact_force_at(ps_i, xi, eta)),
                                 -cfg.force_int_max, cfg.force_int_max)
-                return (ps_i, fint), None
-            (ps, force_int), _ = jax.lax.scan(
-                _substep, (state.pipeline_state, state.info["force_int"]), (), self._n_frames)
+                p_i = ps_i.site_xpos[self._ee_site]
+                e_pos = p_d - p_i
+                e_tangent = e_pos - jnp.dot(e_pos, n_s) * n_s
+                tint = jnp.clip(
+                    tint + cfg.ki_tangent * cfg.timestep * e_tangent,
+                    -cfg.tangent_int_max,
+                    cfg.tangent_int_max,
+                )
+                return (ps_i, fint, tint), None
+            (ps, force_int, tangent_force_int), _ = jax.lax.scan(
+                _substep,
+                (
+                    state.pipeline_state,
+                    state.info["force_int"],
+                    state.info["tangent_force_int"],
+                ),
+                (),
+                self._n_frames,
+            )
         else:
             force_int = state.info["force_int"]
-            tau = self._impedance_tau(state.pipeline_state, n_s, p_d, R_d, S_vec, F_n, force_int, k_local)
+            tangent_force_int = state.info["tangent_force_int"]
+            tau = self._impedance_tau(
+                state.pipeline_state,
+                n_s,
+                p_d,
+                R_d,
+                S_vec,
+                F_n,
+                force_int,
+                tangent_force_int,
+                k_local,
+            )
             ps = self.pipeline_step(state.pipeline_state, tau)
             force_int = jnp.clip(force_int + cfg.ki_force * (F_n - self._contact_force_at(ps, xi, eta)),
                                  -cfg.force_int_max, cfg.force_int_max)
+            p_i = ps.site_xpos[self._ee_site]
+            e_pos = p_d - p_i
+            e_tangent = e_pos - jnp.dot(e_pos, n_s) * n_s
+            tangent_force_int = jnp.clip(
+                tangent_force_int + cfg.ki_tangent * cfg.dt * e_tangent,
+                -cfg.tangent_int_max,
+                cfg.tangent_int_max,
+            )
 
         reward = self._reward(ps, xi, eta, F_n, S_vec, state.info["prev_s"], state.info["step"])
         # MERGE (not replace) so brax training wrappers' info keys (steps/truncation/
         # episode_metrics/...) survive the step; a no-op for the unwrapped MDAC/baseline path.
         info = {**state.info, "xi": xi, "eta": eta, "psi": psi, "prev_s": S_vec,
-                "step": state.info["step"] + 1, "force_int": force_int}
+                "step": state.info["step"] + 1, "force_int": force_int,
+                "tangent_force_int": tangent_force_int}
         obs = self._get_obs(ps, info)
         return state.replace(pipeline_state=ps, obs=obs, reward=reward,
                              metrics={"reward": reward}, info=info)
@@ -482,11 +646,16 @@ class PandaSurfaceScanEnv(PipelineEnv):
         cfg = self._config
         f_span = max(cfg.f_max - cfg.f_min, 1e-6)
         r = u[self.spec.r_slice]
-        nu_raw = u[self.spec.nu_slice]
         xi = xi0 + cfg.coord_scale * r[0]
         eta = eta0 + cfg.coord_scale * r[1]
+        pos = jnp.array([xi - xi_t, eta - eta_t])
+        if not cfg.clean_manifold_force:
+            return pos
+        nu_raw = u[self.spec.nu_slice]
         F_n = self._force_cmd(nu_raw[0])
-        return jnp.array([xi - xi_t, eta - eta_t, (F_n - cfg.f_target) / f_span])
+        return jnp.concatenate([
+            pos, jnp.array([(F_n - cfg.f_target) / f_span])
+        ])
 
     def manifold_residual(self, state, Ybar_nodes):
         xi0, eta0 = state.info["xi"], state.info["eta"]
@@ -499,17 +668,324 @@ class PandaSurfaceScanEnv(PipelineEnv):
         sq = lambda u: 0.5 * jnp.sum(self._manifold_res_node(u, xi0, eta0, xi_t, eta_t) ** 2)
         return jax.vmap(jax.grad(sq))(Ybar_nodes)
 
+    def _surface_coordinate_jacobian(self, xi, eta):
+        """Analytic desired-EE position Jacobian wrt surface coordinates."""
+        coords = jnp.asarray([xi, eta], jnp.float32)
+        return jax.jacfwd(
+            lambda z: self._desired_pose(z[0], z[1])[2]
+        )(coords)
+
+    def _realization_coordinate_offset_raw(self, state):
+        """Unscaled local real-EE bias in ``(xi, eta)`` coordinates."""
+        cfg = self._config
+        xi, eta = state.info["xi"], state.info["eta"]
+        _, n_s, p_d, _ = self._desired_pose(xi, eta)
+        ee = state.pipeline_state.site_xpos[self._ee_site]
+        error = ee - p_d
+        tangent_error = error - jnp.dot(error, n_s) * n_s
+        Jq = self._surface_coordinate_jacobian(xi, eta)
+        reg = max(cfg.realization_compensation_reg, 1e-9)
+        dq = jnp.linalg.solve(
+            Jq.T @ Jq + reg * jnp.eye(2, dtype=Jq.dtype),
+            Jq.T @ tangent_error,
+        )
+        in_contact = self._contact_force_at(
+            state.pipeline_state, xi, eta
+        ) > 0.5
+        return jnp.where(in_contact, dq, jnp.zeros_like(dq))
+
+    def realization_coordinate_offset(self, state):
+        """Frozen local real-EE bias in ``(xi, eta)`` coordinates.
+
+        If ``p_real ~= p_des(q_cmd) + e`` and
+        ``p_des(q_cmd + dq) ~= p_des(q_cmd) + J_q dq``, then
+        ``dq = J_q^+ e_tangent`` estimates the realized coordinate bias. A
+        command targeting ``q_target - dq`` compensates it. The estimate reads
+        the real state but is stop-gradient: geometry differentiation remains
+        on the clean analytic command model.
+        """
+        cfg = self._config
+        dq = self._realization_coordinate_offset_raw(state)
+        dq = dq * jnp.asarray(
+            [
+                cfg.realization_compensation_along_weight,
+                cfg.realization_compensation_cross_weight,
+            ],
+            dtype=dq.dtype,
+        )
+        limit = max(cfg.realization_compensation_max_coord, 0.0)
+        dq = jnp.clip(
+            cfg.realization_compensation_gain * dq, -limit, limit
+        )
+        return jax.lax.stop_gradient(dq)
+
+    def _probe_final_state(self, state, actions):
+        def body(s, u):
+            s2 = self.step(s, u)
+            return s2, None
+
+        return jax.lax.scan(body, state, actions)[0]
+
+    def realization_control_jacobian(self, state, dense_actions):
+        """True short-horizon ``d(realized xi,eta)/d(action xi,eta)``.
+
+        Central differences are evaluated with the existing MJX step/scan stack
+        around the incumbent dense plan. The result is stop-gradient, so the
+        subsequent geometry Jacobian differentiates only the clean node spline.
+        """
+        cfg = self._config
+        horizon = min(
+            max(int(cfg.realization_probe_horizon), 1),
+            int(dense_actions.shape[0]),
+        )
+        actions = dense_actions[:horizon]
+        eps = max(cfg.realization_probe_eps, 1e-5)
+        basis = jnp.eye(2, dtype=dense_actions.dtype) * eps
+
+        def final_ee(delta):
+            perturbed = actions.at[
+                :, self.spec.r_slice.start:self.spec.r_slice.start + 2
+            ].add(delta[None, :])
+            final = self._probe_final_state(state, perturbed)
+            return final.pipeline_state.site_xpos[self._ee_site]
+
+        ee_plus = jax.vmap(final_ee)(basis)
+        ee_minus = jax.vmap(final_ee)(-basis)
+        d_ee = (ee_plus - ee_minus) / (2.0 * eps)  # (2 action axes, 3 xyz)
+        nominal_final = self._probe_final_state(state, actions)
+        Jq = self._surface_coordinate_jacobian(
+            nominal_final.info["xi"], nominal_final.info["eta"]
+        )
+        reg = max(cfg.realization_compensation_reg, 1e-9)
+        pinv = jnp.linalg.solve(
+            Jq.T @ Jq + reg * jnp.eye(2, dtype=Jq.dtype),
+            Jq.T,
+        )
+        B = pinv @ d_ee.T
+        return jax.lax.stop_gradient(B)
+
+    def prepare_realization_context(self, state, dense_actions):
+        """Attach a frozen short-horizon response map to the solver state."""
+        B = self.realization_control_jacobian(state, dense_actions)
+        error = jax.lax.stop_gradient(
+            self._realization_coordinate_offset_raw(state)
+        )
+        info = {
+            **state.info,
+            "_mdac_realization_B": B,
+            "_mdac_realization_error": error,
+        }
+        return state.replace(info=info)
+
+    def _manifold_residual_horizon_impl(
+        self, state, dense_actions, t0, target_shift
+    ):
+        """Cumulative time-indexed residual with a frozen target offset."""
+        cfg = self._config
+        r = dense_actions[:, self.spec.r_slice]
+        xi = jnp.clip(
+            state.info["xi"] + cfg.coord_scale * jnp.cumsum(r[:, 0]), 0.0, 1.0
+        )
+        eta = jnp.clip(
+            state.info["eta"] + cfg.coord_scale * jnp.cumsum(r[:, 1]), 0.0, 1.0
+        )
+        steps = jnp.asarray(t0, jnp.float32) + jnp.arange(
+            dense_actions.shape[0], dtype=jnp.float32
+        )
+        xi_t, eta_t = jax.vmap(self._target)(steps)
+        xi_t = xi_t + target_shift[:, 0]
+        eta_t = eta_t + target_shift[:, 1]
+        pos = jnp.stack([xi - xi_t, eta - eta_t], axis=-1).reshape(-1)
+        if not cfg.clean_manifold_force:
+            return pos
+        f_span = max(cfg.f_max - cfg.f_min, 1e-6)
+        nu_raw = dense_actions[:, self.spec.nu_slice][:, 0]
+        force = jax.vmap(self._force_cmd)(nu_raw)
+        return jnp.concatenate([pos, (force - cfg.f_target) / f_span])
+
+    def manifold_residual_horizon(self, state, dense_actions, t0):
+        """Cumulative, time-indexed clean-command residual over dense controls.
+
+        Actions encode coordinate increments, so node-wise residuals cannot be
+        evaluated independently against one current target. This hook remains
+        task-owned; the MDAC experiment adapter supplies the existing
+        ``NodeSpline`` map from solver nodes to ``dense_actions``.
+        """
+        return self._manifold_residual_horizon_impl(
+            state,
+            dense_actions,
+            t0,
+            jnp.zeros((dense_actions.shape[0], 2), dtype=dense_actions.dtype),
+        )
+
+    def manifold_residual_horizon_realized(self, state, dense_actions, t0):
+        """Horizon manifold corrected by the frozen local realization bias."""
+        return self._manifold_residual_horizon_impl(
+            state,
+            dense_actions,
+            t0,
+            -jnp.broadcast_to(
+                self.realization_coordinate_offset(state),
+                (dense_actions.shape[0], 2),
+            ),
+        )
+
+    def manifold_residual_horizon_controllable(self, state, dense_actions, t0):
+        """Horizon residual lifted through a frozen true-dynamics response map."""
+        cfg = self._config
+        B = state.info["_mdac_realization_B"]
+        error = state.info["_mdac_realization_error"] * jnp.asarray(
+            [
+                cfg.realization_control_along_weight,
+                cfg.realization_control_cross_weight,
+            ],
+            dtype=B.dtype,
+        )
+        reg = max(cfg.realization_control_reg, 1e-9)
+        correction = -B.T @ jnp.linalg.solve(
+            B @ B.T + reg * jnp.eye(2, dtype=B.dtype),
+            error,
+        )
+        max_action = max(cfg.realization_control_max_action, 0.0)
+        correction = jnp.clip(correction, -max_action, max_action)
+        probe_horizon = min(
+            max(int(cfg.realization_probe_horizon), 1),
+            int(dense_actions.shape[0]),
+        )
+        command_shift = (
+            cfg.realization_control_gain
+            * cfg.coord_scale
+            * float(probe_horizon)
+            * correction
+        )
+        coord_limit = max(cfg.realization_compensation_max_coord, 0.0)
+        command_shift = jnp.clip(command_shift, -coord_limit, coord_limit)
+        ramp = jnp.clip(
+            (jnp.arange(dense_actions.shape[0], dtype=dense_actions.dtype) + 1.0)
+            / float(probe_horizon),
+            0.0,
+            1.0,
+        )
+        target_shift = ramp[:, None] * command_shift[None, :]
+        return self._manifold_residual_horizon_impl(
+            state, dense_actions, t0, target_shift
+        )
+
+    def geometry_reliability(self, state):
+        """Pre-action realization-consistency scores and action-space gate.
+
+        The component scores are method-independent observables, so the metrics
+        extractor can recompute them for every trajectory. The solver decides
+        whether to apply them as a scalar or component-wise gate.
+        """
+        cfg = self._config
+        ps = state.pipeline_state
+        xi, eta = state.info["xi"], state.info["eta"]
+        _, n_s, p_d, _ = self._desired_pose(xi, eta)
+        ee = ps.site_xpos[self._ee_site]
+        h = ee - p_d
+        normal_offset = jnp.dot(h, n_s)
+        tangent = h - normal_offset * n_s
+        f_real = self._contact_force_at(ps, xi, eta)
+        deformation = self._penetration_at(ps, xi, eta)
+        contact_loss = (f_real <= 0.5).astype(jnp.float32)
+
+        path_scale = max(cfg.geometry_gate_path_scale, 1e-6)
+        normal_scale = max(cfg.geometry_gate_normal_scale, 1e-6)
+        force_scale = max(cfg.f_max - cfg.f_min, 1e-6)
+        deformation_scale = max(cfg.deformation_scale, 1e-6)
+        e_path = jnp.linalg.norm(tangent) / path_scale
+        e_normal = jnp.abs(normal_offset) / normal_scale
+        e_force = jnp.abs(f_real - cfg.f_target) / force_scale
+        e_deformation = (
+            jnp.maximum(deformation - cfg.deformation_safe, 0.0)
+            / deformation_scale
+        )
+
+        floor = jnp.clip(jnp.asarray(cfg.geometry_gate_floor, jnp.float32), 0.0, 1.0)
+
+        def gated(raw):
+            return floor + (1.0 - floor) * jnp.exp(-raw)
+
+        g_path = gated(cfg.geometry_gate_eta_path * e_path)
+        g_normal = gated(
+            cfg.geometry_gate_eta_normal * e_normal
+            + cfg.geometry_gate_eta_contact * contact_loss
+        )
+        g_force = gated(
+            cfg.geometry_gate_eta_force * e_force
+            + cfg.geometry_gate_eta_deformation * e_deformation
+            + cfg.geometry_gate_eta_contact * contact_loss
+        )
+        g_stiffness = jnp.sqrt(g_normal * g_force)
+        g_scalar = (g_path * g_normal * g_force) ** (1.0 / 3.0)
+
+        action_gate = jnp.ones((self.action_size,), dtype=jnp.float32)
+        action_gate = action_gate.at[self.spec.r_slice.start:self.spec.r_slice.start + 2].set(g_path)
+        action_gate = action_gate.at[self.spec.r_slice.start + 2].set(g_normal)
+        action_gate = action_gate.at[self.spec.s_slice].set(g_stiffness)
+        action_gate = action_gate.at[self.spec.nu_slice].set(g_force)
+        return {
+            "action": action_gate,
+            "scalar": g_scalar,
+            "path": g_path,
+            "normal": g_normal,
+            "stiffness": g_stiffness,
+            "force": g_force,
+            "path_error": e_path,
+            "normal_error": e_normal,
+            "force_error": e_force,
+            "deformation_risk": e_deformation,
+            "contact_loss": contact_loss,
+        }
+
     def _reward(self, ps, xi, eta, F_n, s_vec, prev_s, step):
         cfg = self._config
         _, n_s, _, R_d = self._desired_pose(xi, eta)
         R_h = ps.site_xmat[self._ee_site].reshape(3, 3)
         xi_s, eta_s = self._target(step)
-        path = (xi - xi_s) ** 2 + (eta - eta_s) ** 2
-        force = (self._contact_force_at(ps, xi, eta) - cfg.f_target) ** 2   # contact-force tracking
+        path_scale = (
+            cfg.reward_path_scale if cfg.reward_path_scale > 0.0 else 1.0
+        )
+        path = (
+            ((xi - xi_s) / path_scale) ** 2
+            + ((eta - eta_s) / path_scale) ** 2
+        )
+        F_real = self._contact_force_at(ps, xi, eta)
+        force_scale = (
+            cfg.reward_force_scale if cfg.reward_force_scale > 0.0 else 1.0
+        )
+        force = ((F_real - cfg.f_target) / force_scale) ** 2
         normal = jnp.sum((R_h[:, 2] + n_s) ** 2)
         kreg = jnp.sum((s_vec - self._s_ref) ** 2)
         dk = jnp.sum((s_vec - prev_s) ** 2)
         J = cfg.w_path * path + cfg.w_F * force + cfg.w_R * normal + cfg.w_K * kreg + cfg.w_dK * dk
+        if cfg.w_realized_path:
+            _, n_target, p_target, _ = self._desired_pose(xi_s, eta_s)
+            realized_error = ps.site_xpos[self._ee_site] - p_target
+            realized_tangent = (
+                realized_error - jnp.dot(realized_error, n_target) * n_target
+            )
+            path_scale = max(cfg.track_tol, 1e-6)
+            J = J + cfg.w_realized_path * (
+                jnp.sum(realized_tangent ** 2) / (path_scale ** 2)
+            )
+        if cfg.w_deformation:
+            penetration = self._penetration_at(ps, xi, eta)
+            dscale = max(cfg.deformation_scale, 1e-6)
+            deformation_risk = (
+                jnp.maximum(penetration - cfg.deformation_safe, 0.0) / dscale
+            ) ** 2
+            J = J + cfg.w_deformation * deformation_risk
+        if cfg.w_contact_loss:
+            J = J + cfg.w_contact_loss * (F_real <= 0.5).astype(jnp.float32)
+        if cfg.w_force_violation:
+            fspan = max(cfg.f_max - cfg.f_min, 1e-6)
+            force_risk = (
+                jnp.maximum(F_real - cfg.f_max, 0.0) ** 2
+                + jnp.maximum(cfg.f_min - F_real, 0.0) ** 2
+            ) / (fspan ** 2)
+            J = J + cfg.w_force_violation * force_risk
         return -J
 
     def _get_obs(self, ps, info) -> jax.Array:

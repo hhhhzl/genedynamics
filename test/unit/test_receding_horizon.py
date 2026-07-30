@@ -91,6 +91,24 @@ def test_runs_n_steps_and_shapes():
     assert all(a.shape == (2,) for a in res.actions)
 
 
+def test_can_keep_only_endpoint_states_for_long_runs():
+    p = MockPlanner(H=5, du=2)
+    ctrl = RecedingHorizonController(
+        p,
+        _double_integrator_step,
+        n_steps=8,
+        n_diffuse_init=10,
+        n_diffuse=2,
+        split_rng=_counter_split,
+        collect_states=False,
+        synchronize_steps=True,
+    )
+    res = ctrl.run(np.zeros(4, dtype=np.float32), rng=0)
+    assert res.horizon == 8
+    assert len(res.states) == 2
+    assert np.allclose(res.states[0], np.zeros(4))
+
+
 def test_step_count_annealing_init_then_steady():
     # First replan must use n_diffuse_init; all later ones n_diffuse.
     p = MockPlanner()

@@ -31,7 +31,15 @@ class MethodFlags:
     use_soft_feasibility: bool = True   # augmented-Lagrangian weighting
     use_tangent_projection: bool = True # metric tangent projection P_M^G
     use_retraction: bool = True         # linearized retraction QP
+    use_force_manifold: bool = True     # include F_cmd=F_target in CLEAN manifold
     use_adaptive_schedule: bool = True  # coupled (sigma,rho,kappa,lam_psi) anneal
+    # CPU MGA geometry program. Legacy MDAC keeps these off so previous results
+    # remain reproducible; staged methods opt in explicitly.
+    use_horizon_geometry: bool = False  # cumulative dense controls + time-indexed target
+    use_geometry_gate: bool = False     # blend raw/projected + raw/retracted updates
+    component_geometry_gate: bool = False  # per control block instead of one scalar
+    use_realization_compensation: bool = False  # frozen real-EE bias in clean geometry
+    use_controllability_geometry: bool = False  # finite-difference true response lift
 
     def off(self) -> "MethodFlags":
         """All-off => DIAL-equivalent weighted-mean (the degeneration)."""
@@ -57,7 +65,55 @@ METHOD_TABLE: Dict[str, MethodFlags] = {
     "mdac_no_softfeas": replace(_FULL, use_soft_feasibility=False),
     "mdac_no_tangent": replace(_FULL, use_tangent_projection=False),
     "mdac_no_retraction": replace(_FULL, use_retraction=False),
+    "mdac_position_only": replace(_FULL, use_force_manifold=False),
+    # Diagnostic aliases keep optimizer flags fixed while env reward terms change
+    # through the corresponding experiment configs.
+    "mdac_risk": _FULL,
+    "mdac_position_only_risk": replace(_FULL, use_force_manifold=False),
+    # Composite diagnostic: keep AL/schedule active while disabling both geometry
+    # mechanisms. Unlike DIAL, this isolates geometry from the other MDAC seams.
+    "mdac_no_geometry": replace(
+        _FULL, use_tangent_projection=False, use_retraction=False
+    ),
     "mdac_no_anneal": replace(_FULL, use_adaptive_schedule=False),
+    # --- MGA CPU staged methods -------------------------------------------------
+    # These are composite candidate methods, not one-flag ablations. Each stage
+    # adds exactly the named mechanism on top of the preceding one.
+    "mdac_horizon": replace(_FULL, use_horizon_geometry=True),
+    "mdac_scalar_gate": replace(
+        _FULL, use_horizon_geometry=True, use_geometry_gate=True
+    ),
+    "mdac_component_gate": replace(
+        _FULL,
+        use_horizon_geometry=True,
+        use_geometry_gate=True,
+        component_geometry_gate=True,
+    ),
+    # Same algorithm flags as mdac_component_gate; YAML owns the realized-risk
+    # weights so Pareto points do not proliferate solver implementations.
+    "mdac_component_gate_risk": replace(
+        _FULL,
+        use_horizon_geometry=True,
+        use_geometry_gate=True,
+        component_geometry_gate=True,
+    ),
+    "mdac_realization": replace(
+        _FULL,
+        use_horizon_geometry=True,
+        use_realization_compensation=True,
+    ),
+    "mdac_realization_gate": replace(
+        _FULL,
+        use_horizon_geometry=True,
+        use_geometry_gate=True,
+        component_geometry_gate=True,
+        use_realization_compensation=True,
+    ),
+    "mdac_controllable": replace(
+        _FULL,
+        use_horizon_geometry=True,
+        use_controllability_geometry=True,
+    ),
     # --- baselines in the same sampler. idea.txt §Baselines: they "optimize over
     # the same control sequence U" -> they SHARE the position-stiffness primitive
     # (use_stiffness on); only the MDAC manifold/prior/anneal seams are removed.

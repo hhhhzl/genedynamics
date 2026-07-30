@@ -8,6 +8,7 @@ import numpy as np
 
 from genedynamics.core.backends.runtime import RuntimeBackendManager
 from genedynamics.core.dynamics.adapters import EnvDynamicsAdapter
+from genedynamics.core.task_spec import get_default_task_spec
 from genedynamics.solvers.single.mppi import MPPISolver
 
 from ...framework.base import MethodPlugin
@@ -25,6 +26,7 @@ class MPPIMethodPlugin(MethodPlugin):
         backend = RuntimeBackendManager.get_backend()
         horizon = int(config.get("horizon", getattr(env, "horizon", 80)))
         dt = float(config.get("dt", getattr(env, "dt", 0.1)))
+        task_spec = get_default_task_spec(config.get("env_plugin"), config.get("env_name"))
 
         return MPPISolver(
             dynamics=EnvDynamicsAdapter(env),
@@ -39,6 +41,10 @@ class MPPIMethodPlugin(MethodPlugin):
             action_limit=float(
                 config.get("action_limit", getattr(env, "control_limit", 1.0))
             ),
+            terminal_energy_weight=float(config.get("terminal_energy_weight", 0.0)),
+            guide_weight=float(config.get("guide_weight", 0.0)),
+            position_extractor=task_spec.extract_position,
+            position_dim=task_spec.position_dim,
             seed=int(config.get("np_random_seed", config.get("seed", 0))),
         )
 

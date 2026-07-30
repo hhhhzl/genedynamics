@@ -18,7 +18,7 @@ sched_params) -> filtered_trajectory``.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable, Optional
 
 import jax
 import jax.numpy as jnp
@@ -26,14 +26,34 @@ import jax.numpy as jnp
 from genedynamics.genemetry.retraction.cfs import CfsRetraction
 
 
-def make_mdac_cfs_filter(env: Any, *, n_iters: int = 1, reg: float = 1e-6, gain: float = 1.0):
+ResidualFn = Callable[[Any, Any, Any], Any]
+
+
+def make_mdac_cfs_filter(
+    env: Any,
+    *,
+    residual_fn: Optional[ResidualFn] = None,
+    n_iters: int = 1,
+    reg: float = 1e-6,
+    gain: float = 1.0,
+):
     """CFS filter_fn for MDAC: linearized projection onto ``env.manifold_residual``.
-    Same call shape as cfsmbd's ``_filter_actions_single_jit``."""
+    Same call shape as cfsmbd's ``_filter_actions_single_jit``.
+
+    ``residual_fn`` is the architecture seam for horizon-aware geometry. It
+    receives ``(state, trajectory, t0)``; the default adapts the legacy env hook
+    and preserves previous MDAC behavior exactly.
+    """
+    residual = residual_fn or (
+        lambda state, trajectory, t0: env.manifold_residual(state, trajectory)
+    )
+
     def filter_fn(state, trajectory, sched_state, sched_params):
         shape = trajectory.shape
+        t0 = (sched_params or {}).get("t0", 0.0)
 
         def C(u):
-            return env.manifold_residual(state, u.reshape(shape))
+            return residual(state, u.reshape(shape), t0)
 
         U = trajectory.reshape(-1)
         for _ in range(int(n_iters)):
@@ -48,12 +68,21 @@ def make_mdac_cfs_filter(env: Any, *, n_iters: int = 1, reg: float = 1e-6, gain:
     return filter_fn
 
 
-def make_mdac_retraction(env: Any, *, n_iters: int = 1, reg: float = 1e-6,
-                         gain: float = 1.0) -> CfsRetraction:
+def make_mdac_retraction(
+    env: Any,
+    *,
+    residual_fn: Optional[ResidualFn] = None,
+    n_iters: int = 1,
+    reg: float = 1e-6,
+    gain: float = 1.0,
+) -> CfsRetraction:
     """Upstream genemetry ``CfsRetraction`` (jax) wrapping the MDAC CFS filter —
     constructed exactly as 2GO constructs its retraction."""
     return CfsRetraction(backend="jax",
-                         filter_fn=make_mdac_cfs_filter(env, n_iters=n_iters, reg=reg, gain=gain))
+                         filter_fn=make_mdac_cfs_filter(
+                             env, residual_fn=residual_fn,
+                             n_iters=n_iters, reg=reg, gain=gain,
+                         ))
 
 
-__all__ = ["make_mdac_cfs_filter", "make_mdac_retraction"]
+__all__ = ["ResidualFn", "make_mdac_cfs_filter", "make_mdac_retraction"]

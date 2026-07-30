@@ -67,6 +67,10 @@ class MPPISolver(SamplingSolver):
         noise_sigma: float = 0.3,
         lambda_: float = 1.0,
         action_limit: float = 1.0,
+        terminal_energy_weight: float = 0.0,
+        guide_weight: float = 0.0,
+        position_extractor: Optional[Any] = None,
+        position_dim: int = 2,
         seed: int = 0,
         # brax sampling-MPC budget (used only on the brax-env path; flat path ignores them)
         Hsample: int = 16,
@@ -95,10 +99,14 @@ class MPPISolver(SamplingSolver):
                 noise_sigma=noise_sigma,
                 lambda_=lambda_,
                 action_limit=action_limit,
+                terminal_energy_weight=float(terminal_energy_weight),
+                guide_weight=float(guide_weight),
                 Hsample=int(Hsample), Hnode=int(Hnode), Nsample=int(Nsample),
                 Ndiffuse=int(Ndiffuse), Ndiffuse_init=int(Ndiffuse_init),
             )
         )
+        self.position_extractor = position_extractor
+        self.position_dim = int(position_dim)
 
         # brax PipelineEnv: roll out env.step directly (no flat-state adapter, like DIAL);
         # flat-state dynamics keep the DynamicsToEnvAdapter path unchanged.
@@ -130,6 +138,10 @@ class MPPISolver(SamplingSolver):
                 noise_sigma=self.config["noise_sigma"],
                 lambda_=self.config["lambda_"],
                 action_limit=self.config["action_limit"],
+                terminal_energy_weight=self.config["terminal_energy_weight"],
+                guide_weight=self.config["guide_weight"],
+                position_extractor=self.position_extractor,
+                position_dim=self.position_dim,
                 seed=self.seed,
             )
         return self._backend_impl

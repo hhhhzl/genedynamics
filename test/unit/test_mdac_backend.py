@@ -71,6 +71,43 @@ def test_geometry_seam_routes_to_sdfmanifold():
     assert jnp.all(jnp.isfinite(jnp.asarray(out["actions"])))
 
 
+def test_zero_geometry_gate_recovers_raw_weighted_update():
+    """Gate=0 must recover the raw DIAL direction even with geometry present."""
+    from genedynamics.genemetry.manifold.sdf import SdfManifold
+
+    rng = jax.random.PRNGKey(19)
+    raw = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    expected = raw.plan(X0, rng_key=rng)["actions"]
+
+    def gate(value):
+        return lambda state, Y, t0: {
+            "action": jnp.full((COMMON["nu"],), value),
+            "scalar": jnp.float32(value),
+            "path": jnp.float32(value),
+            "normal": jnp.float32(value),
+            "stiffness": jnp.float32(value),
+            "force": jnp.float32(value),
+        }
+
+    gated = MdacBackendJax(
+        rollout_fn=_mock_rollout, geometry_gate_fn=gate(0.0), **COMMON
+    )
+    gated.geometry_fn = lambda state, Y, t0: Y + 0.1
+    gated.manifold = SdfManifold(backend="jax")
+    gated.topk_active, gated.eps_stab, gated.geom_gain = 2, 1e-6, 1.0
+    actual = gated.plan(X0, rng_key=rng)["actions"]
+    np.testing.assert_allclose(actual, expected, atol=1e-5, rtol=1e-5)
+
+    gated_one = MdacBackendJax(
+        rollout_fn=_mock_rollout, geometry_gate_fn=gate(1.0), **COMMON
+    )
+    gated_one.geometry_fn = lambda state, Y, t0: Y + 0.1
+    gated_one.manifold = SdfManifold(backend="jax")
+    gated_one.topk_active, gated_one.eps_stab, gated_one.geom_gain = 2, 1e-6, 1.0
+    projected = gated_one.plan(X0, rng_key=rng)["actions"]
+    assert np.max(np.abs(projected - expected)) > 1e-6
+
+
 def test_constraint_filter_seam_is_invoked():
     calls = {"n": 0}
 
@@ -98,10 +135,34 @@ def test_solver_registered_and_method_flags():
         resolve_method, assert_single_flag_ablation,
     )
     assert get_solver_registry().get_class("mdac") is MDACSolver
-    assert all(getattr(resolve_method("mdac"), f) for f in resolve_method("mdac").__dataclass_fields__)
+    full = resolve_method("mdac")
+    assert full.use_tangent_projection and full.use_retraction
+    assert not full.use_horizon_geometry and not full.use_geometry_gate
     # dial_nostiff = the true all-off anchor (byte-identity); dial is the fair
     # baseline (shares the position-stiffness primitive, MDAC solver seams off).
     assert not any(getattr(resolve_method("dial_nostiff"), f) for f in resolve_method("dial_nostiff").__dataclass_fields__)
     dial = resolve_method("dial")
     assert dial.use_stiffness and not dial.use_tangent_projection and not dial.use_soft_feasibility
     assert_single_flag_ablation("mdac", "mdac_no_tangent")
+    assert_single_flag_ablation("mdac", "mdac_no_retraction")
+    assert_single_flag_ablation("mdac", "mdac_position_only")
+    assert not resolve_method("mdac_position_only").use_force_manifold
+    horizon = resolve_method("mdac_horizon")
+    scalar = resolve_method("mdac_scalar_gate")
+    component = resolve_method("mdac_component_gate")
+    realization = resolve_method("mdac_realization")
+    realization_gate = resolve_method("mdac_realization_gate")
+    controllable = resolve_method("mdac_controllable")
+    assert horizon.use_horizon_geometry and not horizon.use_geometry_gate
+    assert scalar.use_horizon_geometry and scalar.use_geometry_gate
+    assert not scalar.component_geometry_gate
+    assert component.use_horizon_geometry and component.use_geometry_gate
+    assert component.component_geometry_gate
+    assert realization.use_horizon_geometry
+    assert realization.use_realization_compensation
+    assert not realization.use_geometry_gate
+    assert realization_gate.use_realization_compensation
+    assert realization_gate.component_geometry_gate
+    assert controllable.use_horizon_geometry
+    assert controllable.use_controllability_geometry
+    assert not controllable.use_geometry_gate

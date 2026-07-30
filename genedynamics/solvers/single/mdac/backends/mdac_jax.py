@@ -87,7 +87,9 @@ class MdacBackendJax:
         transport: Any = None,
         constraint_filter: Any = None,
         obstacles: Any = None,
+        geometry_gate_fn: Any = None,
     ) -> None:
+        cfg = {}
         if solver is not None:
             cfg = solver.config
             nu = nu if nu is not None else int(solver.nu)
@@ -115,6 +117,11 @@ class MdacBackendJax:
             transport = transport if transport is not None else getattr(solver, "transport", None)
             constraint_filter = constraint_filter if constraint_filter is not None else getattr(solver, "constraint_filter", None)
             obstacles = obstacles if obstacles is not None else getattr(solver, "obstacles", None)
+            geometry_gate_fn = (
+                geometry_gate_fn
+                if geometry_gate_fn is not None
+                else getattr(solver, "geometry_gate_fn", None)
+            )
 
         if nu is None:
             raise ValueError("MdacBackendJax requires nu (action dim).")
@@ -152,7 +159,6 @@ class MdacBackendJax:
         # (SdfManifold / CfsRetraction), never hand-rolled.
         self.geometry_fn = getattr(solver, "geometry_fn", None) if solver is not None else None
         self.manifold = None
-        self.retraction = None
         if self.geometry_fn is not None:
             cfg = getattr(solver, "config", {}) if solver is not None else {}
             # node space has only Hnode+1 rows; top_k needs k <= rows.
@@ -161,9 +167,22 @@ class MdacBackendJax:
             self.geom_gain = float(cfg.get("mdac_geom_gain", 1.0))
             from genedynamics.genemetry.manifold.sdf import SdfManifold
             self.manifold = SdfManifold(backend="jax")
-            # retraction is optional; the env may register a CFS filter_fn
-            retraction = getattr(solver, "retraction", None) if solver is not None else None
-            self.retraction = retraction
+        # Retraction is an independent seam. In particular, mdac_no_tangent keeps
+        # the CLEAN-manifold retraction active, making it a true one-flag ablation.
+        self.retraction = (
+            getattr(solver, "retraction", None) if solver is not None else None
+        )
+        # Optional task-owned realization gate. It returns an action-space vector
+        # plus named component diagnostics; this backend remains task-agnostic.
+        self.geometry_gate_fn = geometry_gate_fn
+        self.prepare_state_fn = (
+            getattr(solver, "prepare_state_fn", None)
+            if solver is not None else None
+        )
+        self._prepare_state_jit = (
+            jax.jit(self.prepare_state_fn)
+            if self.prepare_state_fn is not None else None
+        )
 
         # --- prior seam (genedynamics/learning/priors): warm-start mix
         # U_init = lam_shift*U_shift + (1-lam_shift)*U_rl (eq:rl_warm_start).
@@ -214,6 +233,11 @@ class MdacBackendJax:
                 jnp.asarray(0.0, jnp.float32), jnp.asarray(self.aug_rho, jnp.float32))
             self._kappa_ref = float(np.asarray(kap_ref))
 
+        # Receding execution calls replan at every real step. Jitting a stable
+        # bound function here avoids creating a fresh lax.scan executable for
+        # every call; only the init/steady schedule shapes compile separately.
+        self._replan_scan_jit = jax.jit(self._replan_scan)
+
     def _kappa_mult(self, state, Ybar_curr):
         """Geometry kappa multiplier for this reverse step (2GO overlay usage).
         margin/rho are read off the CURRENT iterate's clean-state constraint
@@ -235,7 +259,9 @@ class MdacBackendJax:
     # --- rollout / step builders (reuse the shared brax layer; mjx-gated) -----
     def _build_rollout_from_solver(self, solver: Any) -> Optional[RolloutFn]:
         from genedynamics.solvers.common.env_rollout import (
-            is_brax_env, build_brax_rollout, build_brax_rollout_augmented,
+            is_brax_env,
+            build_brax_rollout,
+            build_brax_rollout_augmented,
         )
         env = getattr(solver, "dynamics", None)
         if is_brax_env(env):
@@ -284,7 +310,9 @@ class MdacBackendJax:
         return jax.random.normal(key, shape)
 
     # --- the parallel reverse step (one diffusion step), node space ----------
-    def _reverse_step(self, state, rng, Ybar_curr, noise_scale, k, t0):
+    def _reverse_step(
+        self, state, rng, Ybar_curr, noise_scale, k, t0,
+    ):
         """One reverse-diffusion step. With every seam off this is, op-for-op,
         `dial_jax.reverse_once(update_form='weighted_mean')`."""
         Hn1, nu = Ybar_curr.shape
@@ -319,9 +347,11 @@ class MdacBackendJax:
         # geometry, not the AL penalty). Plain/injected rollout keeps the
         # (state, us, t0) signature => byte-identical DIAL.
         if self._augmented:
-            rewss = self._rollout_fn(state, us, t0, self.aug_lambda, self.aug_rho)
+            rewss = self._rollout_fn(
+                state, us, t0, self.aug_lambda, self.aug_rho
+            )
         else:
-            rewss = self._rollout_fn(state, us, t0)               # (Nsample+1, Hsample+1) — vmap rollout
+            rewss = self._rollout_fn(state, us, t0)
         rew_incumbent = rewss[-1].mean()
         rews = rewss.mean(axis=-1)
 
@@ -330,6 +360,14 @@ class MdacBackendJax:
         logp0 = (rews - rew_incumbent) / (std * self.temp_sample)
         weights = jax.nn.softmax(logp0)
         Ybar_weighted = jnp.einsum("n,nij->ij", weights, Y0s)     # DIAL weighted mean
+
+        gate_diag = None
+        gate_action = None
+        if self.geometry_gate_fn is not None:
+            gate_diag = self.geometry_gate_fn(state, Ybar_curr, t0)
+            gate_action = jnp.clip(
+                jnp.asarray(gate_diag["action"], Ybar_curr.dtype), 0.0, 1.0
+            )[None, :]
 
         # --- geometry seam (genemetry reuse): metric tangent projection of the
         # update direction + optional CFS retraction. Skipped (=> DIAL) when no
@@ -343,13 +381,27 @@ class MdacBackendJax:
             # geometry tracking by the current feasibility -> NON-MONOTONIC; 1.0
             # when adaptive off => unchanged.
             kappa_mult = self._kappa_mult(state, Ybar_curr)
-            Ybar_weighted = Ybar_curr + (self.geom_gain * kappa_mult) * u_proj
-            if self.retraction is not None:
-                Ybar_weighted = self.retraction.retract(
-                    state, Ybar_weighted,
-                    {"sched_state": {"k": idx_init, "K": self.Ndiffuse_init}, "sched_params": {}},
-                ).trajectory
-
+            projected_dir = (self.geom_gain * kappa_mult) * u_proj
+            if gate_action is not None:
+                shaped_dir = u_dir + gate_action * (projected_dir - u_dir)
+            else:
+                shaped_dir = projected_dir
+            Ybar_weighted = Ybar_curr + shaped_dir
+        if self.retraction is not None:
+            Ybar_retracted = self.retraction.retract(
+                state, Ybar_weighted,
+                {
+                    "sched_state": {"k": idx_init, "K": self.Ndiffuse_init},
+                    "sched_params": {"t0": t0},
+                },
+            ).trajectory
+            if gate_action is not None:
+                Ybar_weighted = (
+                    Ybar_weighted
+                    + gate_action * (Ybar_retracted - Ybar_weighted)
+                )
+            else:
+                Ybar_weighted = Ybar_retracted
         # --- transport seam: None => verbatim DIAL; else DDPM/DDIM/FM/Adaptive ---
         if self.transport is None:
             Ybar_next = Ybar_weighted
@@ -368,6 +420,11 @@ class MdacBackendJax:
                 },
             )
         info = {"rews": rews, "mean_reward": rews.mean(), "weights_max": weights.max()}
+        if gate_diag is not None:
+            info.update({
+                f"gate_{name}": gate_diag[name]
+                for name in ("scalar", "path", "normal", "stiffness", "force")
+            })
         return rng, Ybar_next, info
 
     # --- WarmStartPlanner protocol (consumed by the receding-horizon bridge) --
@@ -377,6 +434,26 @@ class MdacBackendJax:
     def make_schedule(self, n_diffuse: int) -> jnp.ndarray:
         return make_traj_diffuse_factors(self.sigma_control, self.traj_diffuse_factor, int(n_diffuse))
 
+    def _replan_scan(self, state, warm_start, schedule, rng, t0) -> jnp.ndarray:
+        n = schedule.shape[0]
+
+        def body(carry, k):
+            rng_c, Y = carry
+            # k = reverse-step index; _reverse_step derives idx_init + the coupled-
+            # annealing multipliers from it.
+            rng_c, Y, _ = self._reverse_step(
+                state,
+                rng_c,
+                Y,
+                schedule[k],
+                k,
+                t0,
+            )
+            return (rng_c, Y), None
+
+        (rng_out, Y), _ = jax.lax.scan(body, (rng, warm_start), jnp.arange(n))
+        return Y
+
     def replan(self, state, warm_start, schedule, rng, t0=0.0) -> jnp.ndarray:
         t0 = jnp.asarray(t0, jnp.float32)
         # prior warm-start mix (eq:rl_warm_start). None => unchanged (DIAL).
@@ -384,17 +461,9 @@ class MdacBackendJax:
             lam = self.prior_lambda_shift
             U_rl = jnp.asarray(self.prior.warm_start(state), warm_start.dtype)
             warm_start = lam * warm_start + (1.0 - lam) * U_rl
-        n = schedule.shape[0]
-
-        def body(carry, k):
-            rng_c, Y = carry
-            # k = reverse-step index; _reverse_step derives idx_init + the coupled-
-            # annealing multipliers from it.
-            rng_c, Y, _ = self._reverse_step(state, rng_c, Y, schedule[k], k, t0)
-            return (rng_c, Y), None
-
-        (rng_out, Y), _ = jax.lax.scan(body, (rng, warm_start), jnp.arange(n))
-        return Y
+        if self._prepare_state_jit is not None:
+            state = self._prepare_state_jit(state, warm_start, t0)
+        return self._replan_scan_jit(state, warm_start, schedule, rng, t0)
 
     def first_action(self, plan_var) -> jnp.ndarray:
         return self.spline.node2u(plan_var)[0]

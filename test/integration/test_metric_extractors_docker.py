@@ -58,13 +58,18 @@ def _check(name, plugin, env, expect_keys):
 
 def main():
     ok = []
-    expect_arm = {"equality_residual_rms", "force_tracking_error", "control_smoothness",
-                  "stiffness_smoothness", "energy", "runtime"}
+    expect_arm = {"surface_tracking_error", "force_tracking_error", "control_smoothness",
+                  "stiffness_smoothness", "energy", "runtime",
+                  "tangential_tracking_error", "force_tracking_error_settled",
+                  "force_command_violation_rate", "scan_progress_ratio",
+                  "realized_path_completion", "max_realized_path_progress",
+                  "trajectory_path_coverage", "gate_path_next_error_corr",
+                  "gate_force_next_risk_corr"}
     ok.append(_check("arm", arm_surface_scan_metrics_plugin(),
                      make_env("manipulator_surface_scan"), expect_arm))
 
-    expect_hum = {"goal_error", "max_violation", "violation_rate", "violation_cvar",
-                  "equality_residual_rms", "balance_margin", "control_smoothness",
+    expect_hum = {"goal_error", "balance_violation_rate", "balance_violation_cvar",
+                  "friction_cone_violation_rate", "balance_margin", "control_smoothness",
                   "stiffness_smoothness", "energy", "runtime"}
     ok.append(_check("humanoid", humanoid_box_push_metrics_plugin(),
                      make_env("humanoid_box_push"), expect_hum))

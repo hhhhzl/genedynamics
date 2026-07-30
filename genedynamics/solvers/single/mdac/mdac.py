@@ -100,6 +100,8 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         # --- geometry seam (genemetry SdfManifold/CfsRetraction, like 2go) ---
         geometry_fn: Any = None,        # (state, Ybar_nodes, t0) -> a_geom (Hnode+1, nu)
         retraction: Any = None,         # optional genemetry CfsRetraction
+        geometry_gate_fn: Any = None,   # -> {action/scalar/path/normal/stiffness/force}
+        prepare_state_fn: Any = None,   # frozen task context before reverse diffusion
         mdac_topk_active: int = 8,
         mdac_eps_stab: float = 1e-6,
         mdac_geom_gain: float = 1.0,
@@ -142,6 +144,8 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         self.obstacles = obstacles
         self.geometry_fn = geometry_fn      # read by MdacBackendJax (None => geometry off)
         self.retraction = retraction
+        self.geometry_gate_fn = geometry_gate_fn
+        self.prepare_state_fn = prepare_state_fn
         self.prior = prior                  # read by MdacBackendJax (None => no warm-start mix)
         self.prior_lambda_shift = float(prior_lambda_shift)
 

@@ -76,5 +76,19 @@ def build_brax_rollout_augmented(env: Any) -> Callable[..., Any]:
 
 
 def build_brax_step(env: Any) -> Callable[[Any, Any], Any]:
-    """Real one-step dynamics for the receding-horizon bridge (brax env.step)."""
-    return env.step
+    """JIT-cached real one-step dynamics for the receding-horizon bridge.
+
+    Returning the raw bound method makes MJX dispatch compile the locally
+    defined substep scan repeatedly during a long Python receding-horizon loop.
+    A single jitted callable preserves identical dynamics while compiling once
+    per environment/state structure.
+    """
+    return jax.jit(env.step)
+
+
+__all__ = [
+    "is_brax_env",
+    "build_brax_rollout",
+    "build_brax_rollout_augmented",
+    "build_brax_step",
+]

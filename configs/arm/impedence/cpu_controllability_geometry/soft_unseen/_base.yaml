@@ -1,0 +1,5 @@
+base: ../soft_cylinder/_base.yaml
+
+env_params:
+  s4_stiffness_range: [800.0, 2000.0]
+  s4_friction_range: [0.05, 0.2]

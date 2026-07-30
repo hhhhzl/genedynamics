@@ -12,7 +12,18 @@ no-op):
   use_tangent_projection -> solver gets the env's ``manifold_geometry`` (else None)
   use_retraction         -> solver gets the CFS retraction (genemetry
                            ``CfsRetraction`` + ``env.manifold_residual`` filter,
-                           wired like 2GO); lives in the geometry path
+                           wired like 2GO), independently of tangent projection
+  use_force_manifold     -> arm CLEAN manifold includes commanded-force equality
+                           (off = position-only reliable geometry diagnostic)
+    use_horizon_geometry   -> map existing node spline to dense incremental controls
+                           and use the env's cumulative, time-indexed residual
+  use_realization_compensation -> use the task-owned frozen real-EE coordinate
+                           bias in that horizon residual
+  use_controllability_geometry -> estimate a stop-gradient true-dynamics local
+                           response map and lift its correction into the residual
+  use_geometry_gate      -> route env realization reliability into the backend's
+                           raw/projected and raw/retracted blend
+  component_geometry_gate -> action-block gate (else scalar-gate ablation)
   use_adaptive_schedule  -> backend reads (margin, rho) off the current iterate's
                            constraint each reverse step and feeds the genemetry
                            ``ScheduleOverlay`` (2GO usage) for a kappa that scales
@@ -65,6 +76,7 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
     env_kw = {"stiffness_mode": stiffness_mode_for(method, flags)}
     if task == ARM_TASK:
         env_kw["surface_seed"] = surface_seed              # selects NURBS (S2-S4) + DR
+        env_kw["clean_manifold_force"] = flags.use_force_manifold
         if level is not None:
             env_kw["level"] = level
     elif task == HUMANOID_TASK:
@@ -72,19 +84,86 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
         env_kw["dr_seed"] = surface_seed                   # H2 domain-randomization draw
         if level is not None:
             env_kw["level"] = level
-    if env_overrides:                                      # yaml env_params (method owns stiffness_mode)
-        env_kw.update({k: v for k, v in env_overrides.items() if k != "stiffness_mode"})
+    if env_overrides:                                      # method owns chart/manifold composition
+        env_kw.update({
+            k: v for k, v in env_overrides.items()
+            if k not in ("stiffness_mode", "clean_manifold_force")
+        })
     env = make_env(task, **env_kw)
-    geometry_fn = env.manifold_geometry if flags.use_tangent_projection else None
-    # CFS retraction (genemetry CfsRetraction + MDAC filter_fn, wired like 2GO);
-    # lives inside the geometry path, so it needs the tangent projection on too.
+    residual_fn = None
+    if flags.use_horizon_geometry:
+        if flags.use_controllability_geometry:
+            residual_hook_name = "manifold_residual_horizon_controllable"
+        elif flags.use_realization_compensation:
+            residual_hook_name = "manifold_residual_horizon_realized"
+        else:
+            residual_hook_name = "manifold_residual_horizon"
+        if not hasattr(env, residual_hook_name):
+            raise ValueError(
+                f"method '{method}' requires env.{residual_hook_name}"
+            )
+        residual_hook = getattr(env, residual_hook_name)
+        from genedynamics.solvers.single.dial.spline import NodeSpline
+        spline = NodeSpline.build(
+            int(cfg.get("Hnode", 4)),
+            int(cfg.get("Hsample", 16)),
+            float(cfg.get("ctrl_dt", 0.02)),
+        )
+
+        def residual_fn(state, nodes, t0):
+            return residual_hook(state, spline.node2u(nodes), t0)
+
+        if flags.use_tangent_projection:
+            import jax
+
+            def geometry_fn(state, nodes, t0):
+                objective = lambda y: 0.5 * jax.numpy.mean(
+                    residual_fn(state, y, t0) ** 2
+                )
+                return jax.grad(objective)(nodes)
+        else:
+            geometry_fn = None
+    else:
+        geometry_fn = env.manifold_geometry if flags.use_tangent_projection else None
+
+    geometry_gate_fn = None
+    # A controllability gate attenuates only the additional response-map target
+    # lead inside the task-owned residual (see prepare_realization_context).
+    # The clean path/force projection and retraction must remain active so an
+    # unreliable/contact-loss state can recover.  Legacy scalar/component gate
+    # methods without a controllability lift keep the backend blend below.
+    if flags.use_geometry_gate and not flags.use_controllability_geometry:
+        if not hasattr(env, "geometry_reliability"):
+            raise ValueError(f"method '{method}' requires env.geometry_reliability")
+        import jax.numpy as jnp
+
+        def geometry_gate_fn(state, nodes, t0):
+            diag = env.geometry_reliability(state)
+            action = (
+                diag["action"]
+                if flags.component_geometry_gate
+                else jnp.ones_like(diag["action"]) * diag["scalar"]
+            )
+            return {**diag, "action": action}
+
+    prepare_state_fn = None
+    if flags.use_controllability_geometry:
+        def prepare_state_fn(state, nodes, t0):
+            return env.prepare_realization_context(
+                state, spline.node2u(nodes)
+            )
+
+    # CFS retraction is independent of tangent shaping so each mechanism has a
+    # genuine single-factor ablation.
     retraction = None
-    if flags.use_tangent_projection and flags.use_retraction:
+    if flags.use_retraction:
         from genedynamics.solvers.single.mdac.core.retraction import make_mdac_retraction
-        retraction = make_mdac_retraction(env)
+        retraction = make_mdac_retraction(env, residual_fn=residual_fn)
     solver = MDACSolver(
         env, None, backend, method=method,
         geometry_fn=geometry_fn, retraction=retraction,
+        geometry_gate_fn=geometry_gate_fn,
+        prepare_state_fn=prepare_state_fn,
         prior=(prior if flags.use_rl_prior else None),
         aug_lambda=aug_lambda, aug_rho=aug_rho, **cfg,
     )

@@ -24,6 +24,10 @@ method_params:
   noise_sigma: 0.20
   lambda_: 1.0
   action_limit: 0.45
+  # Match the main MBD/MDOC trajectory objective: time-aware progress guidance
+  # plus the same terminal-distance weight.
+  terminal_energy_weight: 120.0
+  guide_weight: 20.0
 
 obstacle_levels: [1, 5]
 obstacle_config:

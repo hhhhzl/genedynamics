@@ -130,6 +130,11 @@ class RecedingHorizonController:
         split_rng: optional override for rng splitting (default: jax-aware).
         collect_plan_vars: store each step's plan var (diagnostics / warm-start
             inspection); off by default to keep memory flat.
+        collect_states: store every full dynamics state. Disable for long MJX
+            experiments whose evaluators replay the executed actions; the
+            result then keeps only initial and final state.
+        synchronize_steps: block after each real step so asynchronous JAX
+            execution cannot queue an episode's worth of device buffers.
     """
 
     def __init__(
@@ -143,6 +148,8 @@ class RecedingHorizonController:
         make_schedule: Optional[Callable[[int], Any]] = None,
         split_rng: Optional[Callable[[Any], Any]] = None,
         collect_plan_vars: bool = False,
+        collect_states: bool = True,
+        synchronize_steps: bool = False,
     ) -> None:
         self.planner = planner
         self.step_fn = step_fn
@@ -152,6 +159,8 @@ class RecedingHorizonController:
         self._make_schedule = make_schedule or planner.make_schedule
         self._split_rng = split_rng or _default_split_rng
         self.collect_plan_vars = bool(collect_plan_vars)
+        self.collect_states = bool(collect_states)
+        self.synchronize_steps = bool(synchronize_steps)
 
     def n_diffuse_at(self, t: int) -> int:
         """Diffusion-step count for real step ``t`` (init on t==0, else steady)."""
@@ -179,15 +188,24 @@ class RecedingHorizonController:
             # 2) execute only the first control on the REAL dynamics
             u0 = self.planner.first_action(plan_var)
             state = self.step_fn(state, u0)
+            if self.synchronize_steps:
+                try:
+                    import jax
+                    state, plan_var, u0 = jax.block_until_ready((state, plan_var, u0))
+                except (ImportError, TypeError):
+                    pass
 
             actions.append(u0)
-            states.append(state)
+            if self.collect_states:
+                states.append(state)
             if self.collect_plan_vars:
                 plan_vars.append(plan_var)
 
             # 3) shift the remaining plan to warm-start the next step
             plan_var = self.planner.shift(plan_var)
 
+        if not self.collect_states and self.n_steps:
+            states.append(state)
         return RecedingHorizonResult(
             states=states, actions=actions, plan_vars=plan_vars, infos=infos
         )

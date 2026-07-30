@@ -122,6 +122,28 @@ def rate(mask) -> float:
     return float(np.mean(a > 0.5)) if a.size else 0.0
 
 
+@metric(higher_is_better=True)
+def pearson_correlation(x, y) -> float:
+    """Pearson correlation for paired scalar signals.
+
+    Returns 0 for fewer than two samples or a constant signal. Reliability
+    diagnostics bind ``x`` to a pre-action gate and ``y`` to negative
+    next-step realized error, so larger positive values are better.
+    """
+    xa, ya = _arr(x).ravel(), _arr(y).ravel()
+    n = min(xa.size, ya.size)
+    if n < 2:
+        return 0.0
+    xa, ya = xa[:n], ya[:n]
+    finite = np.isfinite(xa) & np.isfinite(ya)
+    if finite.sum() < 2:
+        return 0.0
+    xa, ya = xa[finite], ya[finite]
+    if float(np.std(xa)) < 1e-12 or float(np.std(ya)) < 1e-12:
+        return 0.0
+    return float(np.corrcoef(xa, ya)[0, 1])
+
+
 # ---------------------------------------------------------------------------
 # Task success / progress
 # ---------------------------------------------------------------------------
@@ -170,6 +192,37 @@ def coverage_ratio(visited, total) -> float:
     return float(np.clip(float(visited) / max(float(total), 1e-12), 0.0, 1.0))
 
 
+def _polyline_progress(positions, reference_path):
+    """Closest-point distance and normalized arc coordinate for each position."""
+    p = _arr(positions)
+    ref = _arr(reference_path)
+    if p.ndim == 1:
+        p = p[None, :]
+    if ref.shape[0] < 2 or p.shape[0] == 0:
+        return np.zeros(p.shape[0]), np.zeros(p.shape[0])
+    seg_vec = ref[1:] - ref[:-1]
+    seg_len = np.linalg.norm(seg_vec, axis=1)
+    total = float(np.sum(seg_len))
+    if total < 1e-12:
+        return np.linalg.norm(p[:, :ref.shape[1]] - ref[0], axis=1), np.ones(p.shape[0])
+    cumulative = np.concatenate([[0.0], np.cumsum(seg_len)])
+    distances = np.full(p.shape[0], np.inf)
+    progress = np.zeros(p.shape[0])
+    for i, (a, ab) in enumerate(zip(ref[:-1], seg_vec)):
+        denom = float(ab @ ab)
+        q = np.zeros(p.shape[0]) if denom < 1e-12 else np.clip(
+            ((p[:, :ref.shape[1]] - a) @ ab) / denom, 0.0, 1.0
+        )
+        projected = a + q[:, None] * ab
+        d = np.linalg.norm(p[:, :ref.shape[1]] - projected, axis=1)
+        better = d < distances
+        distances[better] = d[better]
+        progress[better] = (
+            cumulative[i] + q[better] * seg_len[i]
+        ) / total
+    return distances, np.clip(progress, 0.0, 1.0)
+
+
 @metric(higher_is_better=True)
 def path_completion(positions, reference_path) -> float:
     """Fraction of a parameterized REFERENCE path's arc-length traversed
@@ -179,23 +232,36 @@ def path_completion(positions, reference_path) -> float:
     ref = _arr(reference_path)
     if ref.shape[0] < 2 or p.shape[0] == 0:
         return 1.0 if p.shape[0] else 0.0
-    seg = np.linalg.norm(ref[1:] - ref[:-1], axis=1)
-    total = float(np.sum(seg))
-    if total < 1e-12:
-        return 1.0
-    final = p[-1, : ref.shape[1]]
-    best_s, best_d, acc = 0.0, np.inf, 0.0
-    for i in range(ref.shape[0] - 1):
-        a, b = ref[i], ref[i + 1]
-        ab = b - a
-        L = float(ab @ ab)
-        tp = 0.0 if L < 1e-12 else float(np.clip(((final - a) @ ab) / L, 0.0, 1.0))
-        proj = a + tp * ab
-        d = float(np.linalg.norm(final - proj))
-        if d < best_d:
-            best_d, best_s = d, acc + tp * float(np.sqrt(L))
-        acc += float(seg[i])
-    return float(np.clip(best_s / total, 0.0, 1.0))
+    _, progress = _polyline_progress(p[-1:], ref)
+    return float(progress[0])
+
+
+@metric(higher_is_better=True)
+def max_path_progress(positions, reference_path, valid_mask) -> float:
+    """Farthest closest-point projection reached by a valid trajectory point.
+
+    ``valid_mask`` is task-extracted (for example contact after acquisition).
+    This deliberately has no tracking tolerance: it answers how far the whole
+    trajectory ever reached. Use ``trajectory_path_coverage`` separately to
+    measure how much of the path was visited within a strict tolerance.
+    """
+    _, progress = _polyline_progress(positions, reference_path)
+    valid = _arr(valid_mask).ravel() > 0.5
+    n = min(progress.size, valid.size)
+    return float(np.max(progress[:n][valid[:n]])) if np.any(valid[:n]) else 0.0
+
+
+@metric(higher_is_better=True)
+def trajectory_path_coverage(positions, reference_path, valid_mask, tolerance) -> float:
+    """Fraction of reference waypoints visited by a valid trajectory point."""
+    p, ref = _arr(positions), _arr(reference_path)
+    valid = _arr(valid_mask).ravel() > 0.5
+    n = min(p.shape[0], valid.size)
+    p = p[:n][valid[:n], :ref.shape[1]]
+    if ref.shape[0] == 0 or p.shape[0] == 0:
+        return 0.0
+    distance = np.linalg.norm(ref[:, None, :] - p[None, :, :], axis=2)
+    return float(np.mean(np.min(distance, axis=1) <= float(tolerance)))
 
 
 @metric
@@ -518,7 +584,7 @@ def compute_metrics(requests: List[Any], signals: Dict[str, Any], *,
 __all__ = [
     "metric", "get_metric", "list_metrics", "metric_signals",
     "metric_higher_is_better", "compute_metrics",
-    "cvar", "rate",
+    "cvar", "rate", "pearson_correlation",
     "goal_error", "success", "progress_ratio", "completion_step", "coverage_ratio",
     "path_completion", "pose_error",
     "violation_rate", "violation_mean", "max_violation", "violation_cvar",
