@@ -1242,3 +1242,35 @@ random stiffness can yield \(8\)--\(12\) N settled force error even with no
 force-limit violation. The RL prior/confidence mechanism must reduce this bias
 or decline the model-based correction; it must not be hidden by progress or a
 single weighted reward.
+
+### 21.8 Phase-4 CPU implementation gate (2026-07-31)
+
+The CPU implementation now prepares the GPU experiment without claiming that
+the RL policy has converged:
+
+- the canonical arm policy uses the unchanged 10-D primitive and 100-step
+  episodes;
+- its realized observation includes target phase, physical tangent error,
+  force, deformation, contact, and action history, while excluding the exact
+  simulator medium, friction, and stiffness;
+- one PPO checkpoint is shared by the standalone baseline and the MGA prior;
+- seen rigid/soft geometry and material draws form a heterogeneous vectorized
+  training batch selected by reset keys, while unseen NURBS seeds remain held
+  out;
+- the policy is rolled closed-loop over the existing \(H_{\mathrm{sample}}=16\)
+  grid (\(H_{\mathrm{sample}}+1\) dense controls) and mapped through the existing
+  5-node spline;
+- the raw RL sequence is retained as an incumbent candidate independently of
+  the warm-start mixture;
+- refinement is bounded by a prior trust region and accepted only under
+  predicted improvement, no predicted force violation, and component-wise
+  realized-risk non-degradation within preregistered tolerances;
+- receding-horizon diagnostics retain acceptance, fallback, predicted
+  improvement, and both risk vectors for later confidence training.
+
+For the CPU gate, the response trust remains the globally conservative
+\(0.125\). The learned confidence model is deliberately deferred until the
+shared policy and its interaction data exist; the rejected heuristic/component
+gate is not reintroduced. A 4096-step two-domain Panda PPO run is only a
+compilation/checkpoint smoke test. Final validity still requires the two
+2-million-step GPU seeds and the held-out comparison in Section 21.7.

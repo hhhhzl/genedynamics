@@ -22,11 +22,14 @@ import jax.numpy as jnp
 from genedynamics.core import get_backend
 from genedynamics.envs.factories import make_env
 from genedynamics.solvers.single.mdac.mdac import MDACSolver
-from genedynamics.learning.train_rl_prior import train_rl_prior, build_rl_prior
+from genedynamics.learning.train_rl_policy import (
+    build_policy_prior,
+    train_rl_policy,
+)
 
 ENV_NAME = "quadruped_go2_walk"
 HNODE = 4
-CFG = dict(Hsample=8, Hnode=HNODE, Nsample=64, Ndiffuse_init=3, Ndiffuse=2,
+CFG = dict(Hsample=16, Hnode=HNODE, Nsample=64, Ndiffuse_init=3, Ndiffuse=2,
            temp_sample=0.06, action_limit=1.0, dt=0.02, ctrl_dt=0.02, seed=0)
 
 
@@ -43,12 +46,14 @@ def main():
     ok = []
 
     # tiny PPO train (brax) -> RLPrior
-    params, cfg = train_rl_prior(
-        env, num_timesteps=4096, episode_length=50, num_envs=16,
+    params, cfg = train_rl_policy(
+        env, algo="ppo", num_timesteps=4096, episode_length=50, num_envs=16,
         batch_size=8, num_minibatches=2, unroll_length=10,
         num_updates_per_batch=1, normalize_observations=True, seed=0,
     )
-    prior = build_rl_prior(params, cfg, n_warm_nodes=HNODE + 1)
+    prior = build_policy_prior(
+        params, cfg, env=env, Hsample=CFG["Hsample"], Hnode=HNODE
+    )
     A = int(env.action_size)
 
     ws = np.asarray(prior.warm_start(x0))

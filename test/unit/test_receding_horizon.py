@@ -171,5 +171,25 @@ def test_more_init_steps_refine_more():
     assert a_few[0] == 1  # schedule length recorded
 
 
+def test_optional_replan_diagnostics_are_collected():
+    class DiagnosticPlanner(MockPlanner):
+        def replan_with_info(self, state, warm_start, schedule, rng, t0=0.0):
+            plan = super().replan(
+                state, warm_start, schedule, rng, t0=t0
+            )
+            return plan, {
+                "prior_accepted": float(t0 % 2 == 0),
+                "prior_predicted_improvement": float(t0),
+            }
+
+    planner = DiagnosticPlanner()
+    result = _make_controller(planner, n_steps=3).run(
+        np.zeros(4, dtype=np.float32), rng=0
+    )
+    assert len(result.infos) == 3
+    assert [x["prior_accepted"] for x in result.infos] == [1.0, 0.0, 1.0]
+    assert [x["prior_predicted_improvement"] for x in result.infos] == [0.0, 1.0, 2.0]
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

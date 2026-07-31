@@ -22,6 +22,9 @@ import jax
 import jax.numpy as jnp
 
 from genedynamics.envs.factories import make_env
+from genedynamics.envs.domains.manipulation.panda_brax import (
+    PandaSurfaceScanDomainEnv,
+)
 from genedynamics.solvers.single.mdac.experiment import make_mdac, ARM_TASK
 
 FAMILIES = ["plane", "cylinder", "convex", "bumpy", "unseen"]
@@ -91,6 +94,60 @@ def _contact_friction_reaches_both_geoms():
     print(
         f"  contact mu: probe={geom_friction[probe, 0]:.3f} "
         f"surface={geom_friction[surf, 0]:.3f} -> {'OK' if ok else 'FAIL'}"
+    )
+    return ok
+
+
+def _rl_observation_risk_and_randomized_wrapper():
+    common = dict(
+        level="cylinder",
+        observation_mode="rl_realized",
+        scan_rate=0.0005,
+        reward_path_scale=0.0495,
+        reward_force_scale=5.0,
+        deformation_scale=0.001,
+    )
+    e_lo = make_env(ARM_TASK, friction=0.05, medium="rigid", **common)
+    e_hi = make_env(ARM_TASK, friction=0.20, medium="soft", **common)
+    key = jax.random.PRNGKey(4)
+    s_lo, s_hi = e_lo.reset(key), e_hi.reset(key)
+    # Exact material parameters are not present in rl_realized observation:
+    # before interaction, the two domains expose the same measurable state.
+    no_oracle_leak = np.allclose(
+        np.asarray(s_lo.obs), np.asarray(s_hi.obs), atol=1e-6
+    )
+    action = jnp.linspace(-0.2, 0.2, e_lo.action_size)
+    s1 = e_lo.step(s_lo, action)
+    previous_action_visible = np.allclose(
+        np.asarray(s1.obs[-e_lo.action_size:]), np.asarray(action), atol=1e-6
+    )
+    risk = e_lo.sequence_risk(
+        s_lo, jnp.broadcast_to(action, (CFG["Hsample"] + 1, e_lo.action_size))
+    )
+
+    mixed = PandaSurfaceScanDomainEnv([e_lo, e_hi])
+    reset_jit = jax.jit(mixed.reset)
+    step_jit = jax.jit(mixed.step)
+    sm = reset_jit(jax.random.PRNGKey(9))
+    sm1 = step_jit(sm, jnp.zeros(mixed.action_size))
+    domain_index = int(sm.info["_rl_domain_index"])
+    mixed_ok = (
+        0 <= domain_index < 2
+        and mixed.action_size == 10
+        and bool(jnp.all(jnp.isfinite(sm1.obs)))
+        and bool(jnp.isfinite(sm1.reward))
+    )
+    ok = (
+        no_oracle_leak
+        and previous_action_visible
+        and risk.shape == (4,)
+        and np.all(np.isfinite(np.asarray(risk)))
+        and mixed_ok
+    )
+    print(
+        f"  RL obs={s_lo.obs.shape} no_oracle_leak={no_oracle_leak} "
+        f"prev_action={previous_action_visible} risk={np.round(np.asarray(risk), 3)} "
+        f"mixed_domain={domain_index} -> {'OK' if ok else 'FAIL'}"
     )
     return ok
 
@@ -258,13 +315,16 @@ def main():
         and _soft_s4_compliance_varies()
         and _contact_friction_reaches_both_geoms()
     )
+    print("== RL observation/risk/shared domains =="); c2 = (
+        _rl_observation_risk_and_randomized_wrapper()
+    )
     print("== independent geometry factors =="); d = _geometry_factors_are_independent()
     print("== position-only manifold =="); e = _position_only_manifold()
     print("== staged horizon/gated geometry =="); f = _staged_geometry_routes()
     print("== frozen realization geometry =="); g = _realization_geometry_routes()
     print("== true-dynamics controllability geometry =="); h = _controllability_geometry_routes()
     print("== ablations active (arm, bumpy) =="); i = _ablations_active()
-    ok = a and b and c and d and e and f and g and h and i
+    ok = a and b and c and c2 and d and e and f and g and h and i
     print("RESULT:", "ARM OK" if ok else "FAIL")
     return 0 if ok else 1
 

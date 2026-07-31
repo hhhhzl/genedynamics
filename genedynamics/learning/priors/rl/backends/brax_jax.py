@@ -7,7 +7,9 @@ trained `params` (normalizer + policy) and exposes the `Prior` surface:
   act(obs)            -> brax `make_inference_fn` policy (mode if deterministic)
   logp_of_sequence    -> sum_t dist.log_prob(logits_t, inverse_postprocess(a_t))
                          (jit-safe: depends only on obs/action, not state.info)
-  warm_start(state)   -> policy mean action at state.obs, tiled to (n_warm_nodes, A)
+  warm_start(state)   -> closed-loop policy horizon mapped to solver nodes when a
+                         rollout step is supplied; otherwise the legacy tiled
+                         action used by lightweight integration tests
 
 brax is imported lazily (only when this backend is INSTANTIATED) so the priors
 package imports fine on fedguide (jax, no brax); training/inference run in the
@@ -37,6 +39,10 @@ class BraxRLPrior:
         distribution_type: str = "tanh_normal",
         deterministic: bool = True,
         obs_key: str = "state",
+        rollout_step: Any = None,
+        Hsample: int = 16,
+        Hnode: int = 4,
+        ctrl_dt: float = 0.02,
     ) -> None:
         from brax.training.agents.ppo import networks as ppo_networks
         from brax.training.acme import running_statistics
@@ -60,6 +66,19 @@ class BraxRLPrior:
         self.n_warm_nodes = int(n_warm_nodes)
         self.deterministic = bool(deterministic)
         self._obs_key = obs_key
+        self._rollout_step = rollout_step
+        self._dense_horizon = int(Hsample) + 1
+        self._spline = None
+        if rollout_step is not None:
+            from genedynamics.solvers.single.dial.spline import NodeSpline
+
+            self._spline = NodeSpline.build(
+                int(Hnode), int(Hsample), float(ctrl_dt)
+            )
+            if self.n_warm_nodes != int(Hnode) + 1:
+                raise ValueError(
+                    "n_warm_nodes must equal Hnode + 1 for horizon proposals"
+                )
 
     # --- helpers ---
     def _norm_pol(self):
@@ -94,8 +113,20 @@ class BraxRLPrior:
         return jnp.sum(jax.vmap(step_logp)(jnp.asarray(obs_seq), jnp.asarray(act_seq)))
 
     def warm_start(self, state) -> Any:
-        """Policy mean action at the current obs, tiled across the warm nodes
-        -> `U^rl` of shape (n_warm_nodes, action_size) (eq:rl_warm_start)."""
+        """Return the policy proposal in the solver's node parameterization."""
+        if self._rollout_step is not None:
+            def body(s, _):
+                obs = self._obs_of(s, self._obs_key)
+                action = self.act(obs, deterministic=True)
+                return self._rollout_step(s, action), action
+
+            _, dense_actions = jax.lax.scan(
+                body, state, None, length=self._dense_horizon
+            )
+            return self._spline.u2node(dense_actions)
+
+        # Compatibility path for policy-only tests and callers that do not own
+        # dynamics. Full MGA always supplies rollout_step.
         obs = self._obs_of(state, self._obs_key)
         a = self.act(obs, deterministic=True)
         return jnp.tile(a[None, :], (self.n_warm_nodes, 1))

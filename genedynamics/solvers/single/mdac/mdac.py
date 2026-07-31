@@ -108,6 +108,12 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         # --- prior seam (genedynamics/learning/priors; None => verbatim DIAL) ---
         prior: Any = None,              # Prior: RL/diffusion warm-start (eq:rl_warm_start)
         prior_lambda_shift: float = 0.5,  # U_init = lam*U_shift + (1-lam)*U_rl
+        risk_fn: Any = None,             # task-owned sequence risk vector
+        prior_include_incumbent: bool = True,
+        prior_trust_radius: float = 0.5,
+        prior_improvement_epsilon: float = 0.0,
+        prior_risk_tolerance: Any = (0.0, 0.0, 0.0, 0.0),
+        prior_acceptance: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -148,6 +154,12 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         self.prepare_state_fn = prepare_state_fn
         self.prior = prior                  # read by MdacBackendJax (None => no warm-start mix)
         self.prior_lambda_shift = float(prior_lambda_shift)
+        self.risk_fn = risk_fn
+        self.prior_include_incumbent = bool(prior_include_incumbent)
+        self.prior_trust_radius = float(prior_trust_radius)
+        self.prior_improvement_epsilon = float(prior_improvement_epsilon)
+        self.prior_risk_tolerance = tuple(float(x) for x in prior_risk_tolerance)
+        self.prior_acceptance = bool(prior_acceptance)
 
         self.config.update(
             dict(
@@ -161,6 +173,11 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
                 aug_lambda=float(aug_lambda), aug_rho=float(aug_rho),
                 mdac_topk_active=int(mdac_topk_active), mdac_eps_stab=float(mdac_eps_stab),
                 mdac_geom_gain=float(mdac_geom_gain),
+                prior_include_incumbent=bool(prior_include_incumbent),
+                prior_trust_radius=float(prior_trust_radius),
+                prior_improvement_epsilon=float(prior_improvement_epsilon),
+                prior_risk_tolerance=self.prior_risk_tolerance,
+                prior_acceptance=bool(prior_acceptance),
                 method=str(method),
             )
         )

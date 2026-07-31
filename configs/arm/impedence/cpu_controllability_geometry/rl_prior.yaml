@@ -1,0 +1,47 @@
+base: rigid_cylinder/_base.yaml
+
+# Single canonical Phase-4 configuration. The same PPO checkpoint is evaluated
+# standalone and reconstructed as the MGA horizon prior.
+name: shared_rl_prior
+method: mdac_controllable
+level: cylinder
+output_dir: results/arm/impedence/cpu_controllability_geometry/rl_prior
+
+env_params:
+  observation_mode: rl_realized
+  realization_control_gain: 0.125
+  w_realized_path: 1.0
+  deformation_safe: 0.0005
+  deformation_scale: 0.001
+  w_deformation: 5.0
+  w_contact_loss: 5.0
+  w_force_violation: 10.0
+
+method_params:
+  prior_lambda_shift: 0.5
+  prior_include_incumbent: true
+  prior_trust_radius: 0.35
+  prior_improvement_epsilon: 0.01
+  prior_risk_tolerance: [0.0, 0.01, 0.05, 0.05]
+  prior_acceptance: true
+
+rl:
+  algo: ppo
+  num_timesteps: 2000000
+  episode_length: 100
+  num_envs: 64
+  seed: 0
+  checkpoint: results/arm/impedence/_policies/shared_ppo_seed{seed}.pkl
+  domain_templates:
+    - {medium: rigid, level: cylinder}
+    - {medium: rigid, level: convex}
+    - {medium: soft, level: cylinder, h_surf_tangential: true, soft_contact_manifold: true}
+    - {medium: soft, level: bumpy, h_surf_tangential: true, soft_contact_manifold: true}
+  domain_randomization:
+    seed: 20260731
+    num_domains: 8
+    friction_range: [0.05, 0.2]
+    soft_stiffness_range: [800.0, 2000.0]
+  held_out:
+    levels: [unseen]
+    surface_seeds: [100, 101, 102, 103, 104]

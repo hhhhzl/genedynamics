@@ -123,4 +123,50 @@ def build_policy_act(params: Any, config: Dict[str, Any], *, deterministic: bool
     return lambda obs, key: policy(jnp.asarray(obs), key)[0]
 
 
-__all__ = ["train_rl_policy", "save_policy", "load_policy", "build_policy_act"]
+def build_policy_prior(
+    params: Any,
+    config: Dict[str, Any],
+    *,
+    env: Any,
+    Hsample: int = 16,
+    Hnode: int = 4,
+    ctrl_dt: float = 0.02,
+    deterministic: bool = True,
+):
+    """Build the horizon-level prior from the *same* standalone checkpoint.
+
+    PPO is the canonical Phase-4 prior because its backend exposes both policy
+    likelihood and the closed-loop horizon proposal. SAC remains available as a
+    standalone baseline until an equivalent sequence-density adapter exists.
+    """
+    algo = str(config.get("algo", "ppo")).lower()
+    if algo != "ppo":
+        raise ValueError(
+            "full MGA policy prior currently requires a PPO checkpoint; "
+            f"got algo={algo!r}"
+        )
+    from genedynamics.learning.priors.rl import RLPrior
+
+    return RLPrior(
+        backend="jax",
+        observation_size=config["observation_size"],
+        action_size=config["action_size"],
+        params=params,
+        n_warm_nodes=int(Hnode) + 1,
+        normalize_observations=config["normalize_observations"],
+        policy_hidden_layer_sizes=config["policy_hidden_layer_sizes"],
+        deterministic=deterministic,
+        rollout_step=env.step,
+        Hsample=int(Hsample),
+        Hnode=int(Hnode),
+        ctrl_dt=float(ctrl_dt),
+    )
+
+
+__all__ = [
+    "train_rl_policy",
+    "save_policy",
+    "load_policy",
+    "build_policy_act",
+    "build_policy_prior",
+]

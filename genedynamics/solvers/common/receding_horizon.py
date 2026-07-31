@@ -183,7 +183,16 @@ class RecedingHorizonController:
             # Pass the real-step index t as t0 so time-dependent rewards (e.g.
             # gait phase) advance with execution; planners that ignore time take
             # t0 via **kwargs / a default and are unaffected.
-            plan_var = self.planner.replan(state, plan_var, schedule, sub, t0=t)
+            replan_with_info = getattr(self.planner, "replan_with_info", None)
+            if callable(replan_with_info):
+                plan_var, plan_info = replan_with_info(
+                    state, plan_var, schedule, sub, t0=t
+                )
+                infos.append(plan_info)
+            else:
+                plan_var = self.planner.replan(
+                    state, plan_var, schedule, sub, t0=t
+                )
 
             # 2) execute only the first control on the REAL dynamics
             u0 = self.planner.first_action(plan_var)

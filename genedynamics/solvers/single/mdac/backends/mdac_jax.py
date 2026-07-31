@@ -184,12 +184,29 @@ class MdacBackendJax:
             if self.prepare_state_fn is not None else None
         )
 
-        # --- prior seam (genedynamics/learning/priors): warm-start mix
-        # U_init = lam_shift*U_shift + (1-lam_shift)*U_rl (eq:rl_warm_start).
-        # None => no mix => byte-identical DIAL. RL log-weight (lam_psi) deferred.
+        # --- prior seam (genedynamics/learning/priors): horizon proposal,
+        # incumbent candidate, local trust region, and do-no-harm acceptance.
+        # None => every branch below is skipped and DIAL parity is preserved.
         self.prior = getattr(solver, "prior", None) if solver is not None else None
         self.prior_lambda_shift = (
             float(getattr(solver, "prior_lambda_shift", 0.5)) if solver is not None else 0.5
+        )
+        self.risk_fn = getattr(solver, "risk_fn", None) if solver is not None else None
+        self.prior_include_incumbent = bool(
+            getattr(solver, "prior_include_incumbent", True)
+        )
+        self.prior_trust_radius = float(
+            getattr(solver, "prior_trust_radius", 0.5)
+        )
+        self.prior_improvement_epsilon = float(
+            getattr(solver, "prior_improvement_epsilon", 0.0)
+        )
+        self.prior_risk_tolerance = jnp.asarray(
+            getattr(solver, "prior_risk_tolerance", (0.0, 0.0, 0.0, 0.0)),
+            dtype=jnp.float32,
+        )
+        self.prior_acceptance = bool(
+            getattr(solver, "prior_acceptance", True)
         )
         flags = getattr(solver, "flags", None)
         self.use_rl_prior = bool(getattr(flags, "use_rl_prior", True))
@@ -237,6 +254,11 @@ class MdacBackendJax:
         # bound function here avoids creating a fresh lax.scan executable for
         # every call; only the init/steady schedule shapes compile separately.
         self._replan_scan_jit = jax.jit(self._replan_scan)
+
+    @property
+    def _prior_active(self):
+        """Static-at-trace switch; also supports prior injection in unit tests."""
+        return self.prior is not None and self.use_rl_prior
 
     def _kappa_mult(self, state, Ybar_curr):
         """Geometry kappa multiplier for this reverse step (2GO overlay usage).
@@ -310,8 +332,20 @@ class MdacBackendJax:
         return jax.random.normal(key, shape)
 
     # --- the parallel reverse step (one diffusion step), node space ----------
+    def _project_to_prior(self, nodes, U_rl):
+        """Project node plans into a normalized Euclidean prior trust ball."""
+        if not self._prior_active or self.prior_trust_radius <= 0.0:
+            return nodes
+        delta = nodes - U_rl
+        axes = tuple(range(delta.ndim - 2, delta.ndim))
+        rms = jnp.sqrt(jnp.mean(delta * delta, axis=axes, keepdims=True))
+        scale = jnp.minimum(
+            1.0, self.prior_trust_radius / (rms + 1e-8)
+        )
+        return U_rl + scale * delta
+
     def _reverse_step(
-        self, state, rng, Ybar_curr, noise_scale, k, t0,
+        self, state, rng, Ybar_curr, noise_scale, k, t0, U_rl,
     ):
         """One reverse-diffusion step. With every seam off this is, op-for-op,
         `dial_jax.reverse_once(update_form='weighted_mean')`."""
@@ -326,7 +360,18 @@ class MdacBackendJax:
         eps = self._draw_noise(y_rng, (self.Nsample, Hn1, nu), state=Ybar_curr).astype(Ybar_curr.dtype)
         Y0s = eps * noise_scale[None, :, None] + Ybar_curr[None]  # base DIAL sampling schedule
         Y0s = Y0s.at[:, 0].set(Ybar_curr[0])                      # pin node-0
-        Y0s = jnp.concatenate([Y0s, Ybar_curr[None]], axis=0)     # append incumbent
+        if self._prior_active:
+            Y0s = self._project_to_prior(Y0s, U_rl)
+            if self.prior_include_incumbent:
+                # Raw RL proposal is never overwritten: append it independently
+                # of the shifted/refined incumbent.
+                Y0s = jnp.concatenate(
+                    [Y0s, U_rl[None], Ybar_curr[None]], axis=0
+                )
+            else:
+                Y0s = jnp.concatenate([Y0s, Ybar_curr[None]], axis=0)
+        else:
+            Y0s = jnp.concatenate([Y0s, Ybar_curr[None]], axis=0)
         Y0s = jnp.clip(Y0s, -self.action_limit, self.action_limit)
 
         us = jnp.einsum("hn,bnu->bhu", self.N2U, Y0s)             # node -> dense
@@ -419,6 +464,8 @@ class MdacBackendJax:
                     "abar_km1": self._alphas_bar[jnp.maximum(idx_init - 1, 0)],
                 },
             )
+        if self._prior_active:
+            Ybar_next = self._project_to_prior(Ybar_next, U_rl)
         info = {"rews": rews, "mean_reward": rews.mean(), "weights_max": weights.max()}
         if gate_diag is not None:
             info.update({
@@ -434,7 +481,7 @@ class MdacBackendJax:
     def make_schedule(self, n_diffuse: int) -> jnp.ndarray:
         return make_traj_diffuse_factors(self.sigma_control, self.traj_diffuse_factor, int(n_diffuse))
 
-    def _replan_scan(self, state, warm_start, schedule, rng, t0) -> jnp.ndarray:
+    def _replan_scan(self, state, warm_start, schedule, rng, t0, U_rl) -> jnp.ndarray:
         n = schedule.shape[0]
 
         def body(carry, k):
@@ -448,22 +495,87 @@ class MdacBackendJax:
                 schedule[k],
                 k,
                 t0,
+                U_rl,
             )
             return (rng_c, Y), None
 
         (rng_out, Y), _ = jax.lax.scan(body, (rng, warm_start), jnp.arange(n))
         return Y
 
-    def replan(self, state, warm_start, schedule, rng, t0=0.0) -> jnp.ndarray:
+    def _rollout_node_candidates(self, state, nodes, t0):
+        dense = self.spline.node2u_batch(nodes)
+        if self._augmented:
+            rewards = self._rollout_fn(
+                state, dense, t0, self.aug_lambda, self.aug_rho
+            )
+        else:
+            rewards = self._rollout_fn(state, dense, t0)
+        return dense, rewards
+
+    def _accept_refinement(self, state, U_rl, refined, t0):
+        candidates = jnp.stack([U_rl, refined], axis=0)
+        dense, rewards = self._rollout_node_candidates(
+            state, candidates, t0
+        )
+        scores = jnp.mean(rewards, axis=-1)
+        improvement = scores[1] - scores[0]
+        predicted_ok = improvement > self.prior_improvement_epsilon
+
+        if self.risk_fn is not None:
+            risks = jax.vmap(lambda us: self.risk_fn(state, us))(dense)
+            tolerance = self.prior_risk_tolerance
+            risk_ok = jnp.all(risks[1] <= risks[0] + tolerance)
+            # A refined proposal with any predicted force-limit violation is
+            # never accepted, even when the RL fallback is itself imperfect.
+            hard_force_ok = risks[1, 0] <= 1e-8
+        else:
+            risks = jnp.zeros((2, 0), dtype=refined.dtype)
+            risk_ok = jnp.asarray(True)
+            hard_force_ok = jnp.asarray(True)
+
+        accepted = predicted_ok & risk_ok & hard_force_ok
+        if not self.prior_acceptance:
+            accepted = jnp.asarray(True)
+        selected = jnp.where(accepted, refined, U_rl)
+        info = {
+            "prior_accepted": accepted.astype(jnp.float32),
+            "prior_predicted_improvement": improvement,
+            "prior_score_rl": scores[0],
+            "prior_score_refined": scores[1],
+            "prior_risk_rl": risks[0],
+            "prior_risk_refined": risks[1],
+            "prior_risk_ok": risk_ok.astype(jnp.float32),
+            "prior_force_veto": (~hard_force_ok).astype(jnp.float32),
+        }
+        return selected, info
+
+    def replan_with_info(self, state, warm_start, schedule, rng, t0=0.0):
         t0 = jnp.asarray(t0, jnp.float32)
-        # prior warm-start mix (eq:rl_warm_start). None => unchanged (DIAL).
-        if self.prior is not None and self.use_rl_prior:
+        if self._prior_active:
             lam = self.prior_lambda_shift
             U_rl = jnp.asarray(self.prior.warm_start(state), warm_start.dtype)
             warm_start = lam * warm_start + (1.0 - lam) * U_rl
+            warm_start = self._project_to_prior(warm_start, U_rl)
+        else:
+            # Dummy of the right static shape; all prior branches are Python
+            # static false, preserving the legacy candidate set and arithmetic.
+            U_rl = warm_start
         if self._prepare_state_jit is not None:
-            state = self._prepare_state_jit(state, warm_start, t0)
-        return self._replan_scan_jit(state, warm_start, schedule, rng, t0)
+            # The measured response is frozen around the actual incumbent, not
+            # around an arbitrary shifted/RL mixture.
+            response_center = U_rl if self._prior_active else warm_start
+            state = self._prepare_state_jit(state, response_center, t0)
+        refined = self._replan_scan_jit(
+            state, warm_start, schedule, rng, t0, U_rl
+        )
+        if self._prior_active:
+            return self._accept_refinement(state, U_rl, refined, t0)
+        return refined, {}
+
+    def replan(self, state, warm_start, schedule, rng, t0=0.0) -> jnp.ndarray:
+        return self.replan_with_info(
+            state, warm_start, schedule, rng, t0=t0
+        )[0]
 
     def first_action(self, plan_var) -> jnp.ndarray:
         return self.spline.node2u(plan_var)[0]
@@ -477,18 +589,31 @@ class MdacBackendJax:
         the whole reverse-diffuse jit-ed; candidate rollout vmap-ed over Nsample."""
         if rng_key is None:
             rng_key = jax.random.PRNGKey(self.seed)
-        replan_jit = jax.jit(self.replan)
-        Y = replan_jit(x0, self.init_plan_var(), self.make_schedule(self.Ndiffuse_init), rng_key)
+        replan_jit = jax.jit(self.replan_with_info)
+        Y, prior_info = replan_jit(
+            x0,
+            self.init_plan_var(),
+            self.make_schedule(self.Ndiffuse_init),
+            rng_key,
+        )
         us = self.spline.node2u(Y)
-        rews = np.asarray(self._rollout_fn(x0, us[None], 0.0)[0], dtype=np.float32)
+        _, reward_batch = self._rollout_node_candidates(
+            x0, Y[None], jnp.float32(0.0)
+        )
+        rews = np.asarray(reward_batch[0], dtype=np.float32)
         states = self._rollout_states(x0, us)
-        return {
+        out = {
             "actions": np.asarray(us, dtype=np.float32),
             "states": states,
             "rewards": rews,
             "total_reward": float(np.sum(rews)),
             "mean_reward": float(np.mean(rews)) if rews.size else 0.0,
         }
+        out.update({
+            key: np.asarray(value)
+            for key, value in prior_info.items()
+        })
+        return out
 
     def plan_batch(self, x0: Any, keys: Any) -> List[Dict[str, Any]]:
         return [self.plan(x0, rng_key=k) for k in keys]

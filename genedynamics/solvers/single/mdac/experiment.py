@@ -61,6 +61,7 @@ def stiffness_mode_for(method: str, flags) -> str:
 
 def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
               surface_seed: int = 0, use_base: bool = False, prior: Any = None,
+              policy_ckpt: Optional[str] = None,
               aug_lambda: float = 2.0, aug_rho: float = 200.0,
               backend: Any = None, env_overrides: Optional[dict] = None,
               **cfg: Any) -> Tuple[Any, MDACSolver]:
@@ -90,6 +91,31 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
             if k not in ("stiffness_mode", "clean_manifold_force")
         })
     env = make_env(task, **env_kw)
+    if prior is None and policy_ckpt is not None:
+        from genedynamics.learning.train_rl_policy import (
+            build_policy_prior,
+            load_policy,
+        )
+
+        params, policy_config = load_policy(policy_ckpt)
+        if int(policy_config["action_size"]) != int(env.action_size):
+            raise ValueError(
+                "policy/environment action mismatch: "
+                f"{policy_config['action_size']} != {env.action_size}"
+            )
+        if int(policy_config["observation_size"]) != int(env.observation_size):
+            raise ValueError(
+                "policy/environment observation mismatch: "
+                f"{policy_config['observation_size']} != {env.observation_size}"
+            )
+        prior = build_policy_prior(
+            params,
+            policy_config,
+            env=env,
+            Hsample=int(cfg.get("Hsample", 16)),
+            Hnode=int(cfg.get("Hnode", 4)),
+            ctrl_dt=float(cfg.get("ctrl_dt", 0.02)),
+        )
     residual_fn = None
     if flags.use_horizon_geometry:
         if flags.use_controllability_geometry:
@@ -159,12 +185,16 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
     if flags.use_retraction:
         from genedynamics.solvers.single.mdac.core.retraction import make_mdac_retraction
         retraction = make_mdac_retraction(env, residual_fn=residual_fn)
+    # Acceptance remains solver-generic: the task owns the semantics and
+    # normalization of force/contact/deformation risk.
+    risk_fn = getattr(env, "sequence_risk", None)
     solver = MDACSolver(
         env, None, backend, method=method,
         geometry_fn=geometry_fn, retraction=retraction,
         geometry_gate_fn=geometry_gate_fn,
         prepare_state_fn=prepare_state_fn,
         prior=(prior if flags.use_rl_prior else None),
+        risk_fn=risk_fn,
         aug_lambda=aug_lambda, aug_rho=aug_rho, **cfg,
     )
     return env, solver
@@ -230,7 +260,7 @@ def _build_baseline_solver(method, env, backend, **cfg):
 
 
 def make_controller(task, method="mdac", *, level=None, surface_seed=0, use_base=False,
-                    prior=None, aug_lambda=2.0, aug_rho=200.0, backend=None,
+                    prior=None, policy_ckpt=None, aug_lambda=2.0, aug_rho=200.0, backend=None,
                     env_overrides=None, **cfg):
     """Build ``(env, runner)`` for ANY method on the SAME brax env at the SAME budget:
     an MDAC variant (``MDACSolver`` via ``make_mdac``), a sampling baseline (``mppi`` /
@@ -238,7 +268,8 @@ def make_controller(task, method="mdac", *, level=None, surface_seed=0, use_base
     ``runner.run_receding(x0, n_steps, rng) -> RecedingHorizonResult``."""
     if method in METHOD_TABLE:                       # MDAC variant (incl. dial/mbd/anchors)
         return make_mdac(task, method, level=level, surface_seed=surface_seed, use_base=use_base,
-                         prior=prior, aug_lambda=aug_lambda, aug_rho=aug_rho, backend=backend,
+                         prior=prior, policy_ckpt=policy_ckpt,
+                         aug_lambda=aug_lambda, aug_rho=aug_rho, backend=backend,
                          env_overrides=env_overrides, **cfg)
     env = _build_env(task, method, level, surface_seed, use_base, env_overrides)
     backend = backend or get_backend("jax")

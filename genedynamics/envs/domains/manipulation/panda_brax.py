@@ -232,6 +232,11 @@ class PandaSurfaceScanConfig:
     deformation_scale: float = 0.005
     metric_acquisition_steps: int = 5
     metric_path_tolerance: float = 0.005
+    # Observation contract. ``legacy`` preserves the original 22-D vector.
+    # ``rl_realized`` exposes only measurable task/realization signals needed by
+    # the shared RL prior; it deliberately excludes the simulator's exact
+    # friction, stiffness, and medium label.
+    observation_mode: str = "legacy"
     # CLEAN manifold composition. Full MDAC includes commanded force; the
     # position-only diagnostic keeps only reliable surface coordinates.
     clean_manifold_force: bool = True
@@ -416,6 +421,8 @@ class PandaSurfaceScanEnv(PipelineEnv):
             "force_int": jnp.float32(0.0),     # contact-force integral (admittance state)
             "tangent_force_int": jnp.zeros((3,), dtype=jnp.float32),
         }
+        if self._config.observation_mode == "rl_realized":
+            info["prev_action"] = jnp.zeros((self.action_size,), dtype=jnp.float32)
         obs = self._get_obs(ps, info)
         return State(ps, obs, jnp.float32(0.0), jnp.float32(0.0),
                      {"reward": jnp.float32(0.0)}, info)
@@ -621,6 +628,8 @@ class PandaSurfaceScanEnv(PipelineEnv):
         info = {**state.info, "xi": xi, "eta": eta, "psi": psi, "prev_s": S_vec,
                 "step": state.info["step"] + 1, "force_int": force_int,
                 "tangent_force_int": tangent_force_int}
+        if cfg.observation_mode == "rl_realized":
+            info["prev_action"] = jnp.clip(action, -1.0, 1.0)
         obs = self._get_obs(ps, info)
         return state.replace(pipeline_state=ps, obs=obs, reward=reward,
                              metrics={"reward": reward}, info=info)
@@ -990,9 +999,109 @@ class PandaSurfaceScanEnv(PipelineEnv):
 
     def _get_obs(self, ps, info) -> jax.Array:
         p_h = ps.site_xpos[self._ee_site]
+        if self._config.observation_mode == "rl_realized":
+            cfg = self._config
+            xi, eta = info["xi"], info["eta"]
+            xi_t, eta_t = self._target(info["step"])
+            coord_scale = max(
+                cfg.reward_path_scale
+                if cfg.reward_path_scale > 0.0 else cfg.scan_span,
+                1e-6,
+            )
+            target_error = jnp.asarray([xi_t - xi, eta_t - eta]) / coord_scale
+
+            _, n_s, p_d, _ = self._desired_pose(xi, eta)
+            ee_error = p_h - p_d
+            tangent_error = ee_error - jnp.dot(ee_error, n_s) * n_s
+            Jq = self._surface_coordinate_jacobian(xi, eta)
+            reg = max(cfg.realization_compensation_reg, 1e-9)
+            realized_coord_error = jnp.linalg.solve(
+                Jq.T @ Jq + reg * jnp.eye(2, dtype=Jq.dtype),
+                Jq.T @ tangent_error,
+            ) / coord_scale
+
+            force = self._contact_force_at(ps, xi, eta)
+            force_scale = max(
+                cfg.reward_force_scale
+                if cfg.reward_force_scale > 0.0
+                else cfg.f_max - cfg.f_min,
+                1e-6,
+            )
+            force_error = (force - cfg.f_target) / force_scale
+            deformation = self._penetration_at(ps, xi, eta)
+            deformation_scaled = deformation / max(cfg.deformation_scale, 1e-6)
+            in_contact = (force > 0.5).astype(jnp.float32)
+            phase = jnp.clip(
+                info["step"].astype(jnp.float32) * cfg.scan_rate
+                / max(cfg.scan_span, 1e-6),
+                0.0,
+                1.0,
+            )
+            task_obs = jnp.concatenate([
+                target_error,
+                realized_coord_error,
+                jnp.asarray([
+                    info["psi"],
+                    force_error,
+                    deformation_scaled,
+                    in_contact,
+                    phase,
+                ]),
+                info["prev_action"],
+            ])
+            return jnp.concatenate([ps.qpos, ps.qvel, p_h, task_obs])
+        if self._config.observation_mode != "legacy":
+            raise ValueError(
+                "observation_mode must be 'legacy' or 'rl_realized', got "
+                f"{self._config.observation_mode!r}"
+            )
         return jnp.concatenate([ps.qpos, ps.qvel, p_h,
                                 jnp.array([info["xi"], info["eta"], info["psi"],
                                            self._contact_force_at(ps, info["xi"], info["eta"]), self._mu])])
+
+    def sequence_risk(self, state, actions) -> jax.Array:
+        """Task-owned realized risk vector for one candidate sequence.
+
+        Returns dimensionless ``[force_violation_rate, contact_loss_rate,
+        deformation_CVaR20, force_MAE]``.  The solver only compares this vector;
+        contact semantics and physical scaling remain owned by the environment.
+        """
+        cfg = self._config
+
+        def body(s, u):
+            s2 = self.step(s, u)
+            xi, eta = s2.info["xi"], s2.info["eta"]
+            force = self._contact_force_at(s2.pipeline_state, xi, eta)
+            deformation = self._penetration_at(s2.pipeline_state, xi, eta)
+            force_violation = (
+                (force < cfg.f_min) | (force > cfg.f_max)
+            ).astype(jnp.float32)
+            contact_loss = (force <= 0.5).astype(jnp.float32)
+            force_error = (
+                jnp.abs(force - cfg.f_target)
+                / max(
+                    cfg.reward_force_scale
+                    if cfg.reward_force_scale > 0.0
+                    else cfg.f_max - cfg.f_min,
+                    1e-6,
+                )
+            )
+            return s2, jnp.asarray([
+                force_violation,
+                contact_loss,
+                deformation / max(cfg.deformation_scale, 1e-6),
+                force_error,
+            ])
+
+        _, per_step = jax.lax.scan(body, state, actions)
+        tail_count = max(1, (int(actions.shape[0]) + 4) // 5)
+        deformation_cvar = jnp.mean(jnp.sort(per_step[:, 2])[-tail_count:])
+        return jnp.asarray([
+            jnp.mean(per_step[:, 0]),
+            jnp.mean(per_step[:, 1]),
+            deformation_cvar,
+            jnp.mean(per_step[:, 3]),
+        ])
 
     # --- MDAC soft-feasibility: h_surf (eq 727) + h_normal (eq 731) + g_force ---
     def constraint_residual(self, state, action, ctx=None):
@@ -1017,3 +1126,71 @@ class PandaSurfaceScanEnv(PipelineEnv):
         F_n_cmd = self._force_cmd(action[self.spec.nu_slice][0])
         g = jnp.array([F_n_cmd - cfg.f_max, cfg.f_min - F_n_cmd])   # F_min ≤ F_n ≤ F_max
         return h, g
+
+
+class PandaSurfaceScanDomainEnv:
+    """Reset-key randomized family of shape-compatible Panda scan environments.
+
+    Brax vectorization supplies a different reset key to each environment.  The
+    key selects one statically constructed domain, and ``lax.switch`` dispatches
+    reset/step without exposing that index in the policy observation. In Brax
+    training this yields a heterogeneous parallel batch; AutoReset may retain an
+    environment's selected domain across its episodes. Keeping this wrapper in
+    the task module makes material/geometry randomization an environment concern
+    rather than hard-coded logic in the RL trainer.
+    """
+
+    def __init__(self, domains):
+        self.domains = tuple(domains)
+        if not self.domains:
+            raise ValueError("PandaSurfaceScanDomainEnv needs at least one domain")
+        action_sizes = {int(env.action_size) for env in self.domains}
+        observation_sizes = {int(env.observation_size) for env in self.domains}
+        if len(action_sizes) != 1 or len(observation_sizes) != 1:
+            raise ValueError(
+                "all randomized Panda domains must share action/observation sizes"
+            )
+        self._action_size = action_sizes.pop()
+        self._observation_size = observation_sizes.pop()
+
+    @property
+    def action_size(self):
+        return self._action_size
+
+    @property
+    def observation_size(self):
+        return self._observation_size
+
+    @property
+    def backend(self):
+        return self.domains[0].backend
+
+    @property
+    def dt(self):
+        return self.domains[0].dt
+
+    def reset(self, rng):
+        domain_index = jax.random.randint(
+            rng, (), 0, len(self.domains), dtype=jnp.int32
+        )
+        branches = tuple(
+            (lambda key, env=env: env.reset(key)) for env in self.domains
+        )
+        state = jax.lax.switch(domain_index, branches, rng)
+        return state.replace(
+            info={**state.info, "_rl_domain_index": domain_index}
+        )
+
+    def step(self, state, action):
+        domain_index = state.info["_rl_domain_index"]
+        branches = tuple(
+            (lambda s, env=env: env.step(s, action)) for env in self.domains
+        )
+        return jax.lax.switch(domain_index, branches, state)
+
+
+__all__ = [
+    "PandaSurfaceScanConfig",
+    "PandaSurfaceScanEnv",
+    "PandaSurfaceScanDomainEnv",
+]

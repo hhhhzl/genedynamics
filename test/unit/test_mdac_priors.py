@@ -89,6 +89,11 @@ def test_prior_seam_additive_safety():
     b1 = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
     b1.prior = _FakePrior(COMMON["Hnode"] + 1, COMMON["nu"])
     b1.use_rl_prior, b1.prior_lambda_shift = True, 1.0
+    # Isolate the legacy warm-start seam. The full Phase-4 path intentionally
+    # keeps U_rl as a separate candidate even when lambda_shift=1.
+    b1.prior_include_incumbent = False
+    b1.prior_trust_radius = 0.0
+    b1.prior_acceptance = False
     y1 = _replan(b1, rng)
     assert float(jnp.max(jnp.abs(y1 - base))) < 1e-6      # prior mix is identity at lam=1
 
@@ -107,3 +112,46 @@ def test_prior_none_is_unchanged():
     b = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)   # prior stays None
     assert b.prior is None
     assert float(jnp.max(jnp.abs(_replan(b, rng) - base))) == 0.0
+
+
+def test_prior_acceptance_and_force_veto():
+    backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    backend.prior = _FakePrior(COMMON["Hnode"] + 1, COMMON["nu"])
+    backend.use_rl_prior = True
+    U_rl = jnp.full((COMMON["Hnode"] + 1, COMMON["nu"]), 0.3)
+    refined = jnp.broadcast_to(TARGET, U_rl.shape)
+
+    backend.risk_fn = lambda state, us: jnp.zeros((4,), jnp.float32)
+    selected, info = backend._accept_refinement(
+        X0 := jnp.zeros((1,)), U_rl, refined, jnp.float32(0.0)
+    )
+    np.testing.assert_allclose(selected, refined)
+    assert float(info["prior_accepted"]) == 1.0
+    assert float(info["prior_predicted_improvement"]) > 0.0
+
+    def force_risk(state, us):
+        violation = jnp.mean((us[:, 0] > 0.35).astype(jnp.float32))
+        return jnp.asarray([violation, 0.0, 0.0, 0.0])
+
+    backend.risk_fn = force_risk
+    selected, info = backend._accept_refinement(
+        X0, U_rl, refined, jnp.float32(0.0)
+    )
+    np.testing.assert_allclose(selected, U_rl)
+    assert float(info["prior_accepted"]) == 0.0
+    assert float(info["prior_force_veto"]) == 1.0
+
+
+def test_prior_trust_region_bounds_refinement():
+    backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    U_rl = jnp.full((COMMON["Hnode"] + 1, COMMON["nu"]), 0.2)
+    backend.prior = _FakePrior(
+        COMMON["Hnode"] + 1, COMMON["nu"], val=0.2
+    )
+    backend.use_rl_prior = True
+    backend.prior_trust_radius = 0.1
+    projected = backend._project_to_prior(
+        jnp.full_like(U_rl, 1.0), U_rl
+    )
+    rms = jnp.sqrt(jnp.mean((projected - U_rl) ** 2))
+    assert float(rms) <= 0.100001
