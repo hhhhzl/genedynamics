@@ -58,8 +58,14 @@ def main():
 
     ws = np.asarray(prior.warm_start(x0))
     act = np.asarray(prior.act(x0.obs, deterministic=True))
+    proposals = prior.sample_horizons(
+        x0, key=jax.random.PRNGKey(11), n_samples=3
+    )
     okP1 = (ws.shape == (HNODE + 1, A)) and (act.shape == (A,)) \
-        and bool(np.all(np.isfinite(ws))) and bool(np.all(np.isfinite(act)))
+        and (np.asarray(proposals.trajectories).shape == (3, HNODE + 1, A)) \
+        and (np.asarray(proposals.log_prob).shape == (3,)) \
+        and bool(np.all(np.isfinite(ws))) and bool(np.all(np.isfinite(act))) \
+        and bool(np.all(np.isfinite(np.asarray(proposals.trajectories))))
     ok.append(okP1)
     print(f"[P1] brax RLPrior: warm_start{ws.shape} act{act.shape} finite -> {'PASS' if okP1 else 'FAIL'}")
 
@@ -70,6 +76,17 @@ def main():
     okP2 = (dmax > 1e-4) and bool(np.all(np.isfinite(y_prior)))
     ok.append(okP2)
     print(f"[P2] MDAC with vs without prior: max|Δplan|={dmax:.3e} -> {'PASS' if okP2 else 'FAIL'}")
+
+    structured_solver = MDACSolver(
+        env, None, backend, method="mdac", prior=prior,
+        prior_lambda_shift=0.5, prior_stochastic_samples=3, **CFG,
+    )
+    y_structured = _replan(structured_solver, x0, rng)
+    okP3 = y_structured.shape == y_prior.shape and bool(
+        np.all(np.isfinite(y_structured))
+    )
+    ok.append(okP3)
+    print(f"[P3] stochastic horizon proposals enter fixed-budget MDAC -> {'PASS' if okP3 else 'FAIL'}")
 
     print("RESULT:", "ALL PASS" if all(ok) else "FAILED")
     return 0 if all(ok) else 1

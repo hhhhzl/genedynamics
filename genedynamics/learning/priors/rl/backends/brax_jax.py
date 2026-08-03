@@ -118,6 +118,14 @@ class BraxRLPrior:
                     lambda obs: self.act(obs, deterministic=True)
                 )
                 self._rollout_step_jit = jax.jit(self._rollout_step)
+                self._policy_action_batch_jit = jax.jit(jax.vmap(
+                    lambda obs, key: self.act(
+                        obs, key=key, deterministic=False
+                    )
+                ))
+                self._rollout_step_batch_jit = jax.jit(jax.vmap(
+                    self._rollout_step
+                ))
 
     # --- helpers ---
     def _norm_pol(self):
@@ -188,6 +196,65 @@ class BraxRLPrior:
         obs = self._obs_of(state, self._obs_key)
         a = self.act(obs, deterministic=True)
         return jnp.tile(a[None, :], (self.n_warm_nodes, 1))
+
+    def sample_horizons(self, state, *, key, n_samples: int):
+        """Sample stochastic closed-loop policy horizons in solver node space."""
+        from genedynamics.learning.priors.base import ProposalBatch
+
+        n_samples = int(n_samples)
+        if n_samples <= 0:
+            raise ValueError("n_samples must be positive")
+        if self._rollout_step is None or self._spline is None:
+            raise ValueError(
+                "structured horizon sampling requires rollout_step"
+            )
+
+        # CPU deliberately reuses the same small batched policy/one-step MJX
+        # executables at every horizon position.  This avoids fusing an extra
+        # policy x horizon x environment executable beside MDAC's rollout.
+        batch_state = jax.tree_util.tree_map(
+            lambda x: jnp.broadcast_to(
+                jnp.asarray(x), (n_samples,) + jnp.asarray(x).shape
+            ),
+            state,
+        )
+        keys = jax.random.split(key, self._dense_horizon * n_samples)
+        keys = keys.reshape((self._dense_horizon, n_samples, -1))
+        observations = []
+        actions = []
+
+        if self._cpu_stepwise_rollout:
+            current = batch_state
+            for h in range(self._dense_horizon):
+                obs = self._obs_of(current, self._obs_key)
+                action = self._policy_action_batch_jit(obs, keys[h])
+                observations.append(obs)
+                actions.append(action)
+                current = self._rollout_step_batch_jit(current, action)
+            obs_seq = jnp.stack(observations, axis=1)
+            dense_actions = jnp.stack(actions, axis=1)
+        else:
+            def body(current, key_h):
+                obs = self._obs_of(current, self._obs_key)
+                action = jax.vmap(
+                    lambda o, k: self.act(o, key=k, deterministic=False)
+                )(obs, key_h)
+                next_state = jax.vmap(self._rollout_step)(current, action)
+                return next_state, (obs, action)
+
+            _, (obs_h, action_h) = jax.lax.scan(body, batch_state, keys)
+            obs_seq = jnp.swapaxes(obs_h, 0, 1)
+            dense_actions = jnp.swapaxes(action_h, 0, 1)
+
+        nodes = jnp.einsum(
+            "nh,bhu->bnu", self._spline.U2N, dense_actions
+        )
+        log_prob = jax.vmap(self.logp_of_sequence)(obs_seq, dense_actions)
+        return ProposalBatch(
+            trajectories=nodes,
+            log_prob=log_prob,
+            expert_id=jnp.ones((n_samples,), dtype=jnp.int32),
+        )
 
 
 __all__ = ["BraxRLPrior"]

@@ -199,6 +199,14 @@ class MdacBackendJax:
         self.prior_trust_radius = float(
             getattr(solver, "prior_trust_radius", 0.5)
         )
+        self.prior_stochastic_samples = int(
+            getattr(solver, "prior_stochastic_samples", 0)
+        )
+        if not 0 <= self.prior_stochastic_samples < self.Nsample:
+            raise ValueError(
+                "prior_stochastic_samples must be in [0, Nsample), got "
+                f"{self.prior_stochastic_samples} with Nsample={self.Nsample}"
+            )
         self.prior_improvement_epsilon = float(
             getattr(solver, "prior_improvement_epsilon", 0.0)
         )
@@ -281,6 +289,9 @@ class MdacBackendJax:
         # bound function here avoids creating a fresh lax.scan executable for
         # every call; only the init/steady schedule shapes compile separately.
         self._replan_scan_jit = jax.jit(self._replan_scan)
+        self._replan_scan_structured_jit = jax.jit(
+            self._replan_scan_structured
+        )
         # Acceptance contains a task-owned horizon ``lax.scan``.  Leaving the
         # vmap/scan expression in eager Python causes a fresh transformed
         # function to be constructed on every MPC step, so CPU XLA retains an
@@ -380,6 +391,7 @@ class MdacBackendJax:
 
     def _reverse_step(
         self, state, rng, Ybar_curr, noise_scale, k, t0, U_rl,
+        structured_nodes=None,
     ):
         """One reverse-diffusion step. With every seam off this is, op-for-op,
         `dial_jax.reverse_once(update_form='weighted_mean')`."""
@@ -391,11 +403,22 @@ class MdacBackendJax:
         _, y_rng = jax.random.split(sub)                          # DIAL split pattern
         # cast to the carry dtype so the replan scan carry stays type-consistent
         # (and byte-identical to DIAL) regardless of the jax x64 config.
-        eps = self._draw_noise(y_rng, (self.Nsample, Hn1, nu), state=Ybar_curr).astype(Ybar_curr.dtype)
+        n_structured = (
+            0 if structured_nodes is None else structured_nodes.shape[0]
+        )
+        n_noise = self.Nsample - n_structured
+        eps = self._draw_noise(
+            y_rng, (n_noise, Hn1, nu), state=Ybar_curr
+        ).astype(Ybar_curr.dtype)
         Y0s = eps * noise_scale[None, :, None] + Ybar_curr[None]  # base DIAL sampling schedule
         Y0s = Y0s.at[:, 0].set(Ybar_curr[0])                      # pin node-0
         if self._prior_active:
             Y0s = self._project_to_prior(Y0s, U_rl)
+            if structured_nodes is not None:
+                structured_nodes = self._project_to_prior(
+                    structured_nodes.astype(Ybar_curr.dtype), U_rl
+                )
+                Y0s = jnp.concatenate([Y0s, structured_nodes], axis=0)
             if self.prior_include_incumbent:
                 # Raw RL proposal is never overwritten: append it independently
                 # of the shifted/refined incumbent.
@@ -567,6 +590,35 @@ class MdacBackendJax:
         (rng_out, Y), _ = jax.lax.scan(body, (rng, warm_start), jnp.arange(n))
         return Y
 
+    def _replan_scan_structured(
+        self, state, warm_start, schedule, rng, t0, U_rl, structured_nodes
+    ) -> jnp.ndarray:
+        """Reverse scan with a fixed-budget batch of structured proposals."""
+        n = schedule.shape[0]
+
+        def body(carry, k):
+            rng_c, Y = carry
+            noise_scale = schedule[k]
+
+            def active_step(active_carry):
+                active_rng, active_y = active_carry
+                active_rng, active_y, _ = self._reverse_step(
+                    state, active_rng, active_y, noise_scale, k, t0, U_rl,
+                    structured_nodes=structured_nodes,
+                )
+                return active_rng, active_y
+
+            rng_c, Y = jax.lax.cond(
+                jnp.all(jnp.isfinite(noise_scale)),
+                active_step,
+                lambda inactive_carry: inactive_carry,
+                (rng_c, Y),
+            )
+            return (rng_c, Y), None
+
+        (_, Y), _ = jax.lax.scan(body, (rng, warm_start), jnp.arange(n))
+        return Y
+
     def _rollout_node_candidates(self, state, nodes, t0):
         dense = self.spline.node2u_batch(nodes)
         if self._augmented:
@@ -710,19 +762,57 @@ class MdacBackendJax:
             else:
                 response_center = U_rl if self._prior_active else warm_start
             state = self._prepare_state_jit(state, response_center, t0)
-        refined = self._replan_scan_jit(
-            state, warm_start, schedule, rng, t0, U_rl
-        )
+        proposal_info = {}
+        if self._prior_active and self.prior_stochastic_samples > 0:
+            sample_horizons = getattr(self.prior, "sample_horizons", None)
+            if sample_horizons is None:
+                raise ValueError(
+                    "prior_stochastic_samples requires prior.sample_horizons"
+                )
+            rng, proposal_key = jax.random.split(rng)
+            proposals = sample_horizons(
+                state,
+                key=proposal_key,
+                n_samples=self.prior_stochastic_samples,
+            )
+            structured_nodes = jnp.asarray(
+                proposals.trajectories, warm_start.dtype
+            )
+            expected = (
+                self.prior_stochastic_samples,
+                self.Hnode + 1,
+                self.nu,
+            )
+            if structured_nodes.shape != expected:
+                raise ValueError(
+                    f"structured proposal shape {structured_nodes.shape} != {expected}"
+                )
+            refined = self._replan_scan_structured_jit(
+                state, warm_start, schedule, rng, t0, U_rl,
+                structured_nodes,
+            )
+            proposal_info = {
+                "proposal_stochastic_count": jnp.asarray(
+                    self.prior_stochastic_samples, jnp.float32
+                ),
+                "proposal_logp_mean": jnp.mean(proposals.log_prob),
+            }
+        else:
+            # Exact legacy call: no RNG split, no candidate-shape change.
+            refined = self._replan_scan_jit(
+                state, warm_start, schedule, rng, t0, U_rl
+            )
         if self._prior_active:
             fallback = (
                 receding_incumbent
                 if self.prior_fallback_mode == "receding_incumbent"
                 else U_rl
             )
-            return self._accept_refinement_jit(
+            selected, acceptance_info = self._accept_refinement_jit(
                 state, fallback, refined, t0
             )
-        return refined, {}
+            return selected, {**acceptance_info, **proposal_info}
+        return refined, proposal_info
 
     def replan(self, state, warm_start, schedule, rng, t0=0.0) -> jnp.ndarray:
         return self.replan_with_info(

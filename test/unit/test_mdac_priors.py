@@ -143,6 +143,32 @@ def test_prior_seam_additive_safety():
     assert jnp.all(jnp.isfinite(y0))
 
 
+def test_structured_proposals_use_fixed_gaussian_budget_and_are_opt_in():
+    rng = jax.random.PRNGKey(23)
+    legacy = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    legacy.prior = _FakeStructuredPrior(
+        COMMON["Hnode"] + 1, COMMON["nu"], val=0.3
+    )
+    legacy.use_rl_prior = True
+    legacy.prior_stochastic_samples = 0
+    y_legacy = _replan(legacy, rng)
+
+    structured = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    structured.prior = legacy.prior
+    structured.use_rl_prior = True
+    structured.prior_stochastic_samples = 4
+    y_structured, info = structured.replan_with_info(
+        jnp.zeros((1,)), structured.init_plan_var(),
+        structured.make_schedule(structured.Ndiffuse_init), rng,
+    )
+    assert y_structured.shape == y_legacy.shape
+    assert jnp.all(jnp.isfinite(y_structured))
+    assert float(info["proposal_stochastic_count"]) == 4.0
+    # Four structured candidates replace four Gaussian candidates; the reverse
+    # kernel's declared stochastic budget itself never changes.
+    assert structured.Nsample == legacy.Nsample == COMMON["Nsample"]
+
+
 def test_prior_none_is_unchanged():
     rng = jax.random.PRNGKey(9)
     base = _replan(MdacBackendJax(rollout_fn=_mock_rollout, **COMMON), rng)

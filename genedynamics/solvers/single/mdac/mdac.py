@@ -111,6 +111,7 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         risk_fn: Any = None,             # task-owned sequence risk vector
         prior_include_incumbent: bool = True,
         prior_trust_radius: float = 0.5,
+        prior_stochastic_samples: int = 0,
         prior_improvement_epsilon: float = 0.0,
         prior_risk_tolerance: Any = (0.0, 0.0, 0.0, 0.0),
         prior_acceptance: bool = True,
@@ -162,6 +163,12 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         self.risk_fn = risk_fn
         self.prior_include_incumbent = bool(prior_include_incumbent)
         self.prior_trust_radius = float(prior_trust_radius)
+        self.prior_stochastic_samples = int(prior_stochastic_samples)
+        if not 0 <= self.prior_stochastic_samples < int(Nsample):
+            raise ValueError(
+                "prior_stochastic_samples must be in [0, Nsample), got "
+                f"{self.prior_stochastic_samples} with Nsample={Nsample}"
+            )
         self.prior_improvement_epsilon = float(prior_improvement_epsilon)
         self.prior_risk_tolerance = tuple(float(x) for x in prior_risk_tolerance)
         self.prior_acceptance = bool(prior_acceptance)
@@ -187,6 +194,7 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
                 mdac_geom_gain=float(mdac_geom_gain),
                 prior_include_incumbent=bool(prior_include_incumbent),
                 prior_trust_radius=float(prior_trust_radius),
+                prior_stochastic_samples=self.prior_stochastic_samples,
                 prior_improvement_epsilon=float(prior_improvement_epsilon),
                 prior_risk_tolerance=self.prior_risk_tolerance,
                 prior_acceptance=bool(prior_acceptance),
