@@ -295,6 +295,27 @@ def test_receding_incumbent_fallback_never_returns_raw_policy():
     assert float(cold_info["prior_accepted"]) == 1.0
 
 
+def test_atacom_pareto_incumbent_can_dominate_receding_and_refinement():
+    backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    backend.prior = _FakePrior(COMMON["Hnode"] + 1, COMMON["nu"])
+    backend.use_rl_prior = True
+    backend.prior_fallback_mode = "receding_incumbent"
+    backend.risk_fn = lambda state, us: jnp.zeros((4,), jnp.float32)
+    receding = jnp.zeros((5, 2), jnp.float32)
+    atacom = jnp.broadcast_to(TARGET, receding.shape)
+    worse_refinement = jnp.full_like(receding, -0.8)
+    selected, info = backend._accept_refinement(
+        jnp.zeros((1,)), receding, worse_refinement, jnp.float32(1.0),
+        atacom,
+    )
+    np.testing.assert_allclose(selected, atacom)
+    assert float(info["atacom_incumbent_selected"]) == 1.0
+    assert float(info["prior_accepted"]) == 0.0
+    assert float(info["prior_score_fallback"]) == float(
+        info["prior_score_atacom"]
+    )
+
+
 def test_receding_incumbent_uses_terminal_hold_shift():
     backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
     backend.prior = _FakePrior(COMMON["Hnode"] + 1, COMMON["nu"])
@@ -326,6 +347,24 @@ def test_prior_trust_region_bounds_refinement():
     )
     rms = jnp.sqrt(jnp.mean((projected - U_rl) ** 2))
     assert float(rms) <= 0.100001
+
+
+def test_union_trust_region_preserves_nearest_expert_mode():
+    backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    backend.prior = _FakePrior(COMMON["Hnode"] + 1, COMMON["nu"])
+    backend.use_rl_prior = True
+    backend.prior_trust_radius = 0.1
+    centers = jnp.stack([
+        jnp.full((5, 2), -0.6, jnp.float32),
+        jnp.full((5, 2), 0.6, jnp.float32),
+    ])
+    plans = jnp.stack([
+        jnp.full((5, 2), -0.9, jnp.float32),
+        jnp.full((5, 2), 0.9, jnp.float32),
+    ])
+    projected = backend._project_to_prior_union(plans, centers)
+    np.testing.assert_allclose(projected[0], -0.7, atol=2e-5)
+    np.testing.assert_allclose(projected[1], 0.7, atol=2e-5)
 
 
 def test_raw_rl_controller_matches_receding_horizon_contract():

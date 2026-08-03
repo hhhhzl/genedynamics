@@ -313,6 +313,7 @@ def _prior_diagnostics(res: Any) -> Dict[str, Any]:
         out["prior_fallback_rate"] = 1.0 - out["prior_acceptance_rate"]
         for source in (
             "prior_risk_rl", "prior_risk_incumbent", "prior_risk_refined",
+            "prior_risk_atacom",
             "reliability_risk_incumbent", "reliability_risk_refined",
         ):
             vectors = [np.asarray(x[source], dtype=float).reshape(-1) for x in infos if source in x]
@@ -329,6 +330,10 @@ def _prior_diagnostics(res: Any) -> Dict[str, Any]:
                 "reliability_support_incumbent", "reliability_support_refined",
                 "proposal_stochastic_count", "proposal_atacom_count",
                 "proposal_logp_mean",
+                "proposal_gaussian_best_reward", "proposal_rl_best_reward",
+                "proposal_atacom_best_reward", "proposal_gaussian_weight",
+                "proposal_rl_weight", "proposal_atacom_weight",
+                "atacom_incumbent_selected", "prior_score_atacom",
             )
             if any(key in x for x in infos)
         })

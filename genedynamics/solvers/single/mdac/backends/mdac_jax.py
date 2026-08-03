@@ -208,6 +208,12 @@ class MdacBackendJax:
         self.prior_atacom_samples = int(
             getattr(solver, "prior_atacom_samples", 0)
         )
+        self.prior_union_trust = bool(
+            getattr(solver, "prior_union_trust", False)
+        )
+        self.prior_atacom_incumbent = bool(
+            getattr(solver, "prior_atacom_incumbent", False)
+        )
         if (
             self.prior_stochastic_samples < 0
             or self.prior_atacom_samples < 0
@@ -221,6 +227,8 @@ class MdacBackendJax:
             )
         if self.prior_atacom_samples and self.atacom_prior is None:
             raise ValueError("prior_atacom_samples requires atacom_prior")
+        if self.prior_atacom_incumbent and self.atacom_prior is None:
+            raise ValueError("prior_atacom_incumbent requires atacom_prior")
         self.prior_improvement_epsilon = float(
             getattr(solver, "prior_improvement_epsilon", 0.0)
         )
@@ -403,9 +411,30 @@ class MdacBackendJax:
         )
         return U_rl + scale * delta
 
+    def _project_to_prior_union(self, nodes, centers):
+        """Project each plan to the nearest expert trust ball."""
+        if not self._prior_active or self.prior_trust_radius <= 0.0:
+            return nodes
+        single = nodes.ndim == 2
+        plans = nodes[None] if single else nodes
+        # (B, C, Hn, nu): choose the expert center with minimum plan RMS.
+        delta = plans[:, None] - centers[None]
+        rms = jnp.sqrt(jnp.mean(delta * delta, axis=(-2, -1)) + 1e-8)
+        nearest = jnp.argmin(rms, axis=1)
+        chosen = centers[nearest]
+        selected_delta = plans - chosen
+        selected_rms = jnp.sqrt(
+            jnp.mean(selected_delta * selected_delta, axis=(-2, -1), keepdims=True)
+        )
+        scale = jnp.minimum(
+            1.0, self.prior_trust_radius / (selected_rms + 1e-8)
+        )
+        projected = chosen + scale * selected_delta
+        return projected[0] if single else projected
+
     def _reverse_step(
         self, state, rng, Ybar_curr, noise_scale, k, t0, U_rl,
-        structured_nodes=None,
+        structured_nodes=None, prior_centers=None,
     ):
         """One reverse-diffusion step. With every seam off this is, op-for-op,
         `dial_jax.reverse_once(update_form='weighted_mean')`."""
@@ -427,10 +456,18 @@ class MdacBackendJax:
         Y0s = eps * noise_scale[None, :, None] + Ybar_curr[None]  # base DIAL sampling schedule
         Y0s = Y0s.at[:, 0].set(Ybar_curr[0])                      # pin node-0
         if self._prior_active:
-            Y0s = self._project_to_prior(Y0s, U_rl)
+            if prior_centers is not None:
+                Y0s = self._project_to_prior_union(Y0s, prior_centers)
+            else:
+                Y0s = self._project_to_prior(Y0s, U_rl)
             if structured_nodes is not None:
-                structured_nodes = self._project_to_prior(
-                    structured_nodes.astype(Ybar_curr.dtype), U_rl
+                structured_nodes = structured_nodes.astype(Ybar_curr.dtype)
+                structured_nodes = (
+                    self._project_to_prior_union(
+                        structured_nodes, prior_centers
+                    )
+                    if prior_centers is not None
+                    else self._project_to_prior(structured_nodes, U_rl)
                 )
                 Y0s = jnp.concatenate([Y0s, structured_nodes], axis=0)
             if self.prior_include_incumbent:
@@ -536,8 +573,29 @@ class MdacBackendJax:
                 },
             )
         if self._prior_active:
-            Ybar_next = self._project_to_prior(Ybar_next, U_rl)
+            Ybar_next = (
+                self._project_to_prior_union(Ybar_next, prior_centers)
+                if prior_centers is not None
+                else self._project_to_prior(Ybar_next, U_rl)
+            )
         info = {"rews": rews, "mean_reward": rews.mean(), "weights_max": weights.max()}
+        if structured_nodes is not None:
+            n_noise = self.Nsample - structured_nodes.shape[0]
+            n_rl = self.prior_stochastic_samples
+            n_atacom = self.prior_atacom_samples
+            info["proposal_gaussian_best_reward"] = jnp.max(rews[:n_noise])
+            info["proposal_gaussian_weight"] = jnp.sum(weights[:n_noise])
+            if n_rl > 0:
+                rl_slice = slice(n_noise, n_noise + n_rl)
+                info["proposal_rl_best_reward"] = jnp.max(rews[rl_slice])
+                info["proposal_rl_weight"] = jnp.sum(weights[rl_slice])
+            if n_atacom > 0:
+                start = n_noise + n_rl
+                atacom_slice = slice(start, start + n_atacom)
+                info["proposal_atacom_best_reward"] = jnp.max(
+                    rews[atacom_slice]
+                )
+                info["proposal_atacom_weight"] = jnp.sum(weights[atacom_slice])
         if gate_diag is not None:
             info.update({
                 f"gate_{name}": gate_diag[name]
@@ -605,8 +663,9 @@ class MdacBackendJax:
         return Y
 
     def _replan_scan_structured(
-        self, state, warm_start, schedule, rng, t0, U_rl, structured_nodes
-    ) -> jnp.ndarray:
+        self, state, warm_start, schedule, rng, t0, U_rl, structured_nodes,
+        prior_centers,
+    ):
         """Reverse scan with a fixed-budget batch of structured proposals."""
         n = schedule.shape[0]
 
@@ -616,22 +675,39 @@ class MdacBackendJax:
 
             def active_step(active_carry):
                 active_rng, active_y = active_carry
-                active_rng, active_y, _ = self._reverse_step(
+                active_rng, active_y, step_info = self._reverse_step(
                     state, active_rng, active_y, noise_scale, k, t0, U_rl,
                     structured_nodes=structured_nodes,
+                    prior_centers=prior_centers,
                 )
-                return active_rng, active_y
+                diag = jnp.asarray([
+                    step_info["proposal_gaussian_best_reward"],
+                    step_info.get("proposal_rl_best_reward", jnp.nan),
+                    step_info.get("proposal_atacom_best_reward", jnp.nan),
+                    step_info["proposal_gaussian_weight"],
+                    step_info.get("proposal_rl_weight", jnp.nan),
+                    step_info.get("proposal_atacom_weight", jnp.nan),
+                ], dtype=active_y.dtype)
+                return (active_rng, active_y), diag
 
-            rng_c, Y = jax.lax.cond(
+            (rng_c, Y), diag = jax.lax.cond(
                 jnp.all(jnp.isfinite(noise_scale)),
                 active_step,
-                lambda inactive_carry: inactive_carry,
+                lambda inactive_carry: (
+                    inactive_carry,
+                    jnp.full((6,), jnp.nan, dtype=Y.dtype),
+                ),
                 (rng_c, Y),
             )
-            return (rng_c, Y), None
+            return (rng_c, Y), diag
 
-        (_, Y), _ = jax.lax.scan(body, (rng, warm_start), jnp.arange(n))
-        return Y
+        (_, Y), diagnostics = jax.lax.scan(
+            body, (rng, warm_start), jnp.arange(n)
+        )
+        valid = jnp.isfinite(diagnostics)
+        totals = jnp.nansum(diagnostics, axis=0)
+        counts = jnp.maximum(jnp.sum(valid, axis=0), 1)
+        return Y, totals / counts
 
     def _rollout_node_candidates(self, state, nodes, t0):
         dense = self.spline.node2u_batch(nodes)
@@ -643,7 +719,9 @@ class MdacBackendJax:
             rewards = self._rollout_fn(state, dense, t0)
         return dense, rewards
 
-    def _accept_refinement(self, state, fallback, refined, t0):
+    def _accept_refinement(
+        self, state, fallback, refined, t0, atacom_incumbent=None
+    ):
         fallback_source = (
             "prior_risk_incumbent"
             if self.prior_fallback_mode == "receding_incumbent"
@@ -672,14 +750,23 @@ class MdacBackendJax:
         # model-based refinement establishes the first receding incumbent; from
         # the next control step onward rejection keeps the shifted deployed plan
         # rather than jumping back to an unverified raw policy sequence.
+        has_atacom_incumbent = atacom_incumbent is not None
         first_replan = (
             (t0 <= 0.0)
-            if self.prior_fallback_mode == "receding_incumbent"
+            if (
+                self.prior_fallback_mode == "receding_incumbent"
+                and not has_atacom_incumbent
+            )
             else jnp.asarray(False)
         )
         fallback = jnp.where(first_replan, refined, fallback)
 
-        candidates = jnp.stack([fallback, refined], axis=0)
+        candidates = (
+            jnp.stack([fallback, atacom_incumbent, refined], axis=0)
+            if has_atacom_incumbent
+            else jnp.stack([fallback, refined], axis=0)
+        )
+        refined_idx = 2 if has_atacom_incumbent else 1
         dense = self.spline.node2u_batch(candidates)
         if self.score_risk_fn is not None:
             aug_lambda = self.aug_lambda if self._augmented else 0.0
@@ -693,23 +780,8 @@ class MdacBackendJax:
             _, rewards = self._rollout_node_candidates(state, candidates, t0)
             scores = jnp.mean(rewards, axis=-1)
             risks = None
-        improvement = scores[1] - scores[0]
-        predicted_ok = improvement > self.prior_improvement_epsilon
-
-        if risks is not None or self.risk_fn is not None:
-            if risks is None:
-                risks = jax.vmap(lambda us: self.risk_fn(state, us))(dense)
-            tolerance = self.prior_risk_tolerance
-            risk_ok = jnp.all(risks[1] <= risks[0] + tolerance)
-            # A refined proposal with any predicted force-limit violation is
-            # never accepted, even when the RL fallback is itself imperfect.
-            hard_force_ok = risks[1, 0] <= 1e-8
-        else:
-            risks = jnp.zeros((2, 0), dtype=refined.dtype)
-            risk_ok = jnp.asarray(True)
-            hard_force_ok = jnp.asarray(True)
-
         learned_risks = None
+        support_scores = None
         if self.reliability_model is not None:
             reliability_features = jax.vmap(
                 lambda us: self.reliability_feature_fn(state, us[0])
@@ -720,15 +792,103 @@ class MdacBackendJax:
             support_scores = jax.vmap(
                 self.reliability_model.support_score
             )(reliability_features)
-            learned_support_ok = support_scores[1] <= 1.0
+
+        atacom_selected = jnp.asarray(False)
+        if has_atacom_incumbent:
+            # At t=0 the zero-initialized receding plan has never been deployed
+            # and is not a meaningful safety incumbent.  ATACOM supplies the
+            # first model-constrained executable plan; later steps compare it
+            # against the shifted plan that was actually deployed.
+            cold_atacom = t0 <= 0.0
+            atacom_better = scores[1] > (
+                scores[0] + self.prior_improvement_epsilon
+            )
+            if risks is not None or self.risk_fn is not None:
+                if risks is None:
+                    risks = jax.vmap(
+                        lambda us: self.risk_fn(state, us)
+                    )(dense)
+                atacom_better = atacom_better & jnp.all(
+                    risks[1] <= risks[0] + self.prior_risk_tolerance
+                ) & (risks[1, 0] <= 1e-8)
+            if learned_risks is not None:
+                atacom_better = (
+                    atacom_better
+                    & (support_scores[1] <= 1.0)
+                    & jnp.all(
+                        learned_risks[1]
+                        <= learned_risks[0]
+                        + self.reliability_risk_tolerance
+                    )
+                    & (
+                        learned_risks[1, 0]
+                        <= self.reliability_force_limit
+                    )
+                    & (
+                        learned_risks[1, 2]
+                        <= self.reliability_deformation_limit
+                    )
+                )
+            atacom_selected = cold_atacom | atacom_better
+            fallback = jnp.where(atacom_selected, candidates[1], candidates[0])
+            fallback_score = jnp.where(
+                atacom_selected, scores[1], scores[0]
+            )
+            if risks is not None:
+                fallback_risk = jnp.where(
+                    atacom_selected, risks[1], risks[0]
+                )
+            if learned_risks is not None:
+                fallback_learned_risk = jnp.where(
+                    atacom_selected, learned_risks[1], learned_risks[0]
+                )
+                fallback_support = jnp.where(
+                    atacom_selected, support_scores[1], support_scores[0]
+                )
+        else:
+            fallback_score = scores[0]
+            if risks is not None:
+                fallback_risk = risks[0]
+            if learned_risks is not None:
+                fallback_learned_risk = learned_risks[0]
+                fallback_support = support_scores[0]
+
+        improvement = scores[refined_idx] - fallback_score
+        predicted_ok = improvement > self.prior_improvement_epsilon
+
+        if risks is not None or self.risk_fn is not None:
+            if risks is None:
+                risks = jax.vmap(lambda us: self.risk_fn(state, us))(dense)
+            tolerance = self.prior_risk_tolerance
+            if not has_atacom_incumbent:
+                fallback_risk = risks[0]
+            risk_ok = jnp.all(
+                risks[refined_idx] <= fallback_risk + tolerance
+            )
+            # A refined proposal with any predicted force-limit violation is
+            # never accepted, even when the RL fallback is itself imperfect.
+            hard_force_ok = risks[refined_idx, 0] <= 1e-8
+        else:
+            risks = jnp.zeros(
+                (candidates.shape[0], 0), dtype=refined.dtype
+            )
+            fallback_risk = risks[0]
+            risk_ok = jnp.asarray(True)
+            hard_force_ok = jnp.asarray(True)
+
+        if learned_risks is not None:
+            learned_support_ok = support_scores[refined_idx] <= 1.0
             learned_risk_ok = jnp.all(
-                learned_risks[1]
-                <= learned_risks[0] + self.reliability_risk_tolerance
+                learned_risks[refined_idx]
+                <= fallback_learned_risk + self.reliability_risk_tolerance
             )
             learned_hard_ok = (
-                (learned_risks[1, 0] <= self.reliability_force_limit)
+                (
+                    learned_risks[refined_idx, 0]
+                    <= self.reliability_force_limit
+                )
                 & (
-                    learned_risks[1, 2]
+                    learned_risks[refined_idx, 2]
                     <= self.reliability_deformation_limit
                 )
             )
@@ -740,18 +900,22 @@ class MdacBackendJax:
         info = {
             "prior_accepted": accepted.astype(jnp.float32),
             "prior_predicted_improvement": improvement,
-            "prior_score_fallback": scores[0],
-            "prior_score_refined": scores[1],
-            "prior_risk_refined": risks[1],
+            "prior_score_fallback": fallback_score,
+            "prior_score_refined": scores[refined_idx],
+            "prior_risk_refined": risks[refined_idx],
             "prior_risk_ok": risk_ok.astype(jnp.float32),
             "prior_force_veto": (~hard_force_ok).astype(jnp.float32),
+            "atacom_incumbent_selected": atacom_selected.astype(jnp.float32),
         }
-        info[fallback_source] = risks[0]
+        info[fallback_source] = fallback_risk
+        if has_atacom_incumbent:
+            info["prior_score_atacom"] = scores[1]
+            info["prior_risk_atacom"] = risks[1]
         if learned_risks is not None:
-            info["reliability_risk_incumbent"] = learned_risks[0]
-            info["reliability_risk_refined"] = learned_risks[1]
-            info["reliability_support_incumbent"] = support_scores[0]
-            info["reliability_support_refined"] = support_scores[1]
+            info["reliability_risk_incumbent"] = fallback_learned_risk
+            info["reliability_risk_refined"] = learned_risks[refined_idx]
+            info["reliability_support_incumbent"] = fallback_support
+            info["reliability_support_refined"] = support_scores[refined_idx]
         return selected, info
 
     def replan_with_info(self, state, warm_start, schedule, rng, t0=0.0):
@@ -777,6 +941,15 @@ class MdacBackendJax:
                 response_center = U_rl if self._prior_active else warm_start
             state = self._prepare_state_jit(state, response_center, t0)
         proposal_info = {}
+        U_atacom = None
+        if (
+            self._prior_active
+            and self.atacom_prior is not None
+            and (self.prior_union_trust or self.prior_atacom_incumbent)
+        ):
+            U_atacom = jnp.asarray(
+                self.atacom_prior.warm_start(state), warm_start.dtype
+            )
         n_structured = (
             self.prior_stochastic_samples + self.prior_atacom_samples
         )
@@ -816,9 +989,13 @@ class MdacBackendJax:
                 raise ValueError(
                     f"structured proposal shape {structured_nodes.shape} != {expected}"
                 )
-            refined = self._replan_scan_structured_jit(
+            if self.prior_union_trust and U_atacom is not None:
+                prior_centers = jnp.stack([U_rl, U_atacom], axis=0)
+            else:
+                prior_centers = U_rl[None]
+            refined, mixture_diag = self._replan_scan_structured_jit(
                 state, warm_start, schedule, rng, t0, U_rl,
-                structured_nodes,
+                structured_nodes, prior_centers,
             )
             proposal_info = {
                 "proposal_stochastic_count": jnp.asarray(
@@ -830,6 +1007,12 @@ class MdacBackendJax:
                 "proposal_logp_mean": jnp.mean(
                     jnp.concatenate(proposal_logps, axis=0)
                 ),
+                "proposal_gaussian_best_reward": mixture_diag[0],
+                "proposal_rl_best_reward": mixture_diag[1],
+                "proposal_atacom_best_reward": mixture_diag[2],
+                "proposal_gaussian_weight": mixture_diag[3],
+                "proposal_rl_weight": mixture_diag[4],
+                "proposal_atacom_weight": mixture_diag[5],
             }
         else:
             # Exact legacy call: no RNG split, no candidate-shape change.
@@ -842,9 +1025,14 @@ class MdacBackendJax:
                 if self.prior_fallback_mode == "receding_incumbent"
                 else U_rl
             )
-            selected, acceptance_info = self._accept_refinement_jit(
-                state, fallback, refined, t0
-            )
+            if self.prior_atacom_incumbent:
+                selected, acceptance_info = self._accept_refinement_jit(
+                    state, fallback, refined, t0, U_atacom
+                )
+            else:
+                selected, acceptance_info = self._accept_refinement_jit(
+                    state, fallback, refined, t0
+                )
             return selected, {**acceptance_info, **proposal_info}
         return refined, proposal_info
 
