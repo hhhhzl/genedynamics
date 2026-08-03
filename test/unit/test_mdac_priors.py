@@ -12,7 +12,8 @@ from types import SimpleNamespace
 from typing import NamedTuple
 
 from genedynamics.learning.priors import (
-    DiffusionPrior, EliteBuffer, Prior, list_priors, make_prior,
+    DiffusionPrior, EliteBuffer, Prior, ProposalBatch, StructuredPrior,
+    list_priors, make_prior,
 )
 from genedynamics.learning.reliability import (
     FEATURE_NAMES, LinearReliabilityModel, RISK_NAMES,
@@ -75,6 +76,17 @@ class _FakePrior:
         return self._u
 
 
+class _FakeStructuredPrior(_FakePrior):
+    def sample_horizons(self, state, *, key, n_samples):
+        return ProposalBatch(
+            trajectories=jnp.broadcast_to(
+                self._u, (int(n_samples),) + self._u.shape
+            ),
+            log_prob=jnp.zeros((int(n_samples),), jnp.float32),
+            expert_id=jnp.ones((int(n_samples),), jnp.int32),
+        )
+
+
 COMMON = dict(nu=2, Hnode=4, Hsample=16, Nsample=32, Ndiffuse_init=4, Ndiffuse=2,
               temp_sample=0.06, action_limit=1.0, ctrl_dt=0.02, seed=0)
 TARGET = jnp.array([0.4, -0.2])
@@ -91,6 +103,19 @@ def _replan(backend, rng):
 
 def test_fake_prior_conforms():
     assert isinstance(_FakePrior(5, 2), Prior)
+
+
+def test_structured_prior_batch_is_jax_pytree_and_backward_compatible():
+    prior = _FakeStructuredPrior(5, 2)
+    assert isinstance(prior, Prior)
+    assert isinstance(prior, StructuredPrior)
+    batch = prior.sample_horizons(
+        None, key=jax.random.PRNGKey(0), n_samples=3
+    )
+    assert batch.trajectories.shape == (3, 5, 2)
+    assert batch.log_prob.shape == (3,)
+    assert batch.expert_id.shape == (3,)
+    assert len(jax.tree_util.tree_leaves(batch)) == 3
 
 
 def test_prior_seam_additive_safety():

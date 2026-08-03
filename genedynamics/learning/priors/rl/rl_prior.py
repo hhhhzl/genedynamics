@@ -39,5 +39,15 @@ class RLPrior:
     def warm_start(self, state: Any) -> Any:
         return self._impl.warm_start(state)
 
+    def sample_horizons(
+        self, state: Any, *, key: Any, n_samples: int
+    ) -> Any:
+        sample = getattr(self._impl, "sample_horizons", None)
+        if sample is None:
+            raise NotImplementedError(
+                f"RLPrior backend '{self.backend_name}' has no horizon sampler"
+            )
+        return sample(state, key=key, n_samples=int(n_samples))
+
 
 __all__ = ["RLPrior"]

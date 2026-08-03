@@ -24,10 +24,22 @@ packages (orchestrator + `backends/`), exactly like the solvers.
 
 from __future__ import annotations
 
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, NamedTuple, Optional, Protocol, runtime_checkable
 
 ArrayLike = Any
 PRNGKey = Any
+
+
+class ProposalBatch(NamedTuple):
+    """Fixed-size, solver-shaped horizon proposals from a structured prior.
+
+    The NamedTuple representation is a JAX pytree and keeps this shared layer
+    independent of any particular solver's trajectory parameterization.
+    """
+
+    trajectories: ArrayLike
+    log_prob: ArrayLike
+    expert_id: ArrayLike
 
 
 @runtime_checkable
@@ -55,6 +67,17 @@ class Prior(Protocol):
 
 
 @runtime_checkable
+class StructuredPrior(Prior, Protocol):
+    """A prior able to sample complete state-conditioned control horizons."""
+
+    def sample_horizons(
+        self, state: Any, *, key: PRNGKey, n_samples: int
+    ) -> ProposalBatch:
+        """Return ``n_samples`` trajectories and their proposal metadata."""
+        ...
+
+
+@runtime_checkable
 class DiffusionPrior(Prior, Protocol):
     """Learned diffusion prior `s_theta` (adds the score for transport)."""
 
@@ -64,4 +87,7 @@ class DiffusionPrior(Prior, Protocol):
         ...
 
 
-__all__ = ["Prior", "DiffusionPrior", "ArrayLike", "PRNGKey"]
+__all__ = [
+    "Prior", "StructuredPrior", "DiffusionPrior", "ProposalBatch",
+    "ArrayLike", "PRNGKey",
+]
