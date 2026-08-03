@@ -62,6 +62,7 @@ def stiffness_mode_for(method: str, flags) -> str:
 def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
               surface_seed: int = 0, use_base: bool = False, prior: Any = None,
               policy_ckpt: Optional[str] = None,
+              reliability_ckpt: Optional[str] = None,
               aug_lambda: float = 2.0, aug_rho: float = 200.0,
               backend: Any = None, env_overrides: Optional[dict] = None,
               **cfg: Any) -> Tuple[Any, MDACSolver]:
@@ -116,6 +117,15 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
             Hnode=int(cfg.get("Hnode", 4)),
             ctrl_dt=float(cfg.get("ctrl_dt", 0.02)),
         )
+    reliability_model = None
+    if reliability_ckpt is not None:
+        if not hasattr(env, "reliability_features"):
+            raise ValueError(
+                f"method '{method}' requires env.reliability_features"
+            )
+        from genedynamics.learning.reliability import LinearReliabilityModel
+
+        reliability_model = LinearReliabilityModel.load(reliability_ckpt)
     residual_fn = None
     if flags.use_horizon_geometry:
         if flags.use_controllability_geometry:
@@ -195,6 +205,7 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
         prepare_state_fn=prepare_state_fn,
         prior=(prior if flags.use_rl_prior else None),
         risk_fn=risk_fn,
+        reliability_model=reliability_model,
         aug_lambda=aug_lambda, aug_rho=aug_rho, **cfg,
     )
     return env, solver
@@ -239,8 +250,17 @@ def _build_baseline_solver(method, env, backend, **cfg):
         from genedynamics.solvers.single.pegasusflow.pegasusflow import PegasusFlowSolver
         return PegasusFlowSolver(env, Hsample=Hsample, Hnode=Hnode, Nsample=Nsample,
                                  temp_sample=float(cfg.get("temp_sample", 0.1)), Ndiffuse=Ndiffuse,
-                                 Ndiffuse_init=Ndiffuse_init, action_limit=action_limit, seed=seed)
-    if method in ("atacom", "issa"):
+                                 Ndiffuse_init=Ndiffuse_init,
+                                 noise_sigma=float(cfg.get("noise_sigma", 1.0)),
+                                 sigma_decay=float(cfg.get("sigma_decay", 0.9)),
+                                 update_method=str(cfg.get("update_method", "avwbfo")),
+                                 wbfo_gamma=float(cfg.get("wbfo_gamma", 1.0)),
+                                 noise_scheduler_type=str(cfg.get("noise_scheduler_type", "s2")),
+                                 noise_shape_fn=str(cfg.get("noise_shape_fn", "linear")),
+                                 noise_decay_fn=str(cfg.get("noise_decay_fn", "exponential")),
+                                 noise_final_ratio=float(cfg.get("noise_final_ratio", 0.1)),
+                                 action_limit=action_limit, seed=seed)
+    if method in ("rl", "atacom", "issa"):
         # RL baselines (trained brax policy, engine in learning/): ISSA = raw-action policy +
         # AdamBA safe-set projection at deploy; ATACOM = a manifold-resident tangent-space policy
         # (its ckpt is trained on the AtacomEnvWrapper, action_size = nu - n_f, NOT shared w/ ISSA).
@@ -250,12 +270,51 @@ def _build_baseline_solver(method, env, backend, **cfg):
             raise ValueError(f"'{method}' needs a trained 'policy_ckpt' "
                              f"(run scripts/tasks/robot/arm/train_rl_baseline.py "
                              f"{'--atacom ' if method == 'atacom' else ''}first)")
-        act_fn = build_policy_act(*load_policy(ckpt))
+        params, policy_config = load_policy(ckpt)
+        expected_action_size = int(env.action_size)
+        if method == "atacom":
+            from genedynamics.solvers.single.atacom.backends.atacom_jax import (
+                atacom_null_dim,
+            )
+            expected_action_size = atacom_null_dim(env)
+            protocol = str(policy_config.get("protocol", ""))
+            if "atacom" not in protocol:
+                raise ValueError(
+                    "ATACOM requires a dedicated tangent-policy checkpoint; "
+                    f"got protocol={protocol!r}"
+                )
+        if int(policy_config.get("action_size", -1)) != expected_action_size:
+            raise ValueError(
+                f"{method} policy action mismatch: checkpoint has "
+                f"{policy_config.get('action_size')}, expected {expected_action_size}"
+            )
+        if int(policy_config.get("observation_size", -1)) != int(env.observation_size):
+            raise ValueError(
+                f"{method} policy observation mismatch: checkpoint has "
+                f"{policy_config.get('observation_size')}, expected {env.observation_size}"
+            )
+        act_fn = build_policy_act(params, policy_config)
+        if method == "rl":
+            from genedynamics.solvers.common.rl_policy_controller import (
+                RLPolicyController,
+            )
+            return RLPolicyController(env, act_fn, seed=seed)
         if method == "atacom":
             from genedynamics.solvers.single.atacom.atacom import AtacomSolver
-            return AtacomSolver(env, act_fn, action_limit=action_limit, seed=seed)
+            return AtacomSolver(
+                env, act_fn, Kc=float(cfg.get("Kc", 1.0)),
+                action_limit=action_limit, seed=seed,
+            )
         from genedynamics.solvers.single.issa.issa import IssaSolver
-        return IssaSolver(env, act_fn, action_limit=action_limit, seed=seed)
+        return IssaSolver(
+            env, act_fn,
+            n_dirs=int(cfg.get("n_dirs", 20)),
+            n_iters=int(cfg.get("n_iters", 50)),
+            bound=float(cfg.get("adamba_bound", 1e-4)),
+            threshold=float(cfg.get("safety_threshold", 0.0)),
+            enforce_absolute=bool(cfg.get("enforce_absolute", True)),
+            action_limit=action_limit, seed=seed,
+        )
     raise NotImplementedError(f"baseline method '{method}' not recognized")
 
 
@@ -264,7 +323,7 @@ def make_controller(task, method="mdac", *, level=None, surface_seed=0, use_base
                     env_overrides=None, **cfg):
     """Build ``(env, runner)`` for ANY method on the SAME brax env at the SAME budget:
     an MDAC variant (``MDACSolver`` via ``make_mdac``), a sampling baseline (``mppi`` /
-    ``pegasusflow``), or an RL baseline (``atacom`` / ``issa``). All expose
+    ``pegasusflow``), or an RL baseline (raw ``rl`` / ``atacom`` / ``issa``). All expose
     ``runner.run_receding(x0, n_steps, rng) -> RecedingHorizonResult``."""
     if method in METHOD_TABLE:                       # MDAC variant (incl. dial/mbd/anchors)
         return make_mdac(task, method, level=level, surface_seed=surface_seed, use_base=use_base,
@@ -273,7 +332,9 @@ def make_controller(task, method="mdac", *, level=None, surface_seed=0, use_base
                          env_overrides=env_overrides, **cfg)
     env = _build_env(task, method, level, surface_seed, use_base, env_overrides)
     backend = backend or get_backend("jax")
-    return env, _build_baseline_solver(method, env, backend, **cfg)
+    return env, _build_baseline_solver(
+        method, env, backend, policy_ckpt=policy_ckpt, **cfg
+    )
 
 
 def metrics_plugin_for(task: str):

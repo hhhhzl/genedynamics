@@ -22,14 +22,20 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import time
 
 import numpy as np
 
 from genedynamics.envs.factories import make_env
 from genedynamics.envs.domains.manipulation.panda_brax import (
+    PandaResidualActionEnv,
     PandaSurfaceScanDomainEnv,
 )
-from genedynamics.learning.train_rl_policy import train_rl_policy, save_policy
+from genedynamics.learning.train_rl_policy import (
+    save_policy,
+    scalar_metrics,
+    train_rl_policy,
+)
 from genedynamics.solvers.single.mdac.config import (
     deep_merge,
     load_experiment_config,
@@ -38,12 +44,52 @@ from genedynamics.solvers.single.mdac.config import (
 ARM_TASK = "manipulator_surface_scan"
 
 
-def _shared_domain_specs(base_env, rl_cfg):
+class _BestEvalSelector:
+    """Pair Brax's params-before-eval callbacks and retain the best policy."""
+
+    def __init__(self, metric="eval/episode_reward"):
+        self._snapshots = {}
+        self.metric = str(metric)
+        self.params = None
+        self.step = None
+        self.score = -np.inf
+        self.metrics = {}
+
+    def capture(self, num_steps, _make_policy, params):
+        import jax
+
+        self._snapshots[int(num_steps)] = jax.device_get(params)
+
+    def observe(self, num_steps, metrics):
+        step = int(num_steps)
+        snapshot = self._snapshots.pop(step, None)
+        # The step-zero params callback runs after its progress callback, so its
+        # snapshot is discarded at the first trained evaluation.
+        self._snapshots = {
+            k: value for k, value in self._snapshots.items() if k > step
+        }
+        if step <= 0 or snapshot is None:
+            return
+        score = float(metrics.get(self.metric, np.nan))
+        if np.isfinite(score) and score > self.score:
+            self.params = snapshot
+            self.step = step
+            self.score = score
+            self.metrics = dict(metrics)
+
+
+def _shared_domain_specs(base_env, rl_cfg, num_domains_override=None):
     templates = list(rl_cfg.get("domain_templates", ()))
     if not templates:
         return []
     dr = dict(rl_cfg.get("domain_randomization", {}))
-    n_domains = int(dr.get("num_domains", len(templates)))
+    n_domains = int(
+        num_domains_override
+        if num_domains_override is not None
+        else dr.get("num_domains", len(templates))
+    )
+    if n_domains < 1:
+        raise ValueError("num_domains must be positive")
     rng = np.random.default_rng(int(dr.get("seed", 0)))
     friction_range = tuple(dr.get("friction_range", (0.05, 0.2)))
     soft_range = tuple(dr.get("soft_stiffness_range", (800.0, 2000.0)))
@@ -70,6 +116,12 @@ def main() -> int:
     ap.add_argument("--num-timesteps", type=int, default=None)
     ap.add_argument("--episode-length", type=int, default=None)
     ap.add_argument("--num-envs", type=int, default=None)
+    ap.add_argument(
+        "--num-domains",
+        type=int,
+        default=None,
+        help="CPU resource override; canonical GPU training keeps all configured domains",
+    )
     ap.add_argument("--warmup-steps", type=int, default=None,
                     help="SAC only: replay-buffer prefill (store-only, no updates) before learning")
     ap.add_argument("--seed", type=int, default=None)
@@ -98,7 +150,9 @@ def main() -> int:
     warmup_steps = a.warmup_steps or int(rl_cfg.get("warmup_steps", 5_000))
     seed = a.seed if a.seed is not None else int(rl_cfg.get("seed", 0))
 
-    domain_specs = _shared_domain_specs(base_env, rl_cfg)
+    domain_specs = _shared_domain_specs(
+        base_env, rl_cfg, num_domains_override=a.num_domains
+    )
     if a.smoke and len(domain_specs) > 2:
         # Compile one rigid and one soft branch on CPU. The full canonical
         # distribution remains unchanged for formal training.
@@ -111,11 +165,18 @@ def main() -> int:
         )
         domain_specs = [domain_specs[0], domain_specs[soft_index]]
     if domain_specs:
-        if a.atacom:
-            raise ValueError("shared MGA policy uses the raw 10D action, not ATACOM")
         domains = [make_env(ARM_TASK, **spec) for spec in domain_specs]
+        if a.atacom:
+            # Wrap each concrete branch before domain randomization.  The
+            # randomized dispatcher then has one shape-compatible 7D action
+            # contract and never needs to interpret ATACOM geometry itself.
+            from genedynamics.solvers.single.atacom.wrapper import AtacomEnvWrapper
+            domains = [AtacomEnvWrapper(domain) for domain in domains]
         env = PandaSurfaceScanDomainEnv(domains)
-        env_desc = f"{len(domains)} shared seen domains"
+        env_desc = (
+            f"{len(domains)} shared seen domains"
+            + (" + ATACOM tangent wrappers" if a.atacom else "")
+        )
     else:
         env_kw = deep_merge(
             base_env,
@@ -130,6 +191,17 @@ def main() -> int:
         env = make_env(ARM_TASK, **env_kw)
         env_desc = f"medium={medium} level={env_kw['level']}"
 
+    action_bias = None
+    action_scale = None
+    if domain_specs and not a.atacom and rl_cfg.get("action_bias") is not None:
+        action_bias = np.asarray(rl_cfg["action_bias"], dtype=np.float32)
+        action_scale = np.asarray(
+            rl_cfg.get("action_scale", np.ones_like(action_bias)),
+            dtype=np.float32,
+        )
+        env = PandaResidualActionEnv(env, action_bias, action_scale)
+        env_desc += " + residual scan bias"
+
     if env.action_size != 10 and not a.atacom:
         raise ValueError(
             f"shared MGA prior requires the 10D primitive, got {env.action_size}"
@@ -139,7 +211,7 @@ def main() -> int:
     ):
         raise ValueError("all shared policy domains must use observation_mode=rl_realized")
 
-    if a.atacom:
+    if a.atacom and not domain_specs:
         # ATACOM remains a comparison policy and never becomes the MGA prior.
         from genedynamics.solvers.single.atacom.wrapper import AtacomEnvWrapper
         env = AtacomEnvWrapper(env)
@@ -152,6 +224,33 @@ def main() -> int:
             unroll_length=10,
             num_updates_per_batch=1,
         )
+    progress_history = []
+    select_best = bool(rl_cfg.get("select_best_eval", False)) and algo == "ppo"
+    selection_metric = str(rl_cfg.get(
+        "select_best_eval_metric", "eval/episode_reward"
+    ))
+    selector = _BestEvalSelector(selection_metric) if select_best else None
+    train_started = time.monotonic()
+
+    def progress_fn(num_steps, metrics):
+        record = {
+            "num_steps": int(num_steps),
+            "elapsed_seconds": float(time.monotonic() - train_started),
+            **scalar_metrics(metrics),
+        }
+        progress_history.append(record)
+        if selector is not None:
+            selector.observe(num_steps, record)
+        reward = record.get("eval/episode_reward", float("nan"))
+        print(
+            f"  progress steps={int(num_steps)} "
+            f"reward={reward:.6g} elapsed={record['elapsed_seconds']:.1f}s",
+            flush=True,
+        )
+
+    train_kwargs.setdefault("progress_fn", progress_fn)
+    if selector is not None:
+        train_kwargs.setdefault("policy_params_fn", selector.capture)
 
     print(
         f"training {algo}{' (ATACOM-manifold)' if a.atacom else ''} on "
@@ -169,19 +268,48 @@ def main() -> int:
         seed=seed,
         **train_kwargs,
     )
+    if selector is not None and selector.params is not None:
+        params = selector.params
     config.update({
-        "protocol": "arm_shared_mga_v1" if domain_specs else "arm_baseline_v1",
+        "protocol": (
+            "arm_shared_atacom_v1" if domain_specs and a.atacom
+            else "arm_shared_mga_v1" if domain_specs
+            else "arm_atacom_v1" if a.atacom
+            else "arm_baseline_v1"
+        ),
         "episode_length": int(episode_length),
         "training_seed": int(seed),
         "domain_specs": domain_specs,
+        "domain_count": len(domain_specs),
+        "action_bias": (
+            action_bias.tolist() if action_bias is not None else None
+        ),
+        "action_scale": (
+            action_scale.tolist() if action_scale is not None else None
+        ),
+        "progress_history": progress_history,
+        "training_wall_seconds": float(time.monotonic() - train_started),
+        "selection_metric": selector.metric if selector is not None else None,
+        "selected_step": selector.step if selector is not None else None,
+        "selected_metric_value": selector.score if selector is not None else None,
+        "selected_eval_reward": (
+            selector.metrics.get("eval/episode_reward")
+            if selector is not None else None
+        ),
     })
 
     if a.out:
         out = a.out
     elif domain_specs:
-        template = rl_cfg.get(
-            "checkpoint",
-            "results/arm/impedence/_policies/shared_ppo_seed{seed}.pkl",
+        template = (
+            rl_cfg.get(
+                "atacom_checkpoint",
+                "results/arm/impedence/_policies/shared_atacom_ppo_seed{seed}.pkl",
+            )
+            if a.atacom else rl_cfg.get(
+                "checkpoint",
+                "results/arm/impedence/_policies/shared_ppo_seed{seed}.pkl",
+            )
         )
         out = str(Path(template.format(seed=seed)))
     else:

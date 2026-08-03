@@ -29,14 +29,21 @@ class IssaSolver:
     """Trained policy + implicit-safe-set (AdamBA) projection, driven closed-loop."""
 
     def __init__(self, env: Any, act_fn: Callable[[Any, Any], Any], *, n_dirs: int = 20,
-                 n_iters: int = 50, action_limit: float = 1.0, seed: int = 0) -> None:
+                 n_iters: int = 50, bound: float = 1e-4, threshold: float = 0.0,
+                 enforce_absolute: bool = True, action_limit: float = 1.0,
+                 seed: int = 0) -> None:
         make_projection = _get_issa_backend("jax")
-        proj = make_projection(env, n_dirs=n_dirs, n_iters=n_iters,
-                               action_limit=action_limit, seed=seed)
-        self._ctrl = RLPolicyController(env, act_fn, action_projection=proj, seed=seed)
+        self.projection = make_projection(
+            env, n_dirs=n_dirs, n_iters=n_iters, bound=bound,
+            threshold=threshold, enforce_absolute=enforce_absolute,
+            action_limit=action_limit, seed=seed,
+        )
+        self._ctrl = RLPolicyController(
+            env, act_fn, action_projection=self.projection, seed=seed
+        )
 
-    def run_receding(self, x0: Any, n_steps: int, rng: Any):
-        return self._ctrl.run_receding(x0, n_steps, rng)
+    def run_receding(self, x0: Any, n_steps: int, rng: Any, **kwargs: Any):
+        return self._ctrl.run_receding(x0, n_steps, rng, **kwargs)
 
 
 if register_solver is not None:

@@ -94,6 +94,20 @@ def test_shift_matches_dial_logic(spl):
     assert jnp.allclose(got, ref, rtol=1e-5, atol=1e-5)
 
 
+def test_terminal_hold_shift_preserves_planned_tail(spl):
+    rng = np.random.default_rng(40)
+    nodes = jnp.asarray(
+        rng.standard_normal((HNODE + 1, 2)), dtype=jnp.float32
+    )
+    us = spl.node2u(nodes)
+    ref = spl.u2node(
+        jnp.roll(us, -1, axis=0).at[-1].set(us[-1])
+    )
+
+    got = spl.shift_nodes_terminal_hold(nodes)
+    assert jnp.allclose(got, ref, rtol=1e-5, atol=1e-5)
+
+
 def test_node2u_is_linear(spl):
     # Sanity: the map is linear (so the cached-matrix premise holds).
     rng = np.random.default_rng(5)

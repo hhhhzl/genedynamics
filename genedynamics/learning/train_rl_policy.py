@@ -56,7 +56,7 @@ def train_rl_policy(
         raise ValueError(f"algo must be 'ppo' or 'sac', got {algo!r}")
     extra.update(train_kwargs)                          # explicit caller kwargs win
 
-    _, params, _ = _train.train(
+    _, params, final_metrics = _train.train(
         environment=env,
         num_timesteps=int(num_timesteps),
         episode_length=int(episode_length),
@@ -73,8 +73,34 @@ def train_rl_policy(
         "action_size": int(env.action_size),
         "policy_hidden_layer_sizes": hidden,
         "normalize_observations": bool(normalize_observations),
+        "num_timesteps": int(num_timesteps),
+        "episode_length": int(episode_length),
+        "num_envs": int(num_envs),
+        "learning_rate": float(learning_rate),
+        "warmup_steps": int(warmup_steps),
+        "seed": int(seed),
+        "train_kwargs": {
+            str(k): v for k, v in train_kwargs.items()
+            if isinstance(v, (str, int, float, bool, type(None)))
+        },
+        "final_metrics": scalar_metrics(final_metrics),
     }
     return params, config
+
+
+def scalar_metrics(metrics: Any) -> Dict[str, float]:
+    """Make Brax progress/final metrics portable inside the policy checkpoint."""
+    import numpy as np
+
+    out: Dict[str, float] = {}
+    for key, value in dict(metrics or {}).items():
+        try:
+            array = np.asarray(value)
+            if array.size == 1:
+                out[str(key)] = float(array.reshape(-1)[0])
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def save_policy(path: str, params: Any, config: Dict[str, Any]) -> str:
@@ -106,6 +132,8 @@ def build_policy_act(params: Any, config: Dict[str, Any], *, deterministic: bool
             normalize_observations=config["normalize_observations"],
             policy_hidden_layer_sizes=config["policy_hidden_layer_sizes"],
             deterministic=deterministic,
+            action_bias=config.get("action_bias"),
+            action_scale=config.get("action_scale"),
         )
         return lambda obs, key: prior.act(obs, key=key, deterministic=deterministic)
     # SAC inference via brax sac networks
@@ -160,6 +188,8 @@ def build_policy_prior(
         Hsample=int(Hsample),
         Hnode=int(Hnode),
         ctrl_dt=float(ctrl_dt),
+        action_bias=config.get("action_bias"),
+        action_scale=config.get("action_scale"),
     )
 
 
@@ -169,4 +199,5 @@ __all__ = [
     "load_policy",
     "build_policy_act",
     "build_policy_prior",
+    "scalar_metrics",
 ]

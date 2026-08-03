@@ -1,0 +1,94 @@
+"""Geometry and wrapper contracts for the task-adapted ATACOM baseline."""
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+from flax import struct
+
+from genedynamics.solvers.single.atacom.backends.atacom_jax import (
+    _pinv_null,
+    atacom_constraint_dims,
+    atacom_null_dim,
+    init_slack,
+    make_atacom_transform,
+)
+from genedynamics.solvers.single.atacom.wrapper import AtacomEnvWrapper
+
+
+@struct.dataclass
+class _State:
+    obs: jax.Array
+    info: dict
+
+
+class _ToyConstraintEnv:
+    action_size = 4
+    observation_size = 2
+    manifold_constraint_size = 1
+    inequality_constraint_size = 1
+    backend = "generalized"
+    dt = 1.0
+
+    def reset(self, _key):
+        return _State(
+            obs=jnp.zeros((2,), jnp.float32),
+            info={"goal": jnp.asarray(0.25, jnp.float32)},
+        )
+
+    def manifold_residual(self, state, actions):
+        return actions[..., 0] - state.info["goal"]
+
+    def constraint_residual(self, _state, action):
+        return jnp.zeros((0,), action.dtype), jnp.asarray([action[1] - 0.5])
+
+    def step(self, state, action):
+        return state.replace(obs=state.obs.at[0].set(action[0]))
+
+
+def _augmented_constraint(env, state, action, slack):
+    f = env.manifold_residual(state, action[None]).reshape(-1)
+    g = env.constraint_residual(state, action)[1].reshape(-1)
+    return jnp.concatenate([f, g + 0.5 * slack ** 2])
+
+
+def test_environment_owned_dimensions_determine_policy_null_size():
+    env = _ToyConstraintEnv()
+    assert atacom_constraint_dims(env) == (1, 1)
+    assert atacom_null_dim(env) == 3
+
+
+def test_svd_null_basis_annihilates_augmented_jacobian():
+    A = jnp.asarray([
+        [1.0, 2.0, -1.0, 0.0, 0.5],
+        [0.0, 1.0, 1.0, -2.0, 0.3],
+    ], jnp.float32)
+    pinv, null = _pinv_null(A, n_c=2)
+    np.testing.assert_allclose(A @ null, 0.0, atol=2e-6)
+    np.testing.assert_allclose(A @ pinv, jnp.eye(2), atol=2e-6)
+
+
+def test_error_correction_reduces_augmented_constraint_norm():
+    env = _ToyConstraintEnv()
+    state = env.reset(jax.random.PRNGKey(0))
+    slack = init_slack(env, state)
+    zero = jnp.zeros((env.action_size,), jnp.float32)
+    before = _augmented_constraint(env, state, zero, slack)
+    transform = make_atacom_transform(env, Kc=1.0, time_step=1.0)
+    action, slack_next = transform(
+        state, jnp.zeros((atacom_null_dim(env),), jnp.float32), slack
+    )
+    after = _augmented_constraint(env, state, action, slack_next)
+    assert float(jnp.linalg.norm(after)) < float(jnp.linalg.norm(before))
+    assert action.shape == (4,)
+    assert slack_next.shape == (1,)
+
+
+def test_wrapper_exposes_3d_policy_action_and_executes_4d_control():
+    env = _ToyConstraintEnv()
+    wrapped = AtacomEnvWrapper(env, Kc=1.0)
+    state = wrapped.reset(jax.random.PRNGKey(0))
+    assert wrapped.action_size == 3
+    next_state = wrapped.step(state, jnp.zeros((3,), jnp.float32))
+    assert next_state.info["atacom_u"].shape == (4,)
+    assert next_state.info["atacom_s"].shape == (1,)
+    assert bool(jnp.all(jnp.isfinite(next_state.info["atacom_u"])))

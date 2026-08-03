@@ -31,7 +31,15 @@ python -m pip install \
   "black>=24.3.0" \
   "flake8>=7.0.0"
 
-python -m pip install "jax[cpu]" "brax==0.14.1"
+# jax-cosmo is the parity/build oracle for DIAL's quadratic node spline.  Its
+# 0.1.0 package still imports pkg_resources, which setuptools 81+ removed.
+# Keep this compatibility pin local to the CPU development/test image; the
+# cached spline keeps the runtime solver independent of jax-cosmo.
+python -m pip install \
+  "setuptools<81" \
+  "jax[cpu]" \
+  "brax==0.14.1" \
+  "jax-cosmo==0.1.0"
 
 # Editable install without pulling the repo's GPU-only dependency bundle.
 python -m pip install --no-deps -e "${ROOT}"

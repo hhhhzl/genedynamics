@@ -31,22 +31,82 @@ class RLPolicyController:
         self.action_projection = action_projection
         self.seed = int(seed)
 
-    def run_receding(self, x0: Any, n_steps: int, rng: Any):
+    def run_receding(
+        self,
+        x0: Any,
+        n_steps: int,
+        rng: Any,
+        *,
+        collect_states: bool = True,
+        synchronize_steps: bool = False,
+    ):
         import jax
         from genedynamics.solvers.common.receding_horizon import RecedingHorizonResult
 
+        project_jax = getattr(self.action_projection, "project_jax", None)
+        if not collect_states and (
+            self.action_projection is None or callable(project_jax)
+        ):
+            # JAX-native evaluation: compile policy, optional pure-JAX safety
+            # projection, and the true env step into one closed-loop scan.  The
+            # Python loop remains for non-JAX projections and callers that
+            # explicitly request every intermediate State.
+            def rollout(state, key):
+                def body(carry, _):
+                    current, current_key = carry
+                    current_key, action_key = jax.random.split(current_key)
+                    action = self.act_fn(current.obs, action_key)
+
+                    if callable(project_jax):
+                        action, projection_info = project_jax(current, action)
+                    else:
+                        # A scalar placeholder keeps the scan output signature
+                        # uniform without requiring optional State.info on raw
+                        # RL environments.  It is discarded below.
+                        projection_info = jax.numpy.asarray(0, dtype=jax.numpy.int32)
+                    return (
+                        self.env.step(current, action), current_key
+                    ), (action, projection_info)
+
+                (final_state, _), (actions, projection_info) = jax.lax.scan(
+                    body, (state, key), None, length=int(n_steps)
+                )
+                return final_state, actions, projection_info
+
+            state, actions, projection_info = jax.jit(rollout)(x0, rng)
+            if synchronize_steps:
+                jax.block_until_ready((state, actions, projection_info))
+            return RecedingHorizonResult(
+                states=[x0, state], actions=actions,
+                infos=[projection_info] if callable(project_jax) else [],
+            )
+
         state = x0
-        states, actions = [state], []
+        states, actions, infos = [state], [], []
         key = rng
         for _ in range(int(n_steps)):
             key, k = jax.random.split(key)
             a = self.act_fn(state.obs, k)                       # policy action
             if self.action_projection is not None:
-                a = self.action_projection(state, a)            # ATACOM tangent / ISSA safe-set
+                project_with_info = getattr(
+                    self.action_projection, "project_with_info", None
+                )
+                if callable(project_with_info):
+                    a, projection_info = project_with_info(state, a)
+                    infos.append(projection_info)
+                else:
+                    a = self.action_projection(state, a)        # ATACOM tangent / ISSA safe-set
             state = self.env.step(state, a)
+            if synchronize_steps:
+                jax.block_until_ready(state)
             actions.append(a)
+            if collect_states:
+                states.append(state)
+        if not collect_states:
             states.append(state)
-        return RecedingHorizonResult(states=states, actions=actions)
+        return RecedingHorizonResult(
+            states=states, actions=actions, infos=infos
+        )
 
 
 __all__ = ["RLPolicyController"]

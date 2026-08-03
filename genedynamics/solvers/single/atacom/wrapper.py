@@ -15,10 +15,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import jax
 import jax.numpy as jnp
 
 from genedynamics.solvers.single.atacom.backends.atacom_jax import (
-    make_atacom_transform, atacom_null_dim, init_slack,
+    make_atacom_transform, atacom_constraint_dims, atacom_null_dim, init_slack,
 )
 
 try:                                       # subclass brax Wrapper so brax's training wrappers
@@ -39,14 +40,25 @@ class AtacomEnvWrapper(_BraxWrapper):
     def __init__(self, env: Any, *, Kc: float = 1.0, action_limit: float = 1.0) -> None:
         self.env = env                                       # (brax Wrapper just stores self.env)
         self._nu = int(env.action_size)
+        self._n_f, self._n_g = atacom_constraint_dims(env)
         self._null = atacom_null_dim(env)
         self.alpha_max = float(action_limit)
         dt = float(getattr(getattr(env, "_config", None), "dt", 0.02))
-        self._transform = make_atacom_transform(env, Kc=Kc, time_step=dt, action_limit=action_limit)
+        self._transform = jax.jit(make_atacom_transform(
+            env, Kc=Kc, time_step=dt, action_limit=action_limit
+        ))
 
     @property
     def action_size(self) -> int:
         return self._null                                    # the TANGENT (policy) dimension
+
+    @property
+    def manifold_constraint_size(self) -> int:
+        return self._n_f
+
+    @property
+    def inequality_constraint_size(self) -> int:
+        return self._n_g
 
     def _augment(self, state):
         s = init_slack(self.env, state)

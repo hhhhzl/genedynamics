@@ -43,6 +43,8 @@ class BraxRLPrior:
         Hsample: int = 16,
         Hnode: int = 4,
         ctrl_dt: float = 0.02,
+        action_bias: Any = None,
+        action_scale: Any = None,
     ) -> None:
         from brax.training.agents.ppo import networks as ppo_networks
         from brax.training.acme import running_statistics
@@ -67,8 +69,32 @@ class BraxRLPrior:
         self.deterministic = bool(deterministic)
         self._obs_key = obs_key
         self._rollout_step = rollout_step
+        self._action_bias = (
+            None if action_bias is None
+            else jnp.asarray(action_bias, dtype=jnp.float32)
+        )
+        if self._action_bias is not None and self._action_bias.shape != (self.output_dim,):
+            raise ValueError(
+                "action_bias shape mismatch: "
+                f"{self._action_bias.shape} != {(self.output_dim,)}"
+            )
+        self._action_scale = (
+            None if action_scale is None
+            else jnp.asarray(action_scale, dtype=jnp.float32)
+        )
+        if self._action_scale is not None:
+            if self._action_scale.shape != (self.output_dim,):
+                raise ValueError(
+                    "action_scale shape mismatch: "
+                    f"{self._action_scale.shape} != {(self.output_dim,)}"
+                )
+            if bool(jnp.any(self._action_scale <= 0.0)):
+                raise ValueError("action_scale entries must be positive")
         self._dense_horizon = int(Hsample) + 1
         self._spline = None
+        self._cpu_stepwise_rollout = False
+        self._policy_action_jit = None
+        self._rollout_step_jit = None
         if rollout_step is not None:
             from genedynamics.solvers.single.dial.spline import NodeSpline
 
@@ -79,6 +105,19 @@ class BraxRLPrior:
                 raise ValueError(
                     "n_warm_nodes must equal Hnode + 1 for horizon proposals"
                 )
+            # On CPU, fusing the policy and the full MJX horizon into one XLA
+            # scan makes that executable coexist with MDAC's batched rollout
+            # executable and can exceed the host memory limit.  Keep the exact
+            # same closed-loop recurrence, but compile policy inference and one
+            # dynamics step independently and reuse them from the Python loop.
+            # GPU keeps the fused scan, where launch overhead matters and the
+            # compiler/device memory budget is normally larger.
+            self._cpu_stepwise_rollout = jax.default_backend() == "cpu"
+            if self._cpu_stepwise_rollout:
+                self._policy_action_jit = jax.jit(
+                    lambda obs: self.act(obs, deterministic=True)
+                )
+                self._rollout_step_jit = jax.jit(self._rollout_step)
 
     # --- helpers ---
     def _norm_pol(self):
@@ -102,12 +141,21 @@ class BraxRLPrior:
         if key is None:
             key = jax.random.PRNGKey(0)
         action, _ = policy(jnp.asarray(obs), key)
+        if self._action_scale is not None:
+            action = action * self._action_scale
+        if self._action_bias is not None:
+            action = jnp.clip(action + self._action_bias, -1.0, 1.0)
         return action
 
     def logp_of_sequence(self, obs_seq, act_seq) -> Any:
         """sum_t log pi(a_t | o_t). `obs_seq`:(H,obs), `act_seq`:(H,A) postprocessed."""
         def step_logp(o, a):
             logits = self._logits(o)
+            if self._action_bias is not None:
+                a = a - self._action_bias
+            if self._action_scale is not None:
+                a = a / self._action_scale
+            a = jnp.clip(a, -0.999999, 0.999999)
             raw = self._dist.inverse_postprocess(a)
             return self._dist.log_prob(logits, raw)
         return jnp.sum(jax.vmap(step_logp)(jnp.asarray(obs_seq), jnp.asarray(act_seq)))
@@ -115,6 +163,16 @@ class BraxRLPrior:
     def warm_start(self, state) -> Any:
         """Return the policy proposal in the solver's node parameterization."""
         if self._rollout_step is not None:
+            if self._cpu_stepwise_rollout:
+                current = state
+                dense_actions = []
+                for _ in range(self._dense_horizon):
+                    obs = self._obs_of(current, self._obs_key)
+                    action = self._policy_action_jit(obs)
+                    dense_actions.append(action)
+                    current = self._rollout_step_jit(current, action)
+                return self._spline.u2node(jnp.stack(dense_actions))
+
             def body(s, _):
                 obs = self._obs_of(s, self._obs_key)
                 action = self.act(obs, deterministic=True)

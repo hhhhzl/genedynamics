@@ -31,7 +31,10 @@ class PegasusFlowSolver:
 
     def __init__(self, dynamics: Any, energy: Any = None, backend: Any = None, *,
                  nu: Optional[int] = None, Hsample: int = 16, Hnode: int = 4, Nsample: int = 2048,
-                 noise_sigma: float = 0.3, sigma_decay: float = 0.9, temp_sample: float = 0.1,
+                 noise_sigma: float = 1.0, sigma_decay: float = 0.9, temp_sample: float = 0.1,
+                 update_method: str = "avwbfo", wbfo_gamma: float = 1.0,
+                 noise_scheduler_type: str = "s2", noise_shape_fn: str = "linear",
+                 noise_decay_fn: str = "exponential", noise_final_ratio: float = 0.1,
                  action_limit: float = 1.0, Ndiffuse: int = 2, Ndiffuse_init: int = 10,
                  seed: int = 0, rollout_fn: Any = None, step_fn: Any = None, **kwargs: Any) -> None:
         self.dynamics = dynamics
@@ -43,6 +46,9 @@ class PegasusFlowSolver:
             Hsample=int(Hsample), Hnode=int(Hnode), Nsample=int(Nsample),
             noise_sigma=float(noise_sigma), sigma_decay=float(sigma_decay),
             temp_sample=float(temp_sample), action_limit=float(action_limit),
+            update_method=str(update_method), wbfo_gamma=float(wbfo_gamma),
+            noise_scheduler_type=str(noise_scheduler_type), noise_shape_fn=str(noise_shape_fn),
+            noise_decay_fn=str(noise_decay_fn), noise_final_ratio=float(noise_final_ratio),
             Ndiffuse=int(Ndiffuse), Ndiffuse_init=int(Ndiffuse_init),
         )
         self._backend_impl = None

@@ -15,10 +15,10 @@ the brax/jax stack, matching the vendored algorithm element-for-element:
     optional AVWBFO node-cumulative discount γ (`ActionValueWBFO`).
   * Sampling (`trajopt_policy.py::_eval_traj_grad_batch`): N+1 samples (sample 0 = the
     unperturbed mean); the FIRST NODE is held fixed (current action); per-node-per-dim noise.
-  * Rolling-denoising noise schedule (`noise_scheduler.py::S3NoiseScheduler`):
-        σ(node, it) = DimScale · Shape(node_t) · Decay(it)
-    Shape default = sine (sin(π·t) — zeroes the endpoints, fix-endpoint optimization);
-    Decay default = geometric (decay_rate^it). NO learned score network (model-free).
+  * Rolling-denoising noise schedule (`noise_scheduler.py::S2NoiseScheduler`):
+        σ(node, it) = base_scale · Shape(node_t) · Decay(it)
+    The vendored trajectory-optimization config uses a linear shape and exponential
+    decay.  NO learned score network (model-free).
 
 Implements ``WarmStartPlanner`` so it runs through the shared ``RecedingHorizonController``.
 """
@@ -34,6 +34,72 @@ import jax.numpy as jnp
 from genedynamics.solvers.common.env_rollout import (
     is_brax_env, build_brax_rollout, build_brax_step,
 )
+
+
+_NOISE_SHAPES = {"constant", "sine", "linear", "quadratic", "exponential"}
+_NOISE_DECAYS = {"constant", "linear", "exponential", "cosine"}
+
+
+def _noise_shape(name: str, n_nodes: int) -> jnp.ndarray:
+    """Upstream ``noise_scheduler.py`` temporal shape functions."""
+    if name not in _NOISE_SHAPES:
+        raise ValueError(f"unsupported PegasusFlow noise shape '{name}'")
+    t = jnp.linspace(0.0, 1.0, int(n_nodes), dtype=jnp.float32)
+    if name == "constant":
+        return jnp.ones_like(t)
+    if name == "sine":
+        return jnp.sin(jnp.pi * t)
+    if name == "linear":
+        return t
+    if name == "quadratic":
+        return t ** 2
+    return jnp.exp(t)
+
+
+def _noise_decay(name: str, iteration: int, max_iterations: int, *,
+                 decay_rate: float, final_ratio: float) -> jnp.ndarray:
+    """Upstream scalar decay functions, including their one-iteration edge case."""
+    if name not in _NOISE_DECAYS:
+        raise ValueError(f"unsupported PegasusFlow noise decay '{name}'")
+    if name == "constant" or int(max_iterations) <= 1:
+        return jnp.asarray(1.0, jnp.float32)
+    progress = jnp.asarray(iteration / float(max_iterations - 1), jnp.float32)
+    if name == "linear":
+        return 1.0 + progress * (float(final_ratio) - 1.0)
+    if name == "cosine":
+        return float(final_ratio) + (1.0 - float(final_ratio)) * 0.5 * (
+            1.0 + jnp.cos(jnp.pi * progress)
+        )
+    return jnp.asarray(float(decay_rate) ** int(iteration), jnp.float32)
+
+
+def _weighted_basis_update(samples: jnp.ndarray, rewards: jnp.ndarray,
+                           phi: jnp.ndarray, *, temp: float,
+                           update_method: str, gamma: float) -> jnp.ndarray:
+    """WBFO/AVWBFO update matching the vendored PyTorch implementation.
+
+    PyTorch ``Tensor.std`` defaults to Bessel correction.  Using ``ddof=1`` is
+    important for the relatively small sample counts used by CPU smoke tests.
+    """
+    W = rewards @ phi
+    if update_method == "avwbfo":
+        def back(carry, w_k):
+            carry = w_k + float(gamma) * carry
+            return carry, carry
+
+        _, rev = jax.lax.scan(
+            back, jnp.zeros((W.shape[0],), W.dtype), W.T[::-1]
+        )
+        W = rev[::-1].T
+    elif update_method != "wbfo":
+        raise ValueError(
+            "PegasusFlow JAX supports update_method in {'wbfo', 'avwbfo'}"
+        )
+    W = (W - W.mean(0, keepdims=True)) / (
+        W.std(0, keepdims=True, ddof=1) + 1e-8
+    )
+    W = jax.nn.softmax(W / float(temp), axis=0)
+    return jnp.einsum("sn,sna->na", W, samples)
 
 
 def _catmull_rom_basis(n_eval: int, n_knots: int) -> np.ndarray:
@@ -78,8 +144,11 @@ class PegasusFlowBackendJax:
 
     def __init__(self, solver: Any = None, *, nu: Optional[int] = None,
                  rollout_fn: Optional[Callable] = None, step_fn: Optional[Callable] = None,
-                 Hsample: int = 16, Hnode: int = 4, Nsample: int = 2048, noise_sigma: float = 0.3,
-                 decay_rate: float = 0.9, temp_tau: float = 0.1, gamma: float = 0.0,
+                 Hsample: int = 16, Hnode: int = 4, Nsample: int = 2048, noise_sigma: float = 1.0,
+                 decay_rate: float = 0.9, temp_tau: float = 0.1, gamma: float = 1.0,
+                 update_method: str = "avwbfo", noise_scheduler_type: str = "s2",
+                 noise_shape_fn: str = "linear", noise_decay_fn: str = "exponential",
+                 noise_final_ratio: float = 0.1,
                  action_limit: float = 1.0, Ndiffuse: int = 2, Ndiffuse_init: int = 10,
                  seed: int = 0) -> None:
         if solver is not None:
@@ -92,6 +161,11 @@ class PegasusFlowBackendJax:
             decay_rate = float(cfg.get("decay_rate", cfg.get("sigma_decay", decay_rate)))
             temp_tau = float(cfg.get("temp_sample", cfg.get("temp_tau", temp_tau)))
             gamma = float(cfg.get("wbfo_gamma", gamma))
+            update_method = str(cfg.get("update_method", update_method)).lower()
+            noise_scheduler_type = str(cfg.get("noise_scheduler_type", noise_scheduler_type)).lower()
+            noise_shape_fn = str(cfg.get("noise_shape_fn", noise_shape_fn)).lower()
+            noise_decay_fn = str(cfg.get("noise_decay_fn", noise_decay_fn)).lower()
+            noise_final_ratio = float(cfg.get("noise_final_ratio", noise_final_ratio))
             action_limit = float(cfg.get("action_limit", action_limit))
             Ndiffuse = int(cfg.get("Ndiffuse", Ndiffuse))
             Ndiffuse_init = int(cfg.get("Ndiffuse_init", Ndiffuse_init))
@@ -105,6 +179,14 @@ class PegasusFlowBackendJax:
         self.Nsample = int(Nsample)
         self.base_sigma, self.decay, self.temp = float(noise_sigma), float(decay_rate), float(temp_tau)
         self.gamma = float(gamma)
+        self.update_method = str(update_method).lower()
+        if self.update_method not in ("wbfo", "avwbfo"):
+            raise ValueError("PegasusFlow update_method must be 'wbfo' or 'avwbfo'")
+        if str(noise_scheduler_type).lower() != "s2":
+            raise ValueError("the CPU PegasusFlow reproduction supports the upstream S2 scheduler")
+        self.noise_shape_fn = str(noise_shape_fn).lower()
+        self.noise_decay_fn = str(noise_decay_fn).lower()
+        self.noise_final_ratio = float(noise_final_ratio)
         self.action_limit = float(action_limit)
         self.Ndiffuse, self.Ndiffuse_init, self.seed = int(Ndiffuse), int(Ndiffuse_init), int(seed)
 
@@ -112,8 +194,7 @@ class PegasusFlowBackendJax:
         phi = _catmull_rom_basis(self.Hsample + 1, self.Hnode + 1)
         self._phi = jnp.asarray(phi)
         self._phi_pinv = jnp.asarray(np.linalg.pinv(phi))             # dense→node (for shift)
-        # S3 Shape(node_t) = sine (zeroes the endpoints — fix-endpoint optimization).
-        self._shape = jnp.asarray(np.sin(np.pi * np.linspace(0.0, 1.0, self.Hnode + 1)), jnp.float32)
+        self._shape = _noise_shape(self.noise_shape_fn, self.Hnode + 1)
 
         env = getattr(solver, "dynamics", None)
         self._rollout_fn = rollout_fn or (build_brax_rollout(env) if is_brax_env(env) else None)
@@ -133,16 +214,10 @@ class PegasusFlowBackendJax:
         samples = samples.at[:, 0].set(mean[0])                    # first node fixed (current action)
         samples = samples.at[0].set(mean)                          # sample 0 = unperturbed mean
         rews = self._rollout_fn(state, self._node2dense(samples), 0.0)   # (N+1, Hsample+1)
-        W = rews @ self._phi                                       # (N+1, Hnode+1)  WBFO: W = S·Φ
-        if self.gamma > 0.0:                                       # AVWBFO node-cumulative discount
-            def back(carry, w_k):
-                carry = w_k + self.gamma * carry
-                return carry, carry
-            _, W = jax.lax.scan(back, jnp.zeros((N + 1,), W.dtype), W.T[::-1])
-            W = W[::-1].T
-        W = (W - W.mean(0, keepdims=True)) / (W.std(0, keepdims=True) + 1e-8)
-        W = jax.nn.softmax(W / self.temp, axis=0)                  # per-NODE softmax over samples
-        return jnp.einsum("sn,sna->na", W, samples)               # per-node weighted mean
+        return _weighted_basis_update(
+            samples, rews, self._phi, temp=self.temp,
+            update_method=self.update_method, gamma=self.gamma,
+        )
 
     # --- WarmStartPlanner protocol ---
     def init_plan_var(self) -> jnp.ndarray:
@@ -153,9 +228,14 @@ class PegasusFlowBackendJax:
 
     def replan(self, state, warm_start, schedule, rng, t0=0.0) -> jnp.ndarray:
         mean = warm_start
-        for k in range(int(schedule.shape[0])):                    # σ decays over the diffusion steps
+        n_iter = int(schedule.shape[0])
+        for k in range(n_iter):                                   # σ decays over the diffusion steps
             rng, sub = jax.random.split(rng)
-            sigma_it = self._shape[:, None] * (self.base_sigma * (self.decay ** k))
+            decay = _noise_decay(
+                self.noise_decay_fn, k, n_iter,
+                decay_rate=self.decay, final_ratio=self.noise_final_ratio,
+            )
+            sigma_it = self._shape[:, None] * self.base_sigma * decay
             mean = self._wbfo(state, mean, sigma_it, sub)
         return jnp.clip(mean, -self.action_limit, self.action_limit)
 
@@ -178,4 +258,7 @@ class PegasusFlowBackendJax:
         return [self.plan(x0, rng_key=k) for k in keys]
 
 
-__all__ = ["PegasusFlowBackendJax"]
+__all__ = [
+    "PegasusFlowBackendJax", "_catmull_rom_basis", "_noise_shape",
+    "_noise_decay", "_weighted_basis_update",
+]

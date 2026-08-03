@@ -122,6 +122,18 @@ def arm_surface_scan_signals(trajectory, env, obstacles, constraints, **kw) -> D
         k_surf = e._k_surf_fn(xi, eta)
         reliability = e.geometry_reliability(s)
         realization_offset = e.realization_coordinate_offset(s)
+        _, _, jacp, _, _, _ = e._ee_kin(s.pipeline_state)
+        g_ee = jnp.linalg.solve(
+            jacp.T @ jacp + 1e-6 * jnp.eye(3),
+            jacp.T @ s.pipeline_state.qfrc_bias[:7],
+        )
+        gravity_normal = jnp.dot(g_ee, n_s)
+        residual_gravity = (1.0 - cfg.grav_comp) * gravity_normal
+        effective_press = (
+            f_cmd - residual_gravity
+            + cfg.kp_force * (f_cmd - f_real)
+            + s.info["force_int"]
+        )
         # This mask is invariant to h_surf_tangential/soft_contact_manifold and
         # therefore comparable across methods.
         on_path_common = (
@@ -143,7 +155,10 @@ def arm_surface_scan_signals(trajectory, env, obstacles, constraints, **kw) -> D
                 "gate_force_error": reliability["force_error"][None],
                 "gate_deformation_risk": reliability["deformation_risk"][None],
                 "gate_contact_loss": reliability["contact_loss"][None],
-                "realization_offset": realization_offset}
+                "realization_offset": realization_offset,
+                "force_int": s.info["force_int"][None],
+                "gravity_normal": gravity_normal[None],
+                "effective_press": effective_press[None]}
 
     d = _roll_brax(env, _x0(env, kw), actions, per_step)
     cfg = env._config
@@ -216,6 +231,9 @@ def arm_surface_scan_signals(trajectory, env, obstacles, constraints, **kw) -> D
         "gate_deformation_risk": d["gate_deformation_risk"].reshape(-1),
         "gate_contact_loss": d["gate_contact_loss"].reshape(-1),
         "realization_offset": d["realization_offset"],
+        "force_int": d["force_int"].reshape(-1),
+        "gravity_normal": d["gravity_normal"].reshape(-1),
+        "effective_press": d["effective_press"].reshape(-1),
         "force_des": np.full(h.shape[0], f_target),
         "f_min": float(getattr(cfg, "f_min", 0.0)), "f_max": float(getattr(cfg, "f_max", 0.0)),
         "seconds": float(kw.get("planning_time", 0.0)),

@@ -192,6 +192,7 @@ class MdacBackendJax:
             float(getattr(solver, "prior_lambda_shift", 0.5)) if solver is not None else 0.5
         )
         self.risk_fn = getattr(solver, "risk_fn", None) if solver is not None else None
+        self.score_risk_fn = getattr(self._env, "sequence_score_risk", None)
         self.prior_include_incumbent = bool(
             getattr(solver, "prior_include_incumbent", True)
         )
@@ -207,6 +208,32 @@ class MdacBackendJax:
         )
         self.prior_acceptance = bool(
             getattr(solver, "prior_acceptance", True)
+        )
+        self.prior_fallback_mode = str(
+            getattr(solver, "prior_fallback_mode", "rl")
+        )
+        if self.prior_fallback_mode not in {"rl", "receding_incumbent"}:
+            raise ValueError(
+                "prior_fallback_mode must be 'rl' or 'receding_incumbent', got "
+                f"{self.prior_fallback_mode!r}"
+            )
+        self.reliability_model = getattr(solver, "reliability_model", None)
+        self.reliability_feature_fn = getattr(
+            self._env, "reliability_features", None
+        )
+        if self.reliability_model is not None and self.reliability_feature_fn is None:
+            raise ValueError(
+                "learned reliability requires env.reliability_features"
+            )
+        self.reliability_risk_tolerance = jnp.asarray(
+            getattr(solver, "reliability_risk_tolerance", (0.0, 0.0, 0.0, 0.0)),
+            dtype=jnp.float32,
+        )
+        self.reliability_force_limit = float(
+            getattr(solver, "reliability_force_limit", 0.25)
+        )
+        self.reliability_deformation_limit = float(
+            getattr(solver, "reliability_deformation_limit", float("inf"))
         )
         flags = getattr(solver, "flags", None)
         self.use_rl_prior = bool(getattr(flags, "use_rl_prior", True))
@@ -254,6 +281,13 @@ class MdacBackendJax:
         # bound function here avoids creating a fresh lax.scan executable for
         # every call; only the init/steady schedule shapes compile separately.
         self._replan_scan_jit = jax.jit(self._replan_scan)
+        # Acceptance contains a task-owned horizon ``lax.scan``.  Leaving the
+        # vmap/scan expression in eager Python causes a fresh transformed
+        # function to be constructed on every MPC step, so CPU XLA retains an
+        # episode's worth of acceptance executables.  Keep one stable bound JIT
+        # exactly as for the reverse scan.  This changes no score, risk, or gate
+        # arithmetic; it only makes the compilation/cache boundary explicit.
+        self._accept_refinement_jit = jax.jit(self._accept_refinement)
 
     @property
     def _prior_active(self):
@@ -479,23 +513,54 @@ class MdacBackendJax:
         return jnp.zeros((self.Hnode + 1, self.nu), dtype=jnp.float32)
 
     def make_schedule(self, n_diffuse: int) -> jnp.ndarray:
-        return make_traj_diffuse_factors(self.sigma_control, self.traj_diffuse_factor, int(n_diffuse))
+        n_diffuse = int(n_diffuse)
+        if not 0 < n_diffuse <= self.Ndiffuse_init:
+            raise ValueError(
+                "n_diffuse must be in [1, Ndiffuse_init], got "
+                f"{n_diffuse} with Ndiffuse_init={self.Ndiffuse_init}"
+            )
+        active = make_traj_diffuse_factors(
+            self.sigma_control, self.traj_diffuse_factor, n_diffuse
+        )
+        # Keep one static scan shape for cold and steady replans.  Without this,
+        # CPU XLA caches a second full MJX/MDAC executable for Ndiffuse=2 after
+        # compiling Ndiffuse_init=10, which can exceed the host memory budget.
+        # NaN rows are masked to exact carry no-ops in _replan_scan, so the
+        # number and order of actual reverse updates remain unchanged.
+        pad = self.Ndiffuse_init - n_diffuse
+        return jnp.pad(
+            active,
+            ((0, pad), (0, 0)),
+            constant_values=jnp.nan,
+        )
 
     def _replan_scan(self, state, warm_start, schedule, rng, t0, U_rl) -> jnp.ndarray:
         n = schedule.shape[0]
 
         def body(carry, k):
             rng_c, Y = carry
-            # k = reverse-step index; _reverse_step derives idx_init + the coupled-
-            # annealing multipliers from it.
-            rng_c, Y, _ = self._reverse_step(
-                state,
-                rng_c,
-                Y,
-                schedule[k],
-                k,
-                t0,
-                U_rl,
+            noise_scale = schedule[k]
+
+            def active_step(active_carry):
+                active_rng, active_y = active_carry
+                # k = reverse-step index; _reverse_step derives idx_init + the
+                # coupled-annealing multipliers from it.
+                active_rng, active_y, _ = self._reverse_step(
+                    state,
+                    active_rng,
+                    active_y,
+                    noise_scale,
+                    k,
+                    t0,
+                    U_rl,
+                )
+                return active_rng, active_y
+
+            rng_c, Y = jax.lax.cond(
+                jnp.all(jnp.isfinite(noise_scale)),
+                active_step,
+                lambda inactive_carry: inactive_carry,
+                (rng_c, Y),
             )
             return (rng_c, Y), None
 
@@ -512,17 +577,62 @@ class MdacBackendJax:
             rewards = self._rollout_fn(state, dense, t0)
         return dense, rewards
 
-    def _accept_refinement(self, state, U_rl, refined, t0):
-        candidates = jnp.stack([U_rl, refined], axis=0)
-        dense, rewards = self._rollout_node_candidates(
-            state, candidates, t0
+    def _accept_refinement(self, state, fallback, refined, t0):
+        fallback_source = (
+            "prior_risk_incumbent"
+            if self.prior_fallback_mode == "receding_incumbent"
+            else "prior_risk_rl"
         )
-        scores = jnp.mean(rewards, axis=-1)
+        if not self.prior_acceptance:
+            # This ablation always deploys the refined proposal.  Evaluating
+            # score/risk cannot affect the selected action and would compile two
+            # additional MJX acceptance executables on CPU.  Mark unavailable
+            # counterfactual diagnostics explicitly instead of paying that cost.
+            nan = jnp.asarray(jnp.nan, dtype=refined.dtype)
+            risks = jnp.full((2, 4), nan, dtype=refined.dtype)
+            info = {
+                "prior_accepted": jnp.asarray(1.0, dtype=refined.dtype),
+                "prior_predicted_improvement": nan,
+                "prior_score_fallback": nan,
+                "prior_score_refined": nan,
+                "prior_risk_refined": risks[1],
+                "prior_risk_ok": nan,
+                "prior_force_veto": jnp.asarray(0.0, dtype=refined.dtype),
+            }
+            info[fallback_source] = risks[0]
+            return refined, info
+
+        # At the cold start there is no previously deployed plan to trust.  The
+        # model-based refinement establishes the first receding incumbent; from
+        # the next control step onward rejection keeps the shifted deployed plan
+        # rather than jumping back to an unverified raw policy sequence.
+        first_replan = (
+            (t0 <= 0.0)
+            if self.prior_fallback_mode == "receding_incumbent"
+            else jnp.asarray(False)
+        )
+        fallback = jnp.where(first_replan, refined, fallback)
+
+        candidates = jnp.stack([fallback, refined], axis=0)
+        dense = self.spline.node2u_batch(candidates)
+        if self.score_risk_fn is not None:
+            aug_lambda = self.aug_lambda if self._augmented else 0.0
+            aug_rho = self.aug_rho if self._augmented else 0.0
+            scores, risks = jax.vmap(
+                lambda us: self.score_risk_fn(
+                    state, us, aug_lambda, aug_rho
+                )
+            )(dense)
+        else:
+            _, rewards = self._rollout_node_candidates(state, candidates, t0)
+            scores = jnp.mean(rewards, axis=-1)
+            risks = None
         improvement = scores[1] - scores[0]
         predicted_ok = improvement > self.prior_improvement_epsilon
 
-        if self.risk_fn is not None:
-            risks = jax.vmap(lambda us: self.risk_fn(state, us))(dense)
+        if risks is not None or self.risk_fn is not None:
+            if risks is None:
+                risks = jax.vmap(lambda us: self.risk_fn(state, us))(dense)
             tolerance = self.prior_risk_tolerance
             risk_ok = jnp.all(risks[1] <= risks[0] + tolerance)
             # A refined proposal with any predicted force-limit violation is
@@ -533,24 +643,54 @@ class MdacBackendJax:
             risk_ok = jnp.asarray(True)
             hard_force_ok = jnp.asarray(True)
 
-        accepted = predicted_ok & risk_ok & hard_force_ok
-        if not self.prior_acceptance:
-            accepted = jnp.asarray(True)
-        selected = jnp.where(accepted, refined, U_rl)
+        learned_risks = None
+        if self.reliability_model is not None:
+            reliability_features = jax.vmap(
+                lambda us: self.reliability_feature_fn(state, us[0])
+            )(dense)
+            learned_risks = jax.vmap(
+                self.reliability_model.predict_upper
+            )(reliability_features)
+            support_scores = jax.vmap(
+                self.reliability_model.support_score
+            )(reliability_features)
+            learned_support_ok = support_scores[1] <= 1.0
+            learned_risk_ok = jnp.all(
+                learned_risks[1]
+                <= learned_risks[0] + self.reliability_risk_tolerance
+            )
+            learned_hard_ok = (
+                (learned_risks[1, 0] <= self.reliability_force_limit)
+                & (
+                    learned_risks[1, 2]
+                    <= self.reliability_deformation_limit
+                )
+            )
+            risk_ok = risk_ok & learned_risk_ok & learned_support_ok
+            hard_force_ok = hard_force_ok & learned_hard_ok
+
+        accepted = first_replan | (predicted_ok & risk_ok & hard_force_ok)
+        selected = jnp.where(accepted, refined, fallback)
         info = {
             "prior_accepted": accepted.astype(jnp.float32),
             "prior_predicted_improvement": improvement,
-            "prior_score_rl": scores[0],
+            "prior_score_fallback": scores[0],
             "prior_score_refined": scores[1],
-            "prior_risk_rl": risks[0],
             "prior_risk_refined": risks[1],
             "prior_risk_ok": risk_ok.astype(jnp.float32),
             "prior_force_veto": (~hard_force_ok).astype(jnp.float32),
         }
+        info[fallback_source] = risks[0]
+        if learned_risks is not None:
+            info["reliability_risk_incumbent"] = learned_risks[0]
+            info["reliability_risk_refined"] = learned_risks[1]
+            info["reliability_support_incumbent"] = support_scores[0]
+            info["reliability_support_refined"] = support_scores[1]
         return selected, info
 
     def replan_with_info(self, state, warm_start, schedule, rng, t0=0.0):
         t0 = jnp.asarray(t0, jnp.float32)
+        receding_incumbent = warm_start
         if self._prior_active:
             lam = self.prior_lambda_shift
             U_rl = jnp.asarray(self.prior.warm_start(state), warm_start.dtype)
@@ -563,13 +703,25 @@ class MdacBackendJax:
         if self._prepare_state_jit is not None:
             # The measured response is frozen around the actual incumbent, not
             # around an arbitrary shifted/RL mixture.
-            response_center = U_rl if self._prior_active else warm_start
+            if self._prior_active and self.prior_fallback_mode == "receding_incumbent":
+                response_center = jnp.where(
+                    t0 <= 0.0, U_rl, receding_incumbent
+                )
+            else:
+                response_center = U_rl if self._prior_active else warm_start
             state = self._prepare_state_jit(state, response_center, t0)
         refined = self._replan_scan_jit(
             state, warm_start, schedule, rng, t0, U_rl
         )
         if self._prior_active:
-            return self._accept_refinement(state, U_rl, refined, t0)
+            fallback = (
+                receding_incumbent
+                if self.prior_fallback_mode == "receding_incumbent"
+                else U_rl
+            )
+            return self._accept_refinement_jit(
+                state, fallback, refined, t0
+            )
         return refined, {}
 
     def replan(self, state, warm_start, schedule, rng, t0=0.0) -> jnp.ndarray:
@@ -581,6 +733,8 @@ class MdacBackendJax:
         return self.spline.node2u(plan_var)[0]
 
     def shift(self, plan_var) -> jnp.ndarray:
+        if self._prior_active and self.prior_fallback_mode == "receding_incumbent":
+            return self.spline.shift_nodes_terminal_hold(plan_var)
         return self.spline.shift_nodes(plan_var)
 
     # --- unified backend interface (single-shot, parallel) -------------------

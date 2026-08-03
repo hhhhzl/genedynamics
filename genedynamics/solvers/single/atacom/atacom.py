@@ -30,18 +30,43 @@ class AtacomSolver:
         self.act_fn = act_fn                             # obs -> tangent action α (null dim)
         self.seed = int(seed)
 
-    def run_receding(self, x0: Any, n_steps: int, rng: Any):
+        def policy_step(state, key):
+            alpha = self.act_fn(state.obs, key)
+            next_state = self.wrapper.step(state, alpha)
+            return next_state, next_state.info["atacom_u"]
+
+        # Deployment has no PPO outer scan to provide compilation. Cache the
+        # complete policy -> ATACOM -> MJX step as one executable.
+        self._policy_step = jax.jit(policy_step)
+
+    def run_receding(self, x0: Any, n_steps: int, rng: Any, *,
+                     collect_states: bool = True,
+                     synchronize_steps: bool = False):
         from genedynamics.solvers.common.receding_horizon import RecedingHorizonResult
         state = self.wrapper._augment(x0)                # seed the slack on the (inner) reset state
-        states, actions = [state], []
+        states, actions, infos = [state], [], []
         key = rng
         for _ in range(int(n_steps)):
             key, k = jax.random.split(key)
-            alpha = self.act_fn(state.obs, k)            # tangent action (null dim)
-            state = self.wrapper.step(state, alpha)
-            actions.append(state.info["atacom_u"])       # executed full-dim control u
+            state, executed_u = self._policy_step(state, k)
+            if synchronize_steps:
+                state = jax.block_until_ready(state)
+            actions.append(executed_u)                    # executed full-dim control u
+            infos.append({
+                "atacom_slack_norm": jax.numpy.linalg.norm(
+                    state.info["atacom_s"]
+                ),
+                "atacom_action_norm": jax.numpy.linalg.norm(
+                    state.info["atacom_u"]
+                ),
+            })
+            if collect_states:
+                states.append(state)
+        if not collect_states:
             states.append(state)
-        return RecedingHorizonResult(states=states, actions=actions)
+        return RecedingHorizonResult(
+            states=states, actions=actions, infos=infos
+        )
 
 
 if register_solver is not None:

@@ -1,82 +1,199 @@
-"""JAX backend for ISSA — AdamBA safe-action projection (FAITHFUL reproduction).
+"""JAX ISSA/AdamBA projection using true one-step realized safety.
 
-Re-implements the AdamBA (Adaptive Momentum Boundary Approximation) safe-set projection of
-ISSA (`baselines/Implicit_Safe_Set_Algorithm/toy_problem/{AdamBA,adamba_ssa_project_distance}.py`,
-TF1 + safety-gym) on the jax stack, matching the vendored algorithm:
-
-  * DERIVATIVE-FREE ray search: from the unsafe action, sample random unit directions; along
-    each ray run AdamBA's exponential-expand → bisection to the SAFE-SET BOUNDARY
-    (`AdamBA.py:90-122`, the exact ``eta`` schedule: ×2 to outreach while unsafe; on first
-    crossing ×0.25 then ×0.5 bisection, stepping back when safe / forward when unsafe).
-  * Safe set = ``{u : g(state,u) ≤ 0}`` (the env inequality residual — ISSA's "safe set
-    where the safety index does not increase"); ``unsafe = max_i g_i > 0`` (`utils.chk_unsafe`).
-  * Projection = the QP ``min ||u'−u||² s.t. u' ∈ safe set`` (`adamba_ssa_project_distance.py:
-    37-47`); its N-D realization here is the CLOSEST safe boundary point found by the rays
-    (minimal-change projection onto the safe-set boundary). NO gradient of the constraint.
-
-The ray search is vectorized over directions and runs a fixed iteration budget (jittable);
-the safe/unsafe gate is a deploy-time Python branch (the controller loop is not jitted).
+The vendored ISSA implementation classifies a candidate by simulating it and
+checking the change of a state safety index.  This task-adapted port preserves
+that contract: the Panda environment owns ``safety_index(state)`` and every ray
+candidate passes through ``env.step``.  Command bounds alone are not a safety
+index because the impedance servo clips them before execution.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Dict, Tuple
 
 import jax
 import jax.numpy as jnp
 
 
-def make_issa_projection(env: Any, *, n_dirs: int = 20, n_iters: int = 50, bound: float = 1e-4,
-                         action_limit: float = 1.0, seed: int = 0) -> Callable[[Any, Any], Any]:
-    """Return ``(state, action) -> action`` projecting onto the safe set via AdamBA ray search."""
-    def _g(state, u):
-        return env.constraint_residual(state, u)[1]            # inequality residual g (safe: g<=0)
+class IssaProjection:
+    """Derivative-free AdamBA projection with a safety-first fallback."""
 
-    gmax = jax.jit(lambda state, u: jnp.max(_g(state, u)))
+    def __init__(self, env: Any, *, n_dirs: int = 20, n_iters: int = 50,
+                 bound: float = 1e-4, threshold: float = 0.0,
+                 enforce_absolute: bool = True, action_limit: float = 1.0,
+                 seed: int = 0) -> None:
+        if not hasattr(env, "safety_index"):
+            raise ValueError("ISSA requires env.safety_index(state)")
+        self.env = env
+        self.n_dirs = int(n_dirs)
+        self.n_iters = int(n_iters)
+        self.bound = float(bound)
+        self.threshold = float(threshold)
+        self.enforce_absolute = bool(enforce_absolute)
+        self.action_limit = float(action_limit)
+        self.seed = int(seed)
+        cfg = getattr(env, "_config", None)
+        self.dt = float(getattr(cfg, "dt", 0.02))
+        self._key0 = jax.random.PRNGKey(self.seed)
+        self.last_info: Dict[str, Any] = {}
+        self._margin_jit = jax.jit(self._transition_margin)
+        self._adamba_jit = jax.jit(self._adamba)
 
-    def _adamba(state, u, key):
-        nu = u.shape[0]
-        dirs = jax.random.normal(key, (n_dirs, nu))
+    def _transition_margin(self, state: Any, action: jax.Array) -> jax.Array:
+        """Positive means the candidate violates ISSA's one-step condition."""
+        phi_now = self.env.safety_index(state)
+        next_state = self.env.step(state, action)
+        phi_next = self.env.safety_index(next_state)
+        change = phi_next - phi_now - self.threshold * self.dt
+        if self.enforce_absolute:
+            # Do not leave phi<=0.  If already unsafe, retain the ISSA recovery
+            # rule (non-increasing phi) instead of demanding a one-step miracle.
+            crossing = jnp.where(phi_now <= 0.0, phi_next, -jnp.inf)
+            return jnp.maximum(change, crossing)
+        return change
+
+    def _adamba(self, state: Any, nominal: jax.Array,
+                key: jax.Array) -> Tuple[jax.Array, Dict[str, jax.Array]]:
+        nu = nominal.shape[0]
+        dirs = jax.random.normal(key, (self.n_dirs, nu))
         dirs = dirs / (jnp.linalg.norm(dirs, axis=1, keepdims=True) + 1e-9)
-        unsafe_one = lambda uu: (jnp.max(_g(state, uu)) > 0.0).astype(jnp.float32)
+        margins = jax.vmap(lambda u: self._transition_margin(state, u))
 
-        def body(carry, _):
-            u_cur, eta, dflag, valid = carry
-            flag = jax.vmap(unsafe_one)(u_cur)                 # (N,) 1 = unsafe
-            oob = jnp.any(jnp.abs(u_cur) > action_limit, axis=1)
-            valid = valid & (~oob)
-            expand = (flag > 0.5) & (dflag < 0.5)              # outreach: u += eta·dir; eta×2
-            start = (flag < 0.5) & (dflag < 0.5)               # first crossing: eta×0.25, start refine
-            ref_u = (flag > 0.5) & (dflag > 0.5)               # refine, unsafe: u += eta·dir; eta×0.5
-            ref_s = (flag < 0.5) & (dflag > 0.5)               # refine, safe: u −= eta·dir; eta×0.5
-            move = (jnp.where(expand | ref_u, eta, 0.0) - jnp.where(ref_s, eta, 0.0))[:, None] * dirs
-            u_cur = u_cur + move
-            eta = eta * jnp.where(expand, 2.0, jnp.where(start, 0.25, 0.5))
-            dflag = jnp.where(start, 1.0, dflag)
-            return (u_cur, eta, dflag, valid), None
+        def body(carry):
+            iteration, current, eta, refining, valid, done = carry
+            margin = margins(current)
+            out_of_bounds = jnp.any(
+                jnp.abs(current) > self.action_limit, axis=1
+            )
+            valid = valid & (~out_of_bounds)
+            safe = margin <= 0.0
+            done = done | (safe & (eta <= self.bound))
+            active = (~done) & valid
+            expand = active & (~safe) & (~refining)
+            start_refine = active & safe & (~refining)
+            refine_unsafe = active & (~safe) & refining
+            refine_safe = active & safe & refining
+            signed_step = (
+                jnp.where(expand | refine_unsafe, eta, 0.0)
+                - jnp.where(refine_safe, eta, 0.0)
+            )
+            current = current + signed_step[:, None] * dirs
+            eta = eta * jnp.where(
+                expand, 2.0, jnp.where(start_refine, 0.25, 0.5)
+            )
+            refining = refining | start_refine
+            return (
+                iteration + 1, current, eta, refining, valid, done
+            )
 
-        u0 = jnp.broadcast_to(u, (n_dirs, nu))
-        init = (u0, jnp.full((n_dirs,), bound), jnp.zeros((n_dirs,)), jnp.ones((n_dirs,), bool))
-        (u_cur, _eta, _df, valid), _ = jax.lax.scan(body, init, None, length=int(n_iters))
+        def keep_searching(carry):
+            iteration, _current, _eta, _refining, valid, done = carry
+            unresolved = valid & (~done)
+            return (iteration < self.n_iters) & jnp.any(unresolved)
 
-        # keep boundary points that ended SAFE and in-bounds; pick the closest to u (min-‖·‖ QP).
-        ok = valid & (jax.vmap(unsafe_one)(u_cur) < 0.5)
-        u_cur = jnp.clip(u_cur, -action_limit, action_limit)
-        dist = jnp.where(ok, jnp.sum((u_cur - u) ** 2, axis=1), jnp.inf)
-        best = jnp.argmin(dist)
-        # fall back to the clipped nominal action if no ray found a safe boundary point.
-        return jnp.where(jnp.isfinite(dist[best]), u_cur[best], jnp.clip(u, -action_limit, action_limit))
+        initial = (
+            jnp.asarray(0, jnp.int32),
+            jnp.broadcast_to(nominal, (self.n_dirs, nu)),
+            jnp.full((self.n_dirs,), self.bound),
+            jnp.zeros((self.n_dirs,), dtype=bool),
+            jnp.ones((self.n_dirs,), dtype=bool),
+            jnp.zeros((self.n_dirs,), dtype=bool),
+        )
+        (_iterations, ray_actions, eta, _refining, valid, done) = jax.lax.while_loop(
+            keep_searching, body, initial
+        )
+        final_margin = margins(ray_actions)
+        converged = done | ((final_margin <= 0.0) & (eta <= self.bound))
 
-    adamba = jax.jit(_adamba)
-    key0 = jax.random.PRNGKey(int(seed))
+        # A zero-action hold is an explicit recovery candidate.  The nominal is
+        # included so the fallback is never worse merely because all rays exit
+        # the action box.
+        candidates = jnp.concatenate([
+            jnp.clip(ray_actions, -self.action_limit, self.action_limit),
+            nominal[None],
+            jnp.zeros((1, nu), nominal.dtype),
+        ], axis=0)
+        candidate_valid = jnp.concatenate([
+            valid & converged,
+            jnp.ones((2,), dtype=bool),
+        ])
+        candidate_margin = margins(candidates)
+        candidate_safe = candidate_valid & (candidate_margin <= 0.0)
+        distance = jnp.sum((candidates - nominal[None]) ** 2, axis=1)
+        closest_safe = jnp.argmin(jnp.where(candidate_safe, distance, jnp.inf))
+        safest = jnp.argmin(jnp.where(candidate_valid, candidate_margin, jnp.inf))
+        found_safe = jnp.any(candidate_safe)
+        index = jnp.where(found_safe, closest_safe, safest)
+        projected = candidates[index]
+        return projected, {
+            "found_safe": found_safe,
+            "failure": ~found_safe,
+            "margin": candidate_margin[index],
+            "intervention": jnp.linalg.norm(projected - nominal),
+        }
 
-    def _proj(state, a):
-        a = jnp.clip(jnp.asarray(a), -action_limit, action_limit)
-        if float(gmax(state, a)) <= 0.0:                       # already safe -> identity
-            return a
-        return adamba(state, a, key0)
+    def project_with_info(self, state: Any, action: Any):
+        nominal = jnp.clip(
+            jnp.asarray(action), -self.action_limit, self.action_limit
+        )
+        nominal_margin = self._margin_jit(state, nominal)
+        if float(nominal_margin) <= 0.0:
+            info = {
+                "found_safe": jnp.asarray(True),
+                "failure": jnp.asarray(False),
+                "margin": nominal_margin,
+                "intervention": jnp.asarray(0.0, nominal.dtype),
+            }
+            self.last_info = info
+            return nominal, info
+        step = state.info.get("step", jnp.asarray(0, jnp.int32))
+        key = jax.random.fold_in(self._key0, step.astype(jnp.uint32))
+        projected, info = self._adamba_jit(state, nominal, key)
+        self.last_info = info
+        return projected, info
 
-    return _proj
+    def project_jax(self, state: Any, action: Any):
+        """Pure-JAX projection for a compiled closed-loop rollout.
+
+        ``project_with_info`` deliberately offers an eager Python interface for
+        debugging and unit tests.  Production evaluation instead calls this
+        method from ``lax.scan`` so policy, AdamBA and the realized MJX step are
+        compiled as one control loop rather than dispatched separately at every
+        step.  Both paths use the exact same transition margin and AdamBA body.
+        """
+        nominal = jnp.clip(
+            jnp.asarray(action), -self.action_limit, self.action_limit
+        )
+        nominal_margin = self._transition_margin(state, nominal)
+        step = state.info.get("step", jnp.asarray(0, jnp.int32))
+        key = jax.random.fold_in(self._key0, step.astype(jnp.uint32))
+
+        def accept(_):
+            return nominal, {
+                "found_safe": jnp.asarray(True),
+                "failure": jnp.asarray(False),
+                "margin": nominal_margin,
+                "intervention": jnp.asarray(0.0, nominal.dtype),
+            }
+
+        def project(_):
+            return self._adamba(state, nominal, key)
+
+        return jax.lax.cond(nominal_margin <= 0.0, accept, project, operand=None)
+
+    def __call__(self, state: Any, action: Any):
+        return self.project_with_info(state, action)[0]
 
 
-__all__ = ["make_issa_projection"]
+def make_issa_projection(env: Any, *, n_dirs: int = 20, n_iters: int = 50,
+                         bound: float = 1e-4, threshold: float = 0.0,
+                         enforce_absolute: bool = True,
+                         action_limit: float = 1.0, seed: int = 0) -> IssaProjection:
+    return IssaProjection(
+        env, n_dirs=n_dirs, n_iters=n_iters, bound=bound,
+        threshold=threshold, enforce_absolute=enforce_absolute,
+        action_limit=action_limit, seed=seed,
+    )
+
+
+__all__ = ["IssaProjection", "make_issa_projection"]

@@ -223,6 +223,11 @@ class PandaSurfaceScanConfig:
     # out so compliant contact is not mistaken for path-tracking failure.
     # Default zero preserves every legacy experiment.
     w_realized_path: float = 0.0
+    # Dense online counterpart of maximum realized path progress.  Reward is
+    # earned only when an in-contact, on-path EE sample advances the historical
+    # maximum surface coordinate; staying, retreating, and revisiting cannot
+    # farm it.  Default zero preserves all pre-RL objectives.
+    w_realized_progress: float = 0.0
     # Optional realized-risk terms used by the diagnostic objective. Defaults
     # preserve the original reward byte-for-byte.
     w_deformation: float = 0.0
@@ -413,19 +418,39 @@ class PandaSurfaceScanEnv(PipelineEnv):
     def action_size(self) -> int:
         return self.spec.total_width                       # 10
 
+    @property
+    def manifold_constraint_size(self) -> int:
+        """Per-action equality dimension of ``manifold_residual``."""
+        return 3 if self._config.clean_manifold_force else 2
+
+    @property
+    def inequality_constraint_size(self) -> int:
+        """Per-action inequality dimension of ``constraint_residual``."""
+        return 2
+
     def reset(self, rng: jax.Array) -> State:
         ps = self.pipeline_init(_HOME_QPOS, jnp.zeros(self.sys.qd_size()))
         info = {
             "xi": self._xi0, "eta": self._eta0, "psi": jnp.float32(0.0),
             "prev_s": self._s_ref, "step": jnp.int32(0),
+            "max_realized_xi": self._xi0,
             "force_int": jnp.float32(0.0),     # contact-force integral (admittance state)
             "tangent_force_int": jnp.zeros((3,), dtype=jnp.float32),
         }
         if self._config.observation_mode == "rl_realized":
             info["prev_action"] = jnp.zeros((self.action_size,), dtype=jnp.float32)
+            realized_coords, _ = self._realized_surface_coords(
+                ps, info["xi"], info["eta"]
+            )
+            info["realized_coord_error"] = realized_coords - jnp.asarray([
+                info["xi"], info["eta"]
+            ])
         obs = self._get_obs(ps, info)
         return State(ps, obs, jnp.float32(0.0), jnp.float32(0.0),
-                     {"reward": jnp.float32(0.0)}, info)
+                     {
+                         "reward": jnp.float32(0.0),
+                         "realized_progress": jnp.float32(0.0),
+                     }, info)
 
     # --- surface desired pose + EE kinematics ---
     def _desired_pose(self, xi, eta):
@@ -623,16 +648,51 @@ class PandaSurfaceScanEnv(PipelineEnv):
             )
 
         reward = self._reward(ps, xi, eta, F_n, S_vec, state.info["prev_s"], state.info["step"])
+        max_realized_xi = state.info["max_realized_xi"]
+        realized_progress = jnp.float32(0.0)
+        realized_coords = None
+        tangent_error = None
+        if cfg.w_realized_progress or cfg.observation_mode == "rl_realized":
+            realized_coords, tangent_error = self._realized_surface_coords(
+                ps, xi, eta
+            )
+        if cfg.w_realized_progress:
+            in_contact = self._contact_force_at(ps, xi, eta) > 0.5
+            on_path = jnp.linalg.norm(tangent_error) <= cfg.track_tol
+            current_target_xi, _ = self._target(state.info["step"])
+            candidate = jnp.where(
+                in_contact & on_path,
+                jnp.clip(realized_coords[0], self._xi0, current_target_xi),
+                max_realized_xi,
+            )
+            next_max = jnp.maximum(max_realized_xi, candidate)
+            realized_progress = (
+                next_max - max_realized_xi
+            ) / max(cfg.scan_rate, 1e-6)
+            reward = reward + cfg.w_realized_progress * realized_progress
+            max_realized_xi = next_max
         # MERGE (not replace) so brax training wrappers' info keys (steps/truncation/
         # episode_metrics/...) survive the step; a no-op for the unwrapped MDAC/baseline path.
         info = {**state.info, "xi": xi, "eta": eta, "psi": psi, "prev_s": S_vec,
                 "step": state.info["step"] + 1, "force_int": force_int,
-                "tangent_force_int": tangent_force_int}
+                "tangent_force_int": tangent_force_int,
+                "max_realized_xi": max_realized_xi}
         if cfg.observation_mode == "rl_realized":
             info["prev_action"] = jnp.clip(action, -1.0, 1.0)
+            info["realized_coord_error"] = (
+                realized_coords - jnp.asarray([xi, eta])
+            )
         obs = self._get_obs(ps, info)
-        return state.replace(pipeline_state=ps, obs=obs, reward=reward,
-                             metrics={"reward": reward}, info=info)
+        return state.replace(
+            pipeline_state=ps,
+            obs=obs,
+            reward=reward,
+            metrics={
+                "reward": reward,
+                "realized_progress": realized_progress,
+            },
+            info=info,
+        )
 
     def _target(self, step):
         # scan target sweeps xi from the reset coord; the probe slides on the
@@ -948,6 +1008,46 @@ class PandaSurfaceScanEnv(PipelineEnv):
             "contact_loss": contact_loss,
         }
 
+    def reliability_features(self, state, action):
+        """Observable pre-action features for learned MDAC reliability.
+
+        Keep this contract synchronized with
+        :mod:`genedynamics.learning.reliability`.  No surface label, friction,
+        stiffness draw, or simulator-only material parameter is exposed.
+        """
+        cfg = self._config
+        ps = state.pipeline_state
+        xi, eta = state.info["xi"], state.info["eta"]
+        _, n_s, p_d, _ = self._desired_pose(xi, eta)
+        ee = ps.site_xpos[self._ee_site]
+        h = ee - p_d
+        normal_offset = jnp.dot(h, n_s)
+        tangent = h - normal_offset * n_s
+        force = self._contact_force_at(ps, xi, eta)
+        deformation = self._penetration_at(ps, xi, eta)
+        _, _, force_cmd = self._unpack(action)
+        previous = state.info["prev_action"]
+        force_scale = max(cfg.f_max - cfg.f_min, 1.0e-6)
+        return jnp.asarray([
+            jnp.linalg.norm(tangent) / max(cfg.geometry_gate_path_scale, 1.0e-6),
+            normal_offset / max(cfg.geometry_gate_normal_scale, 1.0e-6),
+            (force - cfg.f_target) / force_scale,
+            deformation / max(cfg.deformation_scale, 1.0e-6),
+            (force <= 0.5).astype(jnp.float32),
+            jnp.clip(
+                state.info["step"].astype(jnp.float32) * cfg.scan_rate
+                / max(cfg.scan_span, 1.0e-6),
+                0.0,
+                1.0,
+            ),
+            action[0],
+            action[1],
+            action[2],
+            jnp.sqrt(jnp.mean(action[self.spec.s_slice] ** 2)),
+            (force_cmd - cfg.f_target) / force_scale,
+            jnp.sqrt(jnp.mean((action - previous) ** 2)),
+        ], dtype=jnp.float32)
+
     def _reward(self, ps, xi, eta, F_n, s_vec, prev_s, step):
         cfg = self._config
         _, n_s, _, R_d = self._desired_pose(xi, eta)
@@ -997,6 +1097,20 @@ class PandaSurfaceScanEnv(PipelineEnv):
             J = J + cfg.w_force_violation * force_risk
         return -J
 
+    def _realized_surface_coords(self, ps, xi, eta):
+        """Estimate measurable EE surface coordinates around the command."""
+        cfg = self._config
+        _, n_s, p_d, _ = self._desired_pose(xi, eta)
+        ee_error = ps.site_xpos[self._ee_site] - p_d
+        tangent_error = ee_error - jnp.dot(ee_error, n_s) * n_s
+        Jq = self._surface_coordinate_jacobian(xi, eta)
+        reg = max(cfg.realization_compensation_reg, 1e-9)
+        delta = jnp.linalg.solve(
+            Jq.T @ Jq + reg * jnp.eye(2, dtype=Jq.dtype),
+            Jq.T @ tangent_error,
+        )
+        return jnp.asarray([xi, eta]) + delta, tangent_error
+
     def _get_obs(self, ps, info) -> jax.Array:
         p_h = ps.site_xpos[self._ee_site]
         if self._config.observation_mode == "rl_realized":
@@ -1010,15 +1124,7 @@ class PandaSurfaceScanEnv(PipelineEnv):
             )
             target_error = jnp.asarray([xi_t - xi, eta_t - eta]) / coord_scale
 
-            _, n_s, p_d, _ = self._desired_pose(xi, eta)
-            ee_error = p_h - p_d
-            tangent_error = ee_error - jnp.dot(ee_error, n_s) * n_s
-            Jq = self._surface_coordinate_jacobian(xi, eta)
-            reg = max(cfg.realization_compensation_reg, 1e-9)
-            realized_coord_error = jnp.linalg.solve(
-                Jq.T @ Jq + reg * jnp.eye(2, dtype=Jq.dtype),
-                Jq.T @ tangent_error,
-            ) / coord_scale
+            realized_coord_error = info["realized_coord_error"] / coord_scale
 
             force = self._contact_force_at(ps, xi, eta)
             force_scale = max(
@@ -1059,17 +1165,31 @@ class PandaSurfaceScanEnv(PipelineEnv):
                                 jnp.array([info["xi"], info["eta"], info["psi"],
                                            self._contact_force_at(ps, info["xi"], info["eta"]), self._mu])])
 
-    def sequence_risk(self, state, actions) -> jax.Array:
-        """Task-owned realized risk vector for one candidate sequence.
+    def sequence_score_risk(
+        self, state, actions, aug_lambda=0.0, aug_rho=0.0
+    ):
+        """Joint predicted score and risk for one acceptance candidate.
 
-        Returns dimensionless ``[force_violation_rate, contact_loss_rate,
-        deformation_CVaR20, force_MAE]``.  The solver only compares this vector;
-        contact semantics and physical scaling remain owned by the environment.
+        Computing both in one dynamics scan avoids compiling and retaining a
+        separate batch-2 reward rollout in addition to the task risk rollout.
+        The score exactly matches the augmented planner reward when nonzero AL
+        parameters are supplied, and the risk vector keeps the existing task-
+        owned normalization.
+
+        Returns ``(mean_score, risk)`` where risk is dimensionless
+        ``[force_violation_rate, contact_loss_rate, deformation_CVaR20,
+        force_MAE]``.
         """
         cfg = self._config
 
         def body(s, u):
             s2 = self.step(s, u)
+            h, g = self.constraint_residual(s2, u)
+            residual = jnp.concatenate([jnp.abs(h), jax.nn.relu(g)], axis=-1)
+            penalty = (
+                aug_lambda * jnp.sum(residual)
+                + 0.5 * aug_rho * jnp.sum(residual * residual)
+            )
             xi, eta = s2.info["xi"], s2.info["eta"]
             force = self._contact_force_at(s2.pipeline_state, xi, eta)
             deformation = self._penetration_at(s2.pipeline_state, xi, eta)
@@ -1086,22 +1206,53 @@ class PandaSurfaceScanEnv(PipelineEnv):
                     1e-6,
                 )
             )
-            return s2, jnp.asarray([
-                force_violation,
-                contact_loss,
-                deformation / max(cfg.deformation_scale, 1e-6),
-                force_error,
-            ])
+            return s2, (
+                s2.reward - penalty,
+                jnp.asarray([
+                    force_violation,
+                    contact_loss,
+                    deformation / max(cfg.deformation_scale, 1e-6),
+                    force_error,
+                ]),
+            )
 
-        _, per_step = jax.lax.scan(body, state, actions)
+        _, (rewards, per_step) = jax.lax.scan(body, state, actions)
         tail_count = max(1, (int(actions.shape[0]) + 4) // 5)
         deformation_cvar = jnp.mean(jnp.sort(per_step[:, 2])[-tail_count:])
-        return jnp.asarray([
+        risk = jnp.asarray([
             jnp.mean(per_step[:, 0]),
             jnp.mean(per_step[:, 1]),
             deformation_cvar,
             jnp.mean(per_step[:, 3]),
         ])
+        return jnp.mean(rewards), risk
+
+    def sequence_risk(self, state, actions) -> jax.Array:
+        """Task-owned realized risk vector for one candidate sequence."""
+        return self.sequence_score_risk(state, actions)[1]
+
+    def safety_index(self, state) -> jax.Array:
+        """Normalized realized-state safety index used by ISSA/AdamBA.
+
+        ``phi <= 0`` denotes the task safe set.  This is intentionally a pure
+        state contract: an ISSA candidate must first pass through the true MJX
+        ``step`` before it can be classified.  Path tracking is performance,
+        not safety, and is therefore excluded.  The three safety modes are
+        realized force bounds, contact retention, and deformation.
+        """
+        cfg = self._config
+        xi, eta = state.info["xi"], state.info["eta"]
+        force = self._contact_force_at(state.pipeline_state, xi, eta)
+        deformation = self._penetration_at(state.pipeline_state, xi, eta)
+        force_scale = max(cfg.f_max - cfg.f_min, 1.0)
+        deformation_scale = max(cfg.deformation_scale, 1.0e-6)
+        contact_threshold = 0.5
+        return jnp.max(jnp.asarray([
+            (cfg.f_min - force) / force_scale,
+            (force - cfg.f_max) / force_scale,
+            (contact_threshold - force) / contact_threshold,
+            (deformation - cfg.deformation_safe) / deformation_scale,
+        ], dtype=jnp.float32))
 
     # --- MDAC soft-feasibility: h_surf (eq 727) + h_normal (eq 731) + g_force ---
     def constraint_residual(self, state, action, ctx=None):
@@ -1189,8 +1340,60 @@ class PandaSurfaceScanDomainEnv:
         return jax.lax.switch(domain_index, branches, state)
 
 
+class PandaResidualActionEnv:
+    """Train a residual policy around a fixed, executable scan primitive."""
+
+    def __init__(self, env, action_bias, action_scale=None):
+        self.env = env
+        self.action_bias = jnp.asarray(action_bias, dtype=jnp.float32)
+        if self.action_bias.shape != (int(env.action_size),):
+            raise ValueError(
+                "action_bias must match the Panda primitive: "
+                f"{self.action_bias.shape} != {(int(env.action_size),)}"
+            )
+        self.action_scale = jnp.asarray(
+            jnp.ones_like(self.action_bias) if action_scale is None else action_scale,
+            dtype=jnp.float32,
+        )
+        if self.action_scale.shape != self.action_bias.shape:
+            raise ValueError(
+                "action_scale must match action_bias: "
+                f"{self.action_scale.shape} != {self.action_bias.shape}"
+            )
+        if bool(jnp.any(self.action_scale <= 0.0)):
+            raise ValueError("action_scale entries must be positive")
+
+    @property
+    def action_size(self):
+        return self.env.action_size
+
+    @property
+    def observation_size(self):
+        return self.env.observation_size
+
+    @property
+    def backend(self):
+        return self.env.backend
+
+    @property
+    def dt(self):
+        return self.env.dt
+
+    def reset(self, rng):
+        return self.env.reset(rng)
+
+    def step(self, state, residual_action):
+        action = jnp.clip(
+            self.action_scale * jnp.asarray(residual_action) + self.action_bias,
+            -1.0,
+            1.0,
+        )
+        return self.env.step(state, action)
+
+
 __all__ = [
     "PandaSurfaceScanConfig",
     "PandaSurfaceScanEnv",
     "PandaSurfaceScanDomainEnv",
+    "PandaResidualActionEnv",
 ]

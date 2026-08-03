@@ -114,6 +114,11 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         prior_improvement_epsilon: float = 0.0,
         prior_risk_tolerance: Any = (0.0, 0.0, 0.0, 0.0),
         prior_acceptance: bool = True,
+        prior_fallback_mode: str = "rl",
+        reliability_model: Any = None,
+        reliability_risk_tolerance: Any = (0.0, 0.0, 0.0, 0.0),
+        reliability_force_limit: float = 0.25,
+        reliability_deformation_limit: float = float("inf"),
         **kwargs: Any,
     ) -> None:
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -160,6 +165,13 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         self.prior_improvement_epsilon = float(prior_improvement_epsilon)
         self.prior_risk_tolerance = tuple(float(x) for x in prior_risk_tolerance)
         self.prior_acceptance = bool(prior_acceptance)
+        self.prior_fallback_mode = str(prior_fallback_mode)
+        self.reliability_model = reliability_model
+        self.reliability_risk_tolerance = tuple(
+            float(x) for x in reliability_risk_tolerance
+        )
+        self.reliability_force_limit = float(reliability_force_limit)
+        self.reliability_deformation_limit = float(reliability_deformation_limit)
 
         self.config.update(
             dict(
@@ -178,6 +190,10 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
                 prior_improvement_epsilon=float(prior_improvement_epsilon),
                 prior_risk_tolerance=self.prior_risk_tolerance,
                 prior_acceptance=bool(prior_acceptance),
+                prior_fallback_mode=self.prior_fallback_mode,
+                reliability_risk_tolerance=self.reliability_risk_tolerance,
+                reliability_force_limit=self.reliability_force_limit,
+                reliability_deformation_limit=self.reliability_deformation_limit,
                 method=str(method),
             )
         )

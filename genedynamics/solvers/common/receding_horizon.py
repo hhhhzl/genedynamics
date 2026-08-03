@@ -170,6 +170,24 @@ class RecedingHorizonController:
         """Execute the closed-loop receding-horizon rollout."""
         state = x0
         plan_var = self.planner.init_plan_var()
+        # A Brax reset can return a pytree that mixes committed device arrays
+        # with uncommitted JAX constants.  After the first real env.step all
+        # leaves become committed, and JAX otherwise treats that sharding change
+        # as a new signature for every large planner executable.  Commit the
+        # complete initial controller carry once so t=0 and steady replans share
+        # exactly one cache key.  Pure NumPy/custom backends retain their
+        # original objects and behavior.
+        try:
+            import jax
+
+            leaves = jax.tree_util.tree_leaves(state)
+            if any(isinstance(leaf, jax.Array) for leaf in leaves):
+                device = jax.devices()[0]
+                state, plan_var, rng = jax.device_put(
+                    (state, plan_var, rng), device=device
+                )
+        except (ImportError, TypeError, ValueError):
+            pass
         states: List[Any] = [state]
         actions: List[Any] = []
         plan_vars: List[Any] = []

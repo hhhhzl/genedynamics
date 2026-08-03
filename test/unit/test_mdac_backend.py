@@ -50,6 +50,25 @@ def test_kernel_is_jit_scan_parallel():
     assert Y.shape == (COMMON["Hnode"] + 1, COMMON["nu"]) and jnp.all(jnp.isfinite(Y))
 
 
+def test_steady_schedule_uses_static_shape_with_exact_masked_tail():
+    mdac = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    schedule = mdac.make_schedule(mdac.Ndiffuse)
+    assert schedule.shape == (
+        COMMON["Ndiffuse_init"], COMMON["Hnode"] + 1
+    )
+    assert bool(jnp.all(jnp.isfinite(schedule[:COMMON["Ndiffuse"]])))
+    assert bool(jnp.all(jnp.isnan(schedule[COMMON["Ndiffuse"]:])))
+
+    rng = jax.random.PRNGKey(17)
+    warm = mdac.init_plan_var()
+    t0 = jnp.float32(0.0)
+    masked = mdac._replan_scan(X0, warm, schedule, rng, t0, warm)
+    unpadded = mdac._replan_scan(
+        X0, warm, schedule[:COMMON["Ndiffuse"]], rng, t0, warm
+    )
+    np.testing.assert_allclose(masked, unpadded, atol=1e-6, rtol=1e-6)
+
+
 def test_transport_seam_routes_to_ddpm():
     from genedynamics.solvers.common.transport import DDPMTransport
     rng = jax.random.PRNGKey(7)

@@ -1,0 +1,18 @@
+base: _base.yaml
+name: full_mdac
+method: mdac_controllable
+group: main
+output_dir: results/arm/impedence/cpu_controllability_geometry/comparison/full_mdac
+method_params:
+  policy_ckpt: results/arm/impedence/_policies/shared_ppo_seed0.pkl
+  prior_lambda_shift: 0.5
+  prior_include_incumbent: true
+  prior_trust_radius: 0.35
+  prior_improvement_epsilon: 0.01
+  prior_risk_tolerance: [0.0, 0.01, 0.05, 0.05]
+  prior_acceptance: true
+  prior_fallback_mode: receding_incumbent
+  reliability_ckpt: results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json
+  reliability_risk_tolerance: [0.0, 0.01, 0.05, 0.05]
+  reliability_force_limit: 0.25
+  reliability_deformation_limit: 0.5

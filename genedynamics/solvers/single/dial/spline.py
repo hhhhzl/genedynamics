@@ -139,3 +139,18 @@ class NodeSpline:
         us = jnp.roll(us, -1, axis=0)
         us = us.at[-1].set(jnp.zeros_like(us[-1]))
         return self.u2node(us)
+
+    def shift_nodes_terminal_hold(self, nodes: jnp.ndarray) -> jnp.ndarray:
+        """Shift while holding the last previously planned control at the tail.
+
+        A guarded receding incumbent can legitimately survive several rejected
+        replans.  Zero-padding would then erase it one control at a time and
+        confound rejection with an artificial stop command.  Terminal hold is
+        the state-free backup extension for that guarded path; canonical DIAL
+        continues to use :meth:`shift_nodes` and its exact zero-tail convention.
+        """
+        us = self.node2u(nodes)
+        terminal = us[-1]
+        us = jnp.roll(us, -1, axis=0)
+        us = us.at[-1].set(terminal)
+        return self.u2node(us)

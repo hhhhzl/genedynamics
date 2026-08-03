@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1
 
 ARG PYTHON_VERSION=3.10
 ARG CUDA_VERSION=12.6.3

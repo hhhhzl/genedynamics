@@ -12,7 +12,10 @@ MGA is a receding-horizon contact impedance control framework that combines:
 2. **A model-based generative annealing optimizer** for short-horizon physical verification and local refinement.
 3. **A realization-aware manifold mechanism** that lifts clean geometry through
    a frozen short-horizon closed-loop response map.
-4. **A safe fallback and trust-region mechanism** that prevents the model-based stage from unnecessarily degrading the model-free policy.
+4. **An incumbent fallback and trust-region mechanism** that prevents the
+   model-based stage from unnecessarily degrading the model-free policy. The
+   fallback is called safe only after its realized risk has been validated; an
+   under-trained RL incumbent is not safe by construction.
 
 The central principles are:
 
@@ -249,7 +252,8 @@ The RL prior is responsible for:
 - Providing reasonable stiffness and force choices.
 - Encoding longer-term experience.
 - Reducing the variance of model-based search.
-- Producing a safe fallback when model-based refinement is uncertain.
+- Producing the incumbent fallback when model-based refinement is uncertain;
+  its safety remains an empirical training/evaluation requirement.
 
 The same trained policy is used as:
 
@@ -588,8 +592,9 @@ The revised reliability route is:
 2. select a conservative response trust from the measured Pareto frontier;
 3. retain the clean recovery geometry instead of disabling it when contact is
    poor;
-4. in Phase 4, compare the refined sequence with the RL incumbent and accept it
-   only under predicted improvement/confidence, otherwise fall back to RL.
+4. in Phase 4, use RL as a horizon proposal and trust-region center, but compare
+   the refined sequence with the shifted previously deployed sequence; reject
+   to that receding incumbent rather than to an unverified raw RL sequence.
 
 ### 8.6 Safety–Performance Pareto Objective
 
@@ -612,9 +617,10 @@ than reducing deformation by stopping or leaving the task.
 
 ---
 
-## 9. Model-Based Acceptance and RL Fallback
+## 9. Model-Based Acceptance and Receding-Incumbent Fallback
 
-The model-based optimizer must not be allowed to overwrite the RL prior unconditionally.
+The model-based optimizer must not overwrite the deployed plan unconditionally,
+and a rejected refinement must not re-enter an unverified raw RL sequence.
 
 ### 9.1 RL Proposal as a Candidate
 
@@ -634,25 +640,50 @@ Restrict refinement to the local neighborhood of the prior:
 \|U-U^{\mathrm{RL}}\|_{\Sigma_\psi^{-1}}^2\le\epsilon.
 \]
 
-### 9.3 Predicted Improvement Gate
+### 9.3 Receding Incumbent
+
+After executing the first action of the accepted sequence at time \(t-1\), form
+
+\[
+U_t^{\mathrm{I}}
+=
+\operatorname{HoldTail}\!\left(
+\operatorname{Shift}(U_{t-1}^{\star})
+\right).
+\]
+
+The terminal hold repeats the final previously planned control when extending
+the horizon. This is load bearing when several replans are rejected: zero-tail
+padding would erase a safe incumbent one step at a time and confound reliability
+with an artificial stop. At the cold start no deployed incumbent exists, so the
+first model-based refinement establishes \(U_0^{\mathrm{I}}\).
+
+### 9.4 Predicted Improvement and Risk Gate
 
 Define
 
 \[
 \Delta J
 =
-J_{\mathrm{MB}}(U^{\mathrm{RL}})
+J_{\mathrm{MB}}(U^{\mathrm{refined}})
 -
-J_{\mathrm{MB}}(U^{\mathrm{refined}}).
+J_{\mathrm{MB}}(U^{\mathrm{I}}),
 \]
 
-Accept refinement only when
+where larger \(J_{\mathrm{MB}}\) is better. Accept refinement only when
 
 \[
-\Delta J>\epsilon_J.
+\Delta J>\epsilon_J,
+\qquad
+R(U^{\mathrm{refined}})
+\preceq
+R(U^{\mathrm{I}})+\tau,
 \]
 
-### 9.4 Model Confidence
+and the refined horizon predicts no force-limit violation. The realized-risk
+vector contains force violation, contact loss, deformation, and force error.
+
+### 9.5 Model Confidence
 
 Let \(\sigma_F\) be predictive uncertainty or an OOD score. The model-based gain is
 
@@ -660,14 +691,15 @@ Let \(\sigma_F\) be predictive uncertainty or an OOD score. The model-based gain
 g_{\mathrm{MB}}=g(\Delta J,\sigma_F,\mathrm{OOD})\in[0,1].
 \]
 
-The final sequence is
+The confidence gate selects between the proposed refinement and the receding
+incumbent:
 
 \[
 U^\star
 =
-U^{\mathrm{RL}}
+U^{\mathrm{I}}
 +
-g_{\mathrm{MB}}(U^{\mathrm{refined}}-U^{\mathrm{RL}}).
+g_{\mathrm{MB}}(U^{\mathrm{refined}}-U^{\mathrm{I}}).
 \]
 
 If the model is uncertain or predicts no improvement:
@@ -675,10 +707,14 @@ If the model is uncertain or predicts no improvement:
 \[
 g_{\mathrm{MB}}=0
 \quad\Rightarrow\quad
-U^\star=U^{\mathrm{RL}}.
+U^\star=U^{\mathrm{I}}.
 \]
 
-This is the main do-no-harm mechanism.
+This is the main **refinement** do-no-harm mechanism: it prevents a predicted
+model-based degradation relative to the deployed receding incumbent. The RL
+sequence remains a proposal, candidate, and trust center, but is not the safety
+fallback. This remains an empirical bounded-horizon safeguard rather than an
+absolute certificate under model mismatch.
 
 ---
 
@@ -693,7 +729,7 @@ This is the main do-no-harm mechanism.
 | Normal penetration geometry | Often reliable | Usually uncertain |
 | Projection/retraction | Clean cumulative geometry + response lift | Conservative trust-scaled response lift |
 | Force and stiffness | Rollout + geometry | RL + realized rollout |
-| Fallback | RL prior | RL prior |
+| Fallback | Shifted deployed incumbent | Shifted deployed incumbent |
 | Main model-based role | Optimization and feasibility | Risk checking and OOD adaptation |
 
 The framework is unified through:
@@ -911,7 +947,7 @@ Recommended metrics:
 - MGA without geometry gating.
 - MGA with unconditional clean geometry.
 - MGA without stiffness optimization.
-- MGA without RL fallback.
+- MGA without receding-incumbent fallback.
 - MGA without trust region.
 - MGA without risk-aware weighting.
 
@@ -922,7 +958,8 @@ Recommended metrics:
 1. Does the RL prior reduce search variance and improve sample efficiency?
 2. Does model-based refinement reduce force, deformation, and contact tail risk?
 3. Does realization-aware geometry preserve rigid-contact gains without harming soft contact?
-4. Does the RL fallback prevent negative model-based correction?
+4. Does receding-incumbent fallback prevent negative model-based correction
+   without erasing task progress?
 5. Does MGA generalize better than standalone RL to unseen compliance, friction, geometry, and jam configurations?
 6. Does strong geometry help only when clean constraints correlate with realized outcomes?
 7. Can MGA improve the success–violation Pareto frontier rather than only raw reward?
@@ -954,10 +991,10 @@ Input:
        h. Estimate and freeze the short-horizon tangent response map B_t.
        i. Apply the regularized, clipped, trust-scaled response lift.
        j. Perform the annealing update.
-5. Compare refined U with U_RL.
-6. Estimate model confidence and predicted improvement.
+5. Form U_I by shifting the previously deployed sequence and holding its tail.
+6. Compare refined U with U_I using predicted improvement and realized risk.
 7. Apply trust-region acceptance:
-       U* = U_RL + g_MB (U_refined - U_RL)
+       U* = U_I + g_MB (U_refined - U_I)
 8. Execute the first primitive u*_0.
 9. Recede the horizon and repeat.
 ```
@@ -983,7 +1020,9 @@ claims 3–4 require the later GPU RL-prior program.
    Model-free RL provides behavioral competence, while model-based rollout provides local physical verification, risk reduction, and test-time adaptation.
 
 4. **Do-no-harm refinement:**  
-   RL fallback, trust regions, confidence gating, and predicted-improvement checks prevent unreliable model-based updates from unnecessarily degrading the learned policy.
+   Receding-incumbent fallback, RL-centered trust regions, confidence gating,
+   and predicted-improvement checks prevent unreliable model-based updates from
+   unnecessarily degrading the deployed closed-loop plan.
 
 5. **Contact impedance generalization:**  
    Position, force, and SPD stiffness are optimized jointly through a common lower-control primitive.
@@ -1077,9 +1116,9 @@ not from one scalar reward.
 Only after Phases 1–3 pass:
 
 - train and evaluate the shared RL prior;
-- insert the RL proposal as an incumbent candidate;
+- insert the RL proposal as a candidate and trust-region center;
 - add the prior trust region;
-- test predicted-improvement acceptance and fallback;
+- test predicted-improvement acceptance and receding-incumbent fallback;
 - compare standalone RL, model-based-only, and full MGA.
 
 ## 21. Validated CPU Route and RL-Readiness Decision (2026-07-28)
@@ -1229,9 +1268,10 @@ This authorizes the next stage; it does **not** establish final MGA superiority
 or deployment safety. Phase 4 must:
 
 1. train the shared RL prior on GPU using the same 10D primitive;
-2. include the unrefined RL proposal as an incumbent candidate;
+2. include the unrefined RL proposal as a candidate and trust-region center;
 3. learn or estimate response trust without access to an oracle medium label;
-4. enforce predicted-improvement acceptance and fallback to the incumbent;
+4. enforce predicted-improvement acceptance and fallback to the shifted
+   previously deployed incumbent;
 5. evaluate corrected DIAL, standalone RL, model-based-only, and full MGA on
    identical held-out stiffness/friction/geometry seeds;
 6. reject the full method if refinement increases force violations, contact
@@ -1260,13 +1300,15 @@ the RL policy has converged:
 - the policy is rolled closed-loop over the existing \(H_{\mathrm{sample}}=16\)
   grid (\(H_{\mathrm{sample}}+1\) dense controls) and mapped through the existing
   5-node spline;
-- the raw RL sequence is retained as an incumbent candidate independently of
-  the warm-start mixture;
+- the raw RL sequence is retained as a proposal candidate independently of the
+  warm-start mixture, but is not treated as a certified fallback;
 - refinement is bounded by a prior trust region and accepted only under
-  predicted improvement, no predicted force violation, and component-wise
-  realized-risk non-degradation within preregistered tolerances;
+  predicted improvement over the receding incumbent, no predicted force
+  violation, and component-wise realized-risk non-degradation within
+  preregistered tolerances;
 - receding-horizon diagnostics retain acceptance, fallback, predicted
-  improvement, and both risk vectors for later confidence training.
+  improvement, and incumbent/refined risk vectors for later confidence
+  training.
 
 For the CPU gate, the response trust remains the globally conservative
 \(0.125\). The learned confidence model is deliberately deferred until the
@@ -1274,3 +1316,273 @@ shared policy and its interaction data exist; the rejected heuristic/component
 gate is not reintroduced. A 4096-step two-domain Panda PPO run is only a
 compilation/checkpoint smoke test. Final validity still requires the two
 2-million-step GPU seeds and the held-out comparison in Section 21.7.
+
+### 21.9 Phase-4 200k CPU pilot and scale-up decision (2026-08-01)
+
+The first formal shared-policy pilot trained one PPO seed for 200,320 actual
+environment steps and then evaluated five methods on two disjoint evaluation
+seeds. Every method used 100 closed-loop control steps,
+\(N_{\mathrm{sample}}=64\), \(H_{\mathrm{sample}}=16\),
+\(H_{\mathrm{node}}=4\), and the same environment/reward declaration from the
+single canonical Phase-4 YAML. The reported coverage is the maximum coverage
+visited by the complete executed EE trajectory, not final-point completion.
+
+The two-seed means are:
+
+| Suite | Method | Track RMS | Max progress | Trajectory coverage | Force violation | Contact loss | Deformation CVaR95 | Gate accept |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| rigid cylinder | corrected DIAL | 4.468 mm | 1.000 | 1.000 | 0.00% | 4.00% | 0.502 mm | -- |
+| rigid cylinder | standalone RL | 1.335 mm | 0.626 | 0.604 | 0.00% | 3.00% | 0.366 mm | -- |
+| rigid cylinder | model-based only | 1.693 mm | 0.756 | 1.000 | 0.50% | 3.50% | 0.366 mm | -- |
+| rigid cylinder | MGA, no acceptance | 1.940 mm | 0.684 | 1.000 | 0.00% | 4.50% | 0.364 mm | 100.0% |
+| rigid cylinder | full MGA | 1.967 mm | 0.675 | 1.000 | 0.00% | 3.00% | 0.343 mm | 32.5% |
+| soft cylinder | corrected DIAL | 4.586 mm | 1.000 | 1.000 | 0.00% | 3.00% | 0.565 mm | -- |
+| soft cylinder | standalone RL | 1.375 mm | 0.606 | 0.614 | 0.00% | 3.00% | 0.593 mm | -- |
+| soft cylinder | model-based only | 1.789 mm | 0.724 | 1.000 | 0.50% | 1.50% | 1.055 mm | -- |
+| soft cylinder | MGA, no acceptance | 2.145 mm | 0.621 | 1.000 | 0.00% | 1.50% | 0.451 mm | 100.0% |
+| soft cylinder | full MGA | 2.028 mm | 0.617 | 1.000 | 0.00% | 2.00% | 0.494 mm | 35.0% |
+| held-out soft unseen | corrected DIAL | 8.991 mm | 1.000 | 1.000 | 0.00% | 2.50% | 0.902 mm | -- |
+| held-out soft unseen | standalone RL | 2.801 mm | 0.536 | 0.347 | 0.00% | 1.00% | 0.919 mm | -- |
+| held-out soft unseen | model-based only | 3.527 mm | 0.708 | 0.931 | 0.00% | 2.00% | 0.972 mm | -- |
+| held-out soft unseen | MGA, no acceptance | 3.819 mm | 0.697 | 0.921 | 0.00% | 2.00% | 0.951 mm | 100.0% |
+| held-out soft unseen | full MGA | 3.793 mm | 0.662 | 0.886 | 0.00% | 0.50% | 0.930 mm | 25.0% |
+
+This pilot supports four bounded conclusions:
+
+1. The horizon RL proposal plus response-lifted geometry is functional. Relative
+   to standalone RL, full MGA raises trajectory coverage from \(0.604\) to
+   \(1.000\) on rigid, from \(0.614\) to \(1.000\) on known soft, and from
+   \(0.347\) to \(0.886\) on held-out soft geometry.
+2. The acceptance intervention is active rather than cosmetic. Its acceptance
+   rate falls to \(25\%\) on held-out soft unseen, and relative to unconditional
+   refinement it reduces held-out contact loss from \(2.0\%\) to \(0.5\%\),
+   deformation CVaR95 from \(0.951\) to \(0.930\) mm, and force MAE from
+   \(11.032\) to \(10.545\) N.
+3. Relative to standalone RL on held-out soft unseen, full MGA pays a
+   \(0.011\) mm deformation-CVaR increase while gaining \(0.126\) maximum
+   progress and \(0.540\) trajectory coverage and halving contact loss. The
+   deformation increase is below the preregistered \(0.05\) mm tolerance; force
+   violation does not increase. This is a safety--performance Pareto pass, not
+   metric-wise dominance.
+4. Neither the 200k RL policy nor the other baselines constitute an absolute
+   safe fallback on the held-out soft suite. Full MGA remains above the
+   \(0.5\) mm deployment line, and the selected 200k policy did not exceed the
+   nominal step-zero evaluation. The pilot therefore validates the experiment,
+   coupling, and bounded do-no-harm gate, but not RL convergence or deployment
+   safety.
+
+Accordingly, the 200k CPU gate **authorizes scale-up to the preregistered 2M
+training run (preferably two GPU training seeds)**. It does not authorize a
+deployment claim. The 2M decision must retain the same five-method held-out
+matrix and must fail if force violation increases or if realized risk exceeds
+the same preregistered tolerances; any phrase claiming a safe fallback remains
+conditional until that test passes.
+
+### 21.10 Two-million-step gate falsification and corrected result (2026-08-02)
+
+Two shared PPO policies were trained for 2 million requested environment steps
+on the four canonical CPU-feasible domain templates. Checkpoint selection used
+held-out evaluation progress rather than the final optimizer state: policy seed
+0 selected the 1.0M checkpoint and policy seed 1 selected the 1.5M checkpoint.
+Each policy was evaluated on seeds 10 and 11 for 100 closed-loop steps with
+Nsample=64, Hsample=16, and Hnode=4. Corrected DIAL and model-based-only are
+policy
+independent, so their existing records are reused rather than duplicated.
+
+The first 2M matrix **falsified raw-RL fallback**. For policy seed 0 on known
+soft, unconditional MGA refinement had zero force violations and 0.460 mm
+deformation CVaR95, while the old gate fell back to raw RL often enough to
+produce 1.5% force violations and 1.534 mm deformation CVaR95. Thus the
+failure was not repaired by threshold tuning: rejection itself re-entered an
+unsafe proposal.
+
+Replacing raw RL with the shifted previously deployed plan removed that safety
+contradiction, but the first implementation retained DIAL's zero-tail shift.
+On policy seed 0 held-out unseen, repeated rejection then erased the incumbent
+and reduced mean maximum progress to 0.549. This was a second discriminating
+failure: deformation was reduced partly by stopping, which Section 8.6 forbids.
+
+The validated receding update is therefore
+
+\[
+U_t^{\mathrm{I}}
+=
+\operatorname{HoldTail}\!\left(
+\operatorname{Shift}(U_{t-1}^{\star})
+\right),
+\qquad
+U_t^\star
+=
+\begin{cases}
+U_t^{\mathrm{refined}}, & \text{if improvement and risk tests pass},\\
+U_t^{\mathrm{I}}, & \text{otherwise}.
+\end{cases}
+\]
+
+Raw RL remains in the candidate set and defines the refinement trust region,
+but it is not the safety fallback. The cold-start refinement establishes the
+first incumbent. Terminal hold changes only the guarded incumbent shift;
+canonical DIAL retains its exact zero-tail shift.
+
+The final four-run means (two policy-training seeds times two evaluation seeds)
+are:
+
+| Suite | Method | Track RMS | Max progress | Trajectory coverage | Force violation | Contact loss | Deformation CVaR95 | Force MAE | Gate accept |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| rigid cylinder | standalone RL | 2.829 mm | 0.891 | 0.787 | 0.00% | 6.00% | 1.090 mm | 6.177 N | -- |
+| rigid cylinder | MGA, no acceptance | 1.916 mm | 0.686 | 1.000 | 0.00% | 2.75% | 0.365 mm | 4.482 N | 100.0% |
+| rigid cylinder | full MGA | 1.872 mm | 0.791 | 1.000 | 0.00% | 3.50% | 0.366 mm | 5.686 N | 13.5% |
+| soft cylinder | standalone RL | 3.075 mm | 0.862 | 0.787 | 0.50% | 3.00% | 1.274 mm | 12.049 N | -- |
+| soft cylinder | MGA, no acceptance | 2.133 mm | 0.634 | 1.000 | 0.00% | 2.25% | 0.460 mm | 4.231 N | 100.0% |
+| soft cylinder | full MGA | 1.956 mm | 0.763 | 1.000 | 0.00% | 2.50% | 0.508 mm | 4.191 N | 18.8% |
+| held-out soft unseen | standalone RL | 5.487 mm | 0.848 | 0.658 | 0.00% | 1.75% | 0.941 mm | 11.367 N | -- |
+| held-out soft unseen | MGA, no acceptance | 3.847 mm | 0.705 | 0.936 | 0.00% | 1.25% | 1.088 mm | 10.801 N | 100.0% |
+| held-out soft unseen | full MGA | 3.996 mm | 0.765 | 0.980 | 0.00% | 1.50% | 0.933 mm | 10.560 N | 13.5% |
+
+This supports the following bounded decision:
+
+1. All 12 final full-MGA trajectories have zero force-limit violations.
+2. On known soft, full MGA improves tracking, progress, and force MAE over
+   unconditional refinement. Its 0.048 mm deformation-CVaR cost is below
+   the preregistered 0.05 mm aggregate tolerance. Policy seed 1 alone is a
+   boundary case at 0.052 mm and must remain visible in seed-wise reporting.
+3. On held-out soft unseen, full MGA improves progress, coverage, deformation
+   CVaR, and force MAE over unconditional refinement, with only 0.149 mm
+   tracking and 0.25 percentage-point contact-loss costs.
+4. Low acceptance no longer reduces risk by stopping: even at 10.5%--18.8%
+   acceptance, final progress remains 0.765--0.791 and coverage remains
+   0.980--1.000.
+
+The Phase-4 CPU mechanism is therefore **valid for the RL-prior stage under a
+bounded simulation/Pareto claim**. It is not deployment safe: held-out
+deformation CVaR95 remains 0.933 mm, above the 0.5 mm deployment line,
+and held-out force MAE remains 10.560 N. GPU scale-up should focus on policy
+stability, learned/OOD confidence, and the remaining force/compliance bias; it
+must preserve receding-incumbent fallback and the same held-out decision rule.
+
+### 21.11 Learned reliability and Soft/OOD safe operating point (2026-08-02)
+
+The remaining CPU work used the existing canonical YAML and result tree; no
+per-test YAML variants were introduced. The learned reliability model is a
+small standardized multi-output ridge predictor with one-sided split-conformal
+upper residuals. Its inputs are twelve pre-action, observable quantities:
+path/normal error, signed force error, deformation, contact loss, phase, the
+three coordinate actions, raw stiffness-action RMS, commanded-force error, and
+action-change RMS. It predicts the existing four-component risk vector
+
+\[
+(R_{\rm force},R_{\rm contact},R_{\rm deform},R_{\rm force\text{-}mae}).
+\]
+
+Training uses seed-10 transitions; seed-11 transitions are reserved for
+conformal calibration. Both accepted full-MGA trajectories and actually
+executed no-acceptance refinements are included, giving 594 training
+transitions. The calibration set has 792 transitions: 594 disjoint seen-domain
+transitions plus 198 deployment-family calibration transitions from unseen
+surface seeds 100 and 101. Seeds 102--104 are not used to fit the ridge model or
+its residual bound. State and action support scores are calibrated separately;
+out-of-support proposals abstain to the receding incumbent.
+
+Two falsifications determine the claim boundary:
+
+1. Seen-only q95 calibration did not transfer to unseen contact: deformation
+   and force-MAE coverage fell to 66.2% and 7.1%. A feature-distance abstention
+   rule also failed to recover coverage because latent compliance can shift the
+   transition target while current observables remain in range. Representative
+   deployment-family residual calibration is therefore required; feature
+   distance alone is not an OOD certificate.
+2. The first online support score was approximately 6.8 because offline data
+   used raw stiffness actions while the runtime hook used physical log
+   stiffness. After enforcing one feature contract, the score fell to about
+   0.59. This contract check is part of the regression gate.
+
+With refinement-distribution data, the frozen checkpoint obtains 95.3%
+deformation/force-MAE coverage on its disjoint 792-transition calibration set.
+On the independent safe seed-104 trajectory it obtains 96.0% deformation
+coverage, 99.0% force-MAE/contact coverage, and 99.0% in-support rate. The
+end-to-end learned gate keeps the analytical predicted-improvement test,
+requires learned non-degradation within `[0, 0.01, 0.05, 0.05]`, rejects a
+learned deformation upper bound above 0.5, and retains the receding incumbent
+on rejection. It is active but does not yet improve nominal acceptance or
+performance: final acceptance remains 2%. Its present value is calibrated
+additional veto/abstention, not a superiority claim.
+
+The Soft/OOD force bias was also traced causally. On unseen seed 102 with the
+raw policy, the normal gravity load was about 32.9 N while the commanded force
+was about 18.0 N; the force integral spent 98% of the episode saturated at
+-30 N, yet measured force averaged 30.5 N. Raising the integral limit to 60 N
+changed force MAE by only 0.14 N and reduced coverage, so integral capacity was
+not the repair. The validated inner-loop point uses partial normal gravity
+compensation `grav_comp=0.45` and slower force integration `ki_force=0.25`.
+
+The 0.5 mm line is physically incompatible with the original 20 N target on
+some held-out soft draws. The preregistered safety--performance search therefore
+selects a 15 N target. Finally, the old 19.3 mm reset depth imposed roughly
+0.7 mm initial penetration on the 20 mm probe; using 19.65 mm bounds the reset
+transient. These four values are frozen only in the canonical `soft_unseen`
+suite. The independent policy-seed-0/surface-seed-104 learned-gate result is:
+
+| Track RMS | Max progress | Completion | Coverage | Force violation | Settled contact loss | Force MAE (tracked) | Deformation peak | Deformation CVaR95 | Gate accept |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1.062 mm | 1.013 | 1.000 | 1.000 | 0.00% | 0.00% | 0.924 N | 0.482 mm | 0.456 mm | 2.0% |
+
+The development seed 103 also passes the deformation peak/CVaR line at
+0.475/0.460 mm with full coverage, but contains 2% contact-loss steps. Thus the
+CPU theory is now complete for a **bounded simulated Soft/OOD operating-point
+claim and entry into the RL-prior/GPU stage**. It is not an absolute real-world
+safety certificate: the conformal statement assumes a representative
+deployment-family calibration distribution, and one untouched final surface is
+insufficient to prove universal OOD safety. GPU/hardware work must expand the
+frozen-seed matrix and retain peak deformation, force violation, contact loss,
+coverage, and calibrated coverage as separate rejection criteria.
+
+The final canonical policy-seed-0 check also exposes the remaining distinction
+between a safe operating point and a universal soft-contact claim. With the
+original 20 N known-soft target, the two-seed mean deformation CVaR is
+0.514 mm. A preregistered final check at 18 N gives:
+
+| Known-soft seed | Track RMS | Max progress | Coverage | Force violation | Settled contact loss | Force MAE (tracked) | Deformation peak | Deformation CVaR95 | Gate accept |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 2.324 mm | 0.680 | 1.000 | 0.00% | 1.11% | 5.499 N | 0.467 mm | 0.444 mm | 14.0% |
+| 11 | 2.211 mm | 0.481 | 0.960 | 0.00% | 1.11% | 4.362 N | 0.521 mm | 0.498 mm | 5.0% |
+
+This 18 N point is frozen in the single canonical YAML because both seed-wise
+CVaRs pass the 0.5 mm line and force violations remain zero. It is a Pareto
+trade: mean tracking rises to 2.267 mm, mean coverage is 0.980, and seed 11's
+instantaneous peak is still 0.021 mm above the line. Therefore the completed
+CPU claim is exactly: calibrated learned reliability plus a validated
+soft-unseen operating point and a safer known-soft Pareto point. It is **not**
+absolute Soft/OOD safety, and the remaining peak-tail failure is a frozen GPU
+and broader-seed validation target rather than a reason to tune another CPU
+force target on these same two seeds.
+
+### 21.12 Corrected DIAL versus full MDAC at the frozen CPU budget (2026-08-02)
+
+After adding `jax-cosmo==0.1.0` as a CPU-development parity oracle, all eight
+DIAL spline tests pass against the upstream quadratic interpolation. Corrected
+DIAL and full MDAC were then run from the same canonical YAML on seeds 10 and
+11 with 100 closed-loop steps, (N_{\rm sample}=64), (H=16), four spline
+nodes, and the same low-level operating points (18 N known soft and 15 N
+soft-unseen). Thus this is a same-budget method comparison; it is not a claim
+about the original (N_{\rm sample}=2048) DIAL configuration.
+
+| Suite | Method | Track RMS | Max progress | Coverage | Force MAE | Force violation | Command violation | Settled contact loss | Deformation peak | Deformation CVaR95 | Smoothness | Runtime |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Rigid cylinder | corrected DIAL | 4.468 mm | 1.000 | 1.000 | 5.413 N | 0.00% | 2.50% | 3.33% | 0.565 mm | 0.502 mm | 0.333 | 60.1 s |
+| Rigid cylinder | full MDAC | 1.610 mm | 0.740 | 1.000 | 3.020 N | 0.00% | 0.00% | 2.22% | 0.387 mm | 0.370 mm | 0.100 | 142.5 s |
+| Known soft | corrected DIAL | 4.582 mm | 1.000 | 1.000 | 6.307 N | 0.00% | 6.00% | 1.11% | 0.555 mm | 0.534 mm | 0.322 | 61.8 s |
+| Known soft | full MDAC | 2.267 mm | 0.581 | 0.980 | 4.930 N | 0.00% | 0.00% | 1.11% | 0.494 mm | 0.471 mm | 0.103 | 136.4 s |
+| Soft unseen | corrected DIAL | 8.745 mm | 1.000 | 0.995 | 6.192 N | 0.00% | 0.50% | 3.33% | 1.176 mm | 1.031 mm | 0.312 | 94.9 s |
+| Soft unseen | full MDAC | 1.356 mm | 1.000 | 1.000 | 0.914 N | 0.00% | 0.00% | 0.00% | 0.434 mm | 0.413 mm | 0.037 | 278.5 s |
+
+The result is not metric-wise dominance on rigid or known-soft contact. DIAL
+traverses the reference aggressively and reaches maximum path progress 1.0,
+but its tracking error, force error, deformation tail, command-limit
+violations, and control variation are all worse. Full MDAC deliberately pays
+runtime and, on the first two suites, maximum-progress cost for a safer and
+more accurate operating point. On soft-unseen, however, both methods reach
+maximum progress 1.0 and full MDAC also improves coverage while sharply
+reducing every reported tracking/contact/force/deformation risk. The main
+method claim should therefore be stated as safety--accuracy Pareto superiority
+and strong Soft/OOD robustness at fixed sample budget, not universal dominance
+over DIAL on raw progress or wall-clock time.
