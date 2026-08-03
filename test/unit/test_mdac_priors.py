@@ -439,6 +439,14 @@ def test_algorithm_level_cpu_comparison_matrix_and_policy_routing():
     assert full["method_params"]["prior_acceptance"] is True
     assert full["method_params"]["prior_fallback_mode"] == "receding_incumbent"
     assert full["method_params"]["reliability_deformation_limit"] == 0.5
+    full_factory, full_sampling = _solver_cfg(full)
+    assert "atacom_policy_ckpt" in full_factory
+    assert "atacom_policy_ckpt" not in full_sampling
+    assert full_sampling["prior_stochastic_samples"] == 8
+    assert full_sampling["prior_atacom_samples"] == 8
+    assert full_sampling["prior_union_trust"] is True
+    assert full_sampling["prior_risk_tolerance"] == [0.0, 0.0, 0.0, 0.0]
+    assert full_sampling["reliability_risk_tolerance"] == [0.0, 0.0, 0.0, 0.0]
     safe_unseen = next(
         c for c in configs
         if c["algorithm"] == "full_mdac" and c["suite"] == "soft_unseen"

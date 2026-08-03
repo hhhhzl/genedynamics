@@ -1586,3 +1586,70 @@ reducing every reported tracking/contact/force/deformation risk. The main
 method claim should therefore be stated as safety--accuracy Pareto superiority
 and strong Soft/OOD robustness at fixed sample budget, not universal dominance
 over DIAL on raw progress or wall-clock time.
+
+### 21.13 Structured-prior Phase 1--5 upgrade (2026-08-03)
+
+The CPU upgrade keeps the original model-based safety architecture and changes
+how the fixed sampling budget is populated. It does **not** reinterpret an RL
+policy as the safety controller. The implemented route is:
+
+1. **Structured proposal contract.** A prior may return a fixed batch of whole
+   horizon proposals, proposal log density, and expert identity. Structured
+   samples replace Gaussian samples; they do not increase `Nsample`.
+2. **Stochastic RL horizons.** The full-action RL policy is rolled closed-loop
+   through the same task dynamics to produce eight state-conditioned horizon
+   proposals. This is a better proposal distribution than a pure Gaussian, not
+   a sample-efficiency or safety claim.
+3. **Stateful ATACOM horizons.** The trained seven-dimensional tangent policy is
+   transformed into full ten-dimensional controls and supplies eight additional
+   proposals plus a second trust-region centre. ATACOM inequality slack is
+   carried across real MPC steps and committed only after execution, exactly as
+   in the standalone wrapper. Reinitializing this slack on every replan was a
+   falsified implementation: it drove off-trajectory stiffness channels to
+   saturation.
+4. **Fixed-budget mixture and reliability.** Gaussian, stochastic-RL, and
+   ATACOM proposals share one `Nsample=64` reverse-diffusion batch. The existing
+   calibrated reliability model remains an additional support/risk veto; it is
+   not used to replace the task-owned model rollout.
+5. **Strict do-no-harm execution.** The executable fallback remains the shifted
+   model-based receding incumbent. A refinement is accepted only when its
+   predicted score improves and both the analytical and learned four-component
+   risks are non-increasing, using zero tolerance. ATACOM is deliberately not
+   the default incumbent: the policy was stable on its own trajectory but
+   produced saturated actions after small MDAC-induced state shifts, so treating
+   it as a closed-loop safety lower bound was falsified.
+
+Every mechanism is default-off at the solver API, so commits `8609dbf`,
+`2bd295f`, `49c7d4e`, `d5d6274`, `7b997d0`, and `4f8e5b1` are individually
+revertible. The single canonical `comparison/mdac.yaml` selects the validated
+combination; no per-surface algorithm YAML is introduced.
+
+The frozen CPU comparison uses seeds 10/11, 100 closed-loop steps,
+`Nsample=64`, `Hsample=16`, four spline nodes, and the already frozen low-level
+operating points. Results are stored under
+`structured_prior_phase1_5/full_mdac` and compared with clean-SHA `a080474`
+ATACOM and old full-MDAC reruns:
+
+| Suite | Method | Track RMS | Force MAE | Settled contact loss | Force violation | Coverage | Deformation peak | Deformation CVaR95 | Runtime |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Rigid | ATACOM | 1.832 mm | 2.862 N | 3.33% | 0.00% | 1.000 | 0.355 mm | 0.352 mm | 23.5 s |
+| Rigid | old full MDAC | 1.610 mm | 3.020 N | 2.22% | 0.00% | 1.000 | 0.387 mm | 0.370 mm | 143.5 s |
+| Rigid | structured full MDAC | 1.790 mm | 2.854 N | 1.11% | 0.00% | 1.000 | 0.360 mm | 0.348 mm | 181.1 s |
+| Known soft | ATACOM | 2.165 mm | 4.571 N | 1.11% | 0.00% | 1.000 | 0.484 mm | 0.446 mm | 23.1 s |
+| Known soft | old full MDAC | 2.267 mm | 4.930 N | 1.11% | 0.00% | 0.980 | 0.494 mm | 0.471 mm | 146.0 s |
+| Known soft | structured full MDAC | 2.011 mm | 4.572 N | 0.56% | 0.00% | 1.000 | 0.495 mm | 0.474 mm | 183.9 s |
+| Soft unseen | ATACOM | 1.235 mm | 0.824 N | 2.78% | 0.00% | 1.000 | 0.430 mm | 0.412 mm | 27.9 s |
+| Soft unseen | old full MDAC | 1.356 mm | 0.914 N | 0.00% | 0.00% | 1.000 | 0.434 mm | 0.413 mm | 272.1 s |
+| Soft unseen | structured full MDAC | 1.302 mm | 0.822 N | 1.11% | 0.00% | 1.000 | 0.431 mm | 0.410 mm | 332.2 s |
+
+Both known-soft seed CVaRs are below 0.5 mm (0.462/0.487 mm); unseen seed
+CVaRs are 0.355/0.465 mm. All six runs have zero force violation and full path
+coverage. Excluding runtime, structured full-MDAC is better or tied on 14 of 21
+scene-metric comparisons against ATACOM and 17 of 21 against old full-MDAC,
+counting tracking, force MAE, settled contact, peak/CVaR deformation, force
+violation, and coverage per scene. This is a near-comprehensive
+safety--accuracy Pareto improvement, not universal dominance: rigid tracking
+remains worse than old full-MDAC, known-soft deformation remains slightly worse
+than ATACOM, soft-unseen tracking remains 0.067 mm worse than ATACOM, and
+runtime is unoptimized. Those limitations belong to Phase 6 and broader-seed /
+GPU validation; they must not be hidden by an aggregate reward.
