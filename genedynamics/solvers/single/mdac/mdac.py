@@ -116,6 +116,8 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         prior_atacom_samples: int = 0,
         prior_union_trust: bool = False,
         prior_atacom_incumbent: bool = False,
+        prior_atacom_default: bool = False,
+        prior_atacom_strict_risk: bool = False,
         prior_improvement_epsilon: float = 0.0,
         prior_risk_tolerance: Any = (0.0, 0.0, 0.0, 0.0),
         prior_acceptance: bool = True,
@@ -172,6 +174,8 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         self.prior_atacom_samples = int(prior_atacom_samples)
         self.prior_union_trust = bool(prior_union_trust)
         self.prior_atacom_incumbent = bool(prior_atacom_incumbent)
+        self.prior_atacom_default = bool(prior_atacom_default)
+        self.prior_atacom_strict_risk = bool(prior_atacom_strict_risk)
         if self.prior_atacom_incumbent and self.atacom_prior is None:
             raise ValueError(
                 "prior_atacom_incumbent requires an atacom_prior"
@@ -220,6 +224,8 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
                 prior_atacom_samples=self.prior_atacom_samples,
                 prior_union_trust=self.prior_union_trust,
                 prior_atacom_incumbent=self.prior_atacom_incumbent,
+                prior_atacom_default=self.prior_atacom_default,
+                prior_atacom_strict_risk=self.prior_atacom_strict_risk,
                 prior_improvement_epsilon=float(prior_improvement_epsilon),
                 prior_risk_tolerance=self.prior_risk_tolerance,
                 prior_acceptance=bool(prior_acceptance),

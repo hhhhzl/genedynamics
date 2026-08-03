@@ -316,6 +316,27 @@ def test_atacom_pareto_incumbent_can_dominate_receding_and_refinement():
     )
 
 
+def test_atacom_default_is_lower_bound_when_refinement_is_worse():
+    backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    backend.prior = _FakePrior(COMMON["Hnode"] + 1, COMMON["nu"])
+    backend.use_rl_prior = True
+    backend.prior_fallback_mode = "receding_incumbent"
+    backend.prior_atacom_default = True
+    backend.prior_atacom_strict_risk = True
+    backend.risk_fn = lambda state, us: jnp.asarray([
+        0.0, 0.0, jnp.mean(jnp.abs(us[:, 0])), 0.0
+    ])
+    receding = jnp.broadcast_to(TARGET, (5, 2))
+    atacom = jnp.zeros_like(receding)
+    risky = jnp.full_like(receding, 0.8)
+    selected, info = backend._accept_refinement(
+        jnp.zeros((1,)), receding, risky, jnp.float32(2.0), atacom
+    )
+    np.testing.assert_allclose(selected, atacom)
+    assert float(info["atacom_incumbent_selected"]) == 1.0
+    assert float(info["prior_accepted"]) == 0.0
+
+
 def test_receding_incumbent_uses_terminal_hold_shift():
     backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
     backend.prior = _FakePrior(COMMON["Hnode"] + 1, COMMON["nu"])

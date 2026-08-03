@@ -214,6 +214,12 @@ class MdacBackendJax:
         self.prior_atacom_incumbent = bool(
             getattr(solver, "prior_atacom_incumbent", False)
         )
+        self.prior_atacom_default = bool(
+            getattr(solver, "prior_atacom_default", False)
+        )
+        self.prior_atacom_strict_risk = bool(
+            getattr(solver, "prior_atacom_strict_risk", False)
+        )
         if (
             self.prior_stochastic_samples < 0
             or self.prior_atacom_samples < 0
@@ -829,7 +835,11 @@ class MdacBackendJax:
                         <= self.reliability_deformation_limit
                     )
                 )
-            atacom_selected = cold_atacom | atacom_better
+            atacom_selected = (
+                jnp.asarray(True)
+                if self.prior_atacom_default
+                else (cold_atacom | atacom_better)
+            )
             fallback = jnp.where(atacom_selected, candidates[1], candidates[0])
             fallback_score = jnp.where(
                 atacom_selected, scores[1], scores[0]
@@ -859,7 +869,14 @@ class MdacBackendJax:
         if risks is not None or self.risk_fn is not None:
             if risks is None:
                 risks = jax.vmap(lambda us: self.risk_fn(state, us))(dense)
-            tolerance = self.prior_risk_tolerance
+            tolerance = (
+                jnp.zeros_like(self.prior_risk_tolerance)
+                if (
+                    has_atacom_incumbent
+                    and self.prior_atacom_strict_risk
+                )
+                else self.prior_risk_tolerance
+            )
             if not has_atacom_incumbent:
                 fallback_risk = risks[0]
             risk_ok = jnp.all(
@@ -878,9 +895,17 @@ class MdacBackendJax:
 
         if learned_risks is not None:
             learned_support_ok = support_scores[refined_idx] <= 1.0
+            learned_tolerance = (
+                jnp.zeros_like(self.reliability_risk_tolerance)
+                if (
+                    has_atacom_incumbent
+                    and self.prior_atacom_strict_risk
+                )
+                else self.reliability_risk_tolerance
+            )
             learned_risk_ok = jnp.all(
                 learned_risks[refined_idx]
-                <= fallback_learned_risk + self.reliability_risk_tolerance
+                <= fallback_learned_risk + learned_tolerance
             )
             learned_hard_ok = (
                 (
@@ -930,10 +955,26 @@ class MdacBackendJax:
             # Dummy of the right static shape; all prior branches are Python
             # static false, preserving the legacy candidate set and arithmetic.
             U_rl = warm_start
+        U_atacom = None
+        if (
+            self._prior_active
+            and self.atacom_prior is not None
+            and (self.prior_union_trust or self.prior_atacom_incumbent)
+        ):
+            # Generate the ATACOM anchor from the actual current state.  When it
+            # is the declared lower bound, refinement starts locally around it
+            # instead of around an unrelated RL/receding mixture.
+            U_atacom = jnp.asarray(
+                self.atacom_prior.warm_start(state), warm_start.dtype
+            )
+            if self.prior_atacom_default:
+                warm_start = U_atacom
         if self._prepare_state_jit is not None:
             # The measured response is frozen around the actual incumbent, not
             # around an arbitrary shifted/RL mixture.
-            if self._prior_active and self.prior_fallback_mode == "receding_incumbent":
+            if self.prior_atacom_default and U_atacom is not None:
+                response_center = U_atacom
+            elif self._prior_active and self.prior_fallback_mode == "receding_incumbent":
                 response_center = jnp.where(
                     t0 <= 0.0, U_rl, receding_incumbent
                 )
@@ -941,15 +982,6 @@ class MdacBackendJax:
                 response_center = U_rl if self._prior_active else warm_start
             state = self._prepare_state_jit(state, response_center, t0)
         proposal_info = {}
-        U_atacom = None
-        if (
-            self._prior_active
-            and self.atacom_prior is not None
-            and (self.prior_union_trust or self.prior_atacom_incumbent)
-        ):
-            U_atacom = jnp.asarray(
-                self.atacom_prior.warm_start(state), warm_start.dtype
-            )
         n_structured = (
             self.prior_stochastic_samples + self.prior_atacom_samples
         )
