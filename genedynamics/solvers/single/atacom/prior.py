@@ -56,6 +56,21 @@ class AtacomHorizonPrior:
         ), static_argnums=(2,))
         self._transform_batch = jax.jit(jax.vmap(self._transform))
         self._step_batch = jax.jit(jax.vmap(env.step))
+        # ATACOM's inequality slack is controller state.  The standalone
+        # wrapper carries it across real steps; resetting it at every MPC
+        # replan changes the expert and can produce off-trajectory saturation.
+        self._slack = None
+        self._pending_slack = None
+
+    def reset(self) -> None:
+        self._slack = None
+        self._pending_slack = None
+
+    def commit(self) -> None:
+        """Advance to the first ATACOM slack update after real execution."""
+        if self._pending_slack is not None:
+            self._slack = self._pending_slack
+        self._pending_slack = None
 
     @staticmethod
     def _obs_of(state):
@@ -82,7 +97,10 @@ class AtacomHorizonPrior:
             ),
             state,
         )
-        slack0 = init_slack(self.env, state)
+        slack0 = (
+            init_slack(self.env, state)
+            if self._slack is None else jnp.asarray(self._slack)
+        )
         slack = jnp.broadcast_to(
             slack0, (n_samples,) + slack0.shape
         )
@@ -91,6 +109,7 @@ class AtacomHorizonPrior:
         observations = []
         alphas = []
         controls = []
+        first_slack = None
         current = batch_state
         for h in range(self._dense_horizon):
             obs = self._obs_of(current)
@@ -98,6 +117,8 @@ class AtacomHorizonPrior:
             control, slack = self._transform_batch(
                 current, alpha * self._alpha_max, slack
             )
+            if h == 0:
+                first_slack = slack
             observations.append(obs)
             alphas.append(alpha)
             controls.append(control)
@@ -112,19 +133,20 @@ class AtacomHorizonPrior:
         log_prob = jax.vmap(
             self.tangent_prior.logp_of_sequence
         )(obs_seq, alpha_seq)
-        return nodes, log_prob
+        return nodes, log_prob, first_slack
 
     def warm_start(self, state):
-        nodes, _ = self._rollout(
+        nodes, _, first_slack = self._rollout(
             state, key=jax.random.PRNGKey(0), n_samples=1,
             deterministic=True,
         )
+        self._pending_slack = first_slack[0]
         return nodes[0]
 
     def sample_horizons(self, state, *, key, n_samples: int):
         if int(n_samples) <= 0:
             raise ValueError("n_samples must be positive")
-        nodes, log_prob = self._rollout(
+        nodes, log_prob, _ = self._rollout(
             state, key=key, n_samples=int(n_samples), deterministic=False,
         )
         return ProposalBatch(

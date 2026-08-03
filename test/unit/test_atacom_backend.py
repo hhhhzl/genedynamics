@@ -128,3 +128,19 @@ def test_horizon_prior_maps_tangent_samples_to_full_control_nodes():
     # The task equality is enforced by the model-based ATACOM transform, not
     # by the tangent network.
     np.testing.assert_allclose(dense[:, :, 0], 0.25, atol=2e-5)
+
+
+def test_horizon_prior_carries_slack_only_after_commit():
+    env = _ToyConstraintEnv()
+    state = env.reset(jax.random.PRNGKey(0))
+    prior = AtacomHorizonPrior(
+        env, _ToyTangentPrior(), Hsample=4, Hnode=2, ctrl_dt=0.02
+    )
+    prior.warm_start(state)
+    pending = np.asarray(prior._pending_slack)
+    assert prior._slack is None
+    prior.commit()
+    np.testing.assert_allclose(prior._slack, pending)
+    assert prior._pending_slack is None
+    prior.reset()
+    assert prior._slack is None

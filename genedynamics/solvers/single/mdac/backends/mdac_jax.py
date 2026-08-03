@@ -611,7 +611,19 @@ class MdacBackendJax:
 
     # --- WarmStartPlanner protocol (consumed by the receding-horizon bridge) --
     def init_plan_var(self) -> jnp.ndarray:
+        if self.atacom_prior is not None:
+            reset = getattr(self.atacom_prior, "reset", None)
+            if callable(reset):
+                reset()
         return jnp.zeros((self.Hnode + 1, self.nu), dtype=jnp.float32)
+
+    def after_step(self, state, action, next_state) -> None:
+        """Commit state carried by a structured expert after real execution."""
+        del state, action, next_state
+        if self.atacom_prior is not None:
+            commit = getattr(self.atacom_prior, "commit", None)
+            if callable(commit):
+                commit()
 
     def make_schedule(self, n_diffuse: int) -> jnp.ndarray:
         n_diffuse = int(n_diffuse)

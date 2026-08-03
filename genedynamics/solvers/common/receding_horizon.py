@@ -214,7 +214,11 @@ class RecedingHorizonController:
 
             # 2) execute only the first control on the REAL dynamics
             u0 = self.planner.first_action(plan_var)
+            previous_state = state
             state = self.step_fn(state, u0)
+            after_step = getattr(self.planner, "after_step", None)
+            if callable(after_step):
+                after_step(previous_state, u0, state)
             if self.synchronize_steps:
                 try:
                     import jax
