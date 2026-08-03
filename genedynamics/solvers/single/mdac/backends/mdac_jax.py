@@ -188,6 +188,9 @@ class MdacBackendJax:
         # incumbent candidate, local trust region, and do-no-harm acceptance.
         # None => every branch below is skipped and DIAL parity is preserved.
         self.prior = getattr(solver, "prior", None) if solver is not None else None
+        self.atacom_prior = (
+            getattr(solver, "atacom_prior", None) if solver is not None else None
+        )
         self.prior_lambda_shift = (
             float(getattr(solver, "prior_lambda_shift", 0.5)) if solver is not None else 0.5
         )
@@ -202,11 +205,22 @@ class MdacBackendJax:
         self.prior_stochastic_samples = int(
             getattr(solver, "prior_stochastic_samples", 0)
         )
-        if not 0 <= self.prior_stochastic_samples < self.Nsample:
+        self.prior_atacom_samples = int(
+            getattr(solver, "prior_atacom_samples", 0)
+        )
+        if (
+            self.prior_stochastic_samples < 0
+            or self.prior_atacom_samples < 0
+            or self.prior_stochastic_samples + self.prior_atacom_samples
+            >= self.Nsample
+        ):
             raise ValueError(
-                "prior_stochastic_samples must be in [0, Nsample), got "
-                f"{self.prior_stochastic_samples} with Nsample={self.Nsample}"
+                "structured prior samples must be nonnegative and sum to less "
+                f"than Nsample; got rl={self.prior_stochastic_samples}, "
+                f"atacom={self.prior_atacom_samples}, Nsample={self.Nsample}"
             )
+        if self.prior_atacom_samples and self.atacom_prior is None:
+            raise ValueError("prior_atacom_samples requires atacom_prior")
         self.prior_improvement_epsilon = float(
             getattr(solver, "prior_improvement_epsilon", 0.0)
         )
@@ -763,23 +777,38 @@ class MdacBackendJax:
                 response_center = U_rl if self._prior_active else warm_start
             state = self._prepare_state_jit(state, response_center, t0)
         proposal_info = {}
-        if self._prior_active and self.prior_stochastic_samples > 0:
-            sample_horizons = getattr(self.prior, "sample_horizons", None)
-            if sample_horizons is None:
-                raise ValueError(
-                    "prior_stochastic_samples requires prior.sample_horizons"
+        n_structured = (
+            self.prior_stochastic_samples + self.prior_atacom_samples
+        )
+        if self._prior_active and n_structured > 0:
+            proposal_nodes = []
+            proposal_logps = []
+            if self.prior_stochastic_samples > 0:
+                sample_horizons = getattr(self.prior, "sample_horizons", None)
+                if sample_horizons is None:
+                    raise ValueError(
+                        "prior_stochastic_samples requires prior.sample_horizons"
+                    )
+                rng, proposal_key = jax.random.split(rng)
+                proposals = sample_horizons(
+                    state, key=proposal_key,
+                    n_samples=self.prior_stochastic_samples,
                 )
-            rng, proposal_key = jax.random.split(rng)
-            proposals = sample_horizons(
-                state,
-                key=proposal_key,
-                n_samples=self.prior_stochastic_samples,
-            )
+                proposal_nodes.append(proposals.trajectories)
+                proposal_logps.append(proposals.log_prob)
+            if self.prior_atacom_samples > 0:
+                rng, atacom_key = jax.random.split(rng)
+                atacom_proposals = self.atacom_prior.sample_horizons(
+                    state, key=atacom_key,
+                    n_samples=self.prior_atacom_samples,
+                )
+                proposal_nodes.append(atacom_proposals.trajectories)
+                proposal_logps.append(atacom_proposals.log_prob)
             structured_nodes = jnp.asarray(
-                proposals.trajectories, warm_start.dtype
+                jnp.concatenate(proposal_nodes, axis=0), warm_start.dtype
             )
             expected = (
-                self.prior_stochastic_samples,
+                n_structured,
                 self.Hnode + 1,
                 self.nu,
             )
@@ -795,7 +824,12 @@ class MdacBackendJax:
                 "proposal_stochastic_count": jnp.asarray(
                     self.prior_stochastic_samples, jnp.float32
                 ),
-                "proposal_logp_mean": jnp.mean(proposals.log_prob),
+                "proposal_atacom_count": jnp.asarray(
+                    self.prior_atacom_samples, jnp.float32
+                ),
+                "proposal_logp_mean": jnp.mean(
+                    jnp.concatenate(proposal_logps, axis=0)
+                ),
             }
         else:
             # Exact legacy call: no RNG split, no candidate-shape change.

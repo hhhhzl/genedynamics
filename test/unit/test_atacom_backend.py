@@ -13,6 +13,8 @@ from genedynamics.solvers.single.atacom.backends.atacom_jax import (
     make_atacom_transform,
 )
 from genedynamics.solvers.single.atacom.wrapper import AtacomEnvWrapper
+from genedynamics.solvers.single.atacom.prior import AtacomHorizonPrior
+from genedynamics.solvers.single.dial.spline import NodeSpline
 
 
 @struct.dataclass
@@ -92,3 +94,37 @@ def test_wrapper_exposes_3d_policy_action_and_executes_4d_control():
     assert next_state.info["atacom_u"].shape == (4,)
     assert next_state.info["atacom_s"].shape == (1,)
     assert bool(jnp.all(jnp.isfinite(next_state.info["atacom_u"])))
+
+
+class _ToyTangentPrior:
+    output_dim = 3
+
+    def act(self, obs, *, key=None, deterministic=True):
+        if deterministic:
+            return jnp.zeros((3,), jnp.float32)
+        return 0.05 * jax.random.normal(key, (3,))
+
+    def logp_of_sequence(self, obs_seq, act_seq):
+        del obs_seq
+        return -0.5 * jnp.sum(act_seq * act_seq)
+
+
+def test_horizon_prior_maps_tangent_samples_to_full_control_nodes():
+    env = _ToyConstraintEnv()
+    state = env.reset(jax.random.PRNGKey(0))
+    prior = AtacomHorizonPrior(
+        env, _ToyTangentPrior(), Hsample=16, Hnode=4, ctrl_dt=0.02
+    )
+    proposals = prior.sample_horizons(
+        state, key=jax.random.PRNGKey(5), n_samples=3
+    )
+    assert proposals.trajectories.shape == (3, 5, 4)
+    assert proposals.log_prob.shape == (3,)
+    assert np.all(np.asarray(proposals.expert_id) == 2)
+    assert bool(jnp.all(jnp.isfinite(proposals.trajectories)))
+    dense = NodeSpline.build(4, 16, 0.02).node2u_batch(
+        proposals.trajectories
+    )
+    # The task equality is enforced by the model-based ATACOM transform, not
+    # by the tangent network.
+    np.testing.assert_allclose(dense[:, :, 0], 0.25, atol=2e-5)

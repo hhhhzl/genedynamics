@@ -52,7 +52,8 @@ RESULT_FILE = "metrics.json"             # written under each config's output_di
 
 # keys in method_params that belong to the controller factory, not solver **cfg
 _MAKE_CONTROLLER_KW = (
-    "aug_lambda", "aug_rho", "policy_ckpt", "reliability_ckpt",
+    "aug_lambda", "aug_rho", "policy_ckpt", "atacom_policy_ckpt",
+    "reliability_ckpt",
 )
 
 
@@ -326,6 +327,8 @@ def _prior_diagnostics(res: Any) -> Dict[str, Any]:
             key: mean_scalar(key)
             for key in (
                 "reliability_support_incumbent", "reliability_support_refined",
+                "proposal_stochastic_count", "proposal_atacom_count",
+                "proposal_logp_mean",
             )
             if any(key in x for x in infos)
         })

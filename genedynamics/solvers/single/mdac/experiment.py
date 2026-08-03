@@ -62,6 +62,7 @@ def stiffness_mode_for(method: str, flags) -> str:
 def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
               surface_seed: int = 0, use_base: bool = False, prior: Any = None,
               policy_ckpt: Optional[str] = None,
+              atacom_policy_ckpt: Optional[str] = None,
               reliability_ckpt: Optional[str] = None,
               aug_lambda: float = 2.0, aug_rho: float = 200.0,
               backend: Any = None, env_overrides: Optional[dict] = None,
@@ -116,6 +117,45 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
             Hsample=int(cfg.get("Hsample", 16)),
             Hnode=int(cfg.get("Hnode", 4)),
             ctrl_dt=float(cfg.get("ctrl_dt", 0.02)),
+        )
+    atacom_prior = None
+    if atacom_policy_ckpt is not None:
+        from genedynamics.learning.priors.rl import RLPrior
+        from genedynamics.learning.train_rl_policy import load_policy
+        from genedynamics.solvers.single.atacom.backends.atacom_jax import (
+            atacom_null_dim,
+        )
+        from genedynamics.solvers.single.atacom.prior import (
+            AtacomHorizonPrior,
+        )
+
+        atacom_params, atacom_config = load_policy(atacom_policy_ckpt)
+        expected = atacom_null_dim(env)
+        if int(atacom_config.get("action_size", -1)) != expected:
+            raise ValueError(
+                "ATACOM prior action mismatch: checkpoint has "
+                f"{atacom_config.get('action_size')}, expected {expected}"
+            )
+        if int(atacom_config.get("observation_size", -1)) != int(env.observation_size):
+            raise ValueError("ATACOM prior observation mismatch")
+        if "atacom" not in str(atacom_config.get("protocol", "")):
+            raise ValueError("ATACOM prior requires a tangent-policy checkpoint")
+        tangent_prior = RLPrior(
+            backend="jax",
+            observation_size=atacom_config["observation_size"],
+            action_size=atacom_config["action_size"],
+            params=atacom_params,
+            normalize_observations=atacom_config["normalize_observations"],
+            policy_hidden_layer_sizes=atacom_config["policy_hidden_layer_sizes"],
+            deterministic=True,
+        )
+        atacom_prior = AtacomHorizonPrior(
+            env, tangent_prior,
+            Hsample=int(cfg.get("Hsample", 16)),
+            Hnode=int(cfg.get("Hnode", 4)),
+            ctrl_dt=float(cfg.get("ctrl_dt", 0.02)),
+            Kc=float(cfg.get("atacom_Kc", 1.0)),
+            action_limit=float(cfg.get("action_limit", 1.0)),
         )
     reliability_model = None
     if reliability_ckpt is not None:
@@ -204,6 +244,7 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
         geometry_gate_fn=geometry_gate_fn,
         prepare_state_fn=prepare_state_fn,
         prior=(prior if flags.use_rl_prior else None),
+        atacom_prior=(atacom_prior if flags.use_rl_prior else None),
         risk_fn=risk_fn,
         reliability_model=reliability_model,
         aug_lambda=aug_lambda, aug_rho=aug_rho, **cfg,
@@ -319,7 +360,8 @@ def _build_baseline_solver(method, env, backend, **cfg):
 
 
 def make_controller(task, method="mdac", *, level=None, surface_seed=0, use_base=False,
-                    prior=None, policy_ckpt=None, aug_lambda=2.0, aug_rho=200.0, backend=None,
+                    prior=None, policy_ckpt=None, atacom_policy_ckpt=None,
+                    aug_lambda=2.0, aug_rho=200.0, backend=None,
                     env_overrides=None, **cfg):
     """Build ``(env, runner)`` for ANY method on the SAME brax env at the SAME budget:
     an MDAC variant (``MDACSolver`` via ``make_mdac``), a sampling baseline (``mppi`` /
@@ -328,6 +370,7 @@ def make_controller(task, method="mdac", *, level=None, surface_seed=0, use_base
     if method in METHOD_TABLE:                       # MDAC variant (incl. dial/mbd/anchors)
         return make_mdac(task, method, level=level, surface_seed=surface_seed, use_base=use_base,
                          prior=prior, policy_ckpt=policy_ckpt,
+                         atacom_policy_ckpt=atacom_policy_ckpt,
                          aug_lambda=aug_lambda, aug_rho=aug_rho, backend=backend,
                          env_overrides=env_overrides, **cfg)
     env = _build_env(task, method, level, surface_seed, use_base, env_overrides)

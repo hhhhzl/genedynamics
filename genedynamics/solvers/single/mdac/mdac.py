@@ -107,11 +107,13 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         mdac_geom_gain: float = 1.0,
         # --- prior seam (genedynamics/learning/priors; None => verbatim DIAL) ---
         prior: Any = None,              # Prior: RL/diffusion warm-start (eq:rl_warm_start)
+        atacom_prior: Any = None,       # optional structured 7D-tangent expert
         prior_lambda_shift: float = 0.5,  # U_init = lam*U_shift + (1-lam)*U_rl
         risk_fn: Any = None,             # task-owned sequence risk vector
         prior_include_incumbent: bool = True,
         prior_trust_radius: float = 0.5,
         prior_stochastic_samples: int = 0,
+        prior_atacom_samples: int = 0,
         prior_improvement_epsilon: float = 0.0,
         prior_risk_tolerance: Any = (0.0, 0.0, 0.0, 0.0),
         prior_acceptance: bool = True,
@@ -159,15 +161,27 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         self.geometry_gate_fn = geometry_gate_fn
         self.prepare_state_fn = prepare_state_fn
         self.prior = prior                  # read by MdacBackendJax (None => no warm-start mix)
+        self.atacom_prior = atacom_prior
         self.prior_lambda_shift = float(prior_lambda_shift)
         self.risk_fn = risk_fn
         self.prior_include_incumbent = bool(prior_include_incumbent)
         self.prior_trust_radius = float(prior_trust_radius)
         self.prior_stochastic_samples = int(prior_stochastic_samples)
-        if not 0 <= self.prior_stochastic_samples < int(Nsample):
+        self.prior_atacom_samples = int(prior_atacom_samples)
+        if (
+            self.prior_stochastic_samples < 0
+            or self.prior_atacom_samples < 0
+            or self.prior_stochastic_samples + self.prior_atacom_samples
+            >= int(Nsample)
+        ):
             raise ValueError(
-                "prior_stochastic_samples must be in [0, Nsample), got "
-                f"{self.prior_stochastic_samples} with Nsample={Nsample}"
+                "structured prior samples must be nonnegative and sum to less "
+                f"than Nsample; got rl={self.prior_stochastic_samples}, "
+                f"atacom={self.prior_atacom_samples}, Nsample={Nsample}"
+            )
+        if self.prior_atacom_samples and self.atacom_prior is None:
+            raise ValueError(
+                "prior_atacom_samples requires an atacom_prior"
             )
         self.prior_improvement_epsilon = float(prior_improvement_epsilon)
         self.prior_risk_tolerance = tuple(float(x) for x in prior_risk_tolerance)
@@ -195,6 +209,7 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
                 prior_include_incumbent=bool(prior_include_incumbent),
                 prior_trust_radius=float(prior_trust_radius),
                 prior_stochastic_samples=self.prior_stochastic_samples,
+                prior_atacom_samples=self.prior_atacom_samples,
                 prior_improvement_epsilon=float(prior_improvement_epsilon),
                 prior_risk_tolerance=self.prior_risk_tolerance,
                 prior_acceptance=bool(prior_acceptance),
