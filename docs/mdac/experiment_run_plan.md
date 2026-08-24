@@ -966,9 +966,30 @@ Acceptance:
 - No formal paper script references the legacy MDAC runner.
 - No formal script uses semantic environment variables to alter the protocol.
 
+Implementation record (2026-08-24):
+
+- The canonical surface tree contains the eight algorithm configs, Full MDAC,
+  and four causal surface ablations. Each ablation inherits Full MDAC and its
+  controller flags differ by only the named mechanism.
+- `runner.py` accepts plural seed/suite selections in one invocation so the
+  manifest and aggregate summary cannot be overwritten by a sequence of
+  single-seed runs.
+- `--development-root` mirrors canonical project-relative output paths under an
+  isolated root and records `run_class: development` plus the canonical path.
+  It creates no development YAML tree and cannot alter formal output paths.
+- The formal surface script restricts causal ablations to the three hybrid
+  suites; the shared verifier applies the identical suite selection.
+
 ### P7 — Run a two-seed integration matrix
 
 Use development seeds, not formal evaluation seeds, for this gate.
+
+Run P7 directly through the unified runner with `--development-root` and
+`--seeds 0 1`. Use a root outside the repository, for example
+`/private/tmp/enerdynamics-mdac-p7`; do not call `scripts/paper/mdac/run_all.sh`
+and do not write development seeds into canonical result directories. Select a
+whole development subset with one `--suites ...` invocation rather than
+separate calls that would replace the protocol manifest and aggregate summary.
 
 Surface scan:
 
@@ -1154,12 +1175,15 @@ The experiment package is paper-ready only when all gates below are true.
 
 ## 13. Immediate next action
 
-The next implementation turn starts with P0 and P1 only:
+P0--P6 are implemented at the scoped integration snapshot plus the P6 closure
+described above. The next execution gate is P7:
 
-1. make a scoped clean snapshot/rollback point;
-2. add/test generic `base` and `suites` support in the unified framework;
-3. prove all existing non-MDAC configs remain unchanged.
+1. dry-run the four surface ablations and the isolated multi-seed/multi-suite
+   CLI contract;
+2. run the critical two-seed smoke subset for surface convex/hybrid,
+   PegInsert ID/OOD, and H1 P1/P3/P4 under an external development root;
+3. verify manifests, exact run counts, trajectories, metrics, PNGs, and GIFs;
+4. only then fill the complete P7 two-seed development matrix.
 
-Do not create the full canonical config tree or launch new formal experiments
-until P1 passes. Do not delete the legacy runner, configs, or result files during
-P0--P5.
+Do not launch the seeds 10--19 paper scripts until P7 passes. Do not delete the
+legacy runner, configs, result files, or the pre-integration rollback point.

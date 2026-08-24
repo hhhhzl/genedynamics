@@ -114,6 +114,27 @@ METHOD_TABLE: Dict[str, MethodFlags] = {
         use_horizon_geometry=True,
         use_controllability_geometry=True,
     ),
+    # Causal ablations of the current surface-scan controller contract.  These
+    # retain horizon + controllability geometry unless that is the component
+    # named by the ablation, so they do not silently fall back to legacy MDAC.
+    "mdac_controllable_no_retraction": replace(
+        _FULL,
+        use_horizon_geometry=True,
+        use_controllability_geometry=True,
+        use_retraction=False,
+    ),
+    "mdac_controllable_no_stiffness": replace(
+        _FULL,
+        use_horizon_geometry=True,
+        use_controllability_geometry=True,
+        use_stiffness=False,
+    ),
+    "mdac_controllable_euclid_stiffness": replace(
+        _FULL,
+        use_horizon_geometry=True,
+        use_controllability_geometry=True,
+        log_spd_stiffness=False,
+    ),
     "mdac_controllable_gate": replace(
         _FULL,
         use_horizon_geometry=True,

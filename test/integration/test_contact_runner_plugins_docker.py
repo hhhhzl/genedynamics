@@ -20,7 +20,7 @@ from genedynamics.experiments.plugins.methods import (
     PegasusFlowContactMethodPlugin,
     StandaloneRLMethodPlugin,
 )
-from genedynamics.experiments.runner import register_all_plugins
+from genedynamics.experiments.runner import main as runner_main, register_all_plugins
 from genedynamics.solvers.single.mdac.experiment import make_controller
 
 
@@ -130,6 +130,75 @@ def test_all_eight_algorithm_plugins_are_independently_registered(tmp_path):
         "full_mdac", "model_based_only", "standalone_rl", "dial", "mppi",
         "pegasusflow", "issa", "atacom",
     }.issubset(names)
+
+
+def test_runner_dry_run_supports_isolated_multi_seed_multi_suite(
+    monkeypatch, tmp_path, capsys,
+):
+    monkeypatch.setattr("sys.argv", [
+        "runner",
+        str(ROOT / "configs/arm/surface_scan/main/full_mdac.yaml"),
+        "--development-root", str(tmp_path / "p7"),
+        "--seeds", "0", "1",
+        "--suites", "rigid_convex", "soft_convex",
+        "--dry-run",
+    ])
+    runner_main()
+    output = capsys.readouterr().out
+    assert "Suites: ['rigid_convex', 'soft_convex']" in output
+    assert "Seeds: [0, 1]" in output
+    assert str(tmp_path / "p7/results/arm/surface_scan/main/full_mdac") in output
+    assert "Run class: development" in output
+
+
+@pytest.mark.parametrize(
+    "filename,controller_method,stiffness_mode",
+    [
+        ("no_controllability_geometry.yaml", "mdac_horizon", "log_spd"),
+        ("no_retraction.yaml", "mdac_controllable_no_retraction", "log_spd"),
+        ("no_stiffness.yaml", "mdac_controllable_no_stiffness", "none"),
+        ("fixed_or_euclidean_stiffness.yaml",
+         "mdac_controllable_euclid_stiffness", "euclid"),
+    ],
+)
+def test_surface_ablation_yaml_dispatches_controller_and_stiffness_chart(
+    monkeypatch, filename, controller_method, stiffness_mode,
+):
+    from genedynamics.experiments.plugins.environments._contact_task import (
+        _env_kwargs,
+    )
+
+    cfg = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/surface_scan/ablation" / filename
+    )
+    captured = {}
+
+    def fake_make_controller(task, method, **kwargs):
+        captured.update(task=task, method=method, kwargs=kwargs)
+        return kwargs["model_env"], object()
+
+    monkeypatch.setattr(
+        "genedynamics.experiments.plugins.methods.contact_receding.make_controller",
+        fake_make_controller,
+    )
+
+    class Env:
+        _experiment_task = "manipulator_surface_scan"
+        _experiment_execution_env = None
+
+    planner = FullMDACMethodPlugin().create_planner(
+        Env(), None, {
+            **cfg.method_params,
+            "task": cfg.env_name,
+            "n_steps": cfg.n_steps,
+        },
+    )
+    assert planner.controller_method == controller_method
+    assert captured["method"] == controller_method
+    assert _env_kwargs(cfg.env_name, {
+        **cfg.env_params,
+        "_controller_method": controller_method,
+    })["stiffness_mode"] == stiffness_mode
 
 
 def test_full_mdac_rejects_missing_learned_component_contract():

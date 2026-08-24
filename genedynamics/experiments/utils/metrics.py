@@ -378,16 +378,75 @@ def _write_plots(rows: List[Dict[str, Any]], output_dir: Path) -> Tuple[List[str
     return files, None
 
 
-def verify_results(config_roots: Sequence[str], require_visuals: bool = False) -> Dict[str, Any]:
+def verify_results(
+    config_roots: Sequence[str],
+    require_visuals: bool = False,
+    development_root: str | Path | None = None,
+    seeds: Sequence[int] | None = None,
+    suites: Sequence[str] | None = None,
+) -> Dict[str, Any]:
+    """Verify formal configs or an isolated development subset.
+
+    Development overrides mirror the runner CLI.  This makes a two-seed P7
+    matrix verifiable without copying or editing canonical YAML files.
+    """
     from genedynamics.experiments.framework.config import ExperimentConfig
 
     errors: List[str] = []
     checked = 0
     for path in _config_paths(config_roots):
         cfg = ExperimentConfig.from_yaml(path)
+        if development_root is not None:
+            try:
+                cfg.use_development_output_root(Path(development_root))
+            except ValueError as exc:
+                errors.append(f"{path}: {exc}")
+                continue
+        if seeds is not None:
+            cfg.seeds = list(dict.fromkeys(int(seed) for seed in seeds))
+            if not cfg.seeds:
+                errors.append(f"{path}: development seed selection is empty")
+                continue
+        if suites is not None:
+            requested = list(dict.fromkeys(str(name) for name in suites))
+            available = {str(suite.get("name")): suite for suite in cfg.suites}
+            unknown = [name for name in requested if name not in available]
+            if unknown:
+                errors.append(f"{path}: unknown suites {unknown!r}")
+                continue
+            requested_set = set(requested)
+            cfg.suites = [
+                suite for suite in cfg.suites
+                if str(suite.get("name")) in requested_set
+            ]
+
         manifest = cfg.output_dir / "protocol_manifest.json"
         if not manifest.is_file():
             errors.append(f"missing {manifest}")
+        else:
+            try:
+                with open(manifest) as handle:
+                    manifest_data = json.load(handle)
+                manifest_config = manifest_data.get("config") or {}
+                if manifest_config.get("output_dir") != str(cfg.output_dir):
+                    errors.append(f"output isolation mismatch {manifest}")
+                if manifest_config.get("seeds") != cfg.seeds:
+                    errors.append(f"seed protocol mismatch {manifest}")
+                expected_suites = [str(item["name"]) for item in cfg.suites]
+                actual_suites = [
+                    str(item.get("name"))
+                    for item in manifest_config.get("suites", [])
+                ]
+                if actual_suites != expected_suites:
+                    errors.append(f"suite protocol mismatch {manifest}")
+                if development_root is not None:
+                    manifest_metadata = manifest_config.get("metadata") or {}
+                    if manifest_metadata.get("run_class") != "development":
+                        errors.append(f"run class mismatch {manifest}")
+                    if manifest_metadata.get("formal_seeds") is not False:
+                        errors.append(f"formal/development mismatch {manifest}")
+            except Exception as exc:
+                errors.append(f"invalid JSON {manifest}: {exc}")
         for suite in cfg.suites or ({"name": level} for level in cfg.obstacle_levels):
             name = str(suite["name"])
             level_dir = cfg.output_dir / f"level_{name}"
@@ -412,6 +471,16 @@ def verify_results(config_roots: Sequence[str], require_visuals: bool = False) -
                 snapshot_budget = snapshot.get("method_params") or {}
                 if snapshot.get("env_name") != cfg.env_name or snapshot.get("method") != cfg.method:
                     errors.append(f"resolved method/environment mismatch {result_path}")
+                if snapshot.get("output_dir") != str(cfg.output_dir):
+                    errors.append(f"resolved output mismatch {result_path}")
+                if snapshot.get("seeds") != cfg.seeds:
+                    errors.append(f"resolved seed mismatch {result_path}")
+                if development_root is not None:
+                    snapshot_metadata = snapshot.get("metadata") or {}
+                    if snapshot_metadata.get("run_class") != "development":
+                        errors.append(f"development run class missing {result_path}")
+                    if snapshot_metadata.get("formal_seeds") is not False:
+                        errors.append(f"development seed label mismatch {result_path}")
                 for key in BUDGET_KEYS:
                     if snapshot_budget.get(key) != cfg.method_params.get(key):
                         errors.append(f"budget mismatch {key} in {result_path}")
@@ -423,8 +492,22 @@ def verify_results(config_roots: Sequence[str], require_visuals: bool = False) -
                     )
                     if not artifacts:
                         errors.append(f"missing visual artifact for {result_path}")
-        if not (cfg.output_dir / "overall_summary.json").is_file():
-            errors.append(f"missing {cfg.output_dir / 'overall_summary.json'}")
+        overall_path = cfg.output_dir / "overall_summary.json"
+        if not overall_path.is_file():
+            errors.append(f"missing {overall_path}")
+        else:
+            try:
+                with open(overall_path) as handle:
+                    overall = json.load(handle)
+                suite_count = len(cfg.suites) if cfg.suites else len(cfg.obstacle_levels)
+                expected_runs = suite_count * len(cfg.seeds)
+                if overall.get("total_experiments") != expected_runs:
+                    errors.append(
+                        f"run-count mismatch {overall_path}: "
+                        f"expected {expected_runs}, got {overall.get('total_experiments')}"
+                    )
+            except Exception as exc:
+                errors.append(f"invalid JSON {overall_path}: {exc}")
     return {"ok": not errors, "checked_runs": checked, "errors": errors}
 
 
@@ -595,6 +678,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     verify = sub.add_parser("verify")
     verify.add_argument("roots", nargs="+")
     verify.add_argument("--require-visuals", action="store_true")
+    verify.add_argument("--development-root")
+    verify.add_argument("--seeds", type=int, nargs="+")
+    verify.add_argument("--suites", nargs="+")
     compare = sub.add_parser("compare")
     compare.add_argument("--legacy", required=True)
     compare.add_argument("--result", required=True)
@@ -609,7 +695,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "summarize":
         return _print_report(summarize_results(args.roots, args.output))
     if args.command == "verify":
-        return _print_report(verify_results(args.roots, args.require_visuals))
+        return _print_report(verify_results(
+            args.roots,
+            require_visuals=args.require_visuals,
+            development_root=args.development_root,
+            seeds=args.seeds,
+            suites=args.suites,
+        ))
     return _print_report(compare_runner_outputs(
         args.legacy, args.result, args.algorithm, args.suite, args.seed,
         args.atol, args.rtol,

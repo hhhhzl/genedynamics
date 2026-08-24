@@ -114,17 +114,42 @@ def main():
         default=None,
         help='Run single obstacle level (overrides config)'
     )
-    parser.add_argument(
+    seed_group = parser.add_mutually_exclusive_group()
+    seed_group.add_argument(
         '--seed',
         type=int,
         default=None,
         help='Run single seed (overrides config)'
     )
-    parser.add_argument(
+    seed_group.add_argument(
+        '--seeds',
+        type=int,
+        nargs='+',
+        default=None,
+        help='Run multiple seeds in one manifest/summary (overrides config)'
+    )
+    suite_group = parser.add_mutually_exclusive_group()
+    suite_group.add_argument(
         '--suite',
         type=str,
         default=None,
         help='Run one named suite from config.suites'
+    )
+    suite_group.add_argument(
+        '--suites',
+        type=str,
+        nargs='+',
+        default=None,
+        help='Run multiple named suites in one manifest/summary'
+    )
+    parser.add_argument(
+        '--development-root',
+        type=str,
+        default=None,
+        help=(
+            'Mirror the canonical project-relative output under this root and '
+            'mark the run as development'
+        ),
     )
     parser.add_argument(
         '--dry-run',
@@ -163,16 +188,33 @@ def main():
         print(f"Error loading configuration: {e}")
         sys.exit(1)
     
-    # Override level and seed if specified
+    if args.development_root is not None:
+        try:
+            config.use_development_output_root(Path(args.development_root))
+        except ValueError as exc:
+            parser.error(str(exc))
+
+    # Override level, seeds, and suites if specified.
     if args.level is not None:
         config.obstacle_levels = [args.level]
     if args.seed is not None:
         config.seeds = [args.seed]
-    if args.suite is not None:
-        matches = [s for s in config.suites if s.get('name') == args.suite]
-        if not matches:
-            available = ', '.join(str(s.get('name')) for s in config.suites)
-            parser.error(f"unknown suite {args.suite!r}; available: {available or '<none>'}")
+    elif args.seeds is not None:
+        config.seeds = list(dict.fromkeys(args.seeds))
+    requested_suites = (
+        [args.suite] if args.suite is not None else args.suites
+    )
+    if requested_suites is not None:
+        requested_suites = list(dict.fromkeys(requested_suites))
+        available_map = {str(s.get('name')): s for s in config.suites}
+        unknown = [name for name in requested_suites if name not in available_map]
+        if unknown:
+            available = ', '.join(available_map)
+            parser.error(
+                f"unknown suites {unknown!r}; available: {available or '<none>'}"
+            )
+        requested = set(requested_suites)
+        matches = [s for s in config.suites if str(s.get('name')) in requested]
         config.suites = matches
     
     # Validate configuration
@@ -190,6 +232,8 @@ def main():
         print(f"Suites: {[s['name'] for s in config.suites]}" if config.suites
               else f"Levels: {config.obstacle_levels}")
         print(f"Seeds: {config.seeds}")
+        print(f"Output directory: {config.output_dir}")
+        print(f"Run class: {config.metadata.get('run_class', 'unspecified')}")
         return
     
     # Create experiment runner

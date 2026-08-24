@@ -7,7 +7,9 @@ from genedynamics.experiments.utils.metrics import (
     aggregate_receding_diagnostics,
     compare_runner_outputs,
     summarize_results,
+    verify_results,
 )
+from genedynamics.experiments.framework.config import ExperimentConfig
 
 
 def _result(root: Path, algorithm: str, seed: int, safe: float, force: float):
@@ -120,3 +122,63 @@ def test_receding_diagnostics_preserve_legacy_aggregation_contract():
     assert report["prior_risk_refined_jam"] == 0.5
     assert report["prior_risk_refined_force_mae"] == pytest.approx(0.2)
     assert report["emergency_selected"] == 0.5
+
+
+def test_verifier_rebases_development_subset_and_detects_overwritten_summary(
+    tmp_path: Path,
+):
+    config_path = tmp_path / "method.yaml"
+    config_path.write_text(
+        """
+name: method
+output_dir: results/mdac_test/development_isolation
+env_name: manipulator_surface_scan
+method: dial
+seeds: [10, 11]
+n_steps: 2
+metrics: []
+visualizations: []
+method_params: {Nsample: 4, Hsample: 4, Hnode: 2, Ndiffuse: 1, Ndiffuse_init: 1}
+suites:
+  - {name: kept, level: plane}
+  - {name: skipped, level: cylinder}
+""",
+        encoding="utf-8",
+    )
+    development_root = tmp_path / "p7"
+    cfg = ExperimentConfig.from_yaml(config_path)
+    cfg.use_development_output_root(development_root)
+    cfg.seeds = [0, 1]
+    cfg.suites = [suite for suite in cfg.suites if suite["name"] == "kept"]
+    cfg.output_dir.mkdir(parents=True)
+    (cfg.output_dir / "protocol_manifest.json").write_text(json.dumps({
+        "config": cfg.to_dict(),
+    }), encoding="utf-8")
+    level_dir = cfg.output_dir / "level_kept"
+    level_dir.mkdir()
+    (level_dir / "summary.json").write_text("{}", encoding="utf-8")
+    for seed in cfg.seeds:
+        seed_dir = level_dir / f"seed_{seed}"
+        trajectory_dir = seed_dir / "trajectory"
+        trajectory_dir.mkdir(parents=True)
+        suite_cfg = cfg.for_suite(cfg.suites[0])
+        (seed_dir / "results.json").write_text(json.dumps({
+            "seed": seed,
+            "suite": "kept",
+            "config_snapshot": suite_cfg.to_dict(),
+        }), encoding="utf-8")
+        (trajectory_dir / "trajectory.json").write_text("{}", encoding="utf-8")
+    overall_path = cfg.output_dir / "overall_summary.json"
+    overall_path.write_text(json.dumps({"total_experiments": 2}), encoding="utf-8")
+
+    kwargs = {
+        "development_root": development_root,
+        "seeds": [0, 1],
+        "suites": ["kept"],
+    }
+    assert verify_results([str(config_path)], **kwargs)["ok"] is True
+
+    overall_path.write_text(json.dumps({"total_experiments": 1}), encoding="utf-8")
+    report = verify_results([str(config_path)], **kwargs)
+    assert report["ok"] is False
+    assert any("run-count mismatch" in error for error in report["errors"])

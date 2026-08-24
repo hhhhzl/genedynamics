@@ -179,7 +179,7 @@ def test_solver_registered_and_method_flags():
     from genedynamics.core.registry.solvers import get_solver_registry
     from genedynamics.solvers.single.mdac import MDACSolver
     from genedynamics.solvers.single.mdac.core.method_registry import (
-        resolve_method, assert_single_flag_ablation,
+        resolve_method, assert_single_flag_ablation, diff_flags,
     )
     assert get_solver_registry().get_class("mdac") is MDACSolver
     full = resolve_method("mdac")
@@ -213,3 +213,11 @@ def test_solver_registered_and_method_flags():
     assert controllable.use_horizon_geometry
     assert controllable.use_controllability_geometry
     assert not controllable.use_geometry_gate
+    surface_ablations = {
+        "mdac_horizon": ("use_controllability_geometry",),
+        "mdac_controllable_no_retraction": ("use_retraction",),
+        "mdac_controllable_no_stiffness": ("use_stiffness",),
+        "mdac_controllable_euclid_stiffness": ("log_spd_stiffness",),
+    }
+    for ablation, expected_difference in surface_ablations.items():
+        assert diff_flags(controllable, resolve_method(ablation)) == expected_difference

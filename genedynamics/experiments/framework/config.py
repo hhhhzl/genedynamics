@@ -217,6 +217,43 @@ class ExperimentConfig:
         # Convert Path to string for JSON serialization
         result['output_dir'] = str(self.output_dir)
         return result
+
+    def use_development_output_root(self, output_root: Path) -> None:
+        """Mirror the canonical project-relative output under an isolated root.
+
+        This keeps development seeds out of formal result directories without
+        introducing a second config tree.  The canonical path and run class are
+        retained in metadata and therefore persisted in manifests/results.
+        """
+        project_root = self._find_project_root()
+        if project_root is None:
+            raise ValueError("Cannot isolate output without a project root")
+        project_root = project_root.resolve()
+        canonical = self.output_dir.resolve()
+        try:
+            relative = canonical.relative_to(project_root)
+        except ValueError as exc:
+            raise ValueError(
+                f"Canonical output directory is outside project root: {canonical}"
+            ) from exc
+
+        root = Path(output_root).expanduser()
+        if not root.is_absolute():
+            root = project_root / root
+        root = root.resolve()
+        isolated = (root / relative).resolve()
+        if isolated == canonical:
+            raise ValueError(
+                "Development output root resolves to the canonical output path"
+            )
+
+        self.output_dir = isolated
+        self.metadata = deep_merge(self.metadata, {
+            "run_class": "development",
+            "formal_seeds": False,
+            "canonical_output_dir": str(canonical),
+            "development_output_root": str(root),
+        })
     
     def to_yaml(self, path: Path) -> None:
         """

@@ -144,3 +144,62 @@ def test_two_suites_by_two_seeds_expand_without_mutating_config(tmp_path: Path):
     assert runner.config is cfg
     assert cfg.env_params == {}
     assert [suite["name"] for suite in cfg.suites] == ["first", "second"]
+
+
+def test_development_root_mirrors_canonical_output_and_marks_provenance(
+    tmp_path: Path,
+):
+    cfg = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/surface_scan/baseline/dial.yaml"
+    )
+    canonical = cfg.output_dir
+    cfg.use_development_output_root(tmp_path / "p7")
+    assert cfg.output_dir == (
+        tmp_path / "p7/results/arm/surface_scan/baseline/dial"
+    ).resolve()
+    assert cfg.metadata["run_class"] == "development"
+    assert cfg.metadata["formal_seeds"] is False
+    assert cfg.metadata["canonical_output_dir"] == str(canonical)
+
+
+@pytest.mark.parametrize(
+    "filename,controller_method,component",
+    [
+        ("no_controllability_geometry.yaml", "mdac_horizon",
+         "use_controllability_geometry"),
+        ("no_retraction.yaml", "mdac_controllable_no_retraction",
+         "use_retraction"),
+        ("no_stiffness.yaml", "mdac_controllable_no_stiffness",
+         "use_stiffness"),
+        ("fixed_or_euclidean_stiffness.yaml",
+         "mdac_controllable_euclid_stiffness", "log_spd_stiffness"),
+    ],
+)
+def test_surface_ablation_inherits_full_contract_and_changes_one_component(
+    filename: str, controller_method: str, component: str,
+):
+    from genedynamics.solvers.single.mdac.core.method_registry import (
+        diff_flags,
+        resolve_method,
+    )
+
+    full = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/surface_scan/main/full_mdac.yaml"
+    )
+    ablation = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/surface_scan/ablation" / filename
+    )
+    assert ablation.method == "full_mdac"
+    assert ablation.seeds == full.seeds
+    assert ablation.suites == full.suites
+    assert ablation.n_steps == full.n_steps
+    assert ablation.method_params["controller_method"] == controller_method
+    inherited = dict(ablation.method_params)
+    inherited["controller_method"] = full.method_params["controller_method"]
+    assert inherited == full.method_params
+    assert diff_flags(
+        resolve_method(full.method_params["controller_method"]),
+        resolve_method(controller_method),
+    ) == (component,)
+    assert ablation.metadata["ablation_of"] == "full_mdac"
+    assert ablation.metadata["ablated_component"] == component

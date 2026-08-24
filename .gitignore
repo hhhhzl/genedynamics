@@ -15,6 +15,7 @@ log
 /cache
 /save
 /reports
+/latex
 
 .vscode/
 build
