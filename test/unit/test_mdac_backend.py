@@ -127,6 +127,34 @@ def test_zero_geometry_gate_recovers_raw_weighted_update():
     assert np.max(np.abs(projected - expected)) > 1e-6
 
 
+def test_controllability_gate_does_not_disable_clean_projection():
+    """Controllability reliability gates B-correction, not clean geometry."""
+    from genedynamics.genemetry.manifold.sdf import SdfManifold
+
+    def zero_gate(state, Y, t0):
+        return {
+            "action": jnp.zeros((COMMON["nu"],)),
+            "scalar": jnp.float32(0.0),
+            "path": jnp.float32(0.0),
+            "normal": jnp.float32(0.0),
+            "stiffness": jnp.float32(0.0),
+            "force": jnp.float32(0.0),
+        }
+
+    rng = jax.random.PRNGKey(29)
+    raw = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    expected_raw = raw.plan(X0, rng_key=rng)["actions"]
+    gated = MdacBackendJax(
+        rollout_fn=_mock_rollout, geometry_gate_fn=zero_gate, **COMMON
+    )
+    gated.geometry_fn = lambda state, Y, t0: Y + 0.1
+    gated.manifold = SdfManifold(backend="jax")
+    gated.topk_active, gated.eps_stab, gated.geom_gain = 2, 1e-6, 1.0
+    gated._gate_controllability_only = True
+    projected = gated.plan(X0, rng_key=rng)["actions"]
+    assert np.max(np.abs(projected - expected_raw)) > 1e-6
+
+
 def test_constraint_filter_seam_is_invoked():
     calls = {"n": 0}
 

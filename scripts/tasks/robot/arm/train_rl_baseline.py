@@ -42,33 +42,50 @@ from genedynamics.solvers.single.mdac.config import (
 )
 
 ARM_TASK = "manipulator_surface_scan"
+INSERT_TASK = "manipulator_peg_insert"
 
 
 class _BestEvalSelector:
     """Pair Brax's params-before-eval callbacks and retain the best policy."""
 
-    def __init__(self, metric="eval/episode_reward"):
+    def __init__(self, metric="eval/episode_reward", checkpoint_fn=None):
         self._snapshots = {}
+        self._observations = {}
         self.metric = str(metric)
         self.params = None
         self.step = None
         self.score = -np.inf
         self.metrics = {}
+        self.checkpoint_fn = checkpoint_fn
 
     def capture(self, num_steps, _make_policy, params):
         import jax
 
-        self._snapshots[int(num_steps)] = jax.device_get(params)
+        step = int(num_steps)
+        self._snapshots[step] = jax.device_get(params)
+        metrics = self._observations.pop(step, None)
+        if metrics is not None:
+            self._consider(step, metrics)
 
     def observe(self, num_steps, metrics):
         step = int(num_steps)
+        if step not in self._snapshots:
+            # Brax reports the step-zero evaluation before its params callback.
+            # Retain that metric so a useful residual primitive is a genuine
+            # lower bound: training must improve it before replacing it.
+            self._observations[step] = dict(metrics)
+            return
+        self._consider(step, metrics)
+
+    def _consider(self, step, metrics):
         snapshot = self._snapshots.pop(step, None)
-        # The step-zero params callback runs after its progress callback, so its
-        # snapshot is discarded at the first trained evaluation.
         self._snapshots = {
             k: value for k, value in self._snapshots.items() if k > step
         }
-        if step <= 0 or snapshot is None:
+        self._observations = {
+            k: value for k, value in self._observations.items() if k > step
+        }
+        if snapshot is None:
             return
         score = float(metrics.get(self.metric, np.nan))
         if np.isfinite(score) and score > self.score:
@@ -76,9 +93,13 @@ class _BestEvalSelector:
             self.step = step
             self.score = score
             self.metrics = dict(metrics)
+            if self.checkpoint_fn is not None:
+                self.checkpoint_fn(self.params, self.step, self.metrics)
 
 
-def _shared_domain_specs(base_env, rl_cfg, num_domains_override=None):
+def _shared_domain_specs(
+    base_env, rl_cfg, *, task=ARM_TASK, num_domains_override=None
+):
     templates = list(rl_cfg.get("domain_templates", ()))
     if not templates:
         return []
@@ -93,13 +114,33 @@ def _shared_domain_specs(base_env, rl_cfg, num_domains_override=None):
     rng = np.random.default_rng(int(dr.get("seed", 0)))
     friction_range = tuple(dr.get("friction_range", (0.05, 0.2)))
     soft_range = tuple(dr.get("soft_stiffness_range", (800.0, 2000.0)))
+    parameter_ranges = dict(dr.get("parameter_ranges", {}))
+    domain_seed_start = int(dr.get("domain_seed_start", 100))
     specs = []
+    training_env_params = dict(rl_cfg.get("training_env_params", {}))
     for i in range(n_domains):
-        spec = deep_merge(base_env, templates[i % len(templates)])
-        spec["surface_seed"] = int(spec.get("surface_seed", i))
-        spec["friction"] = float(rng.uniform(*friction_range))
-        if str(spec.get("medium", "rigid")).lower() == "soft":
-            spec["soft_stiffness"] = float(rng.uniform(*soft_range))
+        spec = deep_merge(
+            deep_merge(base_env, training_env_params),
+            templates[i % len(templates)],
+        )
+        if task == ARM_TASK:
+            spec["surface_seed"] = int(spec.get("surface_seed", i))
+            spec["friction"] = float(rng.uniform(*friction_range))
+            if str(spec.get("medium", "rigid")).lower() == "soft":
+                spec["soft_stiffness"] = float(rng.uniform(*soft_range))
+        elif task == INSERT_TASK:
+            spec["domain_seed"] = int(
+                spec.get("domain_seed", domain_seed_start + i)
+            )
+            for name, bounds in parameter_ranges.items():
+                if len(bounds) != 2:
+                    raise ValueError(
+                        f"domain_randomization.parameter_ranges.{name} "
+                        "must be [low, high]"
+                    )
+                spec[name] = float(rng.uniform(float(bounds[0]), float(bounds[1])))
+        else:
+            raise ValueError(f"shared manipulation RL does not support task={task!r}")
         specs.append(spec)
     return specs
 
@@ -125,33 +166,71 @@ def main() -> int:
     ap.add_argument("--warmup-steps", type=int, default=None,
                     help="SAC only: replay-buffer prefill (store-only, no updates) before learning")
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument(
+        "--num-evals", type=int, default=None,
+        help="CPU segment-size override; does not change the total environment steps",
+    )
+    ap.add_argument(
+        "--resume-training", action="store_true",
+        help="initialize policy/value parameters from the latest Brax checkpoint",
+    )
     ap.add_argument("--atacom", action="store_true",
                     help="train the policy ON the constraint manifold (ATACOM tangent-space env "
                          "wrapper, action_size = nu - n_f); produces an ATACOM-specific ckpt")
     ap.add_argument("--smoke", action="store_true",
                     help="CPU integration run: 4096 steps and four vector envs")
+    ap.add_argument(
+        "--cpu-low-memory",
+        action="store_true",
+        help=(
+            "use a one-step PPO unroll and compact network so MJX gradients fit "
+            "inside Docker Desktop's CPU memory budget"
+        ),
+    )
+    ap.add_argument(
+        "--skip-inline-eval",
+        action="store_true",
+        help=(
+            "do not compile Brax's full-episode evaluator during CPU training; "
+            "select checkpoints later with the task's held-out rollout"
+        ),
+    )
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
 
     resolved = load_experiment_config(a.config) if a.config else {}
     rl_cfg = dict(resolved.get("rl", {}))
     base_env = dict(resolved.get("env_params", {}))
+    task = str(resolved.get("task", ARM_TASK))
+    if task not in (ARM_TASK, INSERT_TASK):
+        raise ValueError(
+            f"arm RL baseline supports {ARM_TASK!r} or {INSERT_TASK!r}, got {task!r}"
+        )
     algo = a.algo or rl_cfg.get("algo") or ("sac" if not a.config else "ppo")
     medium = a.medium or base_env.get("medium", "rigid")
     level = a.level or resolved.get("level", "convex")
     num_timesteps = (
-        4096 if a.smoke
-        else a.num_timesteps or int(rl_cfg.get("num_timesteps", 2_000_000))
+        a.num_timesteps
+        if a.num_timesteps is not None
+        else 4096 if a.smoke
+        else int(rl_cfg.get("num_timesteps", 2_000_000))
     )
     episode_length = (
         a.episode_length or int(rl_cfg.get("episode_length", 100 if a.config else 64))
     )
-    num_envs = 4 if a.smoke else a.num_envs or int(rl_cfg.get("num_envs", 64))
+    num_envs = (
+        a.num_envs or 4
+        if a.smoke
+        else a.num_envs or int(rl_cfg.get("num_envs", 64))
+    )
     warmup_steps = a.warmup_steps or int(rl_cfg.get("warmup_steps", 5_000))
     seed = a.seed if a.seed is not None else int(rl_cfg.get("seed", 0))
 
     domain_specs = _shared_domain_specs(
-        base_env, rl_cfg, num_domains_override=a.num_domains
+        base_env,
+        rl_cfg,
+        task=task,
+        num_domains_override=a.num_domains,
     )
     if a.smoke and len(domain_specs) > 2:
         # Compile one rigid and one soft branch on CPU. The full canonical
@@ -165,31 +244,45 @@ def main() -> int:
         )
         domain_specs = [domain_specs[0], domain_specs[soft_index]]
     if domain_specs:
-        domains = [make_env(ARM_TASK, **spec) for spec in domain_specs]
+        domains = [make_env(task, **spec) for spec in domain_specs]
         if a.atacom:
             # Wrap each concrete branch before domain randomization.  The
             # randomized dispatcher then has one shape-compatible 7D action
             # contract and never needs to interpret ATACOM geometry itself.
             from genedynamics.solvers.single.atacom.wrapper import AtacomEnvWrapper
             domains = [AtacomEnvWrapper(domain) for domain in domains]
-        env = PandaSurfaceScanDomainEnv(domains)
+        if task == INSERT_TASK:
+            from genedynamics.envs.domains.manipulation.peg_insert_brax import (
+                PegInsertDomainEnv,
+            )
+            env = PegInsertDomainEnv(domains)
+        else:
+            env = PandaSurfaceScanDomainEnv(domains)
         env_desc = (
             f"{len(domains)} shared seen domains"
             + (" + ATACOM tangent wrappers" if a.atacom else "")
         )
     else:
-        env_kw = deep_merge(
-            base_env,
-            {
-                "level": ("plane" if medium == "hybrid" else level),
-                "medium": medium,
-                "stiffness_mode": "log_spd",
-            },
-        )
-        if medium == "hybrid":
-            env_kw["stiffness_map"] = a.stiffness_map
-        env = make_env(ARM_TASK, **env_kw)
-        env_desc = f"medium={medium} level={env_kw['level']}"
+        if task == INSERT_TASK:
+            env_kw = deep_merge(
+                base_env,
+                {"level": level, "stiffness_mode": "log_spd"},
+            )
+            env = make_env(task, **env_kw)
+            env_desc = f"task=peg_insert level={env_kw['level']}"
+        else:
+            env_kw = deep_merge(
+                base_env,
+                {
+                    "level": ("plane" if medium == "hybrid" else level),
+                    "medium": medium,
+                    "stiffness_mode": "log_spd",
+                },
+            )
+            if medium == "hybrid":
+                env_kw["stiffness_map"] = a.stiffness_map
+            env = make_env(task, **env_kw)
+            env_desc = f"medium={medium} level={env_kw['level']}"
 
     action_bias = None
     action_scale = None
@@ -199,24 +292,83 @@ def main() -> int:
             rl_cfg.get("action_scale", np.ones_like(action_bias)),
             dtype=np.float32,
         )
-        env = PandaResidualActionEnv(env, action_bias, action_scale)
-        env_desc += " + residual scan bias"
+        if task == INSERT_TASK:
+            from genedynamics.envs.domains.manipulation.peg_insert_brax import (
+                PegInsertResidualActionEnv,
+            )
+            env = PegInsertResidualActionEnv(env, action_bias, action_scale)
+        else:
+            env = PandaResidualActionEnv(env, action_bias, action_scale)
+        env_desc += " + residual action prior"
 
-    if env.action_size != 10 and not a.atacom:
+    expected_action_size = int(rl_cfg.get(
+        "expected_action_size", 13 if task == INSERT_TASK else 10
+    ))
+    if env.action_size != expected_action_size and not a.atacom:
         raise ValueError(
-            f"shared MGA prior requires the 10D primitive, got {env.action_size}"
+            "shared MGA prior action contract mismatch: "
+            f"expected {expected_action_size}, got {env.action_size}"
         )
-    if domain_specs and any(
-        spec.get("observation_mode") != "rl_realized" for spec in domain_specs
+    expected_observation_mode = rl_cfg.get("expected_observation_mode")
+    if expected_observation_mode is not None and domain_specs and any(
+        spec.get("observation_mode") != expected_observation_mode
+        for spec in domain_specs
     ):
-        raise ValueError("all shared policy domains must use observation_mode=rl_realized")
+        raise ValueError(
+            "all shared policy domains must use observation_mode="
+            f"{expected_observation_mode}"
+        )
 
     if a.atacom and not domain_specs:
         # ATACOM remains a comparison policy and never becomes the MGA prior.
         from genedynamics.solvers.single.atacom.wrapper import AtacomEnvWrapper
         env = AtacomEnvWrapper(env)
 
+    if a.out:
+        out = a.out
+    elif domain_specs:
+        template = (
+            rl_cfg.get(
+                "atacom_checkpoint",
+                "results/arm/impedence/_policies/shared_atacom_ppo_seed{seed}.pkl",
+            )
+            if a.atacom else rl_cfg.get(
+                "checkpoint",
+                "results/arm/impedence/_policies/shared_ppo_seed{seed}.pkl",
+            )
+        )
+        out = str(Path(template.format(seed=seed)))
+    else:
+        name = f"atacom_{algo}" if a.atacom else algo
+        family = "peg_insert_cpu" if task == INSERT_TASK else f"impedence/{medium}"
+        out = f"results/arm/{family}/_policies/{name}.pkl"
+    protocol_name = (
+        f"{task}_shared_atacom_v1" if domain_specs and a.atacom
+        else f"{task}_shared_mga_v1" if domain_specs
+        else "arm_atacom_v1" if a.atacom
+        else "arm_baseline_v1"
+    )
+
     train_kwargs = dict(rl_cfg.get("train_kwargs", {}))
+    if a.num_evals is not None:
+        train_kwargs["num_evals"] = int(a.num_evals)
+    if domain_specs and algo == "ppo":
+        training_checkpoint_dir = str(
+            (Path(out).parent / "_training" / Path(out).stem).resolve()
+        )
+        train_kwargs.setdefault("save_checkpoint_path", training_checkpoint_dir)
+        if a.resume_training and Path(training_checkpoint_dir).exists():
+            checkpoints = sorted(
+                path for path in Path(training_checkpoint_dir).iterdir()
+                if path.is_dir() and path.name.isdigit()
+            )
+            if not checkpoints:
+                raise ValueError(
+                    f"no complete Brax checkpoints in {training_checkpoint_dir}"
+                )
+            train_kwargs.setdefault(
+                "restore_checkpoint_path", str(checkpoints[-1].resolve())
+            )
     if a.smoke and algo == "ppo":
         train_kwargs.update(
             batch_size=8,
@@ -224,12 +376,64 @@ def main() -> int:
             unroll_length=10,
             num_updates_per_batch=1,
         )
+    if a.cpu_low_memory and algo == "ppo":
+        train_kwargs.update(
+            batch_size=1,
+            num_minibatches=1,
+            unroll_length=1,
+            num_updates_per_batch=1,
+            policy_hidden_layer_sizes=(16, 16),
+        )
+    if a.skip_inline_eval and algo == "ppo":
+        train_kwargs["run_evals"] = False
     progress_history = []
-    select_best = bool(rl_cfg.get("select_best_eval", False)) and algo == "ppo"
+    select_best = (
+        bool(rl_cfg.get("select_best_eval", False))
+        and algo == "ppo"
+        and not a.skip_inline_eval
+    )
     selection_metric = str(rl_cfg.get(
         "select_best_eval_metric", "eval/episode_reward"
     ))
-    selector = _BestEvalSelector(selection_metric) if select_best else None
+
+    def checkpoint_best(params, selected_step, selected_metrics):
+        """Persist each improved eval so a long CPU run remains usable."""
+        partial_config = {
+            "algo": algo,
+            "observation_size": int(env.observation_size),
+            "action_size": int(env.action_size),
+            "policy_hidden_layer_sizes": tuple(train_kwargs.get(
+                "policy_hidden_layer_sizes", (32, 32, 32, 32)
+            )),
+            "normalize_observations": bool(
+                train_kwargs.get("normalize_observations", True)
+            ),
+            "num_timesteps": int(num_timesteps),
+            "episode_length": int(episode_length),
+            "num_envs": int(num_envs),
+            "learning_rate": float(train_kwargs.get("learning_rate", 3.0e-4)),
+            "warmup_steps": int(warmup_steps),
+            "seed": int(seed),
+            "protocol": protocol_name,
+            "task": task,
+            "domain_specs": domain_specs,
+            "domain_count": len(domain_specs),
+            "action_bias": action_bias.tolist() if action_bias is not None else None,
+            "action_scale": action_scale.tolist() if action_scale is not None else None,
+            "progress_history": list(progress_history),
+            "selection_metric": selection_metric,
+            "selected_step": int(selected_step),
+            "selected_metric_value": float(selected_metrics[selection_metric]),
+            "selected_eval_reward": selected_metrics.get("eval/episode_reward"),
+            "training_complete": False,
+            "resumed_training": bool(a.resume_training),
+        }
+        save_policy(out, params, partial_config)
+
+    selector = (
+        _BestEvalSelector(selection_metric, checkpoint_fn=checkpoint_best)
+        if select_best else None
+    )
     train_started = time.monotonic()
 
     def progress_fn(num_steps, metrics):
@@ -271,12 +475,8 @@ def main() -> int:
     if selector is not None and selector.params is not None:
         params = selector.params
     config.update({
-        "protocol": (
-            "arm_shared_atacom_v1" if domain_specs and a.atacom
-            else "arm_shared_mga_v1" if domain_specs
-            else "arm_atacom_v1" if a.atacom
-            else "arm_baseline_v1"
-        ),
+        "protocol": protocol_name,
+        "task": task,
         "episode_length": int(episode_length),
         "training_seed": int(seed),
         "domain_specs": domain_specs,
@@ -296,25 +496,8 @@ def main() -> int:
             selector.metrics.get("eval/episode_reward")
             if selector is not None else None
         ),
+        "training_complete": True,
     })
-
-    if a.out:
-        out = a.out
-    elif domain_specs:
-        template = (
-            rl_cfg.get(
-                "atacom_checkpoint",
-                "results/arm/impedence/_policies/shared_atacom_ppo_seed{seed}.pkl",
-            )
-            if a.atacom else rl_cfg.get(
-                "checkpoint",
-                "results/arm/impedence/_policies/shared_ppo_seed{seed}.pkl",
-            )
-        )
-        out = str(Path(template.format(seed=seed)))
-    else:
-        name = f"atacom_{algo}" if a.atacom else algo
-        out = f"results/arm/impedence/{medium}/_policies/{name}.pkl"
     save_policy(out, params, config)
     print("saved policy ->", out, flush=True)
     return 0

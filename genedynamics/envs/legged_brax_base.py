@@ -150,3 +150,78 @@ class BaseEnv(PipelineEnv):
     def constraint_residual(self, state, action, ctx=None):
         z = jnp.zeros((0,), dtype=jnp.float32)
         return z, z
+
+
+class HumanoidTaskEnv(BaseEnv):
+    """Task-neutral floating-base humanoid initialization for composed scenes.
+
+    Subclasses provide ``make_system`` and task-specific ``step``/observations.
+    Robot topology is taken from ``self._robot_profile`` rather than an H1
+    environment superclass.
+    """
+
+    def __init__(self, config: BaseEnvConfig):
+        from genedynamics.robots import RobotBinding
+
+        if not hasattr(self, "_robot_profile"):
+            raise ValueError("HumanoidTaskEnv requires self._robot_profile before init")
+        super().__init__(config)
+        self._robot_binding = RobotBinding.from_mujoco_model(
+            self._robot_profile, self.sys.mj_model
+        )
+        ids = self._robot_binding.element_ids
+        self._pelvis_idx = ids["pelvis"]
+        self._torso_idx = ids["torso"]
+        self._feet_site_id = jnp.asarray(
+            [ids["left_foot"], ids["right_foot"]], dtype=jnp.int32
+        )
+        self._left_foot_idx, self._right_foot_idx = self._feet_site_id
+        self._gait = getattr(config, "gait", "jog")
+        self._gait_phase = {
+            "stand": jnp.zeros(2),
+            "slow_walk": jnp.array([0.0, 0.5]),
+            "walk": jnp.array([0.0, 0.5]),
+            "jog": jnp.array([0.0, 0.5]),
+        }
+        self._gait_params = {
+            "stand": jnp.array([1.0, 1.0, 0.0]),
+            "slow_walk": jnp.array([0.6, 0.8, 0.15]),
+            "walk": jnp.array([0.5, 1.0, 0.15]),
+            "jog": jnp.array([0.3, 2.0, 0.2]),
+        }
+        key = self.sys.mj_model.keyframe(self._robot_profile.home_keyframe)
+        self._init_q = jnp.asarray(key.qpos)
+        self._default_pose = self._init_q[
+            jnp.asarray(self._robot_binding.qpos_indices)
+        ]
+        self.physical_joint_range = self.physical_joint_range[
+            :self._robot_profile.num_actuated
+        ]
+        self.joint_range = self.physical_joint_range
+
+    def reset(self, rng: jax.Array):
+        from brax.envs.base import State
+
+        rng, _ = jax.random.split(rng)
+        pipeline_state = self.pipeline_init(self._init_q, jnp.zeros(self._nv))
+        info = {
+            "rng": rng,
+            "pos_tar": jnp.array([0.0, 0.0, 1.2]),
+            "vel_tar": jnp.zeros(3),
+            "ang_vel_tar": jnp.zeros(3),
+            "yaw_tar": 0.0,
+            "step": 0,
+            "z_feet": jnp.zeros(2),
+            "z_feet_tar": jnp.zeros(2),
+            "randomize_target": config_bool(self._config.randomize_tasks),
+            "last_contact": jnp.zeros(2, dtype=jnp.bool_),
+            "feet_air_time": jnp.zeros(2),
+        }
+        obs = self._get_obs(pipeline_state, info)
+        reward, done = jnp.zeros(2)
+        return State(pipeline_state, obs, reward, done, {}, info)
+
+
+def config_bool(value):
+    """Keep Python config flags explicit in JAX state dictionaries."""
+    return bool(value)

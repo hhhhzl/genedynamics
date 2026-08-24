@@ -36,8 +36,6 @@ Imports guarded so the module loads on fedguide (no brax); construction needs br
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -55,28 +53,39 @@ except Exception:  # pragma: no cover
     State = object
 
 from genedynamics.core.control.stiffness import PrimitiveSpec, stiffness_log_to_pd
+from genedynamics.core.control.cartesian_impedance import (
+    end_effector_kinematics,
+    map_cartesian_wrench,
+    orientation_error,
+)
+from genedynamics.envs.composition import MjcfSceneComposer, SphericalToolSpec
 from genedynamics.core.coverage import surface_geometry as sg
 from genedynamics.core.contact.elastic_foundation import stiffness_field
+from genedynamics.robots import RobotBinding, get_robot_registry
+from genedynamics.robots.profile import (
+    CARTESIAN_JACOBIAN, FIXED_BASE, SINGLE_TOOL, TORQUE_CONTROL,
+)
 
-_ASSET = (Path(__file__).resolve().parents[2] / "assets" / "franka_panda" / "panda_arm.xml")
-_HOME_QPOS = jnp.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.5, 0.78], dtype=jnp.float32)
 _STIFF_D = 3                             # 3×3 translational stiffness (main primitive)
-_PROBE_R = 0.02                          # EE probe sphere radius (panda_arm.xml)
-_N_DOF = 7                               # actuated joints (fixed-base Panda; nv=7)
+_SCAN_TOOL = SphericalToolSpec(tool_id="scan_probe", radius=0.02)
 
 
-def _ee_home_fk():
+def _ee_home_fk(profile):
     """End-effector world position at the home pose (raw mujoco FK; needed to
     place the surface before the contact model is built)."""
-    mj0 = mujoco.MjModel.from_xml_path(str(_ASSET))
+    mj0 = mujoco.MjModel.from_xml_path(profile.model_path())
     d0 = mujoco.MjData(mj0)
-    d0.qpos[:7] = np.asarray(_HOME_QPOS)
+    home = np.asarray(profile.controller_defaults["home_qpos"], dtype=np.float64)
+    d0.qpos[:home.size] = home
     mujoco.mj_forward(mj0, d0)
-    sid = mujoco.mj_name2id(mj0, mujoco.mjtObj.mjOBJ_SITE.value, "ee")
+    site = profile.elements["tool_mount"].name
+    sid = mujoco.mj_name2id(mj0, mujoco.mjtObj.mjOBJ_SITE.value, site)
     return np.asarray(d0.site_xpos[sid])
 
 
-def _build_contact_model(surface, ee0, n, depth, friction, solref, collidable=True):
+def _build_contact_model(
+    profile, surface, ee0, n, depth, friction, solref, collidable=True,
+):
     """Place the scan start ``depth`` from the home EE along its local normal.
 
     The controlled EE site is the *centre* of a spherical probe, whose desired
@@ -103,32 +112,34 @@ def _build_contact_model(surface, ee0, n, depth, friction, solref, collidable=Tr
     rx, ry = (float(X.max()) - float(X.min())) / 2, (float(Y.max()) - float(Y.min())) / 2
     hdata = ((Z - zlo) / elev).T.reshape(-1).astype(np.float32)        # mujoco hfield: [row=y, col=x]
 
-    xml = open(_ASSET).read()
-    if collidable:                                                     # rigid/soft: real mjx probe-hfield contact
-        xml = xml.replace('contype="0" conaffinity="0" />', 'contype="1" conaffinity="1" />', 1)
-        # MuJoCo combines geom-pair friction using the higher-priority / larger
-        # coefficients. The probe XML otherwise inherits the default mu=1, which
-        # silently overrides every surface friction and unseen-DR draw below 1.
-        # Set both members of the real contact pair to the requested value.
-        xml = xml.replace(
-            'name="probe" type="sphere" size="0.02"',
-            (
-                'name="probe" type="sphere" size="0.02" '
-                f'friction="{friction:.3f} 0.01 0.001"'
-            ),
-            1,
+    composer = MjcfSceneComposer(profile)
+    if profile.controller_defaults.get("strip_mesh_geoms", False):
+        composer.strip_mesh_geoms()
+    if profile.controller_defaults.get("replace_actuators_with_motors", False):
+        composer.replace_actuators_with_motors(
+            profile.controller_defaults["torque_limits"]
         )
-    asset = f'<asset><hfield name="surf" nrow="{n}" ncol="{n}" size="{rx:.5f} {ry:.5f} {elev:.5f} 0.05"/></asset>'
-    hgeom = (f'<geom name="surf" type="hfield" hfield="surf" pos="{cx:.5f} {cy:.5f} {zlo:.5f}" '
-             f'contype="1" conaffinity="1" friction="{friction:.3f} 0.01 0.001" solref="{solref}"/>')
-    xml = xml.replace("<worldbody>", asset + "<worldbody>").replace("</worldbody>", hgeom + "</worldbody>")
-    mj = mujoco.MjModel.from_xml_string(xml)
+    composer.add_spherical_tool(
+        _SCAN_TOOL, friction=friction, collidable=collidable
+    )
+    composer.add_hfield_surface(
+        name="surf",
+        nrow=n,
+        ncol=n,
+        size=(rx, ry, elev, 0.05),
+        position=(cx, cy, zlo),
+        friction=friction,
+        solref=solref,
+    )
+    mj = composer.compile()
     mj.hfield_data[:] = hdata
     return mj, surface
 
 
 @dataclass
-class PandaSurfaceScanConfig:
+class SurfaceScanConfig:
+    robot: str = "panda"
+    tool: str = "scan_probe"
     dt: float = 0.02
     timestep: float = 0.005
     level: str = "plane"            # surface family: plane/cylinder/s1/s2/s3/s4
@@ -291,14 +302,28 @@ class PandaSurfaceScanConfig:
                                     # out-of-contact estimate (k̂→0) can't blow up the residual
 
 
-class PandaSurfaceScanEnv(PipelineEnv):
-    """7-DoF Panda surface-contact scanning (MDAC 10D primitive, 3×3 impedance)."""
+class SurfaceScanEnv(PipelineEnv):
+    """Robot-parameterized surface-contact scanning task."""
 
-    def __init__(self, config: PandaSurfaceScanConfig | None = None, **kw):
+    def __init__(self, config: SurfaceScanConfig | None = None, **kw):
         if not BRAX_AVAILABLE:
             raise ImportError("brax + mujoco(mjx) required for PandaSurfaceScanEnv.")
-        cfg = config or PandaSurfaceScanConfig(**kw)
+        cfg = config or SurfaceScanConfig(**kw)
         self._config = cfg
+        self._robot_profile = get_robot_registry().get_profile(
+            "manipulator", str(cfg.robot).lower()
+        )
+        if self._robot_profile is None:
+            raise ValueError(f"unknown manipulator robot profile: {cfg.robot}")
+        self._robot_profile.require({
+            FIXED_BASE, CARTESIAN_JACOBIAN, TORQUE_CONTROL, SINGLE_TOOL,
+        })
+        if cfg.tool != _SCAN_TOOL.tool_id:
+            raise ValueError(f"unsupported surface-scan tool: {cfg.tool}")
+        self._tool_spec = _SCAN_TOOL
+        self._home_qpos = jnp.asarray(
+            self._robot_profile.controller_defaults["home_qpos"], jnp.float32
+        )
         self._xi0, self._eta0 = jnp.float32(0.1), jnp.float32(0.5)
 
         # domain randomization (unseen): contact friction + surface compliance.
@@ -336,16 +361,21 @@ class PandaSurfaceScanEnv(PipelineEnv):
 
         # build the REAL contact model: analytic surface -> mjx hfield, EE -> probe.
         surface = sg.surface_for_level(cfg.level, cfg.surface_seed)
-        ee0 = _ee_home_fk()
-        mj, self.surface = _build_contact_model(surface, ee0, cfg.hfield_n, cfg.contact_depth,
-                                                mu, solref, collidable=(self._medium != "hybrid"))
+        ee0 = _ee_home_fk(self._robot_profile)
+        mj, self.surface = _build_contact_model(
+            self._robot_profile, surface, ee0, cfg.hfield_n, cfg.contact_depth,
+            mu, solref, collidable=(self._medium != "hybrid"),
+        )
         sys = mjcf.load_model(mj)
         n_frames = max(1, int(round(cfg.dt / cfg.timestep)))
         super().__init__(sys=sys, backend="mjx", n_frames=n_frames)
 
         self._mjx_model = mjx.put_model(mj)            # for support.contact_force
         self.spec = PrimitiveSpec(pos_dim=3, stiff_dim=_STIFF_D, feed_dim=1)   # -> 10
-        self._ee_site = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_SITE.value, "ee")
+        self._robot_binding = RobotBinding.from_mujoco_model(
+            self._robot_profile, mj
+        )
+        self._ee_site = self._robot_binding.element_ids["tool_mount"]
         self._ee_body = int(self.sys.site_bodyid[self._ee_site])
         self._probe_geom = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_GEOM.value, "probe")
         self._surf_geom = mujoco.mj_name2id(
@@ -419,6 +449,10 @@ class PandaSurfaceScanEnv(PipelineEnv):
         return self.spec.total_width                       # 10
 
     @property
+    def reliability_feature_size(self) -> int:
+        return 12
+
+    @property
     def manifold_constraint_size(self) -> int:
         """Per-action equality dimension of ``manifold_residual``."""
         return 3 if self._config.clean_manifold_force else 2
@@ -429,7 +463,7 @@ class PandaSurfaceScanEnv(PipelineEnv):
         return 2
 
     def reset(self, rng: jax.Array) -> State:
-        ps = self.pipeline_init(_HOME_QPOS, jnp.zeros(self.sys.qd_size()))
+        ps = self.pipeline_init(self._home_qpos, jnp.zeros(self.sys.qd_size()))
         info = {
             "xi": self._xi0, "eta": self._eta0, "psi": jnp.float32(0.0),
             "prev_s": self._s_ref, "step": jnp.int32(0),
@@ -463,7 +497,7 @@ class PandaSurfaceScanEnv(PipelineEnv):
         # the EE site target rides a probe-radius above the surface (the probe
         # sphere just touches), so the SITE tracks the surface (|h_surf| ~ 0) when
         # the probe is in contact.
-        p_d = p_s + (self._config.standoff + _PROBE_R) * n_s
+        p_d = p_s + (self._config.standoff + self._tool_spec.radius) * n_s
         z_d = -n_s
         t_xi, _ = sg.tangents(self.surface, xi, eta)
         x_d = t_xi / (jnp.linalg.norm(t_xi) + 1e-9)
@@ -473,16 +507,13 @@ class PandaSurfaceScanEnv(PipelineEnv):
         return p_s, n_s, p_d, R_d
 
     def _ee_kin(self, ps):
-        p_h = ps.site_xpos[self._ee_site]
-        R_h = ps.site_xmat[self._ee_site].reshape(3, 3)
-        jacp, jacr = _mjx_support.jac(self.sys, ps, p_h, self._ee_body)
-        return p_h, R_h, jacp, jacr, jacp.T @ ps.qvel, jacr.T @ ps.qvel
+        return end_effector_kinematics(
+            self.sys, ps, self._ee_site, self._ee_body
+        )
 
     @staticmethod
     def _orient_err(R_h, R_d):
-        return 0.5 * (jnp.cross(R_h[:, 0], R_d[:, 0])
-                      + jnp.cross(R_h[:, 1], R_d[:, 1])
-                      + jnp.cross(R_h[:, 2], R_d[:, 2]))
+        return orientation_error(R_h, R_d)
 
     # --- 3×3 translational stiffness chart (flag-driven; stiffness ablations) ---
     def _stiffness(self, s_vec):
@@ -522,7 +553,11 @@ class PandaSurfaceScanEnv(PipelineEnv):
             F_meas = k_local * delta
         else:
             F_meas = self._contact_force(ps)
-        g_ee = jnp.linalg.solve(jacp.T @ jacp + 1e-6 * jnp.eye(3), jacp.T @ ps.qfrc_bias[:_N_DOF])
+        dofs = jnp.asarray(self._robot_binding.dof_indices)
+        g_ee = jnp.linalg.solve(
+            jacp.T @ jacp + 1e-6 * jnp.eye(3),
+            jacp.T @ ps.qfrc_bias[dofs],
+        )
         g_n = jnp.dot(g_ee, n_s)                              # arm-weight normal force at EE
         g_tangent = g_ee - g_n * n_s
         t_cross = R_d[:, 1]
@@ -552,9 +587,15 @@ class PandaSurfaceScanEnv(PipelineEnv):
         # PARTIAL gravity/coriolis compensation: full comp makes the arm weightless
         # and it floats off; zero comp makes it lean hard (~20 N). A small residual
         # weight keeps light contact and the planner trims F_n to hit f_target.
-        tau = jacp @ f_pos + jacr @ m_rot + cfg.grav_comp * ps.qfrc_bias[: _N_DOF]
-        lim = jnp.array([87, 87, 87, 87, 12, 12, 12], jnp.float32)
-        return jnp.clip(tau, -lim, lim)
+        return map_cartesian_wrench(
+            jacp,
+            jacr,
+            f_pos,
+            m_rot,
+            ps.qfrc_bias[dofs],
+            gravity_compensation=cfg.grav_comp,
+            torque_limits=self._robot_profile.controller_defaults["torque_limits"],
+        )
 
     # --- normalized [-1,1] primitive -> physical ---
     def _force_cmd(self, nu_raw):
@@ -1279,8 +1320,8 @@ class PandaSurfaceScanEnv(PipelineEnv):
         return h, g
 
 
-class PandaSurfaceScanDomainEnv:
-    """Reset-key randomized family of shape-compatible Panda scan environments.
+class SurfaceScanDomainEnv:
+    """Reset-key randomized family of shape-compatible scan environments.
 
     Brax vectorization supplies a different reset key to each environment.  The
     key selects one statically constructed domain, and ``lax.switch`` dispatches
@@ -1294,7 +1335,7 @@ class PandaSurfaceScanDomainEnv:
     def __init__(self, domains):
         self.domains = tuple(domains)
         if not self.domains:
-            raise ValueError("PandaSurfaceScanDomainEnv needs at least one domain")
+            raise ValueError("SurfaceScanDomainEnv needs at least one domain")
         action_sizes = {int(env.action_size) for env in self.domains}
         observation_sizes = {int(env.observation_size) for env in self.domains}
         if len(action_sizes) != 1 or len(observation_sizes) != 1:
@@ -1340,7 +1381,7 @@ class PandaSurfaceScanDomainEnv:
         return jax.lax.switch(domain_index, branches, state)
 
 
-class PandaResidualActionEnv:
+class SurfaceScanResidualActionEnv:
     """Train a residual policy around a fixed, executable scan primitive."""
 
     def __init__(self, env, action_bias, action_scale=None):
@@ -1348,7 +1389,7 @@ class PandaResidualActionEnv:
         self.action_bias = jnp.asarray(action_bias, dtype=jnp.float32)
         if self.action_bias.shape != (int(env.action_size),):
             raise ValueError(
-                "action_bias must match the Panda primitive: "
+                "action_bias must match the surface-scan primitive: "
                 f"{self.action_bias.shape} != {(int(env.action_size),)}"
             )
         self.action_scale = jnp.asarray(
@@ -1391,7 +1432,19 @@ class PandaResidualActionEnv:
         return self.env.step(state, action)
 
 
+# Compatibility names preserve every existing solver/config import while the
+# canonical API is task-named and accepts ``config.robot``.
+PandaSurfaceScanConfig = SurfaceScanConfig
+PandaSurfaceScanEnv = SurfaceScanEnv
+PandaSurfaceScanDomainEnv = SurfaceScanDomainEnv
+PandaResidualActionEnv = SurfaceScanResidualActionEnv
+
+
 __all__ = [
+    "SurfaceScanConfig",
+    "SurfaceScanEnv",
+    "SurfaceScanDomainEnv",
+    "SurfaceScanResidualActionEnv",
     "PandaSurfaceScanConfig",
     "PandaSurfaceScanEnv",
     "PandaSurfaceScanDomainEnv",

@@ -83,6 +83,17 @@ from genedynamics.experiments.plugins import (
     D3ILAvoidingFixedGeneratorPlugin,
     SteppingStones2DObstacleGeneratorPlugin,
     Corridor2DObstacleGeneratorPlugin,
+    EmptyObstacleGeneratorPlugin,
+    ManipulatorSurfaceScanPlugin,
+    ManipulatorPegInsertPlugin,
+    HumanoidBoxPushPlugin,
+    FullMDACMethodPlugin,
+    ModelBasedOnlyMethodPlugin,
+    DIALContactMethodPlugin,
+    PegasusFlowContactMethodPlugin,
+    ISSAContactMethodPlugin,
+    ATACOMContactMethodPlugin,
+    StandaloneRLMethodPlugin,
 )
 
 
@@ -108,6 +119,12 @@ def main():
         type=int,
         default=None,
         help='Run single seed (overrides config)'
+    )
+    parser.add_argument(
+        '--suite',
+        type=str,
+        default=None,
+        help='Run one named suite from config.suites'
     )
     parser.add_argument(
         '--dry-run',
@@ -151,6 +168,12 @@ def main():
         config.obstacle_levels = [args.level]
     if args.seed is not None:
         config.seeds = [args.seed]
+    if args.suite is not None:
+        matches = [s for s in config.suites if s.get('name') == args.suite]
+        if not matches:
+            available = ', '.join(str(s.get('name')) for s in config.suites)
+            parser.error(f"unknown suite {args.suite!r}; available: {available or '<none>'}")
+        config.suites = matches
     
     # Validate configuration
     errors = config.validate()
@@ -164,7 +187,8 @@ def main():
         print("Configuration is valid (dry run mode)")
         print(f"Environment: {config.env_name}")
         print(f"Method: {config.method}")
-        print(f"Levels: {config.obstacle_levels}")
+        print(f"Suites: {[s['name'] for s in config.suites]}" if config.suites
+              else f"Levels: {config.obstacle_levels}")
         print(f"Seeds: {config.seeds}")
         return
     
@@ -178,7 +202,8 @@ def main():
     print(f"Starting experiments from {config_path}")
     print(f"Environment: {config.env_name}")
     print(f"Method: {config.method}")
-    print(f"Levels: {config.obstacle_levels}")
+    print(f"Suites: {[s['name'] for s in config.suites]}" if config.suites
+          else f"Levels: {config.obstacle_levels}")
     print(f"Seeds: {config.seeds}")
     print(f"Output directory: {config.output_dir}")
     print()
@@ -207,6 +232,13 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(CFSMBDMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDFullMethodPlugin(), 'method')
     runner.register_plugin(MPPIMethodPlugin(), 'method')
+    runner.register_plugin(FullMDACMethodPlugin(), 'method')
+    runner.register_plugin(ModelBasedOnlyMethodPlugin(), 'method')
+    runner.register_plugin(DIALContactMethodPlugin(), 'method')
+    runner.register_plugin(PegasusFlowContactMethodPlugin(), 'method')
+    runner.register_plugin(ISSAContactMethodPlugin(), 'method')
+    runner.register_plugin(ATACOMContactMethodPlugin(), 'method')
+    runner.register_plugin(StandaloneRLMethodPlugin(), 'method')
     runner.register_plugin(TwoGOMethodPlugin(), 'method')
     if DPCCMethodPlugin is not None:
         runner.register_plugin(DPCCMethodPlugin(), 'method')
@@ -237,6 +269,9 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(TUM_RGBD_3DGSPlugin(), 'environment')
     runner.register_plugin(MuJoCoActivePerceptionPlugin(), 'environment')
     runner.register_plugin(HumanoidCorridor2DPlugin(), 'environment')
+    runner.register_plugin(ManipulatorSurfaceScanPlugin(), 'environment')
+    runner.register_plugin(ManipulatorPegInsertPlugin(), 'environment')
+    runner.register_plugin(HumanoidBoxPushPlugin(), 'environment')
 
     # Metrics plugins
     runner.register_plugin(SSRMetricsPlugin(), 'metric')
@@ -249,8 +284,10 @@ def register_all_plugins(runner: ExperimentRunner):
     # extractor). brax tasks; the factories construct without importing brax.
     from genedynamics.experiments.plugins.metrics.extractors import (
         arm_surface_scan_metrics_plugin, humanoid_box_push_metrics_plugin,
+        peg_insert_metrics_plugin,
     )
     runner.register_plugin(arm_surface_scan_metrics_plugin(), 'metric')
+    runner.register_plugin(peg_insert_metrics_plugin(), 'metric')
     runner.register_plugin(humanoid_box_push_metrics_plugin(), 'metric')
 
     # Visualization plugins
@@ -272,6 +309,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(D3ILAvoidingFixedGeneratorPlugin(), 'obstacle_generator')
     runner.register_plugin(SteppingStones2DObstacleGeneratorPlugin(), 'obstacle_generator')
     runner.register_plugin(Corridor2DObstacleGeneratorPlugin(), 'obstacle_generator')
+    runner.register_plugin(EmptyObstacleGeneratorPlugin(), 'obstacle_generator')
 
 
 if __name__ == "__main__":

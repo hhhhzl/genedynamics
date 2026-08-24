@@ -23,6 +23,9 @@ class MPPIMethodPlugin(MethodPlugin):
         return "mppi"
 
     def create_planner(self, env: Any, energy: Any, config: Dict[str, Any]) -> MPPISolver:
+        if getattr(env, "_experiment_task", None):
+            from .contact_receding import MPPIContactMethodPlugin
+            return MPPIContactMethodPlugin().create_planner(env, energy, config)
         backend = RuntimeBackendManager.get_backend()
         horizon = int(config.get("horizon", getattr(env, "horizon", 80)))
         dt = float(config.get("dt", getattr(env, "dt", 0.1)))
@@ -49,6 +52,9 @@ class MPPIMethodPlugin(MethodPlugin):
         )
 
     def plan(self, planner: MPPISolver, initial_state: np.ndarray, rng: Any) -> Dict[str, Any]:
+        from .contact_receding import _ContactPlanner, MPPIContactMethodPlugin
+        if isinstance(planner, _ContactPlanner):
+            return MPPIContactMethodPlugin().plan(planner, initial_state, rng)
         traj = planner.solve(initial_state, horizon=planner.horizon, rng_key=rng)
         result = normalize_result_from_trajectory(
             traj,

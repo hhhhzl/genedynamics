@@ -34,7 +34,6 @@
                     <inertial mass="7.35522e-01" pos="1.0517e-2 -4.252e-3 6.1597e-2" fullinertia="1.2516e-2 1.0027e-2 4.815e-3 -4.28e-4 -1.196e-3 -7.41e-4" />
                     <joint name="joint7" damping="2" />
                     <site name="ee" pos="0 0 0.107" size="0.01" rgba="0 1 0 1" />
-                    <geom name="probe" type="sphere" size="0.02" pos="0 0 0.107" rgba="0.9 0.3 0.1 1" contype="0" conaffinity="0" />
                   </body>
                 </body>
               </body>

@@ -1,0 +1,17 @@
+base: _base.yaml
+name: issa
+method: issa
+group: baseline
+output_dir: results/arm/peg_insert_cpu/issa
+
+evaluation:
+  training_steps: 200000
+  policy_domain_count: 4
+
+method_params:
+  policy_ckpt: results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl
+  n_dirs: 8
+  n_iters: 20
+  adamba_bound: 0.001
+  safety_threshold: 0.0
+  enforce_absolute: true

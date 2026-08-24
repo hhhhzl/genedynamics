@@ -8,7 +8,7 @@ The module exports two things:
 
 * **Joint topology constants** (``G1_LEFT_LEG_JOINTS`` and friends, plus
   ``G1_ACTUATED_JOINTS``). These are the canonical actuator names from the
-  Unitree G1 23-DoF MJCF, ordered legs → waist → arms.
+  Unitree G1 29-DoF MJCF, ordered legs → waist → arms.
 * **``G1RobotSpec``** — a dataclass populated by introspecting a loaded
   ``mujoco.MjModel``. All MuJoCo-side indices, joint ranges, actuator gains
   and torque bounds are read from the MJCF; nothing is hardcoded except the

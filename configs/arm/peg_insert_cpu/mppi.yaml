@@ -1,0 +1,9 @@
+base: _base.yaml
+name: mppi
+method: mppi
+group: baseline
+output_dir: results/arm/peg_insert_cpu/mppi
+
+method_params:
+  noise_sigma: 0.3
+  lambda_: 1.0

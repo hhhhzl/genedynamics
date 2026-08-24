@@ -36,16 +36,22 @@ class GaitParams:
     capture_gain: float = 1.4   # capture step: CoM-over-feet offset -> hip pitch (rad / m)
     capture_lead: float = 0.12  # CoM-velocity lead time in the capture point (s)
     forward_gain: float = 0.45  # v_cmd -> forward hip bias (rad per m/s)
+    roll_amp: float = 0.0       # alternating frontal-plane weight shift (rad)
+    roll_capture_gain: float = 0.0  # lateral CoM-over-feet feedback (rad / m)
+    roll_capture_lead: float = 0.10 # lateral velocity lead time (s)
+    roll_limit: float = 0.30         # total hip-roll reference bound (rad)
 
 
 class BipedalGait:
     """Alternating stepping gait -> per-joint target offsets (legs only; other joints untouched)."""
 
     def __init__(self, left_leg: Tuple[int, int, int], right_leg: Tuple[int, int, int],
-                 n_joints: int, params: GaitParams = GaitParams()):
+                 n_joints: int, params: GaitParams = GaitParams(),
+                 hip_roll: Tuple[int, int] | None = None):
         # left_leg / right_leg = (hip_pitch_idx, knee_idx, ankle_pitch_idx) in the joint vector.
         self._left = left_leg
         self._right = right_leg
+        self._hip_roll = hip_roll
         self._n = int(n_joints)
         self.p = params
 
@@ -61,7 +67,8 @@ class BipedalGait:
         an_off = -p.ankle_frac * p.knee_amp * lift
         return off.at[hp].add(hp_off).at[kn].add(kn_off).at[an].add(an_off)
 
-    def __call__(self, t, com_offset_x: float, com_vx: float, v_cmd: float):
+    def __call__(self, t, com_offset_x: float, com_vx: float, v_cmd: float,
+                 com_offset_y: float = 0.0, com_vy: float = 0.0):
         """t: time (s); com_offset_x: CoM x minus feet-center x (>0 = leaning forward);
         com_vx: CoM forward velocity; v_cmd: forward base-velocity command. Returns (n_joints,)
         joint-target offsets (legs)."""
@@ -72,6 +79,21 @@ class BipedalGait:
         off = jnp.zeros((self._n,), jnp.float32)
         off = self._leg_offsets(off, self._left, phase, bias)
         off = self._leg_offsets(off, self._right, (phase + 0.5) % 1.0, bias)
+        if self._hip_roll is not None:
+            # At phase 0 the left leg enters swing, so positive roll shifts the
+            # H1 pelvis toward the right stance foot; half a cycle later the
+            # sign reverses for right-leg swing.  Applying the same sign to
+            # both hips translates the pelvis laterally instead of merely
+            # changing the foot spacing.
+            roll = p.roll_amp * jnp.cos(2.0 * jnp.pi * phase)
+            # On H1, positive equal hip-roll moves the pelvis toward -y.
+            # Positive lateral CoM error therefore needs a positive correction.
+            roll += p.roll_capture_gain * (
+                com_offset_y + p.roll_capture_lead * com_vy
+            )
+            roll = jnp.clip(roll, -p.roll_limit, p.roll_limit)
+            off = off.at[self._hip_roll[0]].add(roll)
+            off = off.at[self._hip_roll[1]].add(roll)
         return off
 
 

@@ -57,6 +57,9 @@ def convert_to_json_serializable(obj: Any) -> Any:
         return bool(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
+    elif hasattr(obj, "shape") and hasattr(obj, "dtype"):
+        # JAX/Torch array-like values without importing either backend here.
+        return np.asarray(obj).tolist()
     elif isinstance(obj, (list, tuple)):
         return [convert_to_json_serializable(item) for item in obj]
     elif isinstance(obj, dict):
@@ -73,6 +76,49 @@ def _has_items(obj: Any) -> bool:
         return len(obj) > 0  # works for list/tuple/ndarray
     except Exception:
         return bool(obj)
+
+
+def _aggregate_numeric_tree(values: List[Any]) -> Any:
+    """Aggregate matching numeric leaves while reporting missing samples."""
+    present = [value for value in values if value is not None]
+    if not present:
+        return {"mean": None, "std": None, "n": 0, "missing": len(values)}
+    if all(isinstance(value, dict) for value in present):
+        keys = sorted({key for value in present for key in value})
+        return {
+            key: _aggregate_numeric_tree([
+                value.get(key) if isinstance(value, dict) else None
+                for value in values
+            ])
+            for key in keys
+        }
+    numeric = []
+    for value in present:
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            scalar = float(value)
+            if np.isfinite(scalar):
+                numeric.append(scalar)
+    if not numeric:
+        return None
+    return {
+        "mean": float(np.mean(numeric)),
+        "std": float(np.std(numeric)) if len(numeric) > 1 else 0.0,
+        "n": len(numeric),
+        "missing": len(values) - len(numeric),
+    }
+
+
+def _compact_contact_state(state: Any) -> Dict[str, Any]:
+    """Keep actual structured-state signals without dumping the full MJX model."""
+    out: Dict[str, Any] = {}
+    for key in ("obs", "reward", "done", "metrics", "info"):
+        if hasattr(state, key):
+            out[key] = convert_to_json_serializable(getattr(state, key))
+    pipeline_state = getattr(state, "pipeline_state", None)
+    if pipeline_state is not None:
+        out["q"] = convert_to_json_serializable(pipeline_state.q)
+        out["qd"] = convert_to_json_serializable(pipeline_state.qd)
+    return out
 
 
 class ExperimentRunner:
@@ -111,7 +157,7 @@ class ExperimentRunner:
         """
         self.registry.register(plugin, plugin_type, name)
     
-    def run_single_experiment(self, level: int, seed: int) -> Dict[str, Any]:
+    def run_single_experiment(self, level: Any, seed: int) -> Dict[str, Any]:
         """
         Run single experiment instance.
         
@@ -142,8 +188,19 @@ class ExperimentRunner:
         env_plugin = self.registry.get_plugin('environment', self.config.env_name)
         
         # 3. Generate start/target positions (before obstacles, for obstacle generation)
-        temp_env = env_plugin.create_env(self.config.env_params)
-        target_pos = np.asarray(temp_env.target, dtype=np.float32)
+        controller_method = self.config.method_params.get(
+            "controller_method", self.config.method
+        )
+        env_create_params = {
+            **self.config.env_params,
+            "_experiment_seed": int(seed),
+            "_controller_method": controller_method,
+            "_execution_env_params": self.config.execution_env_params,
+        }
+        temp_env = env_plugin.create_env(env_create_params)
+        target_pos = np.asarray(
+            getattr(temp_env, "target", np.zeros(1)), dtype=np.float32
+        )
         obstacle_gen_name = self.config.obstacle_config.get('generator', 'box2d')
         obstacle_gen = self.registry.get_plugin('obstacle_generator', obstacle_gen_name)
         obstacle_config_with_env = {
@@ -175,7 +232,7 @@ class ExperimentRunner:
         assert obstacles is not None, "obstacle_gen.generate did not return"
         
         # 5. Create environment with obstacles (for physics backends that need obstacles in model)
-        env_params_with_obstacles = {**self.config.env_params}
+        env_params_with_obstacles = {**env_create_params}
         # Add obstacles to env_params if using physics backend that needs them
         physics_backend = env_params_with_obstacles.get('physics_backend', None)
         if physics_backend in ['mujoco', 'mjx', 'isaac', 'brax'] and len(obstacles) > 0:
@@ -197,7 +254,12 @@ class ExperimentRunner:
                 )
                 env_params_with_obstacles['collision_ee_only'] = True
 
-        env = env_plugin.create_env(env_params_with_obstacles)
+        # Contact scenes own all collision geometry.  Reuse the task env rather
+        # than recompiling it after an intentionally empty obstacle pass.
+        env = (
+            temp_env if obstacle_gen_name == "none"
+            else env_plugin.create_env(env_params_with_obstacles)
+        )
         if self.config.env_name == 'quadruped_stepping_stones_2d':
             from genedynamics.envs.obstacles.stepping_stones import make_stepping_stones_obstacles
             obstacles = make_stepping_stones_obstacles(env.scene)
@@ -269,6 +331,13 @@ class ExperimentRunner:
             'np_random_seed': seed,  # Pass seed for reproducibility
             'env_plugin': env_plugin,  # For TaskSpec / position_extractor
             'env_name': getattr(self.config, 'env_name', None),
+            'task': getattr(self.config, 'env_name', None),
+            'task_level': self.config.env_params.get('level', level),
+            'n_steps': int(getattr(self.config, 'n_steps', 100)),
+            'controller_method': controller_method,
+            'env_params': self.config.env_params,
+            'execution_env_params': self.config.execution_env_params,
+            'suite': (self.config.metadata or {}).get('suite', level),
         }
         # Pass top-level scheduler_config so method plugins (e.g. MBD3D) can read
         # Ndiffuse / beta0 / betaT / M_k / T_k from diffusion_schedulers.
@@ -618,15 +687,20 @@ class ExperimentRunner:
             getattr(self.config, 'method', None) == 'd3il_unified'
             or 'd3il' in str(getattr(self.config, 'env_name', ''))
         )
-        if is_d3il_style and result.get('executed_states') is not None:
+        direct_trajectory = result.get('trajectory')
+        if isinstance(direct_trajectory, Trajectory):
+            trajectory = direct_trajectory
+        elif is_d3il_style and result.get('executed_states') is not None:
             trajectory = self._extract_trajectory_from_executed(result, env)
         else:
             trajectory = self._extract_trajectory(result, env)
 
         # 10. Compute metrics
+        metric_env = result.get('execution_env') or env
         metrics = self._compute_metrics(
-            trajectory, env, obstacles, constraint_pipeline, level,
+            trajectory, metric_env, obstacles, constraint_pipeline, level,
             env_plugin=env_plugin, planning_result=result, planning_time=planning_time,
+            x0=result.get('initial_state', start_pos), seed=seed,
         )
         
         # 11. Prepare results
@@ -673,7 +747,9 @@ class ExperimentRunner:
         # 12. Generate visualizations
         if self.config.visualizations:
             print("Generating visualizations (folders/images)...")
-            self._generate_visualizations(experiment_result, env, obstacles, env_plugin)
+            self._generate_visualizations(
+                experiment_result, metric_env, obstacles, env_plugin
+            )
         
         total_time = time.time() - experiment_start_time
         experiment_result['total_time'] = float(total_time)
@@ -688,26 +764,88 @@ class ExperimentRunner:
             List of experiment result dictionaries
         """
         all_results = []
-        
-        for level in self.config.obstacle_levels:
-            for seed in self.config.seeds:
-                print(f"\n[experiment] Running level={level}, seed={seed}...")
-                try:
-                    result = self.run_single_experiment(level, seed)
-                    all_results.append(result)
-                    self.results.append(result)
-                    self._save_result(result)
-                except Exception as e:
-                    print(f"Error in level={level}, seed={seed}: {e}")
-                    import traceback
-                    traceback.print_exc()
-        
+        self.config.output_dir.mkdir(parents=True, exist_ok=True)
+        self._save_protocol_manifest()
+        original_config = self.config
+        run_configs = (
+            [original_config.for_suite(suite) for suite in original_config.suites]
+            if original_config.suites else [original_config]
+        )
+        try:
+            for run_config in run_configs:
+                self.config = run_config
+                for level in run_config.obstacle_levels:
+                    for seed in run_config.seeds:
+                        print(f"\n[experiment] Running level={level}, seed={seed}...")
+                        try:
+                            result = self.run_single_experiment(level, seed)
+                            all_results.append(result)
+                            self.results.append(result)
+                            self._save_result(result)
+                        except Exception as e:
+                            print(f"Error in level={level}, seed={seed}: {e}")
+                            import traceback
+                            traceback.print_exc()
+        finally:
+            self.config = original_config
+
         self._save_summary(all_results)
 
         if getattr(self.config, "auto_report", True):
             self._generate_report()
 
         return all_results
+
+    def _save_protocol_manifest(self) -> None:
+        """Write the resolved formal protocol and checkpoint provenance."""
+        import hashlib
+        import subprocess
+
+        try:
+            git_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"], check=True, capture_output=True,
+                text=True,
+            ).stdout.strip()
+        except Exception:
+            git_sha = "unknown"
+        try:
+            dirty = bool(subprocess.run(
+                ["git", "status", "--porcelain"], check=True,
+                capture_output=True, text=True,
+            ).stdout.strip())
+        except Exception:
+            dirty = None
+        try:
+            from importlib.metadata import version
+            versions = {
+                package: version(package)
+                for package in ("jax", "jaxlib", "brax", "mujoco", "numpy")
+            }
+        except Exception:
+            versions = {}
+        checkpoints = {}
+        for key, value in self.config.method_params.items():
+            if not (isinstance(key, str) and key.endswith("_ckpt") and value):
+                continue
+            path = Path(str(value))
+            if not path.is_absolute():
+                path = Path.cwd() / path
+            digest = None
+            if path.is_file():
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            checkpoints[key] = {"path": str(value), "sha256": digest}
+        manifest = {
+            "schema_version": 1,
+            "git_sha": git_sha,
+            "git_dirty": dirty,
+            "config": self.config.to_dict(),
+            "checkpoints": checkpoints,
+            "package_versions": versions,
+        }
+        self._protocol_manifest = manifest
+        with open(self.config.output_dir / "protocol_manifest.json", "w") as f:
+            json.dump(convert_to_json_serializable(manifest), f, indent=2,
+                      allow_nan=False)
 
     def _generate_report(self) -> None:
         """Generate unified report from results (industrial-grade pipeline)."""
@@ -746,6 +884,10 @@ class ExperimentRunner:
         Returns:
             Start position array (may be full state vector with velocities)
         """
+        task_state = env_plugin.reset_state(env, seed)
+        if task_state is not None:
+            return task_state
+
         # d3il_avoiding (4D): use the env reset observation directly.
         # The generic 2D sampler (x in [-1,0], y in [-2,-1.5]) is for toy 2D environments and
         # produces out-of-map starts for D3IL.
@@ -1180,10 +1322,21 @@ class ExperimentRunner:
         """Compute length, smoothness, geometric_smoothness for a single trajectory."""
         task_spec = get_default_task_spec(env_plugin, getattr(self.config, "env_name", None))
 
-        states_arr = [np.asarray(s, dtype=np.float32) for s in trajectory.states]
-        if len(states_arr) < 2:
+        states = list(trajectory.states)
+        if len(states) < 2:
             return 0.0, 0.0, 0.0
-        positions = np.array([np.asarray(task_spec.extract_position(s), dtype=np.float32).reshape(-1) for s in states_arr])
+        # Contact plugins intentionally preserve structured Brax states. Their
+        # task-owned extractor knows whether trajectory position means EE, peg,
+        # or pushed-object position; legacy TaskSpecs expect flat arrays.
+        extract_position = (
+            env_plugin.extract_position
+            if hasattr(states[0], "pipeline_state")
+            else task_spec.extract_position
+        )
+        positions = np.array([
+            np.asarray(extract_position(s), dtype=np.float32).reshape(-1)
+            for s in states
+        ])
         if np.any(np.isnan(positions)) or np.any(np.isinf(positions)):
             return 0.0, 0.0, 0.0
         seg_len = np.linalg.norm(np.diff(positions, axis=0), axis=1)
@@ -1191,7 +1344,7 @@ class ExperimentRunner:
         if not (np.isfinite(length) and length >= 0):
             return 0.0, 0.0, 0.0
         smooth = 0.0
-        if len(states_arr) >= 3:
+        if len(states) >= 3:
             vel = np.diff(positions, axis=0)
             acc = np.diff(vel, axis=0)
             n_acc = max(1, acc.shape[0])
@@ -1431,6 +1584,8 @@ class ExperimentRunner:
         env_plugin: Any = None,
         planning_result: Optional[Dict[str, Any]] = None,
         planning_time: float = 0.0,
+        x0: Any = None,
+        seed: int = 0,
     ) -> Dict[str, Any]:
         """
         Compute all requested metrics.
@@ -1534,6 +1689,10 @@ class ExperimentRunner:
                     env_name=getattr(self.config, "env_name", None),
                     planning_result=planning_result,
                     planning_time=float(planning_time),
+                    x0=x0,
+                    seed=int(seed),
+                    execution_env=env,
+                    infos=(planning_result or {}).get('infos', []),
                 )
                 val = convert_to_json_serializable(metric_value)
                 if metric_name == 'ssr' and isinstance(val, dict):
@@ -2679,9 +2838,38 @@ class ExperimentRunner:
                 'violation_rate_std': float(m.get('violation_rate_std', 0.0)),
             }
         serializable_result['metrics'] = metrics_to_save
+        serializable_result['suite'] = (
+            result.get('config_snapshot', {}).get('metadata', {}).get(
+                'suite', result['level']
+            )
+        )
+        serializable_result['config_snapshot'] = result.get('config_snapshot')
+        protocol = getattr(self, '_protocol_manifest', {})
+        serializable_result['provenance'] = {
+            key: protocol.get(key)
+            for key in ('git_sha', 'git_dirty', 'checkpoints', 'package_versions')
+        }
         
         # Add planning result data if available (omit large arrays exec_states/exec_actions from results.json)
         if isinstance(planning_result, dict):
+            if "component_contract" in planning_result:
+                serializable_result["component_contract"] = (
+                    convert_to_json_serializable(
+                        planning_result["component_contract"]
+                    )
+                )
+            if planning_result.get("infos"):
+                from genedynamics.experiments.utils.metrics import (
+                    aggregate_receding_diagnostics,
+                )
+                diagnostics = aggregate_receding_diagnostics(
+                    planning_result["infos"],
+                    task=result.get("config_snapshot", {}).get("env_name"),
+                )
+                if diagnostics:
+                    serializable_result["diagnostics"] = (
+                        convert_to_json_serializable(diagnostics)
+                    )
             if "success" in planning_result:
                 serializable_result["success"] = convert_to_json_serializable(planning_result["success"])
             if "collision" in planning_result:
@@ -2693,6 +2881,25 @@ class ExperimentRunner:
                     serializable_result["avg_planning_time_per_step"] = float(np.mean(pts)) if pts else 0.0
                 except Exception:
                     pass
+
+            direct = planning_result.get("trajectory")
+            if isinstance(direct, Trajectory):
+                trajectory_dir = output_path / "trajectory"
+                trajectory_dir.mkdir(parents=True, exist_ok=True)
+                executed = {
+                    "schema_version": 1,
+                    "state_layout": "brax_state_compact",
+                    "states": [_compact_contact_state(s) for s in direct.states],
+                    "actions": convert_to_json_serializable(direct.actions),
+                    "infos": convert_to_json_serializable(
+                        planning_result.get("infos", [])
+                    ),
+                    "costs": convert_to_json_serializable(
+                        planning_result.get("costs", [])
+                    ),
+                }
+                with open(trajectory_dir / "trajectory.json", "w") as f:
+                    json.dump(executed, f, indent=2, allow_nan=False)
         
         # Save multi-mode trajectories to trajectory.json (not in results.json)
         if 'candidate_states' in planning_result:
@@ -2794,7 +3001,8 @@ class ExperimentRunner:
         
         # Save JSON
         with open(output_path / "results.json", 'w') as f:
-            json.dump(serializable_result, f, indent=2)
+            json.dump(convert_to_json_serializable(serializable_result), f,
+                      indent=2, allow_nan=False)
     
     def _save_summary(self, all_results: List[Dict[str, Any]]) -> None:
         """
@@ -2808,7 +3016,11 @@ class ExperimentRunner:
         
         # Compute level summaries
         level_summaries = {}
-        for level in self.config.obstacle_levels:
+        configured_levels = (
+            [str(suite["name"]) for suite in self.config.suites]
+            if self.config.suites else self.config.obstacle_levels
+        )
+        for level in configured_levels:
             level_results = [r for r in all_results if r['level'] == level]
             if level_results:
                 pt_list = [r['planning_time'] for r in level_results]
@@ -2819,6 +3031,13 @@ class ExperimentRunner:
                     'num_experiments': n_pt,
                     'avg_planning_time': float(np.mean(pt_list)),
                     'std_planning_time': float(np.std(pt_list)) if n_pt > 1 else 0.0,
+                }
+                summary['metrics'] = {
+                    metric_name: _aggregate_numeric_tree([
+                        (r.get('metrics') or {}).get(metric_name)
+                        for r in level_results
+                    ])
+                    for metric_name in self.config.metrics
                 }
                 
                 # Average metrics
@@ -2884,7 +3103,8 @@ class ExperimentRunner:
                 level_dir = self.config.output_dir / f"level_{level}"
                 level_dir.mkdir(parents=True, exist_ok=True)
                 with open(level_dir / "summary.json", 'w') as f:
-                    json.dump(summary, f, indent=2)
+                    json.dump(convert_to_json_serializable(summary), f,
+                              indent=2, allow_nan=False)
         
         # Overall summary (include best: average of best-mode metrics across all results)
         best_list_all = [
@@ -2898,6 +3118,13 @@ class ExperimentRunner:
             'avg_planning_time': float(np.mean(pt_all)),
             'std_planning_time': float(np.std(pt_all)) if n_all > 1 else 0.0,
             'level_summaries': level_summaries,
+            'metrics': {
+                metric_name: _aggregate_numeric_tree([
+                    (r.get('metrics') or {}).get(metric_name)
+                    for r in all_results
+                ])
+                for metric_name in self.config.metrics
+            },
         }
         if best_list_all:
             n_b_all = len(best_list_all)
@@ -2918,4 +3145,5 @@ class ExperimentRunner:
         
         # Save overall summary
         with open(self.config.output_dir / "overall_summary.json", 'w') as f:
-            json.dump(overall_summary, f, indent=2)
+            json.dump(convert_to_json_serializable(overall_summary), f,
+                      indent=2, allow_nan=False)

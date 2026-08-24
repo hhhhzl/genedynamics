@@ -7,6 +7,7 @@ from .box3d import Box3DObstacleGeneratorPlugin
 from .d3il_avoiding_fixed import D3ILAvoidingFixedGeneratorPlugin
 from .stepping_stones_2d import SteppingStones2DObstacleGeneratorPlugin
 from .corridor_2d import Corridor2DObstacleGeneratorPlugin
+from .empty import EmptyObstacleGeneratorPlugin
 
 __all__ = [
     'Box2DObstacleGeneratorPlugin',
@@ -14,5 +15,5 @@ __all__ = [
     'D3ILAvoidingFixedGeneratorPlugin',
     'SteppingStones2DObstacleGeneratorPlugin',
     'Corridor2DObstacleGeneratorPlugin',
+    'EmptyObstacleGeneratorPlugin',
 ]
-

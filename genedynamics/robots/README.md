@@ -2,6 +2,16 @@
 
 Unified registry for quadruped, humanoid, and other robot models with multi-backend support.
 
+Contact tasks use ``RobotProfile`` plus a construction-time ``RobotBinding``.
+Profiles contain robot-only MJCF paths, semantic frames/contactors, joint groups,
+controller defaults, and capabilities.  Task MJCF is composed before MJX is
+compiled, so a task never hard-codes joint offsets or link names.
+
+Built-in composition checks currently cover:
+
+- ``surface_scan`` with ``panda`` and ``xarm7`` using the same 10-D primitive;
+- ``box_push`` with ``h1`` and ``g1`` using the same 12-D contact primitive.
+
 ## Adding a Quadruped
 
 ```python
@@ -54,6 +64,8 @@ Run: `genedynamics-deploy --robot humanoid --model h1`
 
 | robot_type | model_id | env_factory | dependency |
 |------------|----------|-------------|------------|
+| manipulator | panda   | manipulator_surface_scan | vendored MJCF |
+| manipulator | xarm7   | manipulator_surface_scan | vendored MuJoCo Menagerie MJCF |
 | quadruped  | ant, flat, rough, push | quadruped_*_physics | gymnasium |
 | quadruped  | go2      | quadruped_go2_physics | mujoco_menagerie |
 | humanoid   | humanoid | humanoid_simplified_physics | gymnasium |

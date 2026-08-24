@@ -1,7 +1,7 @@
 """Arm + humanoid signal extractors -> general metrics, on real brax (docker).
 
-Each extractor rolls its brax env over executed actions to recover per-step
-signals (EE pose / box x / contact residual / com / stiffness), then the SHARED
+Each extractor consumes the structured Brax states collected during execution
+(EE pose / box x / contact residual / com / stiffness), then the SHARED
 general metrics are computed via GeneralMetricsPlugin. Validates that both MDAC
 tasks report general metrics through tiny task-specific extractors.
 
@@ -24,13 +24,14 @@ from genedynamics.experiments.plugins.metrics.extractors import (
 
 
 class _Traj:
-    def __init__(self, actions):
-        self.states = []
+    def __init__(self, states, actions):
+        self.states = states
         self.actions = actions
 
 
 def _exec(env, x0, n=6, scale=0.2, key=0):
     """Execute n small random actions, returning the executed action list."""
+    states = [x0]
     acts = []
     s = x0
     rng = jax.random.PRNGKey(key)
@@ -38,13 +39,15 @@ def _exec(env, x0, n=6, scale=0.2, key=0):
         rng, k = jax.random.split(rng)
         u = scale * jax.random.normal(k, (env.action_size,))
         s = env.step(s, u)
+        states.append(s)
         acts.append(np.asarray(u))
-    return acts
+    return states, acts
 
 
 def _check(name, plugin, env, expect_keys):
     x0 = env.reset(jax.random.PRNGKey(1))
-    traj = _Traj(_exec(env, x0))
+    states, actions = _exec(env, x0)
+    traj = _Traj(states, actions)
     out = plugin.compute(traj, env, None, None, x0=x0, planning_time=0.123)
     have = set(out)
     missing = [k for k in expect_keys if k not in have]

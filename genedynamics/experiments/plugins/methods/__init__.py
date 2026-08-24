@@ -13,6 +13,16 @@ from .cfsmbd import CFSMBDMethodPlugin
 from .cfsmbd_full import CFSMBDFullMethodPlugin
 from .mppi import MPPIMethodPlugin
 from .twogo import TwoGOMethodPlugin
+from .contact_receding import (
+    ATACOMContactMethodPlugin,
+    DIALContactMethodPlugin,
+    FullMDACMethodPlugin,
+    ISSAContactMethodPlugin,
+    ModelBasedOnlyMethodPlugin,
+    MPPIContactMethodPlugin,
+    PegasusFlowContactMethodPlugin,
+    StandaloneRLMethodPlugin,
+)
 try:
     from .dpcc import DPCCMethodPlugin
 except Exception as e:
@@ -36,4 +46,12 @@ __all__ = [
     'TwoGOMethodPlugin',
     'DPCCMethodPlugin',
     'SafeDiffuserMethodPlugin',
+    'FullMDACMethodPlugin',
+    'ModelBasedOnlyMethodPlugin',
+    'DIALContactMethodPlugin',
+    'MPPIContactMethodPlugin',
+    'PegasusFlowContactMethodPlugin',
+    'ISSAContactMethodPlugin',
+    'ATACOMContactMethodPlugin',
+    'StandaloneRLMethodPlugin',
 ]

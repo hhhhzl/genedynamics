@@ -21,7 +21,10 @@ from typing import Any
 import numpy as np
 
 from genedynamics.learning.reliability import (
+    FEATURE_NAMES,
     LinearReliabilityModel,
+    PEG_INSERT_FEATURE_NAMES,
+    PEG_INSERT_RISK_NAMES,
     RISK_NAMES,
     samples_from_records,
 )
@@ -48,30 +51,50 @@ def _report(model, x, y) -> dict[str, Any]:
     in_support = support_score <= 1.0
     conditional_coverage = (
         np.mean(y[in_support] <= upper[in_support] + 1.0e-7, axis=0)
-        if np.any(in_support) else np.full(len(RISK_NAMES), np.nan)
+        if np.any(in_support) else np.full(len(model.risk_names), np.nan)
     )
-    return {
+    report = {
         "rows": int(len(x)),
         "mae": {
             name: float(value)
-            for name, value in zip(RISK_NAMES, np.mean(np.abs(prediction - y), axis=0))
+            for name, value in zip(model.risk_names, np.mean(np.abs(prediction - y), axis=0))
         },
         "upper_coverage": {
             name: float(value)
-            for name, value in zip(RISK_NAMES, np.mean(y <= upper + 1.0e-7, axis=0))
+            for name, value in zip(model.risk_names, np.mean(y <= upper + 1.0e-7, axis=0))
         },
         "in_support_upper_coverage": {
             name: float(value)
-            for name, value in zip(RISK_NAMES, conditional_coverage)
+            for name, value in zip(model.risk_names, conditional_coverage)
         },
         "mean_upper": {
             name: float(value)
-            for name, value in zip(RISK_NAMES, np.mean(upper, axis=0))
+            for name, value in zip(model.risk_names, np.mean(upper, axis=0))
         },
         "in_support_rate": float(np.mean(in_support)),
         "support_score_p95": float(np.quantile(support_score, 0.95)),
         "support_score_max": float(np.max(support_score)),
     }
+    if model.classification_probabilities:
+        count = int(model.probability_risk_count)
+        report["probability_brier"] = {
+            name: float(value)
+            for name, value in zip(
+                model.risk_names[:count],
+                np.mean((prediction[:, :count] - y[:, :count]) ** 2, axis=0),
+            )
+        }
+        # Per-outcome coverage is not a meaningful calibration target for a
+        # Bernoulli probability.  Keep the legacy field for compatibility but
+        # label its scope explicitly in new reports.
+        report["upper_coverage_semantics"] = {
+            name: (
+                "event_probability" if index < count
+                else "one_sided_conformal_outcome"
+            )
+            for index, name in enumerate(model.risk_names)
+        }
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -109,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
 
     train_x, train_y, train_provenance = samples_from_records(train_records)
     cal_x, cal_y, cal_provenance = samples_from_records(calibration_records)
+    peg_insert = train_x.shape[1] == len(PEG_INSERT_FEATURE_NAMES)
     model = LinearReliabilityModel.fit(
         train_x,
         train_y,
@@ -116,6 +140,16 @@ def main(argv: list[str] | None = None) -> int:
         cal_y,
         ridge=args.ridge,
         quantile=args.quantile,
+        feature_names=(PEG_INSERT_FEATURE_NAMES if peg_insert else FEATURE_NAMES),
+        risk_names=(PEG_INSERT_RISK_NAMES if peg_insert else RISK_NAMES),
+        state_feature_count=(32 if peg_insert else 6),
+        support_state_feature_count=(12 if peg_insert else 6),
+        probability_risk_count=(3 if peg_insert else 2),
+        classification_probabilities=peg_insert,
+        # The phase-residual basis remains available for controlled ablations,
+        # but held-out PegInsert rollouts rejected it as the canonical gate.
+        # Keep the production trainer on the validated shared linear basis.
+        basis_mode="linear",
     )
     metadata = {
         "training_records": len(train_records),
@@ -124,9 +158,19 @@ def main(argv: list[str] | None = None) -> int:
         "calibration_rows": len(cal_x),
         "training_suites": dict(Counter(x["suite"] for x in train_provenance)),
         "calibration_suites": dict(Counter(x["suite"] for x in cal_provenance)),
-        "calibration_seeds": sorted(calibration_seeds),
+        # Explicit calibration files may contain seeds that do not appear in
+        # ``--calibration-seeds``.  Record the samples actually used so the
+        # paper split is auditable instead of reporting only the CLI selector.
+        "calibration_seeds": sorted({
+            int(x["seed"]) for x in cal_provenance
+        }),
         "deployment_family_calibration_files": list(args.calibration_metrics),
         "ridge": args.ridge,
+        "basis_mode": model.basis_mode,
+        "task": (
+            "manipulator_peg_insert" if peg_insert
+            else "manipulator_surface_scan"
+        ),
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)

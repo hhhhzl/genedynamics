@@ -363,6 +363,12 @@
     <geom name="floor" size="0 0 0.01" type="plane" rgba="0.32 0.42 0.52 1"/>
     <site name="goal_line" pos="0.77 0 0.02" size="0.02 1.0 0.02" type="box" rgba="0.1 0.9 0.2 0.4"/>
 
+    <!-- P3-only corridor.  Non-unjam levels park and hide these geoms in the env. -->
+    <geom name="unjam_wall_left" type="box" pos="1.20 0.64 0.60"
+      size="0.60 0.05 0.60" contype="0" conaffinity="0" rgba="0.35 0.38 0.45 0.75"/>
+    <geom name="unjam_wall_right" type="box" pos="1.20 -0.64 0.60"
+      size="0.60 0.05 0.60" contype="0" conaffinity="0" rgba="0.35 0.38 0.45 0.75"/>
+
     <!-- RIGID crate, planar 3-DoF (x-slide + y-slide + yaw-hinge); size/z re-set by the env from
          box_half. Held at fixed z by the planar joint (no floor contact needed); the HANDS push it. -->
     <body name="box_body" pos="0 0 0.5">
@@ -444,6 +450,10 @@
          hand slam in -> huge force spike -> the box launches and the sim NaNs. Softer = stable push. -->
     <pair name="box_lhand" geom1="static_box" geom2="left_hand_collision" condim="3" friction="0.6 0.6" solref="0.03 1" solimp="0.8 0.9 0.01"/>
     <pair name="box_rhand" geom1="static_box" geom2="right_hand_collision" condim="3" friction="0.6 0.6" solref="0.03 1" solimp="0.8 0.9 0.01"/>
+    <pair name="box_wall_left" geom1="static_box" geom2="unjam_wall_left" condim="3"
+      friction="0.6 0.6" solref="0.10 1" solimp="0.8 0.9 0.01"/>
+    <pair name="box_wall_right" geom1="static_box" geom2="unjam_wall_right" condim="3"
+      friction="0.6 0.6" solref="0.10 1" solimp="0.8 0.9 0.01"/>
   </contact>
 
   <keyframe>

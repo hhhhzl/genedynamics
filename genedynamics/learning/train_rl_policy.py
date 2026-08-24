@@ -106,10 +106,15 @@ def scalar_metrics(metrics: Any) -> Dict[str, float]:
 def save_policy(path: str, params: Any, config: Dict[str, Any]) -> str:
     """Pickle (params, config) to ``path`` (params are jax pytrees of host arrays)."""
     import jax
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    absolute = os.path.abspath(path)
+    os.makedirs(os.path.dirname(absolute), exist_ok=True)
     host_params = jax.device_get(params)               # pull off-device for portable pickling
-    with open(path, "wb") as f:
+    temporary = absolute + ".tmp"
+    with open(temporary, "wb") as f:
         pickle.dump({"params": host_params, "config": config}, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temporary, absolute)
     return path
 
 

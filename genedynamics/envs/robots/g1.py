@@ -7,7 +7,7 @@ returns the requested quantity. Internally a private ``mujoco.MjData`` scratch
 is reused to avoid per-call allocation.
 
 The actuated joint vector follows :data:`G1_ACTUATED_JOINTS` (legs → waist →
-arms, 23 entries). For floating-base operations the base pose is supplied
+arms, 29 entries). For floating-base operations the base pose is supplied
 explicitly via the ``base_pos`` and ``base_quat`` keyword arguments; if
 omitted the base is pinned at the origin in identity orientation, which is
 the convention used by the leg-IK helper.

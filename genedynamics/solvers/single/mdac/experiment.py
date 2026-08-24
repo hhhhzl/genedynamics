@@ -48,6 +48,7 @@ from genedynamics.solvers.single.mdac.core.method_registry import resolve_method
 
 ARM_TASK = "manipulator_surface_scan"
 HUMANOID_TASK = "humanoid_box_push"
+INSERT_TASK = "manipulator_peg_insert"
 
 
 def stiffness_mode_for(method: str, flags) -> str:
@@ -66,6 +67,8 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
               reliability_ckpt: Optional[str] = None,
               aug_lambda: float = 2.0, aug_rho: float = 200.0,
               backend: Any = None, env_overrides: Optional[dict] = None,
+              execution_env_overrides: Optional[dict] = None,
+              model_env: Any = None, execution_env: Any = None,
               **cfg: Any) -> Tuple[Any, MDACSolver]:
     """Build (env, MDACSolver) for ``method``, routing its flags to env + solver.
 
@@ -87,12 +90,21 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
         env_kw["dr_seed"] = surface_seed                   # H2 domain-randomization draw
         if level is not None:
             env_kw["level"] = level
+    elif task == INSERT_TASK:
+        env_kw["domain_seed"] = surface_seed
+        if level is not None:
+            env_kw["level"] = level
     if env_overrides:                                      # method owns chart/manifold composition
         env_kw.update({
             k: v for k, v in env_overrides.items()
             if k not in ("stiffness_mode", "clean_manifold_force")
         })
-    env = make_env(task, **env_kw)
+    env = model_env if model_env is not None else make_env(task, **env_kw)
+    if execution_env is None and execution_env_overrides:
+        execution_kw = dict(env_kw)
+        execution_kw.update(execution_env_overrides)
+        execution_kw.setdefault("domain_seed", surface_seed)
+        execution_env = make_env(task, **execution_kw)
     if prior is None and policy_ckpt is not None:
         from genedynamics.learning.train_rl_policy import (
             build_policy_prior,
@@ -159,13 +171,25 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
         )
     reliability_model = None
     if reliability_ckpt is not None:
-        if not hasattr(env, "reliability_features"):
+        if not (
+            hasattr(env, "reliability_features")
+            or hasattr(env, "reliability_features_sequence")
+        ):
             raise ValueError(
-                f"method '{method}' requires env.reliability_features"
+                f"method '{method}' requires a reliability feature hook"
             )
         from genedynamics.learning.reliability import LinearReliabilityModel
 
         reliability_model = LinearReliabilityModel.load(reliability_ckpt)
+        expected_features = getattr(env, "reliability_feature_size", None)
+        if (
+            expected_features is not None
+            and len(reliability_model.feature_names) != int(expected_features)
+        ):
+            raise ValueError(
+                "reliability checkpoint/environment feature mismatch: "
+                f"{len(reliability_model.feature_names)} != {expected_features}"
+            )
     residual_fn = None
     if flags.use_horizon_geometry:
         if flags.use_controllability_geometry:
@@ -208,7 +232,7 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
     # The clean path/force projection and retraction must remain active so an
     # unreliable/contact-loss state can recover.  Legacy scalar/component gate
     # methods without a controllability lift keep the backend blend below.
-    if flags.use_geometry_gate and not flags.use_controllability_geometry:
+    if flags.use_geometry_gate:
         if not hasattr(env, "geometry_reliability"):
             raise ValueError(f"method '{method}' requires env.geometry_reliability")
         import jax.numpy as jnp
@@ -229,6 +253,16 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
                 state, spline.node2u(nodes)
             )
 
+    # The rollout model owns optimization geometry, while executable-set and
+    # emergency contracts must interpret the measured state in the execution
+    # task's physical frame when a hidden/OOD execution environment is present.
+    task_contract_env = execution_env or env
+    candidate_projection_fn = (
+        getattr(task_contract_env, "project_mdac_candidate", None)
+        if flags.use_geometry_gate
+        else None
+    )
+
     # CFS retraction is independent of tangent shaping so each mechanism has a
     # genuine single-factor ablation.
     retraction = None
@@ -240,15 +274,18 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
     risk_fn = getattr(env, "sequence_risk", None)
     solver = MDACSolver(
         env, None, backend, method=method,
+        step_fn=(execution_env.step if execution_env is not None else None),
         geometry_fn=geometry_fn, retraction=retraction,
         geometry_gate_fn=geometry_gate_fn,
         prepare_state_fn=prepare_state_fn,
+        candidate_projection_fn=candidate_projection_fn,
         prior=(prior if flags.use_rl_prior else None),
         atacom_prior=(atacom_prior if flags.use_rl_prior else None),
         risk_fn=risk_fn,
         reliability_model=reliability_model,
         aug_lambda=aug_lambda, aug_rho=aug_rho, **cfg,
     )
+    solver.execution_env = execution_env
     return env, solver
 
 
@@ -266,12 +303,16 @@ def _build_env(task, method, level, surface_seed, use_base, env_overrides):
         env_kw["dr_seed"] = surface_seed
         if level is not None:
             env_kw["level"] = level
+    elif task == INSERT_TASK:
+        env_kw["domain_seed"] = surface_seed
+        if level is not None:
+            env_kw["level"] = level
     if env_overrides:
         env_kw.update({k: v for k, v in env_overrides.items() if k != "stiffness_mode"})
     return make_env(task, **env_kw)
 
 
-def _build_baseline_solver(method, env, backend, **cfg):
+def _build_baseline_solver(method, env, backend, *, execution_env=None, **cfg):
     """Construct the NON-MDAC baseline solver (its OWN registered solver: mppi/pegasusflow/
     atacom/issa) on the brax env. Each exposes ``run_receding(x0, n_steps, rng)`` natively."""
     Hsample = int(cfg.get("Hsample", 16))
@@ -286,7 +327,8 @@ def _build_baseline_solver(method, env, backend, **cfg):
         return MPPISolver(env, None, backend, Hsample=Hsample, Hnode=Hnode, Nsample=Nsample,
                           Ndiffuse=Ndiffuse, Ndiffuse_init=Ndiffuse_init,
                           noise_sigma=float(cfg.get("noise_sigma", 0.3)),
-                          lambda_=float(cfg.get("lambda_", 1.0)), action_limit=action_limit, seed=seed)
+                          lambda_=float(cfg.get("lambda_", 1.0)), action_limit=action_limit,
+                          step_fn=(execution_env.step if execution_env is not None else None), seed=seed)
     if method == "pegasusflow":
         from genedynamics.solvers.single.pegasusflow.pegasusflow import PegasusFlowSolver
         return PegasusFlowSolver(env, Hsample=Hsample, Hnode=Hnode, Nsample=Nsample,
@@ -362,7 +404,8 @@ def _build_baseline_solver(method, env, backend, **cfg):
 def make_controller(task, method="mdac", *, level=None, surface_seed=0, use_base=False,
                     prior=None, policy_ckpt=None, atacom_policy_ckpt=None,
                     aug_lambda=2.0, aug_rho=200.0, backend=None,
-                    env_overrides=None, **cfg):
+                    env_overrides=None, execution_env_overrides=None,
+                    model_env=None, execution_env=None, **cfg):
     """Build ``(env, runner)`` for ANY method on the SAME brax env at the SAME budget:
     an MDAC variant (``MDACSolver`` via ``make_mdac``), a sampling baseline (``mppi`` /
     ``pegasusflow``), or an RL baseline (raw ``rl`` / ``atacom`` / ``issa``). All expose
@@ -372,22 +415,39 @@ def make_controller(task, method="mdac", *, level=None, surface_seed=0, use_base
                          prior=prior, policy_ckpt=policy_ckpt,
                          atacom_policy_ckpt=atacom_policy_ckpt,
                          aug_lambda=aug_lambda, aug_rho=aug_rho, backend=backend,
-                         env_overrides=env_overrides, **cfg)
-    env = _build_env(task, method, level, surface_seed, use_base, env_overrides)
-    backend = backend or get_backend("jax")
-    return env, _build_baseline_solver(
-        method, env, backend, policy_ckpt=policy_ckpt, **cfg
+                         env_overrides=env_overrides,
+                         execution_env_overrides=execution_env_overrides,
+                         model_env=model_env, execution_env=execution_env, **cfg)
+    env = model_env if model_env is not None else _build_env(
+        task, method, level, surface_seed, use_base, env_overrides
     )
+    if execution_env is None and execution_env_overrides:
+        execution_params = dict(env_overrides or {})
+        execution_params.update(execution_env_overrides)
+        execution_env = _build_env(
+            task, method, level, surface_seed, use_base, execution_params
+        )
+    backend = backend or get_backend("jax")
+    solver = _build_baseline_solver(
+        method, env, backend, execution_env=execution_env,
+        policy_ckpt=policy_ckpt, **cfg
+    )
+    solver.execution_env = execution_env
+    return env, solver
 
 
 def metrics_plugin_for(task: str):
     """The general metrics plugin for a task (shared library + task extractor)."""
     from genedynamics.experiments.plugins.metrics.extractors import (
         arm_surface_scan_metrics_plugin, humanoid_box_push_metrics_plugin,
+        peg_insert_metrics_plugin,
     )
-    return (arm_surface_scan_metrics_plugin() if task == ARM_TASK
-            else humanoid_box_push_metrics_plugin())
+    if task == ARM_TASK:
+        return arm_surface_scan_metrics_plugin()
+    if task == INSERT_TASK:
+        return peg_insert_metrics_plugin()
+    return humanoid_box_push_metrics_plugin()
 
 
-__all__ = ["ARM_TASK", "HUMANOID_TASK", "stiffness_mode_for", "make_mdac",
+__all__ = ["ARM_TASK", "HUMANOID_TASK", "INSERT_TASK", "stiffness_mode_for", "make_mdac",
            "make_controller", "metrics_plugin_for"]

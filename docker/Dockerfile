@@ -5,7 +5,9 @@ ARG CUDA_VERSION=12.6.3
 ARG UBUNTU_VERSION=22.04
 
 
-FROM python:${PYTHON_VERSION}-slim-bookworm AS base-cpu
+# Keep the interpreter line fixed while following the supported official slim
+# variant.  This also lets a clean arm64 Docker Desktop rebuild the CPU image.
+FROM python:${PYTHON_VERSION}-slim AS base-cpu
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -38,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 
-COPY setup.py README.md requirements.txt requirements-softzoo.txt /workspace/
+COPY setup.py README.md requirements.txt /workspace/
 COPY genedynamics /workspace/genedynamics
 COPY configs /workspace/configs
 COPY scripts /workspace/scripts
@@ -117,7 +119,7 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 10 && 
 
 WORKDIR /workspace
 
-COPY setup.py README.md requirements.txt requirements-softzoo.txt /workspace/
+COPY setup.py README.md requirements.txt /workspace/
 COPY genedynamics /workspace/genedynamics
 COPY configs /workspace/configs
 COPY scripts /workspace/scripts

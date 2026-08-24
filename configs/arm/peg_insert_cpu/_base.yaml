@@ -1,0 +1,150 @@
+# Canonical CPU PegInsert comparison.  One YAML per algorithm inherits this
+# shared task/budget definition; physics probes remain tests, not configurations.
+task: manipulator_peg_insert
+n_steps: 64
+
+env_params:
+  observation_mode: contact
+  dt: 0.02
+  timestep: 0.002
+  friction: 0.6
+  clearance: 0.0015
+  # The canonical comparison evaluates contact control, not a long free-space
+  # transit.  Four millimetres still preserves the free-space -> impact mode
+  # switch while leaving enough of the 1.28 s episode for insertion and the
+  # three-step success hold.
+  approach_gap: 0.004
+  f_target: 10.0
+  f_min: 0.0
+  f_max: 30.0
+  lateral_force_limit: 20.0
+  bending_torque_limit: 1.5
+  torsional_torque_limit: 1.0
+  # Nominal rollout tightening for contact-model/realization overshoot. Paper
+  # metrics below still use the physical limits above, not this inner margin.
+  soft_safety_margin: 0.8
+  # Hard revalidation uses the same robust inner set as soft feasibility.  The
+  # reported paper metrics still use the physical limits above, so this is a
+  # model-mismatch buffer rather than a relaxed safety threshold.
+  risk_safety_margin: 0.8
+  realization_probe_horizon: 3
+  realization_probe_eps: 0.04
+
+method_params:
+  Hsample: 8
+  Hnode: 4
+  Nsample: 64
+  Ndiffuse_init: 4
+  Ndiffuse: 2
+  temp_sample: 0.06
+  action_limit: 1.0
+  dt: 0.02
+  ctrl_dt: 0.02
+  seed: 0
+  aug_lambda: 2.0
+  aug_rho: 80.0
+
+evaluation:
+  # Development uses seeds 0--3 through MDAC_SEEDS.  These held-out seeds are
+  # touched only after P0--P4 and the development gate have passed.
+  seeds: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+  n_steps: 64
+  environments:
+    - name: id_wide
+      level: wide
+    - name: ood_pose
+      level: wide
+      execution_env_params:
+        level: ood
+        ood_clearance_range: [0.0015, 0.0015]
+        ood_friction_range: [0.6, 0.6]
+        ood_position_range: 0.0010
+        ood_angle_range: 0.0122173
+        ood_solref_time_range: [0.03, 0.03]
+    - name: ood_sensing
+      level: wide
+      execution_env_params:
+        # Isolate high-level contact-mode sensing mismatch from contact-
+        # geometry and low-level axial-force authority.  Axial force bias is a
+        # force-loop calibration stress (it changes the realized insertion
+        # force), while transverse force/torque bias directly probes the
+        # learned reliability and jam/contact-mode inference used by MDAC.
+        # One-step action/sensor delays remain a separate P3 stress test:
+        # combining both delays causes a terminal alignment oscillation and
+        # should not be relabelled as successful insertion.
+        # Tighter clearance/friction/contact-compliance combinations remain a
+        # separate stress/limitation suite because the canonical 10 N plant can
+        # stay safe there without being able to traverse the bore in 1.28 s.
+        level: wide
+        force_sensor_bias: [0.5, -0.5, 0.0]
+        torque_sensor_bias: [0.02, -0.02, 0.01]
+
+metrics: [peg_insert]
+backend: jax
+
+# One PegInsert policy distribution is shared by standalone RL, ISSA and the
+# MDAC proposal prior.  ATACOM is trained separately in its 6D tangent action
+# space on exactly the same task domains.
+rl:
+  algo: ppo
+  num_timesteps: 200000
+  episode_length: 50
+  # CPU protocol: reset-key randomization still covers all four domains while
+  # avoiding a 16-env contact-gradient executable that exceeds Mac memory.
+  num_envs: 4
+  seed: 0
+  expected_action_size: 13
+  expected_observation_mode: contact
+  select_best_eval: true
+  select_best_eval_metric: eval/episode_reward
+  # Residual around a compliant downward/axial insertion primitive.  This bias
+  # is part of the trained policy contract and is reconstructed at deployment.
+  action_bias: [0.0, 0.0, 0.65, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.2]
+  # PPO learns contact recovery near the executable primitive; wide residual
+  # exploration was observed to destroy insertion and increase violations.
+  action_scale: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.2]
+  training_env_params:
+    # The policy must settle inside the same lateral/orientation tolerances
+    # used by the task success contract; depth alone is not insertion.
+    w_lateral: 4.0
+    w_orientation: 4.0
+    # Keep the learned proposal away from the physical boundary so it remains
+    # useful to MDAC under realization/model mismatch.
+    w_safety: 50.0
+    w_jam: 8.0
+    w_force: 0.5
+  checkpoint: results/arm/peg_insert_cpu/_policies/shared_ppo_seed{seed}.pkl
+  atacom_checkpoint: results/arm/peg_insert_cpu/_policies/shared_atacom_ppo_seed{seed}.pkl
+  train_kwargs:
+    learning_rate: 0.0001
+    batch_size: 8
+    num_minibatches: 2
+    num_updates_per_batch: 1
+    reward_scaling: 0.05
+    max_grad_norm: 1.0
+    # At 200k this gives 2k boundaries; each improved eval and Brax network
+    # checkpoint is saved before the next contact-gradient block.
+    num_evals: 101
+    num_eval_envs: 1
+    deterministic_eval: true
+  domain_templates:
+    - {level: wide, domain_seed: 100}
+    - {level: tight, domain_seed: 101}
+    - level: ood
+      domain_seed: 102
+      ood_clearance_range: [0.0008, 0.0012]
+      ood_friction_range: [0.4, 0.7]
+      ood_position_range: 0.0015
+      ood_angle_range: 0.02618
+    - level: ood
+      domain_seed: 103
+      ood_clearance_range: [0.0008, 0.0012]
+      ood_friction_range: [0.4, 0.7]
+      ood_position_range: 0.0015
+      ood_angle_range: 0.02618
+  domain_randomization:
+    seed: 20260811
+    num_domains: 4
+    domain_seed_start: 100
+  held_out:
+    evaluation_seeds: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]

@@ -13,9 +13,9 @@ use. Compare ``corridor_signals`` (a ~10-line replacement for the monolithic
 ``CorridorMetricsPlugin.compute`` whose metric math is now shared).
 
 Flat-state tasks (corridor / stepping) extract directly from the trajectory and
-are pure-numpy. brax tasks (surface-scan / box-push) roll the env over the
-executed actions to recover per-step signals lost in a flattened trajectory
-(surface coords, contact residuals, com) — that rolling is brax/mjx (docker).
+are pure-numpy. Brax contact tasks consume the actual structured states collected
+by ``run_receding``. Replay is retained only as a backward-compatible fallback
+for legacy trajectories that contain actions but no structured states.
 """
 
 from __future__ import annotations
@@ -90,6 +90,25 @@ def _x0(env, kw):
     return env.reset(jax.random.PRNGKey(int(kw.get("seed", 0))))
 
 
+def _contact_step_signals(trajectory, env, actions, per_step, kw):
+    """Stack signals from executed states, falling back only for legacy data."""
+    import jax.numpy as jnp
+
+    actual_states = list(getattr(trajectory, "states", ()))
+    if (
+        len(actual_states) == len(actions) + 1
+        and actions.shape[0] > 0
+        and hasattr(actual_states[0], "pipeline_state")
+    ):
+        rows = [per_step(env, state, action)
+                for state, action in zip(actual_states[1:], actions)]
+        return {
+            key: np.asarray(jnp.stack([row[key] for row in rows]), np.float64)
+            for key in rows[0]
+        }
+    return _roll_brax(env, _x0(env, kw), actions, per_step)
+
+
 def arm_surface_scan_signals(trajectory, env, obstacles, constraints, **kw) -> Dict[str, Any]:
     """Surface-scan: roll the arm to collect EE pose, the surface/normal tracking
     residual ``h``, the commanded normal force, and the stiffness chart."""
@@ -160,7 +179,7 @@ def arm_surface_scan_signals(trajectory, env, obstacles, constraints, **kw) -> D
                 "gravity_normal": gravity_normal[None],
                 "effective_press": effective_press[None]}
 
-    d = _roll_brax(env, _x0(env, kw), actions, per_step)
+    d = _contact_step_signals(trajectory, env, actions, per_step, kw)
     cfg = env._config
     f_target = float(getattr(cfg, "f_target", 0.0))
     h = np.asarray(d["h"])                                 # (T, 6) = [h_surf(3); h_normal(3)]
@@ -291,6 +310,164 @@ def arm_surface_scan_metrics_plugin(name: str = "arm_surface_scan_metrics"):
     return GeneralMetricsPlugin([*ARM_METRICS], extractor=arm_surface_scan_signals, name=name)
 
 
+def peg_insert_signals(trajectory, env, obstacles, constraints, **kw) -> Dict[str, Any]:
+    """Insertion wrench, progress, contact-mode, jam, and recovery signals."""
+    import jax
+    import jax.numpy as jnp
+
+    actions = jnp.asarray(
+        [np.ravel(np.asarray(a, np.float32)) for a in trajectory.actions]
+    )
+
+    def per_step(e, s, u):
+        pose, angle_vec = e._actual_pose(s.pipeline_state)
+        comp = e.wrench_components(s.info["true_wrench"])
+        measured_comp = e.wrench_components(s.info["measured_wrench"])
+        delta_wrench = s.info["wrench_queue"][0] - s.info["wrench_queue"][1]
+        reliability = e.geometry_reliability(s)
+        force_violation = (
+            (comp["lateral_force"] > e._config.lateral_force_limit)
+            | (comp["axial_force"] > e._config.f_max)
+        ).astype(jnp.float32)
+        torque_violation = (
+            (comp["bending_torque"] > e._config.bending_torque_limit)
+            | (comp["torsional_torque"] > e._config.torsional_torque_limit)
+        ).astype(jnp.float32)
+        safety_cost = (
+            jax.nn.relu(
+                comp["lateral_force"] / e._config.lateral_force_limit - 1.0
+            ) ** 2
+            + jax.nn.relu(comp["axial_force"] / e._config.f_max - 1.0) ** 2
+            + jax.nn.relu(
+                comp["bending_torque"] / e._config.bending_torque_limit - 1.0
+            ) ** 2
+            + jax.nn.relu(
+                comp["torsional_torque"] / e._config.torsional_torque_limit - 1.0
+            ) ** 2
+        )
+        return {
+            "pose": pose,
+            "angle_vec": angle_vec,
+            "insertion_depth": s.info["prev_depth"][None],
+            "lateral_error": jnp.linalg.norm(pose[:2])[None],
+            "angle_error": jnp.linalg.norm(angle_vec)[None],
+            "lateral_force": comp["lateral_force"][None],
+            "axial_force": comp["axial_force"][None],
+            "bending_torque": comp["bending_torque"][None],
+            "torsional_torque": comp["torsional_torque"][None],
+            "force_violation": force_violation[None],
+            "torque_violation": torque_violation[None],
+            "safety_cost": safety_cost[None],
+            "jammed": s.info["jammed"][None],
+            "jammed_once": s.info["jammed_once"][None],
+            "recovered": s.info["recovered"][None],
+            "success": s.info["success"][None],
+            "contact_mode": s.info["contact_mode"][None],
+            "contact": (s.info["contact_count"] > 0).astype(jnp.float32)[None],
+            "penetration": s.info["penetration"][None],
+            "measured_lateral_force": measured_comp["lateral_force"][None],
+            "measured_axial_force": measured_comp["axial_force"][None],
+            "measured_bending_torque": measured_comp["bending_torque"][None],
+            "measured_wrench_delta": jnp.linalg.norm(delta_wrench[:3])[None],
+            "contact_count": s.info["contact_count"][None],
+            "stall_steps": s.info["stall_steps"][None],
+            "gate_scalar": reliability["scalar"][None],
+            "gate_wrench": reliability["wrench"][None],
+            "gate_force": reliability["force"][None],
+            "stiffness": u[e.spec.s_slice],
+        }
+
+    d = _contact_step_signals(trajectory, env, actions, per_step, kw)
+
+    depth = d["insertion_depth"].reshape(-1)
+    safety = d["safety_cost"].reshape(-1)
+    max_depth = np.maximum.accumulate(depth) if depth.size else depth
+    backout = max_depth - depth
+    unsafe_seen = np.maximum.accumulate(np.maximum.reduce([
+        d["force_violation"].reshape(-1),
+        d["torque_violation"].reshape(-1),
+        d["jammed_once"].reshape(-1),
+    ]))
+    strict_safe_success = d["success"].reshape(-1) * (unsafe_seen <= 0.5)
+    return {
+        "controls": np.asarray(actions, np.float64),
+        "stiffness": d["stiffness"],
+        "pose": d["pose"],
+        "angle_vec": d["angle_vec"],
+        "insertion_depth": depth,
+        "lateral_error": d["lateral_error"].reshape(-1),
+        "angle_error": d["angle_error"].reshape(-1),
+        "lateral_force": d["lateral_force"].reshape(-1),
+        "axial_force": d["axial_force"].reshape(-1),
+        "bending_torque": d["bending_torque"].reshape(-1),
+        "torsional_torque": d["torsional_torque"].reshape(-1),
+        "force_violation": d["force_violation"].reshape(-1),
+        "torque_violation": d["torque_violation"].reshape(-1),
+        "force_torque_violation": np.maximum(
+            d["force_violation"].reshape(-1),
+            d["torque_violation"].reshape(-1),
+        ),
+        "safety_cost": safety,
+        "jammed": d["jammed"].reshape(-1),
+        "jammed_once": d["jammed_once"].reshape(-1),
+        "recovered": d["recovered"].reshape(-1),
+        "success": d["success"].reshape(-1),
+        "strict_safe_success": strict_safe_success,
+        "contact_mode": d["contact_mode"].reshape(-1),
+        "in_contact": d["contact"].reshape(-1),
+        "penetration": d["penetration"].reshape(-1),
+        "measured_lateral_force": d["measured_lateral_force"].reshape(-1),
+        "measured_axial_force": d["measured_axial_force"].reshape(-1),
+        "measured_bending_torque": d["measured_bending_torque"].reshape(-1),
+        "measured_wrench_delta": d["measured_wrench_delta"].reshape(-1),
+        "contact_count": d["contact_count"].reshape(-1),
+        "stall_steps": d["stall_steps"].reshape(-1),
+        "backout": backout,
+        "gate_scalar": d["gate_scalar"].reshape(-1),
+        "gate_wrench": d["gate_wrench"].reshape(-1),
+        "gate_force": d["gate_force"].reshape(-1),
+        "gate_predictor": d["gate_scalar"].reshape(-1)[:-1],
+        "next_safety_quality": -safety[1:],
+        "dt": float(env.dt),
+        "seconds": float(kw.get("planning_time", 0.0)),
+    }
+
+
+PEG_INSERT_METRICS = [
+    {"name": "event_occurred", "as": "insertion_success", "bind": {"mask": "success"}},
+    {"name": "event_occurred", "as": "safe_insertion_success",
+     "bind": {"mask": "strict_safe_success"}},
+    {"name": "maximum", "as": "max_insertion_depth", "bind": {"x": "insertion_depth"}},
+    {"name": "terminal_value", "as": "terminal_insertion_depth", "bind": {"x": "insertion_depth"}},
+    {"name": "first_event_time", "as": "completion_time", "bind": {"mask": "success"}},
+    {"name": "maximum", "as": "peak_lateral_force", "bind": {"x": "lateral_force"}},
+    {"name": "maximum", "as": "peak_axial_force", "bind": {"x": "axial_force"}},
+    {"name": "maximum", "as": "peak_bending_torque", "bind": {"x": "bending_torque"}},
+    {"name": "maximum", "as": "peak_torsional_torque", "bind": {"x": "torsional_torque"}},
+    {"name": "rate", "as": "force_torque_violation_rate", "bind": {"mask": "force_torque_violation"}},
+    {"name": "event_occurred", "as": "any_force_torque_violation",
+     "bind": {"mask": "force_torque_violation"}},
+    {"name": "rate", "as": "torque_violation_rate", "bind": {"mask": "torque_violation"}},
+    {"name": "event_occurred", "as": "jam_rate", "bind": {"mask": "jammed_once"}},
+    {"name": "conditional_event_success", "as": "recovery_success",
+     "bind": {"trigger": "jammed", "outcome": "recovered"}},
+    {"name": "time_integral", "as": "cumulative_safety_cost", "bind": {"x": "safety_cost"}},
+    {"name": "cvar", "as": "lateral_force_cvar95", "bind": {"x": "lateral_force"}},
+    {"name": "cvar", "as": "axial_force_cvar95", "bind": {"x": "axial_force"}},
+    {"name": "maximum", "as": "max_backout_distance", "bind": {"x": "backout"}},
+    {"name": "transition_count", "as": "contact_mode_transitions", "bind": {"x": "contact_mode"}},
+    {"name": "pearson_correlation", "as": "gate_next_safety_corr",
+     "bind": {"x": "gate_predictor", "y": "next_safety_quality"}},
+    "control_smoothness", "stiffness_smoothness", "energy", "runtime",
+]
+
+
+def peg_insert_metrics_plugin(name: str = "peg_insert_metrics"):
+    return GeneralMetricsPlugin(
+        [*PEG_INSERT_METRICS], extractor=peg_insert_signals, name=name
+    )
+
+
 def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> Dict[str, Any]:
     """Box-push/unjam (idea.txt Exp II): roll the H1 to collect box x (vs goal),
     the full contact manifold (h_box/h_hand/h_hand_R/h_foot, g_bal/g_fric/g_tip),
@@ -303,27 +480,73 @@ def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> 
 
     def per_step(e, s, u):
         ps = s.pipeline_state
-        c = e._hand_contact(ps, u)
-        h, g = e._manifold(ps, u, s.info)                  # h(11), g(3)
+        c = e._hand_contact(ps, u, s.info)
+        h, g = e._manifold(ps, u, s.info)                  # fixed stance h(14), walk h(10), g(3)
         x = ps.x
         box_x = x.pos[e._box_idx - 1, 0]
+        box_yaw = bmath.quat_to_euler(x.rot[e._box_idx - 1])[2]
+        corridor_clearance = e._corridor_clearance(ps)
         com = x.pos[e._pelvis_idx - 1, :2]
         feet_c = ps.site_xpos[e._feet_site_id].mean(axis=0)[:2]
         up = jnp.dot(bmath.rotate(ez, x.rot[e._torso_idx - 1]), ez)
         fell = ((up < 0) | (x.pos[e._torso_idx - 1, 2] < 0.5)).astype(jnp.float32)
         # REAL hand->box push force from the mjx contact (not the commanded f_n);
         # in_contact = a nonzero physical push force (not the kinematic h_hand proxy).
-        f_real = e._box_contact_force(ps)
+        box_forces = e._box_contact_forces(ps)
+        f_real = box_forces["hand"]
+        wall_force = box_forces["wall"]
+        wall_contact = (wall_force > 0.5).astype(jnp.float32)
+        nonhand_contact = (box_forces["nonhand"] > 0.5).astype(jnp.float32)
         in_contact = (f_real > 0.5).astype(jnp.float32)
-        return {"box_x": box_x[None], "com": com, "feet": feet_c, "fell": fell[None],
+        elapsed = jnp.asarray(s.info["step"], jnp.float32) * e.dt
+        force_scale = jnp.clip(
+            (elapsed - e._bcfg.approach_time)
+            / max(float(e._bcfg.force_ramp_time), 1e-6),
+            0.0, 1.0,
+        )
+        task_active = s.info.get("task_success", jnp.float32(0.0)) < 0.5
+        force_des = jnp.float32(e._bcfg.f_target) * force_scale * task_active
+        expected_contact = (force_scale >= 0.99) & task_active
+        in_contact_expected = jnp.where(expected_contact, in_contact, 1.0)
+        force_violation = jnp.maximum(f_real - e._bcfg.f_max, 0.0)
+        safety_g = jnp.maximum(
+            jnp.maximum(jnp.maximum(g[0], fell), nonhand_contact),
+            force_violation / max(float(e._bcfg.f_max), 1e-6),
+        )
+        return {"box_x": box_x[None], "box_yaw": box_yaw[None],
+                "corridor_clearance": corridor_clearance[None],
+                "com": com, "feet": feet_c, "fell": fell[None],
                 "g_bal": g[0][None], "g_fric": g[1][None], "tip_series": (-g[2])[None],
                 "ft": jnp.linalg.norm(c["f_t"])[None], "fn": c["f_n"][None],
                 "slip": c["slip"][None], "force": f_real[None],
-                "in_contact": in_contact[None], "stiffness": u[e.spec.s_slice]}
+                "force_des": force_des[None], "safety_g": safety_g[None],
+                "force_expected": expected_contact.astype(jnp.float32)[None],
+                "wall_force": wall_force[None],
+                "wall_contact": wall_contact[None],
+                "nonhand_contact": nonhand_contact[None],
+                "in_contact": in_contact[None],
+                "in_contact_expected": in_contact_expected[None],
+                "stiffness": u[e.spec.s_slice]}
 
-    d = _roll_brax(env, _x0(env, kw), actions, per_step)
+    d = _contact_step_signals(trajectory, env, actions, per_step, kw)
+    final_yaw = float(np.asarray(d["box_yaw"][-1]).reshape(-1)[0])
+    x_error = abs(float(np.asarray(d["box_x"][-1]).reshape(-1)[0]) - goal_x)
+    if str(env._bcfg.level).lower() == "unjam":
+        task_goal_error = max(
+            x_error,
+            float(env._bcfg.goal_eps) * abs(final_yaw) / max(float(env._bcfg.unjam_yaw_eps), 1e-6),
+        )
+    else:
+        task_goal_error = x_error
     return {
+        "positions": d["box_x"], "box_x": d["box_x"].reshape(-1),
+        "box_yaw": d["box_yaw"].reshape(-1),
+        "start_pos": np.array([float(np.asarray(_x0(env, kw).info["box_x0"]))]),
         "final_pos": d["box_x"][-1], "target": np.array([goal_x]),
+        "goal_tolerance": float(env._bcfg.goal_eps),
+        "task_goal_error": task_goal_error,
+        "final_yaw": np.array([final_yaw]), "target_yaw": np.array([0.0]),
+        "corridor_clearance": d["corridor_clearance"].reshape(-1),
         "controls": np.asarray(actions, np.float64), "stiffness": d["stiffness"],
         "com_xy": d["com"], "support_center": d["feet"].mean(axis=0),
         "support_radius": float(getattr(env._bcfg, "support_radius", 0.25)),
@@ -333,7 +556,15 @@ def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> 
         "f_tangential": d["ft"].reshape(-1), "f_normal": d["fn"].reshape(-1),
         "mu": float(np.asarray(env._mu)),
         "slip_speed": d["slip"].reshape(-1), "force": d["force"].reshape(-1),
+        "force_des": d["force_des"].reshape(-1),
+        "force_expected": d["force_expected"].reshape(-1),
+        "g_safety": d["safety_g"].reshape(-1),
+        "f_min": 0.0, "f_max": float(env._bcfg.f_max), "dt": float(env.dt),
+        "wall_force": d["wall_force"].reshape(-1),
+        "wall_contact": d["wall_contact"].reshape(-1),
+        "nonhand_contact": d["nonhand_contact"].reshape(-1),
         "in_contact": d["in_contact"].reshape(-1),
+        "in_contact_expected": d["in_contact_expected"].reshape(-1),
         "seconds": float(kw.get("planning_time", 0.0)),
     }
 
@@ -342,22 +573,56 @@ def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> 
 # requests; a few bound to specific g-components / force).
 HUMANOID_METRICS = [
     "goal_error",                                          # box pose error vs goal
+    "progress_ratio",
+    {"name": "completion_step", "as": "completion_step",
+     "bind": {"margin": "goal_tolerance"}},
+    {"name": "max_violation", "as": "safety_violation", "bind": {"g": "g_safety"}},
+    {"name": "success", "as": "safe_success",
+     "bind": {"goal_error": "task_goal_error", "violation": "safety_violation",
+              "margin": "goal_tolerance"}},
+    {"name": "goal_error", "as": "yaw_error",
+     "bind": {"final_pos": "final_yaw", "target": "target_yaw"}},
+    {"name": "tip_margin", "as": "corridor_clearance_min",
+     "bind": {"margin_series": "corridor_clearance"}},
     "fall_rate", "balance_margin", "tangential_slip",
-    "contact_loss_rate", "friction_cone_violation_rate",
+    {"name": "contact_loss_rate", "as": "contact_loss_rate",
+     "bind": {"in_contact": "in_contact_expected"}},
+    "friction_cone_violation_rate",
     {"name": "tip_margin", "as": "tip_margin", "bind": {"margin_series": "tip_series"}},
     {"name": "violation_rate", "as": "balance_violation_rate", "bind": {"g": "g_bal"}},
     {"name": "violation_cvar", "as": "balance_violation_cvar", "bind": {"g": "g_bal"}},
+    {"name": "rate", "as": "nonhand_collision_rate", "bind": {"mask": "nonhand_contact"}},
+    {"name": "rate", "as": "wall_contact_rate", "bind": {"mask": "wall_contact"}},
+    {"name": "cvar", "as": "wall_force_cvar95", "bind": {"x": "wall_force"}},
     {"name": "cvar", "as": "force_cvar95", "bind": {"x": "force"}},
+    "force_tracking_error", "force_tracking_mae", "normalized_force_tracking_mae",
+    {"name": "force_tracking_error_tracked", "as": "steady_force_tracking_error",
+     "bind": {"mask": "force_expected"}},
+    {"name": "force_tracking_mae_tracked", "as": "steady_force_tracking_mae",
+     "bind": {"mask": "force_expected"}},
+    {"name": "normalized_force_tracking_mae_tracked", "as": "steady_normalized_force_tracking_mae",
+     "bind": {"mask": "force_expected"}},
+    "force_peak", "force_overshoot", "force_overshoot_ratio",
+    "force_excess_impulse", "force_settling_time", "force_violation_rate",
+    "contact_chatter",
     "control_smoothness", "stiffness_smoothness", "energy", "runtime",
 ]
 
 
 def humanoid_box_push_metrics_plugin(name: str = "humanoid_box_push_metrics"):
-    return GeneralMetricsPlugin([*HUMANOID_METRICS], extractor=humanoid_box_push_signals, name=name)
+    return GeneralMetricsPlugin(
+        [*HUMANOID_METRICS], extractor=humanoid_box_push_signals, name=name,
+        config={
+            "force_settling_time": {
+                "band_fraction": 0.1, "band_absolute": 1.0, "hold_steps": 10,
+            },
+        },
+    )
 
 
 __all__ = [
     "corridor_signals", "corridor_metrics_plugin", "CORRIDOR_METRICS",
     "arm_surface_scan_signals", "arm_surface_scan_metrics_plugin", "ARM_METRICS",
+    "peg_insert_signals", "peg_insert_metrics_plugin", "PEG_INSERT_METRICS",
     "humanoid_box_push_signals", "humanoid_box_push_metrics_plugin", "HUMANOID_METRICS",
 ]

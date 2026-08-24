@@ -36,6 +36,13 @@ from .methods import (
     TwoGOMethodPlugin,
     DPCCMethodPlugin,
     SafeDiffuserMethodPlugin,
+    FullMDACMethodPlugin,
+    ModelBasedOnlyMethodPlugin,
+    DIALContactMethodPlugin,
+    PegasusFlowContactMethodPlugin,
+    ISSAContactMethodPlugin,
+    ATACOMContactMethodPlugin,
+    StandaloneRLMethodPlugin,
 )
 
 from .environments import (
@@ -62,6 +69,9 @@ from .environments import (
     TUM_RGBD_3DGSPlugin,
     MuJoCoActivePerceptionPlugin,
     HumanoidCorridor2DPlugin,
+    ManipulatorSurfaceScanPlugin,
+    ManipulatorPegInsertPlugin,
+    HumanoidBoxPushPlugin,
 )
 
 from .metrics import (
@@ -93,6 +103,7 @@ from .obstacles import (
     D3ILAvoidingFixedGeneratorPlugin,
     SteppingStones2DObstacleGeneratorPlugin,
     Corridor2DObstacleGeneratorPlugin,
+    EmptyObstacleGeneratorPlugin,
 )
 
 __all__ = [
@@ -112,6 +123,13 @@ __all__ = [
     'TwoGOMethodPlugin',
     'DPCCMethodPlugin',
     'SafeDiffuserMethodPlugin',
+    'FullMDACMethodPlugin',
+    'ModelBasedOnlyMethodPlugin',
+    'DIALContactMethodPlugin',
+    'PegasusFlowContactMethodPlugin',
+    'ISSAContactMethodPlugin',
+    'ATACOMContactMethodPlugin',
+    'StandaloneRLMethodPlugin',
     # Environments
     'SingleIntegrator2DPlugin',
     'DoubleIntegrator2DPlugin',
@@ -136,6 +154,9 @@ __all__ = [
     'TUM_RGBD_3DGSPlugin',
     'MuJoCoActivePerceptionPlugin',
     'HumanoidCorridor2DPlugin',
+    'ManipulatorSurfaceScanPlugin',
+    'ManipulatorPegInsertPlugin',
+    'HumanoidBoxPushPlugin',
     # Metrics
     'SSRMetricsPlugin',
     'ObstacleDensityMetricsPlugin',
@@ -161,4 +182,5 @@ __all__ = [
     'D3ILAvoidingFixedGeneratorPlugin',
     'SteppingStones2DObstacleGeneratorPlugin',
     'Corridor2DObstacleGeneratorPlugin',
+    'EmptyObstacleGeneratorPlugin',
 ]

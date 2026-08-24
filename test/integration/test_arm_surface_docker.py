@@ -98,6 +98,31 @@ def _contact_friction_reaches_both_geoms():
     return ok
 
 
+def _robot_swap_contract():
+    """One task/action contract must bind to two robot-only MJCFs."""
+    results = []
+    for robot in ("panda", "xarm7"):
+        env = make_env(ARM_TASK, robot=robot, level="plane")
+        state = env.reset(jax.random.PRNGKey(13))
+        action = jnp.zeros(env.action_size)
+        next_state = env.step(state, action)
+        h, g = env.constraint_residual(state, action)
+        valid = (
+            env.action_size == 10
+            and h.shape == (6,)
+            and g.shape == (2,)
+            and len(env._robot_binding.actuator_indices)
+            == env._robot_profile.num_actuated
+            and bool(jnp.isfinite(next_state.reward))
+        )
+        print(
+            f"  robot swap {robot}: joints={env._robot_profile.num_actuated} "
+            f"action={env.action_size} h={h.shape} g={g.shape} finite={valid}"
+        )
+        results.append(valid)
+    return all(results)
+
+
 def _rl_observation_risk_and_randomized_wrapper():
     common = dict(
         level="cylinder",
@@ -309,22 +334,23 @@ def _ablations_active():
 def main():
     print("== families ==")
     a = all(_check_family(f) for f in FAMILIES)
-    print("== g_force non-vacuous =="); b = _g_force_nonvacuous()
-    print("== unseen domain randomization =="); c = (
+    print("== robot swap contract =="); b = _robot_swap_contract()
+    print("== g_force non-vacuous =="); c = _g_force_nonvacuous()
+    print("== unseen domain randomization =="); d = (
         _s4_dr_varies()
         and _soft_s4_compliance_varies()
         and _contact_friction_reaches_both_geoms()
     )
-    print("== RL observation/risk/shared domains =="); c2 = (
+    print("== RL observation/risk/shared domains =="); d2 = (
         _rl_observation_risk_and_randomized_wrapper()
     )
-    print("== independent geometry factors =="); d = _geometry_factors_are_independent()
-    print("== position-only manifold =="); e = _position_only_manifold()
-    print("== staged horizon/gated geometry =="); f = _staged_geometry_routes()
-    print("== frozen realization geometry =="); g = _realization_geometry_routes()
-    print("== true-dynamics controllability geometry =="); h = _controllability_geometry_routes()
-    print("== ablations active (arm, bumpy) =="); i = _ablations_active()
-    ok = a and b and c and c2 and d and e and f and g and h and i
+    print("== independent geometry factors =="); e = _geometry_factors_are_independent()
+    print("== position-only manifold =="); f = _position_only_manifold()
+    print("== staged horizon/gated geometry =="); g = _staged_geometry_routes()
+    print("== frozen realization geometry =="); h = _realization_geometry_routes()
+    print("== true-dynamics controllability geometry =="); i = _controllability_geometry_routes()
+    print("== ablations active (arm, bumpy) =="); j = _ablations_active()
+    ok = a and b and c and d and d2 and e and f and g and h and i and j
     print("RESULT:", "ARM OK" if ok else "FAIL")
     return 0 if ok else 1
 

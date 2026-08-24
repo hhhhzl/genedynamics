@@ -24,6 +24,12 @@
     <!-- visual goal LINE on the floor (x = goal); the env reads box_goal_x for the actual target -->
     <site name="goal_line" pos="0.85 0 0.02" size="0.02 1.0 0.02" type="box" rgba="0.1 0.9 0.2 0.4"/>
 
+    <!-- P3 corridor: collides with the type-4 box but not the robot. -->
+    <geom name="unjam_wall_left" type="box" pos="1.20 0.64 0.60"
+      size="0.60 0.05 0.60" contype="1" conaffinity="4" rgba="0.35 0.38 0.45 0.75"/>
+    <geom name="unjam_wall_right" type="box" pos="1.20 -0.64 0.60"
+      size="0.60 0.05 0.60" contype="1" conaffinity="4" rgba="0.35 0.38 0.45 0.75"/>
+
     <!-- RIGID crate (DIAL-size ~1 m), planar 3-DoF (x-slide + y-slide + yaw-hinge): translates and
          rotates in the ground plane, so it can be straight-pushed (L1) and rotated to unjam (L3).
          Sits on the floor at hand-reach distance so the RIGHT HAND pushes its upper face (z~0.9)
@@ -36,6 +42,22 @@
       <joint name="box_yaw" type="hinge" axis="0 0 1" frictionloss="8.0"/>
     </body>
   </worldbody>
+
+  <!-- Force-control contact must be softer than the default rigid collision.  Explicit pairs
+       match the G1 scene and avoid an additional auto-generated hard hand-box contact. -->
+  <contact>
+    <pair name="box_lhand" geom1="static_box" geom2="left_hand_collision" condim="3"
+      friction="0.6 0.6" solref="0.10 1" solimp="0.8 0.9 0.01"/>
+    <pair name="box_rhand" geom1="static_box" geom2="right_hand_collision" condim="3"
+      friction="0.6 0.6" solref="0.10 1" solimp="0.8 0.9 0.01"/>
+    <!-- Named wall pairs make the P3 jam compliance explicit and reproducible.
+         Auto-generated default contacts were stiff enough that 1e-6 control
+         perturbations selected different box-rotation branches. -->
+    <pair name="box_wall_left" geom1="static_box" geom2="unjam_wall_left" condim="3"
+      friction="0.6 0.6" solref="0.10 1" solimp="0.8 0.9 0.01"/>
+    <pair name="box_wall_right" geom1="static_box" geom2="unjam_wall_right" condim="3"
+      friction="0.6 0.6" solref="0.10 1" solimp="0.8 0.9 0.01"/>
+  </contact>
 
   <keyframe>
     <key name="home"

@@ -1,0 +1,122 @@
+import json
+from pathlib import Path
+
+import pytest
+
+from genedynamics.experiments.utils.metrics import (
+    aggregate_receding_diagnostics,
+    compare_runner_outputs,
+    summarize_results,
+)
+
+
+def _result(root: Path, algorithm: str, seed: int, safe: float, force: float):
+    path = root / algorithm / "level_id" / f"seed_{seed}" / "results.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "suite": "id", "level": "id", "seed": seed,
+        "metrics": {"peg_insert_metrics": {
+            "insertion_success": 1.0,
+            "safe_insertion_success": safe,
+            "peak_lateral_force": force,
+        }},
+    }), encoding="utf-8")
+
+
+def test_report_writes_paired_statistics_and_representative_seed(tmp_path: Path):
+    root = tmp_path / "results"
+    _result(root, "full_mdac", 10, 1.0, 5.0)
+    _result(root, "full_mdac", 11, 1.0, 7.0)
+    _result(root, "dial", 10, 0.0, 9.0)
+    _result(root, "dial", 11, 1.0, 8.0)
+    output = tmp_path / "report"
+    report = summarize_results([str(root)], str(output))
+    assert report["result_count"] == 4
+    paired = json.loads((output / "paired_deltas.json").read_text())
+    safe_rows = [row for row in paired if row["metric"].endswith("safe_insertion_success")]
+    assert safe_rows[0]["n_pairs"] == 2
+    assert "paired_sign_flip_p" in safe_rows[0]
+    representative = json.loads((output / "representative_seeds.json").read_text())
+    assert {row["algorithm"] for row in representative} == {"dial", "full_mdac"}
+
+
+def test_legacy_equivalence_compares_actions_and_scalar_metrics(tmp_path: Path):
+    legacy = tmp_path / "legacy.json"
+    legacy.write_text(json.dumps([{
+        "algorithm": "dial", "suite": "id", "seed": 3,
+        "series": {"actions": [[0.1, -0.2], [0.0, 0.3]]},
+        "insertion_success": 1.0,
+        "peak_lateral_force": 4.5,
+        "runtime": 2.0,
+    }]), encoding="utf-8")
+    legacy.with_name("manifest.json").write_text(json.dumps({
+        "git_sha": "frozen",
+        "config": {
+            "task": "manipulator_peg_insert", "method": "dial",
+            "n_steps": 2, "level": "wide",
+            "env_params": {"clearance": 0.0015},
+            "execution_env_params": {},
+            "method_params": {"Nsample": 64},
+        },
+    }), encoding="utf-8")
+    seed_dir = tmp_path / "current" / "level_id" / "seed_3"
+    (seed_dir / "trajectory").mkdir(parents=True)
+    result = seed_dir / "results.json"
+    result.write_text(json.dumps({
+        "metrics": {"peg_insert_metrics": {
+            "insertion_success": 1.0,
+            "peak_lateral_force": 4.5,
+            "runtime": 3.0,
+        }},
+        "config_snapshot": {
+            "env_name": "manipulator_peg_insert", "method": "dial",
+            "n_steps": 2,
+            "env_params": {"clearance": 0.0015, "level": "wide"},
+            "execution_env_params": {},
+            "method_params": {"Nsample": 64, "controller_method": "dial"},
+        },
+        "provenance": {"git_sha": "current"},
+    }), encoding="utf-8")
+    (seed_dir / "trajectory" / "trajectory.json").write_text(json.dumps({
+        "actions": [[0.1, -0.2], [0.0, 0.3]],
+    }), encoding="utf-8")
+    report = compare_runner_outputs(
+        str(legacy), str(result), "dial", "id", 3,
+    )
+    assert report["ok"] is True
+    assert report["actions_equal"] is True
+    assert report["matched_metrics"] == 2
+    assert report["config_comparison"]["equal"] is True
+    assert len(report["runtime_comparisons"]) == 1
+
+
+def test_receding_diagnostics_preserve_legacy_aggregation_contract():
+    report = aggregate_receding_diagnostics(
+        [
+            {
+                "prior_accepted": 1.0,
+                "prior_predicted_improvement": 0.4,
+                "prior_risk_ok": 1.0,
+                "prior_force_veto": 0.0,
+                "prior_risk_refined": [0.0, 0.2, 0.0, 0.1],
+                "emergency_selected": 0.0,
+            },
+            {
+                "prior_accepted": 0.0,
+                "prior_predicted_improvement": -0.2,
+                "prior_risk_ok": 0.0,
+                "prior_force_veto": 1.0,
+                "prior_risk_refined": [1.0, 0.4, 1.0, 0.3],
+                "emergency_selected": 1.0,
+            },
+        ],
+        task="manipulator_peg_insert",
+    )
+    assert report["prior_acceptance_rate"] == 0.5
+    assert report["prior_fallback_rate"] == 0.5
+    assert report["prior_predicted_improvement_mean"] == pytest.approx(0.1)
+    assert report["prior_risk_refined_force_violation"] == 0.5
+    assert report["prior_risk_refined_torque_violation"] == pytest.approx(0.3)
+    assert report["prior_risk_refined_jam"] == 0.5
+    assert report["prior_risk_refined_force_mae"] == pytest.approx(0.2)
+    assert report["emergency_selected"] == 0.5

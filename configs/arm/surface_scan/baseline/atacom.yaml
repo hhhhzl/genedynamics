@@ -1,0 +1,6 @@
+base: ../_base.yaml
+name: atacom
+method: atacom
+output_dir: results/arm/surface_scan/baseline/atacom
+method_params: {controller_method: atacom, policy_ckpt: results/arm/impedence/_policies/shared_atacom_ppo_seed0.pkl, Kc: 1.0}
+metadata: {checkpoint_protocol_requires_retraining: true, required_training_steps: 2000000}

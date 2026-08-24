@@ -123,6 +123,63 @@ def rate(mask) -> float:
 
 
 @metric(higher_is_better=True)
+def event_occurred(mask) -> float:
+    """Episode-level indicator that a binary event happened at least once."""
+    a = _arr(mask).ravel()
+    return float(bool(a.size and np.any(a > 0.5)))
+
+
+@metric
+def maximum(x) -> float:
+    """Largest finite value of a scalar time series (zero when empty)."""
+    a = _arr(x).ravel()
+    a = a[np.isfinite(a)]
+    return float(np.max(a)) if a.size else 0.0
+
+
+@metric
+def terminal_value(x) -> float:
+    """Last finite value of a scalar time series (zero when empty)."""
+    a = _arr(x).ravel()
+    a = a[np.isfinite(a)]
+    return float(a[-1]) if a.size else 0.0
+
+
+@metric
+def time_integral(x, dt: float = 1.0) -> float:
+    """Rectangle-rule integral for a uniformly sampled scalar signal."""
+    a = _arr(x).ravel()
+    return float(np.sum(a[np.isfinite(a)]) * float(dt))
+
+
+@metric(higher_is_better=True)
+def conditional_event_success(trigger, outcome) -> float:
+    """Whether ``outcome`` eventually follows ``trigger``; NaN if never triggered."""
+    t, o = _arr(trigger).ravel(), _arr(outcome).ravel()
+    n = min(t.size, o.size)
+    indices = np.flatnonzero(t[:n] > 0.5)
+    if not indices.size:
+        return float("nan")
+    return float(np.any(o[indices[0]:n] > 0.5))
+
+
+@metric
+def first_event_time(mask, dt: float = 1.0) -> float:
+    """Time of the first event; the finite episode horizon when absent."""
+    a = _arr(mask).ravel()
+    hit = np.flatnonzero(a > 0.5)
+    step = int(hit[0]) if hit.size else int(a.size)
+    return float(step * float(dt))
+
+
+@metric
+def transition_count(x) -> float:
+    """Number of discrete state/mode changes in a sequence."""
+    a = _arr(x).ravel()
+    return float(np.count_nonzero(a[1:] != a[:-1])) if a.size > 1 else 0.0
+
+
+@metric(higher_is_better=True)
 def pearson_correlation(x, y) -> float:
     """Pearson correlation for paired scalar signals.
 
@@ -333,6 +390,26 @@ def force_tracking_error(force, force_des) -> float:
 
 
 @metric
+def force_tracking_mae(force, force_des) -> float:
+    """Mean absolute normal-force tracking error."""
+    f, fd = _arr(force).ravel(), _arr(force_des).ravel()
+    n = min(f.size, fd.size)
+    return float(np.mean(np.abs(f[:n] - fd[:n]))) if n else 0.0
+
+
+@metric
+def normalized_force_tracking_mae(force, force_des) -> float:
+    """Force MAE divided by the largest requested force."""
+    f, fd = _arr(force).ravel(), _arr(force_des).ravel()
+    n = min(f.size, fd.size)
+    if not n:
+        return 0.0
+    mae = float(np.mean(np.abs(f[:n] - fd[:n])))
+    scale = float(np.max(np.abs(fd[:n])))
+    return mae / scale if scale > 1e-12 else mae
+
+
+@metric
 def force_tracking_error_tracked(force, force_des, mask) -> float:
     """RMS force error, scored ONLY over steps where ``mask`` is truthy (e.g. the EE is
     on the scan path). Force tracking is meaningful only while actually doing the task;
@@ -345,6 +422,31 @@ def force_tracking_error_tracked(force, force_des, mask) -> float:
         return float("nan")
     f, fd, m = f[:n], fd[:n], m[:n]
     return float(np.sqrt(np.mean((f[m] - fd[m]) ** 2)))
+
+
+@metric
+def force_tracking_mae_tracked(force, force_des, mask) -> float:
+    """Mean absolute force error over the explicitly selected task phase."""
+    f, fd = _arr(force).ravel(), _arr(force_des).ravel()
+    m = _arr(mask).ravel().astype(bool)
+    n = min(f.size, fd.size, m.size)
+    if n == 0 or not m[:n].any():
+        return float("nan")
+    return float(np.mean(np.abs(f[:n][m[:n]] - fd[:n][m[:n]])))
+
+
+@metric
+def normalized_force_tracking_mae_tracked(force, force_des, mask) -> float:
+    """Selected-phase force MAE normalized by its largest requested force."""
+    f, fd = _arr(force).ravel(), _arr(force_des).ravel()
+    m = _arr(mask).ravel().astype(bool)
+    n = min(f.size, fd.size, m.size)
+    if n == 0 or not m[:n].any():
+        return float("nan")
+    f, fd, m = f[:n], fd[:n], m[:n]
+    mae = float(np.mean(np.abs(f[m] - fd[m])))
+    scale = float(np.max(np.abs(fd[m])))
+    return mae / scale if scale > 1e-12 else mae
 
 
 @metric
@@ -384,6 +486,61 @@ def force_overshoot(force, force_des) -> float:
     f, fd = _arr(force).ravel(), _arr(force_des).ravel()
     n = min(f.size, fd.size)
     return float(max(0.0, np.max(f[:n] - fd[:n]))) if n else 0.0
+
+
+@metric
+def force_overshoot_ratio(force, force_des) -> float:
+    """Peak positive force error normalized by the largest requested force."""
+    f, fd = _arr(force).ravel(), _arr(force_des).ravel()
+    n = min(f.size, fd.size)
+    if not n:
+        return 0.0
+    scale = float(np.max(np.abs(fd[:n])))
+    excess = float(max(0.0, np.max(f[:n] - fd[:n])))
+    return excess / scale if scale > 1e-12 else excess
+
+
+@metric
+def force_peak(force) -> float:
+    """Largest realized normal force over the episode."""
+    f = _arr(force).ravel()
+    return float(np.max(f)) if f.size else 0.0
+
+
+@metric
+def force_excess_impulse(force, force_des, dt: float = 0.02) -> float:
+    """Integral of force above the requested profile, in N s."""
+    f, fd = _arr(force).ravel(), _arr(force_des).ravel()
+    n = min(f.size, fd.size)
+    return float(np.sum(np.maximum(f[:n] - fd[:n], 0.0)) * dt) if n else 0.0
+
+
+@metric
+def force_settling_time(force, force_des, dt: float = 0.02,
+                        band_fraction: float = 0.1,
+                        band_absolute: float = 1.0,
+                        hold_steps: int = 10) -> float:
+    """First time the force enters and stays in the final target band.
+
+    Search starts once the requested ramp reaches 99% of its final value.  If
+    no complete hold window settles, return the episode duration.
+    """
+    f, fd = _arr(force).ravel(), _arr(force_des).ravel()
+    n = min(f.size, fd.size)
+    if not n:
+        return 0.0
+    target = float(np.max(np.abs(fd[:n])))
+    if target <= 1e-12:
+        return 0.0
+    final = np.nonzero(np.abs(fd[:n]) >= 0.99 * target)[0]
+    start = int(final[0]) if final.size else 0
+    band = max(float(band_absolute), float(band_fraction) * target)
+    good = np.abs(f[:n] - fd[:n]) <= band
+    hold = max(1, int(hold_steps))
+    for i in range(start, max(start, n - hold + 1)):
+        if bool(np.all(good[i:i + hold])):
+            return float((i + 1) * dt)
+    return float(n * dt)
 
 
 @metric
@@ -584,12 +741,19 @@ def compute_metrics(requests: List[Any], signals: Dict[str, Any], *,
 __all__ = [
     "metric", "get_metric", "list_metrics", "metric_signals",
     "metric_higher_is_better", "compute_metrics",
-    "cvar", "rate", "pearson_correlation",
+    "cvar", "rate", "event_occurred", "maximum", "terminal_value",
+    "time_integral", "conditional_event_success", "first_event_time",
+    "transition_count", "pearson_correlation",
     "goal_error", "success", "progress_ratio", "completion_step", "coverage_ratio",
     "path_completion", "pose_error",
     "violation_rate", "violation_mean", "max_violation", "violation_cvar",
     "equality_residual_rms",
-    "force_tracking_error", "force_violation_rate", "contact_loss_rate",
+    "force_tracking_error", "force_tracking_mae", "normalized_force_tracking_mae",
+    "force_tracking_error_tracked", "force_tracking_mae_tracked",
+    "normalized_force_tracking_mae_tracked",
+    "force_violation_rate", "contact_loss_rate", "force_overshoot",
+    "force_overshoot_ratio", "force_peak", "force_excess_impulse",
+    "force_settling_time", "contact_chatter",
     "tangential_slip", "friction_cone_violation_rate",
     "fall_rate", "balance_margin", "tip_margin",
     "smoothness", "control_smoothness", "stiffness_smoothness", "energy",

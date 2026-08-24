@@ -27,6 +27,19 @@ def test_rate():
     assert m.rate([False, False]) == 0.0
 
 
+def test_episode_event_and_series_reducers():
+    assert m.event_occurred([0, 0, 1, 0]) == 1.0
+    assert m.event_occurred([0, 0]) == 0.0
+    assert m.maximum([1, 4, 2]) == 4.0
+    assert m.terminal_value([1, 4, 2]) == 2.0
+    assert m.time_integral([1, 2, 3], dt=0.1) == pytest.approx(0.6)
+    assert m.first_event_time([0, 0, 1], dt=0.02) == pytest.approx(0.04)
+    assert m.first_event_time([0, 0], dt=0.02) == pytest.approx(0.04)
+    assert m.transition_count([0, 0, 1, 2, 2]) == 2.0
+    assert m.conditional_event_success([0, 1, 0], [0, 0, 1]) == 1.0
+    assert np.isnan(m.conditional_event_success([0, 0], [0, 1]))
+
+
 def test_pearson_correlation():
     assert m.pearson_correlation([0, 1, 2], [0, 2, 4]) == pytest.approx(1.0)
     assert m.pearson_correlation([0, 1, 2], [4, 2, 0]) == pytest.approx(-1.0)
@@ -70,6 +83,21 @@ def test_violation_metrics():
 
 def test_force_and_contact():
     assert abs(m.force_tracking_error([5, 5], [5, 4]) - np.sqrt(0.5)) < 1e-9
+    assert m.force_tracking_mae([5, 5], [5, 4]) == 0.5
+    assert m.normalized_force_tracking_mae([5, 5], [5, 4]) == 0.1
+    mask = [0, 1, 1]
+    assert m.force_tracking_error_tracked([0, 8, 10], [0, 10, 10], mask) == pytest.approx(np.sqrt(2.0))
+    assert m.force_tracking_mae_tracked([0, 8, 10], [0, 10, 10], mask) == 1.0
+    assert m.normalized_force_tracking_mae_tracked(
+        [0, 8, 10], [0, 10, 10], mask,
+    ) == 0.1
+    assert m.force_peak([0, 7, 3]) == 7.0
+    assert m.force_overshoot_ratio([0, 7, 5], [0, 5, 5]) == 0.4
+    assert m.force_excess_impulse([0, 7, 5], [0, 5, 5], dt=0.1) == 0.2
+    assert m.force_settling_time(
+        [0, 5, 10, 10, 10], [0, 5, 10, 10, 10], dt=0.1,
+        hold_steps=2,
+    ) == pytest.approx(0.3)
     assert m.force_violation_rate([1, 5, 25], f_min=0.0, f_max=20.0) == pytest.approx(1 / 3)
     assert m.contact_loss_rate([1, 1, 0, 1]) == 0.25
     assert m.tangential_slip([-2, 2, 0, 4]) == 2.0

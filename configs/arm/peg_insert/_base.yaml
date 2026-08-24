@@ -1,0 +1,58 @@
+name: peg_insert
+output_dir: results/arm/peg_insert/_invalid_base
+env_name: manipulator_peg_insert
+method: dial
+seeds: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+n_steps: 64
+backend: jax
+device: cpu
+auto_report: false
+obstacle_config: {generator: none}
+visualizations: []
+metrics: [peg_insert_metrics]
+
+env_params:
+  observation_mode: contact
+  dt: 0.02
+  timestep: 0.002
+  friction: 0.6
+  clearance: 0.0015
+  approach_gap: 0.004
+  f_target: 10.0
+  f_min: 0.0
+  f_max: 30.0
+  lateral_force_limit: 20.0
+  bending_torque_limit: 1.5
+  torsional_torque_limit: 1.0
+  soft_safety_margin: 0.8
+  risk_safety_margin: 0.8
+  realization_probe_horizon: 3
+  realization_probe_eps: 0.04
+
+method_params:
+  Hsample: 8
+  Hnode: 4
+  Nsample: 64
+  Ndiffuse_init: 4
+  Ndiffuse: 2
+  temp_sample: 0.06
+  action_limit: 1.0
+  dt: 0.02
+  ctrl_dt: 0.02
+  seed: 0
+  aug_lambda: 2.0
+  aug_rho: 80.0
+
+suites:
+  - {name: id_wide, level: wide}
+  - name: ood_pose
+    level: wide
+    execution_env_params: {level: ood, ood_clearance_range: [0.0015, 0.0015], ood_friction_range: [0.6, 0.6], ood_position_range: 0.0010, ood_angle_range: 0.0122173, ood_solref_time_range: [0.03, 0.03]}
+  - name: ood_sensing
+    level: wide
+    execution_env_params: {level: wide, force_sensor_bias: [0.5, -0.5, 0.0], torque_sensor_bias: [0.02, -0.02, 0.01]}
+
+metadata:
+  protocol: mdac_peg_insert_formal_v1
+  formal_seeds: true
+  narrative: contact_switch_and_safe_recovery

@@ -6,8 +6,9 @@ parameters and loading from YAML/JSON files.
 """
 
 from dataclasses import dataclass, field, asdict
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 from pathlib import Path
+import copy
 import json
 
 # Optional YAML support
@@ -17,6 +18,22 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
     yaml = None
+
+
+def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively merge dictionaries without mutating either input.
+
+    Dictionaries merge key-wise. Scalars and lists are replaced by the child
+    value, which makes seed/suite lists deterministic under ``base:`` config
+    inheritance.
+    """
+    out = copy.deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = deep_merge(out[key], value)
+        else:
+            out[key] = copy.deepcopy(value)
+    return out
 
 
 @dataclass
@@ -41,7 +58,13 @@ class ExperimentConfig:
     
     # Optional fields (with defaults) come after required fields
     env_params: Dict[str, Any] = field(default_factory=dict)
+    execution_env_params: Dict[str, Any] = field(default_factory=dict)
     method_params: Dict[str, Any] = field(default_factory=dict)
+
+    # Named task/physics conditions.  When non-empty, ExperimentRunner expands
+    # suite x seed while preserving the established level_<name>/seed_<n>
+    # result layout.  Existing obstacle-level configs leave this empty.
+    suites: List[Dict[str, Any]] = field(default_factory=list)
     
     # Obstacle configuration. Defaults to a single dummy level so configs
     # that don't sweep obstacles (e.g. 3DGS reconstruction) can omit them.
@@ -50,6 +73,7 @@ class ExperimentConfig:
     
     # Experiment execution
     seeds: List[int] = field(default_factory=lambda: list(range(10)))
+    n_steps: int = 100
     backend: str = "jax"
     device: str = "cpu"
     
@@ -119,8 +143,7 @@ class ExperimentConfig:
                 "PyYAML is required to load YAML configuration files. "
                 "Install it with: pip install pyyaml"
             )
-        with open(path, 'r') as f:
-            data = yaml.safe_load(f)
+        data = cls._load_yaml_dict(Path(path).resolve(), seen=set())
         
         # Convert output_dir string to Path if present
         if 'output_dir' in data and isinstance(data['output_dir'], str):
@@ -133,6 +156,29 @@ class ExperimentConfig:
             data['output_dir'] = output_dir
         
         return cls(**data)
+
+    @classmethod
+    def _load_yaml_dict(cls, path: Path, seen: Set[Path]) -> Dict[str, Any]:
+        """Load a YAML dictionary and resolve its relative ``base:`` chain."""
+        path = path.resolve()
+        if path in seen:
+            chain = " -> ".join(str(p) for p in [*seen, path])
+            raise ValueError(f"Cyclic experiment config base chain: {chain}")
+        if not path.exists():
+            raise FileNotFoundError(f"Experiment config base not found: {path}")
+        with open(path, 'r') as f:
+            data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            raise ValueError(f"Experiment config must be a mapping: {path}")
+        data = copy.deepcopy(data)
+        base_ref = data.pop('base', None)
+        if base_ref is None:
+            return data
+        if not isinstance(base_ref, str) or not base_ref.strip():
+            raise ValueError(f"Experiment config base must be a path string: {path}")
+        base_path = (path.parent / base_ref).resolve()
+        base_data = cls._load_yaml_dict(base_path, seen | {path})
+        return deep_merge(base_data, data)
     
     @classmethod
     def from_json(cls, path: Path) -> 'ExperimentConfig':
@@ -220,6 +266,71 @@ class ExperimentConfig:
         
         if not self.seeds:
             errors.append("At least one seed must be specified")
+
+        suite_names = []
+        for index, suite in enumerate(self.suites):
+            if not isinstance(suite, dict):
+                errors.append(f"Suite {index} must be a mapping")
+                continue
+            name = suite.get("name")
+            if not isinstance(name, str) or not name.strip():
+                errors.append(f"Suite {index} needs a non-empty string name")
+                continue
+            if "/" in name or "\\" in name or name in {".", ".."}:
+                errors.append(f"Suite name is not path-safe: {name!r}")
+            suite_names.append(name)
+            forbidden = sorted(set(suite).intersection({
+                "seeds", "n_steps", "backend", "device", "output_dir",
+            }))
+            if forbidden:
+                errors.append(
+                    f"Suite {name!r} cannot override protocol fields: "
+                    + ", ".join(forbidden)
+                )
+            for key in ("env_params", "execution_env_params", "method_params"):
+                if key in suite and not isinstance(suite[key], dict):
+                    errors.append(f"Suite {name!r} field {key!r} must be a mapping")
+            suite_method = suite.get("method_params", {})
+            if isinstance(suite_method, dict):
+                budget_keys = sorted(
+                    set(suite_method).intersection({
+                        "Nsample", "Hsample", "Hnode", "Ndiffuse",
+                        "Ndiffuse_init", "n_steps",
+                    })
+                )
+                if budget_keys:
+                    errors.append(
+                        f"Suite {name!r} cannot change fairness budget: "
+                        + ", ".join(budget_keys)
+                    )
+        duplicates = sorted({name for name in suite_names if suite_names.count(name) > 1})
+        if duplicates:
+            errors.append(f"Duplicate suite names: {', '.join(duplicates)}")
         
         return errors
 
+    def for_suite(self, suite: Dict[str, Any]) -> 'ExperimentConfig':
+        """Return an isolated resolved config for one named suite."""
+        name = str(suite["name"])
+        cfg = copy.deepcopy(self)
+        cfg.suites = []
+        cfg.obstacle_levels = [name]
+        cfg.env_params = deep_merge(self.env_params, suite.get("env_params", {}))
+        if suite.get("level") is not None:
+            cfg.env_params["level"] = suite["level"]
+        cfg.execution_env_params = deep_merge(
+            self.execution_env_params,
+            suite.get("execution_env_params", {}),
+        )
+        cfg.method_params = deep_merge(
+            self.method_params,
+            suite.get("method_params", {}),
+        )
+        cfg.metadata = deep_merge(self.metadata, {
+            "suite": name,
+            "suite_level": suite.get("level", name),
+        })
+        return cfg
+
+
+__all__ = ["ExperimentConfig", "deep_merge"]

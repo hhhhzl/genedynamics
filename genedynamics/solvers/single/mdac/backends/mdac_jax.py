@@ -183,6 +183,14 @@ class MdacBackendJax:
             jax.jit(self.prepare_state_fn)
             if self.prepare_state_fn is not None else None
         )
+        self.candidate_projection_fn = (
+            getattr(solver, "candidate_projection_fn", None)
+            if solver is not None else None
+        )
+        self._candidate_projection_jit = (
+            jax.jit(self.candidate_projection_fn)
+            if self.candidate_projection_fn is not None else None
+        )
 
         # --- prior seam (genedynamics/learning/priors): horizon proposal,
         # incumbent candidate, local trust region, and do-no-harm acceptance.
@@ -196,6 +204,25 @@ class MdacBackendJax:
         )
         self.risk_fn = getattr(solver, "risk_fn", None) if solver is not None else None
         self.score_risk_fn = getattr(self._env, "sequence_score_risk", None)
+        self.emergency_score_risk_fn = getattr(
+            self._env, "emergency_sequence_score_risk", None
+        )
+        self.risk_safe_fn = getattr(self._env, "sequence_risk_is_safe", None)
+        # Score/risk rollouts deliberately remain on the nominal model.  The
+        # task-owned executable emergency, by contrast, must use the execution
+        # task's true socket frame and observed jam state when one is supplied.
+        self._task_contract_env = (
+            getattr(solver, "execution_env", None) or self._env
+        )
+        self.emergency_plan_fn = getattr(
+            self._task_contract_env, "emergency_plan", None
+        )
+        self.emergency_active_fn = getattr(
+            self._task_contract_env, "emergency_plan_is_active", None
+        )
+        self.emergency_override_fn = getattr(
+            self._task_contract_env, "emergency_plan_should_override", None
+        )
         self.prior_include_incumbent = bool(
             getattr(solver, "prior_include_incumbent", True)
         )
@@ -254,12 +281,26 @@ class MdacBackendJax:
                 f"{self.prior_fallback_mode!r}"
             )
         self.reliability_model = getattr(solver, "reliability_model", None)
+        # These are observed execution-state signals (tracking lag, queued
+        # command and measured wrench), not nominal rollout predictions.  Use
+        # the task frame that generated the observation and training labels.
         self.reliability_feature_fn = getattr(
-            self._env, "reliability_features", None
+            self._task_contract_env, "reliability_features", None
         )
-        if self.reliability_model is not None and self.reliability_feature_fn is None:
+        # Hybrid contact tasks can expose a candidate-horizon feature contract.
+        # Legacy tasks (including the frozen surface-scanning benchmark) keep
+        # the original first-action contract exactly.
+        self.reliability_sequence_feature_fn = getattr(
+            self._task_contract_env, "reliability_features_sequence", None
+        )
+        if (
+            self.reliability_model is not None
+            and self.reliability_feature_fn is None
+            and self.reliability_sequence_feature_fn is None
+        ):
             raise ValueError(
-                "learned reliability requires env.reliability_features"
+                "learned reliability requires env.reliability_features or "
+                "env.reliability_features_sequence"
             )
         self.reliability_risk_tolerance = jnp.asarray(
             getattr(solver, "reliability_risk_tolerance", (0.0, 0.0, 0.0, 0.0)),
@@ -271,8 +312,26 @@ class MdacBackendJax:
         self.reliability_deformation_limit = float(
             getattr(solver, "reliability_deformation_limit", float("inf"))
         )
+        raw_reliability_hard_limits = getattr(
+            solver, "reliability_hard_limits", None
+        )
+        self.reliability_hard_limits = (
+            None
+            if raw_reliability_hard_limits is None
+            else jnp.asarray(raw_reliability_hard_limits, jnp.float32)
+        )
+        self.reliability_support_mode = str(
+            getattr(solver, "reliability_support_mode", "joint")
+        )
+        if self.reliability_support_mode not in {"joint", "state"}:
+            raise ValueError(
+                "reliability_support_mode must be 'joint' or 'state'"
+            )
         flags = getattr(solver, "flags", None)
         self.use_rl_prior = bool(getattr(flags, "use_rl_prior", True))
+        self._gate_controllability_only = bool(
+            getattr(flags, "use_controllability_geometry", False)
+        )
         # coupled annealing (sigma_k down, rho_k up, kappa_k up). Default OFF (no
         # flags / mock => byte-identical DIAL); "mdac" method => flags turn it on.
         self.use_adaptive_schedule = bool(getattr(flags, "use_adaptive_schedule", False))
@@ -541,26 +600,11 @@ class MdacBackendJax:
             # when adaptive off => unchanged.
             kappa_mult = self._kappa_mult(state, Ybar_curr)
             projected_dir = (self.geom_gain * kappa_mult) * u_proj
-            if gate_action is not None:
+            if gate_action is not None and not self._gate_controllability_only:
                 shaped_dir = u_dir + gate_action * (projected_dir - u_dir)
             else:
                 shaped_dir = projected_dir
             Ybar_weighted = Ybar_curr + shaped_dir
-        if self.retraction is not None:
-            Ybar_retracted = self.retraction.retract(
-                state, Ybar_weighted,
-                {
-                    "sched_state": {"k": idx_init, "K": self.Ndiffuse_init},
-                    "sched_params": {"t0": t0},
-                },
-            ).trajectory
-            if gate_action is not None:
-                Ybar_weighted = (
-                    Ybar_weighted
-                    + gate_action * (Ybar_retracted - Ybar_weighted)
-                )
-            else:
-                Ybar_weighted = Ybar_retracted
         # --- transport seam: None => verbatim DIAL; else DDPM/DDIM/FM/Adaptive ---
         if self.transport is None:
             Ybar_next = Ybar_weighted
@@ -584,6 +628,23 @@ class MdacBackendJax:
                 if prior_centers is not None
                 else self._project_to_prior(Ybar_next, U_rl)
             )
+        # Retraction is a feasibility map on the FINAL proposal.  Applying it
+        # before transport lets DDPM/DDIM (and a prior-union projection) move
+        # the plan straight back off the clean manifold.
+        if self.retraction is not None:
+            Ybar_retracted = self.retraction.retract(
+                state, Ybar_next,
+                {
+                    "sched_state": {"k": idx_init, "K": self.Ndiffuse_init},
+                    "sched_params": {"t0": t0},
+                },
+            ).trajectory
+            if gate_action is not None:
+                Ybar_next = Ybar_next + gate_action * (Ybar_retracted - Ybar_next)
+            else:
+                Ybar_next = Ybar_retracted
+        if self._candidate_projection_jit is not None:
+            Ybar_next = self._candidate_projection_jit(state, Ybar_next)
         info = {"rews": rews, "mean_reward": rews.mean(), "weights_max": weights.max()}
         if structured_nodes is not None:
             n_noise = self.Nsample - structured_nodes.shape[0]
@@ -738,7 +799,8 @@ class MdacBackendJax:
         return dense, rewards
 
     def _accept_refinement(
-        self, state, fallback, refined, t0, atacom_incumbent=None
+        self, state, fallback, refined, t0, atacom_incumbent=None,
+        emergency=None,
     ):
         fallback_source = (
             "prior_risk_incumbent"
@@ -764,10 +826,9 @@ class MdacBackendJax:
             info[fallback_source] = risks[0]
             return refined, info
 
-        # At the cold start there is no previously deployed plan to trust.  The
-        # model-based refinement establishes the first receding incumbent; from
-        # the next control step onward rejection keeps the shifted deployed plan
-        # rather than jumping back to an unverified raw policy sequence.
+        # At the cold start there is no previously deployed plan to trust.  Do
+        # not alias it to ``refined``: both plans must retain separate identities
+        # so the task-owned safety contract can validate the first refinement.
         has_atacom_incumbent = atacom_incumbent is not None
         first_replan = (
             (t0 <= 0.0)
@@ -777,23 +838,42 @@ class MdacBackendJax:
             )
             else jnp.asarray(False)
         )
-        fallback = jnp.where(first_replan, refined, fallback)
-
-        candidates = (
-            jnp.stack([fallback, atacom_incumbent, refined], axis=0)
+        base_candidates = (
+            [fallback, atacom_incumbent, refined]
             if has_atacom_incumbent
-            else jnp.stack([fallback, refined], axis=0)
+            else [fallback, refined]
+        )
+        candidates = jnp.stack(
+            base_candidates + ([emergency] if emergency is not None else []),
+            axis=0,
         )
         refined_idx = 2 if has_atacom_incumbent else 1
+        emergency_idx = candidates.shape[0] - 1 if emergency is not None else -1
         dense = self.spline.node2u_batch(candidates)
         if self.score_risk_fn is not None:
             aug_lambda = self.aug_lambda if self._augmented else 0.0
             aug_rho = self.aug_rho if self._augmented else 0.0
-            scores, risks = jax.vmap(
-                lambda us: self.score_risk_fn(
-                    state, us, aug_lambda, aug_rho
+            score_one = lambda us: self.score_risk_fn(
+                state, us, aug_lambda, aug_rho
+            )
+            if emergency is not None and self.emergency_score_risk_fn is not None:
+                # Performance candidates are certified against the task's
+                # robust inner set.  The explicitly task-owned emergency has a
+                # separate physical-set contract, so do not accidentally mark
+                # a safe unload as unrecoverable merely because the measured
+                # state is already inside the robustness buffer band.
+                base_scores, base_risks = jax.vmap(score_one)(dense[:-1])
+                emergency_score, emergency_risk = self.emergency_score_risk_fn(
+                    state, dense[-1], aug_lambda, aug_rho
                 )
-            )(dense)
+                scores = jnp.concatenate(
+                    [base_scores, emergency_score[None]], axis=0
+                )
+                risks = jnp.concatenate(
+                    [base_risks, emergency_risk[None]], axis=0
+                )
+            else:
+                scores, risks = jax.vmap(score_one)(dense)
         else:
             _, rewards = self._rollout_node_candidates(state, candidates, t0)
             scores = jnp.mean(rewards, axis=-1)
@@ -801,15 +881,23 @@ class MdacBackendJax:
         learned_risks = None
         support_scores = None
         if self.reliability_model is not None:
-            reliability_features = jax.vmap(
-                lambda us: self.reliability_feature_fn(state, us[0])
-            )(dense)
+            if self.reliability_sequence_feature_fn is not None:
+                reliability_features = jax.vmap(
+                    lambda us: self.reliability_sequence_feature_fn(state, us)
+                )(dense)
+            else:
+                reliability_features = jax.vmap(
+                    lambda us: self.reliability_feature_fn(state, us[0])
+                )(dense)
             learned_risks = jax.vmap(
                 self.reliability_model.predict_upper
             )(reliability_features)
-            support_scores = jax.vmap(
-                self.reliability_model.support_score
-            )(reliability_features)
+            support_fn = (
+                self.reliability_model.support_score_state
+                if self.reliability_support_mode == "state"
+                else self.reliability_model.support_score
+            )
+            support_scores = jax.vmap(support_fn)(reliability_features)
 
         atacom_selected = jnp.asarray(False)
         if has_atacom_incumbent:
@@ -894,9 +982,22 @@ class MdacBackendJax:
             risk_ok = jnp.all(
                 risks[refined_idx] <= fallback_risk + tolerance
             )
-            # A refined proposal with any predicted force-limit violation is
-            # never accepted, even when the RL fallback is itself imperfect.
-            hard_force_ok = risks[refined_idx, 0] <= 1e-8
+            # The task, rather than the generic backend, owns the semantics of
+            # its risk vector.  Legacy tasks without that hook retain the
+            # original force-component veto.
+            if self.risk_safe_fn is not None:
+                refined_safe = self.risk_safe_fn(risks[refined_idx])
+                fallback_safe = self.risk_safe_fn(fallback_risk)
+                emergency_safe = (
+                    self.risk_safe_fn(risks[emergency_idx])
+                    if emergency is not None
+                    else jnp.asarray(False)
+                )
+            else:
+                refined_safe = risks[refined_idx, 0] <= 1e-8
+                fallback_safe = fallback_risk[0] <= 1e-8
+                emergency_safe = jnp.asarray(False)
+            hard_force_ok = refined_safe
         else:
             risks = jnp.zeros(
                 (candidates.shape[0], 0), dtype=refined.dtype
@@ -904,6 +1005,9 @@ class MdacBackendJax:
             fallback_risk = risks[0]
             risk_ok = jnp.asarray(True)
             hard_force_ok = jnp.asarray(True)
+            refined_safe = jnp.asarray(True)
+            fallback_safe = jnp.asarray(True)
+            emergency_safe = jnp.asarray(False)
 
         if learned_risks is not None:
             learned_support_ok = support_scores[refined_idx] <= 1.0
@@ -919,21 +1023,93 @@ class MdacBackendJax:
                 learned_risks[refined_idx]
                 <= fallback_learned_risk + learned_tolerance
             )
-            learned_hard_ok = (
-                (
-                    learned_risks[refined_idx, 0]
-                    <= self.reliability_force_limit
+            if self.reliability_hard_limits is not None:
+                learned_hard_ok_all = jnp.all(
+                    learned_risks <= self.reliability_hard_limits,
+                    axis=-1,
                 )
-                & (
-                    learned_risks[refined_idx, 2]
-                    <= self.reliability_deformation_limit
+                fallback_learned_hard_ok = jnp.all(
+                    fallback_learned_risk <= self.reliability_hard_limits
                 )
-            )
+            else:
+                # Exact legacy surface-scanning interpretation.
+                learned_hard_ok_all = (
+                    (
+                        learned_risks[:, 0]
+                        <= self.reliability_force_limit
+                    )
+                    & (
+                        learned_risks[:, 2]
+                        <= self.reliability_deformation_limit
+                    )
+                )
+                fallback_learned_hard_ok = (
+                    (fallback_learned_risk[0] <= self.reliability_force_limit)
+                    & (
+                        fallback_learned_risk[2]
+                        <= self.reliability_deformation_limit
+                    )
+                )
+            learned_hard_ok = learned_hard_ok_all[refined_idx]
             risk_ok = risk_ok & learned_risk_ok & learned_support_ok
+            # A learned realization bound is part of final revalidation, not
+            # merely a test of whether refinement improves over the shifted
+            # incumbent.  Otherwise an unreliable incumbent remains the
+            # fallback (and the first replan bypasses the learned hard limit),
+            # even when both performance candidates exceed the calibrated
+            # bound.  The task-owned emergency remains the last-resort action.
+            refined_safe = (
+                refined_safe & learned_support_ok & learned_hard_ok
+            )
+            fallback_safe = (
+                fallback_safe
+                & (fallback_support <= 1.0)
+                & fallback_learned_hard_ok
+            )
             hard_force_ok = hard_force_ok & learned_hard_ok
 
-        accepted = first_replan | (predicted_ok & risk_ok & hard_force_ok)
+        # Safety is lexicographic over performance.  A shifted incumbent is a
+        # valid fallback only after it has been re-evaluated from the *current*
+        # measured state.  If refinement alone is safe, take it even when it is
+        # not a score improvement.  If neither performance candidate is safe,
+        # deploy the task-owned emergency horizon (its own predicted safety is
+        # reported because an existing violation may need time to dissipate).
+        incumbent_valid_safe = fallback_safe & (~first_replan)
+        emergency_incumbent_active = (
+            self.emergency_active_fn(fallback)
+            if self.emergency_active_fn is not None
+            else jnp.asarray(False)
+        )
+        performance_incumbent_valid = (
+            incumbent_valid_safe & (~emergency_incumbent_active)
+        )
+        accepted = refined_safe & (
+            (~performance_incumbent_valid)
+            | (predicted_ok & risk_ok & hard_force_ok)
+        )
+        task_emergency_override = (
+            self.emergency_override_fn(state)
+            if (
+                emergency is not None
+                and self.emergency_override_fn is not None
+            )
+            else jnp.asarray(False)
+        )
+        accepted = accepted & (~task_emergency_override)
+        emergency_selected = task_emergency_override | (
+            (~refined_safe) & (~incumbent_valid_safe)
+            if emergency is not None
+            else jnp.asarray(False)
+        )
         selected = jnp.where(accepted, refined, fallback)
+        if emergency is not None:
+            selected = jnp.where(emergency_selected, emergency, selected)
+        selected_revalidated_safe = jnp.where(
+            emergency_selected,
+            emergency_safe,
+            jnp.where(accepted, refined_safe, incumbent_valid_safe),
+        )
+        emergency_unrecoverable = emergency_selected & (~emergency_safe)
         info = {
             "prior_accepted": accepted.astype(jnp.float32),
             "prior_predicted_improvement": improvement,
@@ -943,11 +1119,29 @@ class MdacBackendJax:
             "prior_risk_ok": risk_ok.astype(jnp.float32),
             "prior_force_veto": (~hard_force_ok).astype(jnp.float32),
             "atacom_incumbent_selected": atacom_selected.astype(jnp.float32),
+            "incumbent_revalidated_safe": incumbent_valid_safe.astype(jnp.float32),
+            "refined_revalidated_safe": refined_safe.astype(jnp.float32),
+            "emergency_selected": emergency_selected.astype(jnp.float32),
+            "emergency_task_override": task_emergency_override.astype(
+                jnp.float32
+            ),
+            "emergency_revalidated_safe": emergency_safe.astype(jnp.float32),
+            "emergency_incumbent_active": emergency_incumbent_active.astype(
+                jnp.float32
+            ),
+            "selected_revalidated_safe": selected_revalidated_safe.astype(
+                jnp.float32
+            ),
+            "emergency_unrecoverable": emergency_unrecoverable.astype(
+                jnp.float32
+            ),
         }
         info[fallback_source] = fallback_risk
         if has_atacom_incumbent:
             info["prior_score_atacom"] = scores[1]
             info["prior_risk_atacom"] = risks[1]
+        if emergency is not None:
+            info["prior_risk_emergency"] = risks[emergency_idx]
         if learned_risks is not None:
             info["reliability_risk_incumbent"] = fallback_learned_risk
             info["reliability_risk_refined"] = learned_risks[refined_idx]
@@ -1063,19 +1257,44 @@ class MdacBackendJax:
             refined = self._replan_scan_jit(
                 state, warm_start, schedule, rng, t0, U_rl
             )
-        if self._prior_active:
+        # Receding-incumbent acceptance is a final model-based safety check, not
+        # an RL-only feature.  It must remain active during the CPU pre-prior
+        # phase so the post-retraction proposal is evaluated before deployment.
+        # Other fallback modes preserve their legacy prior-gated behaviour.
+        incumbent_acceptance = (
+            self.prior_acceptance
+            and self.prior_fallback_mode == "receding_incumbent"
+            and self.score_risk_fn is not None
+        )
+        if self._prior_active or incumbent_acceptance:
             fallback = (
                 receding_incumbent
                 if self.prior_fallback_mode == "receding_incumbent"
                 else U_rl
             )
+            if self._candidate_projection_jit is not None:
+                fallback = self._candidate_projection_jit(state, fallback)
+                refined = self._candidate_projection_jit(state, refined)
+            emergency = (
+                self.emergency_plan_fn(state, fallback, t0)
+                if (
+                    self.prior_fallback_mode == "receding_incumbent"
+                    and self.emergency_plan_fn is not None
+                )
+                else None
+            )
+            if (
+                emergency is not None
+                and self._candidate_projection_jit is not None
+            ):
+                emergency = self._candidate_projection_jit(state, emergency)
             if self.prior_atacom_incumbent:
                 selected, acceptance_info = self._accept_refinement_jit(
-                    state, fallback, refined, t0, U_atacom
+                    state, fallback, refined, t0, U_atacom, emergency
                 )
             else:
                 selected, acceptance_info = self._accept_refinement_jit(
-                    state, fallback, refined, t0
+                    state, fallback, refined, t0, None, emergency
                 )
             return selected, {**acceptance_info, **proposal_info}
         return refined, proposal_info
@@ -1089,8 +1308,25 @@ class MdacBackendJax:
         return self.spline.node2u(plan_var)[0]
 
     def shift(self, plan_var) -> jnp.ndarray:
-        if self._prior_active and self.prior_fallback_mode == "receding_incumbent":
+        if (
+            self._prior_active
+            and self.prior_fallback_mode == "receding_incumbent"
+        ):
             return self.spline.shift_nodes_terminal_hold(plan_var)
+        if (
+            self.prior_fallback_mode == "receding_incumbent"
+            and self.emergency_active_fn is not None
+        ):
+            # Preserve canonical DIAL zero-tail semantics for ordinary CPU
+            # incumbents.  Only the task-owned emergency needs terminal hold:
+            # zero-padding its normalized force/stiffness channels would turn
+            # a 0-N compliant plan back into a loaded nominal-stiffness plan.
+            emergency_active = self.emergency_active_fn(plan_var)
+            return jnp.where(
+                emergency_active,
+                self.spline.shift_nodes_terminal_hold(plan_var),
+                self.spline.shift_nodes(plan_var),
+            )
         return self.spline.shift_nodes(plan_var)
 
     # --- unified backend interface (single-shot, parallel) -------------------

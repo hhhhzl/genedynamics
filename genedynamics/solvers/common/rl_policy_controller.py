@@ -84,9 +84,24 @@ class RLPolicyController:
         state = x0
         states, actions, infos = [state], [], []
         key = rng
+        closed_loop_step = None
+        if self.action_projection is None:
+            # Contact tasks retain every executed State for force/torque
+            # metrics.  Compile one policy+dynamics transition and invoke it
+            # from the host loop; compiling a full 50-step scan exceeds the
+            # memory budget of a 16-GB CPU Mac, while leaving the two calls
+            # separate accumulates many small MJX executables.
+            def _closed_loop_step(current, action_key):
+                action = self.act_fn(current.obs, action_key)
+                return self.env.step(current, action), action
+
+            closed_loop_step = jax.jit(_closed_loop_step)
         for _ in range(int(n_steps)):
             key, k = jax.random.split(key)
-            a = self.act_fn(state.obs, k)                       # policy action
+            if closed_loop_step is not None:
+                state, a = closed_loop_step(state, k)
+            else:
+                a = self.act_fn(state.obs, k)                   # policy action
             if self.action_projection is not None:
                 project_with_info = getattr(
                     self.action_projection, "project_with_info", None
@@ -96,7 +111,7 @@ class RLPolicyController:
                     infos.append(projection_info)
                 else:
                     a = self.action_projection(state, a)        # ATACOM tangent / ISSA safe-set
-            state = self.env.step(state, a)
+                state = self.env.step(state, a)
             if synchronize_steps:
                 jax.block_until_ready(state)
             actions.append(a)

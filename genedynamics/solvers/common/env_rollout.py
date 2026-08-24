@@ -60,7 +60,12 @@ def build_brax_rollout_augmented(env: Any) -> Callable[..., Any]:
     so this is byte-identical to :func:`build_brax_rollout` on unconstrained tasks.
     """
     step = env.step
-    cres = env.constraint_residual
+    # A task may expose a narrower residual for soft feasibility than for
+    # constraint-aware controllers such as ATACOM.  This matters when an
+    # equality describes execution tracking rather than safety: penalising that
+    # lag in the AL makes forward progress artificially infeasible.  Existing
+    # environments keep their byte-identical behaviour through the fallback.
+    cres = getattr(env, "soft_feasibility_residual", env.constraint_residual)
 
     def rollout_one(state, us, t0, aug_lambda, aug_rho):  # us: (Hsample+1, nu)
         def f(s, u):

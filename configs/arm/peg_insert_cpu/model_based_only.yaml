@@ -1,0 +1,5 @@
+base: _base.yaml
+name: model_based_only
+method: mdac_controllable
+group: baseline
+output_dir: results/arm/peg_insert_cpu/model_based_only

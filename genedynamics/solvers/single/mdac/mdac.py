@@ -102,6 +102,7 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         retraction: Any = None,         # optional genemetry CfsRetraction
         geometry_gate_fn: Any = None,   # -> {action/scalar/path/normal/stiffness/force}
         prepare_state_fn: Any = None,   # frozen task context before reverse diffusion
+        candidate_projection_fn: Any = None,  # task-owned executable-set map
         mdac_topk_active: int = 8,
         mdac_eps_stab: float = 1e-6,
         mdac_geom_gain: float = 1.0,
@@ -126,6 +127,8 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         reliability_risk_tolerance: Any = (0.0, 0.0, 0.0, 0.0),
         reliability_force_limit: float = 0.25,
         reliability_deformation_limit: float = float("inf"),
+        reliability_hard_limits: Any = None,
+        reliability_support_mode: str = "joint",
         **kwargs: Any,
     ) -> None:
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -164,6 +167,7 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         self.retraction = retraction
         self.geometry_gate_fn = geometry_gate_fn
         self.prepare_state_fn = prepare_state_fn
+        self.candidate_projection_fn = candidate_projection_fn
         self.prior = prior                  # read by MdacBackendJax (None => no warm-start mix)
         self.atacom_prior = atacom_prior
         self.prior_lambda_shift = float(prior_lambda_shift)
@@ -205,6 +209,12 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         )
         self.reliability_force_limit = float(reliability_force_limit)
         self.reliability_deformation_limit = float(reliability_deformation_limit)
+        self.reliability_hard_limits = (
+            None
+            if reliability_hard_limits is None
+            else tuple(float(x) for x in reliability_hard_limits)
+        )
+        self.reliability_support_mode = str(reliability_support_mode)
 
         self.config.update(
             dict(

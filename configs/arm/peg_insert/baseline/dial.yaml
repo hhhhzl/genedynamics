@@ -1,0 +1,5 @@
+base: ../_base.yaml
+name: dial
+method: dial
+output_dir: results/arm/peg_insert/baseline/dial
+method_params: {controller_method: dial}

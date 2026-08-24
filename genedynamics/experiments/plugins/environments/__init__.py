@@ -31,6 +31,9 @@ from .replica_3dgs import Replica3DGSPlugin
 from .tum_rgbd_3dgs import TUM_RGBD_3DGSPlugin
 from .mujoco_active_perception import MuJoCoActivePerceptionPlugin
 from .humanoid_corridor import HumanoidCorridor2DPlugin
+from .humanoid_box_push import HumanoidBoxPushPlugin
+from .manipulator_peg_insert import ManipulatorPegInsertPlugin
+from .manipulator_surface_scan import ManipulatorSurfaceScanPlugin
 
 __all__ = [
     'SingleIntegrator2DPlugin',
@@ -56,5 +59,7 @@ __all__ = [
     'TUM_RGBD_3DGSPlugin',
     'MuJoCoActivePerceptionPlugin',
     'HumanoidCorridor2DPlugin',
+    'ManipulatorSurfaceScanPlugin',
+    'ManipulatorPegInsertPlugin',
+    'HumanoidBoxPushPlugin',
 ]
-

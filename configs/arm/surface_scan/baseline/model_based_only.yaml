@@ -1,0 +1,5 @@
+base: ../_base.yaml
+name: model_based_only
+method: model_based_only
+output_dir: results/arm/surface_scan/baseline/model_based_only
+method_params: {controller_method: mdac_controllable}

@@ -37,7 +37,7 @@ import numpy as np
 import jax
 
 from genedynamics.solvers.single.mdac.experiment import (
-    make_controller, metrics_plugin_for, ARM_TASK, HUMANOID_TASK,
+    make_controller, metrics_plugin_for, ARM_TASK, HUMANOID_TASK, INSERT_TASK,
 )
 from genedynamics.solvers.single.mdac.config import (
     deep_merge,
@@ -71,6 +71,10 @@ def _apply_run_overrides(configs: List[Dict[str, Any]], cfg_dir: str) -> List[Di
       MDAC_ENV_OVERRIDES         JSON object merged into env_params
       MDAC_METHOD_OVERRIDES      JSON object merged into method_params
       MDAC_OUTPUT_ROOT           redirects outputs, preserving config-tree layout
+      MDAC_RESUME                reuse completed seeds from existing metrics.json
+      MDAC_RENDER_GIF            render collected humanoid states when truthy
+      MDAC_RENDER_STRIDE/FPS     GIF temporal sampling/playback (defaults 2/15)
+      MDAC_RENDER_WIDTH/HEIGHT   GIF resolution (defaults 640/448)
     """
     methods = set(_csv_env("MDAC_METHODS"))
     variants = set(_csv_env("MDAC_VARIANTS"))
@@ -164,6 +168,10 @@ def _evaluation_configs(
             dict(base.get("env_params") or {}),
             dict(environment.get("env_params") or {}),
         )
+        execution_env_params = deep_merge(
+            dict(base.get("execution_env_params") or {}),
+            dict(environment.get("execution_env_params") or {}),
+        )
         algorithm = str(base["name"])
         rel = suite
         out.append({
@@ -174,6 +182,7 @@ def _evaluation_configs(
             "seeds": seeds,
             "n_steps": n_steps,
             "env_params": env_params,
+            "execution_env_params": execution_env_params,
             "method_params": dict(method_params),
             "output_dir": os.path.join(root, rel),
             "output_rel": os.path.join(algorithm, rel),
@@ -220,15 +229,81 @@ def _series(task: str, res: Any, env: Any, x0: Any) -> Dict[str, Any]:
     (a cheap env.step roll, NOT the planner)."""
     import numpy as _np
     from genedynamics.experiments.plugins.metrics.extractors import (
-        arm_surface_scan_signals, humanoid_box_push_signals)
-    ex = humanoid_box_push_signals if task == HUMANOID_TASK else arm_surface_scan_signals
+        arm_surface_scan_signals, humanoid_box_push_signals, peg_insert_signals)
+    ex = (
+        humanoid_box_push_signals if task == HUMANOID_TASK
+        else peg_insert_signals if task == INSERT_TASK
+        else arm_surface_scan_signals
+    )
     d = ex(res, env, None, None, x0=x0)
     def lst(k):
         v = d.get(k)
         return None if v is None else _np.asarray(v).reshape(len(_np.asarray(v)), -1).squeeze().tolist()
     if task == HUMANOID_TASK:
-        return {k: lst(k) for k in ("box_x", "force", "g_bal", "g_fric", "tip_series",
-                                    "f_normal", "f_tangential", "slip_speed", "in_contact")}
+        sd = {k: lst(k) for k in (
+            "box_x", "box_yaw", "force", "g_bal", "g_fric", "tip_series",
+            "f_normal", "f_tangential", "slip_speed", "in_contact",
+            "corridor_clearance", "wall_force", "wall_contact",
+        )}
+        sd["actions"] = _np.asarray(res.actions, dtype=_np.float32).tolist()
+        return sd
+    if task == INSERT_TASK:
+        sd = {k: lst(k) for k in (
+            "insertion_depth", "lateral_force", "axial_force",
+            "bending_torque", "torsional_torque", "jammed", "success",
+            "contact_mode", "penetration", "lateral_error", "angle_error",
+            "pose", "angle_vec", "measured_lateral_force",
+            "measured_axial_force", "measured_bending_torque",
+            "measured_wrench_delta", "contact_count", "contact_count_delta",
+            "contact_volatility", "stall_steps",
+            "force_violation", "torque_violation",
+        )}
+        sd["actions"] = _np.asarray(res.actions, dtype=_np.float32).tolist()
+        # Acceptance is a per-replan signal, so preserve it alongside the
+        # executed physics trace for mechanism debugging and paper diagnostics.
+        infos = list(getattr(res, "infos", ()))
+        for key in (
+            "prior_accepted", "prior_predicted_improvement",
+            "prior_score_fallback", "prior_score_refined", "prior_risk_ok",
+            "prior_force_veto", "incumbent_revalidated_safe",
+            "refined_revalidated_safe", "emergency_selected",
+            "emergency_task_override", "selected_revalidated_safe",
+        ):
+            values = [
+                float(_np.asarray(info[key]).reshape(-1)[0])
+                for info in infos
+                if isinstance(info, dict) and key in info
+            ]
+            if values:
+                sd[key] = values
+        for key in (
+            "prior_risk_incumbent", "prior_risk_refined",
+            "prior_risk_emergency", "reliability_risk_incumbent",
+            "reliability_risk_refined",
+        ):
+            values = [
+                _np.asarray(info[key], dtype=_np.float32).reshape(-1).tolist()
+                for info in infos
+                if isinstance(info, dict) and key in info
+            ]
+            if values:
+                sd[key] = values
+        sd.update(
+            f_target=float(env._config.f_target),
+            f_min=float(env._config.f_min),
+            f_max=float(env._config.f_max),
+            f_cmd_pad=float(env._config.f_cmd_pad),
+            lateral_force_limit=float(env._config.lateral_force_limit),
+            bending_torque_limit=float(env._config.bending_torque_limit),
+            socket_depth=float(env._config.socket_depth),
+            jam_dwell_steps=int(env._config.jam_dwell_steps),
+            action_delay_steps=int(env._config.action_delay_steps),
+            sensor_delay_steps=int(env._config.sensor_delay_steps),
+            approach_gap=float(env._config.approach_gap),
+            translation_step=list(env._config.translation_step),
+            rotation_step=float(env._config.rotation_step),
+        )
+        return sd
     sd = {k: lst(k) for k in (
         "force", "force_cmd", "in_contact", "on_surface", "on_path_common",
         "deformation", "scan_xi", "normal_offset",
@@ -267,88 +342,76 @@ def _budget(cfg: Dict[str, Any]) -> Tuple[int, int, int]:
     return (int(mp["Nsample"]), int(mp["Hsample"]), int(mp["Ndiffuse"]))
 
 
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _render_humanoid_gif(env: Any, res: Any, path: str) -> None:
+    """Render the actually executed MJX states retained by ``run_receding``."""
+    import imageio.v2 as imageio
+
+    stride = max(1, int(os.environ.get("MDAC_RENDER_STRIDE", "2")))
+    fps = max(1.0, float(os.environ.get("MDAC_RENDER_FPS", "15")))
+    width = max(64, int(os.environ.get("MDAC_RENDER_WIDTH", "640")))
+    height = max(64, int(os.environ.get("MDAC_RENDER_HEIGHT", "448")))
+    states = list(getattr(res, "states", ()))
+    if not states or not hasattr(states[0], "pipeline_state"):
+        raise ValueError("humanoid GIF rendering requires collected Brax states")
+    selected = states[::stride]
+    if selected[-1] is not states[-1]:
+        selected.append(states[-1])
+    pipeline_states = [s.pipeline_state for s in selected]
+    frames = env.render(pipeline_states, height=height, width=width)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    imageio.mimsave(path, frames, fps=fps, loop=0)
+
+
 def _run_one(cfg: Dict[str, Any], level: str, seed: int) -> Dict[str, Any]:
     task, method = cfg["task"], cfg["method"]
     mk, sampling = _solver_cfg(cfg)
     env, sol = make_controller(task, method, level=level, surface_seed=seed, prior=None,
-                               env_overrides=cfg.get("env_params"), **mk, **sampling)
-    x0 = env.reset(jax.random.PRNGKey(seed))
+                               env_overrides=cfg.get("env_params"),
+                               execution_env_overrides=cfg.get("execution_env_params"),
+                               **mk, **sampling)
+    eval_env = getattr(sol, "execution_env", None) or env
+    x0 = eval_env.reset(jax.random.PRNGKey(seed))
     t0 = time.time()
     # The task metric extractors replay executed actions from x0, so retaining
     # every full MJX State only causes long-run device-memory growth.
     res = sol.run_receding(
         x0, int(cfg["n_steps"]), jax.random.PRNGKey(1000 + seed),
-        collect_states=False,
+        # Contact-rich humanoid rollouts can bifurcate under action replay;
+        # retain the actually executed states so paper metrics describe the
+        # controller trajectory, not a numerically different lax.scan replay.
+        collect_states=(task in (HUMANOID_TASK, INSERT_TASK)),
         synchronize_steps=True,
     )
     dt = time.time() - t0
-    rec = metrics_plugin_for(task).compute(res, env, None, None, x0=x0, planning_time=dt)
-    rec.update(_prior_diagnostics(res))
+    rec = metrics_plugin_for(task).compute(
+        res, eval_env, None, None, x0=x0, planning_time=dt
+    )
+    rec.update(_prior_diagnostics(res, task=task))
     try:
-        rec["series"] = _series(task, res, env, x0)     # rich raw data for post-hoc plots
+        rec["series"] = _series(task, res, eval_env, x0)     # rich raw data for post-hoc plots
     except Exception as e:
         rec["series"] = {"error": f"{type(e).__name__}: {e}"}
+    if task == HUMANOID_TASK and _env_truthy("MDAC_RENDER_GIF"):
+        algorithm = cfg.get("algorithm", cfg.get("variant", method))
+        gif_path = os.path.join(cfg["output_dir"], f"{algorithm}_seed{seed}.gif")
+        _render_humanoid_gif(env, res, gif_path)
+        rec["render_gif"] = gif_path
     return rec
 
 
-def _prior_diagnostics(res: Any) -> Dict[str, Any]:
-    """Aggregate MDAC-prior and baseline-controller diagnostics."""
-    infos = [x for x in getattr(res, "infos", ()) if isinstance(x, dict)]
-    accepted = [x["prior_accepted"] for x in infos if "prior_accepted" in x]
+def _prior_diagnostics(res: Any, task: str | None = None) -> Dict[str, Any]:
+    """Backward-compatible wrapper around the shared experiment utility."""
+    from genedynamics.experiments.utils.metrics import (
+        aggregate_receding_diagnostics,
+    )
 
-    def mean_scalar(key: str) -> float:
-        values = [np.asarray(x[key], dtype=float).reshape(-1) for x in infos if key in x]
-        return float(np.mean(np.concatenate(values))) if values else float("nan")
-
-    out: Dict[str, Any] = {}
-    if accepted:
-        out.update({
-            "prior_acceptance_rate": mean_scalar("prior_accepted"),
-            "prior_predicted_improvement_mean": mean_scalar(
-                "prior_predicted_improvement"
-            ),
-            "prior_risk_ok_rate": mean_scalar("prior_risk_ok"),
-            "prior_force_veto_rate": mean_scalar("prior_force_veto"),
-        })
-        out["prior_fallback_rate"] = 1.0 - out["prior_acceptance_rate"]
-        for source in (
-            "prior_risk_rl", "prior_risk_incumbent", "prior_risk_refined",
-            "prior_risk_atacom",
-            "reliability_risk_incumbent", "reliability_risk_refined",
-        ):
-            vectors = [np.asarray(x[source], dtype=float).reshape(-1) for x in infos if source in x]
-            if vectors:
-                mean = np.mean(np.stack(vectors), axis=0)
-                labels = ("force_violation", "contact_loss", "deformation", "force_mae")
-                out.update({
-                    f"{source}_{label}": float(value)
-                    for label, value in zip(labels, mean)
-                })
-        out.update({
-            key: mean_scalar(key)
-            for key in (
-                "reliability_support_incumbent", "reliability_support_refined",
-                "proposal_stochastic_count", "proposal_atacom_count",
-                "proposal_logp_mean",
-                "proposal_gaussian_best_reward", "proposal_rl_best_reward",
-                "proposal_atacom_best_reward", "proposal_gaussian_weight",
-                "proposal_rl_weight", "proposal_atacom_weight",
-                "atacom_incumbent_selected", "prior_score_atacom",
-            )
-            if any(key in x for x in infos)
-        })
-    if any("failure" in x for x in infos):
-        out.update({
-            "issa_projection_failure_rate": mean_scalar("failure"),
-            "issa_intervention_mean": mean_scalar("intervention"),
-            "issa_projected_margin_mean": mean_scalar("margin"),
-        })
-    if any("atacom_slack_norm" in x for x in infos):
-        out.update({
-            "atacom_slack_norm_mean": mean_scalar("atacom_slack_norm"),
-            "atacom_action_norm_mean": mean_scalar("atacom_action_norm"),
-        })
-    return out
+    return aggregate_receding_diagnostics(
+        getattr(res, "infos", ()), task=task,
+    )
 
 
 def _table(records: List[Dict[str, Any]], algorithms: List[str], task: str, suite: str,
@@ -430,6 +493,7 @@ def main(argv: List[str] | None = None) -> int:
     records: List[Dict[str, Any]] = []
     failures: List[Dict[str, Any]] = []
     n_runs = sum(len(c["seeds"]) for c in configs)
+    resume = _env_truthy("MDAC_RESUME")
     i = 0
     for cfg in configs:
         task, method, level = cfg["task"], cfg["method"], cfg["level"]
@@ -437,6 +501,23 @@ def main(argv: List[str] | None = None) -> int:
         out_dir = cfg["output_dir"]
         os.makedirs(out_dir, exist_ok=True)
         path = os.path.join(out_dir, RESULT_FILE)
+        manifest_path = os.path.join(out_dir, "manifest.json")
+        if resume and os.path.exists(path):
+            if not os.path.exists(manifest_path):
+                raise ValueError(f"cannot resume without manifest: {path}")
+            with open(manifest_path) as f:
+                old_manifest = json.load(f)
+            old_config = dict(old_manifest.get("config") or {})
+            current_config = dict(cfg)
+            # A validated single-seed sanity run may be extended to the full
+            # seed set.  Every task, environment, method and budget field must
+            # still match; only the selected seed list is resumable metadata.
+            old_config.pop("seeds", None)
+            current_config.pop("seeds", None)
+            if old_config != current_config:
+                raise ValueError(
+                    f"resume config does not match existing manifest: {path}"
+                )
         manifest = {
             "config": cfg,
             "git_sha": _git_sha(),
@@ -446,16 +527,30 @@ def main(argv: List[str] | None = None) -> int:
                     "MDAC_LEVELS", "MDAC_SUITES",
                     "MDAC_SEEDS", "MDAC_N_STEPS",
                     "MDAC_NSAMPLE", "MDAC_ENV_OVERRIDES", "MDAC_OUTPUT_ROOT",
-                    "MDAC_METHOD_OVERRIDES",
+                    "MDAC_METHOD_OVERRIDES", "MDAC_RESUME",
                 ) if k in os.environ
             },
         }
-        with open(os.path.join(out_dir, "manifest.json"), "w") as f:
+        with open(manifest_path, "w") as f:
             json.dump(manifest, f, indent=2, default=float)
         method_recs: List[Dict[str, Any]] = []
+        if resume and os.path.exists(path):
+            with open(path) as f:
+                previous = json.load(f)
+            if not isinstance(previous, list):
+                raise ValueError(f"resume file must contain a record list: {path}")
+            method_recs = [
+                rec for rec in previous
+                if int(rec.get("seed", -1)) in cfg["seeds"]
+            ]
+            records.extend(method_recs)
+        completed_seeds = {int(rec["seed"]) for rec in method_recs}
         for seed in cfg["seeds"]:
             i += 1
             tag = f"{task.split('_')[0]}/{level}/{variant}/seed{seed}"
+            if seed in completed_seeds:
+                print(f"[{i}/{n_runs}] {tag}  resumed")
+                continue
             try:
                 rec = _run_one(cfg, level, seed)
                 rec.update(
@@ -469,7 +564,11 @@ def main(argv: List[str] | None = None) -> int:
                 with open(path, "w") as f:
                     json.dump(method_recs, f, indent=2, default=float)
                 jax.clear_caches(); gc.collect()       # release XLA executables (avoid OOM over many runs)
-                key = "violation_rate" if task == HUMANOID_TASK else "surface_tracking_error"
+                key = (
+                    "violation_rate" if task == HUMANOID_TASK
+                    else "insertion_success" if task == INSERT_TASK
+                    else "surface_tracking_error"
+                )
                 print(f"[{i}/{n_runs}] {tag}  {key}~{rec.get(key, float('nan')):.4g}")
             except Exception as e:        # one failure must not kill the matrix
                 failure = {

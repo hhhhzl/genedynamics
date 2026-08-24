@@ -29,6 +29,7 @@ from genedynamics.robots.g1.spec import (
     G1_WAIST_JOINTS,
     G1RobotSpec,
 )
+from genedynamics.robots.g1.profile import g1_profile
 
 __all__ = [
     "G1AssetNotFoundError",
@@ -45,6 +46,7 @@ __all__ = [
     "G1_RIGHT_ARM_JOINTS",
     "G1_RIGHT_LEG_JOINTS",
     "G1_WAIST_JOINTS",
+    "g1_profile",
 ]
 
 
@@ -69,9 +71,10 @@ def _register_with_global_registry() -> None:
         env_factory_name="humanoid_g1_physics",
         nq=36,
         nv=35,
-        act_dim=23,
+        act_dim=29,
         model_path_resolver=g1_scene_path,
         spec_class=HumanoidTaskSpec,
+        profile_factory=g1_profile,
         description="Unitree G1 (mujoco_menagerie)",
     )
 

@@ -16,7 +16,8 @@ from genedynamics.learning.priors import (
     list_priors, make_prior,
 )
 from genedynamics.learning.reliability import (
-    FEATURE_NAMES, LinearReliabilityModel, RISK_NAMES,
+    FEATURE_NAMES, LinearReliabilityModel, PEG_INSERT_FEATURE_NAMES,
+    PEG_INSERT_RISK_NAMES, RISK_NAMES, samples_from_records,
 )
 from genedynamics.solvers.single.mdac.backends.mdac_jax import MdacBackendJax
 from genedynamics.solvers.common.rl_policy_controller import RLPolicyController
@@ -234,6 +235,98 @@ def test_learned_reliability_is_additional_acceptance_veto():
     assert "reliability_risk_refined" in info
 
 
+def test_sequence_reliability_uses_candidate_horizon_when_available():
+    class Reliability:
+        def predict_upper(self, features):
+            return jnp.asarray([features[0], 0.0, 0.0, 0.0])
+
+        def support_score(self, features):
+            return jnp.asarray(0.0)
+
+    backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    backend.prior = _FakePrior(COMMON["Hnode"] + 1, COMMON["nu"])
+    backend.use_rl_prior = True
+    backend.risk_fn = lambda state, us: jnp.zeros((4,), jnp.float32)
+    backend.reliability_model = Reliability()
+    backend.reliability_feature_fn = lambda state, action: action[:1] * 0.0
+    backend.reliability_sequence_feature_fn = (
+        lambda state, actions: jnp.max(actions[:, :1], axis=0)
+    )
+    backend.reliability_force_limit = 0.35
+    backend.reliability_deformation_limit = float("inf")
+    backend.reliability_risk_tolerance = jnp.zeros((4,), jnp.float32)
+    incumbent = jnp.full((COMMON["Hnode"] + 1, COMMON["nu"]), 0.3)
+    refined = incumbent.at[-1, 0].set(0.8)
+
+    selected, info = backend._accept_refinement(
+        jnp.zeros((1,)), incumbent, refined, jnp.float32(1.0)
+    )
+    np.testing.assert_allclose(selected, incumbent)
+    assert float(info["prior_force_veto"]) == 1.0
+
+
+def test_task_reliability_hard_limits_cover_every_risk_channel():
+    class Reliability:
+        def predict_upper(self, features):
+            return jnp.asarray([0.0, features[0], 0.0, 0.0])
+
+        def support_score(self, features):
+            return jnp.asarray(0.0)
+
+    backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    backend.prior = _FakePrior(COMMON["Hnode"] + 1, COMMON["nu"])
+    backend.use_rl_prior = True
+    backend.risk_fn = lambda state, us: jnp.zeros((4,), jnp.float32)
+    backend.reliability_model = Reliability()
+    backend.reliability_feature_fn = lambda state, action: action[:1]
+    backend.reliability_sequence_feature_fn = None
+    backend.reliability_hard_limits = jnp.asarray(
+        [1.0, 0.35, 1.0, jnp.inf], jnp.float32
+    )
+    backend.reliability_risk_tolerance = jnp.ones((4,), jnp.float32)
+    incumbent = jnp.full((COMMON["Hnode"] + 1, COMMON["nu"]), 0.3)
+    refined = jnp.broadcast_to(TARGET, incumbent.shape)
+
+    selected, info = backend._accept_refinement(
+        jnp.zeros((1,)), incumbent, refined, jnp.float32(1.0)
+    )
+    np.testing.assert_allclose(selected, incumbent)
+    assert float(info["prior_force_veto"]) == 1.0
+
+
+def test_learned_reliability_rejects_unsafe_incumbent_for_emergency():
+    class Reliability:
+        def predict_upper(self, features):
+            return jnp.asarray([features[0], 0.0, 0.0, 0.0])
+
+        def support_score(self, features):
+            return jnp.asarray(0.0)
+
+    backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    backend.prior = _FakePrior(COMMON["Hnode"] + 1, COMMON["nu"])
+    backend.use_rl_prior = True
+    backend.risk_fn = lambda state, us: jnp.zeros((4,), jnp.float32)
+    backend.reliability_model = Reliability()
+    backend.reliability_feature_fn = lambda state, action: action[:1]
+    backend.reliability_sequence_feature_fn = None
+    backend.reliability_hard_limits = jnp.asarray(
+        [0.2, 1.0, 1.0, jnp.inf], jnp.float32
+    )
+    backend.reliability_risk_tolerance = jnp.ones((4,), jnp.float32)
+    incumbent = jnp.full((COMMON["Hnode"] + 1, COMMON["nu"]), 0.3)
+    refined = jnp.full_like(incumbent, 0.4)
+    emergency = jnp.zeros_like(incumbent)
+
+    selected, info = backend._accept_refinement(
+        jnp.zeros((1,)), incumbent, refined, jnp.float32(1.0),
+        emergency=emergency,
+    )
+    np.testing.assert_allclose(selected, emergency)
+    assert float(info["incumbent_revalidated_safe"]) == 0.0
+    assert float(info["refined_revalidated_safe"]) == 0.0
+    assert float(info["emergency_selected"]) == 1.0
+
+
 def test_linear_reliability_fit_calibration_and_roundtrip(tmp_path):
     rng = np.random.default_rng(7)
     train_x = rng.normal(size=(160, len(FEATURE_NAMES))).astype(np.float32)
@@ -249,11 +342,182 @@ def test_linear_reliability_fit_calibration_and_roundtrip(tmp_path):
     assert np.all(np.mean(cal_y <= upper + 1e-6, axis=0) >= 0.9)
     assert np.mean(np.asarray(model.in_support(cal_x))) >= 0.9
     assert not bool(model.in_support(np.full(len(FEATURE_NAMES), 1.0e6)))
+    action_only_ood = np.zeros(len(FEATURE_NAMES), np.float32)
+    action_only_ood[model.state_feature_count:] = 1.0e6
+    assert bool(model.support_score_state(action_only_ood) <= 1.0)
+    assert bool(model.support_score_action(action_only_ood) > 1.0)
 
     path = tmp_path / "reliability.json"
     model.save(path, metadata={"split": "unit"})
     loaded = LinearReliabilityModel.load(path)
     np.testing.assert_allclose(loaded.predict_upper(cal_x), upper, atol=1e-6)
+
+
+def test_peg_insert_reliability_schema_roundtrip(tmp_path):
+    rng = np.random.default_rng(17)
+    nx, ny = len(PEG_INSERT_FEATURE_NAMES), len(PEG_INSERT_RISK_NAMES)
+    train_x = rng.normal(size=(192, nx)).astype(np.float32)
+    train_y = np.maximum(rng.normal(0.1, 0.05, size=(192, ny)), 0.0).astype(np.float32)
+    cal_x = rng.normal(size=(96, nx)).astype(np.float32)
+    cal_y = np.maximum(rng.normal(0.12, 0.05, size=(96, ny)), 0.0).astype(np.float32)
+    model = LinearReliabilityModel.fit(
+        train_x,
+        train_y,
+        cal_x,
+        cal_y,
+        feature_names=PEG_INSERT_FEATURE_NAMES,
+        risk_names=PEG_INSERT_RISK_NAMES,
+        state_feature_count=32,
+        support_state_feature_count=12,
+        probability_risk_count=3,
+        classification_probabilities=True,
+        basis_mode="contact_phase",
+    )
+    assert model.predict_upper(cal_x).shape == (len(cal_x), ny)
+    assert model.state_feature_count == 32
+    assert model.support_state_feature_count == 12
+    assert model.classification_probabilities
+    assert model.basis_mode == "contact_phase"
+    path = tmp_path / "peg_reliability.json"
+    model.save(path)
+    loaded = LinearReliabilityModel.load(path)
+    assert loaded.feature_names == PEG_INSERT_FEATURE_NAMES
+    assert loaded.risk_names == PEG_INSERT_RISK_NAMES
+    assert loaded.probability_risk_count == 3
+    assert loaded.basis_mode == "contact_phase"
+    np.testing.assert_allclose(
+        loaded.predict_upper(cal_x), model.predict_upper(cal_x), atol=1e-6
+    )
+
+
+def test_peg_insert_reliability_labels_the_committed_horizon():
+    n = 5
+    actions = np.zeros((n, 13), np.float32)
+    actions[1:4, 2] = [0.1, 0.2, 0.3]
+    series = {
+        "actions": actions.tolist(),
+        # State t=0 is at the socket plane, so row t=1 owns three committed
+        # actions and must see the violation at post-state t=3.
+        "pose": np.zeros((n, 3), np.float32).tolist(),
+        "angle_vec": np.zeros((n, 3), np.float32).tolist(),
+        "measured_lateral_force": [0.0] * n,
+        "measured_axial_force": [0.0] * n,
+        "measured_bending_torque": [0.0] * n,
+        "measured_wrench_delta": [0.0] * n,
+        "contact_count": [0.0] * n,
+        "stall_steps": [0.0] * n,
+        "force_violation": [0.0, 0.0, 0.0, 1.0, 0.0],
+        "torque_violation": [0.0] * n,
+        "jammed": [0.0] * n,
+        "axial_force": [0.0] * n,
+        "socket_depth": 0.04,
+        "lateral_force_limit": 20.0,
+        "f_max": 30.0,
+        "bending_torque_limit": 1.5,
+        "jam_dwell_steps": 4,
+        "f_target": 10.0,
+    }
+    x, y, provenance = samples_from_records([{
+        "task": "manipulator_peg_insert",
+        "suite": "unit",
+        "seed": 7,
+        "series": series,
+    }])
+    assert x.shape == (n - 1, len(PEG_INSERT_FEATURE_NAMES))
+    assert y.shape == (n - 1, len(PEG_INSERT_RISK_NAMES))
+    assert y[0, 0] == 1.0
+    axial_idx = PEG_INSERT_FEATURE_NAMES.index("cumulative_axial_action")
+    assert np.isclose(x[0, axial_idx], 0.6)
+    assert provenance[0]["step"] == 1
+
+
+def test_peg_insert_reliability_extends_labels_for_execution_delay():
+    n = 6
+    actions = np.zeros((n, 13), np.float32)
+    series = {
+        "actions": actions.tolist(),
+        "pose": np.zeros((n, 3), np.float32).tolist(),
+        "angle_vec": np.zeros((n, 3), np.float32).tolist(),
+        "measured_lateral_force": [0.0] * n,
+        "measured_axial_force": [0.0] * n,
+        "measured_bending_torque": [0.0] * n,
+        "measured_wrench_delta": [0.0] * n,
+        "contact_count": [0.0] * n,
+        "stall_steps": [0.0] * n,
+        # For row t=1, a delayed candidate owns post-states t=1..4.
+        "force_violation": [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        "torque_violation": [0.0] * n,
+        "jammed": [0.0] * n,
+        "axial_force": [0.0] * n,
+        "socket_depth": 0.04,
+        "lateral_force_limit": 20.0,
+        "f_max": 30.0,
+        "bending_torque_limit": 1.5,
+        "jam_dwell_steps": 4,
+        "f_target": 10.0,
+        "action_delay_steps": 1,
+    }
+    _, y, _ = samples_from_records([{
+        "task": "manipulator_peg_insert",
+        "suite": "unit",
+        "seed": 7,
+        "series": series,
+    }])
+    assert y[0, 0] == 1.0
+
+
+def test_peg_insert_reliability_jam_labels_require_applied_insertion_intent():
+    n = 6
+    actions = np.zeros((n, 13), np.float32)
+    # Canonical f_min=0 maps to raw=-0.6 for [-10, 40] N.  The old trace says
+    # the residual contact was stalled/jammed, but the delayed applied command
+    # is already a zero-force hold, so the current contract must not label jam.
+    actions[:, 12] = -0.6
+    series = {
+        "actions": actions.tolist(),
+        "pose": np.zeros((n, 3), np.float32).tolist(),
+        "angle_vec": np.zeros((n, 3), np.float32).tolist(),
+        "measured_lateral_force": [0.0] * n,
+        "measured_axial_force": [10.0] * n,
+        "measured_bending_torque": [0.0] * n,
+        "measured_wrench_delta": [0.0] * n,
+        "contact_count": [4.0] * n,
+        "stall_steps": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        "force_violation": [0.0] * n,
+        "torque_violation": [0.0] * n,
+        "jammed": [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        "axial_force": [10.0] * n,
+        "socket_depth": 0.04,
+        "lateral_force_limit": 20.0,
+        "f_min": 0.0,
+        "f_max": 30.0,
+        "f_cmd_pad": 10.0,
+        "bending_torque_limit": 1.5,
+        "jam_dwell_steps": 4,
+        "f_target": 10.0,
+        "action_delay_steps": 1,
+    }
+    _, safe_y, _ = samples_from_records([{
+        "task": "manipulator_peg_insert",
+        "suite": "unit",
+        "seed": 7,
+        "series": series,
+    }])
+    assert np.max(safe_y[:, 2]) == 0.0
+
+    # Positive axial commands are true insertion intent and must preserve the
+    # same historical jam event under the relabeling pass.
+    insertion_series = dict(series)
+    insertion_actions = actions.copy()
+    insertion_actions[:, 2] = 0.5
+    insertion_series["actions"] = insertion_actions.tolist()
+    _, jam_y, _ = samples_from_records([{
+        "task": "manipulator_peg_insert",
+        "suite": "unit",
+        "seed": 7,
+        "series": insertion_series,
+    }])
+    assert np.max(jam_y[:, 2]) == 1.0
 
 
 def test_no_acceptance_skips_counterfactual_rollouts():
@@ -489,6 +753,13 @@ def test_prior_diagnostics_aggregate_acceptance_and_risk():
     assert diagnostics["prior_fallback_rate"] == pytest.approx(0.5)
     assert diagnostics["prior_force_veto_rate"] == pytest.approx(0.5)
     assert diagnostics["prior_risk_rl_contact_loss"] == pytest.approx(0.15)
+    insert_diagnostics = _prior_diagnostics(
+        result, task="manipulator_peg_insert"
+    )
+    assert insert_diagnostics["prior_risk_rl_torque_violation"] == pytest.approx(
+        0.15
+    )
+    assert insert_diagnostics["prior_risk_rl_jam"] == pytest.approx(0.3)
 
 
 def test_best_eval_selector_pairs_params_with_later_metrics():

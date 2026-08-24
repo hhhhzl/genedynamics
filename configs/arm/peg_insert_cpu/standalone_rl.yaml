@@ -1,0 +1,12 @@
+base: _base.yaml
+name: standalone_rl
+method: rl
+group: baseline
+output_dir: results/arm/peg_insert_cpu/standalone_rl
+
+evaluation:
+  training_steps: 200000
+  policy_domain_count: 4
+
+method_params:
+  policy_ckpt: results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl

@@ -1,0 +1,41 @@
+base: _base.yaml
+name: full_mdac
+method: mdac_controllable_gate
+group: main
+output_dir: results/arm/peg_insert_cpu/full_mdac
+
+evaluation:
+  training_steps: 200000
+  policy_domain_count: 4
+
+method_params:
+  policy_ckpt: results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl
+  prior_lambda_shift: 0.8
+  prior_include_incumbent: true
+  prior_trust_radius: 0.35
+  prior_stochastic_samples: 8
+  # P1 showed that the current stateful ATACOM adapter is not a useful
+  # PegInsert proposal: it never beat Gaussian in the canonical run and its
+  # slack state is not synchronized when MDAC deploys another controller.
+  # Keep ATACOM as an algorithm-level baseline until that contract is fixed.
+  prior_atacom_samples: 0
+  prior_union_trust: false
+  prior_atacom_incumbent: false
+  # Final post-retraction safety check; also active before an RL prior exists.
+  prior_fallback_mode: receding_incumbent
+  prior_acceptance: true
+  prior_improvement_epsilon: 0.0
+  # Risk order: force violation, torque violation, jam, force-target MAE.  The
+  # last is a performance diagnostic, while the first three remain strict.
+  prior_risk_tolerance: [0.0, 0.0, 0.0, 1.0]
+  reliability_ckpt: results/arm/peg_insert_cpu/_policies/reliability_q95.json
+  # Candidate-sequence event probabilities for force, torque and jam.  The
+  # 0.5 force cutoff is the validated selective-risk operating point;
+  # force-MAE remains a nonbinding continuous performance diagnostic.
+  reliability_hard_limits: [0.5, 0.95, 0.95, 10.0]
+  # State support detects unseen contact regimes. Candidate actions remain
+  # bounded by the prior trust region and their calibrated absolute risk;
+  # requiring them to resemble behavior-policy actions would reject the very
+  # optimizer improvements that the prior is meant to seed.
+  reliability_support_mode: state
+  reliability_risk_tolerance: [1.0, 1.0, 1.0, 10.0]

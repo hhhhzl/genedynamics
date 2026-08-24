@@ -114,6 +114,13 @@ METHOD_TABLE: Dict[str, MethodFlags] = {
         use_horizon_geometry=True,
         use_controllability_geometry=True,
     ),
+    "mdac_controllable_gate": replace(
+        _FULL,
+        use_horizon_geometry=True,
+        use_geometry_gate=True,
+        component_geometry_gate=True,
+        use_controllability_geometry=True,
+    ),
     # --- baselines in the same sampler. idea.txt §Baselines: they "optimize over
     # the same control sequence U" -> they SHARE the position-stiffness primitive
     # (use_stiffness on); only the MDAC manifold/prior/anneal seams are removed.

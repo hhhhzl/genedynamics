@@ -1,0 +1,1456 @@
+{
+  "baseline_git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+  "checkpoint_sha256": {
+    "results/arm/impedence/_policies/shared_atacom_ppo_seed0.pkl": "5800a59dd179eb736937d17b424c7b4d075150b03d08b0adde7bbae878edfa36",
+    "results/arm/impedence/_policies/shared_ppo_seed0.pkl": "763683288fb7fd8dd2a6714a8c15ab129e8c372c01d6c37f33942278bdd518d6",
+    "results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json": "679059181f3404c95672fb2cfa332911660ee5b054fa7625a60d36ca9a1e62b6",
+    "results/arm/peg_insert_cpu/_policies/reliability_q95.json": "dbf710d93d537a2937c70cb3ba304448742801c972e6268003d547580a3abdcf",
+    "results/arm/peg_insert_cpu/_policies/shared_atacom_ppo_seed0.pkl": "c7a75f8279fc68a50936652928b151262b5ff71c3ab28c4ea99b5c562e9db88f",
+    "results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl": "76dd7c1cf95283a6fcf7b4c9b4bb79d4c25e7bfcdcd70e844b89f5ac4d72b161"
+  },
+  "docker": {
+    "created": "2026-08-12T01:24:45.866744004Z",
+    "image": "genedynamics/dev-cpu:local",
+    "image_id": "sha256:dd16cea66406d15accec5bdb3e654d721f140de591a500e91d1e4d437cf346ca",
+    "repo_digests": []
+  },
+  "formal_lock_blockers": [
+    "surface-scan ATACOM checkpoint is not training-budget aligned",
+    "H1 Full-MDAC learned-component contract is not available"
+  ],
+  "p5_reference_records": [
+    {
+      "algorithm": "dial",
+      "budget": {
+        "Hnode": 4,
+        "Hsample": 16,
+        "Ndiffuse": 2,
+        "Ndiffuse_init": 10,
+        "Nsample": 64,
+        "n_steps": 100
+      },
+      "checkpoints": {},
+      "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+      "manifest_sha256": "72789f32af2ff73fe97cf7eb97837fab8addf0e1ac6baaed67b3436fd74ddb94",
+      "metrics_sha256": "c96c9f376ab29d7528181df4544c328d231cf3ac47fa257d0e0228a6f783acee",
+      "result_root": "results/arm/impedence/cpu_controllability_geometry/comparison",
+      "seed_count": 2,
+      "seeds": [
+        10,
+        11
+      ],
+      "suite": "rigid_cylinder"
+    },
+    {
+      "algorithm": "full_mdac",
+      "budget": {
+        "Hnode": 4,
+        "Hsample": 16,
+        "Ndiffuse": 2,
+        "Ndiffuse_init": 10,
+        "Nsample": 64,
+        "n_steps": 100
+      },
+      "checkpoints": {
+        "atacom_policy_ckpt": "results/arm/impedence/_policies/shared_atacom_ppo_seed0.pkl",
+        "policy_ckpt": "results/arm/impedence/_policies/shared_ppo_seed0.pkl",
+        "reliability_ckpt": "results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json"
+      },
+      "git_sha": "4f8e5b1d403ce7cc92b23b6a736d212e8c6641cf",
+      "manifest_sha256": "9a3f1b058cf0c34f99d58b965092bdf29c57d6cb6158d083a8d1111e63d41148",
+      "metrics_sha256": "ab3cec1fb1418eecdbdf69ab4dff95f10f92c152f0ac92d58ef5468802d254da",
+      "result_root": "results/arm/impedence/cpu_controllability_geometry/structured_prior_phase1_5",
+      "seed_count": 2,
+      "seeds": [
+        10,
+        11
+      ],
+      "suite": "rigid_cylinder"
+    },
+    {
+      "algorithm": "dial",
+      "budget": {
+        "Hnode": 4,
+        "Hsample": 8,
+        "Ndiffuse": 2,
+        "Ndiffuse_init": 4,
+        "Nsample": 64,
+        "n_steps": 64
+      },
+      "checkpoints": {},
+      "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+      "manifest_sha256": "aeaf518e64818a4e818e411990fa3971ccec2c2ed5ab9addd8c68c5678ed8828",
+      "metrics_sha256": "2ff2e59f9692b8b49c2b92dc1d4ace738d95ed2c91532fa3ae495e9a161fac78",
+      "result_root": "results/arm/peg_insert_cpu/formal_canonical_v4",
+      "seed_count": 10,
+      "seeds": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "suite": "id_wide"
+    },
+    {
+      "algorithm": "full_mdac",
+      "budget": {
+        "Hnode": 4,
+        "Hsample": 8,
+        "Ndiffuse": 2,
+        "Ndiffuse_init": 4,
+        "Nsample": 64,
+        "n_steps": 64
+      },
+      "checkpoints": {
+        "policy_ckpt": "results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl",
+        "reliability_ckpt": "results/arm/peg_insert_cpu/_policies/reliability_q95.json"
+      },
+      "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+      "manifest_sha256": "9255c96c396baae0b8d5a2b728b885be0b94b1f0cca2a8f7ea2eaa8c111c7c06",
+      "metrics_sha256": "93ab5d12b5901a90ef98719dbf35f0b3142814a62e53d7ba09a36fe918f97c86",
+      "result_root": "results/arm/peg_insert_cpu/formal_canonical_v4",
+      "seed_count": 10,
+      "seeds": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "suite": "id_wide"
+    },
+    {
+      "algorithm": "dial",
+      "budget": {
+        "Hnode": 4,
+        "Hsample": 16,
+        "Ndiffuse": 2,
+        "Ndiffuse_init": 10,
+        "Nsample": 64,
+        "n_steps": 100
+      },
+      "checkpoints": {},
+      "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+      "manifest_sha256": "40f185124f0f72599ba614aef3a14fd02adeb12536636210dae560ee8e8b613a",
+      "metrics_sha256": "17a28d09abac88f1c0c76a2302c9291e7cb7647e25cb85aea58f42c4f9603c5a",
+      "result_root": "results/humanoid/box_push",
+      "seed_count": 2,
+      "seeds": [
+        0,
+        1
+      ],
+      "suite": "p3_unjam"
+    },
+    {
+      "algorithm": "model_based_mdac",
+      "budget": {
+        "Hnode": 4,
+        "Hsample": 16,
+        "Ndiffuse": 2,
+        "Ndiffuse_init": 10,
+        "Nsample": 64,
+        "n_steps": 100
+      },
+      "checkpoints": {},
+      "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+      "manifest_sha256": "74871dcb980d1fed4972c4930ee46fefff5361f290ef6d331ad368099562b1b4",
+      "metrics_sha256": "1d4c3758d56eada33480ab140795f5e2dcd9241e9d4fc17de3e0211539fba78b",
+      "result_root": "results/humanoid/box_push",
+      "seed_count": 2,
+      "seeds": [
+        0,
+        1
+      ],
+      "suite": "p3_unjam"
+    }
+  ],
+  "package_versions": {
+    "brax": "0.14.1",
+    "jax": "0.6.2",
+    "jaxlib": "0.6.2",
+    "mujoco": "3.6.0",
+    "numpy": "2.2.6",
+    "python": "3.10.20"
+  },
+  "recorded_on": "2026-08-24",
+  "result_roots": [
+    {
+      "classification": "validated-development",
+      "entries": [
+        {
+          "algorithm": "atacom",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_atacom_ppo_seed0.pkl"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "0c116d38443b5e999d4aab0ada3d14ed0bdf0af04eba947593d950a972c430b1",
+          "metrics_sha256": "54e18e5b40959997fd07a69ba41a27c55510ec968e13090ac4371519b1037b21",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "rigid_cylinder"
+        },
+        {
+          "algorithm": "atacom",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_atacom_ppo_seed0.pkl"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "98b281fbcac0a46826da067c823053ab8e379750cc59656540360a625988f9f7",
+          "metrics_sha256": "9cbd087d0f3ba415cad3ea7b1b8239d76f431a79085b3e1337ea296dbcc54031",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_cylinder"
+        },
+        {
+          "algorithm": "atacom",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_atacom_ppo_seed0.pkl"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "054d269b04b5977d85e81dcd3abdf28cb985f5c397d75167a931412152c71a5b",
+          "metrics_sha256": "d87050d3c88e4f08734f0e9b66eed2927a495c43e7c6f064775f03bce43c4732",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_unseen"
+        },
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "72789f32af2ff73fe97cf7eb97837fab8addf0e1ac6baaed67b3436fd74ddb94",
+          "metrics_sha256": "c96c9f376ab29d7528181df4544c328d231cf3ac47fa257d0e0228a6f783acee",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "rigid_cylinder"
+        },
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "207112f8541ef6abdc1089b463677cd8a893cc5a131637b712291860cbc758f5",
+          "metrics_sha256": "1c629cf218030bf54506dbb338530c22163fd7ca6e7d9915c7ef89c9feed4b85",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_cylinder"
+        },
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "3b344952537570d424ca4866dd6e0f78437b36037fc30148bda066afd646052c",
+          "metrics_sha256": "1821bd7a0bf68759c271f483a33c4da6e7c82a0f17a1a0d35c9554d5d151645e",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_unseen"
+        },
+        {
+          "algorithm": "full_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_ppo_seed0.pkl",
+            "reliability_ckpt": "results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "1f9ccff729e87f2c0088928689ff6958192ffd9c9a12d5ae6296bb16065b3c89",
+          "metrics_sha256": "70f5d71c79f26a128f9bbe59579e4a8e349db1d2f847db9428bdd7c2097d7cb4",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "rigid_cylinder"
+        },
+        {
+          "algorithm": "full_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_ppo_seed0.pkl",
+            "reliability_ckpt": "results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "5e432a3ca17951be0ebd00b9a524c7614b18f66222727830a140a0d3c66c2ba6",
+          "metrics_sha256": "4f179e6980555df445c5dd436f4cab79904c8ef9d72e8904b6c4b88f8cab5c4f",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_cylinder"
+        },
+        {
+          "algorithm": "full_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_ppo_seed0.pkl",
+            "reliability_ckpt": "results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "ce679de4d727bff90cb73f5503920f4630f01215b0dac51b582a3d26b529e26e",
+          "metrics_sha256": "ab54e89454abf08c8f3806371235f7dfba12a1bb4d4c02189d39f8d3468917d1",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_unseen"
+        },
+        {
+          "algorithm": "issa",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_ppo_seed0.pkl"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "98e1a1816c2ce40d6407c350e78de11fa61a64ad31cdc3b1c11fa6abfd048eed",
+          "metrics_sha256": "7c90365e170f72c3ea1d60bc5798e1e1007c7356882bb0252cc978a12113a0d6",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "rigid_cylinder"
+        },
+        {
+          "algorithm": "issa",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_ppo_seed0.pkl"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "b8e465c7ae3743d66a2845f0f354731c5c4fa82c091d63a5927f5aa2deaaf821",
+          "metrics_sha256": "63e33aecf0b510b35305aecb133a5c9498a4c3f542110614551a41635685ae32",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_cylinder"
+        },
+        {
+          "algorithm": "issa",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_ppo_seed0.pkl"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "845635320272e00a94ba97a4cfb5b8aee41b970c511c6c7f8c58132e5013113a",
+          "metrics_sha256": "b521c0de373ed87dde3408253af16c74fa38f4b988610cd489a48347524d2ea9",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_unseen"
+        },
+        {
+          "algorithm": "model_based_only",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "reliability_ckpt": "results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "820dda192f3e35b0722b7d0f22fb5f6da42a82809e88d6d5cf35e7fb78bea3dd",
+          "metrics_sha256": "79fad26c63ca3e4549cfbe6065c592833a2300c0cd43b656ea4170d1544e940d",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "rigid_cylinder"
+        },
+        {
+          "algorithm": "model_based_only",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "reliability_ckpt": "results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "fb486c1422c554b98a7665edb0f568fe1a9f6120facea51599ba828253ec95f6",
+          "metrics_sha256": "0c89221ff189668a833bd0d68a0e04583ea3a411aa6b77c4acd59ebbd577ed48",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_cylinder"
+        },
+        {
+          "algorithm": "model_based_only",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "reliability_ckpt": "results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "f51b0a51375647689669e466b6e4f34277b323230e20c603dce4c717fc474a0a",
+          "metrics_sha256": "bc690fca76028d9dd88629d7f9879a7efa437d7246197d08bedc3188e401536f",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_unseen"
+        },
+        {
+          "algorithm": "mppi",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "99c1147e2db5d52271d630cd4793cb54fd11435b24a2a5ef1c964dea5ea0e801",
+          "metrics_sha256": "1f2d1f449c72b23a414906290d30482b99cf218e1922dd367bd759f3b608b0a8",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "rigid_cylinder"
+        },
+        {
+          "algorithm": "mppi",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "bd7359c0a8936f696fa8dd0da4e82f13cc31c2b01efd619c4e8eed1febd41b01",
+          "metrics_sha256": "ba8e1092312bd818428227157ab9e14441c1b14ada2e17872e18f0ccfb627a6b",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_cylinder"
+        },
+        {
+          "algorithm": "mppi",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "86f0ff48c4879a8520a5c2685c44e87077ca3a636889b1415410291f5006d50c",
+          "metrics_sha256": "144e19a3965e82844fdce99bc137185bc4ed03f88aafbcc6bc53a2ac26aea917",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_unseen"
+        },
+        {
+          "algorithm": "pegasusflow",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "bb744816468fd55e36ff125d29fa7bef446d1a7b8a7b3118f2b5e9045e1e2b74",
+          "metrics_sha256": "e7e9fea77ef24d028d61cc194e3762dfb12de8981c09f657ce48955c4410a7d4",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "rigid_cylinder"
+        },
+        {
+          "algorithm": "pegasusflow",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "812e3761bbc843fad5e20d80095d72d8bdbbff705884bd93f59c1744bb4623c3",
+          "metrics_sha256": "d7b1de277a2a5eca5df3889023359dbc03af1e61612ab5559d7d876faf6ff5b6",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_cylinder"
+        },
+        {
+          "algorithm": "pegasusflow",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "6d71a082ced537f0dc488e7579d73f2d2e891d5d1af6ccfb07d5dbfdf2105258",
+          "metrics_sha256": "972d9a8f4b1091b35c4ce0712046a3002708ae13109636b608e95a36759a5fcc",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_unseen"
+        },
+        {
+          "algorithm": "standalone_rl",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_ppo_seed0.pkl"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "611f0ca8e0d6301836eadf02f2d90dda2f72661b23641f581320bceb8a6584fb",
+          "metrics_sha256": "5a8e384e9afa21ce812c8344ce9dbfa376a80405bafbd1f399270b15af17fd63",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "rigid_cylinder"
+        },
+        {
+          "algorithm": "standalone_rl",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_ppo_seed0.pkl"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "0de35b4356158c7f089a5a90d4cbb6b397dd492cc2df0a9ca8e412d75791bfc3",
+          "metrics_sha256": "5573d932e8a077fbe135f2a9b0d396a89341eb0001057863581878762879ab3d",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_cylinder"
+        },
+        {
+          "algorithm": "standalone_rl",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/impedence/_policies/shared_ppo_seed0.pkl"
+          },
+          "git_sha": "bfdb61ee36a18632506b06751383181ab884f92e",
+          "manifest_sha256": "280ce7c335335dc64e1946f3b95b4c2ba05a9b5dc75dc31b1442010de0faa0e8",
+          "metrics_sha256": "e71cbb2fd91d78723078ba40bc656d8b6aa7d141c53df9da7fceef200fca271c",
+          "seed_count": 2,
+          "seeds": [
+            10,
+            11
+          ],
+          "suite": "soft_unseen"
+        }
+      ],
+      "path": "results/arm/impedence/cpu_controllability_geometry/comparison"
+    },
+    {
+      "classification": "formal-candidate",
+      "entries": [
+        {
+          "algorithm": "atacom",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/peg_insert_cpu/_policies/shared_atacom_ppo_seed0.pkl"
+          },
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "9ef612fd94d1a198916bffc96f9090ec223d4c5adc9e850590e5d3e5ccc2b7b3",
+          "metrics_sha256": "2a86a54375cf2b418c47f7926d8e66487afff105af245268fb9595bf2d478a0c",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "id_wide"
+        },
+        {
+          "algorithm": "atacom",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/peg_insert_cpu/_policies/shared_atacom_ppo_seed0.pkl"
+          },
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "d4e8f45e1618f90b5f358f9891558ebd04d84324c8812b7d51523325924c48f6",
+          "metrics_sha256": "5e9f5c9ce3c7596133d7f81391d650921cb17b15c405a19d955fe5bf096c972b",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "ood_pose"
+        },
+        {
+          "algorithm": "atacom",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/peg_insert_cpu/_policies/shared_atacom_ppo_seed0.pkl"
+          },
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "135d9bb6a528022bc7c7b45760247af14d2ed85c985acb51e53e1e57ca964bcc",
+          "metrics_sha256": "8346f7017c263d1e62d5500ab7bafb24e7454c9af46452f2a603fa881c856c84",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "ood_sensing"
+        },
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "aeaf518e64818a4e818e411990fa3971ccec2c2ed5ab9addd8c68c5678ed8828",
+          "metrics_sha256": "2ff2e59f9692b8b49c2b92dc1d4ace738d95ed2c91532fa3ae495e9a161fac78",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "id_wide"
+        },
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "4ca67d75e56d89fdd14ba37612ec329d1e6ec7b9813d929e69f3cbe0bf19d560",
+          "metrics_sha256": "10dd74c03fe5a066a4e883862fb9c5115a33243de3f1c726c1e6a665630ef380",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "ood_pose"
+        },
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "d6ddbf6e862fe43b421b9626480a97f7667dd04a6c97c1f582fbc722d9195a43",
+          "metrics_sha256": "5852b0c5e0c122a163add9f1c538af99f09dfbedd6bfd85301eb065fd769fd4d",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "ood_sensing"
+        },
+        {
+          "algorithm": "full_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl",
+            "reliability_ckpt": "results/arm/peg_insert_cpu/_policies/reliability_q95.json"
+          },
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "9255c96c396baae0b8d5a2b728b885be0b94b1f0cca2a8f7ea2eaa8c111c7c06",
+          "metrics_sha256": "93ab5d12b5901a90ef98719dbf35f0b3142814a62e53d7ba09a36fe918f97c86",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "id_wide"
+        },
+        {
+          "algorithm": "full_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl",
+            "reliability_ckpt": "results/arm/peg_insert_cpu/_policies/reliability_q95.json"
+          },
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "bcd72ed53ae90a2040f6f649a0e1ef10b0ea9fd4fe84c877b8fa4b4e75323468",
+          "metrics_sha256": "c078bf882d2c4aaaa811c0c14f830231101599e6f30806f9178103fb76c83d75",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "ood_pose"
+        },
+        {
+          "algorithm": "full_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {
+            "policy_ckpt": "results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl",
+            "reliability_ckpt": "results/arm/peg_insert_cpu/_policies/reliability_q95.json"
+          },
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "b93c7a6a25088ba519cd109941792707e8a363d0093efd20d2dea364045d6eaa",
+          "metrics_sha256": "26c78fed3b852f4407351f4c178bf2b643a17375eb92ee8403ade8014af01e00",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "ood_sensing"
+        },
+        {
+          "algorithm": "model_based_only",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "1f865f56b3fbc6f1ca0a7bfd4c07cfd4c643564c6cacc55ea5090541cf861c2c",
+          "metrics_sha256": "ec2db6452fdc3578b25a05b9de4bbe79dcda398a9234a72cd4d201954a77d245",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "id_wide"
+        },
+        {
+          "algorithm": "model_based_only",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "562ba1e7847f716dbf6bd0b47046de8e73aafe87ecad6e07f0dca5992bb9b9b3",
+          "metrics_sha256": "acafbdf5ca4cd3a6835d5b8e080c77ee5c0421d63158145bb02c8fa3929fb59c",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "ood_pose"
+        },
+        {
+          "algorithm": "model_based_only",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 8,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 4,
+            "Nsample": 64,
+            "n_steps": 64
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "fecf81c764e058e87e46d6cd19ac50525eda4fe9e91bfe9395ae14e17523c44f",
+          "metrics_sha256": "45e5ec8a7bffeae0178edcf0bd89817a7aef7718014b46294fa3c0c779195d34",
+          "seed_count": 10,
+          "seeds": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "suite": "ood_sensing"
+        }
+      ],
+      "path": "results/arm/peg_insert_cpu/formal_canonical_v4"
+    },
+    {
+      "classification": "validated-development",
+      "entries": [
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "0b6adb521a478d84fe8ab31f8c1ca63bad6d631ea244aee9225ce205725b0a02",
+          "metrics_sha256": "b8f021f7318b910f576d39a1ec90fea14829e4d7a38dbde5c8c44ff81999268e",
+          "seed_count": 1,
+          "seeds": [
+            0
+          ],
+          "suite": "p1_force_15n"
+        },
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "885b687c913c9829913fab81893516ff3852c9f9bb41fe712c0b06e230fd67b9",
+          "metrics_sha256": "1fb1c5cd551cb6e2a70a73dd917ac4c837bc1cf62b876d600570f8a7911e6910",
+          "seed_count": 1,
+          "seeds": [
+            0
+          ],
+          "suite": "p1_force_30n"
+        },
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "ef7823a3b68169119ab335ba539f3c56ea15b01c40315f8e958216e4c6711762",
+          "metrics_sha256": "947db7e343d4ec3df533e8bf58c02a629491de658da2c6a7e4d9b1ea43351cf4",
+          "seed_count": 1,
+          "seeds": [
+            0
+          ],
+          "suite": "p2_push_nominal"
+        },
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "b8ac21955d2c106d59ebcc6fec3efaff7590aee00d91be005c6957867e830d8f",
+          "metrics_sha256": "93f54e9197542131ac4d8e55b024e7aecbdf8181eb789124aca4898e3650dd75",
+          "seed_count": 1,
+          "seeds": [
+            0
+          ],
+          "suite": "p2_push_ood"
+        },
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "40f185124f0f72599ba614aef3a14fd02adeb12536636210dae560ee8e8b613a",
+          "metrics_sha256": "17a28d09abac88f1c0c76a2302c9291e7cb7647e25cb85aea58f42c4f9603c5a",
+          "seed_count": 2,
+          "seeds": [
+            0,
+            1
+          ],
+          "suite": "p3_unjam"
+        },
+        {
+          "algorithm": "dial",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "4ac5720aba704fef7c5be7b0e2396e12fb08c703832607b0c6685781341e243b",
+          "metrics_sha256": "94464b6e62e5148d559d88129e583ade79f7d6de80d2be3e28e76fb4b5457279",
+          "seed_count": 2,
+          "seeds": [
+            0,
+            1
+          ],
+          "suite": "p4_walk_push"
+        },
+        {
+          "algorithm": "model_based_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "d6fa0092ed61f4ab861e5e8dfd8215dd0f22ad52a401dd203658998b02f2e69f",
+          "metrics_sha256": "009af6554ec6a28fddc515bc4c69b007fdea9c35331d74f0c2e290930a93f1df",
+          "seed_count": 1,
+          "seeds": [
+            0
+          ],
+          "suite": "p1_force_15n"
+        },
+        {
+          "algorithm": "model_based_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "7f2cb3780eef29f4099a2dc8fcc747996a2aa975422ac38ba9f6f947e3821048",
+          "metrics_sha256": "1094a5a39b886f29673cfb3bb37a9af72a2396efc6b14c774a503c393f6295d9",
+          "seed_count": 1,
+          "seeds": [
+            0
+          ],
+          "suite": "p1_force_30n"
+        },
+        {
+          "algorithm": "model_based_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "98bdf37631a315d2a7072c22e1d2f6510fcfa33c311954afbf5775eac3bc71fe",
+          "metrics_sha256": "4ea42476ffe36745a54e8f9529b43d9b540cb4cb51b5764922d061992e49b20a",
+          "seed_count": 1,
+          "seeds": [
+            0
+          ],
+          "suite": "p2_push_nominal"
+        },
+        {
+          "algorithm": "model_based_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "7462d8077688ef6e66b391264c97b19e51d63bea2953249771649c4e68976967",
+          "metrics_sha256": "8619c507acc215af26399b046aaf4c3532e90e945512d362da7091e7398665ae",
+          "seed_count": 1,
+          "seeds": [
+            0
+          ],
+          "suite": "p2_push_ood"
+        },
+        {
+          "algorithm": "model_based_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "74871dcb980d1fed4972c4930ee46fefff5361f290ef6d331ad368099562b1b4",
+          "metrics_sha256": "1d4c3758d56eada33480ab140795f5e2dcd9241e9d4fc17de3e0211539fba78b",
+          "seed_count": 2,
+          "seeds": [
+            0,
+            1
+          ],
+          "suite": "p3_unjam"
+        },
+        {
+          "algorithm": "model_based_mdac",
+          "budget": {
+            "Hnode": 4,
+            "Hsample": 16,
+            "Ndiffuse": 2,
+            "Ndiffuse_init": 10,
+            "Nsample": 64,
+            "n_steps": 100
+          },
+          "checkpoints": {},
+          "git_sha": "5e10ca84c1da1da2403711dd2246666ad4970775",
+          "manifest_sha256": "e300313e0a5b6cc3cf9a9fd349cfeaa08202b2971dbd357a5f75050c2ceb4aeb",
+          "metrics_sha256": "a965e9c1f249341b29cdfda20817cd8bd6e607f16fcb758d5781e60364c8a575",
+          "seed_count": 2,
+          "seeds": [
+            0,
+            1
+          ],
+          "suite": "p4_walk_push"
+        }
+      ],
+      "path": "results/humanoid/box_push"
+    }
+  ],
+  "p5_equivalence": {
+    "action_tolerance": {
+      "atol": 1e-06,
+      "rtol": 1e-05
+    },
+    "cases": [
+      {
+        "action_sha256": "3351809a38113eabfcc9fb90da08f92f4cfff4e0410e862d4c547d99f6a229c2",
+        "action_shape": [
+          100,
+          10
+        ],
+        "algorithm": "dial",
+        "config_equal": true,
+        "exact_actions": true,
+        "max_action_difference": 0.0,
+        "replay_task_metrics_equal": 30,
+        "suite": "rigid_cylinder",
+        "task": "manipulator_surface_scan"
+      },
+      {
+        "action_sha256": "7b6487edf57c19e1a14fc56d0f950d41bf8945cf9651cdfb86edfe98ffc86da2",
+        "action_shape": [
+          100,
+          10
+        ],
+        "algorithm": "full_mdac",
+        "config_equal": true,
+        "diagnostics_equal": 40,
+        "exact_actions": true,
+        "legacy_current_metrics_sha256": "822954f4991bf1cab7e90c7f0d40422088c5171da4bc6db262c95d7c7a43d082",
+        "max_action_difference": 0.0,
+        "replay_task_metrics_equal": 30,
+        "suite": "rigid_cylinder",
+        "task": "manipulator_surface_scan"
+      },
+      {
+        "action_sha256": "ee781e5b29c4edd56e0991147d8421f4de66e7d567e84b336d40cc5c77aeb00d",
+        "action_shape": [
+          64,
+          13
+        ],
+        "algorithm": "dial",
+        "config_equal": true,
+        "exact_actions": true,
+        "matched_metrics_and_diagnostics": 21,
+        "max_action_difference": 0.0,
+        "suite": "id_wide",
+        "task": "manipulator_peg_insert"
+      },
+      {
+        "action_sha256": "2f444a6546bf7cb984d6cf8d44a1bc66d6a8cec39135ccaf56e77d264485a287",
+        "action_shape": [
+          64,
+          13
+        ],
+        "algorithm": "full_mdac",
+        "config_equal": true,
+        "exact_actions": true,
+        "matched_metrics_and_diagnostics": 65,
+        "max_action_difference": 0.0,
+        "suite": "id_wide",
+        "task": "manipulator_peg_insert"
+      },
+      {
+        "action_sha256": "2201460a9fe79d5a5ac40025544131bc1b5a1f5dbd5364808923af223d198300",
+        "action_shape": [
+          100,
+          12
+        ],
+        "algorithm": "dial",
+        "config_equal": true,
+        "exact_actions": true,
+        "legacy_current_metrics_sha256": "b533b8727ae6039af29857cdff69141bf5f1a02747e8f8e34c9d2ccc02cbacc9",
+        "matched_metrics_and_diagnostics": 35,
+        "max_action_difference": 0.0,
+        "suite": "p3_unjam",
+        "task": "humanoid_box_push"
+      },
+      {
+        "action_sha256": "f3c5112e8b390ccf2e0dfc7bfce32b7d706fe0bfb4ec9eda275125db0936435e",
+        "action_shape": [
+          100,
+          12
+        ],
+        "algorithm": "model_based_mdac",
+        "config_equal": true,
+        "exact_actions": true,
+        "legacy_current_metrics_sha256": "be7b877fa7a78b154f589654858f9e766507e07f1a790df01efba14a196998b3",
+        "matched_metrics_and_diagnostics": 32,
+        "max_action_difference": 0.0,
+        "suite": "p3_unjam",
+        "task": "humanoid_box_push"
+      }
+    ],
+    "recorded_on": "2026-08-24",
+    "runtime_policy": "block_after_each_execution_step; wall-clock runtime reported separately and not used as a numerical-equivalence criterion",
+    "status": "passed",
+    "surface_trace": "The legacy surface harness did not retain executed states and recomputed metrics by replay. Replaying the identical unified actions reproduces all 30 legacy task metrics exactly; unified formal metrics intentionally use collected execution states."
+  },
+  "schema_version": 2,
+  "scope": "pre-unified-runner MDAC evidence and P5 numerical references",
+  "worktree_change_count": 94,
+  "worktree_clean": false,
+  "worktree_note": "This is the pre-commit inventory captured at the P0 audit. The containing scoped commit tracks the unified-runner implementation; formal runs must use a clean checkout of that commit."
+}

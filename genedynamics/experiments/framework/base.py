@@ -141,6 +141,19 @@ class EnvironmentPlugin(ABC):
         """
         pass
 
+    def reset_state(self, env: Any, seed: int) -> Any:
+        """Optional task-owned reset hook.
+
+        Flat planning environments can keep returning ``None`` and use the
+        runner's historical start sampler.  Contact environments override this
+        hook so structured Brax/MJX states never pass through that sampler.
+        """
+        return None
+
+    def execution_env(self, env: Any) -> Any:
+        """Return the hidden/OOD execution environment, or the model env."""
+        return getattr(env, "_experiment_execution_env", None) or env
+
 
 class MetricsPlugin(ABC):
     """
@@ -270,4 +283,3 @@ class ObstacleGeneratorPlugin(ABC):
             Generator name (e.g., "box2d", "drone3d")
         """
         pass
-

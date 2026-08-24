@@ -6,7 +6,10 @@ library, with task-specificity isolated to the extractor."""
 import numpy as np
 
 from genedynamics.experiments.plugins.metrics.extractors import (
-    corridor_signals, corridor_metrics_plugin, CORRIDOR_METRICS,
+    CORRIDOR_METRICS,
+    _contact_step_signals,
+    corridor_metrics_plugin,
+    corridor_signals,
 )
 
 
@@ -64,3 +67,38 @@ def test_corridor_plugin_flags_collision_and_miss():
     assert out["max_violation"] > 0.0
     assert out["success"] == 0.0                        # violating AND too far
     assert out["goal_error"] > 0.2
+
+
+def test_contact_signals_use_collected_states_without_replay(monkeypatch):
+    import jax.numpy as jnp
+
+    class State:
+        pipeline_state = object()
+
+        def __init__(self, value):
+            self.value = value
+
+    trajectory = _Traj(
+        [State(0.0), State(1.0), State(2.0)],
+        [jnp.asarray([0.25]), jnp.asarray([0.5])],
+    )
+
+    def fail_replay(*args, **kwargs):
+        raise AssertionError("structured contact trajectories must not be replayed")
+
+    monkeypatch.setattr(
+        "genedynamics.experiments.plugins.metrics.extractors._roll_brax",
+        fail_replay,
+    )
+    signals = _contact_step_signals(
+        trajectory,
+        object(),
+        jnp.asarray(trajectory.actions),
+        lambda env, state, action: {
+            "value": jnp.asarray([state.value]),
+            "action": action,
+        },
+        {},
+    )
+    assert np.allclose(signals["value"].reshape(-1), [1.0, 2.0])
+    assert np.allclose(signals["action"].reshape(-1), [0.25, 0.5])

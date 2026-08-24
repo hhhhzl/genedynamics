@@ -10,10 +10,14 @@ from genedynamics.robots.registry import (
     register_quadruped,
     register_humanoid,
 )
+from genedynamics.robots.profile import NamedElement, RobotBinding, RobotProfile
 
 __all__ = [
     "RobotEntry",
     "get_robot_registry",
     "register_quadruped",
     "register_humanoid",
+    "NamedElement",
+    "RobotBinding",
+    "RobotProfile",
 ]

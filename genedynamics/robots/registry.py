@@ -26,6 +26,7 @@ class RobotEntry:
     act_dim: int
     model_path_resolver: Optional[Callable[[], str]] = None  # () -> path to MJCF
     spec_class: Optional[Type] = None
+    profile_factory: Optional[Callable[[], Any]] = None
     description: str = ""
 
 
@@ -52,6 +53,7 @@ class RobotRegistry:
         act_dim: int,
         model_path_resolver: Optional[Callable[[], str]] = None,
         spec_class: Optional[Type] = None,
+        profile_factory: Optional[Callable[[], Any]] = None,
         description: str = "",
     ) -> None:
         """Register a robot model."""
@@ -64,6 +66,7 @@ class RobotRegistry:
             act_dim=act_dim,
             model_path_resolver=model_path_resolver,
             spec_class=spec_class,
+            profile_factory=profile_factory,
             description=description,
         )
 
@@ -89,6 +92,13 @@ class RobotRegistry:
             except Exception:
                 return None
         return None
+
+    def get_profile(self, robot_type: str, model_id: str):
+        """Construct the simulation profile registered for a robot, if any."""
+        entry = self.get(robot_type, model_id)
+        if entry is None or entry.profile_factory is None:
+            return None
+        return entry.profile_factory()
 
 
 def get_robot_registry() -> RobotRegistry:
@@ -203,6 +213,33 @@ def _register_builtins(reg: RobotRegistry) -> None:
     """Register built-in robot models."""
     from genedynamics.tasks.quadruped.spec import QuadrupedTaskSpec
     from genedynamics.tasks.humanoid.spec import HumanoidTaskSpec
+    from genedynamics.robots.g1.profile import g1_profile
+    from genedynamics.robots.h1.profile import h1_profile
+    from genedynamics.robots.panda.profile import panda_profile
+    from genedynamics.robots.xarm7.profile import xarm7_profile
+
+    reg.register(
+        robot_type="manipulator",
+        model_id="panda",
+        env_factory_name="manipulator_surface_scan",
+        nq=7,
+        nv=7,
+        act_dim=7,
+        model_path_resolver=panda_profile().model_path_resolver,
+        profile_factory=panda_profile,
+        description="Franka Panda fixed-base torque arm",
+    )
+    reg.register(
+        robot_type="manipulator",
+        model_id="xarm7",
+        env_factory_name="manipulator_surface_scan",
+        nq=7,
+        nv=7,
+        act_dim=7,
+        model_path_resolver=xarm7_profile().model_path_resolver,
+        profile_factory=xarm7_profile,
+        description="UFactory xArm7 fixed-base torque arm",
+    )
 
     # Quadruped: ant (default), go2 (placeholder - env not yet implemented)
     reg.register(
@@ -283,6 +320,7 @@ def _register_builtins(reg: RobotRegistry) -> None:
         act_dim=19,
         model_path_resolver=_get_h1_path,
         spec_class=HumanoidTaskSpec,
+        profile_factory=h1_profile,
         description="Unitree H1 (dial-mpc)",
     )
     # G1: Unitree G1 humanoid (mujoco_menagerie)
@@ -292,9 +330,10 @@ def _register_builtins(reg: RobotRegistry) -> None:
         env_factory_name="humanoid_g1_physics",
         nq=36,  # G1: base + joints
         nv=35,
-        act_dim=23,
+        act_dim=29,
         model_path_resolver=_get_g1_path,
         spec_class=HumanoidTaskSpec,
+        profile_factory=g1_profile,
         description="Unitree G1 (mujoco_menagerie)",
     )
 

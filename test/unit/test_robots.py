@@ -12,6 +12,35 @@ import pytest
 import numpy as np
 
 
+def test_simulation_profiles_are_registered_and_consistent():
+    from genedynamics.robots import get_robot_registry
+
+    registry = get_robot_registry()
+    panda = registry.get_profile("manipulator", "panda")
+    xarm7 = registry.get_profile("manipulator", "xarm7")
+    h1 = registry.get_profile("humanoid", "h1")
+    g1 = registry.get_profile("humanoid", "g1")
+
+    assert panda.num_actuated == 7
+    assert xarm7.num_actuated == 7
+    assert h1.num_actuated == 19
+    assert g1.num_actuated == 29
+    assert registry.get("humanoid", "g1").act_dim == g1.num_actuated
+    assert panda.elements["tool_mount"].kind == "site"
+    assert xarm7.elements["tool_mount"].name == "attachment_site"
+    assert h1.joint_groups["right_arm"] == (15, 16, 17, 18)
+    assert g1.joint_groups["right_arm"] == tuple(range(22, 29))
+
+
+def test_profile_capability_failure_is_explicit():
+    from genedynamics.robots import get_robot_registry
+    from genedynamics.robots.profile import SINGLE_TOOL
+
+    h1 = get_robot_registry().get_profile("humanoid", "h1")
+    with pytest.raises(ValueError, match="single_tool"):
+        h1.require({SINGLE_TOOL})
+
+
 @pytest.mark.unit
 class TestRobotModelProtocol:
     """Test RobotModel Protocol."""
