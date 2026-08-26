@@ -1014,6 +1014,87 @@ Acceptance:
 - The direction of the validated legacy results is reproduced.
 - Convex/hybrid failures are resolved before formal seeds are touched.
 
+Execution record (2026-08-25):
+
+- P7 ran only under the external development root
+  `/private/tmp/enerdynamics-mdac-p7`; canonical paper result directories were
+  not modified. The completed matrix contains 74 runs: 26 Surface, 24
+  PegInsert, and 24 H1. Every run has `results.json`, an executed trajectory,
+  PNG, and GIF, and every selected config passes the visual-aware verifier.
+- The unified runner now supports `--resume`. It reuses a result only when the
+  saved per-run execution contract matches, while treating seeds/suites/levels
+  as dispatch dimensions. The final full-matrix invocation still rewrites one
+  complete manifest and aggregate summary. This was required to isolate
+  high-memory PegInsert seeds after Docker Desktop VM interruptions without
+  accepting stale results or replacing complete summaries.
+- PegInsert passes the mechanism gate. Across ID, PoseOOD, and SensingOOD,
+  Full MDAC achieved `safe_insertion_success = 1.0` and zero force/torque
+  violations for both development seeds. DIAL, Model-based Only, and standalone
+  RL retained high raw insertion success but only 0--0.5 safe success per suite,
+  with higher peak lateral force. This validates reporting safe success rather
+  than raw success alone.
+- H1 supports the model-based geometry narrative without claiming a nonexistent
+  learned Full-MDAC contract. Model-based Only removes the DIAL 30 N force spike,
+  wins P2 nominal and P3 safe success, and ties DIAL at 1.0 safe success on P4.
+  DIAL is stronger on the two-seed P2 OOD success rate. P1 is a force-step test,
+  so its zero task `safe_success` is not interpreted as failure; force peak,
+  tracking error, balance, and violation metrics are the relevant endpoints.
+- The overall P7 promotion gate does **not** pass yet. Surface rigid convex is
+  healthy, and Full MDAC improves safety/tracking, but soft/hybrid progress is
+  below DIAL and the no-stiffness ablation improves hybrid progress. Therefore
+  the current Log-SPD stiffness contribution is not causally validated on the
+  hybrid suites. Do not start formal seeds 10--19 or P8 checkpoint locking until
+  this Surface mechanism blocker is resolved and the P7 subset is rerun.
+
+Surface blocker resolution (2026-08-25, supersedes the preceding Surface
+conclusion but not its historical result record):
+
+- The original hybrid map lived on normalized `xi in [0,1]`, while the locked
+  100-step scan only visited approximately `[0.1000,0.1495]`; therefore the
+  purported spatial-material suites were locally constant. The three canonical
+  hybrid suites now map that finite scan segment over the material chart and
+  use a smooth transition. The integration probe observes both the 2 kN/m and
+  8 kN/m regions without increasing `scan_rate`.
+- Hybrid states lie outside the frozen cylinder reliability checkpoint support.
+  Surface Full MDAC now treats this as learned-model abstention and delegates to
+  its task-owned model certificate; the default OOD veto remains unchanged for
+  tasks without that contract. Learned reliability is therefore **not** claimed
+  as validated by the hybrid result and must still be addressed in P8.
+- Surface acceptance now makes only physical force-bound violation
+  lexicographic. Contact retention, deformation, and force-target error remain
+  declared score/Pareto quantities rather than being required to improve in
+  every coordinate against a shifted incumbent. This removed the seed-dependent
+  safe-incumbent freeze while retaining final candidate revalidation and the
+  task-owned zero-force emergency.
+- The controllability gate attenuates the empirical response lead, keeps clean
+  tangential geometry active, and selectively gates unreliable
+  normal/stiffness/force projection and retraction. This reduced the worst Full
+  hybrid force from 52.90 N to 44.01 N without reducing completion. Executed
+  physical SPD stiffness, rather than ignored chart coordinates, is used by the
+  stiffness metrics and ablations.
+- The final external development matrix is rooted at
+  `/private/tmp/enerdynamics-mdac-surface-stiffness-v13`; formal seeds and
+  canonical result paths were untouched. Across 2 seeds x 3 hybrid maps, Full
+  MDAC has mean path coverage 0.9951, realized completion 1.0, common force MAE
+  8.996 N, zero contact loss, zero force violation, deformation CVaR95 0.01046,
+  force CVaR95 37.04 N, and worst realized force 44.01 N.
+- Against the paired no-stiffness ablation under the identical final gate,
+  Full changes mean path coverage by +0.0611, force MAE by -3.711 N,
+  deformation CVaR95 by -0.00325, force CVaR95 by -8.97 N, and peak overshoot
+  by -11.30 N. Both methods have zero force violation. Against the existing
+  no-controllability-geometry matrix, Full improves mean coverage by 0.0264,
+  force MAE by 0.302 N, deformation CVaR95 by 0.00084, force CVaR95 by
+  3.75 N, and peak overshoot by 4.83 N.
+- One-seed convex guards remain healthy: soft-convex coverage rises from the
+  old P7 value 0.703 to 0.931 with zero contact loss/violation; rigid-convex
+  coverage changes from 0.941 to 0.911, while selected-candidate safety rises
+  from 0.92 to 1.0 and force violation remains zero. This small rigid coverage
+  regression must remain visible in later formal reporting.
+- The Surface hybrid mechanism blocker is resolved for development promotion.
+  Forty-nine focused unit/regression tests and the finite-map/controllability
+  Docker probes pass. P8 checkpoint/calibration locking is still required
+  before formal seeds 10--19; this record does not authorize skipping P8.
+
 ### P8 — Lock learned checkpoints and causal ablations
 
 Actions:
@@ -1036,6 +1117,83 @@ Acceptance:
 - No evaluation seed enters training, checkpoint selection, or calibration.
 - Peg ablations differ from Full MDAC by exactly the named mechanism.
 - The H1 method label accurately reflects the active components.
+
+#### P8 execution record and frozen decision (2026-08-26)
+
+P8 is complete.  Formal seeds 10--19 were not used for policy training,
+checkpoint selection, reliability fitting, or conformal calibration.  The
+task-base YAMLs now carry a machine-checked `learned_component_lock`; the
+configuration audit verifies checkpoint existence and SHA-256, the complete
+training protocol, seed disjointness, shared Full/standalone policy binding,
+and the H1 evidence label before a formal run can start.
+
+The frozen learned components are:
+
+| Task/component | Training budget and split | Selection rule | Frozen checkpoint SHA-256 |
+|---|---|---|---|
+| Surface PPO prior / standalone RL | 2,000,000 environment steps; policy seed 0; four seen rigid/soft domains | maximum training-time development realized progress; selected at 1,000,000 steps | `763683288fb7fd8dd2a6714a8c15ab129e8c372c01d6c37f33942278bdd518d6` |
+| Surface ATACOM | 2,000,000 environment steps; policy seed 0; the same four seen domains and PPO architecture | the same development metric; selected at 500,000 steps | `3807c1e44253d02f03f47ab9f97c4bab6bb16237d7e6521043598a93b2d4a8ea` |
+| Surface reliability | 198 seed-0 development transitions for fit; 198 disjoint seed-1 transitions for q95 calibration; rigid/soft convex only | one frozen ridge + split-conformal fit, with no evaluation-based model selection | `359beaa65602a1acf8287f7cc491ba762b61ff527dba60e9e9d28fdc0bb0e2fe` |
+| PegInsert PPO prior / standalone RL | 200,000 environment steps; policy seed 0; wide/tight/two OOD training domains | development safe-success Pareto selection; selected at 100,000 steps | `76dd7c1cf95283a6fcf7b4c9b4bb79d4c25e7bfcdcd70e844b89f5ac4d72b161` |
+| PegInsert ATACOM | 200,000 environment steps; policy seed 0; the identical four-domain/budget contract | development safe-success Pareto selection; selected at 50,000 steps | `c7a75f8279fc68a50936652928b151262b5ff71c3ab28c4ea99b5c562e9db88f` |
+| PegInsert reliability | 1,078 transitions from development seeds 100/101; 539 disjoint calibration transitions from seed 102 | one frozen ridge-logistic + split-conformal fit | `54b7e822b05bb5cbcedc90ef379ffe85bcbb410b68a7d2922b0c05e94a9f14fa` |
+
+The Surface ATACOM budget mismatch is resolved rather than waived.  The old
+checkpoint contained 200,000 training steps.  Its replacement completed the
+full 2M interaction budget on the same four domains as the PPO prior.  The
+training-time development rewards at 0/0.5M/1M/1.5M/2M were respectively
+11986.5, 13345.0, 11506.3, 12444.9, and 12014.7, so the preregistered selector
+retained the 500k snapshot after finishing all 2M interactions.  The old 200k
+binary is retained only as the external rollback artifact
+`/private/tmp/mdac_p8_surface_atacom_200k_old_seed0.pkl`; no formal YAML points
+to it.
+
+The reliability split produced an additional discriminating result.  A broad
+Surface fit that included final Full and no-stiffness hybrid trajectories met
+q95 coverage but made the gate over-conservative: on development seeds 2/3,
+mean hybrid coverage fell to 0.9406 and acceptance to 1%, despite improving
+force tails.  This checkpoint was rejected.  The frozen contract learns only
+on seen rigid/soft data and treats hybrid material switches as OOD.  Its
+calibration upper coverage is 98.99% for force violation, 99.49% for contact
+loss, and 96.46% for both deformation and normalized force MAE, with 98.99%
+in-support calibration rate.  On the independent hybrid development seeds
+2/3 it abstains on 99.3% of replans, so the task-owned model-based sequence
+certificate decides rather than an extrapolating learned model.
+
+The final six-run Surface hybrid guard (three suites by seeds 2/3) obtains:
+
+| Metric | Frozen P8 Full MDAC | P7 development reference |
+|---|---:|---:|
+| mean trajectory coverage | 1.0000 | 0.9951 |
+| mean common force MAE | 9.226 N | 8.996 N |
+| contact-loss rate | 0.0% | 0.0% |
+| force-violation rate | 0.0% | 0.0% |
+| deformation CVaR95 | 0.01023 | 0.01046 |
+| force CVaR95 | 38.85 N | 37.04 N |
+| selected sequence revalidated safe | 100% | 100% |
+
+Thus the checkpoint lock preserves complete hybrid coverage and zero observed
+violations/contact loss.  The +0.23 N force-MAE and +1.81 N force-CVaR changes
+from the old 200k ATACOM proposal remain visible and must be re-estimated on
+the paired formal seeds; P8 does not convert this development guard into a
+superiority claim.
+
+PegInsert now has exactly two formal learned-component ablations.  The
+`no_rl_prior` config changes the current controllable-gate method by only
+`use_rl_prior` and loads no policy checkpoint.  The
+`no_learned_reliability` config keeps the identical solver/sampling contract,
+loads the shared PPO prior, and removes only the learned reliability model.
+The unified-runner adapter records both switches in `component_contract` and
+rejects contradictory checkpoint bindings.
+
+H1 remains explicitly `model_based_only` evidence.  There is no validated H1
+PPO prior or learned reliability checkpoint and therefore no `full_mdac` H1
+YAML.  The paper must not label the current H1 results as Full MDAC.
+
+The final verification consists of 24 formal configs with zero audit errors,
+52 focused unit/config/report tests, and 15 unified-runner component-contract
+tests.  All pass.  P9 formal seeds are now authorized, subject to committing
+the locked source state first and retaining the hashes above.
 
 ### P9 — Run formal matrices in causal order
 

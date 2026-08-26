@@ -21,6 +21,7 @@ _FACTORY_KEYS = {
     "atacom_policy_ckpt",
     "reliability_ckpt",
 }
+_PLUGIN_KEYS = {"learned_reliability"}
 
 
 @dataclass
@@ -56,16 +57,25 @@ class RecedingContactMethodPlugin(MethodPlugin):
             if method not in METHOD_TABLE:
                 raise ValueError("full_mdac must resolve to an MDAC method contract")
             flags = resolve_method(method)
-            if not flags.use_rl_prior:
-                raise ValueError("full_mdac controller contract disables the RL prior")
-            missing = [
-                key for key in ("policy_ckpt", "reliability_ckpt")
-                if not config.get(key)
-            ]
+            learned_reliability = bool(config.get("learned_reliability", True))
+            missing = []
+            if flags.use_rl_prior and not config.get("policy_ckpt"):
+                missing.append("policy_ckpt")
+            if learned_reliability and not config.get("reliability_ckpt"):
+                missing.append("reliability_ckpt")
             if missing:
                 raise ValueError(
                     "full_mdac requires frozen learned components: "
                     + ", ".join(missing)
+                )
+            if not flags.use_rl_prior and config.get("policy_ckpt"):
+                raise ValueError(
+                    "no-RL-prior ablation must not load a policy checkpoint"
+                )
+            if not learned_reliability and config.get("reliability_ckpt"):
+                raise ValueError(
+                    "no-learned-reliability ablation must not load a "
+                    "reliability checkpoint"
                 )
         elif method in METHOD_TABLE and self.name in {
             "mppi", "pegasusflow", "issa", "atacom", "standalone_rl"
@@ -80,6 +90,7 @@ class RecedingContactMethodPlugin(MethodPlugin):
         solver_cfg = {
             key: value for key, value in config.items()
             if key not in _FACTORY_KEYS
+            and key not in _PLUGIN_KEYS
             and key not in {
                 "constraint_pipeline", "scheduler", "obstacles",
                 "obstacle_config", "env_plugin", "env_name", "task",
@@ -107,6 +118,9 @@ class RecedingContactMethodPlugin(MethodPlugin):
             "policy_ckpt": config.get("policy_ckpt"),
             "atacom_policy_ckpt": config.get("atacom_policy_ckpt"),
             "reliability_ckpt": config.get("reliability_ckpt"),
+            "learned_reliability": bool(
+                config.get("learned_reliability", True)
+            ),
         }
         if method in METHOD_TABLE:
             contract["mdac_flags"] = asdict(resolve_method(method))

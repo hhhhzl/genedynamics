@@ -146,6 +146,98 @@ def test_two_suites_by_two_seeds_expand_without_mutating_config(tmp_path: Path):
     assert [suite["name"] for suite in cfg.suites] == ["first", "second"]
 
 
+def test_resume_reuses_only_complete_matching_results(tmp_path: Path):
+    cfg = ExperimentConfig(
+        name="resumable",
+        output_dir=tmp_path,
+        env_name="dummy",
+        method="dummy",
+        seeds=[0, 1],
+        suites=[{"name": "first", "level": "plane"}],
+        metrics=[],
+        visualizations=[],
+        auto_report=False,
+    )
+    suite_cfg = cfg.for_suite(cfg.suites[0])
+    completed_dir = tmp_path / "level_first" / "seed_0"
+    completed_dir.mkdir(parents=True)
+    completed_snapshot = suite_cfg.to_dict()
+    completed_snapshot["seeds"] = [0]
+    completed = {
+        "level": "first",
+        "seed": 0,
+        "planning_time": 1.25,
+        "metrics": {},
+        "config_snapshot": completed_snapshot,
+    }
+    import json
+    (completed_dir / "results.json").write_text(
+        json.dumps(completed, default=str), encoding="utf-8"
+    )
+
+    runner = ExperimentRunner(cfg)
+    runner._save_protocol_manifest = lambda: None
+    runner._save_result = lambda result: None
+    runner._save_summary = lambda results: None
+    calls = []
+
+    def run_one(level, seed):
+        calls.append((level, seed))
+        return {
+            "level": level,
+            "seed": seed,
+            "planning_time": 2.0,
+            "metrics": {},
+            "config_snapshot": runner.config.to_dict(),
+        }
+
+    runner.run_single_experiment = run_one
+    results = runner.run_all(resume=True)
+    assert [(result["level"], result["seed"]) for result in results] == [
+        ("first", 0),
+        ("first", 1),
+    ]
+    assert calls == [("first", 1)]
+
+
+def test_resume_reruns_config_mismatch(tmp_path: Path):
+    cfg = ExperimentConfig(
+        name="resumable",
+        output_dir=tmp_path,
+        env_name="dummy",
+        method="dummy",
+        seeds=[0],
+        metrics=[],
+        visualizations=[],
+        auto_report=False,
+    )
+    completed_dir = tmp_path / "level_0" / "seed_0"
+    completed_dir.mkdir(parents=True)
+    stale = {
+        "level": 0,
+        "seed": 0,
+        "planning_time": 1.0,
+        "metrics": {},
+        "config_snapshot": {"name": "stale"},
+    }
+    import json
+    (completed_dir / "results.json").write_text(
+        json.dumps(stale), encoding="utf-8"
+    )
+
+    runner = ExperimentRunner(cfg)
+    runner._save_protocol_manifest = lambda: None
+    runner._save_result = lambda result: None
+    runner._save_summary = lambda results: None
+    calls = []
+    runner.run_single_experiment = lambda level, seed: (
+        calls.append((level, seed))
+        or {"level": level, "seed": seed, "planning_time": 2.0, "metrics": {}}
+    )
+    runner.run_all(resume=True)
+    assert calls == [(0, 0)]
+
+
 def test_development_root_mirrors_canonical_output_and_marks_provenance(
     tmp_path: Path,
 ):
@@ -165,7 +257,7 @@ def test_development_root_mirrors_canonical_output_and_marks_provenance(
 @pytest.mark.parametrize(
     "filename,controller_method,component",
     [
-        ("no_controllability_geometry.yaml", "mdac_horizon",
+        ("no_controllability_geometry.yaml", "mdac_component_gate",
          "use_controllability_geometry"),
         ("no_retraction.yaml", "mdac_controllable_no_retraction",
          "use_retraction"),
@@ -203,3 +295,51 @@ def test_surface_ablation_inherits_full_contract_and_changes_one_component(
     ) == (component,)
     assert ablation.metadata["ablation_of"] == "full_mdac"
     assert ablation.metadata["ablated_component"] == component
+
+
+def test_peg_ablation_configs_change_only_the_named_component():
+    from genedynamics.solvers.single.mdac.core.method_registry import (
+        diff_flags,
+        resolve_method,
+    )
+
+    full = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/peg_insert/main/full_mdac.yaml"
+    )
+    no_prior = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/peg_insert/ablation/no_rl_prior.yaml"
+    )
+    no_reliability = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/peg_insert/ablation/no_learned_reliability.yaml"
+    )
+    for ablation in (no_prior, no_reliability):
+        assert ablation.method == "full_mdac"
+        assert ablation.seeds == full.seeds
+        assert ablation.suites == full.suites
+        assert ablation.n_steps == full.n_steps
+        assert {
+            key: ablation.method_params[key]
+            for key in ("Nsample", "Hsample", "Hnode", "Ndiffuse", "Ndiffuse_init")
+        } == {
+            key: full.method_params[key]
+            for key in ("Nsample", "Hsample", "Hnode", "Ndiffuse", "Ndiffuse_init")
+        }
+        assert ablation.metadata["ablation_of"] == "full_mdac"
+
+    assert diff_flags(
+        resolve_method(full.method_params["controller_method"]),
+        resolve_method(no_prior.method_params["controller_method"]),
+    ) == ("use_rl_prior",)
+    restored_prior = dict(no_prior.method_params)
+    restored_prior.update({
+        "controller_method": full.method_params["controller_method"],
+        "policy_ckpt": full.method_params["policy_ckpt"],
+    })
+    assert restored_prior == full.method_params
+
+    restored_reliability = dict(no_reliability.method_params)
+    restored_reliability.update({
+        "learned_reliability": True,
+        "reliability_ckpt": full.method_params["reliability_ckpt"],
+    })
+    assert restored_reliability == full.method_params

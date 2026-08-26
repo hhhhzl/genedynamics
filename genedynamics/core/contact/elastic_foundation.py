@@ -23,17 +23,37 @@ _SPOT_R = 0.25          # central-spot radius in (ξ,η)
 _N_STRIPES = 4          # hard/soft band count along ξ
 
 
-def stiffness_field(kind: str, xi, eta, k_hard, k_soft) -> jnp.ndarray:
+def stiffness_field(
+    kind: str, xi, eta, k_hard, k_soft, transition_width: float = 0.0
+) -> jnp.ndarray:
     """Local surface stiffness ``k(ξ,η)`` for a fixed map ``kind`` (a STATIC config
     string, traced once; ``xi,eta`` are traced). ``stripes`` alternates hard/soft bands
     along ξ; ``center_hard`` / ``center_soft`` is a hard / soft central disk in the
     opposite field; anything else (``uniform``) returns ``k_soft``."""
     kind = str(kind).lower()
     k_hard, k_soft = jnp.asarray(k_hard, jnp.float32), jnp.asarray(k_soft, jnp.float32)
+    width = float(transition_width)
     if kind == "stripes":
+        if width > 0.0:
+            # Smooth square wave with the same four alternating bands.  Scale
+            # tanh by the sinusoid slope so ``width`` is approximately the
+            # transition width in normalized surface coordinates.
+            phase = jnp.sin(jnp.pi * _N_STRIPES * jnp.asarray(xi))
+            scale = jnp.pi * _N_STRIPES * max(width, 1.0e-6)
+            hard_weight = 0.5 * (1.0 + jnp.tanh(phase / scale))
+            return k_soft + (k_hard - k_soft) * hard_weight
         band = (jnp.floor(jnp.asarray(xi) * _N_STRIPES).astype(jnp.int32) % 2) == 0
         return jnp.where(band, k_hard, k_soft)
     r2 = (jnp.asarray(xi) - 0.5) ** 2 + (jnp.asarray(eta) - 0.5) ** 2
+    if width > 0.0:
+        radius = jnp.sqrt(r2 + 1.0e-12)
+        inside_weight = 0.5 * (
+            1.0 + jnp.tanh((_SPOT_R - radius) / max(width, 1.0e-6))
+        )
+        if kind == "center_hard":
+            return k_soft + (k_hard - k_soft) * inside_weight
+        if kind == "center_soft":
+            return k_hard - (k_hard - k_soft) * inside_weight
     inside = r2 < (_SPOT_R ** 2)
     if kind == "center_hard":
         return jnp.where(inside, k_hard, k_soft)

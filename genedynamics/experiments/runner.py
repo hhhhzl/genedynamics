@@ -152,6 +152,14 @@ def main():
         ),
     )
     parser.add_argument(
+        '--resume',
+        action='store_true',
+        help=(
+            'Reuse complete matching results already present in output_dir and '
+            'run only missing or config-mismatched matrix entries'
+        ),
+    )
+    parser.add_argument(
         '--dry-run',
         action='store_true',
         help='Validate configuration without running experiments'
@@ -252,7 +260,7 @@ def main():
     print(f"Output directory: {config.output_dir}")
     print()
     
-    results = runner.run_all()
+    results = runner.run_all(resume=args.resume)
     
     print(f"\nCompleted {len(results)} experiments")
     print(f"Results saved to: {config.output_dir}")

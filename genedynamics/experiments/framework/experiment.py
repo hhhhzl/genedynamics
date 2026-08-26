@@ -756,9 +756,56 @@ class ExperimentRunner:
         
         return experiment_result
     
-    def run_all(self) -> List[Dict[str, Any]]:
+    def _load_completed_result(
+        self, level: Any, seed: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Load a complete result only when it matches the resolved run config."""
+        result_path = (
+            self.config.output_dir / f"level_{level}" / f"seed_{seed}"
+            / "results.json"
+        )
+        if not result_path.is_file():
+            return None
+        try:
+            with open(result_path) as f:
+                result = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[resume] Ignoring unreadable {result_path}: {exc}")
+            return None
+
+        expected_config = convert_to_json_serializable(self.config.to_dict())
+        complete = (
+            result.get("level") == level
+            and result.get("seed") == seed
+            and isinstance(result.get("metrics"), dict)
+            and isinstance(result.get("planning_time"), (int, float))
+        )
+        if not complete:
+            print(f"[resume] Ignoring incomplete {result_path}")
+            return None
+        saved_config = result.get("config_snapshot")
+        dispatch_keys = ("seeds", "obstacle_levels", "suites")
+        expected_contract = {
+            key: value for key, value in expected_config.items()
+            if key not in dispatch_keys
+        }
+        saved_contract = {
+            key: value for key, value in saved_config.items()
+            if key not in dispatch_keys
+        } if isinstance(saved_config, dict) else None
+        if saved_contract != expected_contract:
+            print(f"[resume] Config changed; rerunning level={level}, seed={seed}")
+            return None
+        print(f"[resume] Reusing level={level}, seed={seed}: {result_path}")
+        return result
+
+    def run_all(self, resume: bool = False) -> List[Dict[str, Any]]:
         """
         Run all experiments according to configuration.
+
+        Args:
+            resume: Reuse complete results whose saved config snapshot exactly
+                matches the resolved per-suite configuration.
         
         Returns:
             List of experiment result dictionaries
@@ -776,6 +823,12 @@ class ExperimentRunner:
                 self.config = run_config
                 for level in run_config.obstacle_levels:
                     for seed in run_config.seeds:
+                        if resume:
+                            completed = self._load_completed_result(level, seed)
+                            if completed is not None:
+                                all_results.append(completed)
+                                self.results.append(completed)
+                                continue
                         print(f"\n[experiment] Running level={level}, seed={seed}...")
                         try:
                             result = self.run_single_experiment(level, seed)

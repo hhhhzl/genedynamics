@@ -212,6 +212,14 @@ class SurfaceScanConfig:
     stiffness_map: str = "uniform"
     k_hard: float = 8.0e3               # hard-region Winkler stiffness (N/m) -> small sink
     k_soft: float = 2.0e3               # soft-region Winkler stiffness -> large sink
+    # Optional affine chart from task scan coordinates into the normalized
+    # material map.  Defaults preserve the historical [0,1] map.  The paper
+    # hybrid suites map their finite 100-step scan segment onto [0,1], so every
+    # run actually crosses the declared stiffness transitions without raising
+    # scan_rate beyond the impedance execution bandwidth.
+    stiffness_map_xi_origin: float = 0.0
+    stiffness_map_xi_span: float = 1.0
+    stiffness_transition_width: float = 0.0
     # domain randomization (S4): surface stiffness + contact friction
     surface_stiffness: float = 1.0e4    # default ~rigid (negligible sink)
     friction: float = 1.0
@@ -421,7 +429,21 @@ class SurfaceScanEnv(PipelineEnv):
     # in the impedance torque). Dispatch keeps rigid/soft on the real mjx contact.
     def _k_surf_fn(self, xi, eta) -> jnp.ndarray:
         """Local surface stiffness k(ξ,η) from the fixed stiffness map (hybrid)."""
-        return stiffness_field(self._map_kind, xi, eta, self._k_hard, self._k_soft)
+        cfg = self._config
+        map_xi = jnp.clip(
+            (xi - cfg.stiffness_map_xi_origin)
+            / max(cfg.stiffness_map_xi_span, 1.0e-6),
+            0.0,
+            1.0,
+        )
+        return stiffness_field(
+            self._map_kind,
+            map_xi,
+            eta,
+            self._k_hard,
+            self._k_soft,
+            cfg.stiffness_transition_width,
+        )
 
     def _winkler_at(self, ps, xi, eta):
         """Probe penetration δ below the rest surface and the Winkler reaction
@@ -524,7 +546,24 @@ class SurfaceScanEnv(PipelineEnv):
             return jnp.eye(_STIFF_D, dtype=jnp.float32)
         if mode == "euclid":                                    # Euclidean SPD (not log)
             from genedynamics.core.control.stiffness import svec2sym
-            d = jax.nn.softplus(jnp.diagonal(svec2sym(s_vec, _STIFF_D)))
+            diag = jnp.diagonal(svec2sym(s_vec, _STIFF_D))
+            scale = max(self._config.s_scale, 1.0e-6)
+            raw = jnp.clip(
+                (diag - self._config.s_ref_diag) / scale, -1.0, 1.0
+            )
+            k_ref = jnp.exp(self._config.s_ref_diag)
+            k_lo = jnp.exp(self._config.s_ref_diag - self._config.s_scale)
+            k_hi = jnp.exp(self._config.s_ref_diag + self._config.s_scale)
+            # Direct Euclidean/clamped diagonal chart with the same physical
+            # reference and endpoint range as Log-SPD.  Piecewise affine
+            # interpolation keeps raw=0 exactly at K_ref; the previous
+            # softplus(S≈6.4) implementation silently changed 602 N/m into
+            # 6.4 N/m and was not a fair parameterization ablation.
+            d = jnp.where(
+                raw >= 0.0,
+                k_ref + raw * (k_hi - k_ref),
+                k_ref + raw * (k_ref - k_lo),
+            )
             return jnp.diag(d)
         return stiffness_log_to_pd(s_vec, _STIFF_D)             # log_spd: K = exp(S)
 
@@ -874,16 +913,24 @@ class SurfaceScanEnv(PipelineEnv):
         B = pinv @ d_ee.T
         return jax.lax.stop_gradient(B)
 
-    def prepare_realization_context(self, state, dense_actions):
+    def prepare_realization_context(
+        self, state, dense_actions, *, gate_controllability=False
+    ):
         """Attach a frozen short-horizon response map to the solver state."""
         B = self.realization_control_jacobian(state, dense_actions)
         error = jax.lax.stop_gradient(
             self._realization_coordinate_offset_raw(state)
         )
+        realization_gate = (
+            self.geometry_reliability(state)["action"][:2]
+            if gate_controllability
+            else jnp.ones((2,), dtype=B.dtype)
+        )
         info = {
             **state.info,
             "_mdac_realization_B": B,
             "_mdac_realization_error": error,
+            "_mdac_realization_gate": jax.lax.stop_gradient(realization_gate),
         }
         return state.replace(info=info)
 
@@ -968,6 +1015,12 @@ class SurfaceScanEnv(PipelineEnv):
             * float(probe_horizon)
             * correction
         )
+        # Reliability gates only the empirical response-map lead.  Clean
+        # horizon geometry and retraction remain active, so low confidence can
+        # recover instead of freezing the entire controller.  This mirrors the
+        # insertion task's controllability contract and makes the staged
+        # ``mdac_controllable_gate`` method causal rather than diagnostic-only.
+        command_shift = command_shift * state.info["_mdac_realization_gate"]
         coord_limit = max(cfg.realization_compensation_max_coord, 0.0)
         command_shift = jnp.clip(command_shift, -coord_limit, coord_limit)
         ramp = jnp.clip(
@@ -1035,8 +1088,25 @@ class SurfaceScanEnv(PipelineEnv):
         action_gate = action_gate.at[self.spec.r_slice.start + 2].set(g_normal)
         action_gate = action_gate.at[self.spec.s_slice].set(g_stiffness)
         action_gate = action_gate.at[self.spec.nu_slice].set(g_force)
+        # The controllability-aware route gates its empirical tangential lead
+        # with ``action_gate[:2]`` inside the horizon residual.  Clean path
+        # geometry must remain fully active for recovery, but forcing uncertain
+        # normal/impedance/force blocks through projection and retraction can
+        # create a peak at soft--hard switches.  This second task-owned vector
+        # therefore gates only those blocks in the generic optimizer.
+        clean_action_gate = jnp.ones_like(action_gate)
+        clean_action_gate = clean_action_gate.at[
+            self.spec.r_slice.start + 2
+        ].set(g_normal)
+        clean_action_gate = clean_action_gate.at[self.spec.s_slice].set(
+            g_stiffness
+        )
+        clean_action_gate = clean_action_gate.at[self.spec.nu_slice].set(
+            g_force
+        )
         return {
             "action": action_gate,
+            "clean_action": clean_action_gate,
             "scalar": g_scalar,
             "path": g_path,
             "normal": g_normal,
@@ -1271,6 +1341,99 @@ class SurfaceScanEnv(PipelineEnv):
     def sequence_risk(self, state, actions) -> jax.Array:
         """Task-owned realized risk vector for one candidate sequence."""
         return self.sequence_score_risk(state, actions)[1]
+
+    def sequence_risk_is_safe(self, risk):
+        """Hard deployment safety for scanning candidate horizons.
+
+        Contact retention, force-target error, and compliant deformation are
+        reported performance/quality quantities for this task.  Exceeding the
+        physical normal-force interval is the hard event that must never be
+        deployed.  Keeping this interpretation task-owned prevents the generic
+        MDAC backend from guessing the Surface risk-vector schema.
+        """
+        return risk[0] <= 1.0e-8
+
+    def sequence_risk_is_no_worse(self, candidate, incumbent, tolerance):
+        """Compare the hard Surface risk without double-counting quality.
+
+        Deformation, force-target error, and contact retention already enter
+        the planner score with the task's declared progress--safety weights.
+        Requiring each of those quality coordinates to improve monotonically
+        rejects valid Pareto moves and can permanently freeze a safe shifted
+        incumbent at a material transition.  Only the physical force-bound
+        event is lexicographic; :meth:`sequence_risk_is_safe` independently
+        requires the selected candidate to have zero predicted violations.
+        """
+        return candidate[0] <= incumbent[0] + tolerance[0]
+
+    def emergency_sequence_score_risk(
+        self, state, actions, aug_lambda=0.0, aug_rho=0.0
+    ):
+        """Certify the one action actually committed from an emergency plan."""
+        return self.sequence_score_risk(
+            state, actions[:1], aug_lambda, aug_rho
+        )
+
+    def emergency_plan(self, state, fallback, t0):
+        """Zero-force hold used when both performance candidates are unsafe.
+
+        Surface actions contain no normal-position retract channel: normal
+        unloading is owned by the inner force loop.  The first node commands
+        ``f_min`` while holding surface coordinates, so that loop unloads
+        without a tangential jump at a material switch.  Tail nodes command a
+        zero commanded force and the nominal slow scan increment; after
+        receding shift this becomes a safe moving recovery incumbent instead
+        of a sticky all-zero emergency.  Passive contact is retained by the
+        uncompensated normal gravity load already used by this task, while a
+        maximal diagonal SPD stiffness retracts excess deformation before a
+        soft-to-hard transition.
+        """
+        del state, t0
+        cfg = self._config
+        lo = cfg.f_min - cfg.f_cmd_pad
+        hi = cfg.f_max + cfg.f_cmd_pad
+        raw_f_min = 2.0 * (cfg.f_min - lo) / max(hi - lo, 1.0e-6) - 1.0
+        emergency = jnp.zeros_like(fallback)
+        emergency = emergency.at[:, self.spec.nu_slice].set(raw_f_min)
+        # Maximal diagonal impedance retracts the probe toward the nominal
+        # surface pose before/while crossing a soft-to-hard material boundary.
+        # Off-diagonal chart entries remain zero, so the emergency stiffness is
+        # SPD and axis-aligned rather than an arbitrary sampled coupling.
+        diag = jnp.asarray([0, 3, 5]) + self.spec.s_slice.start
+        emergency = emergency.at[:, diag].set(1.0)
+        recovery_scan = jnp.clip(
+            cfg.scan_rate / max(cfg.coord_scale, 1.0e-6), -1.0, 1.0
+        )
+        emergency = emergency.at[1:, self.spec.r_slice.start].set(
+            recovery_scan
+        )
+        return emergency
+
+    def emergency_plan_is_active(self, plan):
+        cfg = self._config
+        lo = cfg.f_min - cfg.f_cmd_pad
+        hi = cfg.f_max + cfg.f_cmd_pad
+        raw_f_min = 2.0 * (cfg.f_min - lo) / max(hi - lo, 1.0e-6) - 1.0
+        first = plan[0]
+        stiffness = first[self.spec.s_slice]
+        diag = stiffness[jnp.asarray([0, 3, 5])]
+        offdiag = stiffness[jnp.asarray([1, 2, 4])]
+        # The shifted recovery tail deliberately moves at scan_rate, so path
+        # motion cannot distinguish it from a performance plan.  Its
+        # zero-force/max-diagonal signature remains unique and keeps it marked
+        # emergency-derived until a revalidated refined plan takes control.
+        return (
+            first[self.spec.nu_slice][0] <= raw_f_min + 1.0e-6
+        ) & (
+            jnp.min(diag) >= 1.0 - 1.0e-6
+        ) & (
+            jnp.max(jnp.abs(offdiag)) <= 1.0e-6
+        )
+
+    def emergency_plan_should_override(self, state):
+        xi, eta = state.info["xi"], state.info["eta"]
+        force = self._contact_force_at(state.pipeline_state, xi, eta)
+        return (force < self._config.f_min) | (force > self._config.f_max)
 
     def safety_index(self, state) -> jax.Array:
         """Normalized realized-state safety index used by ISSA/AdamBA.

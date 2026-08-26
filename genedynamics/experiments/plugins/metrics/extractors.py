@@ -158,9 +158,12 @@ def arm_surface_scan_signals(trajectory, env, obstacles, constraints, **kw) -> D
         on_path_common = (
             (jnp.linalg.norm(h_tangent) < e._config.track_tol) & (f_real > 0.5)
         ).astype(jnp.float32)
+        K = e._stiffness(s_vec)
         return {"ee": ee, "h": h, "h_rest": h_rest, "h_tangent": h_tangent,
                 "normal_offset": normal_offset[None], "xi": xi[None],
-                "stiffness": s_vec, "on_surface": on_surface[None],
+                # Metrics must use the executed SPD matrix, not a sampled chart
+                # coordinate that is ignored by fixed/no-stiffness ablations.
+                "stiffness": K.reshape(-1), "on_surface": on_surface[None],
                 "on_path_common": on_path_common[None],
                 "force": f_real[None], "force_cmd": f_cmd[None], "contact": in_contact[None],
                 "penetration": pen[None], "k_surf": k_surf[None],

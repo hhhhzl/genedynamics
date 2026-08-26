@@ -27,9 +27,24 @@ from genedynamics.solvers.single.mdac.run_experiment import (
     _prior_diagnostics,
     _solver_cfg,
 )
+from scripts.tasks.robot.arm.train_mdac_reliability import (
+    _assert_disjoint_protocol,
+)
 
 
 # --- registry / elite buffer ---
+
+
+def test_reliability_protocol_rejects_split_overlap_and_formal_seed_leakage():
+    train = [{"suite": "soft", "seed": 0}]
+    calibration = [{"suite": "soft", "seed": 1}]
+    _assert_disjoint_protocol(train, calibration, set(range(10, 20)))
+    with pytest.raises(ValueError, match="overlap"):
+        _assert_disjoint_protocol(train, train, set(range(10, 20)))
+    with pytest.raises(ValueError, match="formal evaluation seeds"):
+        _assert_disjoint_protocol(
+            [{"suite": "soft", "seed": 10}], calibration, set(range(10, 20))
+        )
 
 def test_registry_names():
     assert set(list_priors()) == {"rl", "diffusion"}
@@ -206,6 +221,39 @@ def test_prior_acceptance_and_force_veto():
     assert float(info["prior_force_veto"]) == 1.0
 
 
+def test_task_owned_risk_comparison_allows_safe_quality_tradeoff():
+    """A task may score soft quality risks instead of vetoing them twice."""
+    backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    incumbent = jnp.full((COMMON["Hnode"] + 1, COMMON["nu"]), 0.3)
+    refined = jnp.broadcast_to(TARGET, incumbent.shape)
+
+    def quality_risk(state, us):
+        del state
+        return jnp.asarray([
+            0.0,
+            0.0,
+            jnp.mean(jnp.abs(us)),
+            jnp.mean(us * us),
+        ])
+
+    backend.risk_fn = quality_risk
+    selected, info = backend._accept_refinement(
+        jnp.zeros((1,)), incumbent, refined, jnp.float32(1.0)
+    )
+    np.testing.assert_allclose(selected, incumbent)
+    assert float(info["prior_risk_ok"]) == 0.0
+
+    backend.risk_compare_fn = (
+        lambda candidate, fallback, tolerance:
+        candidate[0] <= fallback[0] + tolerance[0]
+    )
+    selected, info = backend._accept_refinement(
+        jnp.zeros((1,)), incumbent, refined, jnp.float32(1.0)
+    )
+    np.testing.assert_allclose(selected, refined)
+    assert float(info["prior_risk_ok"]) == 1.0
+
+
 def test_learned_reliability_is_additional_acceptance_veto():
     class Reliability:
         def predict_upper(self, features):
@@ -233,6 +281,47 @@ def test_learned_reliability_is_additional_acceptance_veto():
     assert float(info["prior_accepted"]) == 0.0
     assert float(info["prior_force_veto"]) == 1.0
     assert "reliability_risk_refined" in info
+
+
+def test_ood_reliability_can_abstain_to_model_based_certificate():
+    """OOD confidence is unknown, not a permanent unsafe classification."""
+
+    class Reliability:
+        def predict_upper(self, features):
+            del features
+            return jnp.asarray([1.0, 1.0, 10.0, 1.0])
+
+        def support_score(self, features):
+            del features
+            return jnp.asarray(2.0)
+
+    backend = MdacBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    backend.prior = _FakePrior(COMMON["Hnode"] + 1, COMMON["nu"])
+    backend.use_rl_prior = True
+    backend.risk_fn = lambda state, us: jnp.zeros((4,), jnp.float32)
+    backend.reliability_model = Reliability()
+    backend.reliability_feature_fn = lambda state, action: action[:1]
+    backend.reliability_deformation_limit = 0.5
+    incumbent = jnp.full((COMMON["Hnode"] + 1, COMMON["nu"]), 0.3)
+    refined = jnp.broadcast_to(TARGET, incumbent.shape)
+
+    # The conservative default retains the historical OOD veto.
+    selected, info = backend._accept_refinement(
+        jnp.zeros((1,)), incumbent, refined, jnp.float32(1.0)
+    )
+    np.testing.assert_allclose(selected, incumbent)
+    assert float(info["prior_accepted"]) == 0.0
+
+    # Surface scanning opts into a complete task-owned model certificate.  The
+    # unsupported learned model abstains and that certificate accepts the safe
+    # improvement instead of freezing the incumbent forever.
+    backend.reliability_ood_policy = "model_based"
+    selected, info = backend._accept_refinement(
+        jnp.zeros((1,)), incumbent, refined, jnp.float32(1.0)
+    )
+    np.testing.assert_allclose(selected, refined)
+    assert float(info["prior_accepted"]) == 1.0
+    assert float(info["reliability_abstained"]) == 1.0
 
 
 def test_sequence_reliability_uses_candidate_horizon_when_available():

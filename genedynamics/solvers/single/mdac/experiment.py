@@ -250,7 +250,9 @@ def make_mdac(task: str, method: str = "mdac", *, level: Optional[str] = None,
     if flags.use_controllability_geometry:
         def prepare_state_fn(state, nodes, t0):
             return env.prepare_realization_context(
-                state, spline.node2u(nodes)
+                state,
+                spline.node2u(nodes),
+                gate_controllability=flags.use_geometry_gate,
             )
 
     # The rollout model owns optimization geometry, while executable-set and

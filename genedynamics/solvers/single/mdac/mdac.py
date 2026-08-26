@@ -129,6 +129,7 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
         reliability_deformation_limit: float = float("inf"),
         reliability_hard_limits: Any = None,
         reliability_support_mode: str = "joint",
+        reliability_ood_policy: str = "veto",
         **kwargs: Any,
     ) -> None:
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -215,6 +216,7 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
             else tuple(float(x) for x in reliability_hard_limits)
         )
         self.reliability_support_mode = str(reliability_support_mode)
+        self.reliability_ood_policy = str(reliability_ood_policy)
 
         self.config.update(
             dict(
@@ -243,6 +245,7 @@ class MDACSolver(BaseModelBasedDiffusionSolver):
                 reliability_risk_tolerance=self.reliability_risk_tolerance,
                 reliability_force_limit=self.reliability_force_limit,
                 reliability_deformation_limit=self.reliability_deformation_limit,
+                reliability_ood_policy=self.reliability_ood_policy,
                 method=str(method),
             )
         )

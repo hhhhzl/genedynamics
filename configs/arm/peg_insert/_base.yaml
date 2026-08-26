@@ -56,3 +56,34 @@ metadata:
   protocol: mdac_peg_insert_formal_v1
   formal_seeds: true
   narrative: contact_switch_and_safe_recovery
+  learned_component_lock:
+    policy:
+      path: results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl
+      sha256: 76dd7c1cf95283a6fcf7b4c9b4bb79d4c25e7bfcdcd70e844b89f5ac4d72b161
+      protocol: manipulator_peg_insert_shared_mga_v1
+      training_seeds: [0]
+      training_budget: {unit: environment_steps, value: 200000}
+      training_domains: [wide_seed100, tight_seed101, ood_seed102, ood_seed103]
+      architecture: ppo_mlp_16x16
+      selection_rule: max_dev_success_safety_pareto
+      selected_step: 100000
+    atacom_policy:
+      path: results/arm/peg_insert_cpu/_policies/shared_atacom_ppo_seed0.pkl
+      sha256: c7a75f8279fc68a50936652928b151262b5ff71c3ab28c4ea99b5c562e9db88f
+      protocol: manipulator_peg_insert_shared_atacom_v1
+      training_seeds: [0]
+      training_budget: {unit: environment_steps, value: 200000}
+      training_domains: [wide_seed100, tight_seed101, ood_seed102, ood_seed103]
+      architecture: ppo_mlp_16x16_atacom_tangent_action
+      selection_rule: max_dev_success_safety_pareto
+      selected_step: 50000
+    reliability:
+      path: results/arm/peg_insert_cpu/_policies/reliability_q95.json
+      sha256: 54b7e822b05bb5cbcedc90ef379ffe85bcbb410b68a7d2922b0c05e94a9f14fa
+      protocol: mdac_peg_insert_reliability_v1
+      training_seeds: [100, 101]
+      calibration_seeds: [102]
+      training_budget: {unit: environment_transitions, value: 1078}
+      training_domains: [id_tight, id_wide, ood_compound, pareto_force15, pareto_force22]
+      architecture: standardized_ridge_logistic_split_conformal
+      selection_rule: single_frozen_fit_no_evaluation_selection

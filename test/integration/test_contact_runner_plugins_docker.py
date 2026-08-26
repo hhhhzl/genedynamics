@@ -154,7 +154,7 @@ def test_runner_dry_run_supports_isolated_multi_seed_multi_suite(
 @pytest.mark.parametrize(
     "filename,controller_method,stiffness_mode",
     [
-        ("no_controllability_geometry.yaml", "mdac_horizon", "log_spd"),
+        ("no_controllability_geometry.yaml", "mdac_component_gate", "log_spd"),
         ("no_retraction.yaml", "mdac_controllable_no_retraction", "log_spd"),
         ("no_stiffness.yaml", "mdac_controllable_no_stiffness", "none"),
         ("fixed_or_euclidean_stiffness.yaml",
@@ -211,6 +211,52 @@ def test_full_mdac_rejects_missing_learned_component_contract():
             {"task": "manipulator_peg_insert",
              "controller_method": "mdac_controllable_gate"},
         )
+
+
+@pytest.mark.parametrize(
+    "filename,controller_method,learned_reliability",
+    [
+        ("no_rl_prior.yaml", "mdac_controllable_gate_no_rl_prior", True),
+        ("no_learned_reliability.yaml", "mdac_controllable_gate", False),
+    ],
+)
+def test_peg_ablation_yaml_dispatches_exact_component_contract(
+    monkeypatch, filename, controller_method, learned_reliability,
+):
+    cfg = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/peg_insert/ablation" / filename
+    )
+    captured = {}
+
+    def fake_make_controller(task, method, **kwargs):
+        captured.update(task=task, method=method, kwargs=kwargs)
+        return kwargs["model_env"], object()
+
+    monkeypatch.setattr(
+        "genedynamics.experiments.plugins.methods.contact_receding.make_controller",
+        fake_make_controller,
+    )
+
+    class Env:
+        _experiment_task = "manipulator_peg_insert"
+        _experiment_execution_env = None
+
+    planner = FullMDACMethodPlugin().create_planner(
+        Env(), None, {
+            **cfg.method_params,
+            "task": cfg.env_name,
+            "n_steps": cfg.n_steps,
+        },
+    )
+    assert planner.controller_method == controller_method
+    assert captured["method"] == controller_method
+    assert planner.component_contract["learned_reliability"] is learned_reliability
+    assert (
+        planner.component_contract["policy_ckpt"] is not None
+    ) is planner.component_contract["mdac_flags"]["use_rl_prior"]
+    assert (
+        planner.component_contract["reliability_ckpt"] is not None
+    ) is learned_reliability
 
 
 @pytest.mark.parametrize(

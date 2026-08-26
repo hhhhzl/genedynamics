@@ -4,6 +4,7 @@ method: full_mdac
 output_dir: results/arm/peg_insert/main/full_mdac
 method_params:
   controller_method: mdac_controllable_gate
+  learned_reliability: true
   policy_ckpt: results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl
   reliability_ckpt: results/arm/peg_insert_cpu/_policies/reliability_q95.json
   prior_lambda_shift: 0.8

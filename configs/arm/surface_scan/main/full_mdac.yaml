@@ -3,7 +3,7 @@ name: full_mdac
 method: full_mdac
 output_dir: results/arm/surface_scan/main/full_mdac
 method_params:
-  controller_method: mdac_controllable
+  controller_method: mdac_controllable_gate
   policy_ckpt: results/arm/impedence/_policies/shared_ppo_seed0.pkl
   atacom_policy_ckpt: results/arm/impedence/_policies/shared_atacom_ppo_seed0.pkl
   reliability_ckpt: results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json
@@ -22,3 +22,6 @@ method_params:
   reliability_risk_tolerance: [0.0, 0.0, 0.0, 0.0]
   reliability_force_limit: 0.25
   reliability_deformation_limit: 0.5
+  # Outside the frozen cylinder reliability support, learned confidence
+  # abstains and the task-owned model-based sequence certificate decides.
+  reliability_ood_policy: model_based

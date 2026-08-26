@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -30,16 +31,189 @@ from genedynamics.learning.reliability import (
 )
 
 
-def _records(paths: list[str]) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
+def _metric_files(paths: list[str]) -> list[Path]:
+    files: list[Path] = []
     for raw in paths:
         path = Path(raw)
+        if path.is_dir():
+            files.extend(sorted(path.rglob("metrics.json")))
+        elif path.is_file():
+            files.append(path)
+        else:
+            raise ValueError(f"missing metric record source: {path}")
+    return sorted(set(item.resolve() for item in files))
+
+
+def _records(paths: list[str]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for path in _metric_files(paths):
         with path.open() as f:
             payload = json.load(f)
         if not isinstance(payload, list):
             raise ValueError(f"{path} must contain a JSON record list")
         records.extend(payload)
     return records
+
+
+def _result_files(paths: list[str]) -> list[Path]:
+    files: list[Path] = []
+    for raw in paths:
+        path = Path(raw)
+        if path.is_dir():
+            files.extend(sorted(path.rglob("results.json")))
+        elif path.name == "results.json" and path.is_file():
+            files.append(path)
+        else:
+            raise ValueError(
+                f"{path} must be a unified-runner results.json or result root"
+            )
+    return sorted(set(item.resolve() for item in files))
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _surface_record_from_result(path: Path) -> dict[str, Any]:
+    """Replay a unified-runner Surface trajectory into the shared signals.
+
+    The runner's executed actions are authoritative.  Replaying them through
+    the resolved execution environment avoids depending on the deprecated
+    solver-local experiment entry and gives reliability training the same
+    signal contract as paper metrics.
+    """
+    import jax
+
+    from genedynamics.core.types import Trajectory
+    from genedynamics.experiments.plugins.environments._contact_task import (
+        ContactTaskEnvironmentPlugin,
+    )
+    from genedynamics.experiments.plugins.metrics.extractors import (
+        arm_surface_scan_signals,
+    )
+
+    with path.open() as handle:
+        result = json.load(handle)
+    snapshot = dict(result.get("config_snapshot") or {})
+    task = str(snapshot.get("env_name", ""))
+    if task != "manipulator_surface_scan":
+        raise ValueError(f"{path} is not a Surface-scan result")
+    seed = int(result["seed"])
+    suite = str(result.get("suite", result.get("level")))
+    suites = {
+        str(item.get("name")): item for item in snapshot.get("suites", ())
+    }
+    level = str((suites.get(suite) or {}).get("level", suite))
+    env_params = dict(snapshot.get("env_params") or {})
+    env_params.setdefault("level", level)
+    method_params = dict(snapshot.get("method_params") or {})
+    controller = str(
+        method_params.get("controller_method", snapshot.get("method", "mdac"))
+    )
+    plugin = ContactTaskEnvironmentPlugin(task)
+    model_env = plugin.create_env({
+        **env_params,
+        "_experiment_seed": seed,
+        "_controller_method": controller,
+        "_execution_env_params": dict(
+            snapshot.get("execution_env_params") or {}
+        ),
+    })
+    execution_env = plugin.execution_env(model_env)
+    trajectory_path = path.parent / "trajectory" / "trajectory.json"
+    with trajectory_path.open() as handle:
+        trajectory_payload = json.load(handle)
+    actions = trajectory_payload.get("actions") or []
+    # Preserve the shared trajectory invariant while deliberately omitting
+    # structured pipeline states: the extractor then takes its documented
+    # action-replay fallback through the resolved execution environment.
+    trajectory = Trajectory(
+        states=[None] * (len(actions) + 1), actions=actions, info={}
+    )
+    x0 = execution_env.reset(jax.random.PRNGKey(seed))
+    signals = arm_surface_scan_signals(
+        trajectory, execution_env, None, None, x0=x0, seed=seed
+    )
+
+    def values(name: str):
+        array = np.asarray(signals[name])
+        return array.reshape(len(array), -1).squeeze().tolist()
+
+    series = {key: values(key) for key in (
+        "force", "force_cmd", "in_contact", "deformation", "normal_offset",
+        "gate_path_error",
+    )}
+    series["actions"] = np.asarray(actions, np.float32).tolist()
+    series.update({
+        "f_min": float(signals["f_min"]),
+        "f_max": float(signals["f_max"]),
+        "f_target": float(execution_env._config.f_target),
+        "deformation_safe": float(
+            getattr(execution_env._config, "deformation_safe", 0.0)
+        ),
+        "deformation_scale": float(
+            getattr(execution_env._config, "deformation_scale", 1.0)
+        ),
+        "path_scale": float(
+            getattr(execution_env._config, "geometry_gate_path_scale", 0.02)
+        ),
+        "normal_scale": float(
+            getattr(execution_env._config, "geometry_gate_normal_scale", 0.005)
+        ),
+        "scan_rate": float(getattr(execution_env._config, "scan_rate", 0.0)),
+        "scan_span": float(getattr(execution_env._config, "scan_span", 1.0)),
+    })
+    checkpoint = (
+        (result.get("provenance") or {}).get("checkpoints", {})
+        .get("policy_ckpt", {})
+    )
+    return {
+        "task": task,
+        "suite": suite,
+        "level": level,
+        "seed": seed,
+        "policy_training_seed": (
+            (snapshot.get("metadata") or {}).get("policy_training_seed")
+        ),
+        "policy_checkpoint_sha256": checkpoint.get("sha256"),
+        "source_result": str(path),
+        "source_result_sha256": _sha256(path),
+        "source_trajectory_sha256": _sha256(trajectory_path),
+        "series": series,
+    }
+
+
+def _result_records(paths: list[str]) -> list[dict[str, Any]]:
+    return [_surface_record_from_result(path) for path in _result_files(paths)]
+
+
+def _assert_disjoint_protocol(
+    train_provenance: list[dict[str, Any]],
+    calibration_provenance: list[dict[str, Any]],
+    evaluation_seeds: set[int],
+) -> None:
+    train_ids = {
+        (str(row["suite"]), int(row["seed"])) for row in train_provenance
+    }
+    calibration_ids = {
+        (str(row["suite"]), int(row["seed"]))
+        for row in calibration_provenance
+    }
+    overlap = sorted(train_ids.intersection(calibration_ids))
+    if overlap:
+        raise ValueError(
+            f"training/calibration trajectories overlap: {overlap}"
+        )
+    used_seeds = {seed for _, seed in train_ids | calibration_ids}
+    leaked = sorted(used_seeds.intersection(evaluation_seeds))
+    if leaked:
+        raise ValueError(
+            f"formal evaluation seeds entered reliability fit/calibration: {leaked}"
+        )
 
 
 def _report(model, x, y) -> dict[str, Any]:
@@ -102,11 +276,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--metrics", nargs="*", default=[])
     parser.add_argument("--calibration-seeds", nargs="+", type=int, default=[11])
     parser.add_argument("--calibration-metrics", nargs="*", default=[])
+    parser.add_argument(
+        "--training-results", nargs="*", default=[],
+        help="unified-runner results.json files or roots used only for fitting",
+    )
+    parser.add_argument(
+        "--calibration-results", nargs="*", default=[],
+        help="disjoint unified-runner results.json files or roots for conformal calibration",
+    )
     parser.add_argument("--test-metrics", nargs="*", default=[])
     parser.add_argument("--output")
     parser.add_argument("--load-checkpoint")
     parser.add_argument("--ridge", type=float, default=1.0e-3)
     parser.add_argument("--quantile", type=float, default=0.95)
+    parser.add_argument("--protocol", default=None)
+    parser.add_argument("--evaluation-seeds", nargs="*", type=int, default=[])
     args = parser.parse_args(argv)
 
     if args.load_checkpoint:
@@ -119,19 +303,28 @@ def main(argv: list[str] | None = None) -> int:
             "held_out_test": _report(model, test_x, test_y),
         }, indent=2))
         return 0
-    if not args.metrics or not args.output:
-        raise ValueError("fitting requires --metrics and --output")
+    if not (args.metrics or args.training_results) or not args.output:
+        raise ValueError(
+            "fitting requires --metrics/--training-results and --output"
+        )
 
     records = _records(args.metrics)
     calibration_seeds = set(args.calibration_seeds)
     train_records = [r for r in records if int(r["seed"]) not in calibration_seeds]
     calibration_records = [r for r in records if int(r["seed"]) in calibration_seeds]
     calibration_records.extend(_records(args.calibration_metrics))
+    train_records.extend(_result_records(args.training_results))
+    calibration_records.extend(_result_records(args.calibration_results))
     if not train_records or not calibration_records:
         raise ValueError("seed split produced an empty training or calibration set")
 
     train_x, train_y, train_provenance = samples_from_records(train_records)
     cal_x, cal_y, cal_provenance = samples_from_records(calibration_records)
+    _assert_disjoint_protocol(
+        train_provenance,
+        cal_provenance,
+        set(args.evaluation_seeds),
+    )
     peg_insert = train_x.shape[1] == len(PEG_INSERT_FEATURE_NAMES)
     model = LinearReliabilityModel.fit(
         train_x,
@@ -164,9 +357,32 @@ def main(argv: list[str] | None = None) -> int:
         "calibration_seeds": sorted({
             int(x["seed"]) for x in cal_provenance
         }),
-        "deployment_family_calibration_files": list(args.calibration_metrics),
+        "training_seeds": sorted({
+            int(x["seed"]) for x in train_provenance
+        }),
+        "evaluation_seeds_excluded": sorted(set(args.evaluation_seeds)),
+        "split_disjoint": True,
+        "training_files": [
+            *list(args.metrics), *list(args.training_results),
+        ],
+        "deployment_family_calibration_files": [
+            *list(args.calibration_metrics), *list(args.calibration_results),
+        ],
+        "source_hashes": {
+            str(path): _sha256(path)
+            for path in [
+                *_metric_files(args.metrics),
+                *_metric_files(args.calibration_metrics),
+                *_result_files(args.training_results),
+                *_result_files(args.calibration_results),
+            ]
+        },
         "ridge": args.ridge,
+        "quantile": args.quantile,
         "basis_mode": model.basis_mode,
+        "architecture": "standardized_multioutput_ridge_split_conformal",
+        "checkpoint_selection_rule": "single_frozen_fit_no_evaluation_selection",
+        "protocol": args.protocol,
         "task": (
             "manipulator_peg_insert" if peg_insert
             else "manipulator_surface_scan"

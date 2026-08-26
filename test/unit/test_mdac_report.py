@@ -5,6 +5,7 @@ import pytest
 
 from genedynamics.experiments.utils.metrics import (
     aggregate_receding_diagnostics,
+    audit_configs,
     compare_runner_outputs,
     summarize_results,
     verify_results,
@@ -23,6 +24,17 @@ def _result(root: Path, algorithm: str, seed: int, safe: float, force: float):
             "peak_lateral_force": force,
         }},
     }), encoding="utf-8")
+
+
+def test_formal_mdac_configs_pass_checkpoint_and_causal_protocol_audit():
+    root = Path(__file__).resolve().parents[2]
+    report = audit_configs([
+        str(root / "configs/arm/surface_scan"),
+        str(root / "configs/arm/peg_insert"),
+        str(root / "configs/humanoid/push_to_line"),
+    ])
+    assert report["ok"], report["errors"]
+    assert report["config_count"] == 24
 
 
 def test_report_writes_paired_statistics_and_representative_seed(tmp_path: Path):
@@ -102,6 +114,7 @@ def test_receding_diagnostics_preserve_legacy_aggregation_contract():
                 "prior_force_veto": 0.0,
                 "prior_risk_refined": [0.0, 0.2, 0.0, 0.1],
                 "emergency_selected": 0.0,
+                "reliability_abstained": 1.0,
             },
             {
                 "prior_accepted": 0.0,
@@ -110,6 +123,7 @@ def test_receding_diagnostics_preserve_legacy_aggregation_contract():
                 "prior_force_veto": 1.0,
                 "prior_risk_refined": [1.0, 0.4, 1.0, 0.3],
                 "emergency_selected": 1.0,
+                "reliability_abstained": 0.0,
             },
         ],
         task="manipulator_peg_insert",
@@ -122,6 +136,7 @@ def test_receding_diagnostics_preserve_legacy_aggregation_contract():
     assert report["prior_risk_refined_jam"] == 0.5
     assert report["prior_risk_refined_force_mae"] == pytest.approx(0.2)
     assert report["emergency_selected"] == 0.5
+    assert report["reliability_abstained"] == 0.5
 
 
 def test_verifier_rebases_development_subset_and_detects_overwritten_summary(
@@ -162,10 +177,12 @@ suites:
         trajectory_dir = seed_dir / "trajectory"
         trajectory_dir.mkdir(parents=True)
         suite_cfg = cfg.for_suite(cfg.suites[0])
+        snapshot = suite_cfg.to_dict()
+        snapshot["seeds"] = [seed]
         (seed_dir / "results.json").write_text(json.dumps({
             "seed": seed,
             "suite": "kept",
-            "config_snapshot": suite_cfg.to_dict(),
+            "config_snapshot": snapshot,
         }), encoding="utf-8")
         (trajectory_dir / "trajectory.json").write_text("{}", encoding="utf-8")
     overall_path = cfg.output_dir / "overall_summary.json"

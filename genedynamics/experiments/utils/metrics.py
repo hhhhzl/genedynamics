@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -20,6 +21,119 @@ import numpy as np
 
 
 BUDGET_KEYS = ("Nsample", "Hsample", "Hnode", "Ndiffuse", "Ndiffuse_init")
+_CONTACT_TASKS = {
+    "manipulator_surface_scan", "manipulator_peg_insert",
+    "humanoid_box_push",
+}
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _audit_checkpoint_lock(
+    task: str,
+    task_records: Sequence[Tuple[Path, Any]],
+    errors: List[str],
+) -> None:
+    """Validate the P8 frozen learned-component contract for one task."""
+    if task not in _CONTACT_TASKS:
+        return
+    reference_path, reference = task_records[0]
+    metadata = dict(reference.metadata or {})
+    if task == "humanoid_box_push":
+        if metadata.get("evidence_scope") != "model_based_only":
+            errors.append(
+                f"{reference_path}: H1 must declare evidence_scope=model_based_only"
+            )
+        if any(cfg.method == "full_mdac" for _, cfg in task_records):
+            errors.append(
+                f"{reference_path}: H1 model-based-only scope cannot contain full_mdac"
+            )
+        return
+
+    lock = dict(metadata.get("learned_component_lock") or {})
+    if not lock:
+        errors.append(f"{reference_path}: missing P8 learned_component_lock")
+        return
+    formal_seeds = {int(seed) for seed in reference.seeds}
+    required = {
+        "path", "sha256", "protocol", "training_seeds", "training_budget",
+        "training_domains", "architecture", "selection_rule",
+    }
+    for name, raw in lock.items():
+        entry = dict(raw or {})
+        missing = sorted(required.difference(entry))
+        if missing:
+            errors.append(
+                f"{reference_path}: lock {name!r} misses {missing}"
+            )
+            continue
+        checkpoint = Path(str(entry["path"]))
+        if not checkpoint.is_file():
+            errors.append(f"{reference_path}: missing locked checkpoint {checkpoint}")
+        else:
+            actual = _file_sha256(checkpoint)
+            if actual != str(entry["sha256"]):
+                errors.append(
+                    f"{reference_path}: checkpoint hash mismatch for {name}: "
+                    f"{actual} != {entry['sha256']}"
+                )
+        used_seeds = {
+            int(seed) for seed in (
+                list(entry.get("training_seeds") or ())
+                + list(entry.get("calibration_seeds") or ())
+            )
+        }
+        leaked = sorted(formal_seeds.intersection(used_seeds))
+        if leaked:
+            errors.append(
+                f"{reference_path}: {name} uses formal evaluation seeds {leaked}"
+            )
+        budget = dict(entry.get("training_budget") or {})
+        if not budget.get("unit") or int(budget.get("value", 0)) <= 0:
+            errors.append(
+                f"{reference_path}: {name} has invalid training_budget"
+            )
+
+    full = next((cfg for _, cfg in task_records if cfg.name == "full_mdac"), None)
+    standalone = next(
+        (cfg for _, cfg in task_records if cfg.name == "standalone_rl"), None
+    )
+    if full is not None and standalone is not None:
+        if full.method_params.get("policy_ckpt") != standalone.method_params.get(
+            "policy_ckpt"
+        ):
+            errors.append(
+                f"{task}: Full MDAC and standalone RL do not share one checkpoint"
+            )
+
+    for path, cfg in task_records:
+        controller = str(
+            cfg.method_params.get("controller_method", cfg.method)
+        )
+        bindings = {
+            "atacom_policy_ckpt": "atacom_policy",
+            "reliability_ckpt": "reliability",
+        }
+        if cfg.method_params.get("policy_ckpt"):
+            bindings["policy_ckpt"] = (
+                "atacom_policy" if controller == "atacom" else "policy"
+            )
+        for key, lock_name in bindings.items():
+            configured = cfg.method_params.get(key)
+            if not configured:
+                continue
+            entry = dict(lock.get(lock_name) or {})
+            if str(configured) != str(entry.get("path")):
+                errors.append(
+                    f"{path}: {key}={configured!r} is not the locked "
+                    f"{lock_name} checkpoint"
+                )
 
 
 def aggregate_receding_diagnostics(
@@ -71,7 +185,8 @@ def aggregate_receding_diagnostics(
             "emergency_selected", "emergency_revalidated_safe",
             "emergency_incumbent_active", "selected_revalidated_safe",
             "emergency_unrecoverable", "reliability_support_incumbent",
-            "reliability_support_refined", "proposal_stochastic_count",
+            "reliability_support_refined", "reliability_abstained",
+            "proposal_stochastic_count",
             "proposal_atacom_count", "proposal_logp_mean",
             "proposal_gaussian_best_reward", "proposal_rl_best_reward",
             "proposal_atacom_best_reward", "proposal_gaussian_weight",
@@ -150,6 +265,7 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
             if cfg.method in {"mppi", "pegasusflow", "issa", "atacom", "standalone_rl"}:
                 if controller.startswith("mdac") or controller == "dial":
                     errors.append(f"{path}: baseline routes through {controller!r}")
+        _audit_checkpoint_lock(task, task_records, errors)
     return {
         "ok": not errors,
         "config_count": len(records),
@@ -473,7 +589,11 @@ def verify_results(
                     errors.append(f"resolved method/environment mismatch {result_path}")
                 if snapshot.get("output_dir") != str(cfg.output_dir):
                     errors.append(f"resolved output mismatch {result_path}")
-                if snapshot.get("seeds") != cfg.seeds:
+                snapshot_seeds = snapshot.get("seeds")
+                if (
+                    not isinstance(snapshot_seeds, list)
+                    or seed not in snapshot_seeds
+                ):
                     errors.append(f"resolved seed mismatch {result_path}")
                 if development_root is not None:
                     snapshot_metadata = snapshot.get("metadata") or {}

@@ -82,6 +82,77 @@ def _soft_s4_compliance_varies():
     return d
 
 
+def _hybrid_map_crosses_finite_scan_segment():
+    common = dict(
+        level="plane",
+        medium="hybrid",
+        stiffness_map_xi_origin=0.1,
+        stiffness_map_xi_span=0.0495,
+        stiffness_transition_width=0.08,
+        k_hard=8000.0,
+        k_soft=2000.0,
+    )
+    stripes = make_env(ARM_TASK, stiffness_map="stripes", **common)
+    striped = np.asarray([
+        stripes._k_surf_fn(jnp.float32(x), jnp.float32(0.5))
+        for x in (0.105, 0.117, 0.130, 0.142)
+    ])
+    center_hard = make_env(ARM_TASK, stiffness_map="center_hard", **common)
+    centered = np.asarray([
+        center_hard._k_surf_fn(jnp.float32(x), jnp.float32(0.5))
+        for x in (0.105, 0.125, 0.149)
+    ])
+    state = stripes.reset(jax.random.PRNGKey(23))
+    fallback = jnp.zeros((CFG["Hnode"] + 1, stripes.action_size))
+    emergency = stripes.emergency_plan(state, fallback, 0.0)
+    _, _, emergency_force = stripes._unpack(emergency[0])
+    _, _, recovery_force = stripes._unpack(emergency[1])
+    recovery_scan = float(emergency[1, stripes.spec.r_slice.start])
+    emergency_stiffness_diag = np.asarray(
+        emergency[0, stripes.spec.s_slice]
+    )[[0, 3, 5]]
+    no_stiff = make_env(
+        ARM_TASK, stiffness_mode="none", stiffness_map="stripes", **common
+    )
+    _, s0, _ = no_stiff._unpack(jnp.zeros(no_stiff.action_size))
+    _, s1, _ = no_stiff._unpack(jnp.ones(no_stiff.action_size))
+    euclid = make_env(
+        ARM_TASK, stiffness_mode="euclid", stiffness_map="stripes", **common
+    )
+    log_spd = make_env(
+        ARM_TASK, stiffness_mode="log_spd", stiffness_map="stripes", **common
+    )
+    _, s_ref_e, _ = euclid._unpack(jnp.zeros(euclid.action_size))
+    _, s_ref_l, _ = log_spd._unpack(jnp.zeros(log_spd.action_size))
+    k_ref_e = np.asarray(euclid._stiffness(s_ref_e))
+    k_ref_l = np.asarray(log_spd._stiffness(s_ref_l))
+    ok = (
+        striped[0] > 5000.0 and striped[1] < 5000.0
+        and striped[2] > 5000.0 and striped[3] < 5000.0
+        and centered[0] < 5000.0 and centered[1] > 5000.0
+        and centered[2] < 5000.0
+        and float(emergency_force) == 0.0
+        and float(recovery_force) == 0.0
+        and np.isclose(
+            recovery_scan,
+            stripes._config.scan_rate / stripes._config.coord_scale,
+        )
+        and np.array_equal(emergency_stiffness_diag, [1.0, 1.0, 1.0])
+        and bool(stripes.emergency_plan_is_active(emergency))
+        and bool(stripes.emergency_plan_is_active(emergency[1:]))
+        and np.array_equal(no_stiff._stiffness(s0), no_stiff._stiffness(s1))
+        and np.allclose(k_ref_e, k_ref_l, rtol=1.0e-5, atol=1.0e-4)
+    )
+    print(
+        f"  finite-scan hybrid stripes={striped.tolist()} "
+        f"center_hard={centered.tolist()} emergency_F={float(emergency_force):.1f} "
+        f"recovery_F={float(recovery_force):.1f} "
+        f"recovery_scan={recovery_scan:.3f} "
+        f"-> {'OK' if ok else 'FAIL'}"
+    )
+    return ok
+
+
 def _contact_friction_reaches_both_geoms():
     env = make_env(ARM_TASK, level="cylinder", friction=0.3)
     surf = int(env._surf_geom)
@@ -291,6 +362,14 @@ def _controllability_geometry_routes():
     residual = env.manifold_residual_horizon_controllable(
         prepared, dense, 10.0
     )
+    reliability = env.geometry_reliability(state)
+    gate_zero = prepared.replace(info={
+        **prepared.info,
+        "_mdac_realization_gate": jnp.zeros((2,), dtype=dense.dtype),
+    })
+    gated_residual = env.manifold_residual_horizon_controllable(
+        gate_zero, dense, 10.0
+    )
     geometry = solver.geometry_fn(prepared, nodes, 10.0)
     singular = np.linalg.svd(np.asarray(B), compute_uv=False)
     ok = (
@@ -302,6 +381,12 @@ def _controllability_geometry_routes():
         and float(B[0, 0]) > 0.0
         and float(B[1, 1]) > 0.0
         and residual.shape == ((CFG["Hsample"] + 1) * 3,)
+        and np.array_equal(
+            np.asarray(reliability["clean_action"][:2]),
+            np.ones((2,), dtype=np.float32),
+        )
+        and reliability["clean_action"].shape == (env.action_size,)
+        and not np.allclose(np.asarray(residual), np.asarray(gated_residual))
         and geometry.shape == nodes.shape
         and np.all(np.isfinite(np.asarray(geometry)))
     )
@@ -341,6 +426,9 @@ def main():
         and _soft_s4_compliance_varies()
         and _contact_friction_reaches_both_geoms()
     )
+    print("== finite-scan hybrid map =="); d1 = (
+        _hybrid_map_crosses_finite_scan_segment()
+    )
     print("== RL observation/risk/shared domains =="); d2 = (
         _rl_observation_risk_and_randomized_wrapper()
     )
@@ -350,7 +438,7 @@ def main():
     print("== frozen realization geometry =="); h = _realization_geometry_routes()
     print("== true-dynamics controllability geometry =="); i = _controllability_geometry_routes()
     print("== ablations active (arm, bumpy) =="); j = _ablations_active()
-    ok = a and b and c and d and d2 and e and f and g and h and i and j
+    ok = a and b and c and d and d1 and d2 and e and f and g and h and i and j
     print("RESULT:", "ARM OK" if ok else "FAIL")
     return 0 if ok else 1
 

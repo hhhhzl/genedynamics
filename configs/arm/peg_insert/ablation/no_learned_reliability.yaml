@@ -1,0 +1,9 @@
+base: ../main/full_mdac.yaml
+name: no_learned_reliability
+output_dir: results/arm/peg_insert/ablation/no_learned_reliability
+method_params:
+  learned_reliability: false
+  reliability_ckpt: null
+metadata:
+  ablation_of: full_mdac
+  ablated_component: learned_reliability

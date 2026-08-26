@@ -208,6 +208,9 @@ class MdacBackendJax:
             self._env, "emergency_sequence_score_risk", None
         )
         self.risk_safe_fn = getattr(self._env, "sequence_risk_is_safe", None)
+        self.risk_compare_fn = getattr(
+            self._env, "sequence_risk_is_no_worse", None
+        )
         # Score/risk rollouts deliberately remain on the nominal model.  The
         # task-owned executable emergency, by contrast, must use the execution
         # task's true socket frame and observed jam state when one is supplied.
@@ -326,6 +329,13 @@ class MdacBackendJax:
         if self.reliability_support_mode not in {"joint", "state"}:
             raise ValueError(
                 "reliability_support_mode must be 'joint' or 'state'"
+            )
+        self.reliability_ood_policy = str(
+            getattr(solver, "reliability_ood_policy", "veto")
+        )
+        if self.reliability_ood_policy not in {"veto", "model_based"}:
+            raise ValueError(
+                "reliability_ood_policy must be 'veto' or 'model_based'"
             )
         flags = getattr(solver, "flags", None)
         self.use_rl_prior = bool(getattr(flags, "use_rl_prior", True))
@@ -586,6 +596,21 @@ class MdacBackendJax:
             gate_action = jnp.clip(
                 jnp.asarray(gate_diag["action"], Ybar_curr.dtype), 0.0, 1.0
             )[None, :]
+        clean_gate_action = gate_action
+        if gate_diag is not None and self._gate_controllability_only:
+            # A controllability-aware task may keep its clean tangential
+            # geometry fully active while selectively attenuating unreliable
+            # normal/stiffness/force projection and retraction blocks.  Tasks
+            # without this optional contract retain the previous fully active
+            # clean geometry; non-controllability methods keep ``action``.
+            clean_action = gate_diag.get("clean_action")
+            clean_gate_action = (
+                None
+                if clean_action is None
+                else jnp.clip(
+                    jnp.asarray(clean_action, Ybar_curr.dtype), 0.0, 1.0
+                )[None, :]
+            )
 
         # --- geometry seam (genemetry reuse): metric tangent projection of the
         # update direction + optional CFS retraction. Skipped (=> DIAL) when no
@@ -600,8 +625,10 @@ class MdacBackendJax:
             # when adaptive off => unchanged.
             kappa_mult = self._kappa_mult(state, Ybar_curr)
             projected_dir = (self.geom_gain * kappa_mult) * u_proj
-            if gate_action is not None and not self._gate_controllability_only:
-                shaped_dir = u_dir + gate_action * (projected_dir - u_dir)
+            if clean_gate_action is not None:
+                shaped_dir = (
+                    u_dir + clean_gate_action * (projected_dir - u_dir)
+                )
             else:
                 shaped_dir = projected_dir
             Ybar_weighted = Ybar_curr + shaped_dir
@@ -639,8 +666,10 @@ class MdacBackendJax:
                     "sched_params": {"t0": t0},
                 },
             ).trajectory
-            if gate_action is not None:
-                Ybar_next = Ybar_next + gate_action * (Ybar_retracted - Ybar_next)
+            if clean_gate_action is not None:
+                Ybar_next = Ybar_next + clean_gate_action * (
+                    Ybar_retracted - Ybar_next
+                )
             else:
                 Ybar_next = Ybar_retracted
         if self._candidate_projection_jit is not None:
@@ -979,8 +1008,14 @@ class MdacBackendJax:
             )
             if not has_atacom_incumbent:
                 fallback_risk = risks[0]
-            risk_ok = jnp.all(
-                risks[refined_idx] <= fallback_risk + tolerance
+            risk_ok = (
+                self.risk_compare_fn(
+                    risks[refined_idx], fallback_risk, tolerance
+                )
+                if self.risk_compare_fn is not None
+                else jnp.all(
+                    risks[refined_idx] <= fallback_risk + tolerance
+                )
             )
             # The task, rather than the generic backend, owns the semantics of
             # its risk vector.  Legacy tasks without that hook retain the
@@ -1051,7 +1086,23 @@ class MdacBackendJax:
                     )
                 )
             learned_hard_ok = learned_hard_ok_all[refined_idx]
-            risk_ok = risk_ok & learned_risk_ok & learned_support_ok
+            # A calibrated learned bound is authoritative only inside its
+            # support.  Some tasks have a complete task-owned model-based
+            # sequence certificate for deployment-family OOD states.  In that
+            # explicitly selected mode the learned model abstains outside its
+            # calibration domain and the existing model-based certificate owns
+            # acceptance; it does not turn "unknown" into "unsafe forever".
+            # The default remains the conservative legacy veto used by tasks
+            # without that certificate.
+            learned_acceptance_ok = (
+                learned_support_ok & learned_risk_ok & learned_hard_ok
+                if self.reliability_ood_policy == "veto"
+                else (
+                    (~learned_support_ok)
+                    | (learned_risk_ok & learned_hard_ok)
+                )
+            )
+            risk_ok = risk_ok & learned_acceptance_ok
             # A learned realization bound is part of final revalidation, not
             # merely a test of whether refinement improves over the shifted
             # incumbent.  Otherwise an unreliable incumbent remains the
@@ -1059,14 +1110,22 @@ class MdacBackendJax:
             # even when both performance candidates exceed the calibrated
             # bound.  The task-owned emergency remains the last-resort action.
             refined_safe = (
-                refined_safe & learned_support_ok & learned_hard_ok
+                refined_safe & learned_acceptance_ok
+            )
+            fallback_support_ok = fallback_support <= 1.0
+            fallback_learned_ok = (
+                fallback_support_ok & fallback_learned_hard_ok
+                if self.reliability_ood_policy == "veto"
+                else ((~fallback_support_ok) | fallback_learned_hard_ok)
             )
             fallback_safe = (
-                fallback_safe
-                & (fallback_support <= 1.0)
-                & fallback_learned_hard_ok
+                fallback_safe & fallback_learned_ok
             )
-            hard_force_ok = hard_force_ok & learned_hard_ok
+            hard_force_ok = hard_force_ok & (
+                learned_hard_ok
+                if self.reliability_ood_policy == "veto"
+                else ((~learned_support_ok) | learned_hard_ok)
+            )
 
         # Safety is lexicographic over performance.  A shifted incumbent is a
         # valid fallback only after it has been re-evaluated from the *current*
@@ -1147,6 +1206,10 @@ class MdacBackendJax:
             info["reliability_risk_refined"] = learned_risks[refined_idx]
             info["reliability_support_incumbent"] = fallback_support
             info["reliability_support_refined"] = support_scores[refined_idx]
+            info["reliability_abstained"] = (
+                (support_scores[refined_idx] > 1.0)
+                & (self.reliability_ood_policy == "model_based")
+            ).astype(jnp.float32)
         return selected, info
 
     def replan_with_info(self, state, warm_start, schedule, rng, t0=0.0):

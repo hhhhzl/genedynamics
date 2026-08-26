@@ -41,7 +41,11 @@ env_params:
   realization_control_reg: 0.0001
   observation_mode: rl_realized
   realization_control_gain: 0.125
-  w_realized_progress: 250.0
+  # The planner must value newly visited, in-contact path enough to avoid
+  # trading tangential coverage for a marginal force/deformation improvement
+  # at hybrid material transitions.  This dense term cannot be farmed by
+  # holding, retreating, or revisiting, so it preserves the safety objective.
+  w_realized_progress: 400.0
   deformation_safe: 0.0005
   deformation_scale: 0.001
   w_deformation: 5.0
@@ -77,11 +81,43 @@ suites:
   - name: soft_unseen
     level: unseen
     env_params: {medium: soft, soft_stiffness: 1500.0, f_target: 15.0, grav_comp: 0.45, ki_force: 0.25, contact_depth: 0.01965, h_surf_tangential: true, soft_contact_manifold: true, s4_stiffness_range: [800.0, 2000.0], s4_friction_range: [0.05, 0.2]}
-  - {name: hybrid_stripes, level: plane, env_params: {medium: hybrid, stiffness_map: stripes, k_hard: 8000.0, k_soft: 2000.0}}
-  - {name: hybrid_center_hard, level: plane, env_params: {medium: hybrid, stiffness_map: center_hard, k_hard: 8000.0, k_soft: 2000.0}}
-  - {name: hybrid_center_soft, level: plane, env_params: {medium: hybrid, stiffness_map: center_soft, k_hard: 8000.0, k_soft: 2000.0}}
+  - {name: hybrid_stripes, level: plane, env_params: {medium: hybrid, stiffness_map: stripes, stiffness_map_xi_origin: 0.1, stiffness_map_xi_span: 0.0495, stiffness_transition_width: 0.08, k_hard: 8000.0, k_soft: 2000.0}}
+  - {name: hybrid_center_hard, level: plane, env_params: {medium: hybrid, stiffness_map: center_hard, stiffness_map_xi_origin: 0.1, stiffness_map_xi_span: 0.0495, stiffness_transition_width: 0.08, k_hard: 8000.0, k_soft: 2000.0}}
+  - {name: hybrid_center_soft, level: plane, env_params: {medium: hybrid, stiffness_map: center_soft, stiffness_map_xi_origin: 0.1, stiffness_map_xi_span: 0.0495, stiffness_transition_width: 0.08, k_hard: 8000.0, k_soft: 2000.0}}
 
 metadata:
   protocol: mdac_surface_scan_formal_v1
   formal_seeds: true
   narrative: geometry_and_compliance
+  learned_component_lock:
+    policy:
+      path: results/arm/impedence/_policies/shared_ppo_seed0.pkl
+      sha256: 763683288fb7fd8dd2a6714a8c15ab129e8c372c01d6c37f33942278bdd518d6
+      protocol: arm_shared_mga_v1
+      training_seeds: [0]
+      training_budget: {unit: environment_steps, value: 2000000}
+      training_domains: [rigid_cylinder_seed0, rigid_convex_seed1, soft_cylinder_seed2, soft_bumpy_seed3]
+      architecture: ppo_mlp_32x32x32x32
+      selection_rule: max_training_dev_realized_progress
+      selected_step: 1000000
+    atacom_policy:
+      path: results/arm/impedence/_policies/shared_atacom_ppo_seed0.pkl
+      sha256: 3807c1e44253d02f03f47ab9f97c4bab6bb16237d7e6521043598a93b2d4a8ea
+      protocol: manipulator_surface_scan_shared_atacom_v1
+      training_seeds: [0]
+      training_budget: {unit: environment_steps, value: 2000000}
+      training_domains: [rigid_cylinder_seed0, rigid_convex_seed1, soft_cylinder_seed2, soft_bumpy_seed3]
+      architecture: ppo_mlp_32x32x32x32_atacom_tangent_action
+      selection_rule: max_training_dev_realized_progress
+      selected_step: 500000
+    reliability:
+      path: results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json
+      sha256: 359beaa65602a1acf8287f7cc491ba762b61ff527dba60e9e9d28fdc0bb0e2fe
+      protocol: mdac_surface_scan_reliability_v2
+      training_seeds: [0]
+      calibration_seeds: [1]
+      training_budget: {unit: environment_transitions, value: 198}
+      training_domains: [rigid_convex, soft_convex]
+      architecture: standardized_multioutput_ridge_split_conformal
+      selection_rule: single_frozen_fit_no_evaluation_selection
+      ood_contract: abstain_to_task_owned_model_based_certificate
