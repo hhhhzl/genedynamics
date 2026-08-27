@@ -21,7 +21,31 @@ _FACTORY_KEYS = {
     "atacom_policy_ckpt",
     "reliability_ckpt",
 }
-_PLUGIN_KEYS = {"learned_reliability"}
+_CHECKPOINT_KEYS = ("policy_ckpt", "atacom_policy_ckpt", "reliability_ckpt")
+_PLUGIN_KEYS = {
+    "learned_reliability",
+    *{f"{key}_by_suite" for key in _CHECKPOINT_KEYS},
+}
+
+
+def _resolve_suite_checkpoints(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve shape-specific learned artifacts without task special cases."""
+    resolved = dict(config)
+    suite = str(config.get("suite", ""))
+    for key in _CHECKPOINT_KEYS:
+        mapping = config.get(f"{key}_by_suite")
+        if not mapping:
+            continue
+        if not isinstance(mapping, dict):
+            raise ValueError(f"{key}_by_suite must be a mapping")
+        value = mapping.get(suite, mapping.get("*"))
+        if not value:
+            raise ValueError(
+                f"no {key} binding for suite {suite!r}; "
+                f"available={sorted(mapping)}"
+            )
+        resolved[key] = value
+    return resolved
 
 
 @dataclass
@@ -49,6 +73,7 @@ class RecedingContactMethodPlugin(MethodPlugin):
 
     def create_planner(self, env: Any, energy: Any, config: Dict[str, Any]) -> Any:
         del energy
+        config = _resolve_suite_checkpoints(config)
         task = str(config.get("task") or getattr(env, "_experiment_task", ""))
         if not task:
             raise ValueError(f"method '{self.name}' requires a contact task")
@@ -118,12 +143,24 @@ class RecedingContactMethodPlugin(MethodPlugin):
             "policy_ckpt": config.get("policy_ckpt"),
             "atacom_policy_ckpt": config.get("atacom_policy_ckpt"),
             "reliability_ckpt": config.get("reliability_ckpt"),
-            "learned_reliability": bool(
-                config.get("learned_reliability", True)
-            ),
+            "rl_prior": False,
+            "model_based_rollout": method in METHOD_TABLE,
+            "learned_reliability": False,
         }
         if method in METHOD_TABLE:
-            contract["mdac_flags"] = asdict(resolve_method(method))
+            flags = resolve_method(method)
+            contract["mdac_flags"] = asdict(flags)
+            contract["rl_prior"] = bool(flags.use_rl_prior and config.get("policy_ckpt"))
+            contract["learned_reliability"] = bool(
+                self.name == "full_mdac"
+                and config.get("learned_reliability", True)
+                and config.get("reliability_ckpt")
+            )
+        elif method in {"rl", "issa"}:
+            contract["policy"] = bool(config.get("policy_ckpt"))
+        elif method == "atacom":
+            contract["policy"] = bool(config.get("policy_ckpt"))
+            contract["tangent_policy"] = True
         return _ContactPlanner(
             solver=solver,
             env=env,

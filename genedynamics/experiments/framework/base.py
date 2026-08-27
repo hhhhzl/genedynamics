@@ -180,6 +180,16 @@ class MetricsPlugin(ABC):
             Dictionary containing metric values (all values should be JSON-serializable)
         """
         pass
+
+    def pop_artifacts(self) -> Dict[str, Any]:
+        """Return optional non-scalar artifacts produced by the last compute.
+
+        Existing metric plugins remain scalar-only.  Plugins that already
+        construct reusable plotting signals may override this hook so the
+        unified runner can persist them beside the executed trajectory without
+        re-running task physics or changing the metric return schema.
+        """
+        return {}
     
     @property
     @abstractmethod

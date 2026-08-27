@@ -1,0 +1,5 @@
+base: ../_base.yaml
+name: mppi
+method: mppi
+output_dir: results/humanoid/push_to_line/baseline/mppi
+method_params: {controller_method: mppi, noise_sigma: 0.3, lambda_: 1.0}

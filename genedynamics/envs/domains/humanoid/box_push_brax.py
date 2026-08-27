@@ -235,6 +235,11 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
     balance, both hands = Cartesian contact impedance). Reuses the H1 brax base — G1 shares the
     pelvis/torso_link bodies + left_foot/right_foot sites, so only the scene + joint layout differ."""
 
+    # Balance/friction inequalities are measured-state constraints and have
+    # zero instantaneous action rows at reset.  Tell ATACOM to use its robust
+    # fixed-width QR projection; arm tasks retain the historical SVD path.
+    atacom_projection_solver = "damped_qr"
+
     def make_system(self, config):
         # planar-box scene (RIGID box, 3-DoF x/y/yaw); per-robot scene (H1 / G1 motor-actuated).
         from brax.io import mjcf
@@ -510,6 +515,28 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         # part of the later push_walk controller, not an alternate way to strike the box.
         return self.spec.total_width + (self._n_planner if self._is_walk else 0)
 
+    @property
+    def manifold_constraint_size(self) -> int:
+        """Action-controllable equality dimension used by ATACOM.
+
+        Fixed stance constrains the six stiffness coordinates and force.  P3
+        additionally constrains its three face logits and lateral face
+        coordinate.  P4 leaves stiffness/contact selection to the whole-body
+        policy and retains only the desired-force equality.
+        """
+        if self._is_walk:
+            return 1
+        return 11 if self._face_select else 7
+
+    @property
+    def inequality_constraint_size(self) -> int:
+        return 3
+
+    @property
+    def reliability_feature_size(self) -> int:
+        # Fixed across P1--P4 despite the different action dimensions.
+        return 24
+
     # --- normalized primitive -> physical pieces ---
     def _stiffness(self, s_raw):
         mode = self._bcfg.stiffness_mode
@@ -695,6 +722,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         info["force_int"] = jnp.float32(0.0)
         info["task_success"] = jnp.float32(0.0)
         info["unjam_released"] = jnp.float32(0.0)
+        info["prev_action"] = jnp.zeros((self.action_size,), jnp.float32)
         return state.replace(info=info)
 
     def step(self, state: State, action: jax.Array) -> State:
@@ -771,6 +799,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             reached = reached & (jnp.abs(box_yaw) <= self._bcfg.unjam_yaw_eps)
         info["task_success"] = jnp.maximum(
             state.info["task_success"], reached.astype(jnp.float32))
+        info["prev_action"] = jnp.asarray(action, jnp.float32)
         # Direct MPC diagnostics deliberately keep a fixed rollout length.  A completed task is
         # nevertheless terminal: make it absorbing so extra calls after ``done`` cannot create a
         # later fall or move the box beyond the line.
@@ -780,10 +809,15 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             state.pipeline_state,
             ps,
         )
-        info = {
-            key: jnp.where(terminal, state.info[key], value)
-            for key, value in info.items()
-        }
+        # Brax training wrappers may attach nested metric dictionaries to
+        # ``info``.  Preserve the complete pytree on an absorbing terminal;
+        # scalar-only per-key ``where`` fails as soon as such a wrapper is
+        # present even though ordinary evaluation states are flat.
+        info = jax.tree_util.tree_map(
+            lambda old, new: jnp.where(terminal, old, new),
+            state.info,
+            info,
+        )
         info["step"] = state.info["step"] + 1
         reward = jnp.where(terminal, jnp.float32(0.0), reward)
         done = jnp.where(terminal, jnp.float32(1.0), done)
@@ -974,8 +1008,321 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         )
         return jax.vmap(jax.grad(sq))(Ybar_nodes)
 
+    def manifold_residual_horizon(self, state, dense_actions, t0):
+        """Task-owned clean contact chart over the complete dense horizon."""
+        del t0
+        contact_a_target = self._unjam_contact_a_target(state)
+        return jax.vmap(
+            lambda u: self._manifold_res_node(u, contact_a_target)
+        )(dense_actions).reshape(-1)
+
+    def prepare_realization_context(
+        self, state, dense_actions, *, gate_controllability=False,
+    ):
+        """Freeze the measured reliability of the current contact mode.
+
+        H1's semantic primitive is a direct chart (not an incremental pose
+        command), so its clean horizon manifold does not need the arm tasks'
+        coordinate-bias lead.  The measured gate still records whether each
+        action block is locally executable and is consumed by the backend's
+        component gate.
+        """
+        del dense_actions
+        gate = (
+            self.geometry_reliability(state)["action"]
+            if gate_controllability else
+            jnp.ones((self.action_size,), jnp.float32)
+        )
+        return state.replace(info={
+            **state.info,
+            "_mdac_realization_gate": jax.lax.stop_gradient(gate),
+        })
+
+    def manifold_residual_horizon_controllable(self, state, dense_actions, t0):
+        # The direct semantic chart is already expressed in its controllable
+        # coordinates.  Measured controllability gates the update blocks in
+        # ``geometry_reliability`` without weakening the clean equalities.
+        return self.manifold_residual_horizon(state, dense_actions, t0)
+
+    def geometry_reliability(self, state):
+        ps = state.pipeline_state
+        cfg = self._bcfg
+        h, g = self._manifold(
+            ps, jnp.zeros((self.action_size,), jnp.float32), state.info
+        )
+        forces = self._box_contact_forces(ps)
+        contact = jnp.clip(forces["hand"] / max(cfg.f_target, 1.0), 0.0, 1.0)
+        force_risk = jax.nn.relu(forces["hand"] / max(cfg.f_max, 1.0) - 0.8)
+        balance_risk = jax.nn.relu(g[0]) / max(cfg.support_radius, 1.0e-6)
+        invalid_risk = jnp.clip(forces["nonhand"] / max(cfg.f_max, 1.0), 0.0, 1.0)
+        contact_error = jnp.linalg.norm(h[2:5]) / max(cfg.contact_acquire_gap, 1.0e-3)
+        scalar = jnp.exp(-(
+            force_risk + balance_risk + invalid_risk + 0.25 * contact_error
+        ))
+        # Keep the task-progress/contact coordinates available for recovery;
+        # attenuate stiffness/feed and walking corrections under low trust.
+        action_gate = jnp.ones((self.action_size,), jnp.float32)
+        action_gate = action_gate.at[self.spec.s_slice].set(scalar)
+        action_gate = action_gate.at[self.spec.nu_slice].set(scalar)
+        if self._is_walk:
+            action_gate = action_gate.at[self.spec.total_width:].set(scalar)
+        return {
+            "scalar": scalar,
+            "action": action_gate,
+            "clean_action": jnp.ones_like(action_gate),
+            # Shared MDAC diagnostics schema.  H1 keeps task-progress/contact
+            # coordinates open (path=1), has no independent sampled surface
+            # normal (report measured contact confidence), and applies the
+            # scalar gate to both stiffness and force action blocks.
+            "path": jnp.float32(1.0),
+            "normal": contact,
+            "stiffness": scalar,
+            "contact": contact,
+            "force": scalar,
+            "force_only": jnp.exp(-force_risk),
+            "balance": jnp.exp(-balance_risk),
+            "invalid_contact": jnp.exp(-invalid_risk),
+            "contact_error": contact_error,
+        }
+
+    def reliability_features(self, state, action):
+        return self.reliability_features_sequence(state, action[None, :])
+
+    def reliability_features_sequence(self, state, actions):
+        """Observable fixed-width state/candidate features for P1--P4."""
+        ps = state.pipeline_state
+        cfg = self._bcfg
+        forces = self._box_contact_forces(ps)
+        box = ps.x.pos[self._box_idx - 1]
+        yaw = brax_math.quat_to_euler(ps.x.rot[self._box_idx - 1])[2]
+        feet = ps.site_xpos[self._feet_site_id]
+        com = ps.x.pos[self._pelvis_idx - 1, :2]
+        support = feet[:, :2].mean(axis=0)
+        state_features = jnp.asarray([
+            (box[0] - state.info["box_x0"]) / max(cfg.push_dist, 1.0e-6),
+            (state.info["box_goal_x"] - box[0]) / max(cfg.push_dist, 1.0e-6),
+            box[1] / max(float(self._half), 1.0e-6),
+            yaw / 0.1,
+            forces["hand"] / max(cfg.f_max, 1.0),
+            forces["wall"] / max(cfg.f_max, 1.0),
+            forces["nonhand"] / max(cfg.f_max, 1.0),
+            jnp.linalg.norm(com - support) / max(cfg.support_radius, 1.0e-6),
+            state.info["contact_acquired"],
+            state.info["unjam_released"],
+            state.info["force_int"] / max(cfg.force_int_max, 1.0),
+            self._corridor_clearance(ps) / max(cfg.unjam_release_clearance, 1.0e-3),
+        ], jnp.float32)
+        semantic = actions[:, :self.spec.total_width]
+        previous = state.info["prev_action"][:self.spec.total_width]
+        delta0 = semantic[0] - previous
+        sequence_features = jnp.asarray([
+            jnp.sqrt(jnp.mean(semantic[:, self.spec.r_slice] ** 2)),
+            jnp.sqrt(jnp.mean(semantic[:, self.spec.s_slice] ** 2)),
+            jnp.mean(semantic[:, self.spec.nu_slice]),
+            jnp.max(jnp.abs(semantic[:, self.spec.nu_slice])),
+            jnp.sqrt(jnp.mean(delta0 ** 2)),
+            jnp.sqrt(jnp.mean(jnp.diff(semantic, axis=0) ** 2))
+            if actions.shape[0] > 1 else jnp.float32(0.0),
+            jnp.mean(semantic[:, 0]),
+            jnp.mean(semantic[:, 3]),
+            jnp.mean(semantic[:, 4]),
+            jnp.sqrt(jnp.mean(actions[:, self.spec.total_width:] ** 2))
+            if self._is_walk else jnp.float32(0.0),
+            jnp.max(jnp.abs(actions[:, self.spec.total_width:]))
+            if self._is_walk else jnp.float32(0.0),
+            jnp.asarray(self._is_walk, jnp.float32),
+        ], jnp.float32)
+        return jnp.concatenate([state_features, sequence_features])
+
+    def sequence_score_risk(self, state, actions, aug_lambda=0.0, aug_rho=0.0):
+        cfg = self._bcfg
+
+        def body(s, u):
+            s2 = self.step(s, u)
+            h, g = self.constraint_residual(s2, u)
+            residual = jnp.concatenate([jnp.abs(h), jax.nn.relu(g)])
+            penalty = aug_lambda * jnp.sum(residual) + 0.5 * aug_rho * jnp.sum(residual ** 2)
+            forces = self._box_contact_forces(s2.pipeline_state)
+            up = brax_math.rotate(
+                jnp.array([0.0, 0.0, 1.0]),
+                s2.pipeline_state.x.rot[self._torso_idx - 1],
+            )[2]
+            fallen = (
+                (up < 0.0)
+                | (s2.pipeline_state.x.pos[self._torso_idx - 1, 2] < 0.5)
+            ).astype(jnp.float32)
+            force_violation = (forces["hand"] > cfg.f_max).astype(jnp.float32)
+            invalid = jnp.maximum(
+                fallen,
+                (forces["nonhand"] > 0.5).astype(jnp.float32),
+            )
+            balance = jax.nn.relu(g[0]) / max(cfg.support_radius, 1.0e-6)
+            force_mae = jnp.abs(forces["hand"] - cfg.f_target) / max(cfg.f_target, 1.0)
+            return s2, (s2.reward - penalty, jnp.asarray([
+                force_violation, invalid, balance, force_mae,
+            ]))
+
+        _, (scores, risks) = jax.lax.scan(body, state, actions)
+        tail = max(1, (int(actions.shape[0]) + 4) // 5)
+        risk = jnp.asarray([
+            jnp.max(risks[:, 0]),
+            jnp.max(risks[:, 1]),
+            jnp.mean(jnp.sort(risks[:, 2])[-tail:]),
+            jnp.mean(risks[:, 3]),
+        ])
+        return jnp.mean(scores), risk
+
+    def sequence_risk(self, state, actions):
+        return self.sequence_score_risk(state, actions)[1]
+
+    def sequence_risk_is_safe(self, risk):
+        return (risk[0] <= 1.0e-8) & (risk[1] <= 1.0e-8) & (risk[2] <= 1.0e-8)
+
+    def sequence_risk_is_no_worse(self, candidate, incumbent, tolerance):
+        return jnp.all(candidate[:3] <= incumbent[:3] + tolerance[:3])
+
+    def emergency_sequence_score_risk(self, state, actions, aug_lambda=0.0, aug_rho=0.0):
+        return self.sequence_score_risk(state, actions[:1], aug_lambda, aug_rho)
+
+    def project_mdac_candidate(self, state, nodes):
+        del state
+        return jnp.clip(nodes, -1.0, 1.0)
+
+    def emergency_plan(self, state, reference_nodes, t0=0.0):
+        """Task-owned zero-force unload with nominal rear-face hold."""
+        del state, t0
+        emergency = jnp.zeros_like(reference_nodes)
+        emergency = emergency.at[:, self.spec.nu_slice].set(-1.0)
+        # Reduce Cartesian stiffness during unloading.  A later shifted suffix
+        # remains zero-force and is revalidated before it can execute.
+        emergency = emergency.at[:, self.spec.s_slice].set(-1.0)
+        return emergency
+
+    def emergency_plan_is_active(self, nodes):
+        return jnp.all(nodes[:, self.spec.nu_slice] <= -1.0 + 1.0e-4)
+
+    def emergency_plan_should_override(self, state):
+        ps = state.pipeline_state
+        forces = self._box_contact_forces(ps)
+        _, g = self._manifold(
+            ps, jnp.zeros((self.action_size,), jnp.float32), state.info
+        )
+        up = brax_math.rotate(
+            jnp.array([0.0, 0.0, 1.0]), ps.x.rot[self._torso_idx - 1]
+        )[2]
+        return (
+            (forces["hand"] > self._bcfg.f_max)
+            | (forces["nonhand"] > 0.5)
+            | (g[0] > 0.0)
+            | (up < 0.0)
+        )
+
+    def safety_index(self, state):
+        ps = state.pipeline_state
+        forces = self._box_contact_forces(ps)
+        _, g = self._manifold(
+            ps, jnp.zeros((self.action_size,), jnp.float32), state.info
+        )
+        up = brax_math.rotate(
+            jnp.array([0.0, 0.0, 1.0]), ps.x.rot[self._torso_idx - 1]
+        )[2]
+        return jnp.max(jnp.asarray([
+            forces["hand"] / max(self._bcfg.f_max, 1.0) - 1.0,
+            forces["nonhand"] / max(self._bcfg.f_max, 1.0),
+            g[0] / max(self._bcfg.support_radius, 1.0e-6),
+            -up,
+        ]))
+
     def _get_obs(self, ps, info) -> jax.Array:
         box_x = ps.x.pos[self._box_idx - 1, 0]
         goal = info.get("box_goal_x", box_x)               # parent reset() calls this pre-goal
-        return jnp.concatenate([ps.qpos, ps.qvel,
-                                jnp.array([box_x, goal, self._mu])])
+        box_pos = ps.x.pos[self._box_idx - 1]
+        box_yaw = brax_math.quat_to_euler(ps.x.rot[self._box_idx - 1])[2]
+        forces = self._box_contact_forces(ps)
+        feet = ps.site_xpos[self._feet_site_id][:, :2]
+        com = ps.x.pos[self._pelvis_idx - 1, :2]
+        level_names = ("push_to_line", "heavy_dr", "unjam", "push_walk")
+        level = str(self._bcfg.level).lower()
+        level_one_hot = jnp.asarray(
+            [float(level == name) for name in level_names], jnp.float32
+        )
+        task_obs = jnp.concatenate([
+            jnp.asarray([
+                box_x,
+                box_pos[1],
+                box_yaw,
+                goal,
+                goal - box_x,
+                self._mu,
+                self._bcfg.f_target / max(self._bcfg.f_max, 1.0),
+                forces["hand"] / max(self._bcfg.f_max, 1.0),
+                forces["wall"] / max(self._bcfg.f_max, 1.0),
+                forces["nonhand"] / max(self._bcfg.f_max, 1.0),
+                jnp.linalg.norm(com - feet.mean(axis=0))
+                / max(self._bcfg.support_radius, 1.0e-6),
+                self._corridor_clearance(ps),
+                info.get("contact_acquired", 0.0),
+                info.get("unjam_released", 0.0),
+                info.get("force_int", 0.0) / max(self._bcfg.force_int_max, 1.0),
+            ], jnp.float32),
+            level_one_hot,
+        ])
+        return jnp.concatenate([ps.qpos, ps.qvel, task_obs])
+
+
+class HumanoidBoxPushDomainEnv:
+    """Reset-key randomized family for one shape-compatible H1 schema."""
+
+    def __init__(self, domains):
+        self.domains = tuple(domains)
+        if not self.domains:
+            raise ValueError("HumanoidBoxPushDomainEnv needs at least one domain")
+        action_sizes = {int(env.action_size) for env in self.domains}
+        observation_sizes = {int(env.observation_size) for env in self.domains}
+        if len(action_sizes) != 1 or len(observation_sizes) != 1:
+            raise ValueError(
+                "all H1 training domains must share action/observation sizes"
+            )
+        self._action_size = action_sizes.pop()
+        self._observation_size = observation_sizes.pop()
+
+    @property
+    def action_size(self):
+        return self._action_size
+
+    @property
+    def observation_size(self):
+        return self._observation_size
+
+    @property
+    def backend(self):
+        return self.domains[0].backend
+
+    @property
+    def dt(self):
+        return self.domains[0].dt
+
+    def reset(self, rng):
+        domain_index = jax.random.randint(
+            rng, (), 0, len(self.domains), dtype=jnp.int32
+        )
+        branches = tuple(
+            (lambda key, env=env: env.reset(key)) for env in self.domains
+        )
+        state = jax.lax.switch(domain_index, branches, rng)
+        return state.replace(info={
+            **state.info, "_rl_domain_index": domain_index,
+        })
+
+    def step(self, state, action):
+        domain_index = state.info["_rl_domain_index"]
+        branches = tuple(
+            (lambda s, env=env: env.step(s, action)) for env in self.domains
+        )
+        return jax.lax.switch(domain_index, branches, state)
+
+
+__all__ = [
+    "HumanoidBoxPushConfig", "HumanoidBoxPushEnv",
+    "HumanoidBoxPushDomainEnv",
+]

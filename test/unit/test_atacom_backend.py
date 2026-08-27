@@ -6,6 +6,7 @@ import numpy as np
 from flax import struct
 
 from genedynamics.solvers.single.atacom.backends.atacom_jax import (
+    _damped_qr_pinv_null,
     _pinv_null,
     atacom_constraint_dims,
     atacom_null_dim,
@@ -67,6 +68,20 @@ def test_svd_null_basis_annihilates_augmented_jacobian():
     pinv, null = _pinv_null(A, n_c=2)
     np.testing.assert_allclose(A @ null, 0.0, atol=2e-6)
     np.testing.assert_allclose(A @ pinv, jnp.eye(2), atol=2e-6)
+
+
+def test_damped_qr_projection_is_finite_for_rank_deficient_rows():
+    A = jnp.asarray([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+    ], jnp.float32)
+    pinv, null = _damped_qr_pinv_null(A, n_c=3)
+    assert pinv.shape == (4, 3)
+    assert null.shape == (4, 1)
+    assert bool(jnp.all(jnp.isfinite(pinv)))
+    assert bool(jnp.all(jnp.isfinite(null)))
+    np.testing.assert_allclose(A @ null, 0.0, atol=2e-6)
 
 
 def test_error_correction_reduces_augmented_constraint_norm():

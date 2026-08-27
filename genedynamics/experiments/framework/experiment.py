@@ -56,10 +56,10 @@ def convert_to_json_serializable(obj: Any) -> Any:
     elif isinstance(obj, (np.bool_, bool)):
         return bool(obj)
     elif isinstance(obj, np.ndarray):
-        return obj.tolist()
+        return convert_to_json_serializable(obj.tolist())
     elif hasattr(obj, "shape") and hasattr(obj, "dtype"):
         # JAX/Torch array-like values without importing either backend here.
-        return np.asarray(obj).tolist()
+        return convert_to_json_serializable(np.asarray(obj).tolist())
     elif isinstance(obj, (list, tuple)):
         return [convert_to_json_serializable(item) for item in obj]
     elif isinstance(obj, dict):
@@ -878,15 +878,29 @@ class ExperimentRunner:
             versions = {}
         checkpoints = {}
         for key, value in self.config.method_params.items():
-            if not (isinstance(key, str) and key.endswith("_ckpt") and value):
+            values = None
+            if isinstance(key, str) and key.endswith("_ckpt") and value:
+                values = {key: value}
+            elif (
+                isinstance(key, str) and key.endswith("_ckpt_by_suite")
+                and isinstance(value, dict)
+            ):
+                values = {
+                    f"{key}:{suite}": checkpoint
+                    for suite, checkpoint in value.items() if checkpoint
+                }
+            if values is None:
                 continue
-            path = Path(str(value))
-            if not path.is_absolute():
-                path = Path.cwd() / path
-            digest = None
-            if path.is_file():
-                digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            checkpoints[key] = {"path": str(value), "sha256": digest}
+            for label, checkpoint in values.items():
+                path = Path(str(checkpoint))
+                if not path.is_absolute():
+                    path = Path.cwd() / path
+                digest = None
+                if path.is_file():
+                    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                checkpoints[label] = {
+                    "path": str(checkpoint), "sha256": digest,
+                }
         manifest = {
             "schema_version": 1,
             "git_sha": git_sha,
@@ -1747,6 +1761,11 @@ class ExperimentRunner:
                     execution_env=env,
                     infos=(planning_result or {}).get('infos', []),
                 )
+                artifacts = metric_plugin.pop_artifacts()
+                if artifacts and planning_result is not None:
+                    planning_result.setdefault("metric_artifacts", {}).update(
+                        artifacts
+                    )
                 val = convert_to_json_serializable(metric_value)
                 if metric_name == 'ssr' and isinstance(val, dict):
                     # Keep only ssr field for modes consistency when we later add ssr from plugin
@@ -2940,7 +2959,7 @@ class ExperimentRunner:
                 trajectory_dir = output_path / "trajectory"
                 trajectory_dir.mkdir(parents=True, exist_ok=True)
                 executed = {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "state_layout": "brax_state_compact",
                     "states": [_compact_contact_state(s) for s in direct.states],
                     "actions": convert_to_json_serializable(direct.actions),
@@ -2951,6 +2970,11 @@ class ExperimentRunner:
                         planning_result.get("costs", [])
                     ),
                 }
+                artifacts = planning_result.get("metric_artifacts", {})
+                if artifacts.get("task_signals") is not None:
+                    executed["task_signals"] = convert_to_json_serializable(
+                        artifacts["task_signals"]
+                    )
                 with open(trajectory_dir / "trajectory.json", "w") as f:
                     json.dump(executed, f, indent=2, allow_nan=False)
         

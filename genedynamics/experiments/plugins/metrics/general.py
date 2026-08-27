@@ -44,12 +44,15 @@ class GeneralMetricsPlugin(MetricsPlugin):
 
     def __init__(self, metric_names: List[str], extractor: Extractor, *,
                  name: str = "metrics", config: Optional[Dict[str, Any]] = None,
-                 skip_missing: bool = True) -> None:
+                 skip_missing: bool = True,
+                 persist_signals: bool = False) -> None:
         self._names = list(metric_names)
         self._extractor = extractor
         self._name = str(name)
         self._config = dict(config or {})
         self._skip_missing = bool(skip_missing)
+        self._persist_signals = bool(persist_signals)
+        self._artifacts: Dict[str, Any] = {}
 
     @property
     def name(self) -> str:
@@ -58,9 +61,16 @@ class GeneralMetricsPlugin(MetricsPlugin):
     def compute(self, trajectory: Trajectory, env: Any, obstacles: Any,
                 constraints: Any, **kwargs: Any) -> Dict[str, Any]:
         signals = self._extractor(trajectory, env, obstacles, constraints, **kwargs)
+        self._artifacts = (
+            {"task_signals": signals} if self._persist_signals else {}
+        )
         config = {**self._config, **kwargs}
         return compute_metrics(self._names, signals, config=config,
                                skip_missing=self._skip_missing)
+
+    def pop_artifacts(self) -> Dict[str, Any]:
+        artifacts, self._artifacts = self._artifacts, {}
+        return artifacts
 
 
 __all__ = ["GeneralMetricsPlugin"]

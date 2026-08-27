@@ -213,11 +213,14 @@ def test_solver_registered_and_method_flags():
     assert controllable.use_horizon_geometry
     assert controllable.use_controllability_geometry
     assert not controllable.use_geometry_gate
+    current = resolve_method("mdac_controllable_gate")
     surface_ablations = {
         "mdac_horizon": ("use_controllability_geometry",),
         "mdac_controllable_no_retraction": ("use_retraction",),
         "mdac_controllable_no_stiffness": ("use_stiffness",),
         "mdac_controllable_euclid_stiffness": ("log_spd_stiffness",),
+        "mdac_controllable_gate_no_tangent": ("use_tangent_projection",),
     }
     for ablation, expected_difference in surface_ablations.items():
-        assert diff_flags(controllable, resolve_method(ablation)) == expected_difference
+        base = controllable if ablation == "mdac_horizon" else current
+        assert diff_flags(base, resolve_method(ablation)) == expected_difference

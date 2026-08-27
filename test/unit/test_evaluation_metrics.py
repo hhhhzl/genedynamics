@@ -273,3 +273,14 @@ def test_general_plugin_adapter():
     assert plug.name == "demo"
     out = plug.compute(_Traj(), _Env(), None, None, violations=np.array([0.0, 1.0]))
     assert abs(out["goal_error"]) < 1e-9 and out["violation_rate"] == 0.5
+    assert plug.pop_artifacts() == {}
+
+    persistent = GeneralMetricsPlugin(
+        ["goal_error"], extractor, name="persistent", persist_signals=True,
+    )
+    persistent.compute(_Traj(), _Env(), None, None)
+    artifacts = persistent.pop_artifacts()
+    assert set(artifacts) == {"task_signals"}
+    assert np.allclose(artifacts["task_signals"]["final_pos"], [1.0, 0.0])
+    # Artifacts are per-run and cannot leak into the next seed.
+    assert persistent.pop_artifacts() == {}

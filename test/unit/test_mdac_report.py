@@ -34,7 +34,13 @@ def test_formal_mdac_configs_pass_checkpoint_and_causal_protocol_audit():
         str(root / "configs/humanoid/push_to_line"),
     ])
     assert report["ok"], report["errors"]
-    assert report["config_count"] == 24
+    assert report["config_count"] == 35
+    assert report["run_count_by_task"] == {
+        "manipulator_surface_scan": 1160,
+        "manipulator_peg_insert": 300,
+        "humanoid_box_push": 580,
+    }
+    assert report["formal_run_count"] == 2040
 
 
 def test_report_writes_paired_statistics_and_representative_seed(tmp_path: Path):

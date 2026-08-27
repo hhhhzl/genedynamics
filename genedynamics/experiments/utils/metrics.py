@@ -46,15 +46,11 @@ def _audit_checkpoint_lock(
     reference_path, reference = task_records[0]
     metadata = dict(reference.metadata or {})
     if task == "humanoid_box_push":
-        if metadata.get("evidence_scope") != "model_based_only":
+        if metadata.get("evidence_scope") != "full_eight_algorithm":
             errors.append(
-                f"{reference_path}: H1 must declare evidence_scope=model_based_only"
+                f"{reference_path}: H1 must declare "
+                "evidence_scope=full_eight_algorithm"
             )
-        if any(cfg.method == "full_mdac" for _, cfg in task_records):
-            errors.append(
-                f"{reference_path}: H1 model-based-only scope cannot contain full_mdac"
-            )
-        return
 
     lock = dict(metadata.get("learned_component_lock") or {})
     if not lock:
@@ -105,12 +101,46 @@ def _audit_checkpoint_lock(
         (cfg for _, cfg in task_records if cfg.name == "standalone_rl"), None
     )
     if full is not None and standalone is not None:
-        if full.method_params.get("policy_ckpt") != standalone.method_params.get(
-            "policy_ckpt"
-        ):
+        full_policy = (
+            full.method_params.get("policy_ckpt_by_suite")
+            or full.method_params.get("policy_ckpt")
+        )
+        standalone_policy = (
+            standalone.method_params.get("policy_ckpt_by_suite")
+            or standalone.method_params.get("policy_ckpt")
+        )
+        if full_policy != standalone_policy:
             errors.append(
                 f"{task}: Full MDAC and standalone RL do not share one checkpoint"
             )
+
+    if task == "humanoid_box_push":
+        lock_paths = {
+            str(dict(entry or {}).get("path")): name
+            for name, entry in lock.items()
+        }
+        required_names = {
+            "full_mdac", "model_based_only", "standalone_rl", "dial",
+            "mppi", "pegasusflow", "issa", "atacom",
+            "no_rl_prior", "no_learned_reliability", "no_tangent",
+            "no_retraction", "no_stiffness",
+        }
+        actual_names = {cfg.name for _, cfg in task_records}
+        missing_names = sorted(required_names.difference(actual_names))
+        if missing_names:
+            errors.append(f"{task}: missing formal configs {missing_names}")
+        for path, cfg in task_records:
+            for key in ("policy_ckpt", "atacom_policy_ckpt", "reliability_ckpt"):
+                configured = cfg.method_params.get(key)
+                if configured and str(configured) not in lock_paths:
+                    errors.append(f"{path}: unlocked H1 checkpoint {configured}")
+                mapping = cfg.method_params.get(f"{key}_by_suite") or {}
+                for suite, checkpoint in mapping.items():
+                    if str(checkpoint) not in lock_paths:
+                        errors.append(
+                            f"{path}: unlocked H1 checkpoint for {suite}: {checkpoint}"
+                        )
+        return
 
     for path, cfg in task_records:
         controller = str(
@@ -240,8 +270,12 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
     by_task: Dict[str, List[Tuple[Path, ExperimentConfig]]] = defaultdict(list)
     for record in records:
         by_task[record[1].env_name].append(record)
+    run_count_by_task: Dict[str, int] = {}
     for task, task_records in by_task.items():
         reference = task_records[0][1]
+        full_cfg = next(
+            (cfg for _, cfg in task_records if cfg.name == "full_mdac"), None
+        )
         ref_protocol = {
             "seeds": reference.seeds,
             "n_steps": reference.n_steps,
@@ -265,11 +299,51 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
             if cfg.method in {"mppi", "pegasusflow", "issa", "atacom", "standalone_rl"}:
                 if controller.startswith("mdac") or controller == "dial":
                     errors.append(f"{path}: baseline routes through {controller!r}")
+            ablated = (cfg.metadata or {}).get("ablated_component")
+            if ablated and full_cfg is not None and ablated not in {
+                "learned_reliability",
+            }:
+                from genedynamics.solvers.single.mdac.core.method_registry import (
+                    METHOD_TABLE, diff_flags, resolve_method,
+                )
+                full_controller = str(full_cfg.method_params.get(
+                    "controller_method", full_cfg.method,
+                ))
+                if controller in METHOD_TABLE and full_controller in METHOD_TABLE:
+                    differences = diff_flags(
+                        resolve_method(full_controller), resolve_method(controller)
+                    )
+                    if differences != (str(ablated),):
+                        errors.append(
+                            f"{path}: ablation {ablated!r} changes flags "
+                            f"{differences!r}"
+                        )
+            available_suites = {
+                str(item.get("name")) for item in cfg.suites
+            }
+            formal_suites = list(
+                (cfg.metadata or {}).get("formal_suites")
+                or sorted(available_suites)
+            )
+            unknown = sorted(set(formal_suites).difference(available_suites))
+            if unknown:
+                errors.append(f"{path}: unknown formal_suites {unknown}")
+            run_count_by_task[task] = run_count_by_task.get(task, 0) + (
+                len(cfg.seeds) * len(formal_suites)
+            )
         _audit_checkpoint_lock(task, task_records, errors)
+        expected = (reference.metadata or {}).get("expected_formal_task_runs")
+        if expected is not None and run_count_by_task[task] != int(expected):
+            errors.append(
+                f"{task}: formal matrix has {run_count_by_task[task]} runs, "
+                f"expected {expected}"
+            )
     return {
         "ok": not errors,
         "config_count": len(records),
         "task_count": len(by_task),
+        "run_count_by_task": run_count_by_task,
+        "formal_run_count": sum(run_count_by_task.values()),
         "errors": errors,
     }
 

@@ -48,7 +48,62 @@ metadata:
   protocol: mdac_humanoid_push_formal_v1
   formal_seeds: true
   narrative: whole_body_contact_geometry
-  # P8 lock: no H1 learned prior/reliability checkpoint has passed the common
-  # training protocol yet.  These runs are deliberately model-based-only
-  # evidence and must not be labelled Full MDAC in the paper.
-  evidence_scope: model_based_only
+  evidence_scope: full_eight_algorithm
+  expected_formal_task_runs: 580
+  learned_component_lock:
+    policy_fixed:
+      path: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+      sha256: 1fe928bd143d7c03df8fcfe381aad4fc27a81ee50825187270f76643d394cf7d
+      protocol: humanoid_box_push_fixed_ppo_v1
+      training_seeds: [0]
+      training_budget: {unit: environment_steps, value: 200000}
+      training_domains: [p1_force_15n, p1_force_30n, p2_push_nominal, p2_push_ood, p3_unjam]
+      architecture: ppo_mlp_16x16
+      selection_rule: final_checkpoint_after_fixed_budget
+    policy_walk:
+      path: results/humanoid/box_push/_policies/walk_ppo_seed0.pkl
+      sha256: 9f5d25b9b078e7c3d87b5d2c72adf943e45682055a9ddc4c4a4983ef19a55d0e
+      protocol: humanoid_box_push_walk_ppo_v1
+      training_seeds: [0]
+      training_budget: {unit: environment_steps, value: 200000}
+      training_domains: [p4_walk_push]
+      architecture: ppo_mlp_16x16
+      selection_rule: final_checkpoint_after_fixed_budget
+    atacom_p12:
+      path: results/humanoid/box_push/_policies/atacom_p12_ppo_seed0.pkl
+      sha256: 242212e7604799a178414ff2028386757b4825a12ce017ce2f3323bc2ded81d0
+      protocol: humanoid_box_push_atacom_p12_ppo_v1
+      training_seeds: [0]
+      training_budget: {unit: environment_steps, value: 200000}
+      training_domains: [p1_force_15n, p1_force_30n, p2_push_nominal, p2_push_ood]
+      architecture: ppo_mlp_16x16_atacom_tangent_action
+      selection_rule: final_checkpoint_after_fixed_budget
+    atacom_p3:
+      path: results/humanoid/box_push/_policies/atacom_p3_ppo_seed0.pkl
+      sha256: 887494c81832d024317b1960c95279cc6e8f456e2e7e491a45bd5faff0e01ec9
+      protocol: humanoid_box_push_atacom_p3_ppo_v1
+      training_seeds: [0]
+      training_budget: {unit: environment_steps, value: 200000}
+      training_domains: [p3_unjam]
+      architecture: ppo_mlp_16x16_atacom_tangent_action
+      selection_rule: final_checkpoint_after_fixed_budget
+    atacom_p4:
+      path: results/humanoid/box_push/_policies/atacom_p4_ppo_seed0.pkl
+      sha256: 66955be8bc550cbf249cb7b2cb1feeec4e3a10f0f73246f00ed822f4e05a1bd7
+      protocol: humanoid_box_push_atacom_p4_ppo_v1
+      training_seeds: [0]
+      training_budget: {unit: environment_steps, value: 200000}
+      training_domains: [p4_walk_push]
+      architecture: ppo_mlp_16x16_atacom_tangent_action
+      selection_rule: final_checkpoint_after_fixed_budget
+    reliability:
+      path: results/humanoid/box_push/_policies/reliability_q95.json
+      sha256: 80303f6cb8d426244170d298111279f3bd75e6e274132c39a0ea41b2474e299b
+      protocol: humanoid_box_push_reliability_v1
+      training_seeds: [0]
+      calibration_seeds: [1]
+      training_budget: {unit: environment_transitions, value: 600}
+      training_domains: [p1_force_15n, p1_force_30n, p2_push_nominal, p2_push_ood, p3_unjam, p4_walk_push]
+      architecture: standardized_ridge_logistic_split_conformal
+      selection_rule: single_frozen_fit_no_evaluation_selection
+      ood_contract: abstain_to_task_owned_model_based_certificate

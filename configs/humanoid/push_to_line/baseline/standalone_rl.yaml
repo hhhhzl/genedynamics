@@ -1,0 +1,13 @@
+base: ../_base.yaml
+name: standalone_rl
+method: standalone_rl
+output_dir: results/humanoid/push_to_line/baseline/standalone_rl
+method_params:
+  controller_method: rl
+  policy_ckpt_by_suite:
+    p1_force_15n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p1_force_30n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p2_push_nominal: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p2_push_ood: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p3_unjam: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p4_walk_push: results/humanoid/box_push/_policies/walk_ppo_seed0.pkl

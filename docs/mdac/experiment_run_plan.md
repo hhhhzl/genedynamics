@@ -461,14 +461,18 @@ configs/
 │       ├── baseline/<one-yaml-per-algorithm>
 │       └── ablation/
 │           ├── no_rl_prior.yaml
-│           ├── no_learned_reliability.yaml
-│           └── no_revalidation_emergency.yaml
+│           └── no_learned_reliability.yaml
 └── humanoid/
     └── push_to_line/
         ├── _base.yaml
         ├── main/full_mdac.yaml
         ├── baseline/<one-yaml-per-algorithm>
-        └── ablation/<only-causally-required-ablations>
+        └── ablation/
+            ├── no_rl_prior.yaml
+            ├── no_learned_reliability.yaml
+            ├── no_tangent.yaml
+            ├── no_retraction.yaml
+            └── no_stiffness.yaml
 ```
 
 No algorithm is represented by several tuning YAMLs in the formal tree. Search
@@ -501,11 +505,10 @@ hybrid_center_hard
 hybrid_center_soft
 ```
 
-All eight algorithms run the ten main suites. The three hybrid suites are a
-targeted mechanism matrix: Full MDAC, Model-based Only, DIAL, ATACOM, and the
-stiffness/geometry ablations. If compute permits, the remaining baselines may be
-added, but their absence must be stated rather than filled with development
-numbers.
+All eight algorithms run all thirteen suites.  The four stiffness/geometry
+ablations run only the three hybrid suites, where spatial material switching
+makes their causal effect identifiable.  An algorithm row may not omit the
+hybrid suites.
 
 ### 6.2 PegInsert suite list
 
@@ -533,6 +536,21 @@ p4_walk_push
 P1 has a force-step success contract, not a line-reaching success contract. Its
 metrics are rise time, settling time, overshoot, steady-state force error, force
 violation, and balance margin. P2--P4 use task-specific safe push success.
+
+All eight algorithms run all six H1 suites.  H1 ablations are deliberately
+targeted instead of repeated on suites that cannot identify the mechanism:
+
+```text
+no_rl_prior:             p2_push_ood, p3_unjam, p4_walk_push
+no_learned_reliability:  p2_push_ood, p3_unjam, p4_walk_push
+no_tangent:              p3_unjam
+no_retraction:           p3_unjam
+no_stiffness:            p1_force_15n, p1_force_30n
+```
+
+The first two isolate learned proposal/reliability components under OOD or
+contact-mode change; the next two isolate whole-body contact-manifold geometry
+in P3; the final one isolates impedance geometry in the force-step task.
 
 ---
 
@@ -568,8 +586,16 @@ Rules for learned methods:
   before the paper comparison is valid.
 - PegInsert currently uses a 200k learned-policy protocol. Retain it unless a
   preregistered budget study changes all learned methods together.
-- H1 does not yet have a validated Full-MDAC training contract. It is not run as
-  Full MDAC until that contract and checkpoint are established.
+- H1 must use suite-aware frozen checkpoint bindings because its primitive
+  dimension changes in P4 and its ATACOM equality dimension changes in P3:
+  one raw PPO checkpoint shared by Full/standalone-RL/ISSA for P1--P3, one raw
+  PPO checkpoint for P4, and separate ATACOM tangent checkpoints for P1/P2,
+  P3, and P4.  A YAML path alone is not a valid binding; the resolved suite,
+  action/observation dimensions, protocol, and checkpoint hash are audited.
+- H1 requires a fixed-dimensional task-wide learned-reliability contract (or a
+  preregistered fixed-stance/walk split if one contract is demonstrably
+  impossible).  Full MDAC is not run until the H1 policy, reliability, safety,
+  and suite-aware checkpoint contracts pass development seeds.
 
 Formal visualizations use a preregistered representative-seed rule, such as the
 successful seed nearest the multi-metric median. A visually attractive or
@@ -1107,8 +1133,8 @@ Actions:
 4. Train/freeze learned reliability using training/development data only.
 5. Freeze PegInsert `no_rl_prior` and `no_learned_reliability` configs before
    viewing their formal-seed results.
-6. Establish the H1 Full-MDAC prior/reliability contract or explicitly classify
-   H1 as model-based-only evidence.
+6. Establish the H1 Full-MDAC prior/reliability/safety contract and the
+   suite-aware checkpoint resolver required to run all eight algorithms.
 
 Acceptance:
 
@@ -1116,7 +1142,8 @@ Acceptance:
   list.
 - No evaluation seed enters training, checkpoint selection, or calibration.
 - Peg ablations differ from Full MDAC by exactly the named mechanism.
-- The H1 method label accurately reflects the active components.
+- The H1 method label accurately reflects the active components, and all eight
+  algorithms pass a one-step and one-seed shape/interface smoke on every suite.
 
 #### P8 execution record and frozen decision (2026-08-26)
 
@@ -1186,14 +1213,83 @@ loads the shared PPO prior, and removes only the learned reliability model.
 The unified-runner adapter records both switches in `component_contract` and
 rejects contradictory checkpoint bindings.
 
-H1 remains explicitly `model_based_only` evidence.  There is no validated H1
-PPO prior or learned reliability checkpoint and therefore no `full_mdac` H1
-YAML.  The paper must not label the current H1 results as Full MDAC.
+H1 remains explicitly `model_based_only` evidence in this historical P8
+snapshot.  There is no validated H1 PPO prior or learned reliability checkpoint
+and therefore no `full_mdac` H1 YAML in that snapshot.
 
 The final verification consists of 24 formal configs with zero audit errors,
 52 focused unit/config/report tests, and 15 unified-runner component-contract
-tests.  All pass.  P9 formal seeds are now authorized, subject to committing
-the locked source state first and retaining the hashes above.
+tests.  All pass for the then-frozen Surface/Peg and model-based-only H1 scope.
+
+#### P8 scope extension (2026-08-27; supersedes H1 model-based-only scope)
+
+The formal protocol now requires the same eight algorithm rows in every
+environment.  Surface and Peg checkpoint locks above remain valid, but P8 is
+reopened for H1 and P9 is **not authorized** until this extension passes.
+
+The H1 learned-artifact minimum is:
+
+- raw PPO, fixed stance P1--P3 (`action_size=12`), shared by Full MDAC,
+  standalone RL, and ISSA;
+- raw PPO, P4 walk (`action_size=23`), shared by the same three methods;
+- ATACOM tangent PPO for P1/P2 (`action_size=5`), P3 (`action_size=1`), and P4
+  (`action_size=22`);
+- one fixed-dimensional H1 reliability checkpoint, or a preregistered
+  fixed-stance/walk pair if the single-contract development test fails.
+
+Before training, H1 must expose and test the contracts its algorithms actually
+consume: ATACOM equality/inequality dimensions, ISSA safety index, learned
+reliability features and risks, and Full-MDAC measured-state sequence safety,
+revalidation, and task-owned emergency behavior.  The runner must resolve the
+correct checkpoint per suite and record the effective component contract and
+hash.  Copying Surface/Peg YAMLs or attaching an incompatible checkpoint does
+not satisfy this gate.
+
+The H1 `no_tangent` method must switch only tangent projection inside the
+current Full-MDAC controllability/gate contract; the legacy `mdac_no_tangent`
+method is not a valid substitute.  Likewise, MBO provenance must report the
+effective absence of policy and reliability checkpoints even if its internal
+controller is constructed through the MDAC sampler.  A `no_mb_rollout`
+ablation is not in the frozen matrix because the current registry flag is inert
+by design.  Full versus standalone RL/MBO may be reported as a system-level
+decomposition, but not as a single-factor rollout ablation.  Adding that causal
+claim later requires a genuine no-rollout algorithm and a preregistered extra
+30 H1 runs.
+
+#### P8 H1 extension execution record (2026-08-27)
+
+The H1 extension is complete and the pre-P9 execution gate is open. No formal
+evaluation seed (10--19) was used for training, calibration, smoke execution,
+or checkpoint selection. This authorizes starting P9; it does **not** claim a
+formal performance advantage before the paired P9 matrix is complete.
+
+| Frozen component | Non-formal protocol | SHA256 |
+|---|---|---|
+| Fixed-stance raw PPO | seed 0; 200k steps; P1/P2 then P3 curriculum; final fixed-budget checkpoint | `1fe928bd143d7c03df8fcfe381aad4fc27a81ee50825187270f76643d394cf7d` |
+| P4 walk raw PPO | seed 0; 200k steps; final fixed-budget checkpoint | `9f5d25b9b078e7c3d87b5d2c72adf943e45682055a9ddc4c4a4983ef19a55d0e` |
+| ATACOM P1/P2 tangent PPO | seed 0; 200k steps; tangent width 5 | `242212e7604799a178414ff2028386757b4825a12ce017ce2f3323bc2ded81d0` |
+| ATACOM P3 tangent PPO | seed 0; 200k steps; tangent width 1 | `887494c81832d024317b1960c95279cc6e8f456e2e7e491a45bd5faff0e01ec9` |
+| ATACOM P4 tangent PPO | seed 0; 200k steps; tangent width 22 | `66955be8bc550cbf249cb7b2cb1feeec4e3a10f0f73246f00ed822f4e05a1bd7` |
+| H1 reliability | 600 seed-0 model-based development transitions; 600 disjoint seed-1 calibration transitions; one fixed 24-feature fit | `80303f6cb8d426244170d298111279f3bd75e6e274132c39a0ea41b2474e299b` |
+
+H1's balance/friction inequalities contain structurally zero instantaneous
+action-Jacobian rows. The task therefore selects ATACOM's finite damped-QR
+projection, while Surface and Peg retain their historical SVD path. Random
+exploration remained finite for 20 steps in all three H1 action schemas, and
+the dedicated ATACOM backend tests passed.
+
+The frozen verification record is:
+
+- 35 formal YAMLs pass unified-runner dry-run;
+- the checkpoint/protocol/causal audit reports exactly
+  `Surface=1160`, `Peg=300`, `H1=580`, total `2040`, with zero errors;
+- all eight H1 algorithms execute a development step in P1/P2, P3, and P4
+  checkpoint/action schemas (24 cases total);
+- all five targeted H1 causal ablations execute their declared development
+  gate (5 cases total);
+- the Peg Full-MDAC one-step run persists prior, revalidation, and emergency
+  diagnostics; all three tasks persist schema-v2 task signals;
+- 56 focused unit/audit tests and 22 non-slow unified-runner/plugin tests pass.
 
 ### P9 — Run formal matrices in causal order
 
@@ -1202,11 +1298,14 @@ compute on broad baselines.
 
 #### P9.1 Surface scan
 
-1. Full MDAC, Model-based Only, standalone RL, and DIAL on the ten main suites.
-2. MPPI, PegasusFlow, ISSA, and ATACOM on the same suites.
-3. Full/Model-based/DIAL/ATACOM plus geometry/stiffness ablations on the three
-   hybrid suites.
+1. Full MDAC, Model-based Only, standalone RL, and DIAL on all thirteen suites.
+2. MPPI, PegasusFlow, ISSA, and ATACOM on all thirteen suites.
+3. Run `no_controllability_geometry`, `no_stiffness`,
+   `fixed_or_euclidean_stiffness`, and `no_retraction` on the three hybrid
+   suites only.
 4. Verify completeness before aggregation.
+
+Count: `8 * 13 * 10 + 4 * 3 * 10 = 1160` runs.
 
 #### P9.2 PegInsert
 
@@ -1215,14 +1314,26 @@ compute on broad baselines.
 3. MPPI, PegasusFlow, ISSA, and ATACOM.
 4. Verify strict safe-success derivation and all violation/jam events.
 
+All ten configurations run all three suites.  Count:
+`8 * 3 * 10 + 2 * 3 * 10 = 300` runs.
+
 #### P9.3 H1 push
 
-1. P1 force-step validation; do not rank algorithms by line-goal success.
-2. DIAL, Model-based Only, standalone RL, and Full MDAC on P2--P4 if Full is
-   validated.
-3. Add ATACOM/ISSA only after their whole-body safety/task interfaces are valid.
-4. Treat P3 as the primary geometry comparison and P4 as generalization unless
-   the statistics demonstrate a stronger result.
+1. After the P8 H1 extension passes, run Full MDAC, Model-based Only,
+   standalone RL, and DIAL on all six suites.
+2. Run MPPI, PegasusFlow, ISSA, and ATACOM on all six suites.
+3. Run `no_rl_prior` and `no_learned_reliability` on P2-OOD/P3/P4;
+   `no_tangent` and `no_retraction` on P3; and `no_stiffness` on both P1 force
+   steps.
+4. Interpret P1 with force-step metrics rather than line-goal success, P3 as
+   the primary whole-body geometry comparison, and P4 according to its actual
+   generalization outcome.
+
+Count: `8 * 6 * 10 + 2 * 3 * 10 + 2 * 1 * 10 + 1 * 2 * 10 = 580` runs.
+
+The complete frozen protocol is therefore `1160 + 300 + 580 = 2040` runs.
+This count excludes development smokes, checkpoint training/calibration, and
+any optional stress-test appendix.
 
 Each matrix uses seeds 10--19, paired across methods. A run is incomplete if any
 expected seed is absent, failed, or uses a mismatched config/checkpoint.
@@ -1302,7 +1413,7 @@ The experiment package is paper-ready only when all gates below are true.
 
 ### Surface gate
 
-- All ten rigid/soft geometry suites complete on paired formal seeds.
+- All eight algorithms complete all thirteen suites on paired formal seeds.
 - `convex` is no longer missing.
 - Hybrid stiffness tests validate or falsify the stiffness mechanism.
 - Claims are Pareto-based, not "wins every metric."
@@ -1316,11 +1427,14 @@ The experiment package is paper-ready only when all gates below are true.
 
 ### H1 gate
 
+- All eight algorithms complete all six suites with the preregistered
+  suite-aware checkpoint binding.
 - P1 uses force-step metrics.
-- P2--P4 have adequate paired seeds.
-- P3 demonstrates the geometry contribution statistically.
+- The five targeted ablations are complete on their declared suites.
+- P3 validates or falsifies tangent/retraction geometry statistically.
 - P4 is described according to its actual comparative outcome.
-- Full MDAC label matches active components.
+- Full MDAC, MBO, RL, ISSA, and ATACOM labels match their effective components
+  and checkpoint hashes.
 
 ### Reproducibility gate
 
@@ -1333,15 +1447,9 @@ The experiment package is paper-ready only when all gates below are true.
 
 ## 13. Immediate next action
 
-P0--P6 are implemented at the scoped integration snapshot plus the P6 closure
-described above. The next execution gate is P7:
-
-1. dry-run the four surface ablations and the isolated multi-seed/multi-suite
-   CLI contract;
-2. run the critical two-seed smoke subset for surface convex/hybrid,
-   PegInsert ID/OOD, and H1 P1/P3/P4 under an external development root;
-3. verify manifests, exact run counts, trajectories, metrics, PNGs, and GIFs;
-4. only then fill the complete P7 two-seed development matrix.
-
-Do not launch the seeds 10--19 paper scripts until P7 passes. Do not delete the
-legacy runner, configs, result files, or the pre-integration rollback point.
+Start P9 through `scripts/paper/mdac/run_all.sh`, or run the three task scripts
+in the P9.1--P9.3 causal order. The scripts call only the unified runner, use
+the frozen formal seeds 10--19, preserve explicit algorithm order, and pass
+`--resume`. Do not tune configs or select checkpoints after inspecting partial
+formal results. Keep the legacy runner, old configs, result files, and rollback
+point until P9--P11 and the reproducibility verifier pass.

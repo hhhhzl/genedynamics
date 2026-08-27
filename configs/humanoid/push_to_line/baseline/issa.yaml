@@ -1,0 +1,18 @@
+base: ../_base.yaml
+name: issa
+method: issa
+output_dir: results/humanoid/push_to_line/baseline/issa
+method_params:
+  controller_method: issa
+  policy_ckpt_by_suite:
+    p1_force_15n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p1_force_30n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p2_push_nominal: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p2_push_ood: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p3_unjam: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p4_walk_push: results/humanoid/box_push/_policies/walk_ppo_seed0.pkl
+  n_dirs: 8
+  n_iters: 20
+  adamba_bound: 0.001
+  safety_threshold: 0.0
+  enforce_absolute: true

@@ -48,6 +48,27 @@ def _pinv_null(A: jnp.ndarray, n_c: int, rcond: float = 1e-6):
     return A_pinv, Nc
 
 
+def _damped_qr_pinv_null(
+    A: jnp.ndarray, n_c: int, rcond: float = 1e-6,
+):
+    """Finite fixed-width projection for structurally rank-deficient tasks.
+
+    Some task contracts include measured-state inequalities whose instantaneous
+    action Jacobian is exactly zero.  SVD is appropriate for the full-rank arm
+    contracts, but XLA's SVD can return NaNs for that repeated-zero spectrum.
+    A complete QR still supplies the preregistered ``n_var - n_c`` tangent
+    basis, while a damped right inverse safely ignores uncontrollable rows.
+    """
+    A = jnp.nan_to_num(jnp.asarray(A), nan=0.0, posinf=1e6, neginf=-1e6)
+    q, _ = jnp.linalg.qr(A.T, mode="complete")
+    Nc = q[:, n_c:]
+    gram = A @ A.T
+    scale = jnp.maximum(jnp.max(jnp.diag(gram)), jnp.asarray(1.0, A.dtype))
+    regularized = gram + (float(rcond) * scale) * jnp.eye(n_c, dtype=A.dtype)
+    A_pinv = A.T @ jnp.linalg.solve(regularized, jnp.eye(n_c, dtype=A.dtype))
+    return jnp.nan_to_num(A_pinv), jnp.nan_to_num(Nc)
+
+
 def make_atacom_transform(env: Any, *, Kc: float = 1.0,
                           time_step: float = 0.02,
                           action_limit: float = 1.0,
@@ -81,7 +102,17 @@ def make_atacom_transform(env: Any, *, Kc: float = 1.0,
             jnp.diag(slack),
         ], axis=0)
         Jc = jnp.concatenate([Ju, Js], axis=1)
-        Jc_inv, Nc = _pinv_null(Jc, n_c, rcond=rcond)
+        projection_solver = str(
+            getattr(env, "atacom_projection_solver", "svd")
+        )
+        if projection_solver == "damped_qr":
+            Jc_inv, Nc = _damped_qr_pinv_null(Jc, n_c, rcond=rcond)
+        elif projection_solver == "svd":
+            Jc_inv, Nc = _pinv_null(Jc, n_c, rcond=rcond)
+        else:
+            raise ValueError(
+                f"unknown ATACOM projection solver {projection_solver!r}"
+            )
         duds = Nc @ alpha - Jc_inv @ (K_c * C)
         u = jnp.clip(duds[:nu], -action_limit, action_limit)
         # Upstream ATACOM does not clamp slack: its sign is immaterial to s^2
@@ -103,5 +134,5 @@ def init_slack(env: Any, state: Any) -> jnp.ndarray:
 
 __all__ = [
     "make_atacom_transform", "atacom_constraint_dims", "atacom_null_dim",
-    "init_slack", "_pinv_null",
+    "init_slack", "_pinv_null", "_damped_qr_pinv_null",
 ]

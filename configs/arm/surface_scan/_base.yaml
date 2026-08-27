@@ -89,6 +89,7 @@ metadata:
   protocol: mdac_surface_scan_formal_v1
   formal_seeds: true
   narrative: geometry_and_compliance
+  expected_formal_task_runs: 1160
   learned_component_lock:
     policy:
       path: results/arm/impedence/_policies/shared_ppo_seed0.pkl

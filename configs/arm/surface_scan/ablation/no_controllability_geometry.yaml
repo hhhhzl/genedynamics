@@ -3,6 +3,7 @@ name: no_controllability_geometry
 output_dir: results/arm/surface_scan/ablation/no_controllability_geometry
 method_params: {controller_method: mdac_component_gate}
 metadata:
+  formal_suites: [hybrid_stripes, hybrid_center_hard, hybrid_center_soft]
   ablation_of: full_mdac
   ablated_component: use_controllability_geometry
   paper_scope: hybrid

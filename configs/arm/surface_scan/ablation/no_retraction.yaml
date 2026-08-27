@@ -3,6 +3,7 @@ name: no_retraction
 output_dir: results/arm/surface_scan/ablation/no_retraction
 method_params: {controller_method: mdac_controllable_no_retraction}
 metadata:
+  formal_suites: [hybrid_stripes, hybrid_center_hard, hybrid_center_soft]
   ablation_of: full_mdac
   ablated_component: use_retraction
   paper_scope: hybrid

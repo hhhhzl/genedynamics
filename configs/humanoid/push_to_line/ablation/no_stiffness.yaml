@@ -1,0 +1,5 @@
+base: ../main/full_mdac.yaml
+name: no_stiffness
+output_dir: results/humanoid/push_to_line/ablation/no_stiffness
+method_params: {controller_method: mdac_controllable_no_stiffness}
+metadata: {ablation_of: full_mdac, ablated_component: use_stiffness, formal_suites: [p1_force_15n, p1_force_30n]}

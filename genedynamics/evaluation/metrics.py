@@ -600,7 +600,14 @@ def balance_margin(com_xy, support_center, support_radius: float = 0.25) -> floa
     """Minimum CoM-over-support margin over time: ``radius - ||com - center||``
     (``>= 0`` balanced). Returns the worst (min) margin; empty -> 0.0 (no data)."""
     com = _arr(com_xy)
-    c = _arr(support_center).ravel()
+    c = _arr(support_center)
+    # A static center remains the legacy contract.  Walking tasks may provide
+    # one support center per sample; collapsing those centers over time makes
+    # the margin physically wrong whenever the feet move.
+    if c.ndim == 2 and com.ndim == 2 and c.shape == com.shape:
+        d = np.linalg.norm(com - c, axis=1)
+        return float(np.min(support_radius - d)) if d.size else 0.0
+    c = c.ravel()
     com = com.reshape(-1, c.shape[0])
     d = np.linalg.norm(com - c, axis=1)
     return float(np.min(support_radius - d)) if d.size else 0.0

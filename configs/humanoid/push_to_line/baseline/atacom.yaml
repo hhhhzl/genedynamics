@@ -1,0 +1,14 @@
+base: ../_base.yaml
+name: atacom
+method: atacom
+output_dir: results/humanoid/push_to_line/baseline/atacom
+method_params:
+  controller_method: atacom
+  policy_ckpt_by_suite:
+    p1_force_15n: results/humanoid/box_push/_policies/atacom_p12_ppo_seed0.pkl
+    p1_force_30n: results/humanoid/box_push/_policies/atacom_p12_ppo_seed0.pkl
+    p2_push_nominal: results/humanoid/box_push/_policies/atacom_p12_ppo_seed0.pkl
+    p2_push_ood: results/humanoid/box_push/_policies/atacom_p12_ppo_seed0.pkl
+    p3_unjam: results/humanoid/box_push/_policies/atacom_p3_ppo_seed0.pkl
+    p4_walk_push: results/humanoid/box_push/_policies/atacom_p4_ppo_seed0.pkl
+  Kc: 1.0

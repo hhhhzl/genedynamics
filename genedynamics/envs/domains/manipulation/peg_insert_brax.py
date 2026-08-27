@@ -946,16 +946,25 @@ class PegInsertEnv(PipelineEnv):
         minus = jax.vmap(final_pose)(-basis)
         return jax.lax.stop_gradient(((plus - minus) / (2.0 * eps)).T)
 
-    def prepare_realization_context(self, state, dense_actions):
+    def prepare_realization_context(
+        self, state, dense_actions, *, gate_controllability=False,
+    ):
         B = self.realization_control_jacobian(state, dense_actions)
         pose, angle = self._actual_pose(state.pipeline_state)
         actual = jnp.concatenate([pose, angle])
         error = jax.lax.stop_gradient(actual - state.info["command_pose"])
+        realization_gate = jax.lax.cond(
+            jnp.asarray(gate_controllability),
+            lambda _: self.geometry_reliability(state)["action"][:6],
+            lambda _: jnp.ones((6,), dtype=B.dtype),
+            operand=None,
+        )
         return state.replace(
             info={
                 **state.info,
                 "_mdac_realization_B": B,
                 "_mdac_realization_error": error,
+                "_mdac_realization_gate": realization_gate,
             }
         )
 
@@ -996,7 +1005,7 @@ class PegInsertEnv(PipelineEnv):
         # The reliability gate applies only to this empirical response-map
         # correction.  The clean path/force manifold remains active in the
         # backend even when the local realization estimate is unreliable.
-        realization_gate = self.geometry_reliability(state)["action"][:6]
+        realization_gate = state.info["_mdac_realization_gate"]
         command_shift = command_shift * realization_gate
         return self._horizon_residual(
             state,

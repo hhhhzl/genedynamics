@@ -236,6 +236,90 @@ def _metric_plugin_end_to_end():
     return len(rec) >= 12 and valid
 
 
+def _paper_algorithm_contracts():
+    from genedynamics.solvers.single.atacom.backends.atacom_jax import (
+        atacom_null_dim,
+    )
+
+    expected = {
+        "push_to_line": (7, 5),
+        "unjam": (11, 1),
+        "push_walk": (1, 22),
+    }
+    ok = True
+    for level, (n_f, tangent) in expected.items():
+        env = make_env(HUMANOID_TASK, level=level)
+        state = env.reset(jax.random.PRNGKey(31))
+        actions = jnp.zeros((5, env.action_size))
+        prepared = env.prepare_realization_context(
+            state, actions, gate_controllability=True,
+        )
+        residual = env.manifold_residual_horizon_controllable(
+            prepared, actions, 0.0,
+        )
+        features = env.reliability_features_sequence(state, actions)
+        emergency = env.emergency_plan(state, actions)
+        valid = (
+            env.manifold_constraint_size == n_f
+            and atacom_null_dim(env) == tangent
+            and features.shape == (24,)
+            and residual.shape == (5 * n_f,)
+            and emergency.shape == actions.shape
+            and bool(jnp.isfinite(env.safety_index(state)))
+        )
+        print(
+            f"  {level}: n_f={env.manifold_constraint_size}, "
+            f"tangent={atacom_null_dim(env)}, features={features.shape}, "
+            f"residual={residual.shape} -> {valid}"
+        )
+        ok &= valid
+    return ok
+
+
+def _atacom_finite_rollout():
+    """ATACOM must stay finite under exploratory PPO actions."""
+    from genedynamics.solvers.single.atacom.wrapper import AtacomEnvWrapper
+
+    cases = (
+        ("push_to_line", {}),
+        ("unjam", {"push_dist": 0.03, "contact_band": 0.02}),
+        ("push_walk", {"push_dist": 0.30}),
+    )
+    ok = True
+    for level, overrides in cases:
+        wrapped = AtacomEnvWrapper(
+            make_env(HUMANOID_TASK, level=level, **overrides)
+        )
+        key = jax.random.PRNGKey(700 + len(level))
+        state = wrapped.reset(key)
+        step_fn = jax.jit(wrapped.step)
+        failed_step = None
+        for step in range(20):
+            key, action_key = jax.random.split(key)
+            alpha = jax.random.uniform(
+                action_key, (wrapped.action_size,), minval=-1.0, maxval=1.0,
+            )
+            state = step_fn(state, alpha)
+            leaves = {
+                "obs": state.obs, "reward": state.reward,
+                "q": state.pipeline_state.q, "qd": state.pipeline_state.qd,
+                "slack": state.info["atacom_s"],
+                "u": state.info["atacom_u"],
+            }
+            nonfinite = [
+                name for name, value in leaves.items()
+                if not bool(jnp.all(jnp.isfinite(value)))
+            ]
+            if nonfinite:
+                failed_step = step
+                print(f"    nonfinite={nonfinite}")
+                break
+        valid = failed_step is None
+        print(f"  {level}: finite={valid}, failed_step={failed_step}")
+        ok &= valid
+    return ok
+
+
 def main():
     print("== levels =="); a = all([
         _check_level("push_to_line", want_nu=12), _check_level("heavy_dr", want_nu=12),
@@ -247,7 +331,9 @@ def main():
     print("== heavy_dr domain randomization =="); e = _h2_dr_varies()
     print("== ablations active (humanoid, unjam) =="); f = _ablations_active()
     print("== metric plugin end-to-end =="); g = _metric_plugin_end_to_end()
-    ok = a and b and c and d and e and f and g
+    print("== paper algorithm contracts =="); h = _paper_algorithm_contracts()
+    print("== ATACOM finite rollout =="); i = _atacom_finite_rollout()
+    ok = a and b and c and d and e and f and g and h and i
     print("RESULT:", "HUMANOID OK" if ok else "FAIL")
     return 0 if ok else 1
 

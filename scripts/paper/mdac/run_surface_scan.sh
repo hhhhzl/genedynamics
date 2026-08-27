@@ -3,11 +3,25 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$repo_root"
-while IFS= read -r config; do
+configs=(
+  configs/arm/surface_scan/main/full_mdac.yaml
+  configs/arm/surface_scan/baseline/model_based_only.yaml
+  configs/arm/surface_scan/baseline/standalone_rl.yaml
+  configs/arm/surface_scan/baseline/dial.yaml
+  configs/arm/surface_scan/baseline/mppi.yaml
+  configs/arm/surface_scan/baseline/pegasusflow.yaml
+  configs/arm/surface_scan/baseline/issa.yaml
+  configs/arm/surface_scan/baseline/atacom.yaml
+  configs/arm/surface_scan/ablation/no_controllability_geometry.yaml
+  configs/arm/surface_scan/ablation/no_retraction.yaml
+  configs/arm/surface_scan/ablation/no_stiffness.yaml
+  configs/arm/surface_scan/ablation/fixed_or_euclidean_stiffness.yaml
+)
+for config in "${configs[@]}"; do
   if [[ "$config" == */ablation/* ]]; then
-    python -m genedynamics.experiments.runner "$config" \
+    python -m genedynamics.experiments.runner "$config" --resume \
       --suites hybrid_stripes hybrid_center_hard hybrid_center_soft
   else
-    python -m genedynamics.experiments.runner "$config"
+    python -m genedynamics.experiments.runner "$config" --resume
   fi
-done < <(find configs/arm/surface_scan -type f -name '*.yaml' ! -name '_base.yaml' | sort)
+done
