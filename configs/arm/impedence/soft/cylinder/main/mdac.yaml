@@ -1,8 +1,0 @@
-# MDAC (main) — full method: log-SPD stiffness + AL soft-feas + tangent projection + CFS retraction + coupled anneal.
-# environment: cylinder (S1 analytic cylinder) · SOFT medium (compliant contact)
-base: ../../_base.yaml
-
-level: cylinder
-method: mdac
-name: arm_impedence_soft_cylinder_mdac
-output_dir: results/arm/impedence/soft/cylinder/main/mdac

@@ -1,8 +1,0 @@
-# Ablation: NO soft-feasibility (use_soft_feasibility off -> no AL weighting of the constraint residual).
-# environment: bumpy (S3 bumpy NURBS) · SOFT medium (compliant contact)
-base: ../../_base.yaml
-
-level: bumpy
-method: mdac_no_softfeas
-name: arm_impedence_soft_bumpy_mdac_no_softfeas
-output_dir: results/arm/impedence/soft/bumpy/ablation/mdac_no_softfeas

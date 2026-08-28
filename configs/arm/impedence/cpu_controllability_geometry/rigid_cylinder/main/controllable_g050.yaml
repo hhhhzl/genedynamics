@@ -1,8 +1,0 @@
-base: ../_base.yaml
-level: cylinder
-method: mdac_controllable
-variant: controllable_g050
-name: cpu_controllable_g050
-output_dir: results/arm/impedence/cpu_controllability_geometry/rigid_cylinder/g050
-env_params:
-  realization_control_gain: 0.5

@@ -1,8 +1,0 @@
-# Ablation: NO coupled anneal (fixed schedule).
-# environment: stripes_plane (hybrid stripes map on plane)
-base: ../_base.yaml
-
-level: stripes_plane
-method: mdac_no_anneal
-name: arm_impedence_hybrid_stripes_plane_mdac_no_anneal
-output_dir: results/arm/impedence/hybrid/stripes_plane/ablation/mdac_no_anneal

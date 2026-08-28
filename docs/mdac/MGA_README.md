@@ -1052,32 +1052,41 @@ MGA extends the existing project architecture; it does not introduce a parallel
 
 ```text
 genedynamics/
-├── envs/domains/manipulation/panda_brax.py
-│   └── task-owned realized signals, horizon residuals, local response map
+├── envs/domains/
+│   ├── manipulation/{surface_scan_brax,peg_insert_brax}.py
+│   └── humanoid/box_push_brax.py
+│       └── task-owned dynamics, realized signals, residuals and safety hooks
 ├── solvers/single/mdac/
 │   ├── core/
 │   │   └── reusable geometry/retraction policies
-│   ├── backends/mdac_jax.py
-│   │   └── generic solver seams and JAX execution
-│   ├── experiment.py
-│   │   └── route method flags and env hooks into the solver
-│   └── run_experiment.py
-│       └── fair-budget execution and manifests
-├── experiments/plugins/metrics/
-│   └── task signal extraction through the general metric registry
+│   ├── backends/
+│   │   └── mdac_jax.py — generic solver seams and JAX execution
+│   └── mdac.py — backend-independent solver shell
+├── experiments/
+│   ├── runner.py
+│   ├── plugins/environments/
+│   │   └── contact-task construction and model/execution pairing
+│   ├── plugins/methods/contact_receding.py
+│   │   └── algorithm-level controller composition
+│   ├── plugins/metrics/
+│   │   └── task signal extraction through the general metric registry
+│   └── utils/
+│       └── aggregation, verification and saved-trajectory rendering
 └── evaluation/
-    └── task-independent metrics and aggregation
+    └── task-independent metric definitions
 
-configs/arm/impedence/
-└── CPU stage configs and Pareto points
+configs/
+├── arm/{surface_scan,peg_insert}/
+└── humanoid/push_to_line/
+    └── formal algorithm and targeted-ablation configs
 
-scripts/tasks/robot/arm/
-└── orchestration/plotting only; no duplicate solver or metric math
+scripts/paper/mdac/
+└── formal orchestration only
 ```
 
 Task physics remains in the environment, algorithm-independent statistics
-remain in ``evaluation``, and MDAC-specific composition remains in the MDAC
-solver package.
+remain in ``evaluation``, solver math remains in ``solvers``, and experiment
+composition enters through the shared runner and its plugins.
 
 ---
 

@@ -1,8 +1,0 @@
-# Ablation: NO metric tangent projection (geometry_fn = None).
-# environment: center_soft_plane (hybrid center_soft map on plane)
-base: ../_base.yaml
-
-level: center_soft_plane
-method: mdac_no_tangent
-name: arm_impedence_hybrid_center_soft_plane_mdac_no_tangent
-output_dir: results/arm/impedence/hybrid/center_soft_plane/ablation/mdac_no_tangent

@@ -1,8 +1,0 @@
-# Ablation: NO metric tangent projection (use_tangent_projection off -> geometry_fn = None).
-# environment: bumpy (S3 bumpy NURBS) · SOFT medium (compliant contact)
-base: ../../_base.yaml
-
-level: bumpy
-method: mdac_no_tangent
-name: arm_impedence_soft_bumpy_mdac_no_tangent
-output_dir: results/arm/impedence/soft/bumpy/ablation/mdac_no_tangent

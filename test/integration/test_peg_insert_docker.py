@@ -16,15 +16,12 @@ import numpy as np
 from genedynamics.envs.factories import make_env
 from genedynamics.experiments.plugins.metrics.extractors import peg_insert_metrics_plugin
 from genedynamics.solvers.common.receding_horizon import RecedingHorizonResult
-from genedynamics.solvers.single.mdac.experiment import (
+from genedynamics.experiments.plugins.methods.contact_receding import (
     INSERT_TASK,
     make_controller,
     make_mdac,
 )
-from genedynamics.solvers.single.mdac.run_experiment import (
-    _discover_algorithm_configs,
-    _solver_cfg,
-)
+from genedynamics.experiments.framework.config import ExperimentConfig
 
 
 SMALL = dict(
@@ -645,29 +642,28 @@ def _p3_hidden_execution():
 
 
 def _p4_algorithms_metrics():
-    root = Path("configs/arm/peg_insert_cpu")
-    configs = _discover_algorithm_configs(str(root))
-    names = {cfg["algorithm"] for cfg in configs}
-    suites = {cfg["suite"] for cfg in configs}
+    root = Path("configs/arm/peg_insert")
+    paths = [root / "main/full_mdac.yaml", *sorted((root / "baseline").glob("*.yaml"))]
+    configs = [ExperimentConfig.from_yaml(path) for path in paths]
+    names = {cfg.name for cfg in configs}
+    suites = {suite["name"] for suite in configs[0].suites}
     config_ok = names == {
         "dial", "mppi", "pegasusflow", "issa", "atacom",
         "standalone_rl", "model_based_only", "full_mdac",
     } and suites == {
         "id_wide", "ood_pose", "ood_sensing"
-    } and len(configs) == 8 * 3
+    } and len(configs) == 8
     for cfg in configs:
-        factory, sampling = _solver_cfg(cfg)
-        uses_policy = cfg["algorithm"] in {
+        uses_policy = cfg.name in {
             "issa", "atacom", "standalone_rl", "full_mdac",
         }
-        config_ok = config_ok and (("policy_ckpt" in factory) == uses_policy)
-        config_ok = config_ok and "policy_ckpt" not in sampling
-    full = next(cfg for cfg in configs if cfg["algorithm"] == "full_mdac")
-    full_factory, full_sampling = _solver_cfg(full)
-    config_ok = config_ok and "atacom_policy_ckpt" not in full_factory
-    config_ok = config_ok and full_sampling["prior_stochastic_samples"] == 8
-    config_ok = config_ok and full_sampling["prior_atacom_samples"] == 0
-    config_ok = config_ok and "reliability_ckpt" in full_factory
+        config_ok = config_ok and (("policy_ckpt" in cfg.method_params) == uses_policy)
+    full = next(cfg for cfg in configs if cfg.name == "full_mdac")
+    config_ok = config_ok and "atacom_policy_ckpt" not in full.method_params
+    config_ok = config_ok and full.method_params["prior_stochastic_samples"] == 8
+    config_ok = config_ok and full.method_params["prior_atacom_samples"] == 0
+    config_ok = config_ok and "reliability_ckpt" in full.method_params
+    config_ok = config_ok and full.metadata["training"]["rl"]["num_timesteps"] == 200000
 
     plans = {}
     for method in ("dial", "mppi", "mdac_controllable_gate"):

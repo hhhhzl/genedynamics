@@ -1,8 +1,0 @@
-# PegasusFlow (baseline) — basis-function sampling (node basis, same Hnode) + rolling-denoising; manifold OFF (idea.txt PegasusFlow/WBFO).
-# environment: cylinder (S1 analytic cylinder)
-base: ../../_base.yaml
-
-level: cylinder
-method: pegasusflow
-name: arm_impedence_rigid_cylinder_pegasusflow
-output_dir: results/arm/impedence/rigid/cylinder/baseline/pegasusflow

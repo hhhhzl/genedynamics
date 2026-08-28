@@ -1,8 +1,0 @@
-# Ablation: EUCLIDEAN stiffness (log_spd off -> diag softplus, not K=exp(S)).
-# environment: bumpy (S3 bumpy NURBS)
-base: ../../_base.yaml
-
-level: bumpy
-method: mdac_euclid_stiffness
-name: arm_impedence_rigid_bumpy_mdac_euclid_stiffness
-output_dir: results/arm/impedence/rigid/bumpy/ablation/mdac_euclid_stiffness

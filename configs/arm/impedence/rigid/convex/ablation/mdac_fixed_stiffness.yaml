@@ -1,8 +1,0 @@
-# Ablation: FIXED stiffness (log_spd off -> K = K_ref, S block ignored).
-# environment: convex (S2 convex NURBS)
-base: ../../_base.yaml
-
-level: convex
-method: mdac_fixed_stiffness
-name: arm_impedence_rigid_convex_mdac_fixed_stiffness
-output_dir: results/arm/impedence/rigid/convex/ablation/mdac_fixed_stiffness

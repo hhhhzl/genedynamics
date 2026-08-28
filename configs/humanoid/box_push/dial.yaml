@@ -1,5 +1,0 @@
-base: _base.yaml
-name: dial
-method: dial
-group: baseline
-output_dir: results/humanoid/box_push/dial

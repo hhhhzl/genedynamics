@@ -21,7 +21,7 @@ from genedynamics.experiments.plugins.methods import (
     StandaloneRLMethodPlugin,
 )
 from genedynamics.experiments.runner import main as runner_main, register_all_plugins
-from genedynamics.solvers.single.mdac.experiment import make_controller
+from genedynamics.experiments.plugins.methods.contact_receding import make_controller
 
 
 ROOT = Path(__file__).resolve().parents[2]

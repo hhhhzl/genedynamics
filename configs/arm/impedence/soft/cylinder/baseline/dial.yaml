@@ -1,8 +1,0 @@
-# DIAL (baseline) — same sampler + position-stiffness primitive; MDAC manifold/prior/anneal seams OFF (reverse-diffusion is DIAL-equivalent).
-# environment: cylinder (S1 analytic cylinder) · SOFT medium (compliant contact)
-base: ../../_base.yaml
-
-level: cylinder
-method: dial
-name: arm_impedence_soft_cylinder_dial
-output_dir: results/arm/impedence/soft/cylinder/baseline/dial

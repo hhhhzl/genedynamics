@@ -26,7 +26,7 @@ import jax.numpy as jnp
 import mujoco
 
 from genedynamics.envs.factories import make_env
-from genedynamics.solvers.single.mdac.experiment import (
+from genedynamics.experiments.plugins.methods.contact_receding import (
     make_mdac, metrics_plugin_for, HUMANOID_TASK,
 )
 

@@ -1,9 +1,0 @@
-base: _base.yaml
-name: mppi
-method: mppi
-group: baseline
-output_dir: results/arm/impedence/cpu_controllability_geometry/comparison/mppi
-method_params:
-  noise_sigma: 0.3
-  lambda_: 1.0
-

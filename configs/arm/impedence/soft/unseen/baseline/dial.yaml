@@ -1,8 +1,0 @@
-# DIAL (baseline) — same sampler + position-stiffness primitive; MDAC manifold/prior/anneal seams OFF (reverse-diffusion is DIAL-equivalent).
-# environment: unseen (S4 unseen NURBS + domain randomization) · SOFT medium (compliant contact)
-base: ../../_base.yaml
-
-level: unseen
-method: dial
-name: arm_impedence_soft_unseen_dial
-output_dir: results/arm/impedence/soft/unseen/baseline/dial

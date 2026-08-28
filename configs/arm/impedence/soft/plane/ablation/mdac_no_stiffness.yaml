@@ -1,8 +1,0 @@
-# Ablation: NO position-stiffness primitive (use_stiffness off -> K = I).
-# environment: plane (S1 analytic plane) · SOFT medium (compliant contact)
-base: ../../_base.yaml
-
-level: plane
-method: mdac_no_stiffness
-name: arm_impedence_soft_plane_mdac_no_stiffness
-output_dir: results/arm/impedence/soft/plane/ablation/mdac_no_stiffness

@@ -1,5 +1,0 @@
-# Hybrid env: hard disk in a soft field (stiffness_map=center_hard) on a plane geometry.
-base: ../_base.yaml
-
-env_params:
-  stiffness_map: center_hard

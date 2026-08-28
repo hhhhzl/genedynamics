@@ -1,8 +1,0 @@
-# Ablation: NO soft-feasibility (use_soft_feasibility off -> no AL weighting of the constraint residual).
-# environment: plane (S1 analytic plane)
-base: ../../_base.yaml
-
-level: plane
-method: mdac_no_softfeas
-name: arm_impedence_rigid_plane_mdac_no_softfeas
-output_dir: results/arm/impedence/rigid/plane/ablation/mdac_no_softfeas

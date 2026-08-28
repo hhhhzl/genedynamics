@@ -122,3 +122,50 @@ metadata:
       architecture: standardized_multioutput_ridge_split_conformal
       selection_rule: single_frozen_fit_no_evaluation_selection
       ood_contract: abstain_to_task_owned_model_based_certificate
+  training:
+    rl:
+      algo: ppo
+      num_timesteps: 2000000
+      episode_length: 100
+      num_envs: 16
+      seed: 0
+      select_best_eval: true
+      select_best_eval_metric: eval/episode_realized_progress
+      action_bias: [0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.25]
+      action_scale: [0.02, 0.02, 0.02, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+      training_env_params:
+        observation_mode: rl_realized
+        realization_control_gain: 0.125
+        w_path: 5.0
+        w_realized_path: 5.0
+        w_realized_progress: 250.0
+        deformation_safe: 0.0005
+        deformation_scale: 0.001
+        w_deformation: 5.0
+        w_contact_loss: 5.0
+        w_force_violation: 10.0
+      checkpoint: results/arm/impedence/_policies/shared_ppo_seed{seed}.pkl
+      atacom_checkpoint: results/arm/impedence/_policies/shared_atacom_ppo_seed{seed}.pkl
+      train_kwargs:
+        learning_rate: 0.0001
+        batch_size: 8
+        num_minibatches: 2
+        num_updates_per_batch: 1
+        reward_scaling: 0.01
+        max_grad_norm: 1.0
+        num_evals: 5
+        num_eval_envs: 32
+        deterministic_eval: true
+      domain_templates:
+        - {medium: rigid, level: cylinder}
+        - {medium: rigid, level: convex}
+        - {medium: soft, level: cylinder, h_surf_tangential: true, soft_contact_manifold: true}
+        - {medium: soft, level: bumpy, h_surf_tangential: true, soft_contact_manifold: true}
+      domain_randomization:
+        seed: 20260731
+        num_domains: 8
+        friction_range: [0.05, 0.2]
+        soft_stiffness_range: [800.0, 2000.0]
+      held_out:
+        levels: [unseen]
+        surface_seeds: [100, 101, 102, 103, 104]

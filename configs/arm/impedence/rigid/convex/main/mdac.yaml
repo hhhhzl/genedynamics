@@ -1,8 +1,0 @@
-# MDAC (main) — full method: log-SPD stiffness + AL soft-feas + tangent projection + CFS retraction + coupled anneal.
-# environment: convex (S2 convex NURBS)
-base: ../../_base.yaml
-
-level: convex
-method: mdac
-name: arm_impedence_rigid_convex_mdac
-output_dir: results/arm/impedence/rigid/convex/main/mdac

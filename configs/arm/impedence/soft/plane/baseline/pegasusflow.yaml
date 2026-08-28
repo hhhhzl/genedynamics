@@ -1,8 +1,0 @@
-# PegasusFlow (baseline) — basis-function sampling (node basis, same Hnode) + rolling-denoising; manifold OFF (idea.txt PegasusFlow/WBFO).
-# environment: plane (S1 analytic plane) · SOFT medium (compliant contact)
-base: ../../_base.yaml
-
-level: plane
-method: pegasusflow
-name: arm_impedence_soft_plane_pegasusflow
-output_dir: results/arm/impedence/soft/plane/baseline/pegasusflow

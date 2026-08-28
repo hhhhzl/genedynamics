@@ -6,16 +6,14 @@
              action_size = nu - n_f); the policy is manifold-resident, NOT post-hoc projected,
              so it needs its OWN ckpt: ``_policies/atacom_<algo>.pkl``.
 
-The Phase-4 MGA path loads the canonical YAML and trains one shared raw-action
+The MGA path loads a formal task base YAML and trains one shared raw-action
 PPO across its seen material/geometry domains.  The same checkpoint is deployed
-standalone and reconstructed as the MDAC horizon prior.  The legacy per-medium
-CLI remains available for ISSA/ATACOM comparisons.
+standalone and reconstructed as the MDAC horizon prior.
 
 Needs real brax/mjx -> run in docker (genedynamics/dev-cpu:torch):
-  docker run --rm -v $(pwd):/workspace -w /workspace --user $(id -u):$(id -g) \
-    -e HOME=/tmp -e MUJOCO_GL=egl -e PYTHONPATH=/workspace genedynamics/dev-cpu:torch \
-    bash -lc "pip install -q 'setuptools<81' jax_cosmo >/dev/null 2>&1; \
-              python scripts/tasks/robot/arm/train_rl_baseline.py --medium rigid --algo sac"
+  docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
+    python scripts/tasks/robot/arm/train_rl_baseline.py \
+      --config configs/arm/surface_scan/_base.yaml
 """
 
 from __future__ import annotations
@@ -36,9 +34,9 @@ from genedynamics.learning.train_rl_policy import (
     scalar_metrics,
     train_rl_policy,
 )
-from genedynamics.solvers.single.mdac.config import (
+from genedynamics.experiments.framework.config import (
+    ExperimentConfig,
     deep_merge,
-    load_experiment_config,
 )
 
 ARM_TASK = "manipulator_surface_scan"
@@ -198,10 +196,14 @@ def main() -> int:
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
 
-    resolved = load_experiment_config(a.config) if a.config else {}
-    rl_cfg = dict(resolved.get("rl", {}))
+    resolved = (
+        ExperimentConfig.from_yaml(Path(a.config)).to_dict()
+        if a.config else {}
+    )
+    training = dict((resolved.get("metadata") or {}).get("training") or {})
+    rl_cfg = dict(training.get("rl") or {})
     base_env = dict(resolved.get("env_params", {}))
-    task = str(resolved.get("task", ARM_TASK))
+    task = str(resolved.get("env_name", ARM_TASK))
     if task not in (ARM_TASK, INSERT_TASK):
         raise ValueError(
             f"arm RL baseline supports {ARM_TASK!r} or {INSERT_TASK!r}, got {task!r}"

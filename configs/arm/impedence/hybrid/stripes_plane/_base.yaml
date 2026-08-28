@@ -1,5 +1,0 @@
-# Hybrid env: alternating hard/soft stripes along the scan (stiffness_map=stripes) on a plane geometry.
-base: ../_base.yaml
-
-env_params:
-  stiffness_map: stripes

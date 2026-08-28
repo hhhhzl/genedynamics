@@ -88,3 +88,45 @@ metadata:
       training_domains: [id_tight, id_wide, ood_compound, pareto_force15, pareto_force22]
       architecture: standardized_ridge_logistic_split_conformal
       selection_rule: single_frozen_fit_no_evaluation_selection
+  training:
+    rl:
+      algo: ppo
+      num_timesteps: 200000
+      episode_length: 50
+      num_envs: 4
+      seed: 0
+      expected_action_size: 13
+      expected_observation_mode: contact
+      select_best_eval: true
+      select_best_eval_metric: eval/episode_reward
+      action_bias: [0.0, 0.0, 0.65, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.2]
+      action_scale: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.2]
+      training_env_params:
+        w_lateral: 4.0
+        w_orientation: 4.0
+        w_safety: 50.0
+        w_jam: 8.0
+        w_force: 0.5
+      checkpoint: results/arm/peg_insert_cpu/_policies/shared_ppo_seed{seed}.pkl
+      atacom_checkpoint: results/arm/peg_insert_cpu/_policies/shared_atacom_ppo_seed{seed}.pkl
+      train_kwargs:
+        learning_rate: 0.0001
+        batch_size: 8
+        num_minibatches: 2
+        num_updates_per_batch: 1
+        reward_scaling: 0.05
+        max_grad_norm: 1.0
+        num_evals: 101
+        num_eval_envs: 1
+        deterministic_eval: true
+      domain_templates:
+        - {level: wide, domain_seed: 100}
+        - {level: tight, domain_seed: 101}
+        - {level: ood, domain_seed: 102, ood_clearance_range: [0.0008, 0.0012], ood_friction_range: [0.4, 0.7], ood_position_range: 0.0015, ood_angle_range: 0.02618}
+        - {level: ood, domain_seed: 103, ood_clearance_range: [0.0008, 0.0012], ood_friction_range: [0.4, 0.7], ood_position_range: 0.0015, ood_angle_range: 0.02618}
+      domain_randomization:
+        seed: 20260811
+        num_domains: 4
+        domain_seed_start: 100
+      held_out:
+        evaluation_seeds: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]

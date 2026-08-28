@@ -1,8 +1,0 @@
-# Ablation: NO CFS retraction (use_retraction off -> no linearized projection onto {C(U)=0}).
-# environment: cylinder (S1 analytic cylinder)
-base: ../../_base.yaml
-
-level: cylinder
-method: mdac_no_retraction
-name: arm_impedence_rigid_cylinder_mdac_no_retraction
-output_dir: results/arm/impedence/rigid/cylinder/ablation/mdac_no_retraction

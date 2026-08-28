@@ -1,8 +1,0 @@
-# Ablation: FIXED stiffness (log_spd off -> K = K_ref, S block ignored).
-# environment: plane (S1 analytic plane)
-base: ../../_base.yaml
-
-level: plane
-method: mdac_fixed_stiffness
-name: arm_impedence_rigid_plane_mdac_fixed_stiffness
-output_dir: results/arm/impedence/rigid/plane/ablation/mdac_fixed_stiffness

@@ -1,8 +1,0 @@
-# PegasusFlow (baseline) — basis-function sampling (node basis, same Hnode) + rolling-denoising; manifold OFF (idea.txt PegasusFlow/WBFO).
-# environment: unseen (S4 unseen NURBS + domain randomization)
-base: ../../_base.yaml
-
-level: unseen
-method: pegasusflow
-name: arm_impedence_rigid_unseen_pegasusflow
-output_dir: results/arm/impedence/rigid/unseen/baseline/pegasusflow

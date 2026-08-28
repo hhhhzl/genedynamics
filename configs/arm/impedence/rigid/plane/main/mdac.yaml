@@ -1,8 +1,0 @@
-# MDAC (main) — full method: log-SPD stiffness + AL soft-feas + tangent projection + CFS retraction + coupled anneal.
-# environment: plane (S1 analytic plane)
-base: ../../_base.yaml
-
-level: plane
-method: mdac
-name: arm_impedence_rigid_plane_mdac
-output_dir: results/arm/impedence/rigid/plane/main/mdac

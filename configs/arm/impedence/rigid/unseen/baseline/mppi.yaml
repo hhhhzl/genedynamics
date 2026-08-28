@@ -1,8 +1,0 @@
-# MPPI (baseline) — same sampler + position-stiffness primitive; MDAC seams OFF (solver-level DIAL-equivalent).
-# environment: unseen (S4 unseen NURBS + domain randomization)
-base: ../../_base.yaml
-
-level: unseen
-method: mppi
-name: arm_impedence_rigid_unseen_mppi
-output_dir: results/arm/impedence/rigid/unseen/baseline/mppi

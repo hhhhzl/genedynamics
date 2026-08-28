@@ -1,8 +1,0 @@
-# Ablation: EUCLIDEAN stiffness (log_spd off -> diag softplus, not K=exp(S)).
-# environment: plane (S1 analytic plane)
-base: ../../_base.yaml
-
-level: plane
-method: mdac_euclid_stiffness
-name: arm_impedence_rigid_plane_mdac_euclid_stiffness
-output_dir: results/arm/impedence/rigid/plane/ablation/mdac_euclid_stiffness

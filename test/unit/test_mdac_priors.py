@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from pathlib import Path
 from types import SimpleNamespace
 from typing import NamedTuple
 
@@ -21,11 +22,9 @@ from genedynamics.learning.reliability import (
 )
 from genedynamics.solvers.single.mdac.backends.mdac_jax import MdacBackendJax
 from genedynamics.solvers.common.rl_policy_controller import RLPolicyController
-from genedynamics.solvers.single.mdac.run_experiment import (
-    _discover_algorithm_configs,
-    _evaluation_configs,
-    _prior_diagnostics,
-    _solver_cfg,
+from genedynamics.experiments.framework.config import ExperimentConfig
+from genedynamics.experiments.utils.metrics import (
+    aggregate_receding_diagnostics,
 )
 from scripts.tasks.robot.arm.train_mdac_reliability import (
     _assert_disjoint_protocol,
@@ -764,58 +763,46 @@ def test_raw_rl_controller_matches_receding_horizon_contract():
     np.testing.assert_allclose(result.states[-1].obs, [0.75, 0.75])
 
 
-def test_algorithm_level_cpu_comparison_matrix_and_policy_routing():
-    root = "configs/arm/impedence/cpu_controllability_geometry/comparison"
-    configs = _discover_algorithm_configs(root)
-    assert len(configs) == 3 * 8
-    assert {c["algorithm"] for c in configs} == {
+def test_formal_surface_algorithm_matrix_and_policy_routing():
+    root = Path("configs/arm/surface_scan")
+    paths = [root / "main/full_mdac.yaml", *sorted((root / "baseline").glob("*.yaml"))]
+    configs = [ExperimentConfig.from_yaml(path) for path in paths]
+    assert len(configs) == 8
+    assert {c.name for c in configs} == {
         "dial", "mppi", "pegasusflow", "issa", "atacom",
         "standalone_rl", "model_based_only", "full_mdac",
     }
-    assert {c["suite"] for c in configs} == {
-        "rigid_cylinder", "soft_cylinder", "soft_unseen",
+    assert {suite["name"] for suite in configs[0].suites} == {
+        "rigid_plane", "rigid_cylinder", "rigid_convex", "rigid_bumpy",
+        "rigid_unseen", "soft_plane", "soft_cylinder", "soft_convex",
+        "soft_bumpy", "soft_unseen", "hybrid_stripes",
+        "hybrid_center_hard", "hybrid_center_soft",
     }
-    assert all(c["seeds"] == [10, 11] for c in configs)
+    assert all(c.seeds == list(range(10, 20)) for c in configs)
     for cfg in configs:
-        factory, sampling = _solver_cfg(cfg)
-        uses_policy = cfg["algorithm"] in {
+        uses_policy = cfg.name in {
             "standalone_rl", "issa", "atacom", "full_mdac",
         }
-        assert ("policy_ckpt" in factory) == uses_policy
-        assert "policy_ckpt" not in sampling
-        uses_reliability = cfg["algorithm"] in {
-            "model_based_only", "full_mdac",
-        }
-        assert ("reliability_ckpt" in factory) == uses_reliability
-        assert "reliability_ckpt" not in sampling
-    full = next(c for c in configs if c["algorithm"] == "full_mdac")
-    assert full["method_params"]["prior_acceptance"] is True
-    assert full["method_params"]["prior_fallback_mode"] == "receding_incumbent"
-    assert full["method_params"]["reliability_deformation_limit"] == 0.5
-    full_factory, full_sampling = _solver_cfg(full)
-    assert "atacom_policy_ckpt" in full_factory
-    assert "atacom_policy_ckpt" not in full_sampling
-    assert full_sampling["prior_stochastic_samples"] == 8
-    assert full_sampling["prior_atacom_samples"] == 8
-    assert full_sampling["prior_union_trust"] is True
-    assert full_sampling["prior_risk_tolerance"] == [0.0, 0.0, 0.0, 0.0]
-    assert full_sampling["reliability_risk_tolerance"] == [0.0, 0.0, 0.0, 0.0]
-    safe_unseen = next(
-        c for c in configs
-        if c["algorithm"] == "full_mdac" and c["suite"] == "soft_unseen"
-    )
-    assert safe_unseen["env_params"]["f_target"] == 15.0
-    assert safe_unseen["env_params"]["grav_comp"] == 0.45
-    standalone_path = f"{root}/standalone_rl.yaml"
-    seeded = _evaluation_configs(
-        standalone_path, "/tmp/shared_ppo_seed1.pkl", policy_seed=1
-    )
-    assert all(c["policy_training_seed"] == 1 for c in seeded)
-    assert all(c["policy_training_steps"] == 2_000_000 for c in seeded)
-    assert all(
-        c["method_params"]["policy_ckpt"] == "/tmp/shared_ppo_seed1.pkl"
-        for c in seeded
-    )
+        assert ("policy_ckpt" in cfg.method_params) == uses_policy
+    full = next(c for c in configs if c.name == "full_mdac")
+    params = full.method_params
+    assert params["prior_acceptance"] is True
+    assert params["prior_fallback_mode"] == "receding_incumbent"
+    assert params["reliability_deformation_limit"] == 0.5
+    assert "atacom_policy_ckpt" in params
+    assert params["prior_stochastic_samples"] == 8
+    assert params["prior_atacom_samples"] == 8
+    assert params["prior_union_trust"] is True
+    assert params["prior_risk_tolerance"] == [0.0, 0.0, 0.0, 0.0]
+    assert params["reliability_risk_tolerance"] == [0.0, 0.0, 0.0, 0.0]
+    soft_unseen = next(s for s in full.suites if s["name"] == "soft_unseen")
+    resolved = full.for_suite(soft_unseen)
+    assert resolved.env_params["f_target"] == 15.0
+    assert resolved.env_params["grav_comp"] == 0.45
+    training = full.metadata["training"]["rl"]
+    assert training["num_timesteps"] == 2_000_000
+    assert training["seed"] == 0
+    assert training["checkpoint"].endswith("shared_ppo_seed{seed}.pkl")
 
 
 def test_prior_diagnostics_aggregate_acceptance_and_risk():
@@ -837,13 +824,13 @@ def test_prior_diagnostics_aggregate_acceptance_and_risk():
             "prior_risk_refined": jnp.asarray([0.1, 0.3, 0.5, 0.7]),
         },
     ])
-    diagnostics = _prior_diagnostics(result)
+    diagnostics = aggregate_receding_diagnostics(result.infos)
     assert diagnostics["prior_acceptance_rate"] == pytest.approx(0.5)
     assert diagnostics["prior_fallback_rate"] == pytest.approx(0.5)
     assert diagnostics["prior_force_veto_rate"] == pytest.approx(0.5)
     assert diagnostics["prior_risk_rl_contact_loss"] == pytest.approx(0.15)
-    insert_diagnostics = _prior_diagnostics(
-        result, task="manipulator_peg_insert"
+    insert_diagnostics = aggregate_receding_diagnostics(
+        result.infos, task="manipulator_peg_insert"
     )
     assert insert_diagnostics["prior_risk_rl_torque_violation"] == pytest.approx(
         0.15

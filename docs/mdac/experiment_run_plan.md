@@ -33,10 +33,9 @@ The plan has four non-negotiable goals:
   locked formal matrix. Development results may motivate a hypothesis, but may
   not be relabeled as formal evidence.
 
-The current
-`genedynamics/solvers/single/mdac/run_experiment.py` is therefore a legacy
-development harness. It remains available until equivalence tests pass, but it
-is not a formal paper entrypoint and is not called by `scripts/paper/mdac`.
+The former solver-local development harness has been retired. Contact
+experiments now enter exclusively through `genedynamics.experiments.runner`;
+controller composition lives in the existing method-plugin layer.
 
 ---
 
@@ -1381,16 +1380,19 @@ Acceptance:
 
 ### P12 — Retire legacy harnesses and development configs
 
-Only after P5--P11 pass:
+Cleanup status (2026-08-28): the user explicitly authorized early destructive
+cleanup after the formal configs, training recipes, and config-contract tests
+were migrated. This does not promote development results to formal evidence;
+P9--P11 and the result lock remain required.
 
-1. Remove formal documentation references to
-   `solvers/single/mdac/run_experiment.py`.
-2. Keep a temporary deprecation wrapper if tests/users still depend on it.
-3. Move genuinely reusable config-loading logic to the unified framework.
-4. Delete obsolete development configs only after mapping every retained result
-   to its generating config and obtaining explicit approval for destructive
-   cleanup.
-5. Do not delete legacy result data as part of code cleanup.
+Completed cleanup contract:
+
+1. Solver-local experiment orchestration and config discovery are removed.
+2. Formal and training configuration are owned by the unified config trees.
+3. Obsolete development configs are recoverable from Git history but no longer
+   coexist with the formal configs.
+4. Legacy result/checkpoint data remain untouched and continue to satisfy the
+   frozen learned-component bindings.
 
 Acceptance:
 

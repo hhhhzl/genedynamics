@@ -1,8 +1,0 @@
-# MPPI (baseline) — same sampler + position-stiffness primitive; MDAC seams OFF (DIAL-equivalent).
-# environment: center_hard_plane (hybrid center_hard map on plane)
-base: ../_base.yaml
-
-level: center_hard_plane
-method: mppi
-name: arm_impedence_hybrid_center_hard_plane_mppi
-output_dir: results/arm/impedence/hybrid/center_hard_plane/baseline/mppi

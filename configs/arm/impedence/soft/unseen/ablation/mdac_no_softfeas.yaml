@@ -1,8 +1,0 @@
-# Ablation: NO soft-feasibility (use_soft_feasibility off -> no AL weighting of the constraint residual).
-# environment: unseen (S4 unseen NURBS + domain randomization) · SOFT medium (compliant contact)
-base: ../../_base.yaml
-
-level: unseen
-method: mdac_no_softfeas
-name: arm_impedence_soft_unseen_mdac_no_softfeas
-output_dir: results/arm/impedence/soft/unseen/ablation/mdac_no_softfeas

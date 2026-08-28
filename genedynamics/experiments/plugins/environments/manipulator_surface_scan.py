@@ -1,8 +1,6 @@
 """Unified-runner environment plugin for the arm surface-scan task."""
 
-from genedynamics.solvers.single.mdac.experiment import ARM_TASK
-
-from ._contact_task import ContactTaskEnvironmentPlugin
+from ._contact_task import ARM_TASK, ContactTaskEnvironmentPlugin
 
 
 class ManipulatorSurfaceScanPlugin(ContactTaskEnvironmentPlugin):

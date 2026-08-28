@@ -1,8 +1,6 @@
 """Unified-runner environment plugin for the humanoid box-push task."""
 
-from genedynamics.solvers.single.mdac.experiment import HUMANOID_TASK
-
-from ._contact_task import ContactTaskEnvironmentPlugin
+from ._contact_task import HUMANOID_TASK, ContactTaskEnvironmentPlugin
 
 
 class HumanoidBoxPushPlugin(ContactTaskEnvironmentPlugin):

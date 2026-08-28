@@ -1,8 +1,0 @@
-# MPPI (baseline) — same sampler + position-stiffness primitive; MDAC seams OFF (solver-level DIAL-equivalent).
-# environment: convex (S2 convex NURBS)
-base: ../../_base.yaml
-
-level: convex
-method: mppi
-name: arm_impedence_rigid_convex_mppi
-output_dir: results/arm/impedence/rigid/convex/baseline/mppi

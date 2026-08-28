@@ -19,7 +19,11 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from genedynamics.solvers.single.mdac.experiment import make_mdac, ARM_TASK, HUMANOID_TASK
+from genedynamics.experiments.plugins.methods.contact_receding import (
+    ARM_TASK,
+    HUMANOID_TASK,
+    make_mdac,
+)
 from genedynamics.solvers.single.mdac.core.method_registry import assert_fair
 
 CFG = dict(Hsample=8, Hnode=4, Nsample=64, Ndiffuse_init=3, Ndiffuse=2,

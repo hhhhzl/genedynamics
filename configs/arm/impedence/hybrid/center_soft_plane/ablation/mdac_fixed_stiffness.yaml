@@ -1,8 +1,0 @@
-# Ablation: FIXED stiffness (log_spd off -> K = K_ref).
-# environment: center_soft_plane (hybrid center_soft map on plane)
-base: ../_base.yaml
-
-level: center_soft_plane
-method: mdac_fixed_stiffness
-name: arm_impedence_hybrid_center_soft_plane_mdac_fixed_stiffness
-output_dir: results/arm/impedence/hybrid/center_soft_plane/ablation/mdac_fixed_stiffness

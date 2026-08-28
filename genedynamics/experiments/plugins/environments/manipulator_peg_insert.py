@@ -1,8 +1,6 @@
 """Unified-runner environment plugin for the arm peg-insert task."""
 
-from genedynamics.solvers.single.mdac.experiment import INSERT_TASK
-
-from ._contact_task import ContactTaskEnvironmentPlugin
+from ._contact_task import INSERT_TASK, ContactTaskEnvironmentPlugin
 
 
 class ManipulatorPegInsertPlugin(ContactTaskEnvironmentPlugin):

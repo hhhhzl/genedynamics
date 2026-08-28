@@ -1,6 +1,0 @@
-base: ../_base.yaml
-level: cylinder
-method: mdac_horizon
-variant: controllability_clean
-name: cpu_controllability_clean
-output_dir: results/arm/impedence/cpu_controllability_geometry/rigid_cylinder/clean

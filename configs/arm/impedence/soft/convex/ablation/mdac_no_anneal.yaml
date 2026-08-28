@@ -1,8 +1,0 @@
-# Ablation: NO coupled anneal (use_adaptive_schedule off -> fixed schedule, no feasibility-coupled rho/kappa).
-# environment: convex (S2 convex NURBS) · SOFT medium (compliant contact)
-base: ../../_base.yaml
-
-level: convex
-method: mdac_no_anneal
-name: arm_impedence_soft_convex_mdac_no_anneal
-output_dir: results/arm/impedence/soft/convex/ablation/mdac_no_anneal

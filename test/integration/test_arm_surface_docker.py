@@ -25,7 +25,10 @@ from genedynamics.envs.factories import make_env
 from genedynamics.envs.domains.manipulation.panda_brax import (
     PandaSurfaceScanDomainEnv,
 )
-from genedynamics.solvers.single.mdac.experiment import make_mdac, ARM_TASK
+from genedynamics.experiments.plugins.methods.contact_receding import (
+    ARM_TASK,
+    make_mdac,
+)
 
 FAMILIES = ["plane", "cylinder", "convex", "bumpy", "unseen"]
 CFG = dict(Hsample=8, Hnode=4, Nsample=64, Ndiffuse_init=3, Ndiffuse=2,

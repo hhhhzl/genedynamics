@@ -17,12 +17,19 @@ from genedynamics.solvers.single.mdac.core.method_registry import (
     METHOD_TABLE,
     resolve_method,
 )
-from genedynamics.solvers.single.mdac.experiment import (
-    ARM_TASK,
-    HUMANOID_TASK,
-    INSERT_TASK,
-    stiffness_mode_for,
-)
+
+ARM_TASK = "manipulator_surface_scan"
+HUMANOID_TASK = "humanoid_box_push"
+INSERT_TASK = "manipulator_peg_insert"
+
+
+def stiffness_mode_for(method: str, flags: Any) -> str:
+    """Map an MDAC method contract to the task's stiffness chart."""
+    if not flags.use_stiffness:
+        return "none"
+    if flags.log_spd_stiffness:
+        return "log_spd"
+    return "fixed" if "fixed" in method else "euclid"
 
 
 _PRIVATE_KEYS = {
@@ -109,4 +116,10 @@ class ContactTaskEnvironmentPlugin(EnvironmentPlugin):
         return self.execution_env(env).reset(jax.random.PRNGKey(int(seed)))
 
 
-__all__ = ["ContactTaskEnvironmentPlugin"]
+__all__ = [
+    "ARM_TASK",
+    "HUMANOID_TASK",
+    "INSERT_TASK",
+    "ContactTaskEnvironmentPlugin",
+    "stiffness_mode_for",
+]

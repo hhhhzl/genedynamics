@@ -37,18 +37,17 @@ Deploy configs: `configs/quadruped/stepping_stones_2d/deploy/*.yaml`.
 
 ### arm/
 
-Franka-Panda surface-scan (MDAC, idea.txt Exp I) render/plot scripts. Run from the
-repo root in `genedynamics/dev-cpu:torch`; outputs go to `results/arm/impedence/rigid/`.
+The formal contact-control experiments are orchestrated from
+`scripts/paper/mdac/`; task directories retain training utilities only.
 
 | Script | Purpose |
 |--------|---------|
-| `render_scan.py <level>` | 3D matplotlib GIF: surface mesh + Panda chain + EE scan path |
-| `mujoco_render.py <level>` | Paper-level mujoco mp4/gif (full visual Panda + true analytic surface mesh) |
-| `brax_html_render.py <level>` | brax-native interactive HTML render |
-| `plot_force_time.py` | Force-vs-time (f_min/f_max/f_target bands) from the saved per-run series |
+| `train_rl_baseline.py --config <formal-base.yaml>` | Train the shared PPO or ATACOM policy from the frozen `metadata.training.rl` contract |
+| `train_mdac_reliability.py` | Fit the frozen reliability model from development-only result splits |
 
-Experiment configs: `configs/arm/impedence/rigid/<environment>/<role>/*.yaml`
-(driven by `genedynamics/solvers/single/mdac/run_experiment.py`).
+Formal configs live in `configs/arm/{surface_scan,peg_insert}` and run through
+`python -m genedynamics.experiments.runner`. Saved trajectories are rendered by
+`python -m genedynamics.experiments.utils.vis`.
 
 ## soft_robot/
 
