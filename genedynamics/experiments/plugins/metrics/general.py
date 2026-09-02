@@ -24,7 +24,7 @@ Example::
         extractor=arm_signals, name="arm_metrics",
     )
 
-This is how MDAC's surface-scan / box-push experiments (and corridor, stepping,
+This is how MGA's surface-scan / box-push experiments (and corridor, stepping,
 ...) all report the SAME general metrics — only their extractor differs.
 """
 

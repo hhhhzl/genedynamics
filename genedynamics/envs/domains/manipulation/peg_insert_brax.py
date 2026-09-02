@@ -856,7 +856,7 @@ class PegInsertEnv(PipelineEnv):
         return jnp.concatenate([ps.qpos, ps.qvel, task])
 
     # ------------------------------------------------------------------
-    # MDAC clean geometry and realized controllability
+    # MGA clean geometry and realized controllability
     # ------------------------------------------------------------------
     def _target_pose(self, step):
         z = jnp.clip(
@@ -962,9 +962,9 @@ class PegInsertEnv(PipelineEnv):
         return state.replace(
             info={
                 **state.info,
-                "_mdac_realization_B": B,
-                "_mdac_realization_error": error,
-                "_mdac_realization_gate": realization_gate,
+                "_mga_realization_B": B,
+                "_mga_realization_error": error,
+                "_mga_realization_gate": realization_gate,
             }
         )
 
@@ -977,8 +977,8 @@ class PegInsertEnv(PipelineEnv):
         return self._horizon_residual(state, actions, t0, -ramp * error[None, :])
 
     def manifold_residual_horizon_controllable(self, state, actions, t0):
-        B = state.info["_mdac_realization_B"]
-        error = state.info["_mdac_realization_error"]
+        B = state.info["_mga_realization_B"]
+        error = state.info["_mga_realization_error"]
         reg = max(float(self._config.realization_control_reg), 1.0e-8)
         correction = -B.T @ jnp.linalg.solve(
             B @ B.T + reg * jnp.eye(6, dtype=B.dtype), error
@@ -1005,7 +1005,7 @@ class PegInsertEnv(PipelineEnv):
         # The reliability gate applies only to this empirical response-map
         # correction.  The clean path/force manifold remains active in the
         # backend even when the local realization estimate is unreliable.
-        realization_gate = state.info["_mdac_realization_gate"]
+        realization_gate = state.info["_mga_realization_gate"]
         command_shift = command_shift * realization_gate
         return self._horizon_residual(
             state,
@@ -1181,7 +1181,7 @@ class PegInsertEnv(PipelineEnv):
         """Hard safety residual used by the augmented rollout.
 
         ``constraint_residual`` retains the full tracking equality for generic
-        constraint-aware controllers.  MDAC already handles the insertion
+        constraint-aware controllers.  MGA already handles the insertion
         manifold through tangent geometry and realized controllability, so
         charging the AL for transient actual-to-command lag double-counts that
         geometry and makes progress look infeasible.  Soft feasibility is
@@ -1367,7 +1367,7 @@ class PegInsertEnv(PipelineEnv):
 
         Force-target error is a performance quantity.  Force/torque violations
         and jamming are the three hard contact-safety events for insertion.
-        Keeping this interpretation in the task prevents the generic MDAC
+        Keeping this interpretation in the task prevents the generic MGA
         backend from assuming that every environment uses the same risk schema.
         """
         return jnp.all(risk[:3] <= 1.0e-8)
@@ -1402,8 +1402,8 @@ class PegInsertEnv(PipelineEnv):
             <= self._capture_lateral_radius(pose[2])
         ) & (jnp.linalg.norm(angle) <= self._config.success_angle_tol)
 
-    def project_mdac_candidate(self, state, nodes):
-        """Projects a geometry-updated MDAC plan into the executable set.
+    def project_mga_candidate(self, state, nodes):
+        """Projects a geometry-updated MGA plan into the executable set.
 
         Geometry/retraction can move node values outside the sampler's action
         box.  The physical environment clips such commands only at execution,

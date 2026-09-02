@@ -2,17 +2,17 @@
 
 A *prior* is reusable infrastructure any solver can consume through a single
 additive `prior=` seam (mirrors the `core/prob.NoiseSampler` seam: `None` =>
-byte-identical old behaviour). It is NOT MDAC-private — MDAC is just the first
+byte-identical old behaviour). It is NOT MGA-private — MGA is just the first
 heavy consumer.
 
 Two protocols:
 
 * :class:`Prior` — a model-free policy prior `p_psi(U | s_0, c)`. A solver uses
   whatever it needs:
-    - warm-start:        `U^rl = prior.warm_start(state)`            (MPPI/MBD/MDAC)
-    - log-prior weight:  `+ lam_psi * prior.logp_of_sequence(...)`    (CFSMBD/MDAC)
+    - warm-start:        `U^rl = prior.warm_start(state)`            (MPPI/MBD/MGA)
+    - log-prior weight:  `+ lam_psi * prior.logp_of_sequence(...)`    (CFSMBD/MGA)
 * :class:`DiffusionPrior` (a `Prior`) — adds `score(x, t)` for a learned
-  diffusion prior `s_theta`, fed to the transport `score_g` seam (MDAC `omega_mf`).
+  diffusion prior `s_theta`, fed to the transport `score_g` seam (MGA `omega_mf`).
 
 `logp_of_sequence` must be jit-safe: it uses an info-FREE observation (no
 `state.info` dependency) so it can run inside the reverse-diffusion scan.

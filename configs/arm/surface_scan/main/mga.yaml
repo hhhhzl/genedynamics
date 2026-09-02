@@ -1,0 +1,27 @@
+base: ../_base.yaml
+name: mga
+method: mga
+output_dir: results/arm/surface_scan/main/mga
+method_params:
+  controller_method: mga_controllable_gate
+  policy_ckpt: results/arm/impedence/_policies/shared_ppo_seed0.pkl
+  atacom_policy_ckpt: results/arm/impedence/_policies/shared_atacom_ppo_seed0.pkl
+  reliability_ckpt: results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json
+  prior_lambda_shift: 0.5
+  prior_include_incumbent: true
+  prior_trust_radius: 0.35
+  prior_stochastic_samples: 8
+  prior_atacom_samples: 8
+  prior_union_trust: true
+  prior_atacom_incumbent: false
+  prior_atacom_default: false
+  prior_improvement_epsilon: 0.01
+  prior_risk_tolerance: [0.0, 0.0, 0.0, 0.0]
+  prior_acceptance: true
+  prior_fallback_mode: receding_incumbent
+  reliability_risk_tolerance: [0.0, 0.0, 0.0, 0.0]
+  reliability_force_limit: 0.25
+  reliability_deformation_limit: 0.5
+  # Outside the frozen cylinder reliability support, learned confidence
+  # abstains and the task-owned model-based sequence certificate decides.
+  reliability_ood_policy: model_based

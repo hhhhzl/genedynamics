@@ -2,7 +2,7 @@
 
 Each extractor consumes the structured Brax states collected during execution
 (EE pose / box x / contact residual / com / stiffness), then the SHARED
-general metrics are computed via GeneralMetricsPlugin. Validates that both MDAC
+general metrics are computed via GeneralMetricsPlugin. Validates that both MGA
 tasks report general metrics through tiny task-specific extractors.
 
 Invoke (from repo root):

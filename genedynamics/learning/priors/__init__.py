@@ -1,7 +1,7 @@
 """Shared prior infrastructure (genedynamics/learning/priors).
 
 Reusable by ANY solver via the additive `prior=` seam (None => unchanged). NOT
-MDAC-private. Multi-backend, mirroring the solver architecture:
+MGA-private. Multi-backend, mirroring the solver architecture:
   rl/        - RLPrior: model-free policy prior; jax backend = brax.training
   diffusion/ - LearnedDiffusionPrior: s_theta score model (transport score_g)
 """

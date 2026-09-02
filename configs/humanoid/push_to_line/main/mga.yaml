@@ -1,0 +1,24 @@
+base: ../_base.yaml
+name: mga
+method: mga
+output_dir: results/humanoid/push_to_line/main/mga
+method_params:
+  controller_method: mga_controllable_gate
+  learned_reliability: true
+  policy_ckpt_by_suite:
+    p1_force_15n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p1_force_30n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p2_push_nominal: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p2_push_ood: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p3_unjam: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    p4_walk_push: results/humanoid/box_push/_policies/walk_ppo_seed0.pkl
+  reliability_ckpt: results/humanoid/box_push/_policies/reliability_q95.json
+  prior_stochastic_samples: 8
+  prior_atacom_samples: 0
+  prior_include_incumbent: true
+  prior_fallback_mode: receding_incumbent
+  prior_acceptance: true
+  prior_risk_tolerance: [0.0, 0.0, 0.0, 1.0]
+  reliability_support_mode: state
+  reliability_hard_limits: [0.5, 0.5, 0.5, 10.0]
+  reliability_risk_tolerance: [1.0, 1.0, 1.0, 10.0]

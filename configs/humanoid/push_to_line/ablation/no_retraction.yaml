@@ -1,5 +1,5 @@
-base: ../main/full_mdac.yaml
+base: ../main/mga.yaml
 name: no_retraction
 output_dir: results/humanoid/push_to_line/ablation/no_retraction
-method_params: {controller_method: mdac_controllable_no_retraction}
-metadata: {ablation_of: full_mdac, ablated_component: use_retraction, formal_suites: [p3_unjam]}
+method_params: {controller_method: mga_controllable_no_retraction}
+metadata: {ablation_of: mga, ablated_component: use_retraction, formal_suites: [p3_unjam]}

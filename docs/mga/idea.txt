@@ -1,0 +1,1025 @@
+\section{Preliminaries}
+\label{sec:prelim}
+
+\subsection{Lower-Control Optimal Control}
+\label{subsec:prelim_lower_control}
+
+We consider a robot with state $s_t\in\mathcal S$ and a generalized lower-control input
+$u_t\in\mathcal U$. In contrast to trajectory-level planning, the sampled variable in this work is
+not a state trajectory, but a finite-horizon lower-control sequence
+\begin{equation}
+    U
+    =
+    u_{0:H-1}
+    \in \mathcal U^H .
+\end{equation}
+The state sequence is obtained by rolling out the closed-loop dynamics
+\begin{equation}
+    s_{h+1}
+    =
+    F(s_h,u_h;c),
+    \qquad h=0,\ldots,H-1,
+    \label{eq:closed_loop_rollout}
+\end{equation}
+where $c$ denotes the task context, including the goal, environment geometry, contact mode, object
+state, terrain information, and robot-specific model parameters. The map $F$ is a closed-loop
+lower-control transition. If $u_h$ is a torque command, then $F(s_h,u_h;c)=f(s_h,u_h)$.
+If $u_h$ is a position--stiffness primitive, then
+\begin{equation}
+    a_h=\pi_{\mathrm{low}}(s_h,u_h;c),
+    \qquad
+    F(s_h,u_h;c)=f(s_h,a_h),
+\end{equation}
+where $\pi_{\mathrm{low}}$ can be an impedance controller, whole-body controller, or tracking
+controller. Therefore, the same formulation covers torque-level control, impedance-level control,
+and reference-level whole-body control.
+
+The lower-control finite-horizon objective is
+\begin{equation}
+\begin{aligned}
+    J_{\mathrm{cl}}(U;s_0,c)
+    =
+    \ell_T(s_H,c)
+    +
+    \sum_{h=0}^{H-1}
+    \ell(s_h,u_h,c),
+    \qquad
+    s_{h+1}=F(s_h,u_h;c).
+\end{aligned}
+\label{eq:closed_loop_cost}
+\end{equation}
+The corresponding constrained lower-control problem is
+\begin{equation}
+\begin{aligned}
+    U^\star
+    \in
+    \arg\min_U
+    \quad&
+    J_{\mathrm{cl}}(U;s_0,c)
+    \\
+    \mathrm{s.t.}\quad&
+    s_{h+1}=F(s_h,u_h;c),
+    \\
+    &
+    h(s_h,u_h,c)=0,
+    \\
+    &
+    g(s_h,u_h,c)\le 0,
+    \qquad h=0,\ldots,H-1.
+\end{aligned}
+\label{eq:lower_control_ocp}
+\end{equation}
+Here $h$ encodes equality constraints, such as contact consistency, surface attachment, foot-ground
+contact, and object motion constraints. The inequality constraints $g$ encode safety and viability
+constraints, such as friction cones, force limits, joint limits, collision avoidance, balance margins,
+and tipping margins.
+
+\subsection{Position--Stiffness Control Primitive}
+\label{subsec:prelim_position_stiffness}
+
+In this work, the lower-control input $u_h$ is not restricted to joint torque. We primarily consider
+position--stiffness control primitives of the form
+\begin{equation}
+    u_h
+    =
+    (r_h,K_h,\nu_h),
+    \label{eq:position_stiffness_u}
+\end{equation}
+where $r_h$ denotes a task-space, contact-space, or whole-body reference, $K_h$ denotes a stiffness
+matrix, and $\nu_h$ collects additional feedforward terms such as desired contact force, desired
+velocity, or footstep parameters. The stiffness must remain positive definite,
+\begin{equation}
+    K_h\in\mathbb S_{++}^{d}.
+\end{equation}
+We use a log-Euclidean parametrization
+\begin{equation}
+    K_h=\exp(S_h),
+    \qquad
+    S_h=S_h^\top,
+    \label{eq:stiffness_log_param}
+\end{equation}
+so that sampling and optimization are performed over the symmetric matrix $S_h$, while the
+executed stiffness $K_h$ is positive definite by construction.
+
+For example, in surface-contact manipulation, the primitive can be
+\begin{equation}
+    u_h^{\mathrm{arm}}
+    =
+    (\Delta \xi_h,\Delta \eta_h,\Delta\psi_h,S_h,F_{n,h}^{d}),
+\end{equation}
+where $(\xi,\eta)$ are surface coordinates, $\psi$ is the yaw angle around the surface normal,
+$S_h$ parametrizes the probe stiffness, and $F_{n,h}^{d}$ is the desired normal force. In humanoid
+loco-manipulation, the primitive can be
+\begin{equation}
+    u_h^{\mathrm{hum}}
+    =
+    (v_h^{\mathrm{base}},p_h^{\mathrm{foot}},c_h^{\mathrm{hand}},
+    S_h^{\mathrm{hand}},S_h^{\mathrm{body}},F_{n,h}^{d}),
+\end{equation}
+where $c_h^{\mathrm{hand}}$ denotes a hand-object contact coordinate, such as a face index and local
+surface coordinates on the object.
+
+\subsection{Diffusion-Style Control over Control Sequences}
+\label{subsec:prelim_diffusion_control}
+
+Following diffusion-style sampling-based control, we treat the lower-control sequence $U$ as the
+diffusion variable. Let $U_1$ denote a clean control sequence and $U_k$ denote its noisy version at
+reverse step $k$. The forward noising process is
+\begin{equation}
+    U_k
+    =
+    \sqrt{\bar\alpha_k}U_1
+    +
+    \sqrt{1-\bar\alpha_k}\epsilon,
+    \qquad
+    \epsilon\sim\mathcal N(0,I),
+    \label{eq:forward_noising_U}
+\end{equation}
+where $\bar\alpha_k=\prod_{j=1}^k\alpha_j$. The noisy marginal is
+\begin{equation}
+    p_k(U_k)
+    =
+    \int q(U_k\mid U_1)p_1(U_1)dU_1.
+\end{equation}
+A score-based reverse update uses
+\begin{equation}
+    S_k(U_k)=\nabla_{U_k}\log p_k(U_k).
+\end{equation}
+In model-free diffusion, $S_k$ is learned from data. In model-based diffusion, the score can be
+estimated through Monte Carlo evaluation of clean control proposals. Given a noisy control sequence
+$U_k$, the forward kernel induces the clean proposal distribution
+\begin{equation}
+    \Omega_k(U_k)
+    =
+    \mathcal N
+    \left(
+    \frac{U_k}{\sqrt{\bar\alpha_k}},
+    \left(\frac{1}{\bar\alpha_k}-1\right)\Sigma_k
+    \right).
+    \label{eq:clean_proposal_U}
+\end{equation}
+For candidate controls $\tilde U_{k,m}\sim\Omega_k(U_k)$, the state trajectory is not sampled
+independently, but obtained by rollout:
+\begin{equation}
+    \tilde s_{h+1}^{m}
+    =
+    F(\tilde s_h^{m},\tilde u_{k,m,h};c).
+    \label{eq:sample_rollout_U_to_s}
+\end{equation}
+The clean estimate is computed by likelihood weighting,
+\begin{equation}
+    \bar U_k
+    =
+    \frac{
+    \sum_{m=1}^{M} w_{k,m}\tilde U_{k,m}
+    }{
+    \sum_{m=1}^{M} w_{k,m}
+    },
+    \label{eq:clean_estimate_U_prelim}
+\end{equation}
+which yields the model-based Monte Carlo score estimate
+\begin{equation}
+    \hat S_k^{\mathrm{mb}}
+    =
+    -
+    \frac{U_k}{1-\bar\alpha_k}
+    +
+    \frac{\sqrt{\bar\alpha_k}}{1-\bar\alpha_k}
+    \bar U_k .
+    \label{eq:mb_score_U}
+\end{equation}
+
+\subsection{Constraint Manifolds}
+\label{subsec:prelim_constraint_manifold}
+
+For equality constraints $h(s,u,c)=0$ and inequality constraints $g(s,u,c)\le 0$, we introduce
+nonnegative slack variables through
+\begin{equation}
+    g(s,u,c)+\frac{1}{2}\mu\odot \mu=0.
+\end{equation}
+For a rolled-out control sequence $U$ and its induced state sequence $s_{0:H}$, define
+\begin{equation}
+    C(U,\mu;s_0,c)
+    =
+    \begin{bmatrix}
+    h(s_h,u_h,c)\\
+    g(s_h,u_h,c)+\frac{1}{2}\mu_h\odot\mu_h
+    \end{bmatrix}_{h=0}^{H-1}.
+    \label{eq:constraint_vector}
+\end{equation}
+The lower-control safety manifold is
+\begin{equation}
+    \mathcal M(s_0,c)
+    =
+    \left\{
+    (U,\mu):
+    C(U,\mu;s_0,c)=0,\;
+    K_h=\exp(S_h),\;
+    h=0,\ldots,H-1
+    \right\}.
+    \label{eq:control_manifold}
+\end{equation}
+For contact-rich systems with multiple contact modes, such as hand-object face selection or
+stance-foot selection, the feasible set is a hybrid union
+\begin{equation}
+    \mathcal M(s_0,c)
+    =
+    \bigcup_{m\in\mathcal A}
+    \mathcal M_m(s_0,c),
+    \label{eq:hybrid_union_manifold}
+\end{equation}
+where $m$ indexes the active contact mode.
+
+Given a metric $G(U)\succ 0$ and the constraint Jacobian
+\begin{equation}
+    J_C(U)=\nabla_U C(U,\mu;s_0,c),
+\end{equation}
+the metric-aware tangent projection is
+\begin{equation}
+    P_{\mathcal M}^{G}(U)
+    =
+    I
+    -
+    G^{-1}J_C^\top
+    \left(
+    J_CG^{-1}J_C^\top
+    \right)^\dagger
+    J_C .
+    \label{eq:metric_tangent_projection}
+\end{equation}
+This operator projects score directions and stochastic perturbations onto the tangent space of the
+active lower-control manifold.
+
+\section{Method}
+\label{sec:method}
+
+\subsection{Overview}
+\label{subsec:method_overview}
+
+We propose \emph{Manifold Generative Annealing} (MGA), a joint model-free and
+model-based lower-control framework. The method samples and denoises a lower-control sequence
+$U=u_{0:H-1}$, rolls it out through the closed-loop dynamics to obtain $s_{1:H}$, evaluates task and
+safety objectives, and updates $U$ through a geometry-aware reverse diffusion process.
+
+The main idea is to define a target distribution over lower-control sequences,
+\begin{equation}
+    p^\star(U\mid s_0,c)
+    \propto
+    p_{\psi}(U\mid s_0,c)^{\lambda_\psi}
+    \exp
+    \left(
+    -\frac{1}{\beta}
+    J_{\mathrm{cl}}(U;s_0,c)
+    \right)
+    \mathbf 1_{\mathcal M(s_0,c)}(U),
+    \label{eq:joint_target_hard}
+\end{equation}
+where $p_{\psi}$ is a model-free RL prior and the exponential term is a model-based closed-loop
+likelihood evaluated by rollout. The indicator restricts the support to the active contact/safety
+manifold. In practice, the hard indicator is replaced by a soft residual during score estimation and
+a hard retraction after denoising.
+
+\subsection{Model-Free RL Prior over Control Sequences}
+\label{subsec:method_rl_prior}
+
+We first train a model-free lower-control policy
+\begin{equation}
+    \pi_\psi(u_h\mid o_h,c),
+\end{equation}
+where $o_h$ is the observation induced by the rolled-out state $s_h$. The policy is trained with a
+standard RL objective
+\begin{equation}
+    \max_\psi
+    \mathbb E_{\pi_\psi}
+    \left[
+    \sum_{t=0}^{\infty}\gamma^t r(s_t,u_t,c)
+    \right],
+    \label{eq:rl_objective}
+\end{equation}
+where the reward includes task progress, tracking, contact quality, stiffness regularization, and soft
+safety penalties. The RL policy is not used as the final controller. Instead, it provides a model-free
+prior over promising lower-control sequences:
+\begin{equation}
+    p_\psi(U\mid s_0,c)
+    =
+    \prod_{h=0}^{H-1}
+    \pi_\psi(u_h\mid \hat o_h,c),
+    \qquad
+    \hat s_{h+1}=F(\hat s_h,u_h;c).
+    \label{eq:rl_prior_horizon}
+\end{equation}
+This prior guides the generative controller toward useful contact modes, nominal motion directions,
+and reasonable stiffness profiles.
+
+At runtime, the RL prior is injected in two ways. First, it warm-starts the initial control sequence:
+\begin{equation}
+    U^{\mathrm{init}}
+    =
+    \lambda_{\mathrm{shift}}U^{\mathrm{shift}}
+    +
+    (1-\lambda_{\mathrm{shift}})U^{\mathrm{rl}},
+    \label{eq:rl_warm_start}
+\end{equation}
+where $U^{\mathrm{shift}}$ is the shifted solution from the previous control step and $U^{\mathrm{rl}}$
+is a rollout of $\pi_\psi$. Second, it contributes to the importance weight of each candidate through
+$\log p_\psi(\tilde U_{k,m}\mid s_0,c)$.
+
+\subsection{Soft Model-Based Feasibility for Score Estimation}
+\label{subsec:method_soft_feasibility}
+
+Directly using the hard indicator $\mathbf 1_{\mathcal M}$ can cause weight collapse, especially in
+high-dimensional contact-rich systems. We therefore define an adaptive soft feasibility objective
+\begin{equation}
+\begin{aligned}
+    \tilde J_k(U;s_0,c)
+    =
+    J_{\mathrm{cl}}(U;s_0,c)
+    +
+    \lambda_k^\top r(U;s_0,c)
+    +
+    \frac{\rho_k}{2}\|r(U;s_0,c)\|^2,
+\end{aligned}
+\label{eq:soft_feasibility_cost}
+\end{equation}
+where
+\begin{equation}
+    r(U;s_0,c)
+    =
+    \begin{bmatrix}
+    h(s_h,u_h,c)\\
+    [g(s_h,u_h,c)]_+
+    \end{bmatrix}_{h=0}^{H-1}
+    \label{eq:constraint_residual}
+\end{equation}
+is evaluated after rolling out $U$ through Eq.~\eqref{eq:closed_loop_rollout}. The adaptive
+parameters $\lambda_k$ and $\rho_k$ are updated across reverse steps so that early denoising
+keeps informative near-feasible samples, while late denoising enforces strict feasibility.
+
+The soft target used for score estimation is
+\begin{equation}
+    \tilde p_k(U\mid s_0,c)
+    \propto
+    p_\psi(U\mid s_0,c)^{\lambda_{\psi,k}}
+    \exp
+    \left(
+    -\frac{1}{\beta_k}
+    \tilde J_k(U;s_0,c)
+    \right).
+    \label{eq:soft_target_distribution}
+\end{equation}
+
+\subsection{Model-Based Monte Carlo Score in Control Space}
+\label{subsec:method_mc_score}
+
+At reverse step $k$, given the current noisy control sequence $U_k$, we draw $M$ clean control
+candidates
+\begin{equation}
+    \tilde U_{k,m}
+    \sim
+    \Omega_k(U_k)
+    =
+    \mathcal N
+    \left(
+    \frac{U_k}{\sqrt{\bar\alpha_k}},
+    \left(
+    \frac{1}{\bar\alpha_k}-1
+    \right)\Sigma_k
+    \right),
+    \qquad m=1,\ldots,M.
+    \label{eq:method_clean_proposal}
+\end{equation}
+Each candidate is rolled out through the closed-loop dynamics:
+\begin{equation}
+    \tilde s_{h+1}^{m}
+    =
+    F(\tilde s_h^{m},\tilde u_{k,m,h};c).
+    \label{eq:method_candidate_rollout}
+\end{equation}
+We then compute the log weight
+\begin{equation}
+\begin{aligned}
+    \log w_{k,m}
+    =
+    -
+    \frac{1}{\beta_k}
+    \tilde J_k(\tilde U_{k,m};s_0,c)
+    +
+    \lambda_{\psi,k}
+    \log p_\psi(\tilde U_{k,m}\mid s_0,c).
+\end{aligned}
+\label{eq:importance_weight}
+\end{equation}
+The normalized weights are
+\begin{equation}
+    \bar w_{k,m}
+    =
+    \frac{\exp(\log w_{k,m})}
+    {\sum_{j=1}^{M}\exp(\log w_{k,j})}.
+\end{equation}
+The weighted clean control estimate is
+\begin{equation}
+    \bar U_k
+    =
+    \sum_{m=1}^{M}\bar w_{k,m}\tilde U_{k,m}.
+    \label{eq:method_clean_mean}
+\end{equation}
+This gives the model-based control-space score estimate
+\begin{equation}
+    \hat S_k^{\mathrm{mb}}
+    =
+    -
+    \frac{U_k}{1-\bar\alpha_k}
+    +
+    \frac{\sqrt{\bar\alpha_k}}{1-\bar\alpha_k}
+    \bar U_k.
+    \label{eq:method_mb_score}
+\end{equation}
+
+If a learned diffusion prior over control sequences is available, with score
+$s_\theta(U_k,k,s_0,c)$, we combine it with the model-based score:
+\begin{equation}
+    \hat S_k
+    =
+    \omega_k^{\mathrm{mb}}\hat S_k^{\mathrm{mb}}
+    +
+    \omega_k^{\mathrm{mf}}s_\theta(U_k,k,s_0,c).
+    \label{eq:joint_score}
+\end{equation}
+In the minimal implementation, we set $\omega_k^{\mathrm{mf}}=0$ and inject the model-free
+knowledge through RL warm-start and the likelihood term in Eq.~\eqref{eq:importance_weight}.
+
+\subsection{Stiffness- and Constraint-Aware Metric Shaping}
+\label{subsec:method_metric}
+
+The raw score direction in Eq.~\eqref{eq:method_mb_score} ignores the geometry of the active
+constraints and the positive-definite stiffness space. We define a task-dependent metric
+\begin{equation}
+    G_k(U)
+    =
+    I
+    +
+    \rho_k J_C(U)^\top W_CJ_C(U)
+    +
+    \kappa_k J_{\mathrm{tr}}(U)^\top W_{\mathrm{tr}}J_{\mathrm{tr}}(U)
+    +
+    G_K(U),
+    \label{eq:method_metric}
+\end{equation}
+where $J_C$ is the active constraint Jacobian, $J_{\mathrm{tr}}$ measures closed-loop tracking or
+contact sensitivity, and $G_K$ is the stiffness geometry term. For the log-Euclidean stiffness
+parametrization, a simple choice is
+\begin{equation}
+    G_K(U)
+    =
+    \mathrm{blkdiag}(0,\ldots,W_S,\ldots,0),
+\end{equation}
+where $W_S$ weights the log-stiffness coordinates $S_h$. The geometry-shaped score is
+\begin{equation}
+    \hat S_{\mathcal M,k}
+    =
+    P_{\mathcal M}^{G_k}(U_k)
+    G_k(U_k)^{-1}
+    \hat S_k,
+    \label{eq:geometry_shaped_score}
+\end{equation}
+and the reverse stochasticity is filtered through the same tangent projector:
+\begin{equation}
+    \epsilon_{\mathcal M,k}
+    =
+    P_{\mathcal M}^{G_k}(U_k)\epsilon_k,
+    \qquad
+    \epsilon_k\sim\mathcal N(0,I).
+    \label{eq:tangent_noise}
+\end{equation}
+Thus, both the ascent direction and the exploration noise are constrained by the active
+lower-control manifold.
+
+\subsection{Manifold Generative Annealing Update}
+\label{subsec:method_reverse_update}
+
+Given the shaped score in Eq.~\eqref{eq:geometry_shaped_score}, we use a DDPM-style stochastic
+reverse update in control space:
+\begin{equation}
+    U_{k-1}^{\mathrm{raw}}
+    =
+    \frac{1}{\sqrt{\alpha_k}}
+    \left(
+    U_k
+    +
+    (1-\bar\alpha_k)\hat S_{\mathcal M,k}
+    \right)
+    +
+    \sigma_k\epsilon_{\mathcal M,k}.
+    \label{eq:ddpm_control_update}
+\end{equation}
+Equivalently, a DDIM or flow-like update can be written through the predicted clean control
+sequence
+\begin{equation}
+    \hat U_{1,k}
+    =
+    \frac{
+    U_k+(1-\bar\alpha_k)\hat S_{\mathcal M,k}
+    }{
+    \sqrt{\bar\alpha_k}
+    },
+    \label{eq:predicted_clean_control}
+\end{equation}
+and the implied noise
+\begin{equation}
+    \hat\epsilon_k
+    =
+    \frac{
+    U_k-\sqrt{\bar\alpha_k}\hat U_{1,k}
+    }{
+    \sqrt{1-\bar\alpha_k}
+    }.
+\end{equation}
+The generalized DDIM update is
+\begin{equation}
+    U_{k-1}^{\mathrm{raw}}
+    =
+    \sqrt{\bar\alpha_{k-1}}\hat U_{1,k}
+    +
+    \sqrt{1-\bar\alpha_{k-1}-\sigma_k^2}\hat\epsilon_k
+    +
+    \sigma_k\epsilon_{\mathcal M,k}.
+    \label{eq:ddim_control_update}
+\end{equation}
+When $\sigma_k>0$, the update is stochastic and diffusion-like. When $\sigma_k=0$, it becomes a
+deterministic flow-like lower-control refinement.
+
+After the raw update, we retract the sequence back to the active manifold:
+\begin{equation}
+    U_{k-1}
+    =
+    \operatorname{Retr}_{\mathcal M}
+    \left(
+    U_{k-1}^{\mathrm{raw}}
+    \right).
+    \label{eq:method_retraction}
+\end{equation}
+The retraction is defined as the local metric projection
+\begin{equation}
+\begin{aligned}
+    \operatorname{Retr}_{\mathcal M}(U^{\mathrm{raw}})
+    =
+    \arg\min_U
+    \quad&
+    \frac{1}{2}
+    \|U-U^{\mathrm{raw}}\|_{G_k}^2
+    \\
+    \mathrm{s.t.}\quad&
+    C(U,\mu;s_0,c)=0,
+    \qquad
+    K_h=\exp(S_h).
+\end{aligned}
+\label{eq:retraction_qp}
+\end{equation}
+In practice, Eq.~\eqref{eq:retraction_qp} is solved approximately by one or two linearized
+projection steps:
+\begin{equation}
+\begin{aligned}
+    \Delta U^\star
+    =
+    \arg\min_{\Delta U}
+    \quad&
+    \frac{1}{2}\|\Delta U\|_{G_k}^2
+    \\
+    \mathrm{s.t.}\quad&
+    C(U)+J_C(U)\Delta U=0,
+    \\
+    &
+    g(U)+J_g(U)\Delta U\le 0.
+\end{aligned}
+\label{eq:linearized_retraction}
+\end{equation}
+
+\subsection{Adaptive Annealing of Noise, Constraints, and Stiffness}
+\label{subsec:method_schedule}
+
+The reverse process uses a coupled schedule
+\begin{equation}
+    \left(
+    \sigma_k,\rho_k,\kappa_k,\lambda_{\psi,k}
+    \right),
+    \label{eq:coupled_schedule}
+\end{equation}
+where $\sigma_k$ controls reverse stochasticity, $\rho_k$ controls constraint hardening,
+$\kappa_k$ controls tracking and stiffness hardening, and $\lambda_{\psi,k}$ controls the strength
+of the RL prior. We use the qualitative schedule
+\begin{equation}
+    \sigma_k\downarrow,
+    \qquad
+    \rho_k\uparrow,
+    \qquad
+    \kappa_k\uparrow,
+    \qquad
+    \lambda_{\psi,k}\downarrow.
+    \label{eq:schedule_trend}
+\end{equation}
+Early reverse steps therefore use the RL prior and stochasticity to explore useful contact modes and
+motion directions. Later steps emphasize model-based rollout cost, constraint satisfaction, and
+manifold retraction.
+
+\subsection{Receding-Horizon Execution}
+\label{subsec:method_receding_horizon}
+
+At every real control step, MGA solves the lower-control sampling problem for the current state,
+executes the first control primitive, shifts the remaining sequence, and repeats. The algorithm is
+summarized below.
+
+\begin{algorithm}[t]
+\caption{Manifold Generative Annealing}
+\label{alg:mga}
+\begin{algorithmic}[1]
+\STATE \textbf{Input:} current state $s_0$, context $c$, RL prior $\pi_\psi$, horizon $H$, reverse steps $K$, samples $M$
+\STATE Roll out $\pi_\psi$ to obtain $U^{\mathrm{rl}}$
+\STATE Shift previous solution to obtain $U^{\mathrm{shift}}$
+\STATE Initialize $U_K$ from Eq.~\eqref{eq:rl_warm_start} with tangent noise
+\FOR{$k=K,\ldots,1$}
+    \STATE Sample clean candidates $\tilde U_{k,m}\sim\Omega_k(U_k)$
+    \STATE Roll out each candidate through $\tilde s_{h+1}^{m}=F(\tilde s_h^{m},\tilde u_{k,m,h};c)$
+    \STATE Compute $\tilde J_k(\tilde U_{k,m};s_0,c)$ and $\log p_\psi(\tilde U_{k,m}\mid s_0,c)$
+    \STATE Compute normalized weights $\bar w_{k,m}$ using Eq.~\eqref{eq:importance_weight}
+    \STATE Estimate $\bar U_k$ and $\hat S_k^{\mathrm{mb}}$ using Eqs.~\eqref{eq:method_clean_mean}--\eqref{eq:method_mb_score}
+    \STATE Form joint score $\hat S_k$ using Eq.~\eqref{eq:joint_score}
+    \STATE Compute $G_k$, $P_{\mathcal M}^{G_k}$, $\hat S_{\mathcal M,k}$, and $\epsilon_{\mathcal M,k}$
+    \STATE Update $U_{k-1}^{\mathrm{raw}}$ using Eq.~\eqref{eq:ddpm_control_update} or Eq.~\eqref{eq:ddim_control_update}
+    \STATE Retract $U_{k-1}=\operatorname{Retr}_{\mathcal M}(U_{k-1}^{\mathrm{raw}})$
+\ENDFOR
+\STATE Execute $u_0^\star=U_1[0]$ through the lower-control interface
+\STATE Store optimized sequence for optional prior distillation
+\end{algorithmic}
+\end{algorithm}
+
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Research Questions}
+\label{subsec:experiment_questions}
+
+We design experiments to answer the following questions:
+\begin{itemize}
+    \item \textbf{RQ1:} Does sampling lower-control primitives $U$ outperform trajectory-level or torque-only sampling in contact-rich tasks?
+    \item \textbf{RQ2:} Does the position--stiffness primitive improve the safety--task tradeoff compared with fixed-stiffness or position-only controllers?
+    \item \textbf{RQ3:} Does manifold tangent denoising and retraction reduce contact, force, and balance violations compared with sequential safety filters?
+    \item \textbf{RQ4:} Does the joint model-free/model-based formulation improve sample efficiency and generalization compared with model-free-only and model-based-only methods?
+    \item \textbf{RQ5:} Can the same formulation handle both manipulation and humanoid loco-manipulation through different definitions of $u_t$, $F$, and $\mathcal M$?
+\end{itemize}
+
+\subsection{Experiment I: Robotic Surface-Contact Manipulation}
+\label{subsec:exp_arm_surface}
+
+The first experiment studies a 7-DoF manipulator performing contact-rich scanning over curved
+surfaces. The environment is parameterized by a NURBS surface
+\begin{equation}
+    p_s(\xi,\eta)\in\mathbb R^3,
+    \qquad
+    (\xi,\eta)\in[0,1]^2.
+\end{equation}
+The surface normal is
+\begin{equation}
+    n_s(\xi,\eta)
+    =
+    \frac{
+    \partial_\xi p_s(\xi,\eta)\times\partial_\eta p_s(\xi,\eta)
+    }{
+    \|\partial_\xi p_s(\xi,\eta)\times\partial_\eta p_s(\xi,\eta)\|
+    }.
+\end{equation}
+The lower-control primitive is
+\begin{equation}
+    u_h^{\mathrm{arm}}
+    =
+    (\Delta\xi_h,\Delta\eta_h,\Delta\psi_h,S_h,F_{n,h}^{d}),
+    \qquad
+    K_h=\exp(S_h).
+\end{equation}
+The desired end-effector pose is reconstructed from the surface coordinates:
+\begin{equation}
+    p_h^{d}
+    =
+    p_s(\xi_h,\eta_h)+d\,n_s(\xi_h,\eta_h),
+\end{equation}
+\begin{equation}
+    R_h^{d}e_z
+    =
+    -n_s(\xi_h,\eta_h),
+\end{equation}
+with yaw $\psi_h$ around the normal direction. The impedance controller maps the primitive to
+joint torques:
+\begin{equation}
+    F_h
+    =
+    K_h(p_h^d-p_h)
+    +
+    D_h(\dot p_h^d-\dot p_h)
+    +
+    F_{n,h}^{d}n_s,
+\end{equation}
+\begin{equation}
+    \tau_h
+    =
+    J(q_h)^\top F_h+\tau_{\mathrm{null}}.
+\end{equation}
+The main surface-contact constraints are
+\begin{equation}
+    h_{\mathrm{surf}}(s_h,u_h)
+    =
+    p_h-p_s(\xi_h,\eta_h)-d\,n_s(\xi_h,\eta_h)=0,
+\end{equation}
+\begin{equation}
+    h_{\mathrm{normal}}(s_h,u_h)
+    =
+    R_h e_z+n_s(\xi_h,\eta_h)=0,
+\end{equation}
+\begin{equation}
+    F_{\min}\le F_{n,h}\le F_{\max}.
+\end{equation}
+The task objective is
+\begin{equation}
+\begin{aligned}
+    J_{\mathrm{arm}}
+    =
+    &
+    w_{\mathrm{path}}
+    \sum_{h=0}^{H-1}
+    \|(\xi_h,\eta_h)-(\xi_h^\star,\eta_h^\star)\|^2
+    +
+    w_F
+    \sum_{h=0}^{H-1}
+    (F_{n,h}-F_{n}^{d})^2
+    \\
+    &
+    +
+    w_R
+    \sum_{h=0}^{H-1}
+    \|R_he_z+n_s(\xi_h,\eta_h)\|^2
+    +
+    w_K
+    \sum_{h=0}^{H-1}
+    \|\log K_h-\log K_{\mathrm{ref}}\|^2
+    \\
+    &
+    +
+    w_{\Delta K}
+    \sum_{h=0}^{H-2}
+    \|\log K_{h+1}-\log K_h\|^2 .
+\end{aligned}
+\label{eq:arm_cost}
+\end{equation}
+
+We evaluate four surface families:
+\begin{itemize}
+    \item \textbf{S1:} planar and cylindrical surfaces;
+    \item \textbf{S2:} convex ellipsoid-like surfaces;
+    \item \textbf{S3:} nonconvex NURBS surfaces with local bumps and valleys;
+    \item \textbf{S4:} unseen NURBS surfaces with randomized surface stiffness and contact friction.
+\end{itemize}
+
+The metrics are surface tracking error, normal alignment error, force tracking error, force violation
+rate, force CVaR95, contact loss rate, path completion, coverage ratio, stiffness smoothness, energy,
+and runtime.
+
+\subsection{Experiment II: Humanoid Contact-Manifold Box Pushing}
+\label{subsec:exp_humanoid_box}
+
+The second experiment studies humanoid loco-manipulation in a box-pushing task. The humanoid
+must move a box to a goal region while maintaining hand-object contact, foot-ground contact,
+balance, friction feasibility, and non-tipping constraints.
+
+The object state is
+\begin{equation}
+    x_b=(p_{b,x},p_{b,y},\theta_b)\in SE(2),
+\end{equation}
+embedded in $SE(3)$ by the ground-contact manifold
+\begin{equation}
+    h_{\mathrm{box}}(x_b)
+    =
+    \begin{bmatrix}
+    p_{b,z}-z_0\\
+    \phi_b\\
+    \vartheta_b
+    \end{bmatrix}
+    =
+    0,
+    \label{eq:box_ground_manifold}
+\end{equation}
+where $\phi_b$ and $\vartheta_b$ are box roll and pitch.
+
+The hand contact is parameterized by a box face index $j$ and local face coordinates $(a,b)$:
+\begin{equation}
+    c_h^{\mathrm{hand}}
+    =
+    (j_h,a_h,b_h).
+\end{equation}
+Let $p_{\mathrm{face}}^j(a,b)$ be the local point on the selected box face. The world contact point is
+\begin{equation}
+    p_c
+    =
+    T_b p_{\mathrm{face}}^j(a,b).
+\end{equation}
+The hand-box contact manifold is
+\begin{equation}
+    h_{\mathrm{hand}}(s_h,u_h)
+    =
+    p_{\mathrm{hand}}(q_h)
+    -
+    T_b p_{\mathrm{face}}^{j_h}(a_h,b_h)
+    =
+    0,
+    \label{eq:hand_box_contact}
+\end{equation}
+with orientation consistency
+\begin{equation}
+    h_{\mathrm{hand},R}(s_h,u_h)
+    =
+    R_{\mathrm{hand}}e_z
+    +
+    R_b n_{j_h}
+    =
+    0.
+    \label{eq:hand_box_orientation}
+\end{equation}
+For stance feet, we impose
+\begin{equation}
+    h_{\mathrm{foot}}^i(s_h)
+    =
+    \begin{bmatrix}
+    p_{f_i,z}(q_h)\\
+    R_{f_i}e_z-e_z\\
+    v_{f_i}(q_h,\dot q_h)
+    \end{bmatrix}
+    =
+    0,
+    \qquad i\in\mathcal C_{\mathrm{stance}}.
+    \label{eq:foot_contact_manifold}
+\end{equation}
+Balance and contact safety are encoded as inequalities:
+\begin{equation}
+    g_{\mathrm{bal}}(s_h)\le 0,
+    \qquad
+    g_{\mathrm{fric}}(s_h,u_h)=\|f_{t,h}\|-\mu f_{n,h}\le 0,
+    \qquad
+    g_{\mathrm{tip}}(x_{b,h},f_h)\le 0.
+    \label{eq:humanoid_ineq}
+\end{equation}
+The complete humanoid contact manifold is
+\begin{equation}
+\begin{aligned}
+    \mathcal M_{\mathrm{hum}}
+    =
+    \bigcup_{m\in\mathcal A}
+    \{
+    U:
+    &
+    h_{\mathrm{box}}=0,\;
+    h_{\mathrm{hand}}^m=0,\;
+    h_{\mathrm{hand},R}^m=0,\;
+    h_{\mathrm{foot}}^m=0,
+    \\
+    &
+    g_{\mathrm{bal}}+\frac{1}{2}\mu_{\mathrm{bal}}^2=0,\;
+    g_{\mathrm{fric}}+\frac{1}{2}\mu_{\mathrm{fric}}^2=0,\;
+    g_{\mathrm{tip}}+\frac{1}{2}\mu_{\mathrm{tip}}^2=0,\;
+    K=\exp(S)
+    \}.
+\end{aligned}
+\label{eq:humanoid_manifold}
+\end{equation}
+The lower-control primitive is
+\begin{equation}
+    u_h^{\mathrm{hum}}
+    =
+    (
+    v_h^{\mathrm{base}},
+    p_h^{\mathrm{foot}},
+    j_h,a_h,b_h,
+    S_h^{\mathrm{hand}},
+    S_h^{\mathrm{body}},
+    F_{n,h}^{d}
+    ).
+\end{equation}
+The humanoid cost is
+\begin{equation}
+\begin{aligned}
+    J_{\mathrm{hum}}
+    =
+    &
+    w_b\|x_{b,H}-x_b^\star\|^2
+    +
+    w_{\mathrm{prog}}\sum_{h=0}^{H-1}
+    \ell_{\mathrm{prog}}(x_{b,h},x_b^\star)
+    +
+    w_{\mathrm{bal}}\sum_{h=0}^{H-1}
+    [g_{\mathrm{bal}}(s_h)]_+^2
+    \\
+    &
+    +
+    w_{\mathrm{fric}}\sum_{h=0}^{H-1}
+    [g_{\mathrm{fric}}(s_h,u_h)]_+^2
+    +
+    w_{\mathrm{tip}}\sum_{h=0}^{H-1}
+    [g_{\mathrm{tip}}(x_{b,h},f_h)]_+^2
+    \\
+    &
+    +
+    w_{\mathrm{hand}}\sum_{h=0}^{H-1}
+    \|h_{\mathrm{hand}}(s_h,u_h)\|^2
+    +
+    w_{\mathrm{foot}}\sum_{h=0}^{H-1}
+    \|h_{\mathrm{foot}}(s_h,u_h)\|^2
+    \\
+    &
+    +
+    w_K\sum_{h=0}^{H-1}
+    \|\log K_h-\log K_{\mathrm{ref}}\|^2
+    +
+    w_{\Delta K}\sum_{h=0}^{H-2}
+    \|\log K_{h+1}-\log K_h\|^2.
+\end{aligned}
+\label{eq:humanoid_cost}
+\end{equation}
+
+We evaluate four task levels:
+\begin{itemize}
+    \item \textbf{H1:} double-support box pushing with fixed feet;
+    \item \textbf{H2:} heavy-box pushing with randomized mass and friction;
+    \item \textbf{H3:} walk-and-push with stance-foot switching;
+    \item \textbf{H4:} box unjamming with local contact-face selection.
+\end{itemize}
+
+The metrics are box-goal success rate, fall rate, box pose error, hand contact loss, hand tangential
+slip, friction-cone violation, tipping margin, foot slip, balance margin, force CVaR95, stiffness
+smoothness, energy, and runtime.
+
+\subsection{Baselines}
+\label{subsec:exp_baselines}
+
+We compare against representative lower-control, diffusion, safe RL, and constrained control
+baselines:
+\begin{table}[t]
+\centering
+\caption{Baseline methods.}
+\label{tab:baselines}
+\begin{tabular}{lccc}
+\toprule
+Method & Model-Free Prior & Model-Based Rollout & Manifold Safety \\
+\midrule
+PPO/SAC & \checkmark & \xmark & \xmark \\
+PPO/SAC + learned stiffness & \checkmark & \xmark & \xmark \\
+SRL-VIC & \checkmark & \xmark & partial \\
+ATACOM-style RL & \checkmark & partial & \checkmark \\
+MPPI & \xmark & \checkmark & \xmark \\
+DIAL-MPC-style annealing & \xmark & \checkmark & \xmark \\
+PegasusFlow/WBFO-style sampling & optional & \checkmark & \xmark \\
+RL + CBF/ISSA safety layer & \checkmark & partial & sequential \\
+MGA, ours & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For fair comparison, all sampling-based lower-control baselines optimize over the same control
+sequence $U$ and use the same closed-loop rollout model $s_{h+1}=F(s_h,u_h;c)$. For DIAL-MPC-
+style and MPPI-style baselines, we remove the manifold tangent projection and retraction but keep
+the same sample budget. For PegasusFlow/WBFO-style baselines, we use the same basis dimension
+when the basis representation is enabled. For RL baselines, we train policies over the same
+position--stiffness action space.
+
+\subsection{Ablations}
+\label{subsec:exp_ablations}
+
+We evaluate the following ablations:
+\begin{table}[t]
+\centering
+\caption{Ablation studies.}
+\label{tab:ablations}
+\begin{tabular}{ll}
+\toprule
+Ablation & Purpose \\
+\midrule
+MGA w/o stiffness & Test whether adaptive stiffness is necessary \\
+MGA fixed stiffness & Test whether learned/generated stiffness improves safety--task tradeoff \\
+MGA w/o RL prior & Test the role of the model-free prior \\
+MGA w/o model-based rollout & Test the role of closed-loop model-based evaluation \\
+MGA w/o tangent projection & Test the role of tangent-space denoising \\
+MGA w/o retraction & Test the role of hard manifold correction \\
+MGA w/o adaptive schedule & Test the role of coupled annealing of noise, constraints, and stiffness \\
+MGA Euclidean stiffness & Test the role of SPD/log-stiffness geometry \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Implementation Details}
+\label{subsec:exp_implementation}
+
+For each control step, all sampling-based methods use the same horizon $H$, reverse or optimization
+iterations $K$, and sample budget $M$. The RL prior is trained using PPO for humanoid tasks and
+SAC for manipulator tasks. In the minimal implementation, the RL prior is used for warm-starting
+and likelihood weighting, without training a diffusion prior. In the full implementation, optimized
+control sequences are stored in an elite buffer and used to train a conditional diffusion prior
+$s_\theta(U_k,k,s_0,c)$.
+
+All methods execute only the first control primitive $u_0^\star$ and then replan in a receding-horizon
+fashion. The sampled object is always $U$; the state sequence $s_{1:H}$ is only obtained by the
+closed-loop rollout in Eq.~\eqref{eq:closed_loop_rollout}.

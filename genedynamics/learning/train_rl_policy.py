@@ -1,6 +1,6 @@
 """Train a standalone RL POLICY (PPO / SAC) on a brax env + checkpoint I/O.
 
-Sibling of ``train_rl_prior`` (which trains a warm-start prior for MDAC): this trains a
+Sibling of ``train_rl_prior`` (which trains a warm-start prior for MGA): this trains a
 policy to be deployed as a STANDALONE closed-loop baseline controller (the engine for the
 ATACOM / ISSA RL baselines, which add a projection layer at deploy). brax-native, runs in
 the docker brax image; ``(params, config)`` are pickled to a checkpoint and rebuilt at
@@ -175,7 +175,7 @@ def build_policy_prior(
     algo = str(config.get("algo", "ppo")).lower()
     if algo != "ppo":
         raise ValueError(
-            "full MGA policy prior currently requires a PPO checkpoint; "
+            "MGA policy prior currently requires a PPO checkpoint; "
             f"got algo={algo!r}"
         )
     from genedynamics.learning.priors.rl import RLPrior

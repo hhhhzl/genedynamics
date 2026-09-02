@@ -15,11 +15,12 @@ from genedynamics.experiments.plugins.environments._contact_task import (
     INSERT_TASK,
     stiffness_mode_for,
 )
-from genedynamics.solvers.single.mdac.core.method_registry import (
+from genedynamics.solvers.single.mga.core.method_registry import (
     METHOD_TABLE,
+    canonical_method_name,
     resolve_method,
 )
-from genedynamics.solvers.single.mdac.mdac import MDACSolver
+from genedynamics.solvers.single.mga.mga import MGASolver
 
 
 def _task_env_kwargs(
@@ -32,6 +33,7 @@ def _task_env_kwargs(
     overrides: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Resolve task-owned construction arguments for direct probe callers."""
+    method = canonical_method_name(method)
     if method in METHOD_TABLE:
         flags = resolve_method(method)
         kwargs: Dict[str, Any] = {
@@ -57,9 +59,9 @@ def _task_env_kwargs(
     return kwargs
 
 
-def make_mdac(
+def make_mga(
     task: str,
-    method: str = "mdac",
+    method: str = "mga_base",
     *,
     level: Optional[str] = None,
     surface_seed: int = 0,
@@ -76,8 +78,13 @@ def make_mdac(
     model_env: Any = None,
     execution_env: Any = None,
     **cfg: Any,
-) -> Tuple[Any, MDACSolver]:
-    """Compose one MDAC controller for a contact-task experiment adapter."""
+) -> Tuple[Any, MGASolver]:
+    """Compose one MGA controller for a contact-task experiment adapter.
+
+    The public name ``mga`` resolves to ``mga_controllable_gate``; direct
+    regression probes can request ``mga_base`` explicitly.
+    """
+    method = canonical_method_name(method)
     flags = resolve_method(method)
     backend = backend or get_backend("jax")
     env_kwargs = _task_env_kwargs(
@@ -246,16 +253,16 @@ def make_mdac(
 
     task_contract_env = execution_env or env
     candidate_projection_fn = (
-        getattr(task_contract_env, "project_mdac_candidate", None)
+        getattr(task_contract_env, "project_mga_candidate", None)
         if flags.use_geometry_gate
         else None
     )
     retraction = None
     if flags.use_retraction:
-        from genedynamics.solvers.single.mdac.core.retraction import make_mdac_retraction
+        from genedynamics.solvers.single.mga.core.retraction import make_mga_retraction
 
-        retraction = make_mdac_retraction(env, residual_fn=residual_fn)
-    solver = MDACSolver(
+        retraction = make_mga_retraction(env, residual_fn=residual_fn)
+    solver = MGASolver(
         env,
         None,
         backend,
@@ -368,7 +375,7 @@ def _build_baseline_solver(method, env, backend, *, execution_env=None, **cfg):
 
 def make_controller(
     task,
-    method="mdac",
+    method="mga_controllable_gate",
     *,
     level=None,
     surface_seed=0,
@@ -387,8 +394,9 @@ def make_controller(
     **cfg,
 ):
     """Build an algorithm-level contact controller for the unified adapter."""
+    method = canonical_method_name(method)
     if method in METHOD_TABLE:
-        return make_mdac(
+        return make_mga(
             task, method, level=level, surface_seed=surface_seed,
             use_base=use_base, prior=prior, policy_ckpt=policy_ckpt,
             atacom_policy_ckpt=atacom_policy_ckpt,
@@ -482,10 +490,12 @@ class RecedingContactMethodPlugin(MethodPlugin):
         task = str(config.get("task") or getattr(env, "_experiment_task", ""))
         if not task:
             raise ValueError(f"method '{self.name}' requires a contact task")
-        method = str(config.get("controller_method", self._default_controller_method))
-        if self.name == "full_mdac":
+        method = canonical_method_name(
+            config.get("controller_method", self._default_controller_method)
+        )
+        if self.name == "mga":
             if method not in METHOD_TABLE:
-                raise ValueError("full_mdac must resolve to an MDAC method contract")
+                raise ValueError("mga must resolve to an MGA method contract")
             flags = resolve_method(method)
             learned_reliability = bool(config.get("learned_reliability", True))
             missing = []
@@ -495,7 +505,7 @@ class RecedingContactMethodPlugin(MethodPlugin):
                 missing.append("reliability_ckpt")
             if missing:
                 raise ValueError(
-                    "full_mdac requires frozen learned components: "
+                    "mga requires frozen learned components: "
                     + ", ".join(missing)
                 )
             if not flags.use_rl_prior and config.get("policy_ckpt"):
@@ -511,7 +521,7 @@ class RecedingContactMethodPlugin(MethodPlugin):
             "mppi", "pegasusflow", "issa", "atacom", "standalone_rl"
         }:
             raise ValueError(
-                f"baseline plugin '{self.name}' cannot route through MDAC method '{method}'"
+                f"baseline plugin '{self.name}' cannot route through MGA method '{method}'"
             )
 
         factory_kwargs = {
@@ -554,10 +564,10 @@ class RecedingContactMethodPlugin(MethodPlugin):
         }
         if method in METHOD_TABLE:
             flags = resolve_method(method)
-            contract["mdac_flags"] = asdict(flags)
+            contract["mga_flags"] = asdict(flags)
             contract["rl_prior"] = bool(flags.use_rl_prior and config.get("policy_ckpt"))
             contract["learned_reliability"] = bool(
-                self.name == "full_mdac"
+                self.name == "mga"
                 and config.get("learned_reliability", True)
                 and config.get("reliability_ckpt")
             )
@@ -609,14 +619,14 @@ class RecedingContactMethodPlugin(MethodPlugin):
         }
 
 
-class FullMDACMethodPlugin(RecedingContactMethodPlugin):
+class MGAMethodPlugin(RecedingContactMethodPlugin):
     def __init__(self) -> None:
-        super().__init__("full_mdac", "mdac")
+        super().__init__("mga", "mga_controllable_gate")
 
 
 class ModelBasedOnlyMethodPlugin(RecedingContactMethodPlugin):
     def __init__(self) -> None:
-        super().__init__("model_based_only", "mdac_controllable")
+        super().__init__("model_based_only", "mga_controllable")
 
 
 class DIALContactMethodPlugin(RecedingContactMethodPlugin):
@@ -653,10 +663,10 @@ __all__ = [
     "ARM_TASK",
     "HUMANOID_TASK",
     "INSERT_TASK",
-    "make_mdac",
+    "make_mga",
     "make_controller",
     "RecedingContactMethodPlugin",
-    "FullMDACMethodPlugin",
+    "MGAMethodPlugin",
     "ModelBasedOnlyMethodPlugin",
     "DIALContactMethodPlugin",
     "MPPIContactMethodPlugin",

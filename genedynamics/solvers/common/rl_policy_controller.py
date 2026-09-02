@@ -1,8 +1,8 @@
 """Standalone closed-loop RL controller (shared base for the RL baselines).
 
 Wraps a trained policy's ``act(obs, key) -> action`` as a ``run_receding(x0, n_steps, rng)``
-controller (the same interface as ``MDACSolver`` / the sampling baselines), so an RL policy
-plugs into the MDAC harness comparison like any other method. There is NO online planning —
+controller (the same interface as ``MGASolver`` / the sampling baselines), so an RL policy
+plugs into the MGA harness comparison like any other method. There is NO online planning —
 the policy is queried each real step. An optional ``action_projection(state, action) ->
 action`` hook is applied before stepping, which is exactly where the RL BASELINES add their
 contribution:

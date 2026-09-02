@@ -1,7 +1,7 @@
-base: ../main/full_mdac.yaml
+base: ../main/mga.yaml
 name: no_rl_prior
 output_dir: results/humanoid/push_to_line/ablation/no_rl_prior
 method_params:
-  controller_method: mdac_controllable_gate_no_rl_prior
+  controller_method: mga_controllable_gate_no_rl_prior
   policy_ckpt_by_suite: null
-metadata: {ablation_of: full_mdac, ablated_component: use_rl_prior, formal_suites: [p2_push_ood, p3_unjam, p4_walk_push]}
+metadata: {ablation_of: mga, ablated_component: use_rl_prior, formal_suites: [p2_push_ood, p3_unjam, p4_walk_push]}

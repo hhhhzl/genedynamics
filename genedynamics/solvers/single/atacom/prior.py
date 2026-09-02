@@ -3,7 +3,7 @@
 The network remains a 7-D tangent-space policy.  This adapter rolls it through
 the same stateful ATACOM transform and task dynamics used by the standalone
 baseline, then exposes the resulting 10-D node trajectories through the shared
-``StructuredPrior`` contract.  It owns no MDAC logic.
+``StructuredPrior`` contract.  It owns no MGA logic.
 """
 
 from __future__ import annotations

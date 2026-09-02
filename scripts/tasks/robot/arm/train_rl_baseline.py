@@ -8,7 +8,7 @@
 
 The MGA path loads a formal task base YAML and trains one shared raw-action
 PPO across its seen material/geometry domains.  The same checkpoint is deployed
-standalone and reconstructed as the MDAC horizon prior.
+standalone and reconstructed as the MGA horizon prior.
 
 Needs real brax/mjx -> run in docker (genedynamics/dev-cpu:torch):
   docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \

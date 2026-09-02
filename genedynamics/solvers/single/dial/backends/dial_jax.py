@@ -213,7 +213,7 @@ class DialBackendJax:
         # BRAX-STATE path (faithful to dial-mpc MBDPI): if the env is a brax
         # PipelineEnv (dial's UnitreeH1/Go2 envs), roll out env.step over the
         # brax State and read state.reward. Shared layer (env_rollout) so MBD /
-        # MPPI / MDAC can reuse the same env+reward. Time/gait phase lives in
+        # MPPI / MGA can reuse the same env+reward. Time/gait phase lives in
         # state.info (advanced by env.step), so t0 is unused here.
         from genedynamics.solvers.common.env_rollout import is_brax_env, build_brax_rollout
         env = getattr(solver, "dynamics", None)

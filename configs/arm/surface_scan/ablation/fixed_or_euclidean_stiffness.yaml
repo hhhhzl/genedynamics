@@ -1,9 +1,9 @@
-base: ../main/full_mdac.yaml
+base: ../main/mga.yaml
 name: euclidean_stiffness
 output_dir: results/arm/surface_scan/ablation/euclidean_stiffness
-method_params: {controller_method: mdac_controllable_euclid_stiffness}
+method_params: {controller_method: mga_controllable_euclid_stiffness}
 metadata:
   formal_suites: [hybrid_stripes, hybrid_center_hard, hybrid_center_soft]
-  ablation_of: full_mdac
+  ablation_of: mga
   ablated_component: log_spd_stiffness
   paper_scope: hybrid

@@ -138,15 +138,15 @@ class BaseEnv(PipelineEnv):
         tau = jnp.clip(tau, self.joint_torque_range[:, 0], self.joint_torque_range[:, 1])
         return tau
 
-    # --- MDAC constraint hook (default no-op) ------------------------------
-    # Constrained envs override this to expose the manifold residual the MDAC
+    # --- MGA constraint hook (default no-op) ------------------------------
+    # Constrained envs override this to expose the manifold residual the MGA
     # solver reads (soft-feasibility / geometry). It receives the full
     # brax ``State`` (so it can read both ``state.pipeline_state`` for the clean
     # predicted kinematics AND ``state.info`` for env-carried context such as
     # surface coordinates) and is evaluated on that clean state — never
     # differentiated through the mjx rollout. Returns (h, g): equality residual h
     # (== 0 feasible) and inequality residual g (<= 0 feasible). The unconstrained
-    # default returns zero-width arrays, so MDAC degenerates to DIAL.
+    # default returns zero-width arrays, so MGA degenerates to DIAL.
     def constraint_residual(self, state, action, ctx=None):
         z = jnp.zeros((0,), dtype=jnp.float32)
         return z, z

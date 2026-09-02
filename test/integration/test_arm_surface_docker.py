@@ -8,7 +8,7 @@ Validates the rebuilt 10D arm primitive + NURBS surface families:
     NON-vacuous (nu=+1 commands a force above f_max -> g[0]>0);
   * manifold_geometry returns (Hnode+1, nu);
   * S4 domain randomization (surface stiffness / friction) varies across seeds;
-  * MDAC ablations (no_softfeas / no_stiffness / no_tangent) still change the plan.
+  * MGA ablations (no_softfeas / no_stiffness / no_tangent) still change the plan.
 
 Invoke (from repo root):
   docker run --rm -v $(pwd):/workspace -w /workspace --user $(id -u):$(id -g) \
@@ -27,7 +27,7 @@ from genedynamics.envs.domains.manipulation.panda_brax import (
 )
 from genedynamics.experiments.plugins.methods.contact_receding import (
     ARM_TASK,
-    make_mdac,
+    make_mga,
 )
 
 FAMILIES = ["plane", "cylinder", "convex", "bumpy", "unseen"]
@@ -252,8 +252,8 @@ def _rl_observation_risk_and_randomized_wrapper():
 
 
 def _geometry_factors_are_independent():
-    e_t, no_tangent = make_mdac(ARM_TASK, "mdac_no_tangent", level="plane", **CFG)
-    e_r, no_retraction = make_mdac(ARM_TASK, "mdac_no_retraction", level="plane", **CFG)
+    e_t, no_tangent = make_mga(ARM_TASK, "mga_no_tangent", level="plane", **CFG)
+    e_r, no_retraction = make_mga(ARM_TASK, "mga_no_retraction", level="plane", **CFG)
     ok = (no_tangent.geometry_fn is None and no_tangent.retraction is not None
           and no_retraction.geometry_fn is not None and no_retraction.retraction is None)
     print(f"  no_tangent: geometry={no_tangent.geometry_fn is not None} "
@@ -264,7 +264,7 @@ def _geometry_factors_are_independent():
 
 
 def _position_only_manifold():
-    env, _ = make_mdac(ARM_TASK, "mdac_position_only", level="plane", **CFG)
+    env, _ = make_mga(ARM_TASK, "mga_position_only", level="plane", **CFG)
     x0 = env.reset(jax.random.PRNGKey(0))
     nodes = jnp.zeros((CFG["Hnode"] + 1, env.action_size))
     c = env.manifold_residual(x0, nodes)
@@ -274,10 +274,10 @@ def _position_only_manifold():
 
 
 def _staged_geometry_routes():
-    env_h, horizon = make_mdac(ARM_TASK, "mdac_horizon", level="plane", **CFG)
-    env_s, scalar = make_mdac(ARM_TASK, "mdac_scalar_gate", level="plane", **CFG)
-    env_c, component = make_mdac(
-        ARM_TASK, "mdac_component_gate", level="plane", **CFG
+    env_h, horizon = make_mga(ARM_TASK, "mga_horizon", level="plane", **CFG)
+    env_s, scalar = make_mga(ARM_TASK, "mga_scalar_gate", level="plane", **CFG)
+    env_c, component = make_mga(
+        ARM_TASK, "mga_component_gate", level="plane", **CFG
     )
     x0 = env_c.reset(jax.random.PRNGKey(0))
     nodes = jnp.zeros((CFG["Hnode"] + 1, env_c.action_size))
@@ -307,8 +307,8 @@ def _staged_geometry_routes():
 
 
 def _realization_geometry_routes():
-    env, solver = make_mdac(
-        ARM_TASK, "mdac_realization", level="cylinder", **CFG
+    env, solver = make_mga(
+        ARM_TASK, "mga_realization", level="cylinder", **CFG
     )
     state = env.reset(jax.random.PRNGKey(0))
     # Acquire contact before measuring the task-owned frozen coordinate map.
@@ -342,9 +342,9 @@ def _realization_geometry_routes():
 
 
 def _controllability_geometry_routes():
-    env, solver = make_mdac(
+    env, solver = make_mga(
         ARM_TASK,
-        "mdac_controllable",
+        "mga_controllable",
         level="cylinder",
         env_overrides={
             "realization_probe_horizon": 5,
@@ -368,7 +368,7 @@ def _controllability_geometry_routes():
     reliability = env.geometry_reliability(state)
     gate_zero = prepared.replace(info={
         **prepared.info,
-        "_mdac_realization_gate": jnp.zeros((2,), dtype=dense.dtype),
+        "_mga_realization_gate": jnp.zeros((2,), dtype=dense.dtype),
     })
     gated_residual = env.manifold_residual_horizon_controllable(
         gate_zero, dense, 10.0
@@ -408,14 +408,14 @@ def _plan(env, sol, rng):
 
 def _ablations_active():
     rng = jax.random.PRNGKey(0)
-    env0, full = make_mdac(ARM_TASK, "mdac", level="bumpy", **CFG)
+    env0, full = make_mga(ARM_TASK, "mga_base", level="bumpy", **CFG)
     base = _plan(env0, full, rng)
     ok = True
-    for m in ("mdac_no_softfeas", "mdac_no_stiffness", "mdac_no_tangent"):
-        e, s = make_mdac(ARM_TASK, m, level="bumpy", **CFG)
+    for m in ("mga_no_softfeas", "mga_no_stiffness", "mga_no_tangent"):
+        e, s = make_mga(ARM_TASK, m, level="bumpy", **CFG)
         d = float(np.max(np.abs(_plan(e, s, rng) - base)))
         ok &= d > 1e-4
-        print(f"  mdac vs {m}: max|Δplan|={d:.3e} -> {'ACTIVE' if d > 1e-4 else 'NO-OP!'}")
+        print(f"  mga vs {m}: max|Δplan|={d:.3e} -> {'ACTIVE' if d > 1e-4 else 'NO-OP!'}")
     return ok
 
 

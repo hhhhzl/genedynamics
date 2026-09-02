@@ -67,7 +67,9 @@ def render_result(
         **(config.get("env_params") or {}),
         "_experiment_seed": int(result["seed"]),
         "_controller_method": method_params.get(
-            "controller_method", config.get("method", "mdac")
+            "controller_method",
+            "mga_controllable_gate" if config.get("method") == "mga"
+            else config.get("method", "mga_controllable_gate"),
         ),
         "_execution_env_params": config.get("execution_env_params") or {},
     })

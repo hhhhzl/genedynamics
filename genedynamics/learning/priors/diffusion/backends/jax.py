@@ -5,7 +5,7 @@ flattened control sequences. Exposes `score(x, t)` for the transport `score_g`
 seam (`S_hat = omega_mb S_mb + omega_mf s_theta`) and `warm_start`
 via a few ancestral-sampling steps. Pure JAX (no brax) — testable on fedguide.
 
-Minimal by design: MDAC's minimal config sets `omega_mf = 0` (s_theta off), so
+Minimal by design: MGA's minimal config sets `omega_mf = 0` (s_theta off), so
 this is the optional full-path component; it is built strictly AFTER elite
 collection from a minimal RL prior.
 """

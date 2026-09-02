@@ -12,8 +12,8 @@ log-Euclidean chart `K_h = exp(S_h)`, `S_h` symmetric, so that
 
 This lives in `genedynamics/core/control/` (not inside any solver) because the
 primitive is reusable by ANY env (an impedance `act2impedance` law) and ANY
-solver (MDAC samples it; others may too). The MDAC solver imports it; it is not
-MDAC-private.
+solver (MGA samples it; others may too). The MGA solver imports it; it is not
+MGA-private.
 
 `PrimitiveSpec.total_width` is the SINGLE coupling point that widens a sampler's
 `action_size`: an env that opts into the impedance primitive reports

@@ -38,12 +38,12 @@ Deploy configs: `configs/quadruped/stepping_stones_2d/deploy/*.yaml`.
 ### arm/
 
 The formal contact-control experiments are orchestrated from
-`scripts/paper/mdac/`; task directories retain training utilities only.
+`scripts/paper/mga/`; task directories retain training utilities only.
 
 | Script | Purpose |
 |--------|---------|
 | `train_rl_baseline.py --config <formal-base.yaml>` | Train the shared PPO or ATACOM policy from the frozen `metadata.training.rl` contract |
-| `train_mdac_reliability.py` | Fit the frozen reliability model from development-only result splits |
+| `train_mga_reliability.py` | Fit the frozen reliability model from development-only result splits |
 
 Formal configs live in `configs/arm/{surface_scan,peg_insert}` and run through
 `python -m genedynamics.experiments.runner`. Saved trajectories are rendered by

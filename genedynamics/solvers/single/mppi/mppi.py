@@ -183,7 +183,7 @@ class MPPISolver(SamplingSolver):
         return Trajectory(states=states_list, actions=actions_list, info=result)
 
     # --- brax-native receding-horizon path (arm / box-push comparison) ---
-    # On a brax env, MPPI runs through the SAME shared bridge as DIAL/MDAC using the
+    # On a brax env, MPPI runs through the SAME shared bridge as DIAL/MGA using the
     # path-integral backend (backends/mppi_brax_jax.py), warm-started across steps.
     def _get_brax_backend_impl(self):
         if self._brax_backend_impl is None:

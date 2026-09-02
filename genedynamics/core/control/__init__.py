@@ -1,7 +1,7 @@
 """Upstream control-action primitives (solver-agnostic).
 
 Currently the position-stiffness primitive `u=(r,K,nu)` with the log-Euclidean
-SPD chart `K=exp(S)` — reusable by any env (impedance law) or solver (MDAC and
+SPD chart `K=exp(S)` — reusable by any env (impedance law) or solver (MGA and
 beyond). See `stiffness.py`.
 """
 

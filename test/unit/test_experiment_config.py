@@ -21,7 +21,7 @@ def test_yaml_base_and_named_suite_resolution(tmp_path: Path):
 name: contact
 output_dir: results/contact
 env_name: manipulator_surface_scan
-method: mdac
+method: mga
 env_params: {dt: 0.02, medium: rigid}
 execution_env_params: {sensor_delay_steps: 0}
 method_params: {Nsample: 64, Hsample: 16, nested: {a: 1}}
@@ -37,16 +37,16 @@ suites:
 """,
     )
     child = _write(
-        tmp_path / "full_mdac.yaml",
+        tmp_path / "mga.yaml",
         """
 base: _base.yaml
-name: full_mdac
+name: mga
 method_params: {Nsample: 64}
 """,
     )
 
     cfg = ExperimentConfig.from_yaml(child)
-    assert cfg.name == "full_mdac"
+    assert cfg.name == "mga"
     assert cfg.seeds == [10, 11]
     assert cfg.validate() == []
 
@@ -257,31 +257,31 @@ def test_development_root_mirrors_canonical_output_and_marks_provenance(
 @pytest.mark.parametrize(
     "filename,controller_method,component",
     [
-        ("no_controllability_geometry.yaml", "mdac_component_gate",
+        ("no_controllability_geometry.yaml", "mga_component_gate",
          "use_controllability_geometry"),
-        ("no_retraction.yaml", "mdac_controllable_no_retraction",
+        ("no_retraction.yaml", "mga_controllable_no_retraction",
          "use_retraction"),
-        ("no_stiffness.yaml", "mdac_controllable_no_stiffness",
+        ("no_stiffness.yaml", "mga_controllable_no_stiffness",
          "use_stiffness"),
         ("fixed_or_euclidean_stiffness.yaml",
-         "mdac_controllable_euclid_stiffness", "log_spd_stiffness"),
+         "mga_controllable_euclid_stiffness", "log_spd_stiffness"),
     ],
 )
 def test_surface_ablation_inherits_full_contract_and_changes_one_component(
     filename: str, controller_method: str, component: str,
 ):
-    from genedynamics.solvers.single.mdac.core.method_registry import (
+    from genedynamics.solvers.single.mga.core.method_registry import (
         diff_flags,
         resolve_method,
     )
 
     full = ExperimentConfig.from_yaml(
-        ROOT / "configs/arm/surface_scan/main/full_mdac.yaml"
+        ROOT / "configs/arm/surface_scan/main/mga.yaml"
     )
     ablation = ExperimentConfig.from_yaml(
         ROOT / "configs/arm/surface_scan/ablation" / filename
     )
-    assert ablation.method == "full_mdac"
+    assert ablation.method == "mga"
     assert ablation.seeds == full.seeds
     assert ablation.suites == full.suites
     assert ablation.n_steps == full.n_steps
@@ -293,18 +293,18 @@ def test_surface_ablation_inherits_full_contract_and_changes_one_component(
         resolve_method(full.method_params["controller_method"]),
         resolve_method(controller_method),
     ) == (component,)
-    assert ablation.metadata["ablation_of"] == "full_mdac"
+    assert ablation.metadata["ablation_of"] == "mga"
     assert ablation.metadata["ablated_component"] == component
 
 
 def test_peg_ablation_configs_change_only_the_named_component():
-    from genedynamics.solvers.single.mdac.core.method_registry import (
+    from genedynamics.solvers.single.mga.core.method_registry import (
         diff_flags,
         resolve_method,
     )
 
     full = ExperimentConfig.from_yaml(
-        ROOT / "configs/arm/peg_insert/main/full_mdac.yaml"
+        ROOT / "configs/arm/peg_insert/main/mga.yaml"
     )
     no_prior = ExperimentConfig.from_yaml(
         ROOT / "configs/arm/peg_insert/ablation/no_rl_prior.yaml"
@@ -313,7 +313,7 @@ def test_peg_ablation_configs_change_only_the_named_component():
         ROOT / "configs/arm/peg_insert/ablation/no_learned_reliability.yaml"
     )
     for ablation in (no_prior, no_reliability):
-        assert ablation.method == "full_mdac"
+        assert ablation.method == "mga"
         assert ablation.seeds == full.seeds
         assert ablation.suites == full.suites
         assert ablation.n_steps == full.n_steps
@@ -324,7 +324,7 @@ def test_peg_ablation_configs_change_only_the_named_component():
             key: full.method_params[key]
             for key in ("Nsample", "Hsample", "Hnode", "Ndiffuse", "Ndiffuse_init")
         }
-        assert ablation.metadata["ablation_of"] == "full_mdac"
+        assert ablation.metadata["ablation_of"] == "mga"
 
     assert diff_flags(
         resolve_method(full.method_params["controller_method"]),

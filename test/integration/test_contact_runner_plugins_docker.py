@@ -13,7 +13,7 @@ from genedynamics.experiments.plugins.environments import (
 from genedynamics.experiments.plugins.methods import (
     ATACOMContactMethodPlugin,
     DIALContactMethodPlugin,
-    FullMDACMethodPlugin,
+    MGAMethodPlugin,
     ISSAContactMethodPlugin,
     ModelBasedOnlyMethodPlugin,
     MPPIContactMethodPlugin,
@@ -127,7 +127,7 @@ def test_all_eight_algorithm_plugins_are_independently_registered(tmp_path):
     register_all_plugins(runner)
     names = set(runner.registry.list_plugins("method"))
     assert {
-        "full_mdac", "model_based_only", "standalone_rl", "dial", "mppi",
+        "mga", "model_based_only", "standalone_rl", "dial", "mppi",
         "pegasusflow", "issa", "atacom",
     }.issubset(names)
 
@@ -137,7 +137,7 @@ def test_runner_dry_run_supports_isolated_multi_seed_multi_suite(
 ):
     monkeypatch.setattr("sys.argv", [
         "runner",
-        str(ROOT / "configs/arm/surface_scan/main/full_mdac.yaml"),
+        str(ROOT / "configs/arm/surface_scan/main/mga.yaml"),
         "--development-root", str(tmp_path / "p7"),
         "--seeds", "0", "1",
         "--suites", "rigid_convex", "soft_convex",
@@ -147,18 +147,18 @@ def test_runner_dry_run_supports_isolated_multi_seed_multi_suite(
     output = capsys.readouterr().out
     assert "Suites: ['rigid_convex', 'soft_convex']" in output
     assert "Seeds: [0, 1]" in output
-    assert str(tmp_path / "p7/results/arm/surface_scan/main/full_mdac") in output
+    assert str(tmp_path / "p7/results/arm/surface_scan/main/mga") in output
     assert "Run class: development" in output
 
 
 @pytest.mark.parametrize(
     "filename,controller_method,stiffness_mode",
     [
-        ("no_controllability_geometry.yaml", "mdac_component_gate", "log_spd"),
-        ("no_retraction.yaml", "mdac_controllable_no_retraction", "log_spd"),
-        ("no_stiffness.yaml", "mdac_controllable_no_stiffness", "none"),
+        ("no_controllability_geometry.yaml", "mga_component_gate", "log_spd"),
+        ("no_retraction.yaml", "mga_controllable_no_retraction", "log_spd"),
+        ("no_stiffness.yaml", "mga_controllable_no_stiffness", "none"),
         ("fixed_or_euclidean_stiffness.yaml",
-         "mdac_controllable_euclid_stiffness", "euclid"),
+         "mga_controllable_euclid_stiffness", "euclid"),
     ],
 )
 def test_surface_ablation_yaml_dispatches_controller_and_stiffness_chart(
@@ -186,7 +186,7 @@ def test_surface_ablation_yaml_dispatches_controller_and_stiffness_chart(
         _experiment_task = "manipulator_surface_scan"
         _experiment_execution_env = None
 
-    planner = FullMDACMethodPlugin().create_planner(
+    planner = MGAMethodPlugin().create_planner(
         Env(), None, {
             **cfg.method_params,
             "task": cfg.env_name,
@@ -201,23 +201,23 @@ def test_surface_ablation_yaml_dispatches_controller_and_stiffness_chart(
     })["stiffness_mode"] == stiffness_mode
 
 
-def test_full_mdac_rejects_missing_learned_component_contract():
+def test_mga_rejects_missing_learned_component_contract():
     class Env:
         _experiment_task = "manipulator_peg_insert"
 
     with pytest.raises(ValueError, match="frozen learned components"):
-        FullMDACMethodPlugin().create_planner(
+        MGAMethodPlugin().create_planner(
             Env(), None,
             {"task": "manipulator_peg_insert",
-             "controller_method": "mdac_controllable_gate"},
+             "controller_method": "mga_controllable_gate"},
         )
 
 
 @pytest.mark.parametrize(
     "filename,controller_method,learned_reliability",
     [
-        ("no_rl_prior.yaml", "mdac_controllable_gate_no_rl_prior", True),
-        ("no_learned_reliability.yaml", "mdac_controllable_gate", False),
+        ("no_rl_prior.yaml", "mga_controllable_gate_no_rl_prior", True),
+        ("no_learned_reliability.yaml", "mga_controllable_gate", False),
     ],
 )
 def test_peg_ablation_yaml_dispatches_exact_component_contract(
@@ -241,7 +241,7 @@ def test_peg_ablation_yaml_dispatches_exact_component_contract(
         _experiment_task = "manipulator_peg_insert"
         _experiment_execution_env = None
 
-    planner = FullMDACMethodPlugin().create_planner(
+    planner = MGAMethodPlugin().create_planner(
         Env(), None, {
             **cfg.method_params,
             "task": cfg.env_name,
@@ -253,7 +253,7 @@ def test_peg_ablation_yaml_dispatches_exact_component_contract(
     assert planner.component_contract["learned_reliability"] is learned_reliability
     assert (
         planner.component_contract["policy_ckpt"] is not None
-    ) is planner.component_contract["mdac_flags"]["use_rl_prior"]
+    ) is planner.component_contract["mga_flags"]["use_rl_prior"]
     assert (
         planner.component_contract["reliability_ckpt"] is not None
     ) is learned_reliability
@@ -262,8 +262,8 @@ def test_peg_ablation_yaml_dispatches_exact_component_contract(
 @pytest.mark.parametrize(
     "plugin,controller_method",
     [
-        (FullMDACMethodPlugin, "mdac"),
-        (ModelBasedOnlyMethodPlugin, "mdac_controllable"),
+        (MGAMethodPlugin, "mga_controllable_gate"),
+        (ModelBasedOnlyMethodPlugin, "mga_controllable"),
         (DIALContactMethodPlugin, "dial"),
         (MPPIContactMethodPlugin, "mppi"),
         (PegasusFlowContactMethodPlugin, "pegasusflow"),
@@ -290,7 +290,7 @@ def test_each_contact_plugin_dispatches_its_own_controller(
         fake_make_controller,
     )
     config = {"task": "manipulator_peg_insert", "n_steps": 1}
-    if plugin is FullMDACMethodPlugin:
+    if plugin is MGAMethodPlugin:
         config.update(policy_ckpt="policy.pkl", reliability_ckpt="reliability.json")
     planner = plugin().create_planner(Env(), None, config)
     assert planner.controller_method == controller_method
@@ -300,7 +300,7 @@ def test_each_contact_plugin_dispatches_its_own_controller(
 
 def test_h1_suite_checkpoint_resolution_and_truthful_components(monkeypatch):
     cfg = ExperimentConfig.from_yaml(
-        ROOT / "configs/humanoid/push_to_line/main/full_mdac.yaml"
+        ROOT / "configs/humanoid/push_to_line/main/mga.yaml"
     )
     captured = {}
 
@@ -317,7 +317,7 @@ def test_h1_suite_checkpoint_resolution_and_truthful_components(monkeypatch):
         _experiment_task = "humanoid_box_push"
         _experiment_execution_env = None
 
-    planner = FullMDACMethodPlugin().create_planner(Env(), None, {
+    planner = MGAMethodPlugin().create_planner(Env(), None, {
         **cfg.method_params, "task": cfg.env_name, "suite": "p4_walk_push",
     })
     assert planner.component_contract["policy_ckpt"].endswith(
@@ -328,7 +328,7 @@ def test_h1_suite_checkpoint_resolution_and_truthful_components(monkeypatch):
 
     mbo = ModelBasedOnlyMethodPlugin().create_planner(Env(), None, {
         "task": cfg.env_name, "suite": "p4_walk_push",
-        "controller_method": "mdac_controllable",
+        "controller_method": "mga_controllable",
     })
     assert mbo.component_contract["rl_prior"] is False
     assert mbo.component_contract["learned_reliability"] is False
@@ -387,9 +387,9 @@ def test_unified_runner_executes_and_saves_one_contact_step(
 @pytest.mark.requires_jax
 @pytest.mark.requires_brax
 @pytest.mark.slow
-def test_full_mdac_result_persists_receding_diagnostics(tmp_path):
+def test_mga_result_persists_receding_diagnostics(tmp_path):
     cfg = ExperimentConfig.from_yaml(
-        ROOT / "configs/arm/peg_insert/main/full_mdac.yaml"
+        ROOT / "configs/arm/peg_insert/main/mga.yaml"
     )
     cfg.output_dir = tmp_path
     cfg.seeds = [0]
@@ -419,7 +419,7 @@ def test_full_mdac_result_persists_receding_diagnostics(tmp_path):
     "p1_force_15n", "p3_unjam", "p4_walk_push",
 ])
 @pytest.mark.parametrize("config_path", [
-    "configs/humanoid/push_to_line/main/full_mdac.yaml",
+    "configs/humanoid/push_to_line/main/mga.yaml",
     "configs/humanoid/push_to_line/baseline/model_based_only.yaml",
     "configs/humanoid/push_to_line/baseline/standalone_rl.yaml",
     "configs/humanoid/push_to_line/baseline/dial.yaml",

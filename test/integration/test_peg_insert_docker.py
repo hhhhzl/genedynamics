@@ -1,7 +1,7 @@
 """P0--P4 acceptance gates for the single-arm MuJoCo/MJX PegInsert task.
 
 This is the only probe entry point for insertion.  It deliberately uses no
-probe YAMLs: task physics, impedance, MDAC hooks, hidden execution mismatch,
+probe YAMLs: task physics, impedance, MGA hooks, hidden execution mismatch,
 metrics, and the canonical algorithm configs are validated in one place.
 """
 
@@ -19,7 +19,7 @@ from genedynamics.solvers.common.receding_horizon import RecedingHorizonResult
 from genedynamics.experiments.plugins.methods.contact_receding import (
     INSERT_TASK,
     make_controller,
-    make_mdac,
+    make_mga,
 )
 from genedynamics.experiments.framework.config import ExperimentConfig
 
@@ -183,10 +183,10 @@ def _p1_impedance_and_recovery():
     return ok, recovery_states
 
 
-def _p2_mdac_geometry(recovery_states):
-    env, solver = make_mdac(
+def _p2_mga_geometry(recovery_states):
+    env, solver = make_mga(
         INSERT_TASK,
-        "mdac_controllable_gate",
+        "mga_controllable_gate",
         level="wide",
         env_overrides={"realization_probe_horizon": 1},
         prior_fallback_mode="receding_incumbent",
@@ -196,7 +196,7 @@ def _p2_mdac_geometry(recovery_states):
     nodes = jnp.zeros((SMALL["Hnode"] + 1, env.action_size))
     dense = solver._get_backend_impl().spline.node2u(nodes)
     prepared = env.prepare_realization_context(state, dense)
-    B = np.asarray(prepared.info["_mdac_realization_B"])
+    B = np.asarray(prepared.info["_mga_realization_B"])
     residual = env.manifold_residual_horizon_controllable(prepared, dense, 0.0)
     geometry = solver.geometry_fn(prepared, nodes, 0.0)
     h_soft, g_soft = env.soft_feasibility_residual(state, nodes[0])
@@ -231,7 +231,7 @@ def _p2_mdac_geometry(recovery_states):
     loaded_emergency = env.emergency_plan(loaded_state, nodes, 0.0)
     loaded_delta, _, _ = env._unpack(loaded_emergency[0])
     out_of_range = jnp.full_like(nodes, 2.0)
-    stable_projection = env.project_mdac_candidate(state, out_of_range)
+    stable_projection = env.project_mga_candidate(state, out_of_range)
     dropout_state = state.replace(info={
         **state.info,
         "step": jnp.int32(env._config.realization_probe_horizon),
@@ -239,7 +239,7 @@ def _p2_mdac_geometry(recovery_states):
         "contact_count": jnp.float32(0.0),
         "contact_volatility": jnp.float32(1.0),
     })
-    dropout_projection = env.project_mdac_candidate(
+    dropout_projection = env.project_mga_candidate(
         dropout_state, out_of_range
     )
     reentry_state = dropout_state.replace(info={
@@ -247,7 +247,7 @@ def _p2_mdac_geometry(recovery_states):
         "contact_count": jnp.float32(4.0),
         "contact_count_delta": jnp.float32(4.0),
     })
-    reentry_projection = env.project_mdac_candidate(
+    reentry_projection = env.project_mga_candidate(
         reentry_state, out_of_range
     )
     partial_release_state = reentry_state.replace(info={
@@ -255,20 +255,20 @@ def _p2_mdac_geometry(recovery_states):
         "contact_count": jnp.float32(4.0),
         "contact_count_delta": jnp.float32(-4.0),
     })
-    partial_release_projection = env.project_mdac_candidate(
+    partial_release_projection = env.project_mga_candidate(
         partial_release_state, out_of_range
     )
     stable_contact_state = reentry_state.replace(info={
         **reentry_state.info, "contact_count_delta": jnp.float32(0.0)
     })
-    stable_contact_projection = env.project_mdac_candidate(
+    stable_contact_projection = env.project_mga_candidate(
         stable_contact_state, out_of_range
     )
     shallow_switch_state = dropout_state.replace(info={
         **dropout_state.info,
         "prev_depth": jnp.float32(env._config.chamfer_depth),
     })
-    shallow_switch_projection = env.project_mdac_candidate(
+    shallow_switch_projection = env.project_mga_candidate(
         shallow_switch_state, out_of_range
     )
     projection_contract = (
@@ -358,11 +358,11 @@ def _p2_mdac_geometry(recovery_states):
     # The backend owns hooks from the nominal model env but passes the real
     # execution state.  Verify that delay metadata therefore crosses that
     # model/execution boundary instead of being read from ``env._config``.
-    delayed_memory_projection = env.project_mdac_candidate(
+    delayed_memory_projection = env.project_mga_candidate(
         delayed_memory_state, out_of_range
     )
     delayed_retract = out_of_range.at[0, 2].set(-0.25)
-    delayed_retract_projection = env.project_mdac_candidate(
+    delayed_retract_projection = env.project_mga_candidate(
         delayed_memory_state, delayed_retract
     )
     # A node submitted under action delay executes only after the commands
@@ -379,7 +379,7 @@ def _p2_mdac_geometry(recovery_states):
         "command_pose": capture_command,
     })
     capture_nodes = jnp.ones_like(nodes)
-    capture_projection = delayed.project_mdac_candidate(
+    capture_projection = delayed.project_mga_candidate(
         capture_state, capture_nodes
     )
     capture_pose, _ = delayed._actual_pose(capture_state.pipeline_state)
@@ -587,9 +587,9 @@ def _p3_hidden_execution():
     se1 = jax.jit(execution.step)(se, action)
     delayed = float(se1.info["command_pose"][2]) < float(sn1.info["command_pose"][2]) - 1.0e-5
 
-    _, solver = make_mdac(
+    _, solver = make_mga(
         INSERT_TASK,
-        "mdac_controllable_gate",
+        "mga_controllable_gate",
         level="wide",
         env_overrides={"realization_probe_horizon": 1},
         execution_env_overrides={
@@ -643,22 +643,22 @@ def _p3_hidden_execution():
 
 def _p4_algorithms_metrics():
     root = Path("configs/arm/peg_insert")
-    paths = [root / "main/full_mdac.yaml", *sorted((root / "baseline").glob("*.yaml"))]
+    paths = [root / "main/mga.yaml", *sorted((root / "baseline").glob("*.yaml"))]
     configs = [ExperimentConfig.from_yaml(path) for path in paths]
     names = {cfg.name for cfg in configs}
     suites = {suite["name"] for suite in configs[0].suites}
     config_ok = names == {
         "dial", "mppi", "pegasusflow", "issa", "atacom",
-        "standalone_rl", "model_based_only", "full_mdac",
+        "standalone_rl", "model_based_only", "mga",
     } and suites == {
         "id_wide", "ood_pose", "ood_sensing"
     } and len(configs) == 8
     for cfg in configs:
         uses_policy = cfg.name in {
-            "issa", "atacom", "standalone_rl", "full_mdac",
+            "issa", "atacom", "standalone_rl", "mga",
         }
         config_ok = config_ok and (("policy_ckpt" in cfg.method_params) == uses_policy)
-    full = next(cfg for cfg in configs if cfg.name == "full_mdac")
+    full = next(cfg for cfg in configs if cfg.name == "mga")
     config_ok = config_ok and "atacom_policy_ckpt" not in full.method_params
     config_ok = config_ok and full.method_params["prior_stochastic_samples"] == 8
     config_ok = config_ok and full.method_params["prior_atacom_samples"] == 0
@@ -666,7 +666,7 @@ def _p4_algorithms_metrics():
     config_ok = config_ok and full.metadata["training"]["rl"]["num_timesteps"] == 200000
 
     plans = {}
-    for method in ("dial", "mppi", "mdac_controllable_gate"):
+    for method in ("dial", "mppi", "mga_controllable_gate"):
         env, solver = make_controller(
             INSERT_TASK,
             method,
@@ -723,7 +723,7 @@ def _p4_algorithms_metrics():
 def main():
     p0 = _p0_physics()
     p1, recovery_states = _p1_impedance_and_recovery()
-    p2 = _p2_mdac_geometry(recovery_states)
+    p2 = _p2_mga_geometry(recovery_states)
     p3 = _p3_hidden_execution()
     p4 = _p4_algorithms_metrics()
     ok = p0 and p1 and p2 and p3 and p4

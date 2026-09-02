@@ -17,7 +17,7 @@ matrices
 
 built by applying the reference jax_cosmo spline to each basis vector. The
 cached matrices make the per-node constraint Jacobian chaining (needed later by
-MDAC) trivial and avoid re-fitting a spline inside the diffusion scan. We keep
+MGA) trivial and avoid re-fitting a spline inside the diffusion scan. We keep
 jax_cosmo only as the build-time/parity oracle, exactly as planned (the hot path
 is a single matmul).
 

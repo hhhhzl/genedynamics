@@ -1,7 +1,7 @@
-"""Unified-runner adapters for the three MDAC contact tasks.
+"""Unified-runner adapters for the three MGA contact tasks.
 
 The adapters contain no physics.  They resolve the same environment kwargs as
-the existing MDAC controller factory and delegate construction to
+the existing MGA controller factory and delegate construction to
 ``genedynamics.envs.factories.make_env``.
 """
 
@@ -13,8 +13,9 @@ import numpy as np
 
 from genedynamics.envs.factories import make_env
 from genedynamics.experiments.framework.base import EnvironmentPlugin
-from genedynamics.solvers.single.mdac.core.method_registry import (
+from genedynamics.solvers.single.mga.core.method_registry import (
     METHOD_TABLE,
+    canonical_method_name,
     resolve_method,
 )
 
@@ -24,7 +25,7 @@ INSERT_TASK = "manipulator_peg_insert"
 
 
 def stiffness_mode_for(method: str, flags: Any) -> str:
-    """Map an MDAC method contract to the task's stiffness chart."""
+    """Map an MGA method contract to the task's stiffness chart."""
     if not flags.use_stiffness:
         return "none"
     if flags.log_spd_stiffness:
@@ -40,7 +41,9 @@ _PRIVATE_KEYS = {
 
 
 def _env_kwargs(task: str, config: Dict[str, Any]) -> Dict[str, Any]:
-    method = str(config.get("_controller_method", "mdac"))
+    method = canonical_method_name(
+        config.get("_controller_method", "mga_controllable_gate")
+    )
     seed = int(config.get("_experiment_seed", 0))
     kwargs = {k: v for k, v in config.items() if k not in _PRIVATE_KEYS}
     if method in METHOD_TABLE:
@@ -89,8 +92,8 @@ class ContactTaskEnvironmentPlugin(EnvironmentPlugin):
                 raise ValueError("model/execution environment observation mismatch")
         env._experiment_execution_env = execution_env
         env._experiment_task = self.task
-        env._experiment_controller_method = str(
-            config.get("_controller_method", "mdac")
+        env._experiment_controller_method = canonical_method_name(
+            config.get("_controller_method", "mga_controllable_gate")
         )
         return env
 

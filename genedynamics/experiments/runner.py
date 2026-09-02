@@ -87,7 +87,7 @@ from genedynamics.experiments.plugins import (
     ManipulatorSurfaceScanPlugin,
     ManipulatorPegInsertPlugin,
     HumanoidBoxPushPlugin,
-    FullMDACMethodPlugin,
+    MGAMethodPlugin,
     ModelBasedOnlyMethodPlugin,
     DIALContactMethodPlugin,
     PegasusFlowContactMethodPlugin,
@@ -284,7 +284,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(CFSMBDMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDFullMethodPlugin(), 'method')
     runner.register_plugin(MPPIMethodPlugin(), 'method')
-    runner.register_plugin(FullMDACMethodPlugin(), 'method')
+    runner.register_plugin(MGAMethodPlugin(), 'method')
     runner.register_plugin(ModelBasedOnlyMethodPlugin(), 'method')
     runner.register_plugin(DIALContactMethodPlugin(), 'method')
     runner.register_plugin(PegasusFlowContactMethodPlugin(), 'method')

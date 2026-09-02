@@ -26,6 +26,14 @@ _CONTACT_TASKS = {
     "humanoid_box_push",
 }
 
+# Result trees produced before the public algorithm rename remain immutable.
+# Canonicalize only while reading them so old evidence can still be summarized
+# together with new MGA runs without rewriting provenance on disk.
+_LEGACY_RESULT_ALIASES = {
+    "full_mdac": "mga",
+    "model_based_mdac": "model_based_only",
+}
+
 
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -96,7 +104,7 @@ def _audit_checkpoint_lock(
                 f"{reference_path}: {name} has invalid training_budget"
             )
 
-    full = next((cfg for _, cfg in task_records if cfg.name == "full_mdac"), None)
+    full = next((cfg for _, cfg in task_records if cfg.name == "mga"), None)
     standalone = next(
         (cfg for _, cfg in task_records if cfg.name == "standalone_rl"), None
     )
@@ -111,7 +119,7 @@ def _audit_checkpoint_lock(
         )
         if full_policy != standalone_policy:
             errors.append(
-                f"{task}: Full MDAC and standalone RL do not share one checkpoint"
+                f"{task}: MGA and standalone RL do not share one checkpoint"
             )
 
     if task == "humanoid_box_push":
@@ -120,7 +128,7 @@ def _audit_checkpoint_lock(
             for name, entry in lock.items()
         }
         required_names = {
-            "full_mdac", "model_based_only", "standalone_rl", "dial",
+            "mga", "model_based_only", "standalone_rl", "dial",
             "mppi", "pegasusflow", "issa", "atacom",
             "no_rl_prior", "no_learned_reliability", "no_tangent",
             "no_retraction", "no_stiffness",
@@ -274,7 +282,7 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
     for task, task_records in by_task.items():
         reference = task_records[0][1]
         full_cfg = next(
-            (cfg for _, cfg in task_records if cfg.name == "full_mdac"), None
+            (cfg for _, cfg in task_records if cfg.name == "mga"), None
         )
         ref_protocol = {
             "seeds": reference.seeds,
@@ -297,13 +305,13 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
                 errors.append(f"{path}: paired protocol differs from {task_records[0][0]}")
             controller = cfg.method_params.get("controller_method", cfg.method)
             if cfg.method in {"mppi", "pegasusflow", "issa", "atacom", "standalone_rl"}:
-                if controller.startswith("mdac") or controller == "dial":
+                if controller.startswith("mga") or controller == "dial":
                     errors.append(f"{path}: baseline routes through {controller!r}")
             ablated = (cfg.metadata or {}).get("ablated_component")
             if ablated and full_cfg is not None and ablated not in {
                 "learned_reliability",
             }:
-                from genedynamics.solvers.single.mdac.core.method_registry import (
+                from genedynamics.solvers.single.mga.core.method_registry import (
                     METHOD_TABLE, diff_flags, resolve_method,
                 )
                 full_controller = str(full_cfg.method_params.get(
@@ -388,10 +396,16 @@ def collect_results(roots: Sequence[str]) -> List[Dict[str, Any]]:
             with open(path) as handle:
                 data = json.load(handle)
             parts = path.parts
-            algorithm = path.parents[2].name if path.parents[1].name.startswith("level_") else path.parents[2].name
+            raw_algorithm = (
+                path.parents[2].name
+                if path.parents[1].name.startswith("level_")
+                else path.parents[2].name
+            )
+            algorithm = _LEGACY_RESULT_ALIASES.get(raw_algorithm, raw_algorithm)
             record = {
                 "path": str(path),
                 "algorithm": algorithm,
+                "raw_algorithm": raw_algorithm,
                 "suite": str(data.get("suite", data.get("level"))),
                 "seed": int(data["seed"]),
                 "metrics": data.get("metrics") or {},
@@ -423,10 +437,10 @@ def summarize_results(roots: Sequence[str], output_dir: str) -> Dict[str, Any]:
     lookup = {
         key: dict(pairs) for key, pairs in groups.items()
     }
-    full_keys = [key for key in lookup if key[0] == "full_mdac"]
-    algorithms = sorted({key[0] for key in lookup if key[0] != "full_mdac"})
+    full_keys = [key for key in lookup if key[0] == "mga"]
+    algorithms = sorted({key[0] for key in lookup if key[0] != "mga"})
     for _, suite, metric in full_keys:
-        full = lookup[("full_mdac", suite, metric)]
+        full = lookup[("mga", suite, metric)]
         for algorithm in algorithms:
             other = lookup.get((algorithm, suite, metric), {})
             seeds = sorted(set(full).intersection(other))
@@ -435,7 +449,7 @@ def summarize_results(roots: Sequence[str], output_dir: str) -> Dict[str, Any]:
             delta = np.asarray([full[s] - other[s] for s in seeds], dtype=float)
             low, high = _bootstrap_mean(delta)
             paired.append({
-                "reference": "full_mdac", "algorithm": algorithm,
+                "reference": "mga", "algorithm": algorithm,
                 "suite": suite, "metric": metric, "n_pairs": len(seeds),
                 "mean_paired_delta": float(delta.mean()),
                 "ci95_low": low, "ci95_high": high,

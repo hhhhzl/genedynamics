@@ -1,4 +1,4 @@
-"""Calibrated, observable reliability model for the MDAC acceptance gate.
+"""Calibrated, observable reliability model for the MGA acceptance gate.
 
 The model deliberately stays small and CPU-friendly.  Surface scanning retains
 its standardized ridge + split-conformal contract exactly.  PegInsert uses
@@ -582,7 +582,7 @@ def samples_from_records(
     *,
     task: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]:
-    """Build transition samples from existing MDAC metric records.
+    """Build transition samples from existing MGA metric records.
 
     ``series[t]`` is the post-action state for ``actions[t]``.  Therefore row
     ``t`` uses post-state ``t-1`` and action ``t`` to predict post-state ``t``;

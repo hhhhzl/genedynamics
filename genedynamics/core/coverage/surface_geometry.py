@@ -3,7 +3,7 @@
 A surface is `p_s(ξ,η) ∈ R^3` with `(ξ,η)∈[0,1]^2` (idea.txt eq:exp_arm). The unit
 normal `n_s = (∂_ξ p × ∂_η p)/‖·‖` and the tangents are obtained by autodiff of
 `point` — so only the closed-form `point` is written per family; normals stay
-exact and differentiable (clean-state Jacobians for the MDAC `geometry_fn`).
+exact and differentiable (clean-state Jacobians for the MGA `geometry_fn`).
 
 Families:
   plane, cylinder, ellipsoid  (analytic)

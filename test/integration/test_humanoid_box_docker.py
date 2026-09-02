@@ -10,7 +10,7 @@ Validates the rebuilt contact-semantic primitive + π_low + full manifold:
   * face selection (H4): different j logits -> different contact target;
     fixed rear face for H1;
   * H2 domain randomization (hand friction / box frictionloss) varies across seeds;
-  * MDAC ablations (no_softfeas/no_stiffness/no_tangent) change the plan;
+  * MGA ablations (no_softfeas/no_stiffness/no_tangent) change the plan;
   * the metrics plugin rolls + computes the full Exp II metric set end-to-end.
 
 Invoke (from repo root):
@@ -27,7 +27,7 @@ import mujoco
 
 from genedynamics.envs.factories import make_env
 from genedynamics.experiments.plugins.methods.contact_receding import (
-    make_mdac, metrics_plugin_for, HUMANOID_TASK,
+    make_mga, metrics_plugin_for, HUMANOID_TASK,
 )
 
 CFG = dict(Hsample=8, Hnode=4, Nsample=64, Ndiffuse_init=3, Ndiffuse=2,
@@ -177,13 +177,13 @@ def _plan(env, sol, rng):
 
 def _ablations_active():
     rng = jax.random.PRNGKey(0)
-    env0, full = make_mdac(HUMANOID_TASK, "mdac", level="unjam", **CFG)
+    env0, full = make_mga(HUMANOID_TASK, "mga_base", level="unjam", **CFG)
     base = _plan(env0, full, rng)
     ok = True
-    for m in ("mdac_no_softfeas", "mdac_no_stiffness", "mdac_no_tangent"):
-        e, s = make_mdac(HUMANOID_TASK, m, level="unjam", **CFG)
+    for m in ("mga_no_softfeas", "mga_no_stiffness", "mga_no_tangent"):
+        e, s = make_mga(HUMANOID_TASK, m, level="unjam", **CFG)
         d = float(np.max(np.abs(_plan(e, s, rng) - base)))
-        if m == "mdac_no_tangent":
+        if m == "mga_no_tangent":
             # The zero plan is exactly on the clean stiffness/force manifold, so the final
             # stochastic plan delta can legitimately be tiny.  Test the actual operator on a
             # controlled off-manifold direction instead of classifying float32 noise as a no-op.
@@ -198,12 +198,12 @@ def _ablations_active():
             op_delta = float(jnp.max(jnp.abs(projected - a_geom)))
             active = (full.geometry_fn is not None and s.geometry_fn is None
                       and float(jnp.linalg.norm(a_geom)) > 1e-4 and op_delta > 1e-4)
-            print(f"  mdac vs {m}: max|Δplan|={d:.3e}, "
+            print(f"  mga vs {m}: max|Δplan|={d:.3e}, "
                   f"controlled projection Δ={op_delta:.3e} -> "
                   f"{'ACTIVE' if active else 'NO-OP!'}")
         else:
             active = d > 1e-4
-            print(f"  mdac vs {m}: max|Δplan|={d:.3e} -> "
+            print(f"  mga vs {m}: max|Δplan|={d:.3e} -> "
                   f"{'ACTIVE' if active else 'NO-OP!'}")
         ok &= active
     return ok

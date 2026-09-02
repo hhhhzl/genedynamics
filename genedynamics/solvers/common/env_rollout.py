@@ -3,8 +3,8 @@
 The brax-State path rolls ``env.step`` over a brax ``State`` and reads
 ``state.reward`` (dial-mpc ``MBDPI`` style; time / gait phase carried inside
 ``state.info`` by the env). Factoring it out of the DIAL backend lets MBD / MPPI
-/ CEM / MDAC run the *same* environment and reward and differ only in their
-reverse-diffusion update -- the fair-baseline setup for the MDAC experiments.
+/ CEM / MGA run the *same* environment and reward and differ only in their
+reverse-diffusion update -- the fair-baseline setup for the MGA experiments.
 
 Flat-state envs keep using ``DynamicsToEnvAdapter.jax_transition`` + a separate
 energy; this module only adds the brax-State option.

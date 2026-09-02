@@ -1,7 +1,7 @@
 """JAX (brax-native) backend for the MPPI baseline — path-integral sampling MPC.
 
 Mirrors ``dial/backends/dial_jax.py``: pulls config off the solver, builds the SAME brax
-rollout as DIAL/MDAC (``env_rollout.build_brax_rollout`` — real ``env.step`` + reward), and
+rollout as DIAL/MGA (``env_rollout.build_brax_rollout`` — real ``env.step`` + reward), and
 implements the ``WarmStartPlanner`` capability so it plugs into the shared
 ``RecedingHorizonController`` natively (warm-started, few iterations per real step).
 

@@ -16,7 +16,7 @@ from .twogo import TwoGOMethodPlugin
 from .contact_receding import (
     ATACOMContactMethodPlugin,
     DIALContactMethodPlugin,
-    FullMDACMethodPlugin,
+    MGAMethodPlugin,
     ISSAContactMethodPlugin,
     ModelBasedOnlyMethodPlugin,
     MPPIContactMethodPlugin,
@@ -46,7 +46,7 @@ __all__ = [
     'TwoGOMethodPlugin',
     'DPCCMethodPlugin',
     'SafeDiffuserMethodPlugin',
-    'FullMDACMethodPlugin',
+    'MGAMethodPlugin',
     'ModelBasedOnlyMethodPlugin',
     'DIALContactMethodPlugin',
     'MPPIContactMethodPlugin',

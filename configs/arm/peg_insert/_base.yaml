@@ -53,7 +53,7 @@ suites:
     execution_env_params: {level: wide, force_sensor_bias: [0.5, -0.5, 0.0], torque_sensor_bias: [0.02, -0.02, 0.01]}
 
 metadata:
-  protocol: mdac_peg_insert_formal_v1
+  protocol: mga_peg_insert_formal_v2
   formal_seeds: true
   narrative: contact_switch_and_safe_recovery
   expected_formal_task_runs: 300
@@ -81,6 +81,7 @@ metadata:
     reliability:
       path: results/arm/peg_insert_cpu/_policies/reliability_q95.json
       sha256: 54b7e822b05bb5cbcedc90ef379ffe85bcbb410b68a7d2922b0c05e94a9f14fa
+      # Provenance identifier embedded in this already-frozen artifact.
       protocol: mdac_peg_insert_reliability_v1
       training_seeds: [100, 101]
       calibration_seeds: [102]

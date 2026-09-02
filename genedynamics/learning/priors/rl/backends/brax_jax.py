@@ -106,7 +106,7 @@ class BraxRLPrior:
                     "n_warm_nodes must equal Hnode + 1 for horizon proposals"
                 )
             # On CPU, fusing the policy and the full MJX horizon into one XLA
-            # scan makes that executable coexist with MDAC's batched rollout
+            # scan makes that executable coexist with MGA's batched rollout
             # executable and can exceed the host memory limit.  Keep the exact
             # same closed-loop recurrence, but compile policy inference and one
             # dynamics step independently and reuse them from the Python loop.
@@ -192,7 +192,7 @@ class BraxRLPrior:
             return self._spline.u2node(dense_actions)
 
         # Compatibility path for policy-only tests and callers that do not own
-        # dynamics. Full MGA always supplies rollout_step.
+        # dynamics. MGA always supplies rollout_step.
         obs = self._obs_of(state, self._obs_key)
         a = self.act(obs, deterministic=True)
         return jnp.tile(a[None, :], (self.n_warm_nodes, 1))
@@ -211,7 +211,7 @@ class BraxRLPrior:
 
         # CPU deliberately reuses the same small batched policy/one-step MJX
         # executables at every horizon position.  This avoids fusing an extra
-        # policy x horizon x environment executable beside MDAC's rollout.
+        # policy x horizon x environment executable beside MGA's rollout.
         batch_state = jax.tree_util.tree_map(
             lambda x: jnp.broadcast_to(
                 jnp.asarray(x), (n_samples,) + jnp.asarray(x).shape

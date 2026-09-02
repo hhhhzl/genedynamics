@@ -86,7 +86,7 @@ suites:
   - {name: hybrid_center_soft, level: plane, env_params: {medium: hybrid, stiffness_map: center_soft, stiffness_map_xi_origin: 0.1, stiffness_map_xi_span: 0.0495, stiffness_transition_width: 0.08, k_hard: 8000.0, k_soft: 2000.0}}
 
 metadata:
-  protocol: mdac_surface_scan_formal_v1
+  protocol: mga_surface_scan_formal_v2
   formal_seeds: true
   narrative: geometry_and_compliance
   expected_formal_task_runs: 1160
@@ -114,6 +114,7 @@ metadata:
     reliability:
       path: results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json
       sha256: 359beaa65602a1acf8287f7cc491ba762b61ff527dba60e9e9d28fdc0bb0e2fe
+      # Provenance identifier embedded in this already-frozen artifact.
       protocol: mdac_surface_scan_reliability_v2
       training_seeds: [0]
       calibration_seeds: [1]

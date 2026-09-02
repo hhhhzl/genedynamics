@@ -2,7 +2,7 @@
 
 A 7-DoF Panda performs contact-rich scanning over a parametric surface. The env
 is a brax ``PipelineEnv`` (mjx) over the vendored mesh-free Panda
-(``assets/franka_panda/panda_arm.xml``), consuming the MDAC lower-control
+(``assets/franka_panda/panda_arm.xml``), consuming the MGA lower-control
 position-stiffness primitive
 
     u^arm = (Δξ, Δη, Δψ, S_h, F_n^d),   K_h = exp(S_h) ∈ S³₊₊  (3×3 translational)
@@ -261,12 +261,12 @@ class SurfaceScanConfig:
     # the shared RL prior; it deliberately excludes the simulator's exact
     # friction, stiffness, and medium label.
     observation_mode: str = "legacy"
-    # CLEAN manifold composition. Full MDAC includes commanded force; the
+    # CLEAN manifold composition. MGA includes commanded force; the
     # position-only diagnostic keeps only reliable surface coordinates.
     clean_manifold_force: bool = True
     # Realization-reliability gate. These are task parameters because their
     # signals (EE tracking, contact force, deformation) belong to this env; the
-    # MDAC backend only consumes the resulting action-space gate.
+    # MGA backend only consumes the resulting action-space gate.
     geometry_gate_floor: float = 0.02
     geometry_gate_path_scale: float = 0.02
     geometry_gate_normal_scale: float = 0.005
@@ -275,7 +275,7 @@ class SurfaceScanConfig:
     geometry_gate_eta_force: float = 2.0
     geometry_gate_eta_deformation: float = 1.0
     geometry_gate_eta_contact: float = 2.0
-    # Frozen local realization compensation used by the staged MDAC geometry.
+    # Frozen local realization compensation used by the staged MGA geometry.
     # The current real EE tracking bias is expressed in surface coordinates via
     # the analytic surface Jacobian and held fixed over one MPC horizon. The
     # hook is opt-in at the method layer; these values do not affect legacy runs.
@@ -296,7 +296,7 @@ class SurfaceScanConfig:
     # AL h_surf measures the TANGENTIAL deviation only (project out the normal penetration the
     # compliant contact naturally has) so soft-feasibility stops fighting the sink. Realized path
     # (reads pipeline_state) -> not clean-state-limited. Gated (default off = original); on soft
-    # it lifts the AL methods (dial/mdac), validated: it stops the AL penalizing the natural sink.
+    # it lifts the AL methods (dial/mga), validated: it stops the AL penalizing the natural sink.
     h_surf_tangential: bool = False
     # Soft-contact manifold (eq:soft_contact_residual): the realized contact residual targets the
     # DEFORMED contact point S_0 − δ*·n instead of the undeformed surface, with target indentation
@@ -465,7 +465,7 @@ class SurfaceScanEnv(PipelineEnv):
             return self._winkler_at(ps, xi, eta)[1]
         return self._penetration(ps)
 
-    # --- action is the MDAC primitive, not the 7 joint torques ---
+    # --- action is the MGA primitive, not the 7 joint torques ---
     @property
     def action_size(self) -> int:
         return self.spec.total_width                       # 10
@@ -752,7 +752,7 @@ class SurfaceScanEnv(PipelineEnv):
             reward = reward + cfg.w_realized_progress * realized_progress
             max_realized_xi = next_max
         # MERGE (not replace) so brax training wrappers' info keys (steps/truncation/
-        # episode_metrics/...) survive the step; a no-op for the unwrapped MDAC/baseline path.
+        # episode_metrics/...) survive the step; a no-op for the unwrapped MGA/baseline path.
         info = {**state.info, "xi": xi, "eta": eta, "psi": psi, "prev_s": S_vec,
                 "step": state.info["step"] + 1, "force_int": force_int,
                 "tangent_force_int": tangent_force_int,
@@ -928,9 +928,9 @@ class SurfaceScanEnv(PipelineEnv):
         )
         info = {
             **state.info,
-            "_mdac_realization_B": B,
-            "_mdac_realization_error": error,
-            "_mdac_realization_gate": jax.lax.stop_gradient(realization_gate),
+            "_mga_realization_B": B,
+            "_mga_realization_error": error,
+            "_mga_realization_gate": jax.lax.stop_gradient(realization_gate),
         }
         return state.replace(info=info)
 
@@ -965,7 +965,7 @@ class SurfaceScanEnv(PipelineEnv):
 
         Actions encode coordinate increments, so node-wise residuals cannot be
         evaluated independently against one current target. This hook remains
-        task-owned; the MDAC experiment adapter supplies the existing
+        task-owned; the MGA experiment adapter supplies the existing
         ``NodeSpline`` map from solver nodes to ``dense_actions``.
         """
         return self._manifold_residual_horizon_impl(
@@ -990,8 +990,8 @@ class SurfaceScanEnv(PipelineEnv):
     def manifold_residual_horizon_controllable(self, state, dense_actions, t0):
         """Horizon residual lifted through a frozen true-dynamics response map."""
         cfg = self._config
-        B = state.info["_mdac_realization_B"]
-        error = state.info["_mdac_realization_error"] * jnp.asarray(
+        B = state.info["_mga_realization_B"]
+        error = state.info["_mga_realization_error"] * jnp.asarray(
             [
                 cfg.realization_control_along_weight,
                 cfg.realization_control_cross_weight,
@@ -1019,8 +1019,8 @@ class SurfaceScanEnv(PipelineEnv):
         # horizon geometry and retraction remain active, so low confidence can
         # recover instead of freezing the entire controller.  This mirrors the
         # insertion task's controllability contract and makes the staged
-        # ``mdac_controllable_gate`` method causal rather than diagnostic-only.
-        command_shift = command_shift * state.info["_mdac_realization_gate"]
+        # ``mga_controllable_gate`` method causal rather than diagnostic-only.
+        command_shift = command_shift * state.info["_mga_realization_gate"]
         coord_limit = max(cfg.realization_compensation_max_coord, 0.0)
         command_shift = jnp.clip(command_shift, -coord_limit, coord_limit)
         ramp = jnp.clip(
@@ -1120,7 +1120,7 @@ class SurfaceScanEnv(PipelineEnv):
         }
 
     def reliability_features(self, state, action):
-        """Observable pre-action features for learned MDAC reliability.
+        """Observable pre-action features for learned MGA reliability.
 
         Keep this contract synchronized with
         :mod:`genedynamics.learning.reliability`.  No surface label, friction,
@@ -1349,7 +1349,7 @@ class SurfaceScanEnv(PipelineEnv):
         reported performance/quality quantities for this task.  Exceeding the
         physical normal-force interval is the hard event that must never be
         deployed.  Keeping this interpretation task-owned prevents the generic
-        MDAC backend from guessing the Surface risk-vector schema.
+        MGA backend from guessing the Surface risk-vector schema.
         """
         return risk[0] <= 1.0e-8
 
@@ -1458,7 +1458,7 @@ class SurfaceScanEnv(PipelineEnv):
             (deformation - cfg.deformation_safe) / deformation_scale,
         ], dtype=jnp.float32))
 
-    # --- MDAC soft-feasibility: h_surf (eq 727) + h_normal (eq 731) + g_force ---
+    # --- MGA soft-feasibility: h_surf (eq 727) + h_normal (eq 731) + g_force ---
     def constraint_residual(self, state, action, ctx=None):
         cfg = self._config
         ps = state.pipeline_state

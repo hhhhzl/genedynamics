@@ -230,7 +230,7 @@ class HumanoidBoxPushConfig(BaseEnvConfig):
 
 
 class HumanoidBoxPushEnv(HumanoidTaskEnv):
-    """Humanoid box pushing/unjamming with the MDAC contact-semantic primitive. Drives H1 or G1
+    """Humanoid box pushing/unjamming with the MGA contact-semantic primitive. Drives H1 or G1
     (``config.robot``) through one robot-agnostic whole-body controller (legs/waist = planner WBC
     balance, both hands = Cartesian contact impedance). Reuses the H1 brax base — G1 shares the
     pelvis/torso_link bodies + left_foot/right_foot sites, so only the scene + joint layout differ."""
@@ -845,7 +845,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         force_scale = max(float(cfg.f_max), 1e-6)
         # The benchmark owns the desired force.  Scoring realized force against
         # the action-selected command lets a baseline choose zero force and earn
-        # a false tracking advantage.  MDAC and DIAL therefore share this same
+        # a false tracking advantage.  MGA and DIAL therefore share this same
         # time-indexed target ramp in both reward and evaluation.
         elapsed = jnp.asarray(info["step"], jnp.float32) * self.dt
         force_ref_scale = jnp.clip(
@@ -899,7 +899,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             vb = global_to_body_velocity(ps.xd.vel[self._torso_idx - 1], x.rot[self._torso_idx - 1])
             r_vel = -(vb[0] - cfg.target_vx) ** 2
             reward = reward + cfg.w_gait * r_gait + cfg.w_vel * r_vel
-        # NaN-guard: a physics blow-up in an MDAC rollout must score very low (rejected), not poison
+        # NaN-guard: a physics blow-up in an MGA rollout must score very low (rejected), not poison
         # the sample-weighted average (-> NaN action). H1 reward is always finite, so this is a no-op there.
         reward = jnp.nan_to_num(reward, nan=-1e3, posinf=-1e3, neginf=-1e3)
         return reward, done
@@ -918,7 +918,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         h_hand_R = c["push_axis"] + c["n_c"]              # distal push axis to -face normal
         feet = ps.site_xpos[self._feet_site_id]
         # A walking task constrains only ground contact.  The fixed-stance force-control tasks also
-        # anchor foot x/y to reset: without this distinction MDAC can satisfy the old z-only
+        # anchor foot x/y to reset: without this distinction MGA can satisfy the old z-only
         # residual while swinging an ankle through the box.
         h_foot = (feet[:, 2] if self._is_walk else (feet - self._feet_home).reshape(-1))
         h = jnp.concatenate([h_box, h_hand, h_hand_R, h_foot])
@@ -1035,7 +1035,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         )
         return state.replace(info={
             **state.info,
-            "_mdac_realization_gate": jax.lax.stop_gradient(gate),
+            "_mga_realization_gate": jax.lax.stop_gradient(gate),
         })
 
     def manifold_residual_horizon_controllable(self, state, dense_actions, t0):
@@ -1070,7 +1070,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             "scalar": scalar,
             "action": action_gate,
             "clean_action": jnp.ones_like(action_gate),
-            # Shared MDAC diagnostics schema.  H1 keeps task-progress/contact
+            # Shared MGA diagnostics schema.  H1 keeps task-progress/contact
             # coordinates open (path=1), has no independent sampled surface
             # normal (report measured contact confidence), and applies the
             # scalar gate to both stiffness and force action blocks.
@@ -1184,7 +1184,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
     def emergency_sequence_score_risk(self, state, actions, aug_lambda=0.0, aug_rho=0.0):
         return self.sequence_score_risk(state, actions[:1], aug_lambda, aug_rho)
 
-    def project_mdac_candidate(self, state, nodes):
+    def project_mga_candidate(self, state, nodes):
         del state
         return jnp.clip(nodes, -1.0, 1.0)
 
