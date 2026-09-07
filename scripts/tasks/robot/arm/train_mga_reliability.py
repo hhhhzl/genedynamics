@@ -336,7 +336,7 @@ def main(argv: list[str] | None = None) -> int:
         feature_names=(PEG_INSERT_FEATURE_NAMES if peg_insert else FEATURE_NAMES),
         risk_names=(PEG_INSERT_RISK_NAMES if peg_insert else RISK_NAMES),
         state_feature_count=(32 if peg_insert else 6),
-        support_state_feature_count=(12 if peg_insert else 6),
+        support_state_feature_count=(32 if peg_insert else 6),
         probability_risk_count=(3 if peg_insert else 2),
         classification_probabilities=peg_insert,
         # The phase-residual basis remains available for controlled ablations,
@@ -380,7 +380,10 @@ def main(argv: list[str] | None = None) -> int:
         "ridge": args.ridge,
         "quantile": args.quantile,
         "basis_mode": model.basis_mode,
-        "architecture": "standardized_multioutput_ridge_split_conformal",
+        "architecture": (
+            "standardized_ridge_logistic_split_conformal_backtracking"
+            if peg_insert else "standardized_multioutput_ridge_split_conformal"
+        ),
         "checkpoint_selection_rule": "single_frozen_fit_no_evaluation_selection",
         "protocol": args.protocol,
         "task": (

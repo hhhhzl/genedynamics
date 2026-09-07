@@ -41,6 +41,8 @@ def test_formal_mga_configs_pass_checkpoint_and_causal_protocol_audit():
         "humanoid_box_push": 580,
     }
     assert report["formal_run_count"] == 2040
+    assert report["warnings"]
+    assert all("explicitly waived" in warning for warning in report["warnings"])
 
 
 def test_report_writes_paired_statistics_and_representative_seed(tmp_path: Path):

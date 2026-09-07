@@ -4,9 +4,10 @@ method: mga
 output_dir: results/arm/peg_insert/main/mga
 method_params:
   controller_method: mga_controllable_gate
+  prior_mode: additive
   learned_reliability: true
   policy_ckpt: results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl
-  reliability_ckpt: results/arm/peg_insert_cpu/_policies/reliability_q95.json
+  reliability_ckpt: results/arm/peg_insert/_policies/reliability.json
   prior_lambda_shift: 0.8
   prior_include_incumbent: true
   prior_trust_radius: 0.35
@@ -19,5 +20,14 @@ method_params:
   prior_improvement_epsilon: 0.0
   prior_risk_tolerance: [0.0, 0.0, 0.0, 1.0]
   reliability_hard_limits: [0.5, 0.95, 0.95, 10.0]
-  reliability_support_mode: state
+  reliability_support_mode: joint
+  reliability_ood_policy: model_based
   reliability_risk_tolerance: [1.0, 1.0, 1.0, 10.0]
+metadata:
+  protocol: mga_peg_insert_paper
+  learned_component_lock:
+    reliability:
+      path: results/arm/peg_insert/_policies/reliability.json
+      sha256: 45ea1b37bc99fd41192956b28d47c81fb0125689955da95840b2110ac7c96db1
+      protocol: mga_peg_insert_reliability
+      architecture: standardized_ridge_logistic_split_conformal_backtracking

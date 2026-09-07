@@ -26,8 +26,10 @@ import jax.numpy as jnp
 import mujoco
 
 from genedynamics.envs.factories import make_env
-from genedynamics.experiments.plugins.methods.contact_receding import (
-    make_mga, metrics_plugin_for, HUMANOID_TASK,
+from genedynamics.experiments.plugins.environments._contact_task import HUMANOID_TASK
+from genedynamics.experiments.plugins.methods.contact_receding import make_mga
+from genedynamics.experiments.plugins.metrics.extractors import (
+    humanoid_box_push_metrics_plugin,
 )
 
 CFG = dict(Hsample=8, Hnode=4, Nsample=64, Ndiffuse_init=3, Ndiffuse=2,
@@ -216,7 +218,9 @@ def _metric_plugin_end_to_end():
     acts = [np.asarray(jax.random.uniform(jax.random.PRNGKey(i), (env.action_size,),
             minval=-1.0, maxval=1.0)) for i in range(5)]
     traj = types.SimpleNamespace(actions=acts)
-    rec = metrics_plugin_for(HUMANOID_TASK).compute(traj, env, None, None, x0=x0, planning_time=0.3)
+    rec = humanoid_box_push_metrics_plugin().compute(
+        traj, env, None, None, x0=x0, planning_time=0.3
+    )
     # Five random steps end before the force ramp reaches its tracked window.
     # Steady-state/settling metrics are therefore unavailable by definition;
     # every metric that is observable on this short trajectory must stay finite.

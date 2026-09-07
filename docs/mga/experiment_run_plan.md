@@ -1334,7 +1334,14 @@ The complete frozen protocol is therefore `1160 + 300 + 580 = 2040` runs.
 This count excludes development smokes, checkpoint training/calibration, and
 any optional stress-test appendix.
 
-Each matrix uses seeds 10--19, paired across methods. A run is incomplete if any
+**Formal-v3 seed override (2026-09-03).** The three task matrices now use
+evaluation seeds 0--9, paired across methods. This intentionally overlaps the
+frozen seed-0 policy training and, for Surface/H1 reliability, seed-1
+calibration provenance. The task YAMLs record an explicit overlap waiver; the
+audit reports the overlap as warnings rather than presenting the split as
+disjoint. Frozen checkpoint provenance and hashes remain unchanged.
+
+Each matrix uses seeds 0--9, paired across methods. A run is incomplete if any
 expected seed is absent, failed, or uses a mismatched config/checkpoint.
 
 ### P10 — Statistics, figures, and report verification
@@ -1449,9 +1456,66 @@ The experiment package is paper-ready only when all gates below are true.
 
 ## 13. Immediate next action
 
+### PegInsert final freeze
+
+PegInsert now has one versionless paper protocol, `mga_peg_insert_paper`, and
+one canonical configuration/result tree under `configs/arm/peg_insert` and
+`results/arm/peg_insert`. Pre-freeze runs remain historical evidence only and
+must not be pooled with the final matrix. Pose-OOD and Sensing-OOD seeds 0--9
+were inspected during development, so they are evaluation-on-reused-seeds
+rather than an untouched holdout; state this limitation explicitly.
+
+The three changes are:
+
+1. Stabilize PegInsert ridge-logistic reliability fitting with backtracking.
+   Reuse the original fit seeds 100/101 and calibration seed 102, excluding
+   evaluation seeds 0--9. The frozen checkpoint is
+   `results/arm/peg_insert/_policies/reliability.json`, SHA-256
+   `45ea1b37bc99fd41192956b28d47c81fb0125689955da95840b2110ac7c96db1`.
+   Joint support checks use all 32 state features plus candidate features.
+   Out-of-support predictions abstain under the existing `model_based` policy;
+   this is not an absolute OOD safety certificate.
+2. Enable the opt-in `prior_mode: additive` for PegInsert MGA. Preserve the
+   no-prior Gaussian refinement stream; assess one deterministic and eight
+   stochastic RL horizons with the same model-based score/risk and learned
+   gate. A rejected expert cannot replace the already revalidated Gaussian
+   decision. Log adoption, candidate count and predicted score improvement.
+   The 64-sample Gaussian budget is unchanged, but Full MGA now performs nine
+   extra expert evaluations per replan: this is not equal-total-compute evidence.
+   Other tasks retain the existing `guided` default.
+3. Correct the task reward so misalignment does not discount unfinished
+   insertion cost. Add contact-weighted misalignment cost while preserving
+   the depth objective. Physics, force/torque limits, success definition,
+   episode length, OOD parameters and the frozen PPO checkpoint stay unchanged.
+   This changes the PegInsert optimization objective for every algorithm;
+   pre-freeze baseline rewards must not be pooled with final-protocol rewards.
+
+Execution uses only the existing paper script and unified runner:
+
+```bash
+scripts/paper/mga/run_peg_insert.sh
+```
+
+The script evaluates all ten final configurations with seeds 0--9 and writes
+the canonical three-suite matrix. `--resume` may reuse only complete,
+config-matching runs. The reliability checkpoint path, digest, reward,
+physics, budgets and suite definitions are frozen before execution. Do not
+tune from partial final results. The existing development directories and logs
+are retained only for audit and are not formal paper inputs.
+
+Results retain the usual project-relative layout below each development root.
+Use `genedynamics.experiments.utils.metrics` and
+`genedynamics.experiments.utils.vis` for reports and rendering. Report safe
+success, raw success, insertion depth, violations, force/torque peaks, jam,
+emergency frequency, reliability support/rejections and RL adoption. A
+nominal predicted improvement does not establish true closed-loop dominance.
+Keep scanning configs, checkpoints, reward and existing results unchanged.
+
+### Original three-task formal entry points
+
 Start P9 through `scripts/paper/mga/run_all.sh`, or run the three task scripts
 in the P9.1--P9.3 causal order. The scripts call only the unified runner, use
-the frozen formal seeds 10--19, preserve explicit algorithm order, and pass
+the frozen formal seeds 0--9, preserve explicit algorithm order, and pass
 `--resume`. Do not tune configs or select checkpoints after inspecting partial
 formal results. Keep the legacy runner, old configs, result files, and rollback
 point until P9--P11 and the reproducibility verifier pass.

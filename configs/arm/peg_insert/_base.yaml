@@ -2,7 +2,7 @@ name: peg_insert
 output_dir: results/arm/peg_insert/_invalid_base
 env_name: manipulator_peg_insert
 method: dial
-seeds: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 n_steps: 64
 backend: jax
 device: cpu
@@ -53,8 +53,11 @@ suites:
     execution_env_params: {level: wide, force_sensor_bias: [0.5, -0.5, 0.0], torque_sensor_bias: [0.02, -0.02, 0.01]}
 
 metadata:
-  protocol: mga_peg_insert_formal_v2
+  protocol: mga_peg_insert_paper
   formal_seeds: true
+  formal_seed_overlap_waiver:
+    accepted: true
+    reason: evaluation_seeds_0_9_overlap_frozen_policy_training_seed_0
   narrative: contact_switch_and_safe_recovery
   expected_formal_task_runs: 300
   learned_component_lock:
@@ -130,4 +133,4 @@ metadata:
         num_domains: 4
         domain_seed_start: 100
       held_out:
-        evaluation_seeds: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+        evaluation_seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

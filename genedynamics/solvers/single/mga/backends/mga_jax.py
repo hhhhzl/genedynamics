@@ -241,6 +241,9 @@ class MgaBackendJax:
         self.prior_union_trust = bool(
             getattr(solver, "prior_union_trust", False)
         )
+        self.prior_mode = str(getattr(solver, "prior_mode", "guided"))
+        if self.prior_mode not in {"guided", "additive"}:
+            raise ValueError("prior_mode must be 'guided' or 'additive'")
         self.prior_atacom_incumbent = bool(
             getattr(solver, "prior_atacom_incumbent", False)
         )
@@ -396,11 +399,16 @@ class MgaBackendJax:
         # exactly as for the reverse scan.  This changes no score, risk, or gate
         # arithmetic; it only makes the compilation/cache boundary explicit.
         self._accept_refinement_jit = jax.jit(self._accept_refinement)
+        self._select_additive_prior_jit = jax.jit(self._select_additive_prior)
 
     @property
     def _prior_active(self):
         """Static-at-trace switch; also supports prior injection in unit tests."""
         return self.prior is not None and self.use_rl_prior
+
+    @property
+    def _prior_guided(self):
+        return self._prior_active and self.prior_mode == "guided"
 
     def _kappa_mult(self, state, Ybar_curr):
         """Geometry kappa multiplier for this reverse step (2GO overlay usage).
@@ -530,7 +538,7 @@ class MgaBackendJax:
         ).astype(Ybar_curr.dtype)
         Y0s = eps * noise_scale[None, :, None] + Ybar_curr[None]  # base DIAL sampling schedule
         Y0s = Y0s.at[:, 0].set(Ybar_curr[0])                      # pin node-0
-        if self._prior_active:
+        if self._prior_guided:
             if prior_centers is not None:
                 Y0s = self._project_to_prior_union(Y0s, prior_centers)
             else:
@@ -649,7 +657,7 @@ class MgaBackendJax:
                     "abar_km1": self._alphas_bar[jnp.maximum(idx_init - 1, 0)],
                 },
             )
-        if self._prior_active:
+        if self._prior_guided:
             Ybar_next = (
                 self._project_to_prior_union(Ybar_next, prior_centers)
                 if prior_centers is not None
@@ -1212,8 +1220,117 @@ class MgaBackendJax:
             ).astype(jnp.float32)
         return selected, info
 
+    def _select_additive_prior(self, state, candidates):
+        """Rank expert horizons by the same task certificate as deployment."""
+        if self._candidate_projection_jit is not None:
+            candidates = jax.vmap(
+                lambda nodes: self._candidate_projection_jit(state, nodes)
+            )(candidates)
+        dense = self.spline.node2u_batch(candidates)
+        scores, risks = jax.vmap(lambda us: self.score_risk_fn(
+            state, us, self.aug_lambda if self._augmented else 0.0,
+            self.aug_rho if self._augmented else 0.0,
+        ))(dense)
+        safe = jax.vmap(self.risk_safe_fn)(risks)
+        if self.reliability_model is not None:
+            features = jax.vmap(lambda us: (
+                self.reliability_sequence_feature_fn(state, us)
+                if self.reliability_sequence_feature_fn is not None
+                else self.reliability_feature_fn(state, us[0])
+            ))(dense)
+            learned = self.reliability_model.predict_upper(features)
+            support_fn = (
+                self.reliability_model.support_score_state
+                if self.reliability_support_mode == "state"
+                else self.reliability_model.support_score
+            )
+            supported = support_fn(features) <= 1.0
+            bounded = (
+                jnp.all(learned <= self.reliability_hard_limits, axis=-1)
+                if self.reliability_hard_limits is not None
+                else ((learned[:, 0] <= self.reliability_force_limit)
+                      & (learned[:, 2] <= self.reliability_deformation_limit))
+            )
+            safe &= (
+                supported & bounded if self.reliability_ood_policy == "veto"
+                else (~supported) | bounded
+            )
+        safe &= jnp.isfinite(scores) & jnp.all(jnp.isfinite(risks), axis=-1)
+        index = jnp.argmax(jnp.where(safe, scores, -jnp.inf))
+        return candidates[index], jnp.any(safe), scores[index]
+
+    def _replan_additive(self, state, incumbent, schedule, rng, t0):
+        """Keep the no-prior search intact; experts can only add candidates.
+
+        Gaussian RNG, starting point and realization context are identical
+        with/without the prior. Nsample is the Gaussian refinement budget;
+        expert horizons are evaluated once, with their count reported.
+        """
+        if self.score_risk_fn is None or self.risk_safe_fn is None:
+            raise ValueError("additive prior requires task score and safety hooks")
+        if self._prepare_state_jit is not None:
+            state = self._prepare_state_jit(state, incumbent, t0)
+        gaussian = self._replan_scan_jit(
+            state, incumbent, schedule, rng, t0, incumbent
+        )
+        if self._candidate_projection_jit is not None:
+            incumbent = self._candidate_projection_jit(state, incumbent)
+            gaussian = self._candidate_projection_jit(state, gaussian)
+        emergency = (
+            self.emergency_plan_fn(state, incumbent, t0)
+            if self.emergency_plan_fn is not None else None
+        )
+        if emergency is not None and self._candidate_projection_jit is not None:
+            emergency = self._candidate_projection_jit(state, emergency)
+        selected, info = self._accept_refinement_jit(
+            state, incumbent, gaussian, t0, None, emergency
+        )
+        info = {**info, "additive_prior_selected": jnp.float32(0.0),
+                "additive_prior_candidate_count": jnp.float32(0.0)}
+        if not self._prior_active:
+            return selected, info
+        proposals = [jnp.asarray(self.prior.warm_start(state))[None]]
+        if self.prior_stochastic_samples:
+            batch = self.prior.sample_horizons(
+                state, key=jax.random.fold_in(rng, 1701),
+                n_samples=self.prior_stochastic_samples,
+            )
+            proposals.append(batch.trajectories)
+        candidates = jnp.clip(jnp.concatenate(proposals),
+                              -self.action_limit, self.action_limit)
+        expert, any_safe, expert_score = self._select_additive_prior_jit(
+            state, candidates
+        )
+        # The Gaussian decision has already been revalidated at this state,
+        # including cold start. Do not invalidate it a second time at t=0.
+        challenger, expert_info = self._accept_refinement_jit(
+            state, selected, expert, jnp.maximum(t0, 1.0), None, emergency
+        )
+        # Never let a rejected expert replace the Gaussian fallback with a
+        # second emergency. Adoption requires a strict score improvement.
+        adopted = (
+            any_safe & (expert_info["prior_accepted"] > 0.5)
+            & (expert_info["prior_predicted_improvement"] > self.prior_improvement_epsilon)
+        )
+        deployed = jnp.where(adopted, challenger, selected)
+        combined = {
+            k: jnp.where(adopted, expert_info[k], v) if k in expert_info else v
+            for k, v in info.items()
+        }
+        combined.update({
+            "additive_prior_selected": adopted.astype(jnp.float32),
+            "additive_prior_candidate_count": jnp.float32(candidates.shape[0]),
+            "additive_prior_any_safe": any_safe.astype(jnp.float32),
+            "additive_prior_improvement": expert_info["prior_predicted_improvement"],
+            "additive_prior_score": expert_score,
+            "additive_gaussian_score": expert_info["prior_score_fallback"],
+        })
+        return deployed, combined
+
     def replan_with_info(self, state, warm_start, schedule, rng, t0=0.0):
         t0 = jnp.asarray(t0, jnp.float32)
+        if self.prior_mode == "additive":
+            return self._replan_additive(state, warm_start, schedule, rng, t0)
         receding_incumbent = warm_start
         if self._prior_active:
             lam = self.prior_lambda_shift

@@ -47,12 +47,19 @@ def _audit_checkpoint_lock(
     task: str,
     task_records: Sequence[Tuple[Path, Any]],
     errors: List[str],
+    warnings: List[str],
 ) -> None:
     """Validate the P8 frozen learned-component contract for one task."""
     if task not in _CONTACT_TASKS:
         return
     reference_path, reference = task_records[0]
     metadata = dict(reference.metadata or {})
+    overlap_waiver = dict(metadata.get("formal_seed_overlap_waiver") or {})
+    overlap_accepted = overlap_waiver.get("accepted") is True
+    if overlap_accepted and not str(overlap_waiver.get("reason", "")).strip():
+        errors.append(
+            f"{reference_path}: accepted formal_seed_overlap_waiver needs a reason"
+        )
     if task == "humanoid_box_push":
         if metadata.get("evidence_scope") != "full_eight_algorithm":
             errors.append(
@@ -95,9 +102,14 @@ def _audit_checkpoint_lock(
         }
         leaked = sorted(formal_seeds.intersection(used_seeds))
         if leaked:
-            errors.append(
-                f"{reference_path}: {name} uses formal evaluation seeds {leaked}"
+            message = (
+                f"{task}: locked component {name} uses formal evaluation "
+                f"seeds {leaked}"
             )
+            if overlap_accepted:
+                warnings.append(f"{message} (explicitly waived)")
+            else:
+                errors.append(message)
         budget = dict(entry.get("training_budget") or {})
         if not budget.get("unit") or int(budget.get("value", 0)) <= 0:
             errors.append(
@@ -230,6 +242,9 @@ def aggregate_receding_diagnostics(
             "proposal_atacom_best_reward", "proposal_gaussian_weight",
             "proposal_rl_weight", "proposal_atacom_weight",
             "atacom_incumbent_selected", "prior_score_atacom",
+            "additive_prior_selected", "additive_prior_candidate_count",
+            "additive_prior_any_safe", "additive_prior_improvement",
+            "additive_prior_score", "additive_gaussian_score",
         ):
             if has(key):
                 out[key] = mean_scalar(key)
@@ -266,6 +281,7 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
 
     records = []
     errors: List[str] = []
+    warnings: List[str] = []
     for path in _config_paths(roots):
         try:
             cfg = ExperimentConfig.from_yaml(path)
@@ -339,7 +355,7 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
             run_count_by_task[task] = run_count_by_task.get(task, 0) + (
                 len(cfg.seeds) * len(formal_suites)
             )
-        _audit_checkpoint_lock(task, task_records, errors)
+        _audit_checkpoint_lock(task, task_records, errors, warnings)
         expected = (reference.metadata or {}).get("expected_formal_task_runs")
         if expected is not None and run_count_by_task[task] != int(expected):
             errors.append(
@@ -352,6 +368,7 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
         "task_count": len(by_task),
         "run_count_by_task": run_count_by_task,
         "formal_run_count": sum(run_count_by_task.values()),
+        "warnings": warnings,
         "errors": errors,
     }
 

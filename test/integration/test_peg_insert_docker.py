@@ -38,6 +38,26 @@ SMALL = dict(
 )
 
 
+def test_reward_does_not_discount_unfinished_insertion_when_misaligned():
+    from genedynamics.envs.domains.manipulation.peg_insert_brax import (
+        PegInsertConfig, PegInsertEnv,
+    )
+
+    # Exercise the actual task reward without allocating a physics pipeline.
+    cfg = PegInsertConfig(w_lateral=0.0, w_orientation=0.0, w_force=0.0)
+    env = SimpleNamespace(_config=cfg, spec=SimpleNamespace(s_slice=slice(6, 12)))
+    info = {"jammed": jnp.float32(0.0), "success": jnp.float32(0.0)}
+    wrench = dict(axial_force=0.0, lateral_force=0.0, bending_torque=0.0)
+    reward = lambda x, depth, angle: PegInsertEnv._reward(
+        env, info, jnp.array([x, 0.0, depth]), jnp.array([angle, 0.0, 0.0]),
+        wrench, jnp.zeros(13),
+    )
+    for depth in (-cfg.approach_gap, 0.0, 0.015):
+        assert float(reward(0.0, depth, 0.0)) > float(reward(0.004, depth, 0.0))
+        assert float(reward(0.0, depth, 0.0)) > float(reward(0.0, depth, 0.1))
+    assert float(reward(0.0, 0.025, 0.0)) > float(reward(0.0, 0.015, 0.0))
+
+
 def _force_raw(force, env):
     cfg = env._config
     lo, hi = cfg.f_min - cfg.f_cmd_pad, cfg.f_max + cfg.f_cmd_pad
@@ -721,6 +741,7 @@ def _p4_algorithms_metrics():
 
 
 def main():
+    test_reward_does_not_discount_unfinished_insertion_when_misaligned()
     p0 = _p0_physics()
     p1, recovery_states = _p1_impedance_and_recovery()
     p2 = _p2_mga_geometry(recovery_states)

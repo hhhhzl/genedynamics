@@ -111,6 +111,7 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         mga_geom_gain: float = 1.0,
         # --- prior seam (genedynamics/learning/priors; None => verbatim DIAL) ---
         prior: Any = None,              # Prior: RL/diffusion warm-start (eq:rl_warm_start)
+        prior_mode: str = "guided",     # guided trust region | additive candidates
         atacom_prior: Any = None,       # optional structured 7D-tangent expert
         prior_lambda_shift: float = 0.5,  # U_init = lam*U_shift + (1-lam)*U_rl
         risk_fn: Any = None,             # task-owned sequence risk vector
@@ -184,6 +185,7 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         self.prior_stochastic_samples = int(prior_stochastic_samples)
         self.prior_atacom_samples = int(prior_atacom_samples)
         self.prior_union_trust = bool(prior_union_trust)
+        self.prior_mode = str(prior_mode)
         self.prior_atacom_incumbent = bool(prior_atacom_incumbent)
         self.prior_atacom_default = bool(prior_atacom_default)
         self.prior_atacom_strict_risk = bool(prior_atacom_strict_risk)
@@ -241,6 +243,7 @@ class MGASolver(BaseModelBasedDiffusionSolver):
                 prior_stochastic_samples=self.prior_stochastic_samples,
                 prior_atacom_samples=self.prior_atacom_samples,
                 prior_union_trust=self.prior_union_trust,
+                prior_mode=self.prior_mode,
                 prior_atacom_incumbent=self.prior_atacom_incumbent,
                 prior_atacom_default=self.prior_atacom_default,
                 prior_atacom_strict_risk=self.prior_atacom_strict_risk,

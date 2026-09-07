@@ -188,3 +188,6 @@ third_party/environments/dataset/
 /results/*.json
 
 MUJOCO_LOG.TXT
+
+# Local render/test artifacts
+/tmp/

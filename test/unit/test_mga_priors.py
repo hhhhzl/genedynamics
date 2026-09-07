@@ -120,6 +120,95 @@ def test_fake_prior_conforms():
     assert isinstance(_FakePrior(5, 2), Prior)
 
 
+def test_additive_prior_preserves_gaussian_search_and_rejects_bad_expert():
+    def build(value=None):
+        backend = MgaBackendJax(rollout_fn=_mock_rollout, **COMMON)
+        backend.prior_mode = "additive"
+        backend.prior_fallback_mode = "receding_incumbent"
+        backend.score_risk_fn = lambda state, us, lam, rho: (
+            -jnp.mean((us - TARGET) ** 2), jnp.zeros(4)
+        )
+        backend.risk_safe_fn = lambda risk: jnp.all(risk[:3] == 0)
+        if value is not None:
+            backend.prior = _FakeStructuredPrior(5, 2, val=value)
+            backend.use_rl_prior = True
+            backend.prior_stochastic_samples = 3
+        return backend
+
+    rng = jax.random.PRNGKey(31)
+    reference = _replan(build(), rng)
+    bad = build(-1.0)
+    selected, info = bad.replan_with_info(
+        jnp.zeros(1), bad.init_plan_var(),
+        bad.make_schedule(bad.Ndiffuse_init), rng,
+    )
+    np.testing.assert_array_equal(selected, reference)
+    assert float(info["additive_prior_selected"]) == 0.0
+    good = build(TARGET)
+    selected, info = good.replan_with_info(
+        jnp.zeros(1), good.init_plan_var(),
+        good.make_schedule(good.Ndiffuse_init), rng,
+    )
+    np.testing.assert_allclose(selected, jnp.broadcast_to(TARGET, (5, 2)))
+    assert float(info["additive_prior_selected"]) == 1.0
+
+
+@pytest.mark.parametrize("rejection", ["physical", "learned", "unsupported"])
+def test_additive_prior_rejects_high_scoring_unsafe_expert(rejection):
+    backend = MgaBackendJax(rollout_fn=_mock_rollout, **COMMON)
+    backend.prior_mode = "additive"
+    backend.prior_fallback_mode = "receding_incumbent"
+    backend.prior = _FakeStructuredPrior(5, 2, val=TARGET)
+    backend.use_rl_prior = True
+    backend.prior_stochastic_samples = 3
+    is_expert = lambda us: (jnp.mean((us - TARGET) ** 2) < 1.0e-8).astype(jnp.float32)
+    backend.score_risk_fn = lambda state, us, lam, rho: (
+        -jnp.mean((us - TARGET) ** 2),
+        jnp.zeros(4).at[0].set(is_expert(us) if rejection == "physical" else 0.0),
+    )
+    backend.risk_safe_fn = lambda risk: jnp.all(risk[:3] == 0)
+    if rejection != "physical":
+        backend.reliability_sequence_feature_fn = lambda state, us: is_expert(us)[None]
+        backend.reliability_support_mode = "joint"
+        backend.reliability_ood_policy = "veto"
+        backend.reliability_hard_limits = jnp.ones(4) * 0.5
+        backend.reliability_model = SimpleNamespace(
+            predict_upper=lambda features: jnp.broadcast_to(
+                features if rejection == "learned" else jnp.zeros_like(features),
+                (*features.shape[:-1], 4),
+            ),
+            support_score=lambda features: (
+                2.0 * features[..., 0] if rejection == "unsupported"
+                else jnp.zeros(features.shape[:-1])
+            ),
+        )
+    selected, info = backend.replan_with_info(
+        jnp.zeros(1), backend.init_plan_var(),
+        backend.make_schedule(backend.Ndiffuse_init), jax.random.PRNGKey(31),
+    )
+    assert float(info["additive_prior_selected"]) == 0.0
+    assert float(info["additive_prior_any_safe"]) == 0.0
+    assert not np.allclose(selected, TARGET)
+
+
+def test_logistic_reliability_handles_separable_contact_data():
+    rng = np.random.default_rng(72)
+    x = rng.normal(size=(300, len(PEG_INSERT_FEATURE_NAMES)))
+    y = np.column_stack([
+        x[:, 0] > 0.5, x[:, 1] > 1, x[:, 2] > 0,
+        np.maximum(x[:, 3], 0),
+    ]).astype(float)
+    model = LinearReliabilityModel.fit(
+        x[:200], y[:200], x[200:], y[200:],
+        feature_names=PEG_INSERT_FEATURE_NAMES, risk_names=PEG_INSERT_RISK_NAMES,
+        state_feature_count=32, support_state_feature_count=32,
+        probability_risk_count=3, classification_probabilities=True,
+    )
+    probabilities = np.asarray(model.predict(x[200:]))[:, :3]
+    assert np.all(np.isfinite(model.weights))
+    assert np.mean((probabilities - y[200:, :3]) ** 2) < 0.12
+
+
 def test_structured_prior_batch_is_jax_pytree_and_backward_compatible():
     prior = _FakeStructuredPrior(5, 2)
     assert isinstance(prior, Prior)
@@ -778,7 +867,7 @@ def test_formal_surface_algorithm_matrix_and_policy_routing():
         "soft_bumpy", "soft_unseen", "hybrid_stripes",
         "hybrid_center_hard", "hybrid_center_soft",
     }
-    assert all(c.seeds == list(range(10, 20)) for c in configs)
+    assert all(c.seeds == list(range(10)) for c in configs)
     for cfg in configs:
         uses_policy = cfg.name in {
             "standalone_rl", "issa", "atacom", "mga",

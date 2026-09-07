@@ -788,13 +788,8 @@ class PegInsertEnv(PipelineEnv):
         lateral = lateral_error / max(cfg.clearance + 0.003, 1.0e-6)
         orientation = angle_error / 0.1
         contact_weight = jax.nn.sigmoid(pose[2] / 0.001)
-        # In free space, depth is the approach objective.  Once the peg reaches
-        # the socket, however, pushing deeper before it lies inside the
-        # chamfer's capture basin creates exactly the low-force local minimum
-        # that an insertion controller must avoid.  Use the task geometry to
-        # continuously hand priority from alignment back to depth; this keeps
-        # the objective differentiable and does not introduce a solver-specific
-        # mode switch or a tuned per-suite threshold.
+        # Depth drives approach; at contact, add a geometry-based alignment
+        # penalty without removing the incentive to complete insertion.
         capture_lateral = max(
             cfg.clearance + cfg.chamfer_width,
             cfg.success_lateral_tol,
@@ -805,9 +800,10 @@ class PegInsertEnv(PipelineEnv):
             -(lateral_error / capture_lateral) ** 2
             - (angle_error / capture_angle) ** 2
         )
-        depth_weight = (1.0 - contact_weight) + contact_weight * (
-            0.1 + 0.9 * alignment_gate
-        )
+        # Alignment must not discount the cost of unfinished insertion: that
+        # would reward moving away from the socket axis. Keep depth progress
+        # monotone and charge misalignment separately during contact.
+        insertion_cost = depth_error**2 + contact_weight * (1.0 - alignment_gate)
         force_error = (
             contact_weight
             * jnp.abs(wrench["axial_force"] - cfg.f_target)
@@ -819,7 +815,7 @@ class PegInsertEnv(PipelineEnv):
         safety = force_excess**2 + axial_excess**2 + torque_excess**2
         stiffness_delta = action[self.spec.s_slice]
         cost = (
-            cfg.w_depth * depth_weight * depth_error**2
+            cfg.w_depth * insertion_cost
             + cfg.w_lateral * lateral**2
             + cfg.w_orientation * orientation**2
             + cfg.w_force * force_error**2

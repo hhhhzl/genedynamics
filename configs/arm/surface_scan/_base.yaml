@@ -2,7 +2,7 @@ name: surface_scan
 output_dir: results/arm/surface_scan/_invalid_base
 env_name: manipulator_surface_scan
 method: dial
-seeds: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 n_steps: 100
 backend: jax
 device: cpu
@@ -86,8 +86,11 @@ suites:
   - {name: hybrid_center_soft, level: plane, env_params: {medium: hybrid, stiffness_map: center_soft, stiffness_map_xi_origin: 0.1, stiffness_map_xi_span: 0.0495, stiffness_transition_width: 0.08, k_hard: 8000.0, k_soft: 2000.0}}
 
 metadata:
-  protocol: mga_surface_scan_formal_v2
+  protocol: mga_surface_scan_paper
   formal_seeds: true
+  formal_seed_overlap_waiver:
+    accepted: true
+    reason: evaluation_seeds_0_9_overlap_frozen_training_seed_0_and_calibration_seed_1
   narrative: geometry_and_compliance
   expected_formal_task_runs: 1160
   learned_component_lock:

@@ -173,7 +173,14 @@ class LinearReliabilityModel:
             for risk_index in range(int(probability_risk_count)):
                 target = train_y[:, risk_index]
                 logistic_coeff = np.zeros(design.shape[1], np.float64)
-                for _ in range(50):
+                def objective(beta):
+                    logits = design @ beta
+                    return (
+                        np.sum(np.logaddexp(0.0, logits) - target * logits)
+                        + 0.5 * beta @ penalty @ beta
+                    )
+
+                for _ in range(100):
                     logit = np.clip(design @ logistic_coeff, -30.0, 30.0)
                     probability = 1.0 / (1.0 + np.exp(-logit))
                     variance = np.maximum(
@@ -187,8 +194,19 @@ class LinearReliabilityModel:
                         + penalty @ logistic_coeff
                     )
                     update = np.linalg.solve(hessian, gradient)
-                    logistic_coeff -= update
-                    if np.max(np.abs(update)) < 1.0e-7:
+                    # Full Newton steps can diverge on nearly separable
+                    # contact data. Backtracking keeps the penalized logistic
+                    # objective decreasing instead of saturating all risks.
+                    step = 1.0
+                    current_loss = objective(logistic_coeff)
+                    descent = gradient @ update
+                    while step > 1.0e-8:
+                        candidate = logistic_coeff - step * update
+                        if objective(candidate) <= current_loss - 1.0e-4 * step * descent:
+                            break
+                        step *= 0.5
+                    logistic_coeff -= step * update
+                    if np.max(np.abs(step * update)) < 1.0e-7:
                         break
                 coeff[:, risk_index] = logistic_coeff
         weights, bias = coeff[:-1], coeff[-1]
