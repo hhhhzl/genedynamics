@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from genedynamics.solvers.common.rl_policy_controller import RLPolicyController
 from genedynamics.solvers.single.issa.backends.issa_jax import IssaProjection
 
 
@@ -87,6 +88,67 @@ def test_projection_is_deterministic_for_seed_and_state_step():
     a2, i2 = p2.project_with_info(state, nominal)
     np.testing.assert_allclose(a1, a2, rtol=0.0, atol=0.0)
     np.testing.assert_allclose(i1["margin"], i2["margin"], rtol=0.0, atol=0.0)
+
+
+def test_project_and_step_returns_selected_action_transition():
+    env = _IntervalEnv()
+    projection = IssaProjection(env, n_dirs=32, n_iters=40, seed=5)
+    state = _state(0.9, step=2)
+    action, next_state, info = projection.project_and_step_with_info(
+        state, jnp.asarray([0.5, 0.1], jnp.float32)
+    )
+    expected = env.step(state, action)
+    np.testing.assert_allclose(next_state.x, expected.x, rtol=0.0, atol=0.0)
+    assert int(next_state.info["step"]) == int(expected.info["step"])
+    assert float(projection._transition_margin(state, action)) <= 1e-5
+    assert bool(info["found_safe"])
+
+
+def test_policy_controller_reuses_projection_next_state():
+    class CountingState(NamedTuple):
+        x: jnp.ndarray
+        obs: jnp.ndarray
+        info: dict
+
+    class CountingEnv:
+        def __init__(self):
+            self.step_calls = 0
+
+        def step(self, state, action):
+            self.step_calls += 1
+            x = state.x + action[0]
+            return CountingState(
+                x=x, obs=jnp.atleast_1d(x),
+                info={"step": state.info["step"] + 1},
+            )
+
+    class Projection:
+        def __init__(self, env):
+            self.env = env
+
+        def project_and_step_with_info(self, state, action):
+            next_state = self.env.step(state, action)
+            return action, next_state, {"intervention": jnp.asarray(0.0)}
+
+    env = CountingEnv()
+    controller = RLPolicyController(
+        env,
+        lambda obs, key: jnp.asarray([0.1, 0.0], jnp.float32),
+        action_projection=Projection(env),
+    )
+    result = controller.run_receding(
+        CountingState(
+            x=jnp.asarray(0.0), obs=jnp.asarray([0.0]),
+            info={"step": jnp.asarray(0, jnp.int32)},
+        ),
+        3,
+        jax.random.PRNGKey(0),
+        synchronize_steps=True,
+    )
+    assert env.step_calls == 3
+    assert len(result.actions) == 3
+    assert len(result.states) == 4
+    np.testing.assert_allclose(result.states[-1].x, 0.3, atol=1e-6)
 
 
 def test_compiled_projection_matches_eager_contract():

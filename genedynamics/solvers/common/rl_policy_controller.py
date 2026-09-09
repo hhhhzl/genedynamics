@@ -103,15 +103,22 @@ class RLPolicyController:
             else:
                 a = self.act_fn(state.obs, k)                   # policy action
             if self.action_projection is not None:
+                project_and_step = getattr(
+                    self.action_projection, "project_and_step_with_info", None
+                )
                 project_with_info = getattr(
                     self.action_projection, "project_with_info", None
                 )
-                if callable(project_with_info):
+                if callable(project_and_step):
+                    a, state, projection_info = project_and_step(state, a)
+                    infos.append(projection_info)
+                elif callable(project_with_info):
                     a, projection_info = project_with_info(state, a)
                     infos.append(projection_info)
                 else:
                     a = self.action_projection(state, a)        # ATACOM tangent / ISSA safe-set
-                state = self.env.step(state, a)
+                if not callable(project_and_step):
+                    state = self.env.step(state, a)
             if synchronize_steps:
                 jax.block_until_ready(state)
             actions.append(a)
