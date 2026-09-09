@@ -57,7 +57,15 @@ class IssaProjection:
         nu = nominal.shape[0]
         dirs = jax.random.normal(key, (self.n_dirs, nu))
         dirs = dirs / (jnp.linalg.norm(dirs, axis=1, keepdims=True) + 1e-9)
-        margins = jax.vmap(lambda u: self._transition_margin(state, u))
+        # Each margin evaluates a complete realized Brax/MJX transition.  A
+        # vmap materializes all ray transitions in parallel and exceeds the
+        # memory budget of the H1 environment even for the canonical eight
+        # directions.  lax.map preserves the exact ray set and AdamBA update
+        # while evaluating one transition at a time, bounding peak memory by
+        # one environment step rather than ``n_dirs`` steps.
+        margins = lambda actions: jax.lax.map(
+            lambda u: self._transition_margin(state, u), actions
+        )
 
         def body(carry):
             iteration, current, eta, refining, valid, done = carry
