@@ -27,6 +27,187 @@ from genedynamics.experiments.plugins.methods.contact_receding import make_contr
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.parametrize("resume", [False, True])
+@pytest.mark.parametrize("with_suites", [False, True])
+def test_aborted_attempt_preflight_preserves_all_output_before_first_seed(
+    tmp_path, monkeypatch, resume, with_suites,
+):
+    """No physics: a later failed seed protects the complete output tree."""
+    import json
+
+    cfg = ExperimentConfig(
+        name="failed_attempt_guard", output_dir=tmp_path,
+        env_name="dummy", method="dummy", seeds=[110, 111],
+        obstacle_levels=["legacy"], metrics=[], visualizations=[],
+        suites=[{"name": "first"}, {"name": "second"}] if with_suites else [],
+        auto_report=False,
+    )
+    failed_level = "second" if with_suites else "legacy"
+    failed_dir = tmp_path / f"level_{failed_level}" / "seed_111"
+    (failed_dir / "trajectory").mkdir(parents=True)
+    manifest = tmp_path / "protocol_manifest.json"
+    manifest.write_text('{"original_protocol": "do not overwrite"}\n')
+    result_path = failed_dir / "results.json"
+    result_path.write_text(json.dumps({
+        "execution_status": {"state": "aborted_unrecoverable"},
+        "original_attempt": True,
+    }))
+    trace_path = failed_dir / "trajectory" / "trajectory.json"
+    trace_path.write_text('{"actions": [], "original_prefix": true}\n')
+    original = {path: path.read_bytes() for path in tmp_path.rglob("*")
+                if path.is_file()}
+    original_paths = set(tmp_path.rglob("*"))
+    runner = ExperimentRunner(cfg)
+    calls = []
+    monkeypatch.setattr(runner, "run_single_experiment",
+                        lambda *args: calls.append(args))
+    with pytest.raises(ValueError, match="Refusing to resume/overwrite aborted"):
+        runner.run_all(resume=resume)
+    assert calls == []
+    assert runner.results == []
+    assert runner.config is cfg
+    assert set(tmp_path.rglob("*")) == original_paths
+    assert {path: path.read_bytes() for path in original} == original
+
+
+@pytest.mark.parametrize("executed_steps", [0, 2])
+@pytest.mark.parametrize("artifact_failure", [False, True])
+def test_h1_explicit_rejection_saves_prefix_and_counts_failed_seed(
+    tmp_path, monkeypatch, executed_steps, artifact_failure,
+):
+    """Runner contract with synthetic prefixes; this does not test physics."""
+    import json
+    from types import SimpleNamespace
+    import numpy as np
+    from genedynamics.core.types import ExecutionRejected
+    from genedynamics.solvers.common.receding_horizon import RecedingHorizonResult
+    from genedynamics.experiments.plugins.methods.contact_receding import _ContactPlanner
+    from genedynamics.experiments.utils.metrics import collect_results
+
+    cfg = ExperimentConfig.from_yaml(
+        ROOT / "configs/humanoid/push_to_line/baseline/dial.yaml"
+    )
+    cfg.output_dir, cfg.seeds, cfg.n_steps = tmp_path, [110], 3
+    cfg.suites = [dict(cfg.suites[0], n_steps=3)]
+    cfg.visualizations, cfg.auto_report = [], False
+    runner = ExperimentRunner(cfg)
+    register_all_plugins(runner)
+    method = runner.registry.get_plugin("method", "dial")
+
+    def create_planner(env, energy, config):
+        def run_receding(initial, steps, rng, **kwargs):
+            error = ExecutionRejected("invalid sealed geometry", {"entry_valid": False})
+            action = np.zeros(env.action_size, np.float32)
+            error.partial_result = RecedingHorizonResult(
+                states=[initial] * (executed_steps + 1),
+                actions=[action] * executed_steps,
+                infos=[{"executed": 1}] * executed_steps,
+            )
+            error.partial_states_complete = True
+            error.rejected_action = action
+            error.rejected_info = {"rejected": 1}
+            error.rejected_step = executed_steps
+            error.requested_steps = steps
+            raise error
+        return _ContactPlanner(
+            solver=SimpleNamespace(run_receding=run_receding), env=env,
+            execution_env=env, task="humanoid_box_push", controller_method="dial",
+            n_steps=3, seed=110, component_contract={"synthetic_contract_test": True},
+        )
+
+    monkeypatch.setattr(method, "create_planner", create_planner)
+    metric_calls = []
+    def prefix_metrics(trajectory, *args, **kwargs):
+        metric_calls.append(len(trajectory.actions))
+        if artifact_failure:
+            raise RuntimeError("synthetic prefix metric failure")
+        return {"humanoid_box_push_metrics": {
+            "safe_success": 1., "task_success": 1., "physics_force_peak": 2.,
+        }}
+    monkeypatch.setattr(runner, "_compute_metrics", prefix_metrics)
+    if artifact_failure:
+        cfg.visualizations = ["synthetic_failure"]
+        def broken_visuals(*args, **kwargs):
+            raise RuntimeError("synthetic prefix visual failure")
+        monkeypatch.setattr(runner, "_generate_visualizations", broken_visuals)
+    attempts = runner.run_all()
+    assert len(attempts) == 1
+    assert metric_calls == ([executed_steps] if executed_steps else [])
+    suite = cfg.suites[0]["name"]
+    seed_dir = tmp_path / f"level_{suite}" / "seed_110"
+    payload = json.loads((seed_dir / "results.json").read_text())
+    trace = json.loads((seed_dir / "trajectory" / "trajectory.json").read_text())
+    assert payload["execution_status"]["state"] == "aborted_unrecoverable"
+    assert payload["execution_status"]["executed_steps"] == executed_steps
+    assert payload["execution_status"]["requested_steps"] == 3
+    assert payload["metrics"]["humanoid_box_push_metrics"] == {
+        "task_success": 0., "safe_success": 0.,
+    }
+    assert len(trace["states"]) == executed_steps + 1
+    assert len(trace["actions"]) == len(trace["infos"]) == executed_steps
+    assert trace["execution_status"]["rejected_info"] == {"rejected": 1}
+    if executed_steps and not artifact_failure:
+        assert payload["partial_metrics"]["humanoid_box_push_metrics"]["physics_force_peak"] == 2.
+    else:
+        assert payload["partial_metrics"] == {}
+        assert "task_signals" not in trace
+    if artifact_failure:
+        assert payload["execution_status"]["visualization_error"] == "synthetic prefix visual failure"
+        if executed_steps:
+            assert payload["execution_status"]["partial_metrics_error"] == "synthetic prefix metric failure"
+    overall = json.loads((tmp_path / "overall_summary.json").read_text())
+    assert overall["total_experiments"] == 1
+    summary = overall["metrics"]["humanoid_box_push_metrics"]["safe_success"]
+    assert summary["n"] == 1 and summary["missing"] == 0 and summary["mean"] == 0.
+    runner.config = cfg.for_suite(cfg.suites[0])
+    with pytest.raises(ValueError, match="Refusing to resume/overwrite aborted"):
+        runner._load_completed_result(suite, 110)
+    records = collect_results([str(tmp_path)])
+    assert len(records) == 1
+    assert "physics_force_peak" not in records[0]["metrics"]["humanoid_box_push_metrics"]
+
+
+@pytest.mark.parametrize("has_initializer", [False, True])
+@pytest.mark.parametrize("is_planning_controller", [False, True])
+def test_contact_plan_initializer_is_only_forwarded_to_planners(
+    has_initializer, is_planning_controller,
+):
+    """The optional task seam must not change raw/tangent policy call contracts."""
+    from types import SimpleNamespace
+    import numpy as np
+    from genedynamics.experiments.plugins.methods.contact_receding import (
+        RecedingContactMethodPlugin, _ContactPlanner,
+    )
+
+    recorded = {}
+
+    def run_receding(state, n_steps, rng, **kwargs):
+        recorded.update(kwargs)
+        return SimpleNamespace(
+            states=[state, state], actions=[np.zeros(1)], infos=[], costs=[],
+        )
+
+    initialize = lambda state, nodes: nodes
+    env = SimpleNamespace()
+    if has_initializer:
+        env.plan_initializer = initialize
+    solver = SimpleNamespace(run_receding=run_receding)
+    if is_planning_controller:
+        solver.make_controller = lambda *args, **kwargs: None
+    planner = _ContactPlanner(
+        solver=solver, env=env, execution_env=env,
+        task="humanoid_box_push", controller_method="dial",
+        n_steps=1, seed=110, component_contract={},
+    )
+    RecedingContactMethodPlugin("dial", "dial").plan(
+        planner, np.zeros(1), rng=None,
+    )
+    expected = dict(collect_states=True, synchronize_steps=True)
+    if has_initializer and is_planning_controller:
+        expected["initialize_plan"] = initialize
+    assert recorded == expected
+
+
 @pytest.mark.requires_jax
 @pytest.mark.requires_brax
 @pytest.mark.parametrize(
@@ -296,6 +477,33 @@ def test_each_contact_plugin_dispatches_its_own_controller(
     assert planner.controller_method == controller_method
     assert captured["method"] == controller_method
     assert captured["kwargs"]["model_env"] is planner.env
+
+
+def test_contact_runner_seed_routes_to_environment_and_stochastic_solver(monkeypatch):
+    """One formal seed owns both domain randomization and planner sampling."""
+    class Env:
+        _experiment_task = "humanoid_box_push"
+        _experiment_execution_env = None
+
+    captured = {}
+
+    def fake_make_controller(task, method, **kwargs):
+        captured.update(task=task, method=method, kwargs=kwargs)
+        return kwargs["model_env"], object()
+
+    monkeypatch.setattr(
+        "genedynamics.experiments.plugins.methods.contact_receding.make_controller",
+        fake_make_controller,
+    )
+    planner = DIALContactMethodPlugin().create_planner(Env(), None, {
+        "task": "humanoid_box_push",
+        "n_steps": 1,
+        "seed": 0,
+        "np_random_seed": 17,
+    })
+    assert captured["kwargs"]["surface_seed"] == 17
+    assert captured["kwargs"]["seed"] == 17
+    assert planner.seed == 17
 
 
 def test_h1_suite_checkpoint_resolution_and_truthful_components(monkeypatch):

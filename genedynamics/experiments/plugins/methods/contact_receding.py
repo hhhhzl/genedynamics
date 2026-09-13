@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict, Optional, Tuple
 
 from genedynamics.core import get_backend
-from genedynamics.core.types import Trajectory
+from genedynamics.core.types import ExecutionRejected, Trajectory
 from genedynamics.envs.factories import make_env
 from genedynamics.experiments.framework.base import MethodPlugin
 from genedynamics.experiments.plugins.environments._contact_task import (
@@ -21,6 +21,41 @@ from genedynamics.solvers.single.mga.core.method_registry import (
     resolve_method,
 )
 from genedynamics.solvers.single.mga.mga import MGASolver
+
+
+def _validate_policy_interface(
+    env, policy_config, *, label="policy", atacom=None, execution_env=None,
+):
+    """Honor a task-owned semantic contract when shape checks are insufficient."""
+    expected = getattr(env, "policy_interface", None)
+    if execution_env is not None:
+        actual = getattr(execution_env, "policy_interface", None)
+        if expected != actual and (expected is not None or actual is not None):
+            raise ValueError(f"{label} model/execution policy interface mismatch")
+    if expected is None:
+        return  # Preserve legacy H1 and other tasks' checkpoint behavior.
+    if policy_config.get("policy_interface") != expected:
+        raise ValueError(
+            f"{label} policy interface mismatch: a checkpoint trained for the "
+            "active task/action semantics is required (matching dimensions are insufficient)"
+        )
+    expected_action_transform = getattr(env, "policy_action_transform", None)
+    if expected_action_transform is not None and atacom is None:
+        if policy_config.get("policy_action_transform") != expected_action_transform:
+            raise ValueError(
+                f"{label} policy action transform mismatch: the checkpoint must "
+                "use the task-owned residual chart for the active absolute action semantics"
+            )
+        for key in ("action_bias", "action_scale"):
+            if policy_config.get(key) != expected_action_transform[key]:
+                raise ValueError(f"{label} {key} does not match its policy action transform")
+    if atacom is not None:
+        transform = {
+            **atacom,
+            "time_step": float(getattr(getattr(env, "_config", None), "dt", 0.02)),
+        }
+        if policy_config.get("atacom_transform") != transform:
+            raise ValueError(f"{label} ATACOM training/deployment transform mismatch")
 
 
 def _task_env_kwargs(
@@ -85,6 +120,22 @@ def make_mga(
     regression probes can request ``mga_base`` explicitly.
     """
     method = canonical_method_name(method)
+    prior_rollout_mode = str(
+        cfg.pop("prior_rollout_mode", "closed_loop")
+    ).lower()
+    if prior_rollout_mode not in {"closed_loop", "current_observation"}:
+        raise ValueError(
+            "prior_rollout_mode must be 'closed_loop' or "
+            "'current_observation'"
+        )
+    if (
+        prior_rollout_mode == "current_observation"
+        and int(cfg.get("prior_stochastic_samples", 0)) > 0
+    ):
+        raise ValueError(
+            "current_observation prior does not support stochastic closed-loop "
+            "horizon samples"
+        )
     flags = resolve_method(method)
     backend = backend or get_backend("jax")
     env_kwargs = _task_env_kwargs(
@@ -108,6 +159,9 @@ def make_mga(
         )
 
         params, policy_config = load_policy(policy_ckpt)
+        _validate_policy_interface(
+            env, policy_config, label="MGA prior", execution_env=execution_env,
+        )
         if int(policy_config["action_size"]) != int(env.action_size):
             raise ValueError(
                 "policy/environment action mismatch: "
@@ -125,6 +179,7 @@ def make_mga(
             Hsample=int(cfg.get("Hsample", 16)),
             Hnode=int(cfg.get("Hnode", 4)),
             ctrl_dt=float(cfg.get("ctrl_dt", 0.02)),
+            rollout_mode=prior_rollout_mode,
         )
 
     atacom_prior = None
@@ -137,6 +192,10 @@ def make_mga(
         from genedynamics.solvers.single.atacom.prior import AtacomHorizonPrior
 
         atacom_params, atacom_config = load_policy(atacom_policy_ckpt)
+        _validate_policy_interface(env, atacom_config, label="ATACOM prior", execution_env=execution_env, atacom={
+            "Kc": float(cfg.get("atacom_Kc", 1.0)),
+            "action_limit": float(cfg.get("action_limit", 1.0)),
+        })
         expected = atacom_null_dim(env)
         if int(atacom_config.get("action_size", -1)) != expected:
             raise ValueError(
@@ -175,6 +234,19 @@ def make_mga(
             raise ValueError(f"method '{method}' requires a reliability feature hook")
         from genedynamics.learning.reliability import LinearReliabilityModel
 
+        validator = getattr(env, "validate_reliability_checkpoint", None)
+        if validator is not None:
+            import json
+            from pathlib import Path
+
+            horizon_steps = int(cfg.get("Hsample", 16)) + 1
+            payload = json.loads(Path(reliability_ckpt).read_text())
+            validator(payload, horizon_steps=horizon_steps)
+            if execution_env is not None:
+                execution_validator = getattr(execution_env, "validate_reliability_checkpoint", None)
+                if execution_validator is None:
+                    raise ValueError("reliability model/execution task contract mismatch")
+                execution_validator(payload, horizon_steps=horizon_steps)
         reliability_model = LinearReliabilityModel.load(reliability_ckpt)
         expected_features = getattr(env, "reliability_feature_size", None)
         if (
@@ -330,6 +402,12 @@ def _build_baseline_solver(method, env, backend, *, execution_env=None, **cfg):
         if checkpoint is None:
             raise ValueError(f"'{method}' needs a trained 'policy_ckpt'")
         params, policy_config = load_policy(checkpoint)
+        _validate_policy_interface(
+            env, policy_config, label=method,
+            execution_env=execution_env,
+            atacom={"Kc": float(cfg.get("Kc", 1.0)), "action_limit": action_limit}
+            if method == "atacom" else None,
+        )
         expected_action_size = int(env.action_size)
         if method == "atacom":
             from genedynamics.solvers.single.atacom.backends.atacom_jax import atacom_null_dim
@@ -538,6 +616,14 @@ class RecedingContactMethodPlugin(MethodPlugin):
                 "env_params", "suite", "task_level", "np_random_seed",
             }
         }
+        # ``np_random_seed`` is the runner's resolved per-run seed.  A seed in
+        # the shared method YAML is only a construction default; retaining it
+        # here would make every evaluation seed reuse the same stochastic
+        # planner trajectory while randomizing only the environment.  Route
+        # the resolved run seed into DIAL/MGA/MPPI/PegasusFlow as well as the
+        # environment so a formal seed denotes one complete experiment.
+        if "np_random_seed" in config:
+            solver_cfg["seed"] = int(config["np_random_seed"])
         execution_env = getattr(env, "_experiment_execution_env", None)
         model_env, solver = make_controller(
             task,
@@ -591,13 +677,46 @@ class RecedingContactMethodPlugin(MethodPlugin):
         del rng
         import jax
 
-        result = planner.solver.run_receding(
-            initial_state,
-            planner.n_steps,
-            jax.random.PRNGKey(1000 + planner.seed),
-            collect_states=True,
-            synchronize_steps=True,
-        )
+        controller_kwargs = dict(collect_states=True, synchronize_steps=True)
+        initialize_plan = getattr(planner.env, "plan_initializer", None)
+        if callable(initialize_plan) and callable(
+            getattr(planner.solver, "make_controller", None)
+        ):
+            # Task coordinates can have a nonzero neutral action. Only MPC
+            # controllers own a cold horizon; raw/tangent RL do not use one.
+            controller_kwargs["initialize_plan"] = initialize_plan
+        if isinstance(planner.solver, MGASolver):
+            # Use the same task execution context as direct MGA deployment.
+            execution_step = getattr(
+                planner.solver._get_backend_impl(), "execution_step", None
+            )
+            if execution_step is not None:
+                controller_kwargs["execution_step"] = execution_step
+        execution_status = None
+        try:
+            result = planner.solver.run_receding(
+                initial_state,
+                planner.n_steps,
+                jax.random.PRNGKey(1000 + planner.seed),
+                **controller_kwargs,
+            )
+        except ExecutionRejected as exc:
+            # Only a task's explicit pre-physics rejection may become an
+            # aborted attempt. Generic simulator/planner errors still raise.
+            if not getattr(exc, "partial_states_complete", False):
+                raise
+            result = exc.partial_result
+            execution_status = {
+                "state": "aborted_unrecoverable",
+                "reason": exc.reason,
+                "details": exc.details,
+                "requested_steps": int(exc.requested_steps),
+                "executed_steps": len(result.actions),
+                "rejected_step": int(exc.rejected_step),
+                "rejected_action": exc.rejected_action,
+                "rejected_info": exc.rejected_info,
+                "metrics_scope": "actual_execution_prefix_only",
+            }
         states = list(result.states)
         actions = list(result.actions)
         infos = list(getattr(result, "infos", ()))
@@ -605,6 +724,7 @@ class RecedingContactMethodPlugin(MethodPlugin):
         trajectory = Trajectory(states=states, actions=actions, info={
             "infos": infos,
             "costs": costs,
+            **({"execution_status": execution_status} if execution_status else {}),
         })
         return {
             "trajectory": trajectory,
@@ -616,6 +736,7 @@ class RecedingContactMethodPlugin(MethodPlugin):
             "execution_env": planner.execution_env,
             "receding_result": result,
             "component_contract": planner.component_contract,
+            **({"execution_status": execution_status} if execution_status else {}),
         }
 
 

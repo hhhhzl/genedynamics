@@ -94,6 +94,17 @@ def test_suite_cannot_change_fairness_budget(tmp_path: Path):
     assert any("cannot change fairness budget" in error for error in cfg.validate())
 
 
+@pytest.mark.parametrize("steps", [0, -1, True, False, 1.5, "300", None])
+def test_suite_episode_length_requires_positive_integer(tmp_path: Path, steps):
+    cfg = ExperimentConfig(
+        name="episode_length", output_dir=tmp_path, env_name="dummy", method="dummy",
+        suites=[{"name": "walk", "n_steps": steps}],
+    )
+    assert any("n_steps must be a positive integer" in error for error in cfg.validate())
+    with pytest.raises(ValueError, match="n_steps must be a positive integer"):
+        cfg.for_suite(cfg.suites[0])
+
+
 def test_existing_config_keeps_legacy_level_protocol():
     cfg = ExperimentConfig.from_yaml(ROOT / "configs/single_2d/mbd.yaml")
     assert cfg.name == "single2d_mbd_default"
@@ -115,7 +126,7 @@ def test_two_suites_by_two_seeds_expand_without_mutating_config(tmp_path: Path):
         seeds=[3, 7],
         suites=[
             {"name": "first", "level": "plane", "env_params": {"medium": "rigid"}},
-            {"name": "second", "level": "cylinder", "env_params": {"medium": "soft"}},
+            {"name": "second", "level": "cylinder", "env_params": {"medium": "soft"}, "n_steps": 300},
         ],
         metrics=[],
         visualizations=[],
@@ -129,21 +140,39 @@ def test_two_suites_by_two_seeds_expand_without_mutating_config(tmp_path: Path):
 
     def run_one(level, seed):
         calls.append((level, seed, runner.config.env_params["medium"],
-                      runner.config.metadata["suite"]))
+                      runner.config.metadata["suite"], runner.config.n_steps))
         return {"level": level, "seed": seed}
 
     runner.run_single_experiment = run_one
     results = runner.run_all()
     assert len(results) == 4
     assert calls == [
-        ("first", 3, "rigid", "first"),
-        ("first", 7, "rigid", "first"),
-        ("second", 3, "soft", "second"),
-        ("second", 7, "soft", "second"),
+        ("first", 3, "rigid", "first", 100),
+        ("first", 7, "rigid", "first", 100),
+        ("second", 3, "soft", "second", 300),
+        ("second", 7, "soft", "second", 300),
     ]
     assert runner.config is cfg
     assert cfg.env_params == {}
+    assert cfg.n_steps == 100
     assert [suite["name"] for suite in cfg.suites] == ["first", "second"]
+
+
+def test_manifest_records_resolved_suite_episode_lengths(tmp_path: Path):
+    import json
+
+    cfg = ExperimentConfig(
+        name="duration", output_dir=tmp_path, env_name="dummy", method="dummy",
+        suites=[{"name": "force"}, {"name": "walk", "n_steps": 300}],
+        method_params={"Nsample": 64, "Hsample": 16},
+    )
+    ExperimentRunner(cfg)._save_protocol_manifest()
+    manifest = json.loads((tmp_path / "protocol_manifest.json").read_text())
+    budgets = manifest["resolved_suite_budgets"]
+    assert budgets["force"]["n_steps"] == 100
+    assert budgets["walk"]["n_steps"] == 300
+    assert budgets["force"]["Nsample"] == budgets["walk"]["Nsample"] == 64
+    assert manifest["config"]["n_steps"] == 100
 
 
 def test_resume_reuses_only_complete_matching_results(tmp_path: Path):

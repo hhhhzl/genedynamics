@@ -13,6 +13,25 @@ from genedynamics.experiments.utils.metrics import (
 from genedynamics.experiments.framework.config import ExperimentConfig
 
 
+def test_report_keeps_h1_physical_force_primary_separate_from_endpoints():
+    from genedynamics.experiments.utils.metrics import _plot_metric_rows
+
+    rows = [{"metric": name, "mean": value} for name, value in (
+        ("humanoid_box_push_metrics.force_peak", 166.0),
+        ("humanoid_box_push_metrics.physics_force_peak", 331.0),
+        ("humanoid_box_push_metrics.physics_force_normalized_cvar95", 5.52),
+        ("surface_scan_metrics.force_peak", 20.0),
+        ("peg_insert_metrics.peak_lateral_force", 7.0),
+    )]
+    assert _plot_metric_rows(rows, "force_peak") == [rows[0], rows[3]]
+    assert _plot_metric_rows(rows, "physics_force_peak") == [rows[1]]
+    assert _plot_metric_rows(rows, "physics_force_normalized_cvar95") == [rows[2]]
+    # Missing physical evidence must not silently fall back to endpoint data.
+    assert _plot_metric_rows([rows[0]], "physics_force_peak") == []
+    assert _plot_metric_rows([rows[0]], "physics_force_normalized_cvar95") == []
+    assert _plot_metric_rows(rows, "peak_lateral_force") == [rows[4]]
+
+
 def _result(root: Path, algorithm: str, seed: int, safe: float, force: float):
     path = root / algorithm / "level_id" / f"seed_{seed}" / "results.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -45,6 +64,25 @@ def test_formal_mga_configs_pass_checkpoint_and_causal_protocol_audit():
     assert all("explicitly waived" in warning for warning in report["warnings"])
 
 
+def test_protocol_pairs_episode_length_within_each_suite(tmp_path: Path):
+    for algorithm in ("dial", "mga"):
+        config = ExperimentConfig(
+            name=algorithm, output_dir=tmp_path / algorithm,
+            env_name="dummy", method=algorithm,
+            suites=[{"name": "force"}, {"name": "walk", "n_steps": 300}],
+            method_params={"Nsample": 64, "Hsample": 16},
+        )
+        config.to_yaml(tmp_path / f"{algorithm}.yaml")
+    assert audit_configs([str(tmp_path)])["ok"]
+    path = tmp_path / "mga.yaml"
+    changed = ExperimentConfig.from_yaml(path)
+    changed.suites[1]["n_steps"] = 301
+    changed.to_yaml(path)
+    report = audit_configs([str(tmp_path)])
+    assert not report["ok"]
+    assert any("paired protocol differs" in error for error in report["errors"])
+
+
 def test_report_writes_paired_statistics_and_representative_seed(tmp_path: Path):
     root = tmp_path / "results"
     _result(root, "mga", 10, 1.0, 5.0)
@@ -74,6 +112,38 @@ def test_report_reads_legacy_algorithm_directory_as_mga(tmp_path: Path):
     paired = json.loads((output / "paired_deltas.json").read_text())
     assert paired
     assert {row["reference"] for row in paired} == {"mga"}
+
+
+def test_aborted_h1_seed_counts_against_ssr_without_prefix_force_advantage(tmp_path):
+    root = tmp_path / "results"
+    for seed, aborted in ((110, False), (111, True)):
+        path = root / "mga" / "level_p3" / f"seed_{seed}" / "results.json"
+        path.parent.mkdir(parents=True)
+        metrics = {"safe_success": 0. if aborted else 1.,
+                   "task_success": 0. if aborted else 1.}
+        payload = {"suite": "p3", "seed": seed,
+                   "metrics": {"humanoid_box_push_metrics": metrics}}
+        if aborted:
+            payload.update({
+                "execution_status": {"state": "aborted_unrecoverable"},
+                "partial_metrics": {"humanoid_box_push_metrics": {"physics_force_peak": 0.1}},
+            })
+        else:
+            metrics["physics_force_peak"] = 44.
+        path.write_text(json.dumps(payload))
+    output = tmp_path / "report"
+    report = summarize_results([str(root)], str(output))
+    assert report["result_count"] == 2
+    rows = json.loads((output / "summary.json").read_text())
+    safe = next(row for row in rows if row["metric"].endswith(".safe_success"))
+    force = next(row for row in rows if row["metric"].endswith(".physics_force_peak"))
+    assert safe["n"] == 2 and safe["mean"] == .5
+    assert force["n"] == 1 and force["mean"] == 44.
+    assert force["n_attempted"] == 2 and force["n_completed"] == 1
+    aborts = next(row for row in rows if row["metric"] == "execution.abort_rate")
+    assert aborts["n"] == 2 and aborts["mean"] == .5
+    representative = json.loads((output / "representative_seeds.json").read_text())
+    assert len(representative) == 1 and representative[0]["seed"] == 110
 
 
 def test_legacy_equivalence_compares_actions_and_scalar_metrics(tmp_path: Path):
@@ -177,7 +247,7 @@ metrics: []
 visualizations: []
 method_params: {Nsample: 4, Hsample: 4, Hnode: 2, Ndiffuse: 1, Ndiffuse_init: 1}
 suites:
-  - {name: kept, level: plane}
+  - {name: kept, level: plane, n_steps: 3}
   - {name: skipped, level: cylinder}
 """,
         encoding="utf-8",
@@ -217,7 +287,86 @@ suites:
     }
     assert verify_results([str(config_path)], **kwargs)["ok"] is True
 
+    result_path = level_dir / "seed_0" / "results.json"
+    result = json.loads(result_path.read_text())
+    result["config_snapshot"]["n_steps"] = 2
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    report = verify_results([str(config_path)], **kwargs)
+    assert any("budget mismatch n_steps" in error for error in report["errors"])
+    result["config_snapshot"]["n_steps"] = 3
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+
+    manifest_path = cfg.output_dir / "protocol_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["config"]["suites"][0]["n_steps"] = 2
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    report = verify_results([str(config_path)], **kwargs)
+    assert any("resolved suite budget mismatch" in error for error in report["errors"])
+    manifest["config"]["suites"][0]["n_steps"] = 3
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
     overall_path.write_text(json.dumps({"total_experiments": 1}), encoding="utf-8")
     report = verify_results([str(config_path)], **kwargs)
     assert report["ok"] is False
     assert any("run-count mismatch" in error for error in report["errors"])
+
+
+@pytest.mark.parametrize("pattern", ["all_na", "mixed", "legacy"])
+def test_receding_comparison_applicability_excludes_placeholders(pattern):
+    def row(improvement, applicable):
+        value = {
+            "prior_accepted": 1.0, "prior_predicted_improvement": improvement,
+            "prior_risk_ok": 1.0, "prior_force_veto": 0.0,
+            "reliability_risk_incumbent": [improvement] * 4,
+            "reliability_support_incumbent": improvement,
+            "additive_prior_improvement": improvement,
+            "emergency_fallback_recovery": float(not applicable),
+        }
+        if pattern != "legacy":
+            value.update({
+                "prior_comparison_applicable": float(applicable),
+                "reliability_incumbent_applicable": float(applicable),
+                "additive_prior_comparison_applicable": float(applicable),
+            })
+        return value
+    rows = (
+        [row(0.0, False), row(0.0, False)] if pattern == "all_na"
+        else [row(0.0, False), row(4.0, True)]
+    )
+    result = aggregate_receding_diagnostics(rows, task="humanoid_box_push")
+    keys = [
+        "prior_predicted_improvement_mean", "additive_prior_improvement",
+        "reliability_risk_incumbent_force_violation", "reliability_support_incumbent",
+    ]
+    counts = ["prior_comparison_count", "reliability_incumbent_count",
+              "additive_prior_comparison_count"]
+    if pattern == "all_na":
+        assert all(key not in result for key in keys)
+        assert all(result[key] == 0.0 for key in counts)
+    else:
+        expected = 4.0 if pattern == "mixed" else 2.0
+        assert all(result[key] == expected for key in keys)
+        if pattern == "mixed":
+            assert all(result[key] == 1.0 for key in counts)
+        else:
+            assert all(key not in result for key in counts)
+    # These are finite placeholders plus explicit applicability, not NaN JSON.
+    json.dumps({"infos": rows, "aggregates": result}, allow_nan=False)
+
+
+@pytest.mark.parametrize("task,labels", [
+    ("humanoid_box_push", ("force_violation", "invalid_contact", "balance", "force_mae")),
+    ("manipulator_peg_insert", ("force_violation", "torque_violation", "jam", "force_mae")),
+    ("manipulator_surface_scan", ("force_violation", "contact_loss", "deformation", "force_mae")),
+])
+def test_receding_risk_names_follow_exact_task_semantics(task, labels):
+    row = {
+        "prior_accepted": 1.0, "prior_predicted_improvement": 1.0,
+        "prior_risk_ok": 1.0, "prior_force_veto": 0.0,
+        "prior_risk_refined": [1.0, 2.0, 3.0, 4.0],
+    }
+    result = aggregate_receding_diagnostics([row], task=task)
+    actual = {key: value for key, value in result.items()
+              if key.startswith("prior_risk_refined_")}
+    assert actual == {f"prior_risk_refined_{label}": float(index + 1)
+                      for index, label in enumerate(labels)}

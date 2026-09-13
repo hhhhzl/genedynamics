@@ -154,3 +154,21 @@ class NodeSpline:
         us = jnp.roll(us, -1, axis=0)
         us = us.at[-1].set(terminal)
         return self.u2node(us)
+
+    def shift_nodes_certified_terminal_hold(self, nodes: jnp.ndarray) -> jnp.ndarray:
+        """Shift with an exact first action and a terminal-hold extension.
+
+        Refitting a one-step-shifted dense sequence into fewer spline nodes is
+        only a least-squares approximation.  For a receding safety certificate,
+        that approximation must not rewrite the immediate backup action that
+        was certified in the preceding cycle.  The spline interpolates its
+        first endpoint exactly, so pinning node zero to the old dense action at
+        index one preserves that deployed successor while retaining the usual
+        terminal-hold fit for the remaining horizon.
+        """
+        us = self.node2u(nodes)
+        first_backup = us[1]
+        terminal = us[-1]
+        shifted_us = jnp.roll(us, -1, axis=0).at[-1].set(terminal)
+        shifted_nodes = self.u2node(shifted_us)
+        return shifted_nodes.at[0].set(first_backup)

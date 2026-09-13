@@ -26,6 +26,7 @@ def train_rl_policy(
     policy_hidden_layer_sizes: Sequence[int] = (32, 32, 32, 32),
     normalize_observations: bool = True,
     learning_rate: float = 3e-4,
+    init_noise_std: float = 1.0,
     seed: int = 0,
     warmup_steps: int = 5_000,
     **train_kwargs: Any,
@@ -43,7 +44,8 @@ def train_rl_policy(
         from brax.training.agents.ppo import train as _train
         from brax.training.agents.ppo import networks as _nets
         network_factory = functools.partial(_nets.make_ppo_networks,
-                                             policy_hidden_layer_sizes=hidden)
+                                             policy_hidden_layer_sizes=hidden,
+                                             init_noise_std=float(init_noise_std))
         extra: Dict[str, Any] = {}
     elif algo == "sac":
         from brax.training.agents.sac import train as _train
@@ -77,6 +79,7 @@ def train_rl_policy(
         "episode_length": int(episode_length),
         "num_envs": int(num_envs),
         "learning_rate": float(learning_rate),
+        "init_noise_std": float(init_noise_std),
         "warmup_steps": int(warmup_steps),
         "seed": int(seed),
         "train_kwargs": {
@@ -165,6 +168,7 @@ def build_policy_prior(
     Hnode: int = 4,
     ctrl_dt: float = 0.02,
     deterministic: bool = True,
+    rollout_mode: str = "closed_loop",
 ):
     """Build the horizon-level prior from the *same* standalone checkpoint.
 
@@ -178,6 +182,12 @@ def build_policy_prior(
             "MGA policy prior currently requires a PPO checkpoint; "
             f"got algo={algo!r}"
         )
+    rollout_mode = str(rollout_mode).lower()
+    if rollout_mode not in {"closed_loop", "current_observation"}:
+        raise ValueError(
+            "policy prior rollout_mode must be 'closed_loop' or "
+            "'current_observation'"
+        )
     from genedynamics.learning.priors.rl import RLPrior
 
     return RLPrior(
@@ -189,7 +199,11 @@ def build_policy_prior(
         normalize_observations=config["normalize_observations"],
         policy_hidden_layer_sizes=config["policy_hidden_layer_sizes"],
         deterministic=deterministic,
-        rollout_step=env.step,
+        # A current-observation prior is a learned node-space centre: it does
+        # not compile a second copy of a large MJX dynamics graph beside the
+        # model-based optimizer.  The default remains the closed-loop policy
+        # rollout used by existing tasks and GPU experiments.
+        rollout_step=(env.step if rollout_mode == "closed_loop" else None),
         Hsample=int(Hsample),
         Hnode=int(Hnode),
         ctrl_dt=float(ctrl_dt),

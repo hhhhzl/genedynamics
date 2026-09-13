@@ -133,8 +133,19 @@ class RecedingHorizonController:
         collect_states: store every full dynamics state. Disable for long MJX
             experiments whose evaluators replay the executed actions; the
             result then keeps only initial and final state.
+        collect_infos: store every full replanning diagnostic. Disable for
+            long MJX runs when the execution bridge consumes the diagnostic
+            online and retaining candidate-rollout tensors would grow memory.
+            This never changes the diagnostic passed to ``execution_step``.
         synchronize_steps: block after each real step so asynchronous JAX
             execution cannot queue an episode's worth of device buffers.
+        initialize_plan: optional task-owned conversion of the cold plan,
+            ``(initial_state, planner_default) -> plan_var``. The planner still
+            owns its representation and all subsequent refinement/shift steps.
+        execution_step: optional task-owned real transition
+            ``(state, action, final_plan_info) -> next_state``. The info is None
+            for planners without replan diagnostics. Errors propagate without
+            executing the ordinary transition as an implicit fallback.
     """
 
     def __init__(
@@ -149,7 +160,10 @@ class RecedingHorizonController:
         split_rng: Optional[Callable[[Any], Any]] = None,
         collect_plan_vars: bool = False,
         collect_states: bool = True,
+        collect_infos: bool = True,
         synchronize_steps: bool = False,
+        initialize_plan: Optional[Callable[[Any, Any], Any]] = None,
+        execution_step: Optional[Callable[[Any, Any, Any], Any]] = None,
     ) -> None:
         self.planner = planner
         self.step_fn = step_fn
@@ -160,7 +174,14 @@ class RecedingHorizonController:
         self._split_rng = split_rng or _default_split_rng
         self.collect_plan_vars = bool(collect_plan_vars)
         self.collect_states = bool(collect_states)
+        self.collect_infos = bool(collect_infos)
         self.synchronize_steps = bool(synchronize_steps)
+        if initialize_plan is not None and not callable(initialize_plan):
+            raise TypeError("initialize_plan must be callable or None")
+        self._initialize_plan = initialize_plan
+        if execution_step is not None and not callable(execution_step):
+            raise TypeError("execution_step must be callable or None")
+        self._execution_step = execution_step
 
     def n_diffuse_at(self, t: int) -> int:
         """Diffusion-step count for real step ``t`` (init on t==0, else steady)."""
@@ -170,6 +191,8 @@ class RecedingHorizonController:
         """Execute the closed-loop receding-horizon rollout."""
         state = x0
         plan_var = self.planner.init_plan_var()
+        if self._initialize_plan is not None:
+            plan_var = self._initialize_plan(state, plan_var)
         # A Brax reset can return a pytree that mixes committed device arrays
         # with uncommitted JAX constants.  After the first real env.step all
         # leaves become committed, and JAX otherwise treats that sharding change
@@ -192,6 +215,7 @@ class RecedingHorizonController:
         actions: List[Any] = []
         plan_vars: List[Any] = []
         infos: List[Any] = []
+        executed_infos: List[Any] = []  # Used only for an explicit abort prefix.
 
         for t in range(self.n_steps):
             schedule = self._make_schedule(self.n_diffuse_at(t))
@@ -201,12 +225,14 @@ class RecedingHorizonController:
             # Pass the real-step index t as t0 so time-dependent rewards (e.g.
             # gait phase) advance with execution; planners that ignore time take
             # t0 via **kwargs / a default and are unaffected.
+            plan_info = None
             replan_with_info = getattr(self.planner, "replan_with_info", None)
             if callable(replan_with_info):
                 plan_var, plan_info = replan_with_info(
                     state, plan_var, schedule, sub, t0=t
                 )
-                infos.append(plan_info)
+                if self.collect_infos:
+                    infos.append(plan_info)
             else:
                 plan_var = self.planner.replan(
                     state, plan_var, schedule, sub, t0=t
@@ -215,7 +241,32 @@ class RecedingHorizonController:
             # 2) execute only the first control on the REAL dynamics
             u0 = self.planner.first_action(plan_var)
             previous_state = state
-            state = self.step_fn(state, u0)
+            if self._execution_step is None:
+                state = self.step_fn(state, u0)
+            else:
+                # Keep the no-context bridge free of core/backend imports.
+                from genedynamics.core.types import ExecutionRejected
+
+                try:
+                    state = self._execution_step(state, u0, plan_info)
+                except ExecutionRejected as exc:
+                    # The callback rejects BEFORE physical execution. Do not
+                    # append its action/info, call after_step, shift, or pad.
+                    partial_states = list(states)
+                    if not self.collect_states and actions:
+                        partial_states.append(previous_state)
+                    exc.partial_result = RecedingHorizonResult(
+                        states=partial_states, actions=list(actions),
+                        plan_vars=list(plan_vars), infos=list(executed_infos),
+                    )
+                    exc.partial_states_complete = (
+                        self.collect_states or len(actions) <= 1
+                    )
+                    exc.rejected_action = u0
+                    exc.rejected_info = plan_info
+                    exc.rejected_step = t
+                    exc.requested_steps = self.n_steps
+                    raise
             after_step = getattr(self.planner, "after_step", None)
             if callable(after_step):
                 after_step(previous_state, u0, state)
@@ -227,6 +278,8 @@ class RecedingHorizonController:
                     pass
 
             actions.append(u0)
+            if self._execution_step is not None and self.collect_infos:
+                executed_infos.append(plan_info)
             if self.collect_states:
                 states.append(state)
             if self.collect_plan_vars:

@@ -509,6 +509,271 @@ def peg_insert_metrics_plugin(name: str = "peg_insert_metrics"):
     )
 
 
+def _humanoid_goal_signals(box_x, box_yaw, task_success, goal_x, cfg):
+    """Keep physical box error separate from the task's completion contract.
+
+    Retain the legacy geometric residual separately from true task completion.
+    Locomotion P4 must satisfy the environment's walking and dwell conditions;
+    reaching the line with the box alone is not a completed walking task.
+    """
+    residual = np.abs(np.asarray(box_x).reshape(-1) - goal_x)
+    task_error = float(residual[-1])
+    if str(cfg.level).lower() == "unjam":
+        task_error = max(
+            task_error,
+            float(cfg.goal_eps) * abs(float(np.asarray(box_yaw).reshape(-1)[-1]))
+            / max(float(cfg.unjam_yaw_eps), 1e-6),
+        )
+    if (str(cfg.level).lower() == "push_walk"
+            and getattr(cfg, "walk_success_mode", "legacy") == "locomotion"):
+        incomplete = np.asarray(task_success).reshape(-1) < 0.5
+        residual = np.maximum(residual, incomplete * (2.0 * float(cfg.goal_eps)))
+        task_error = float(residual[-1])
+    return {
+        "task_goal_error": task_error,
+        "completion_residual": residual[:, None],
+        "task_completion_residual": (np.asarray(task_success).reshape(-1) < 0.5).astype(float)[:, None],
+        "completion_target": np.zeros(1),
+    }
+
+
+_HUMANOID_WALK_DIAGNOSTIC_KEYS = (
+    "foot_normal_loads", "foot_floor_clearance", "foot_ground_contact",
+    "robot_subtree_com", "torso_up", "torso_height", "box_forward_velocity",
+)
+
+
+def _humanoid_walk_diagnostics(env, pipeline_state):
+    """Persist physical support evidence without changing legacy safety metrics."""
+    cfg = env._bcfg
+    if not (str(cfg.level).lower() == "push_walk"
+            and getattr(cfg, "walk_success_mode", "legacy") == "locomotion"
+            and getattr(cfg, "walk_leg_control", "legacy") == "joint_target"):
+        return {}
+    return env._walk_contact_diagnostics(pipeline_state)
+
+
+_HUMANOID_LEGACY_EVALUATION_CONTRACT = {
+    "version": 1,
+    "physical_samples": "exclude_only_contiguous_success_padding_suffix",
+    "completion_event": "post_transition_task_success",
+    "completion_step_indexing": "zero_based_post_transition_row",
+}
+
+_HUMANOID_EVALUATION_CONTRACT = {
+    "version": 3,
+    "physical_samples": "active_prefix_then_actual_post_physics_substeps",
+    "completion_event": "post_transition_task_success",
+    "completion_step_indexing": "zero_based_post_transition_row",
+    "physics_clock": "control_start_plus_j_plus_one_times_physics_dt",
+    "physics_integral": "right_rectangle_excluding_initial_state_and_padding",
+    "primary_force_tail": "physics_force_normalized_cvar95",
+    "primary_force_peak": "physics_force_peak",
+    "primary_force_violation_rate": "physics_force_violation_rate",
+    "safe_success": "initial_and_active_substep_margins_with_complete_coverage",
+    "failure_tail": "retain_first_fall_transition_then_exclude_post_terminal_rollout",
+    "endpoint_force_metrics": "retained_20ms_diagnostics_not_primary_safety",
+}
+
+_HUMANOID_PHYSICS_ARRAYS = (
+    "physics_hand_force", "physics_nonhand_force", "physics_safety_margins",
+)
+
+# Only physical time-series consumed by H1 metrics are shortened.  In particular,
+# reliability arrays describe the original rollout contract and remain untouched.
+_HUMANOID_PHYSICAL_SERIES = (
+    "positions", "box_x", "box_y", "box_yaw", "completion_residual",
+    "task_completion_residual", "corridor_clearance", "controls", "stiffness",
+    "com_xy", "support_center", "pelvis_position", "feet_positions",
+    "walk_body_progress", "walk_support_progress", "walk_forward_steps",
+    "walk_left_steps", "walk_right_steps", "walk_swing_seen", "walk_foot_loaded",
+    "walk_swing_eligible", "walk_landing_x", "walk_goal_ready", "walk_goal_hold_time",
+    "walk_force_scale", "fell", "g_bal", "g_fric", "tip_series", "f_tangential",
+    "f_normal", "slip_speed", "force", "force_des", "task_force_reference",
+    "execution_force_reference", "force_effective", "contact_acquired", "contact_step",
+    "force_int", "unjam_released", "task_success", "task_fallen", "success_padding",
+    "safety_margins", "force_rise_mask", "force_expected", "g_safety", "wall_force",
+    "wall_contact", "nonhand_contact", "in_contact", "in_contact_expected", "g",
+    *_HUMANOID_WALK_DIAGNOSTIC_KEYS,
+    *_HUMANOID_PHYSICS_ARRAYS, "physics_samples_valid",
+    "mga_execution_mode", "mga_emergency_zero_force",
+    "reliability_execution_applicable",
+)
+
+
+def _humanoid_evaluation_view(signals):
+    """Exclude terminal suffixes while retaining the terminal transition.
+
+    Successful H1 rollouts already mark their unexecuted absorbing suffix.
+    Fixed-length diagnostic drivers can also keep calling ``step`` after a
+    fall, however.  Those later states are not part of the episode and must not
+    create locomotion progress or completed foot steps.  Historical signals
+    need an explicitly documented offline audit; absence of the collection-time
+    contract must not silently select a new metric protocol.
+    """
+    metadata = signals.get("task_metadata") or {}
+    is_h1 = str(metadata.get("robot", "h1")).lower() == "h1"
+    contract = (_HUMANOID_EVALUATION_CONTRACT if is_h1
+                else _HUMANOID_LEGACY_EVALUATION_CONTRACT)
+    if (metadata.get("evaluation_contract") != contract
+            or "success_padding" not in signals):
+        raise ValueError("H1 evaluation contract/padding missing; historical signals are audit-only")
+    raw_padding = np.asarray(signals["success_padding"]).reshape(-1)
+    if not np.all(np.isin(raw_padding, [False, True])):
+        raise ValueError("H1 success_padding must be finite binary flags")
+    padding = raw_padding.astype(bool)
+    count = len(padding)
+    starts = np.flatnonzero(padding)
+    success_active = int(starts[0]) if starts.size else count
+    if success_active == 0 or (starts.size and not np.all(padding[success_active:])):
+        raise ValueError("H1 padding must be a contiguous suffix after an actual transition")
+    success = np.asarray(signals["task_success"]).reshape(-1)
+    if len(success) != count or (starts.size and not np.all(success[success_active - 1:] > 0.5)):
+        raise ValueError("H1 padding must follow the retained successful transition")
+    fallen = np.asarray(signals.get("task_fallen", signals.get("fell", np.zeros(count)))).reshape(-1)
+    if fallen.shape != (count,) or not np.all(np.isin(fallen, [0.0, 1.0, False, True])):
+        raise ValueError("H1 task_fallen/fell must be finite binary flags")
+    fall_events = np.flatnonzero(fallen > 0.5)
+    # Retain the physical transition that first detects the fall, then discard
+    # all fixed-horizon calls after termination.  Taking the minimum also makes
+    # simultaneous success/fall obey the environment's fall-priority rule.
+    fall_active = int(fall_events[0]) + 1 if fall_events.size else count
+    active = min(success_active, fall_active)
+    if "physics_samples_valid" in signals:
+        physics_valid = np.asarray(signals["physics_samples_valid"]).reshape(-1)
+        if (physics_valid.shape != (count,)
+                or not np.all(np.isin(physics_valid, [False, True]))):
+            raise ValueError("H1 physics_samples_valid must be finite binary transition flags")
+        if np.any(physics_valid[padding]):
+            raise ValueError("H1 success padding cannot claim executed physics samples")
+    view = dict(signals)
+    for name in _HUMANOID_PHYSICAL_SERIES:
+        if name not in signals:
+            continue
+        values = np.asarray(signals[name])
+        if values.ndim == 0 or len(values) != count:
+            raise ValueError(f"H1 physical series {name!r} must match transition count")
+        view[name] = values[:active]
+    # Scalar endpoint aliases are constructed by the extractor before the
+    # evaluation view.  Rebind them to the retained episode endpoint so that
+    # secondary pose/progress diagnostics cannot use post-fall motion.
+    if active > 0 and "positions" in view:
+        view["final_pos"] = np.asarray(view["positions"])[-1]
+    if active > 0 and "box_yaw" in view:
+        view["final_yaw"] = np.atleast_1d(np.asarray(view["box_yaw"])[-1])
+    if "task_goal_error" in view and not bool(view.get("force_step_applicable", False)):
+        # A required alias prevents raw/legacy compute_metrics calls from
+        # bypassing this view and using success.violation's default zero.
+        view["safe_success_goal_error"] = view["task_goal_error"]
+    if not is_h1:
+        # G1 retains its endpoint protocol; it must not be mistaken for an H1
+        # rollout with missing physical coverage or receive fabricated samples.
+        view["safe_success_violation"] = float(np.max(np.maximum(view["g_safety"], 0.0)))
+        view["safe_success_violation_tol"] = 1e-6
+        return view
+    return _humanoid_physics_evaluation_view(view)
+
+
+def _humanoid_physics_evaluation_view(view):
+    """Bind actual substep statistics without changing the endpoint time grid.
+
+    Missing/partial coverage retains diagnostics but cannot certify success.
+    In particular, an absent optional ``success.violation`` would otherwise
+    default to zero in the general metric library.  The internal gate is always
+    present; its infinity is not exported as an observed physical violation.
+    """
+    count = len(view["success_padding"])
+    valid = np.asarray(view.get("physics_samples_valid", np.zeros(count))).reshape(-1)
+    if valid.shape != (count,) or not np.all(np.isin(valid, [False, True])):
+        raise ValueError("H1 physics_samples_valid must be finite binary transition flags")
+    view["physics_samples_valid"] = valid
+    view["safe_success_violation"] = np.inf
+    view["safe_success_violation_tol"] = 0.0
+    if not np.all(valid):
+        return view
+    if any(key not in view for key in _HUMANOID_PHYSICS_ARRAYS):
+        raise ValueError("H1 valid physics coverage requires actual substep arrays")
+    force = np.asarray(view["physics_hand_force"], dtype=float)
+    nonhand = np.asarray(view["physics_nonhand_force"], dtype=float)
+    margins = np.asarray(view["physics_safety_margins"], dtype=float)
+    if (force.ndim != 2 or force.shape[0] != count or force.shape[1] < 1
+            or nonhand.shape != force.shape or margins.shape != (*force.shape, 4)):
+        raise ValueError("H1 physics arrays must have shapes [T,n_frames] and [T,n_frames,4]")
+    physics_dt = float(view.get("physics_dt", 0.0))
+    dt = float(view["dt"])
+    f_max = float(view["f_max"])
+    initial = np.asarray(view.get("physics_initial_safety_margins", ()), dtype=float)
+    if (not np.isfinite(physics_dt) or physics_dt <= 0.0
+            or not np.isfinite(dt) or dt <= 0.0
+            or not np.isclose(force.shape[1] * physics_dt, dt, rtol=1e-6, atol=1e-10)):
+        raise ValueError("H1 n_frames * physics_dt must equal the control dt")
+    if not np.isfinite(f_max) or f_max <= 0.0:
+        raise ValueError("H1 physical force normalization requires a positive finite f_max")
+    if (initial.shape != (4,) or not all(np.all(np.isfinite(value))
+            for value in (force, nonhand, margins, initial))
+            or np.any(force < 0.0) or np.any(nonhand < 0.0)):
+        raise ValueError("H1 claimed-valid physics and initial safety samples must be finite")
+    samples = force.reshape(-1)
+    reference = np.asarray(
+        view.get("task_force_reference", view.get("force_des", ())), dtype=float
+    ).reshape(-1)
+    if reference.shape != (count,):
+        raise ValueError("H1 physical force evaluation requires a per-transition reference")
+    default_expected = (
+        np.abs(reference) >= 0.99 * float(np.max(np.abs(reference)))
+        if reference.size and np.max(np.abs(reference)) > 0.0
+        else np.zeros(reference.shape, dtype=bool)
+    )
+    expected = np.asarray(view.get("force_expected", default_expected), dtype=float).reshape(-1)
+    if expected.shape != (count,):
+        raise ValueError("H1 physical force evaluation requires a per-transition tracking mask")
+    reference_samples = np.repeat(reference, force.shape[1])
+    expected_samples = np.repeat(expected, force.shape[1])
+    physics_g = np.max(margins.reshape(-1, 4), axis=1)
+    view.update({
+        "physics_hand_force_samples": samples,
+        "physics_hand_force_ratio_samples": samples / f_max,
+        "physics_force_reference_samples": reference_samples,
+        "physics_force_expected_samples": expected_samples,
+        "physics_force_rise_mask_samples": (
+            samples >= float(view.get("force_step_rise_fraction", 0.9))
+            * float(view.get("force_step_target", np.max(np.abs(reference_samples))))
+        ).astype(float),
+        "physics_force_limit_profile": np.full(samples.shape, f_max),
+        "physics_nonhand_collision_samples": nonhand.reshape(-1) > 0.5,
+        "physics_g_safety_samples": physics_g,
+        "physics_safety_margin_envelope": np.append(physics_g, np.max(initial)),
+        # Initial conditions have zero duration: include them in certification,
+        # not in CVaR, time fractions, or impulse quadrature.
+        "safe_success_violation": max(float(np.max(initial)), float(np.max(physics_g)), 0.0),
+    })
+    if bool(view.get("force_step_applicable", False)):
+        target = float(view["force_step_target"])
+        band = max(
+            float(view["force_step_band_absolute"]),
+            float(view["force_step_band_fraction"]) * target,
+        )
+        hold = max(1, int(np.ceil(
+            float(view["force_step_hold_time"]) / physics_dt - 1.0e-9
+        )))
+        tracked = expected_samples > 0.5
+        tracked_indices = np.flatnonzero(tracked)
+        terminal_hold = (
+            tracked_indices.size >= hold
+            and np.all(np.abs(
+                samples[tracked_indices[-hold:]] - reference_samples[tracked_indices[-hold:]]
+            ) <= band)
+        )
+        rose = bool(np.any(
+            view["physics_force_rise_mask_samples"] * tracked
+        ))
+        safe = float(view["safe_success_violation"]) <= 0.0
+        view["force_step_pass"] = np.asarray([
+            rose and terminal_hold and safe
+        ], dtype=float)
+    return view
+
+
 def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> Dict[str, Any]:
     """Box-push/unjam (idea.txt Exp II): roll the H1 to collect box x (vs goal),
     the full contact manifold (h_box/h_hand/h_hand_R/h_foot, g_bal/g_fric/g_tip),
@@ -517,8 +782,21 @@ def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> 
     import jax.numpy as jnp
     from brax import math as bmath
     actions = jnp.asarray([np.ravel(np.asarray(a, np.float32)) for a in trajectory.actions])
-    goal_x = float(np.asarray(_x0(env, kw).info["box_goal_x"]))
-    ez = jnp.array([0.0, 0.0, 1.0])
+    is_h1 = str(getattr(env._bcfg, "robot", "h1")).lower() == "h1"
+    states = list(getattr(trajectory, "states", ()))
+    actual_states = (len(states) == len(actions) + 1 and len(actions) > 0
+                     and hasattr(states[0], "pipeline_state"))
+    initial = states[0] if actual_states else _x0(env, kw)
+    goal_x = float(np.asarray(initial.info["box_goal_x"]))
+    initial_safety = np.full(4, np.nan)
+    if is_h1 and actual_states:
+        ps0 = initial.pipeline_state
+        balance0 = (jnp.linalg.norm(ps0.x.pos[env._pelvis_idx - 1, :2]
+                    - ps0.site_xpos[env._feet_site_id, :2].mean(axis=0))
+                    - env._bcfg.support_radius)
+        initial_safety = np.asarray(env._safety_margins(
+            ps0, env._box_contact_forces(ps0), balance0,
+        ), dtype=float)
 
     def per_step(e, s, u):
         ps = s.pipeline_state
@@ -530,8 +808,7 @@ def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> 
         corridor_clearance = e._corridor_clearance(ps)
         com = x.pos[e._pelvis_idx - 1, :2]
         feet_c = ps.site_xpos[e._feet_site_id].mean(axis=0)[:2]
-        up = jnp.dot(bmath.rotate(ez, x.rot[e._torso_idx - 1]), ez)
-        fell = ((up < 0) | (x.pos[e._torso_idx - 1, 2] < 0.5)).astype(jnp.float32)
+        fell = e._has_fallen(ps).astype(jnp.float32)
         # REAL hand->box push force from the mjx contact (not the commanded f_n);
         # in_contact = a nonzero physical push force (not the kinematic h_hand proxy).
         box_forces = e._box_contact_forces(ps)
@@ -546,8 +823,12 @@ def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> 
             / max(float(e._bcfg.force_ramp_time), 1e-6),
             0.0, 1.0,
         )
-        task_active = s.info.get("task_success", jnp.float32(0.0)) < 0.5
-        force_des = jnp.float32(e._bcfg.f_target) * force_scale * task_active
+        # The transition that first reaches success was physically executed.
+        # Only later frozen padding lacks an executed force reference.
+        task_active = ~jnp.asarray(s.info["success_padding"], jnp.bool_)
+        walk_force_scale = e.walk_force_scale(ps, s.info)
+        benchmark_force = e.requested_force_reference(ps, s.info)
+        force_des = benchmark_force * task_active
         contact_acquired = jnp.asarray(s.info.get("contact_acquired", 0.0), jnp.float32)
         contact_step = jnp.asarray(s.info.get("contact_step", -1), jnp.float32)
         execution_elapsed = jnp.maximum(
@@ -557,30 +838,82 @@ def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> 
             execution_elapsed / max(float(e._bcfg.force_ramp_time), 1e-6),
             0.0, 1.0,
         )
+        if getattr(e._bcfg, "walk_force_startup_mode", "legacy") == "synchronized":
+            # Nominal post-state reference on the selected execution clock;
+            # this is not the action-selected F_n or the measured hand force.
+            execution_scale = e._normal_force_startup_scale(s.info)
         execution_force_des = (
-            jnp.float32(e._bcfg.f_target) * execution_scale * task_active
+            jnp.float32(e._bcfg.f_target) * execution_scale * task_active * walk_force_scale
         )
-        expected_contact = (force_scale >= 0.99) & task_active
+        expected_contact = (force_scale >= 0.99) & task_active & (walk_force_scale > 0.0)
         in_contact_expected = jnp.where(expected_contact, in_contact, 1.0)
-        force_violation = jnp.maximum(f_real - e._bcfg.f_max, 0.0)
-        safety_g = jnp.maximum(
-            jnp.maximum(jnp.maximum(g[0], fell), nonhand_contact),
-            force_violation / max(float(e._bcfg.f_max), 1e-6),
-        )
+        safety_margins = e._safety_margins(ps, box_forces, g[0])
+        safety_g = jnp.max(safety_margins)
         _, _, _, _, K_hand, _ = e._unpack(u)
-        contact_command = e._hand_contact(ps, u, s.info)
+        if is_h1 and callable(getattr(e, "realized_hand_stiffness", None)):
+            K_hand = e.realized_hand_stiffness(s, u)
+        # This is the same state/action/context contact realization as ``c``
+        # above.  Reuse it rather than repeating an expensive host-side MJX
+        # contact evaluation for every executed state.
+        contact_command = c
         reliability_features = e.reliability_features(s, u)
+        transition_margins = (e._transition_safety_margins(s, safety_margins)
+                              if is_h1 else safety_margins)
         reliability_risk = jnp.asarray([
-            (f_real > e._bcfg.f_max).astype(jnp.float32),
-            jnp.maximum(fell, nonhand_contact),
-            jax.nn.relu(g[0]) / max(float(e._bcfg.support_radius), 1.0e-6),
-            jnp.abs(f_real - e._bcfg.f_target)
+            (transition_margins[0] > 0.0).astype(jnp.float32),
+            ((transition_margins[1] > 0.0) | (transition_margins[3] > 0.0)).astype(jnp.float32),
+            jax.nn.relu(transition_margins[2]),
+            # This performance head remains explicitly endpoint-based; only
+            # the three physical safety heads use the substep envelope.
+            jnp.abs(f_real - benchmark_force)
             / max(float(e._bcfg.f_target), 1.0),
         ])
+        physics_signals = {}
+        if is_h1:
+            physics_valid = (
+                jnp.asarray(s.info.get("physics_samples_valid", False), jnp.bool_)
+                & actual_states
+            )
+            # Unknown coverage is not an observed violation label.  The
+            # existing fitter rejects these nonfinite rows explicitly.  A
+            # frozen success endpoint remains known without invented substeps.
+            # Missing mode is unknown, not permission to back-fill NORMAL
+            # labels into historical/abnormal states with known physical tape.
+            execution_mode = jnp.asarray(s.info.get("mga_execution_mode", -1), jnp.int32)
+            execution_applicable = execution_mode == 0
+            # UNLOAD is observed physics but outside the normal-only learned
+            # model's label population. Do not call it unknown physics.
+            risk_valid = actual_states & ((~task_active) | physics_valid)
+            risk_valid = risk_valid & execution_applicable & jnp.all(jnp.isfinite(reliability_risk))
+            execution_force_des = jnp.where(execution_mode == 1, 0.0, execution_force_des)
+            reliability_risk = jnp.where(risk_valid, reliability_risk,
+                                         jnp.full_like(reliability_risk, jnp.nan))
+            physics_signals = {
+                "physics_samples_valid": physics_valid[None],
+                "reliability_risk_valid": jnp.asarray(risk_valid)[None],
+                "mga_execution_mode": execution_mode[None],
+                "mga_emergency_zero_force": jnp.asarray(
+                    s.info.get("mga_emergency_zero_force", False), jnp.bool_
+                )[None],
+                "reliability_execution_applicable": execution_applicable[None],
+                **{key: s.info[key] for key in _HUMANOID_PHYSICS_ARRAYS if key in s.info},
+            }
         return {"box_x": box_x[None], "box_y": x.pos[e._box_idx - 1, 1][None],
                 "box_yaw": box_yaw[None],
                 "corridor_clearance": corridor_clearance[None],
                 "com": com, "feet": feet_c, "fell": fell[None],
+                "pelvis_position": x.pos[e._pelvis_idx - 1],
+                "feet_positions": ps.site_xpos[e._feet_site_id],
+                "walk_body_progress": jnp.asarray(s.info.get("walk_body_progress", 0.0))[None],
+                "walk_support_progress": jnp.asarray(s.info.get("walk_support_progress", 0.0))[None],
+                "walk_forward_steps": s.info.get("walk_forward_steps", jnp.zeros(2, jnp.int32)),
+                "walk_swing_seen": s.info.get("walk_swing_seen", jnp.zeros(2, jnp.bool_)),
+                "walk_foot_loaded": s.info.get("walk_foot_loaded", jnp.zeros(2, jnp.bool_)),
+                "walk_swing_eligible": s.info.get("walk_swing_eligible", jnp.zeros(2, jnp.bool_)),
+                "walk_landing_x": s.info.get("walk_landing_x", jnp.zeros(2)),
+                "walk_goal_ready": jnp.asarray(s.info.get("walk_goal_ready", False))[None],
+                "walk_goal_hold_time": jnp.asarray(s.info.get("walk_goal_hold_time", 0.0))[None],
+                "walk_force_scale": walk_force_scale[None],
                 "g_bal": g[0][None], "g_fric": g[1][None], "tip_series": (-g[2])[None],
                 "ft": jnp.linalg.norm(c["f_t"])[None], "fn": c["f_n"][None],
                 "slip": c["slip"][None], "force": f_real[None],
@@ -592,6 +925,9 @@ def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> 
                 "force_int": s.info.get("force_int", jnp.float32(0.0))[None],
                 "unjam_released": s.info.get("unjam_released", jnp.float32(0.0))[None],
                 "task_success": s.info.get("task_success", jnp.float32(0.0))[None],
+                "task_fallen": jnp.asarray(s.info.get("task_fallen", 0.0))[None],
+                "success_padding": jnp.asarray(s.info.get("success_padding", False))[None],
+                "safety_margins": safety_margins,
                 "safety_g": safety_g[None],
                 "force_expected": expected_contact.astype(jnp.float32)[None],
                 "wall_force": wall_force[None],
@@ -602,29 +938,40 @@ def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> 
                 "stiffness": K_hand.reshape(-1),
                 "g": g,
                 "reliability_features": reliability_features,
-                "reliability_risk": reliability_risk}
+                "reliability_risk": reliability_risk,
+                **physics_signals,
+                **{key: jnp.atleast_1d(value) for key, value in
+                   _humanoid_walk_diagnostics(e, ps).items()}}
 
     d = _contact_step_signals(trajectory, env, actions, per_step, kw)
     final_yaw = float(np.asarray(d["box_yaw"][-1]).reshape(-1)[0])
-    x_error = abs(float(np.asarray(d["box_x"][-1]).reshape(-1)[0]) - goal_x)
-    if str(env._bcfg.level).lower() == "unjam":
-        task_goal_error = max(
-            x_error,
-            float(env._bcfg.goal_eps) * abs(final_yaw) / max(float(env._bcfg.unjam_yaw_eps), 1e-6),
-        )
-    else:
-        task_goal_error = x_error
+    goal_signals = _humanoid_goal_signals(
+        d["box_x"], d["box_yaw"], d["task_success"], goal_x, env._bcfg,
+    )
     return {
         "positions": d["box_x"], "box_x": d["box_x"].reshape(-1),
         "box_y": d["box_y"].reshape(-1), "box_yaw": d["box_yaw"].reshape(-1),
-        "start_pos": np.array([float(np.asarray(_x0(env, kw).info["box_x0"]))]),
+        "start_pos": np.array([float(np.asarray(initial.info["box_x0"]))]),
         "final_pos": d["box_x"][-1], "target": np.array([goal_x]),
         "goal_tolerance": float(env._bcfg.goal_eps),
-        "task_goal_error": task_goal_error,
+        **goal_signals,
         "final_yaw": np.array([final_yaw]), "target_yaw": np.array([0.0]),
         "corridor_clearance": d["corridor_clearance"].reshape(-1),
         "controls": np.asarray(actions, np.float64), "stiffness": d["stiffness"],
         "com_xy": d["com"], "support_center": d["feet"],
+        "pelvis_position": d["pelvis_position"], "feet_positions": d["feet_positions"],
+        "walk_body_progress": d["walk_body_progress"].reshape(-1),
+        "walk_support_progress": d["walk_support_progress"].reshape(-1),
+        "walk_forward_steps": d["walk_forward_steps"],
+        "walk_left_steps": d["walk_forward_steps"][:, 0],
+        "walk_right_steps": d["walk_forward_steps"][:, 1],
+        "walk_swing_seen": d["walk_swing_seen"],
+        "walk_foot_loaded": d["walk_foot_loaded"],
+        "walk_swing_eligible": d["walk_swing_eligible"],
+        "walk_landing_x": d["walk_landing_x"],
+        "walk_goal_ready": d["walk_goal_ready"].reshape(-1),
+        "walk_goal_hold_time": d["walk_goal_hold_time"].reshape(-1),
+        "walk_force_scale": d["walk_force_scale"].reshape(-1),
         "support_radius": float(getattr(env._bcfg, "support_radius", 0.25)),
         "fell": d["fell"].reshape(-1),
         "g_bal": d["g_bal"].reshape(-1), "g_fric": d["g_fric"].reshape(-1),
@@ -641,10 +988,27 @@ def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> 
         "force_int": d["force_int"].reshape(-1),
         "unjam_released": d["unjam_released"].reshape(-1),
         "task_success": d["task_success"].reshape(-1),
+        "task_fallen": d["task_fallen"].reshape(-1),
+        "success_padding": d["success_padding"].reshape(-1),
+        "safety_margins": d["safety_margins"],
         "force_rise_mask": (
             d["force"].reshape(-1) >= 0.9 * float(env._bcfg.f_target)
         ).astype(np.float64),
         "force_expected": d["force_expected"].reshape(-1),
+        "force_step_applicable": bool(getattr(env._bcfg, "fixed_force_target", False)),
+        "force_step_target": float(env._bcfg.f_target),
+        "force_step_rise_fraction": float(
+            getattr(env._bcfg, "force_step_rise_fraction", 0.9)
+        ),
+        "force_step_band_fraction": float(
+            getattr(env._bcfg, "force_step_band_fraction", 0.1)
+        ),
+        "force_step_band_absolute": float(
+            getattr(env._bcfg, "force_step_band_absolute", 1.0)
+        ),
+        "force_step_hold_time": float(
+            getattr(env._bcfg, "force_step_hold_time", 0.2)
+        ),
         "g_safety": d["safety_g"].reshape(-1),
         "f_min": 0.0, "f_max": float(env._bcfg.f_max), "dt": float(env.dt),
         "wall_force": d["wall_force"].reshape(-1),
@@ -655,6 +1019,26 @@ def humanoid_box_push_signals(trajectory, env, obstacles, constraints, **kw) -> 
         "g": d["g"],
         "reliability_features": d["reliability_features"],
         "reliability_risk": d["reliability_risk"],
+        **({
+            "physics_samples_valid": d["physics_samples_valid"].reshape(-1),
+            "reliability_risk_valid": d["reliability_risk_valid"].reshape(-1),
+            "mga_execution_mode": d["mga_execution_mode"].reshape(-1),
+            "mga_emergency_zero_force": d["mga_emergency_zero_force"].reshape(-1),
+            "reliability_execution_applicable": d["reliability_execution_applicable"].reshape(-1),
+            "physics_dt": float(getattr(env._bcfg, "timestep", 0.0)),
+            "physics_initial_safety_margins": initial_safety,
+            **{key: d[key] for key in _HUMANOID_PHYSICS_ARRAYS if key in d},
+        } if is_h1 else {}),
+        "task_metadata": {
+            "reliability_contract": env.reliability_contract(),
+            "reliability_source_sha256": env.reliability_source_sha256(),
+            "robot": str(getattr(env._bcfg, "robot", "h1")).lower(),
+            "evaluation_contract": dict(_HUMANOID_EVALUATION_CONTRACT if is_h1
+                                        else _HUMANOID_LEGACY_EVALUATION_CONTRACT),
+            **({"physics_evidence_source": "executed_states" if actual_states else "legacy_action_replay"}
+               if is_h1 else {}),
+        },
+        **{key: d[key] for key in _HUMANOID_WALK_DIAGNOSTIC_KEYS if key in d},
         "seconds": float(kw.get("planning_time", 0.0)),
     }
 
@@ -665,11 +1049,65 @@ HUMANOID_METRICS = [
     "goal_error",                                          # box pose error vs goal
     "progress_ratio",
     {"name": "completion_step", "as": "completion_step",
-     "bind": {"margin": "goal_tolerance"}},
+     "bind": {"positions": "task_completion_residual", "target": "completion_target"},
+     "config": {"margin": 0.5}},
+    {"name": "completion_step", "as": "box_completion_step",
+     "bind": {"positions": "positions", "target": "target", "margin": "goal_tolerance"}},
+    {"name": "event_occurred", "as": "task_success", "bind": {"mask": "task_success"}},
+    {"name": "event_occurred", "as": "force_step_success",
+     "bind": {"mask": "force_step_pass"}},
+    {"name": "maximum", "as": "walk_body_progress_max", "bind": {"x": "walk_body_progress"}},
+    {"name": "maximum", "as": "walk_support_progress_max", "bind": {"x": "walk_support_progress"}},
+    {"name": "terminal_value", "as": "walk_body_progress_final", "bind": {"x": "walk_body_progress"}},
+    {"name": "terminal_value", "as": "walk_support_progress_final", "bind": {"x": "walk_support_progress"}},
+    {"name": "maximum", "as": "walk_left_steps", "bind": {"x": "walk_left_steps"}},
+    {"name": "maximum", "as": "walk_right_steps", "bind": {"x": "walk_right_steps"}},
     {"name": "max_violation", "as": "safety_violation", "bind": {"g": "g_safety"}},
     {"name": "success", "as": "safe_success",
-     "bind": {"goal_error": "task_goal_error", "violation": "safety_violation",
-              "margin": "goal_tolerance"}},
+     "bind": {"goal_error": "safe_success_goal_error", "violation": "safe_success_violation",
+              "margin": "goal_tolerance", "violation_tol": "safe_success_violation_tol"}},
+    {"name": "rate", "as": "physics_sample_coverage", "bind": {"mask": "physics_samples_valid"}},
+    {"name": "max_violation", "as": "physics_safety_violation",
+     "bind": {"g": "physics_safety_margin_envelope"}},
+    {"name": "force_peak", "as": "physics_force_peak", "bind": {"force": "physics_hand_force_samples"}},
+    {"name": "force_tracking_error_tracked", "as": "physics_steady_force_tracking_error",
+     "bind": {"force": "physics_hand_force_samples",
+              "force_des": "physics_force_reference_samples",
+              "mask": "physics_force_expected_samples"}},
+    {"name": "force_tracking_mae_tracked", "as": "physics_steady_force_tracking_mae",
+     "bind": {"force": "physics_hand_force_samples",
+              "force_des": "physics_force_reference_samples",
+              "mask": "physics_force_expected_samples"}},
+    {"name": "normalized_force_tracking_mae_tracked",
+     "as": "physics_steady_normalized_force_tracking_mae",
+     "bind": {"force": "physics_hand_force_samples",
+              "force_des": "physics_force_reference_samples",
+              "mask": "physics_force_expected_samples"}},
+    {"name": "force_overshoot", "as": "physics_force_overshoot",
+     "bind": {"force": "physics_hand_force_samples",
+              "force_des": "physics_force_reference_samples"}},
+    {"name": "force_overshoot_ratio", "as": "physics_force_overshoot_ratio",
+     "bind": {"force": "physics_hand_force_samples",
+              "force_des": "physics_force_reference_samples"}},
+    {"name": "force_settling_time", "as": "physics_force_settling_time",
+     "bind": {"force": "physics_hand_force_samples",
+              "force_des": "physics_force_reference_samples", "dt": "physics_dt"},
+     "config": {"band_fraction": 0.1, "band_absolute": 1.0, "hold_steps": 50}},
+    {"name": "first_event_time", "as": "physics_force_rise_time",
+     "bind": {"mask": "physics_force_rise_mask_samples", "dt": "physics_dt"}},
+    {"name": "cvar", "as": "physics_force_cvar95", "bind": {"x": "physics_hand_force_samples"},
+     "config": {"alpha": 0.95}},
+    {"name": "cvar", "as": "physics_force_normalized_cvar95",
+     "bind": {"x": "physics_hand_force_ratio_samples"}, "config": {"alpha": 0.95}},
+    {"name": "force_violation_rate", "as": "physics_force_violation_rate",
+     "bind": {"force": "physics_hand_force_samples"}},
+    {"name": "time_integral", "as": "physics_force_impulse",
+     "bind": {"x": "physics_hand_force_samples", "dt": "physics_dt"}},
+    {"name": "force_excess_impulse", "as": "physics_force_limit_excess_impulse",
+     "bind": {"force": "physics_hand_force_samples", "force_des": "physics_force_limit_profile",
+              "dt": "physics_dt"}},
+    {"name": "rate", "as": "physics_nonhand_collision_rate",
+     "bind": {"mask": "physics_nonhand_collision_samples"}},
     {"name": "goal_error", "as": "yaw_error",
      "bind": {"final_pos": "final_yaw", "target": "target_yaw"}},
     {"name": "tip_margin", "as": "corridor_clearance_min",
@@ -704,7 +1142,8 @@ HUMANOID_METRICS = [
 def humanoid_box_push_metrics_plugin(name: str = "humanoid_box_push_metrics"):
     return GeneralMetricsPlugin(
         [*HUMANOID_METRICS], extractor=humanoid_box_push_signals, name=name,
-        persist_signals=True,
+        persist_signals=True, evaluation_view=_humanoid_evaluation_view,
+        execution_failure_metrics={"task_success": 0.0, "safe_success": 0.0},
         config={
             "force_settling_time": {
                 "band_fraction": 0.1, "band_absolute": 1.0, "hold_steps": 10,

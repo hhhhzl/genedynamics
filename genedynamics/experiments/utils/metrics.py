@@ -21,6 +21,23 @@ import numpy as np
 
 
 BUDGET_KEYS = ("Nsample", "Hsample", "Hnode", "Ndiffuse", "Ndiffuse_init")
+
+
+def resolved_suite_budgets(config: Any) -> Dict[str, Dict[str, Any]]:
+    """Resolve per-condition episode lengths and shared planning budgets."""
+    conditions = config.suites or [
+        {"name": str(level)} for level in config.obstacle_levels
+    ]
+    budgets = {}
+    for suite in conditions:
+        resolved = config.for_suite(suite)
+        budgets[str(suite["name"])] = {
+            "n_steps": resolved.n_steps,
+            **{key: resolved.method_params.get(key) for key in BUDGET_KEYS},
+        }
+    return budgets
+
+
 _CONTACT_TASKS = {
     "manipulator_surface_scan", "manipulator_peg_insert",
     "humanoid_box_push",
@@ -195,26 +212,63 @@ def aggregate_receding_diagnostics(
     def has(key: str) -> bool:
         return any(key in row for row in rows)
 
-    def mean_scalar(key: str) -> float:
+    def applicable(row: Dict[str, Any], flag: str | None) -> bool:
+        if flag is None or flag not in row:
+            return True  # Frozen tasks/archives did not publish applicability.
+        value = np.asarray(row[flag])
+        if value.shape != () or value.item() not in (0, 1):
+            raise ValueError(f"invalid diagnostic applicability: {flag}")
+        return bool(value.item())
+
+    def eligible(key: str, flag: str | None = None):
+        return [row for row in rows if key in row and applicable(row, flag)]
+
+    def mean_scalar(key: str, flag: str | None = None) -> float:
         values = [np.asarray(row[key], dtype=float).reshape(-1)
-                  for row in rows if key in row]
+                  for row in eligible(key, flag)]
         return float(np.mean(np.concatenate(values))) if values else float("nan")
 
     out: Dict[str, float] = {}
     if has("prior_accepted"):
+        out["prior_acceptance_rate"] = mean_scalar("prior_accepted")
+        comparison_flag = (
+            "prior_comparison_applicable" if has("prior_comparison_applicable") else None
+        )
+        if comparison_flag is not None:
+            out["prior_comparison_count"] = float(len(eligible(
+                "prior_predicted_improvement", comparison_flag
+            )))
+        if comparison_flag is None or eligible("prior_predicted_improvement", comparison_flag):
+            out["prior_predicted_improvement_mean"] = mean_scalar(
+                "prior_predicted_improvement", comparison_flag
+            )
         out.update({
-            "prior_acceptance_rate": mean_scalar("prior_accepted"),
-            "prior_predicted_improvement_mean": mean_scalar(
-                "prior_predicted_improvement"
-            ),
             "prior_risk_ok_rate": mean_scalar("prior_risk_ok"),
             "prior_force_veto_rate": mean_scalar("prior_force_veto"),
         })
+        learned_flag = (
+            "reliability_incumbent_applicable"
+            if has("reliability_incumbent_applicable") else None
+        )
+        if learned_flag is not None:
+            out["reliability_incumbent_count"] = float(len(eligible(
+                "reliability_risk_incumbent", learned_flag
+            )))
+        additive_flag = (
+            "additive_prior_comparison_applicable"
+            if has("additive_prior_comparison_applicable") else None
+        )
+        if additive_flag is not None:
+            out["additive_prior_comparison_count"] = float(len(eligible(
+                "additive_prior_improvement", additive_flag
+            )))
         out["prior_fallback_rate"] = 1.0 - out["prior_acceptance_rate"]
         insertion = task == "manipulator_peg_insert"
         labels = (
             ("force_violation", "torque_violation", "jam", "force_mae")
             if insertion else
+            ("force_violation", "invalid_contact", "balance", "force_mae")
+            if task == "humanoid_box_push" else
             ("force_violation", "contact_loss", "deformation", "force_mae")
         )
         for source in (
@@ -222,8 +276,9 @@ def aggregate_receding_diagnostics(
             "prior_risk_atacom", "prior_risk_emergency",
             "reliability_risk_incumbent", "reliability_risk_refined",
         ):
+            flag = learned_flag if source == "reliability_risk_incumbent" else None
             vectors = [np.asarray(row[source], dtype=float).reshape(-1)
-                       for row in rows if source in row]
+                       for row in eligible(source, flag)]
             if vectors:
                 mean = np.mean(np.stack(vectors), axis=0)
                 out.update({
@@ -245,9 +300,14 @@ def aggregate_receding_diagnostics(
             "additive_prior_selected", "additive_prior_candidate_count",
             "additive_prior_any_safe", "additive_prior_improvement",
             "additive_prior_score", "additive_gaussian_score",
+            "emergency_fallback_recovery", "emergency_validation_candidate_count",
         ):
-            if has(key):
-                out[key] = mean_scalar(key)
+            flag = (
+                learned_flag if key == "reliability_support_incumbent"
+                else additive_flag if key == "additive_prior_improvement" else None
+            )
+            if has(key) and (flag is None or eligible(key, flag)):
+                out[key] = mean_scalar(key, flag)
     if has("failure"):
         out.update({
             "issa_projection_failure_rate": mean_scalar("failure"),
@@ -290,6 +350,8 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
             continue
         validation = cfg.validate()
         errors.extend(f"{path}: {error}" for error in validation)
+        if validation:
+            continue
         records.append((path, cfg))
     by_task: Dict[str, List[Tuple[Path, ExperimentConfig]]] = defaultdict(list)
     for record in records:
@@ -305,6 +367,7 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
             "n_steps": reference.n_steps,
             "suites": reference.suites,
             "budget": {key: reference.method_params.get(key) for key in BUDGET_KEYS},
+            "resolved_suite_budgets": resolved_suite_budgets(reference),
         }
         names = set()
         for path, cfg in task_records:
@@ -316,6 +379,7 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
                 "n_steps": cfg.n_steps,
                 "suites": cfg.suites,
                 "budget": {key: cfg.method_params.get(key) for key in BUDGET_KEYS},
+                "resolved_suite_budgets": resolved_suite_budgets(cfg),
             }
             if current != ref_protocol:
                 errors.append(f"{path}: paired protocol differs from {task_records[0][0]}")
@@ -426,6 +490,8 @@ def collect_results(roots: Sequence[str]) -> List[Dict[str, Any]]:
                 "suite": str(data.get("suite", data.get("level"))),
                 "seed": int(data["seed"]),
                 "metrics": data.get("metrics") or {},
+                **({"execution_status": data["execution_status"]}
+                   if "execution_status" in data else {}),
             }
             records.append(record)
     return records
@@ -434,12 +500,26 @@ def collect_results(roots: Sequence[str]) -> List[Dict[str, Any]]:
 def summarize_results(roots: Sequence[str], output_dir: str) -> Dict[str, Any]:
     """Write scalar summaries and paired deltas from authoritative seed files."""
     records = collect_results(roots)
+    attempts: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        attempts[(record["algorithm"], record["suite"])].append(record)
+    has_aborts = any(
+        (record.get("execution_status") or {}).get("state") == "aborted_unrecoverable"
+        for record in records
+    )
     groups: Dict[Tuple[str, str, str], List[Tuple[int, float]]] = defaultdict(list)
     for record in records:
         for metric, value in _numeric_leaves(record["metrics"]):
             groups[(record["algorithm"], record["suite"], metric)].append(
                 (record["seed"], value)
             )
+    if has_aborts:
+        for (algorithm, suite), items in attempts.items():
+            groups[(algorithm, suite, "execution.abort_rate")] = [
+                (record["seed"], float((record.get("execution_status") or {}).get("state")
+                                      == "aborted_unrecoverable"))
+                for record in items
+            ]
     rows = []
     for (algorithm, suite, metric), pairs in sorted(groups.items()):
         values = np.asarray([value for _, value in pairs], dtype=float)
@@ -449,6 +529,13 @@ def summarize_results(roots: Sequence[str], output_dir: str) -> Dict[str, Any]:
             "n": len(values), "mean": float(values.mean()),
             "std": float(values.std()) if len(values) > 1 else 0.0,
             "ci95_low": low, "ci95_high": high,
+            **({
+                "n_attempted": len(attempts[(algorithm, suite)]),
+                "n_completed": sum(
+                    (record.get("execution_status") or {}).get("state", "completed") == "completed"
+                    for record in attempts[(algorithm, suite)]
+                ),
+            } if has_aborts else {}),
         })
     paired = []
     lookup = {
@@ -498,6 +585,8 @@ def _representative_seeds(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     """Locked qualitative rule: successful seed nearest metric-wise medians."""
     groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
     for record in records:
+        if (record.get("execution_status") or {}).get("state", "completed") != "completed":
+            continue  # Keep failed attempts in SSR, not as representative completed motion.
         groups[(record["algorithm"], record["suite"])].append(record)
     selections = []
     for (algorithm, suite), items in sorted(groups.items()):
@@ -538,6 +627,16 @@ def _representative_seeds(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     return selections
 
 
+def _plot_metric_rows(rows: List[Dict[str, Any]], metric: str) -> List[Dict[str, Any]]:
+    """Keep endpoint force diagnostics separate from physical-substep safety."""
+    if metric in {"force_peak", "physics_force_peak", "physics_force_normalized_cvar95"}:
+        # A suffix match would put force_peak and physics_force_peak in the
+        # same figure with indistinguishable algorithm/suite labels. Preserve
+        # the old endpoint figure; H1's new primary has its own exact key/file.
+        return [row for row in rows if row["metric"].rsplit(".", 1)[-1] == metric]
+    return [row for row in rows if row["metric"].endswith(metric)]
+
+
 def _write_plots(rows: List[Dict[str, Any]], output_dir: Path) -> Tuple[List[str], Any]:
     """Export compact paper diagnostics as both PNG and vector PDF."""
     try:
@@ -547,10 +646,11 @@ def _write_plots(rows: List[Dict[str, Any]], output_dir: Path) -> Tuple[List[str
     wanted = (
         "safe_insertion_success", "insertion_success",
         "trajectory_path_coverage", "safe_success", "force_peak",
+        "physics_force_peak", "physics_force_normalized_cvar95",
     )
     files: List[str] = []
     for suffix in wanted:
-        selected = [row for row in rows if row["metric"].endswith(suffix)]
+        selected = _plot_metric_rows(rows, suffix)
         if not selected:
             continue
         labels = [f"{row['algorithm']}\n{row['suite']}" for row in selected]
@@ -660,6 +760,16 @@ def verify_results(
                 ]
                 if actual_suites != expected_suites:
                     errors.append(f"suite protocol mismatch {manifest}")
+                expected_budgets = resolved_suite_budgets(cfg)
+                saved_budgets = resolved_suite_budgets(ExperimentConfig(**manifest_config))
+                if saved_budgets != expected_budgets:
+                    errors.append(f"resolved suite budget mismatch {manifest}")
+                # Older manifests encode the same budgets inside config only.
+                if (
+                    "resolved_suite_budgets" in manifest_data
+                    and manifest_data["resolved_suite_budgets"] != expected_budgets
+                ):
+                    errors.append(f"resolved suite budget summary mismatch {manifest}")
                 if development_root is not None:
                     manifest_metadata = manifest_config.get("metadata") or {}
                     if manifest_metadata.get("run_class") != "development":
@@ -670,6 +780,7 @@ def verify_results(
                 errors.append(f"invalid JSON {manifest}: {exc}")
         for suite in cfg.suites or ({"name": level} for level in cfg.obstacle_levels):
             name = str(suite["name"])
+            resolved_config = cfg.for_suite(suite)
             level_dir = cfg.output_dir / f"level_{name}"
             if not (level_dir / "summary.json").is_file():
                 errors.append(f"missing {level_dir / 'summary.json'}")
@@ -688,8 +799,12 @@ def verify_results(
                     continue
                 if data.get("seed") != seed or str(data.get("suite")) != name:
                     errors.append(f"identity mismatch {result_path}")
+                if (data.get("execution_status") or {}).get("state", "completed") != "completed":
+                    errors.append(f"execution aborted/incomplete {result_path}")
                 snapshot = data.get("config_snapshot") or {}
                 snapshot_budget = snapshot.get("method_params") or {}
+                if snapshot.get("n_steps") != resolved_config.n_steps:
+                    errors.append(f"budget mismatch n_steps in {result_path}")
                 if snapshot.get("env_name") != cfg.env_name or snapshot.get("method") != cfg.method:
                     errors.append(f"resolved method/environment mismatch {result_path}")
                 if snapshot.get("output_dir") != str(cfg.output_dir):
@@ -707,7 +822,7 @@ def verify_results(
                     if snapshot_metadata.get("formal_seeds") is not False:
                         errors.append(f"development seed label mismatch {result_path}")
                 for key in BUDGET_KEYS:
-                    if snapshot_budget.get(key) != cfg.method_params.get(key):
+                    if snapshot_budget.get(key) != resolved_config.method_params.get(key):
                         errors.append(f"budget mismatch {key} in {result_path}")
                 if not (seed_dir / "trajectory" / "trajectory.json").is_file():
                     errors.append(f"missing executed trajectory for {result_path}")

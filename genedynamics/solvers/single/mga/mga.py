@@ -79,6 +79,10 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         Hsample: int = 16,
         Hnode: int = 4,
         Nsample: int = 2048,
+        candidate_rollout_batch_size: Optional[int] = None,
+        stepwise_diffusion: bool = False,
+        stepwise_acceptance: bool = False,
+        lazy_emergency_scoring: bool = False,
         Ndiffuse: int = 2,
         Ndiffuse_init: int = 10,
         temp_sample: float = 0.06,
@@ -111,7 +115,7 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         mga_geom_gain: float = 1.0,
         # --- prior seam (genedynamics/learning/priors; None => verbatim DIAL) ---
         prior: Any = None,              # Prior: RL/diffusion warm-start (eq:rl_warm_start)
-        prior_mode: str = "guided",     # guided trust region | additive candidates
+        prior_mode: str = "guided",     # guided | warm_start | additive
         atacom_prior: Any = None,       # optional structured 7D-tangent expert
         prior_lambda_shift: float = 0.5,  # U_init = lam*U_shift + (1-lam)*U_rl
         risk_fn: Any = None,             # task-owned sequence risk vector
@@ -127,6 +131,7 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         prior_risk_tolerance: Any = (0.0, 0.0, 0.0, 0.0),
         prior_acceptance: bool = True,
         prior_fallback_mode: str = "rl",
+        receding_shift_mode: str = "legacy",
         reliability_model: Any = None,
         reliability_risk_tolerance: Any = (0.0, 0.0, 0.0, 0.0),
         reliability_force_limit: float = 0.25,
@@ -177,6 +182,19 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         self.prepare_state_fn = prepare_state_fn
         self.candidate_projection_fn = candidate_projection_fn
         self.prior = prior                  # read by MgaBackendJax (None => no warm-start mix)
+        self.candidate_rollout_batch_size = (
+            None
+            if candidate_rollout_batch_size is None
+            else int(candidate_rollout_batch_size)
+        )
+        if (
+            self.candidate_rollout_batch_size is not None
+            and self.candidate_rollout_batch_size <= 0
+        ):
+            raise ValueError("candidate_rollout_batch_size must be positive")
+        self.stepwise_diffusion = bool(stepwise_diffusion)
+        self.stepwise_acceptance = bool(stepwise_acceptance)
+        self.lazy_emergency_scoring = bool(lazy_emergency_scoring)
         self.atacom_prior = atacom_prior
         self.prior_lambda_shift = float(prior_lambda_shift)
         self.risk_fn = risk_fn
@@ -212,6 +230,14 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         self.prior_risk_tolerance = tuple(float(x) for x in prior_risk_tolerance)
         self.prior_acceptance = bool(prior_acceptance)
         self.prior_fallback_mode = str(prior_fallback_mode)
+        self.receding_shift_mode = str(receding_shift_mode)
+        if self.receding_shift_mode not in {
+            "legacy", "zero", "terminal_hold", "certified_terminal_hold",
+        }:
+            raise ValueError(
+                "receding_shift_mode must be legacy, zero, terminal_hold, "
+                "or certified_terminal_hold"
+            )
         self.reliability_model = reliability_model
         self.reliability_risk_tolerance = tuple(
             float(x) for x in reliability_risk_tolerance
@@ -229,6 +255,10 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         self.config.update(
             dict(
                 Hsample=int(Hsample), Hnode=int(Hnode), Nsample=int(Nsample),
+                candidate_rollout_batch_size=self.candidate_rollout_batch_size,
+                stepwise_diffusion=self.stepwise_diffusion,
+                stepwise_acceptance=self.stepwise_acceptance,
+                lazy_emergency_scoring=self.lazy_emergency_scoring,
                 Ndiffuse=int(Ndiffuse), Ndiffuse_init=int(Ndiffuse_init),
                 temp_sample=float(temp_sample),
                 horizon_diffuse_factor=float(horizon_diffuse_factor),
@@ -251,6 +281,7 @@ class MGASolver(BaseModelBasedDiffusionSolver):
                 prior_risk_tolerance=self.prior_risk_tolerance,
                 prior_acceptance=bool(prior_acceptance),
                 prior_fallback_mode=self.prior_fallback_mode,
+                receding_shift_mode=self.receding_shift_mode,
                 reliability_risk_tolerance=self.reliability_risk_tolerance,
                 reliability_force_limit=self.reliability_force_limit,
                 reliability_deformation_limit=self.reliability_deformation_limit,
@@ -275,6 +306,18 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         step_fn = self._step_fn or getattr(backend, "_step_fn", None)
         if step_fn is None:
             raise ValueError("MGA needs a step_fn (inject one or provide dynamics).")
+        execution_step = getattr(backend, "execution_step", None)
+        if execution_step is not None:
+            requested = kw.setdefault("execution_step", execution_step)
+            same_callback = requested is execution_step or (
+                getattr(execution_step, "__self__", None) is not None
+                and getattr(requested, "__self__", None) is execution_step.__self__
+                and getattr(requested, "__func__", None) is execution_step.__func__
+            )
+            if not same_callback:
+                raise ValueError(
+                    "MGA execution context cannot be disabled or replaced at execution"
+                )
         return RecedingHorizonController(
             backend,
             step_fn=step_fn,
@@ -297,7 +340,15 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         res = self.make_controller(n).run(x0, rng)
         states = [self._flatten_state(s) for s in res.states]
         actions = [np.asarray(a, dtype=np.float32) for a in res.actions]
-        return Trajectory(states=states, actions=actions, info={"source": "mga", "method": self.method})
+        info = {"source": "mga", "method": self.method}
+        context = getattr(self._get_backend_impl(), "_execution_context", None)
+        if context is not None:
+            info["infos"] = list(res.infos)
+            info["execution_mode_contract"] = {
+                key: context[key]
+                for key in ("schema_version", "normal_mode", "emergency_mode")
+            }
+        return Trajectory(states=states, actions=actions, info=info)
 
     @staticmethod
     def _flatten_state(s: Any) -> np.ndarray:

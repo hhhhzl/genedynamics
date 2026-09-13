@@ -23,7 +23,9 @@ def is_brax_env(env: Any) -> bool:
     return env is not None and hasattr(env, "step") and hasattr(env, "pipeline_step")
 
 
-def build_brax_rollout(env: Any) -> Callable[[Any, Any, Any], Any]:
+def build_brax_rollout(
+    env: Any, candidate_batch_size: int | None = None,
+) -> Callable[[Any, Any, Any], Any]:
     """Build ``rollout_fn(state, us, t0) -> rews``.
 
     ``state`` is a brax ``State`` (current), ``us`` is a batch of dense control
@@ -40,10 +42,24 @@ def build_brax_rollout(env: Any) -> Callable[[Any, Any, Any], Any]:
         _, rews = jax.lax.scan(f, state, us)
         return rews
 
-    return jax.jit(jax.vmap(rollout_one, in_axes=(None, 0, None)))
+    if candidate_batch_size is None:
+        return jax.jit(jax.vmap(rollout_one, in_axes=(None, 0, None)))
+    candidate_batch_size = int(candidate_batch_size)
+    if candidate_batch_size <= 0:
+        raise ValueError("candidate_batch_size must be positive")
+
+    def rollout_batched(state, us, t0):
+        body = lambda candidate: rollout_one(state, candidate, t0)
+        if candidate_batch_size == 1:
+            return jax.lax.map(body, us)
+        return jax.lax.map(body, us, batch_size=candidate_batch_size)
+
+    return jax.jit(rollout_batched)
 
 
-def build_brax_rollout_augmented(env: Any) -> Callable[..., Any]:
+def build_brax_rollout_augmented(
+    env: Any, candidate_batch_size: int | None = None,
+) -> Callable[..., Any]:
     """Augmented-Lagrangian brax rollout (the cfsmbd AL pattern, on a brax env).
 
     Same as :func:`build_brax_rollout` but the per-step reward is augmented with
@@ -77,7 +93,21 @@ def build_brax_rollout_augmented(env: Any) -> Callable[..., Any]:
         _, rews = jax.lax.scan(f, state, us)
         return rews
 
-    return jax.jit(jax.vmap(rollout_one, in_axes=(None, 0, None, None, None)))
+    if candidate_batch_size is None:
+        return jax.jit(jax.vmap(rollout_one, in_axes=(None, 0, None, None, None)))
+    candidate_batch_size = int(candidate_batch_size)
+    if candidate_batch_size <= 0:
+        raise ValueError("candidate_batch_size must be positive")
+
+    def rollout_batched(state, us, t0, aug_lambda, aug_rho):
+        body = lambda candidate: rollout_one(
+            state, candidate, t0, aug_lambda, aug_rho
+        )
+        if candidate_batch_size == 1:
+            return jax.lax.map(body, us)
+        return jax.lax.map(body, us, batch_size=candidate_batch_size)
+
+    return jax.jit(rollout_batched)
 
 
 def build_brax_step(env: Any) -> Callable[[Any, Any], Any]:

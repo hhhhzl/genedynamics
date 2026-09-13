@@ -126,6 +126,14 @@ class BraxRLPrior:
                 self._rollout_step_batch_jit = jax.jit(jax.vmap(
                     self._rollout_step
                 ))
+        else:
+            # A node-space/current-observation prior still runs at every MPC
+            # step.  Compile the PPO network as one stable executable rather
+            # than dispatching each MLP primitive eagerly and accumulating a
+            # collection of small CPU executables beside the MJX planner.
+            self._policy_action_jit = jax.jit(
+                lambda obs: self.act(obs, deterministic=True)
+            )
 
     # --- helpers ---
     def _norm_pol(self):
@@ -191,10 +199,11 @@ class BraxRLPrior:
             )
             return self._spline.u2node(dense_actions)
 
-        # Compatibility path for policy-only tests and callers that do not own
-        # dynamics. MGA always supplies rollout_step.
+        # Policy-only node-space centre: low-level task references may advance
+        # independently during the model rollout, so one local correction is
+        # deliberately repeated over the node horizon.
         obs = self._obs_of(state, self._obs_key)
-        a = self.act(obs, deterministic=True)
+        a = self._policy_action_jit(obs)
         return jnp.tile(a[None, :], (self.n_warm_nodes, 1))
 
     def sample_horizons(self, state, *, key, n_samples: int):

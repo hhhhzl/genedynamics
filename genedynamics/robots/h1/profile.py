@@ -62,6 +62,14 @@ def h1_profile() -> RobotProfile:
         controller_defaults={
             "hand_forward_extent": 0.033,
             "hand_push_axis": (1.0, 0.0, 0.0),
+            # Locomotion command envelope, in the planner joint-group order.
+            # These are DIAL's H1 sampling bounds, not physical joint limits
+            # or box-task parameters; tasks choose whether to use this chart.
+            "planner_joint_bounds": (
+                (-0.3, 0.3), (-0.3, 0.3), (-1.0, 1.0), (0.0, 1.74), (-0.6, 0.4),
+                (-0.3, 0.3), (-0.3, 0.3), (-1.0, 1.0), (0.0, 1.74), (-0.6, 0.4),
+                (-0.5, 0.5),
+            ),
             "home_qpos": (
                 0.0, 0.0, 0.98, 1.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, -0.4, 0.8, -0.4,

@@ -5,7 +5,9 @@ Why a gait at all: a STATIC stance cannot balance a humanoid push. The push (and
 reaching forward) shifts the CoM ahead of the feet; the ankle torque saturates (~40 Nm vs a
 ~50 Nm tipping moment) and the robot tips. The fix is to STEP — reposition the swing foot under
 a CoM *capture point* so the support follows the CoM (dynamic balance). DIAL avoids the issue by
-walking; we provide the equivalent as an explicit, reusable leg controller.
+optimizing joint targets across their configured ranges, not by using this CPG.
+This reusable reference generator is therefore a different low-level mechanism;
+its physical walking feasibility must be validated for each embodiment and load.
 
 What this is: a small CPG. Two legs run 180 deg out of phase; each cycle a leg lifts (knee) and
 swings its hip from back to front, and the per-leg hip target is biased by the *capture term*
@@ -40,6 +42,8 @@ class GaitParams:
     roll_capture_gain: float = 0.0  # lateral CoM-over-feet feedback (rad / m)
     roll_capture_lead: float = 0.10 # lateral velocity lead time (s)
     roll_limit: float = 0.30         # total hip-roll reference bound (rad)
+    hip_forward_sign: float = 1.0  # positive joint direction for forward swing; legacy default
+    stance_sweep: bool = False     # continue front->back through stance, without a touchdown jump
 
 
 class BipedalGait:
@@ -62,7 +66,12 @@ class BipedalGait:
         s = jnp.clip(phase / p.swing_frac, 0.0, 1.0)               # swing progress in [0, 1]
         lift = jnp.sin(jnp.pi * s) * swing                         # smooth 0 -> 1 -> 0 foot lift
         swing_hp = (2.0 * s - 1.0) * swing                         # hip swings back -> front
-        hp_off = p.hip_amp * swing_hp + bias                       # + capture/forward bias
+        if p.stance_sweep:
+            stance_progress = jnp.clip(
+                (phase - p.swing_frac) / (1.0 - p.swing_frac), 0.0, 1.0
+            )
+            swing_hp = swing_hp + (1.0 - 2.0 * stance_progress) * (1.0 - swing)
+        hp_off = p.hip_forward_sign * (p.hip_amp * swing_hp + bias)
         kn_off = p.knee_amp * lift
         an_off = -p.ankle_frac * p.knee_amp * lift
         return off.at[hp].add(hp_off).at[kn].add(kn_off).at[an].add(an_off)

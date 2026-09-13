@@ -8,6 +8,7 @@ parameters and loading from YAML/JSON files.
 from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, List, Optional, Set
 from pathlib import Path
+from numbers import Integral
 import copy
 import json
 
@@ -303,6 +304,8 @@ class ExperimentConfig:
         
         if not self.seeds:
             errors.append("At least one seed must be specified")
+        if isinstance(self.n_steps, bool) or not isinstance(self.n_steps, Integral) or self.n_steps <= 0:
+            errors.append("n_steps must be a positive integer")
 
         suite_names = []
         for index, suite in enumerate(self.suites):
@@ -317,13 +320,17 @@ class ExperimentConfig:
                 errors.append(f"Suite name is not path-safe: {name!r}")
             suite_names.append(name)
             forbidden = sorted(set(suite).intersection({
-                "seeds", "n_steps", "backend", "device", "output_dir",
+                "seeds", "backend", "device", "output_dir",
             }))
             if forbidden:
                 errors.append(
                     f"Suite {name!r} cannot override protocol fields: "
                     + ", ".join(forbidden)
                 )
+            if "n_steps" in suite:
+                steps = suite["n_steps"]
+                if isinstance(steps, bool) or not isinstance(steps, Integral) or steps <= 0:
+                    errors.append(f"Suite {name!r} n_steps must be a positive integer")
             for key in ("env_params", "execution_env_params", "method_params"):
                 if key in suite and not isinstance(suite[key], dict):
                     errors.append(f"Suite {name!r} field {key!r} must be a mapping")
@@ -347,9 +354,18 @@ class ExperimentConfig:
         return errors
 
     def for_suite(self, suite: Dict[str, Any]) -> 'ExperimentConfig':
-        """Return an isolated resolved config for one named suite."""
+        """Resolve one task condition, including its optional episode length.
+
+        Sampling budgets remain shared.  Episode duration may differ between
+        tasks, but the protocol auditor still pairs it across methods within
+        each suite.
+        """
         name = str(suite["name"])
+        steps = suite.get("n_steps", self.n_steps)
+        if isinstance(steps, bool) or not isinstance(steps, Integral) or steps <= 0:
+            raise ValueError(f"Suite {name!r} n_steps must be a positive integer")
         cfg = copy.deepcopy(self)
+        cfg.n_steps = int(steps)
         cfg.suites = []
         cfg.obstacle_levels = [name]
         cfg.env_params = deep_merge(self.env_params, suite.get("env_params", {}))

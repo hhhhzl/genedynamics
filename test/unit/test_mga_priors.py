@@ -29,6 +29,13 @@ from genedynamics.experiments.utils.metrics import (
 from scripts.tasks.robot.arm.train_mga_reliability import (
     _assert_disjoint_protocol,
 )
+from scripts.tasks.robot.humanoid.train_box_push_reliability import (
+    FEATURE_NAMES as H1_FEATURE_NAMES,
+    _fit_audit as h1_reliability_fit_audit,
+    _model_diagnostics as h1_reliability_diagnostics,
+    _sequence_rows as h1_reliability_sequence_rows,
+    _validate_splits as h1_reliability_validate_splits,
+)
 
 
 # --- registry / elite buffer ---
@@ -44,6 +51,665 @@ def test_reliability_protocol_rejects_split_overlap_and_formal_seed_leakage():
         _assert_disjoint_protocol(
             [{"suite": "soft", "seed": 10}], calibration, set(range(10, 20))
         )
+
+
+def _h1_reliability_payload(n=10, *, width=12, is_walk=False):
+    actions = np.random.default_rng(113).uniform(-1, 1, (n, width))
+    post_features = np.zeros((n, len(H1_FEATURE_NAMES)))
+    post_features[:, :12] = np.arange(n)[:, None]
+    post_features[:, -1] = float(is_walk)
+    return {
+        "actions": actions,
+        "states": [{"info": {"prev_action": np.zeros(width)}}] + [
+            {"info": {"prev_action": action}} for action in actions
+        ],
+        "task_signals": {
+            "reliability_features": post_features,
+            "reliability_risk": np.zeros((n, 4)),
+            "task_success": np.zeros(n),
+        },
+    }
+
+
+def test_h1_reliability_uses_prestate_and_same_future_risk_window():
+    payload = _h1_reliability_payload()
+    risks = payload["task_signals"]["reliability_risk"]
+    risks[0] = [1, 1, 100, 100]  # Past risk must not leak into the target.
+    risks[6] = [1, 1, 0.6, 6]    # Last transition of decision-1's six-step window.
+    risks[5, 2:] = [0.2, 2]
+    risks[7] = [1, 1, 100, 100]  # Outside the window.
+    x, y, meta = h1_reliability_sequence_rows(payload, {}, horizon_steps=6)
+    assert meta["decision_steps"] == [1, 2, 3, 4]
+    np.testing.assert_array_equal(x[0, :12], np.zeros(12))
+    np.testing.assert_allclose(y[0], [1, 1, 0.4, 8 / 6])
+    assert y[1, 2] > y[0, 2]
+    # Unknown future measured states are labels, never part of s_t features.
+    payload["task_signals"]["reliability_features"][1:, :12] = 999
+    x_changed, _, _ = h1_reliability_sequence_rows(payload, {}, horizon_steps=6)
+    np.testing.assert_array_equal(x_changed[0], x[0])
+
+
+@pytest.mark.parametrize("use_base,is_walk", [(False, False), (True, False), (False, True)])
+def test_h1_reliability_features_match_deployment_without_physics(use_base, is_walk):
+    from genedynamics.core.control.stiffness import PrimitiveSpec
+    from genedynamics.envs.domains.humanoid.box_push_brax import HumanoidBoxPushEnv
+
+    spec = PrimitiveSpec(pos_dim=8 if use_base else 5, stiff_dim=3, feed_dim=1)
+    width = spec.total_width + (11 if is_walk else 0)
+    payload = _h1_reliability_payload(width=width, is_walk=is_walk)
+    # Persisted controller memory, rather than the last submitted action, is
+    # authoritative.  These differ on an absorbing terminal in real traces.
+    previous = np.full(width, 0.37)
+    payload["states"][1]["info"]["prev_action"] = previous
+    state = SimpleNamespace(
+        pipeline_state=SimpleNamespace(
+            x=SimpleNamespace(
+                pos=jnp.asarray([[0.9, 0.1, 0.5], [0.03, 0.01, 1.0]]),
+                rot=jnp.asarray([[1.0, 0.0, 0.0, 0.0]] * 2),
+            ),
+            site_xpos=jnp.asarray([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]]),
+        ),
+        info={"box_x0": 0.8, "box_goal_x": 1.0, "contact_acquired": 1.0,
+              "unjam_released": 0.0, "force_int": 3.0,
+              "prev_action": jnp.asarray(previous)},
+    )
+    env = SimpleNamespace(
+        spec=spec, _is_walk=is_walk, _half=0.5, _box_idx=1, _pelvis_idx=2,
+        _feet_site_id=jnp.asarray([0, 1]),
+        _bcfg=SimpleNamespace(push_dist=0.2, f_max=60.0, support_radius=0.25,
+                              force_int_max=30.0, unjam_release_clearance=0.005),
+        _box_contact_forces=lambda ps: {"hand": 15.0, "wall": 2.0, "nonhand": 0.0},
+        _corridor_clearance=lambda ps: 0.01,
+    )
+    expected = HumanoidBoxPushEnv.reliability_features_sequence(
+        env, state, jnp.asarray(payload["actions"][1:5]),
+    )
+    payload["task_signals"]["reliability_features"][0, :12] = np.asarray(expected[:12])
+    x, _, _ = h1_reliability_sequence_rows(
+        payload, {"env_params": {"use_base": use_base,
+                  "level": "push_walk" if is_walk else "push_to_line"}},
+        horizon_steps=4,
+    )
+    np.testing.assert_allclose(x[0], np.asarray(expected), rtol=1e-6, atol=1e-7)
+
+
+def test_h1_reliability_excludes_terminal_starts_and_incomplete_windows():
+    payload = _h1_reliability_payload(n=8)
+    _, _, meta = h1_reliability_sequence_rows(payload, {}, horizon_steps=3)
+    assert meta["decision_steps"] == [1, 2, 3, 4, 5]
+    assert meta["unobserved_reset_starts"] == 1
+    assert meta["right_censored_starts_excluded"] == 2
+    payload["task_signals"]["task_success"][2:] = 1
+    # Absorbing success can retain an unsafe contact; reaching the goal must
+    # not erase that event from windows that started before success.
+    payload["task_signals"]["reliability_risk"][2:, 0] = 1
+    _, y, meta = h1_reliability_sequence_rows(payload, {}, horizon_steps=3)
+    assert meta["decision_steps"] == [1, 2]
+    assert meta["absorbing_starts_excluded"] == 5
+    np.testing.assert_array_equal(y[:, 0], [1, 1])
+    x, y, _ = h1_reliability_sequence_rows(payload, {}, horizon_steps=20)
+    assert x.shape == (0, len(H1_FEATURE_NAMES)) and y.shape == (0, 4)
+
+
+def test_h1_reliability_preserves_unsafe_examples_and_single_step_boundary():
+    payload = _h1_reliability_payload(n=4)
+    payload["task_signals"]["reliability_risk"][1] = [1, 0, 0, 0]
+    payload["task_signals"]["reliability_risk"][2] = [0, 1, 0.5, 2]
+    x, y, meta = h1_reliability_sequence_rows(payload, {}, horizon_steps=1)
+    np.testing.assert_array_equal(y, [[1, 0, 0, 0], [0, 1, 0.5, 2], [0, 0, 0, 0]])
+    np.testing.assert_array_equal(x[:, H1_FEATURE_NAMES.index("action_roughness")], 0)
+    assert meta["decision_steps"] == [1, 2, 3]
+    with pytest.raises(ValueError, match="positive"):
+        h1_reliability_sequence_rows(payload, {}, horizon_steps=0)
+    payload["task_signals"]["reliability_risk"][1, 0] = np.nan
+    with pytest.raises(ValueError, match="non-finite"):
+        h1_reliability_sequence_rows(payload, {}, horizon_steps=1)
+
+
+def test_h1_reliability_diagnostics_expose_degenerate_labels_and_no_support():
+    model = SimpleNamespace(
+        predict=lambda x: np.zeros((len(x), 4)),
+        predict_upper=lambda x: np.zeros((len(x), 4)),
+        support_score_state=lambda x: np.full(len(x), 2.0),
+        support_score=lambda x: np.full(len(x), 3.0),
+    )
+    report = h1_reliability_diagnostics(
+        model, np.zeros((2, 24)), np.asarray([[1, 0, 0, 0], [0, 0, 0, 0]]),
+    )
+    assert report["labels"]["invalid_contact_or_fall"]["positive"] == 0
+    assert report["labels"]["force_violation"]["positive_fraction"] == 0.5
+    assert report["binary_brier"]["force_violation"] == 0.5
+    assert report["binary_threshold_errors"]["force_violation"]["false_negative_rate"] == 1.0
+    assert report["binary_threshold_errors"]["force_violation"]["false_positive_rate"] == 0.0
+    assert report["binary_threshold_errors"]["invalid_contact_or_fall"]["false_negative_rate"] is None
+    assert set(report["continuous_upper_coverage"]) == {"balance", "force_mae"}
+    assert report["state_support_fraction"] == 0.0
+    assert report["in_state_support_continuous_upper_coverage"]["balance"] is None
+
+
+def test_h1_reliability_reserves_canonical_and_development_evaluation_seeds():
+    excluded = h1_reliability_validate_splits({101}, {102}, {110, 111}, set(range(10)))
+    assert excluded == set(range(10)) | {110, 111}
+    for train, calibration in [({0}, {102}), ({101}, {110}), ({101}, {101})]:
+        with pytest.raises(ValueError, match="must be disjoint"):
+            h1_reliability_validate_splits(train, calibration, {110, 111}, set(range(10)))
+
+
+def test_h1_reliability_fit_audit_exposes_duplicates_missing_classes_and_brier():
+    train_y = np.asarray([[0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [1, 1, 0, 0]])
+    cal_y = np.asarray([[1, 0, 0, 0], [1, 0, 0, 0]])
+    prediction = np.asarray([[0.5, 0.25, 0, 0], [0.5, 0.25, 0, 0]])
+    train_sources = [
+        {"result": "train_a", "feature_risk_sha256": "same"},
+        {"result": "train_b", "feature_risk_sha256": "same"},
+    ]
+    cal_sources = [{"result": "cal", "feature_risk_sha256": "same"}]
+    audit = h1_reliability_fit_audit(train_y, cal_y, prediction, train_sources, cal_sources)
+    assert audit["source_counts"]["training"] == {
+        "window_rows": 4, "source_trajectory_count": 2,
+        "unique_feature_risk_trajectory_count": 1,
+        "unique_feature_risk_sha256": ["same"],
+    }
+    assert len(audit["identical_training_calibration_sources"]) == 2
+    reasons = audit["promotion_blocking_reasons"]
+    assert "missing_negative_class:training:invalid_contact_or_fall" in reasons
+    assert "missing_negative_class:calibration:force_violation" in reasons
+    assert "missing_positive_class:calibration:invalid_contact_or_fall" in reasons
+    assert "identical_training_calibration_feature_risk_trajectories" in reasons
+    brier = audit["calibration_brier_vs_training_prevalence"]["force_violation"]
+    assert brier["training_prevalence"] == 0.25
+    assert brier["constant_calibration_brier"] == 0.5625
+    assert brier["model_calibration_brier"] == 0.25
+    assert brier["model_minus_constant"] == -0.3125
+
+
+def test_h1_reliability_fit_without_data_warnings_still_cannot_claim_promotion():
+    y = np.asarray([[0, 1, 0, 0], [1, 0, 0, 0]])
+    audit = h1_reliability_fit_audit(
+        y, y, y,
+        [{"result": "train", "feature_risk_sha256": "a"}],
+        [{"result": "cal", "feature_risk_sha256": "b"}],
+    )
+    assert audit["fit_scope"] == "development_fit_only"
+    assert audit["performance_validated"] is False
+    assert audit["promotion_eligible"] is False
+    assert audit["trajectory_independence_validated"] is False
+    assert audit["identical_training_calibration_sources"] == []
+    assert audit["promotion_blocking_reasons"] == [
+        "independent_candidate_and_performance_validation_not_performed",
+    ]
+
+
+def test_h1_reliability_rejects_existing_output_before_collecting_or_fitting(tmp_path, monkeypatch):
+    from scripts.tasks.robot.humanoid import train_box_push_reliability as trainer
+
+    output = tmp_path / "frozen.json"
+    output.write_text("existing artifact")
+    monkeypatch.setattr("sys.argv", ["train", str(tmp_path), "--output", str(output)])
+    monkeypatch.setattr(trainer, "_rows", lambda *a, **k: pytest.fail("data read before output guard"))
+    with pytest.raises(FileExistsError, match="already exists"):
+        trainer.main()
+    assert output.read_text() == "existing artifact"
+
+
+def test_h1_policy_interface_checks_semantics_and_preserves_legacy_loads():
+    from genedynamics.experiments.plugins.methods.contact_receding import _validate_policy_interface
+
+    interface = {"action_layout": {"primitive_width": 12, "mapping": "joint_target"}}
+    env = SimpleNamespace(policy_interface=interface, _config=SimpleNamespace(dt=0.02))
+    _validate_policy_interface(env, {"policy_interface": interface})
+    residual = {
+        "action_bias": [0.0, -0.4], "action_scale": [1.0, 0.1],
+        "mapping": "residual",
+    }
+    residual_env = SimpleNamespace(
+        policy_interface=interface, policy_action_transform=residual,
+        _config=SimpleNamespace(dt=0.02),
+    )
+    residual_checkpoint = {
+        "policy_interface": interface, "policy_action_transform": residual,
+        "action_bias": residual["action_bias"], "action_scale": residual["action_scale"],
+    }
+    _validate_policy_interface(residual_env, residual_checkpoint)
+    with pytest.raises(ValueError, match="policy action transform mismatch"):
+        _validate_policy_interface(residual_env, {"policy_interface": interface})
+    with pytest.raises(ValueError, match="action_bias"):
+        _validate_policy_interface(
+            residual_env, {**residual_checkpoint, "action_bias": [0.0, 0.0]},
+        )
+    for checkpoint in ({}, {"policy_interface": {"mapping": "residual"}}):
+        with pytest.raises(ValueError, match="policy interface mismatch"):
+            _validate_policy_interface(env, checkpoint)
+    _validate_policy_interface(SimpleNamespace(), {})
+    _validate_policy_interface(SimpleNamespace(policy_interface=None), {"policy_interface": interface})
+    with pytest.raises(ValueError, match="model/execution"):
+        _validate_policy_interface(env, {"policy_interface": interface}, execution_env=SimpleNamespace())
+    transform = {"Kc": 1.0, "action_limit": 1.0}
+    checkpoint = {"policy_interface": interface, "atacom_transform": {**transform, "time_step": 0.02}}
+    _validate_policy_interface(env, checkpoint, atacom=transform)
+    with pytest.raises(ValueError, match="transform mismatch"):
+        _validate_policy_interface(env, checkpoint, atacom={**transform, "Kc": 2.0})
+
+
+def _h1_reliability_contract_env(*, walk=False):
+    from genedynamics.envs.domains.humanoid.box_push_brax import (
+        HumanoidBoxPushConfig, HumanoidBoxPushEnv,
+    )
+
+    env = SimpleNamespace(
+        _bcfg=HumanoidBoxPushConfig(level="push_walk" if walk else "push_to_line"),
+        dt=0.02, _is_walk=walk, _robot_profile=SimpleNamespace(model_id="h1"),
+        action_size=23 if walk else 12, spec=SimpleNamespace(total_width=12),
+        policy_interface={"observation_layout": {"observation_size": 91,
+                          "version": "current_history"}} if walk else None,
+        reliability_features=lambda *args: None, reliability_feature_size=24,
+    )
+    env.reliability_contract = lambda horizon_steps=None: HumanoidBoxPushEnv.reliability_contract(env, horizon_steps)
+    env.validate_reliability_checkpoint = lambda payload, **kw: HumanoidBoxPushEnv.validate_reliability_checkpoint(env, payload, **kw)
+    return env
+
+
+def test_h1_reliability_contract_rejects_same_width_old_risk_horizon_and_policy():
+    from copy import deepcopy
+    from genedynamics.envs.domains.humanoid.box_push_brax import H1_RELIABILITY_SCHEMA
+
+    env = _h1_reliability_contract_env(walk=True)
+    contract = env.reliability_contract(25)
+    payload = {name: deepcopy(H1_RELIABILITY_SCHEMA[name]) for name in (
+        "feature_names", "risk_names", "state_feature_count", "support_state_feature_count",
+        "probability_risk_count", "classification_probabilities",
+    )}
+    with pytest.raises(ValueError, match="contract mismatch"):
+        env.validate_reliability_checkpoint(payload, horizon_steps=25)
+    payload["metadata"] = {"reliability_contracts": [contract]}
+    env.validate_reliability_checkpoint(payload, horizon_steps=25)
+    with pytest.raises(ValueError, match="contract mismatch"):
+        env.validate_reliability_checkpoint(payload, horizon_steps=17)
+    for key in ("risk_names", "feature_names"):
+        altered = deepcopy(payload)
+        altered[key][0] = "old_same_width_semantics"
+        with pytest.raises(ValueError, match="mismatch"):
+            env.validate_reliability_checkpoint(altered, horizon_steps=25)
+    altered = deepcopy(payload)
+    altered["metadata"]["reliability_contracts"][0]["policy_interface"]["observation_layout"]["observation_size"] = 78
+    with pytest.raises(ValueError, match="contract mismatch"):
+        env.validate_reliability_checkpoint(altered, horizon_steps=25)
+    altered = deepcopy(payload)
+    altered["metadata"]["reliability_contracts"][0]["schema"]["risk_definitions"][3] = "old_constant_target_error"
+    with pytest.raises(ValueError, match="contract mismatch"):
+        env.validate_reliability_checkpoint(altered, horizon_steps=25)
+    env._bcfg.f_max = 61.0
+    with pytest.raises(ValueError, match="contract mismatch"):
+        env.validate_reliability_checkpoint(payload, horizon_steps=25)
+
+
+def test_h1_reliability_collection_requires_saved_contract_and_matching_sources():
+    from copy import deepcopy
+    from genedynamics.envs.domains.humanoid.box_push_brax import HumanoidBoxPushEnv
+    from scripts.tasks.robot.humanoid.train_box_push_reliability import _collection_contract, _fitted_contracts
+
+    with pytest.raises(ValueError, match="audit-only"):
+        _collection_contract({}, horizon_steps=17)
+    env = _h1_reliability_contract_env()
+    signals = {"task_metadata": {
+        "reliability_contract": env.reliability_contract(),
+        "reliability_source_sha256": HumanoidBoxPushEnv.reliability_source_sha256(),
+    }}
+    contract, _ = _collection_contract(signals, horizon_steps=17)
+    assert contract["horizon_steps"] == 17
+    assert signals["task_metadata"]["reliability_contract"]["horizon_steps"] is None
+    altered = deepcopy(signals)
+    altered["task_metadata"]["reliability_source_sha256"] = {"old_env": "old_sha"}
+    with pytest.raises(ValueError, match="source mismatch"):
+        _collection_contract(altered, horizon_steps=17)
+    rows = [{"reliability_contract": contract}]
+    assert _fitted_contracts(rows, rows) == [contract]
+    with pytest.raises(ValueError, match="contracts differ"):
+        _fitted_contracts(rows, [{"reliability_contract": env.reliability_contract(25)}])
+
+
+def test_h1_reliability_loader_checks_task_contract_before_shared_model(tmp_path, monkeypatch):
+    from genedynamics.experiments.plugins.methods.contact_receding import make_mga
+
+    path = tmp_path / "legacy_q95.json"
+    path.write_text("{}")
+    monkeypatch.setattr(LinearReliabilityModel, "load", lambda *args: pytest.fail("shared load before validation"))
+    with pytest.raises(ValueError, match="H1 reliability checkpoint"):
+        make_mga("humanoid_box_push", model_env=_h1_reliability_contract_env(),
+                 reliability_ckpt=str(path))
+    class ReachedSharedLoader(Exception):
+        pass
+    def unchanged_loader(*args):
+        raise ReachedSharedLoader()
+    monkeypatch.setattr(LinearReliabilityModel, "load", unchanged_loader)
+    for task in ("manipulator_surface_scan", "manipulator_peg_insert"):
+        with pytest.raises(ReachedSharedLoader):
+            make_mga(task, model_env=SimpleNamespace(reliability_features=lambda *args: None),
+                     reliability_ckpt=str(path))
+
+
+def test_h1_reliability_static_metadata_keeps_metric_arrays_and_json_serializable():
+    import json
+    from genedynamics.experiments.framework.experiment import convert_to_json_serializable
+    from genedynamics.experiments.plugins.metrics.general import GeneralMetricsPlugin
+
+    metadata = {"reliability_contract": _h1_reliability_contract_env().reliability_contract()}
+    signals = {"force": np.array([1., 3., 2.]), "task_metadata": metadata}
+    plugin = GeneralMetricsPlugin(["force_peak"], extractor=lambda *a, **k: signals,
+                                  persist_signals=True)
+    assert plugin.compute(None, None, None, None)["force_peak"] == 3.0
+    saved = json.loads(json.dumps(convert_to_json_serializable(plugin.pop_artifacts()), allow_nan=False))
+    assert saved["task_signals"]["task_metadata"] == metadata
+
+
+@pytest.mark.parametrize("consumer", ["mga", "atacom_prior", "rl", "issa", "atacom"])
+def test_h1_checkpoint_loaders_reject_old_matching_dimension_policy(monkeypatch, consumer):
+    from genedynamics.experiments.plugins.methods.contact_receding import make_controller, make_mga
+    from genedynamics.learning import train_rl_policy as learning
+
+    env = SimpleNamespace(action_size=23, observation_size=76,
+                          manifold_constraint_size=1, inequality_constraint_size=3,
+                          policy_interface={"mapping": "joint_target"})
+    checkpoint = {"action_size": 22 if "atacom" in consumer else 23,
+                  "observation_size": 76, "protocol": "old_atacom" if "atacom" in consumer else "old_walk"}
+    monkeypatch.setattr(learning, "load_policy", lambda path: (None, checkpoint))
+    with pytest.raises(ValueError, match="policy interface mismatch"):
+        if consumer in {"mga", "atacom_prior"}:
+            key = "policy_ckpt" if consumer == "mga" else "atacom_policy_ckpt"
+            make_mga("humanoid_box_push", model_env=env, **{key: "old.pkl"})
+        else:
+            make_controller("humanoid_box_push", consumer, model_env=env, policy_ckpt="old.pkl")
+
+
+@pytest.mark.parametrize("consumer", ["atacom", "atacom_prior"])
+def test_h1_p3_loaders_reject_old_one_dimensional_tangent_policy(monkeypatch, consumer):
+    from genedynamics.envs.domains.humanoid.box_push_brax import HumanoidBoxPushEnv
+    from genedynamics.experiments.plugins.methods.contact_receding import make_controller, make_mga
+    from genedynamics.learning import train_rl_policy as learning
+
+    task = SimpleNamespace(_is_walk=False, _face_select=True)
+    env = SimpleNamespace(action_size=12, observation_size=76, policy_interface=None,
+                          manifold_constraint_size=HumanoidBoxPushEnv.manifold_constraint_size.fget(task),
+                          inequality_constraint_size=3)
+    checkpoint = {"action_size": 1, "observation_size": 76,
+                  "protocol": "humanoid_box_push_atacom_p3_ppo_v1"}
+    monkeypatch.setattr(learning, "load_policy", lambda path: (None, checkpoint))
+    with pytest.raises(ValueError, match="action mismatch:.*expected 2"):
+        if consumer == "atacom_prior":
+            make_mga("humanoid_box_push", model_env=env, atacom_policy_ckpt="old.pkl")
+        else:
+            make_controller("humanoid_box_push", "atacom", model_env=env, policy_ckpt="old.pkl")
+
+
+def test_h1_p3_training_exports_new_tangent_width_without_changing_raw_policy(monkeypatch):
+    from brax.training.agents.ppo import train as ppo_train
+    from genedynamics.envs.domains.humanoid.box_push_brax import HumanoidBoxPushEnv
+    from genedynamics.learning.train_rl_policy import train_rl_policy
+    from genedynamics.solvers.single.atacom.wrapper import AtacomEnvWrapper
+
+    task = SimpleNamespace(_is_walk=False, _face_select=True)
+    raw_env = SimpleNamespace(action_size=12, observation_size=76, policy_interface=None,
+                              manifold_constraint_size=HumanoidBoxPushEnv.manifold_constraint_size.fget(task),
+                              inequality_constraint_size=3)
+    wrapped = AtacomEnvWrapper(raw_env)
+    calls = []
+
+    def fake_train(**kwargs):
+        calls.append(kwargs["environment"].action_size)
+        return None, None, {}
+
+    monkeypatch.setattr(ppo_train, "train", fake_train)
+    for env, expected in ((wrapped, 2), (raw_env, 12)):
+        _, config = train_rl_policy(env, num_timesteps=0, episode_length=100, num_envs=1)
+        assert config["action_size"] == expected
+        assert config["observation_size"] == 76
+    assert calls == [2, 12]
+
+
+def test_h1_training_p4_overrides_are_explicit_scoped_and_do_not_mutate_canonical():
+    from scripts.tasks.robot.humanoid.train_box_push_rl import (
+        _development_env_specs, _stage_episode_lengths, _walk_curriculum_groups,
+    )
+
+    specs = [{"level": "push_walk", "push_dist": 0.30}]
+    unchanged, overrides = _development_env_specs("walk", specs, None)
+    assert unchanged == specs and overrides == {}
+    for schema in ("walk", "atacom_p4"):
+        resolved, overrides = _development_env_specs(schema, specs,
+            '{"walk_leg_control":"joint_target","walk_success_mode":"locomotion","gait_cadence":0.7}')
+        assert resolved[0]["walk_leg_control"] == "joint_target"
+        assert resolved[0]["walk_success_mode"] == "locomotion"
+        assert resolved[0]["gait_cadence"] == overrides["gait_cadence"] == 0.7
+    assert specs == [{"level": "push_walk", "push_dist": 0.30}]
+    suites = [SimpleNamespace(n_steps=100)]
+    assert _stage_episode_lengths("walk", suites) == [100]
+    assert _stage_episode_lengths("walk", suites, 300) == [300]
+    assert _stage_episode_lengths("walk", suites, 300, stage_count=2) == [300, 300]
+    groups = _walk_curriculum_groups("walk", [{
+        "level": "push_walk", "f_target": 30.0, "w_contact": 5.0,
+        "w_force": 2.0, "w_force_limit": 10.0, "w_nonhand": 10.0,
+        "w_bal": 0.5, "w_stiffness_nominal": 2.0,
+    }], True)
+    assert len(groups) == 2
+    assert groups[0][0]["f_target"] == 0.0
+    assert groups[0][0]["f_max"] == 1.0
+    assert groups[0][0]["emergency_retract_force"] == 0.0
+    assert groups[0][0]["fixed_force_target"] is True
+    assert groups[0][0]["s_ref_diag"] == groups[0][0]["s_scale"] == 0.0
+    assert groups[0][0]["w_contact"] == groups[0][0]["w_nonhand"] == 0.0
+    assert groups[1][0]["f_target"] == 30.0
+    with pytest.raises(ValueError, match="single-domain walk"):
+        _walk_curriculum_groups("atacom_p4", [{"level": "push_walk"}], True)
+    for schema, raw in (
+        ("fixed", '{}'), ("atacom_p3", '{}'), ("walk", '[]'),
+        ("walk", '{"unknown_field":1}'), ("walk", '{}'),
+        ("walk", '{"walk_leg_control":"joint_target","walk_success_mode":"legacy"}'),
+        ("walk", '{"walk_leg_control":"joint_target","walk_success_mode":"locomotion","level":"unjam"}'),
+        ("walk", '{"walk_leg_control":"joint_target","walk_success_mode":"locomotion","use_base":true}'),
+        ("walk", '{"walk_leg_control":"joint_target","walk_success_mode":"locomotion","dt":NaN}'),
+    ):
+        with pytest.raises(ValueError):
+            _development_env_specs(schema, specs, raw)
+
+
+def test_h1_walk_expert_loader_keeps_only_verified_representable_leg_teacher(tmp_path):
+    import json
+    from scripts.tasks.robot.humanoid.train_box_push_rl import _load_walk_expert
+
+    path = tmp_path / "trajectory.json"
+    actions = np.zeros((3, 23), dtype=float)
+    actions[:, 12:] = np.linspace(-1.0, 1.0, 11)
+    path.write_text(json.dumps({
+        "actions": actions.tolist(),
+        "states": [{"obs": np.full(91, i, dtype=float).tolist()} for i in range(4)],
+        "task_signals": {
+            "task_fallen": [0, 0, 0],
+            "walk_left_steps": [0, 1, 1],
+            "walk_right_steps": [0, 0, 1],
+        },
+    }))
+    bias = np.r_[np.zeros(12), np.full(11, -0.2)]
+    scale = np.r_[np.full(12, 0.25), np.full(11, 1.2)]
+    obs, target, report = _load_walk_expert(
+        path, observation_size=91, action_size=23,
+        action_transform={"action_bias": bias.tolist(), "action_scale": scale.tolist()},
+    )
+    assert obs.shape == (3, 91) and target.shape == (3, 23)
+    np.testing.assert_array_equal(target[:, :12], 0.0)
+    assert report["verified_left_steps"] == report["verified_right_steps"] == 1
+    assert report["absolute_leg_action_rmse"] < 5e-4
+    broken = json.loads(path.read_text())
+    broken["task_signals"]["task_fallen"][-1] = 1
+    path.write_text(json.dumps(broken))
+    with pytest.raises(ValueError, match="fall-free bilateral"):
+        _load_walk_expert(path, observation_size=91, action_size=23,
+                          action_transform={"action_bias": bias.tolist(),
+                                            "action_scale": scale.tolist()})
+
+
+def test_h1_walk_expert_loader_does_not_double_add_shared_dial_reference(tmp_path):
+    import hashlib
+    import json
+    from scripts.tasks.robot.humanoid.train_box_push_rl import _load_walk_expert
+
+    path = tmp_path / "trajectory.json"
+    actions = np.zeros((3, 23), dtype=float)
+    actions[:, :12] = 0.75  # Unloaded contact coordinates are not a teacher.
+    actions[:, 12:] = np.linspace(-1.0, 1.0, 11)
+    path.write_text(json.dumps({
+        "actions": actions.tolist(),
+        "states": [{"obs": np.full(91, i, dtype=float).tolist()} for i in range(4)],
+        "task_signals": {
+            "task_fallen": [0, 0, 0],
+            "walk_left_steps": [0, 1, 1],
+            "walk_right_steps": [0, 0, 1],
+        },
+    }))
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    transform = {
+        "center": "time_indexed_dial_reference",
+        "action_bias": np.zeros(23).tolist(),
+        "action_scale": np.ones(23).tolist(),
+    }
+    interface = {"action_layout": {"planner_reference_sha256": digest}}
+    _, target, report = _load_walk_expert(
+        path, observation_size=91, action_size=23,
+        action_transform=transform, policy_interface=interface,
+    )
+    np.testing.assert_array_equal(target, 0.0)
+    assert report["absolute_leg_action_rmse"] == 0.0
+    assert report["target_semantics"] == (
+        "zero_residual_around_verified_DIAL_planner_reference"
+    )
+
+    interface["action_layout"]["planner_reference_sha256"] = "wrong"
+    with pytest.raises(ValueError, match="exactly match"):
+        _load_walk_expert(
+            path, observation_size=91, action_size=23,
+            action_transform=transform, policy_interface=interface,
+        )
+
+
+def test_h1_walk_expert_initialization_is_globally_zero_about_shared_reference(
+        tmp_path):
+    import hashlib
+    import json
+    import jax
+    import jax.numpy as jnp
+    from brax.training.acme import running_statistics
+    from brax.training.agents.ppo import networks as ppo_networks
+    from scripts.tasks.robot.humanoid.train_box_push_rl import (
+        _pretrain_walk_policy_from_expert,
+    )
+
+    path = tmp_path / "trajectory.json"
+    path.write_text(json.dumps({
+        "actions": np.zeros((3, 23), dtype=float).tolist(),
+        "states": [{"obs": np.full(91, i, dtype=float).tolist()}
+                   for i in range(4)],
+        "task_signals": {
+            "task_fallen": [0, 0, 0],
+            "walk_left_steps": [0, 1, 1],
+            "walk_right_steps": [0, 0, 1],
+        },
+    }))
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    transform = {
+        "center": "time_indexed_dial_reference",
+        "action_bias": np.zeros(23).tolist(),
+        "action_scale": np.ones(23).tolist(),
+    }
+    interface = {"action_layout": {"planner_reference_sha256": digest}}
+    env = SimpleNamespace(observation_size=91, action_size=23)
+    params, report = _pretrain_walk_policy_from_expert(
+        env, transform, interface, path, seed=101, hidden_sizes=(16, 16),
+        normalize_observations=False, normalizer_std_eps=0.05,
+        init_noise_std=0.25, steps=10,
+    )
+    networks = ppo_networks.make_ppo_networks(
+        observation_size=91, action_size=23,
+        preprocess_observations_fn=lambda x, y: x,
+        policy_hidden_layer_sizes=(16, 16), init_noise_std=0.25,
+    )
+    normalizer, policy_params, _ = params
+    observations = jax.random.normal(jax.random.PRNGKey(7), (8, 91)) * 100.0
+    logits = networks.policy_network.apply(normalizer, policy_params, observations)
+    actions = networks.parametric_action_distribution.mode(logits)
+    np.testing.assert_allclose(np.asarray(actions), 0.0, atol=1e-7)
+    assert report["initialization"] == "analytic_global_zero_policy_mean"
+    assert report["pretrain_steps"] == 0
+    assert report["requested_pretrain_steps"] == 10
+
+
+def test_policy_prior_current_observation_mode_avoids_second_dynamics_graph(monkeypatch):
+    from genedynamics.learning import train_rl_policy as learning
+    from genedynamics.learning.priors import rl
+    from genedynamics.experiments.plugins.methods.contact_receding import make_mga
+
+    captured = {}
+
+    def fake_prior(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(**kwargs)
+
+    monkeypatch.setattr(rl, "RLPrior", fake_prior)
+    env = SimpleNamespace(step=lambda state, action: (state, action))
+    config = {
+        "algo": "ppo", "observation_size": 4, "action_size": 2,
+        "normalize_observations": False,
+        "policy_hidden_layer_sizes": (8, 8),
+    }
+    learning.build_policy_prior(
+        object(), config, env=env, Hsample=6, Hnode=2,
+        rollout_mode="current_observation",
+    )
+    assert captured["rollout_step"] is None
+    with pytest.raises(ValueError, match="rollout_mode"):
+        learning.build_policy_prior(
+            object(), config, env=env, rollout_mode="unknown",
+        )
+    with pytest.raises(ValueError, match="does not support stochastic"):
+        make_mga(
+            "humanoid_box_push", prior_rollout_mode="current_observation",
+            prior_stochastic_samples=1,
+        )
+
+
+def test_h1_training_exports_actual_underlying_interface_and_atacom_options():
+    from dataclasses import dataclass
+    from scripts.tasks.robot.humanoid.train_box_push_rl import (
+        _atacom_training_options, _environment_policy_action_transform,
+        _environment_training_contract,
+    )
+
+    @dataclass
+    class Config:
+        dt: float = 0.02
+        walk_leg_control: str = "joint_target"
+
+    interface = {"action_layout": {"action_size": 23}}
+    action_transform = {"action_bias": [0.0], "action_scale": [0.2]}
+    domain = SimpleNamespace(
+        _bcfg=Config(), _config=Config(), policy_interface=interface,
+        policy_action_transform=action_transform,
+    )
+    saved, params, transform = _environment_training_contract([domain], {"Kc": 2.0, "action_limit": 0.8})
+    assert saved == interface
+    assert params == [{"dt": 0.02, "walk_leg_control": "joint_target"}]
+    assert transform == {"Kc": 2.0, "action_limit": 0.8, "time_step": 0.02}
+    assert _environment_policy_action_transform([domain]) == action_transform
+    assert _atacom_training_options("walk") is None
+    config = ExperimentConfig(name="atacom", env_name="humanoid_box_push", method="atacom",
+                              output_dir="results/_development/test",
+                              method_params={"Kc": 2.0, "action_limit": 0.8},
+                              suites=[{"name": "p4_walk_push", "level": "push_walk"}])
+    assert _atacom_training_options("atacom_p4", config) == {"Kc": 2.0, "action_limit": 0.8}
+    legacy = SimpleNamespace(_bcfg=Config(), _config=Config(), policy_interface=None)
+    with pytest.raises(ValueError, match="share policy interface"):
+        _environment_training_contract([domain, legacy])
+    with pytest.raises(ValueError, match="share policy action transform"):
+        _environment_policy_action_transform([domain, legacy])
+
 
 def test_registry_names():
     assert set(list_priors()) == {"rl", "diffusion"}
@@ -729,11 +1395,14 @@ def test_receding_incumbent_fallback_never_returns_raw_policy():
     assert float(info["prior_accepted"]) == 0.0
     assert "prior_risk_incumbent" in info
 
+    # Cold start is no longer an unconditional refined-plan bypass.  Both
+    # candidates receive the same model-based certificate and the safe,
+    # higher-scoring incumbent remains selected.
     cold, cold_info = backend._accept_refinement(
         jnp.zeros((1,)), incumbent, worse, jnp.float32(0.0)
     )
-    np.testing.assert_allclose(cold, worse)
-    assert float(cold_info["prior_accepted"]) == 1.0
+    np.testing.assert_allclose(cold, incumbent)
+    assert float(cold_info["prior_accepted"]) == 0.0
 
 
 def test_atacom_pareto_incumbent_can_dominate_receding_and_refinement():
@@ -973,3 +1642,86 @@ def test_panda_residual_action_wrapper_adds_and_clips_bias():
         jnp.asarray([0.9, 0.25]),
     )
     np.testing.assert_allclose(result.obs, [0.7, -0.4375])
+
+
+def _h1_normal_only_reliability_payload(n=10):
+    payload = _h1_reliability_payload(n)
+    signals = payload["task_signals"]
+    signals.update({
+        "mga_execution_mode": np.zeros(n, np.int32),
+        "reliability_execution_applicable": np.ones(n, bool),
+        "reliability_risk_valid": np.ones(n, bool),
+        "safety_margins": np.full((n, 4), -1.),
+        "task_metadata": {"reliability_contract": {"schema": {"version": 3}}},
+    })
+    return payload
+
+
+def test_h1_reliability_excludes_unload_windows_not_real_physical_observations():
+    payload = _h1_normal_only_reliability_payload()
+    signals = payload["task_signals"]
+    signals["mga_execution_mode"][4] = 1
+    signals["reliability_execution_applicable"][4] = False
+    signals["reliability_risk_valid"][4] = False
+    signals["reliability_risk"][4] = np.nan
+    # The UNLOAD endpoint is an observed physical state. It may seed a later
+    # NORMAL candidate, while a candidate crossing its UNLOAD action is N/A.
+    signals["safety_margins"][4] = [.1, -.1, -.1, -.1]
+    _, y, meta = h1_reliability_sequence_rows(payload, {}, horizon_steps=3)
+    assert meta["decision_steps"] == [1, 5, 6, 7]
+    assert meta["unload_crossing_starts_excluded"] == 3
+    assert meta["unload_transitions_excluded_from_normal_labels"] == 1
+    assert y[1, 0] == 1.  # initial s_5 force, not the previous interval envelope
+    assert np.isfinite(y).all()
+
+
+def test_h1_reliability_v3_initial_endpoint_not_past_peak_sets_candidate_risk():
+    payload = _h1_normal_only_reliability_payload()
+    signals = payload["task_signals"]
+    signals["reliability_risk"][0] = [1., 1., 99., 99.]
+    _, y, _ = h1_reliability_sequence_rows(payload, {}, horizon_steps=3)
+    np.testing.assert_array_equal(y[0], 0.)
+    signals["safety_margins"][0] = [.1, .2, .3, -.1]
+    _, y, _ = h1_reliability_sequence_rows(payload, {}, horizon_steps=3)
+    np.testing.assert_allclose(y[0], [1., 1., .3, 0.])
+
+
+@pytest.mark.parametrize("bad", ["normal_nan", "normal_unknown", "mode_mismatch", "unload_finite",
+                                 "missing_mode", "instantaneous_nan"])
+def test_h1_reliability_normal_only_mask_does_not_hide_unknown_or_corrupt_labels(bad):
+    payload = _h1_normal_only_reliability_payload()
+    signals = payload["task_signals"]
+    signals["mga_execution_mode"][4] = 1
+    signals["reliability_execution_applicable"][4] = False
+    signals["reliability_risk_valid"][4] = False
+    signals["reliability_risk"][4] = np.nan
+    if bad == "normal_nan":
+        signals["reliability_risk"][0, 0] = np.nan
+    elif bad == "normal_unknown":
+        signals["reliability_risk_valid"][0] = False
+    elif bad == "mode_mismatch":
+        signals["reliability_execution_applicable"][4] = True
+    elif bad == "unload_finite":
+        signals["reliability_risk"][4] = 0.
+    elif bad == "missing_mode":
+        del signals["mga_execution_mode"]
+    else:
+        signals["safety_margins"][0, 0] = np.nan
+    with pytest.raises(ValueError):
+        h1_reliability_sequence_rows(payload, {}, horizon_steps=3)
+
+
+def test_h1_reliability_rejects_aborted_collection_before_reading_prefix(tmp_path):
+    import json
+    from scripts.tasks.robot.humanoid.train_box_push_reliability import _rows
+
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps({
+        "seed": 101, "config_snapshot": {"env_name": "humanoid_box_push", "name": "mga"},
+        "execution_status": {"state": "aborted_unrecoverable",
+                             "reason": "invalid_unload_entry"},
+    }))
+    # A trajectory is deliberately absent: rejection must precede loading or
+    # length checks, even if an aborted run would have had 17+ normal actions.
+    with pytest.raises(ValueError, match="aborted H1 collection.*results.json.*invalid_unload_entry"):
+        _rows([path], {101}, {"mga"})

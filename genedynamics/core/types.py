@@ -22,6 +22,20 @@ State = Any  # Can be numpy array, JAX array, PyTorch tensor, dict, etc.
 Action = Any  # Can be numpy array, JAX array, PyTorch tensor, etc.
 
 
+class ExecutionRejected(RuntimeError):
+    """An explicitly rejected command that has not advanced real dynamics.
+
+    This is not a physical safety certificate or a generic simulator error.
+    Execution drivers may attach the actually executed prefix so experiments
+    can retain a failed attempt without inventing states or dropping its seed.
+    """
+
+    def __init__(self, reason: str, details: Optional[dict] = None):
+        super().__init__(reason)
+        self.reason = str(reason)
+        self.details = dict(details or {})
+
+
 # Optional: If you want to enforce a specific structure, you can use these:
 @runtime_checkable
 class StateProtocol(Protocol):
@@ -79,4 +93,3 @@ class Trajectory:
 StateType = Any  # Can be State protocol or concrete implementation
 ActionType = Any  # Can be Action protocol or concrete implementation
 TrajectoryType = Trajectory
-

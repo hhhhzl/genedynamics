@@ -39,10 +39,11 @@ suites:
   - {name: p1_force_30n, level: push_to_line, env_params: {f_target: 30.0, fixed_force_target: true, fixed_contact_target: true, box_frictionloss: 10000.0, push_dist: 0.5, w_box: 0.0, w_prog: 0.0, w_force: 10.0}}
   - {name: p2_push_nominal, level: push_to_line, env_params: {push_dist: 0.10, goal_eps: 0.005}}
   - {name: p2_push_ood, level: heavy_dr, env_params: {f_target: 45.0, push_dist: 0.10, goal_eps: 0.005}}
-  - {name: p3_unjam, level: unjam, env_params: {f_target: 45.0, push_dist: 0.03, goal_eps: 0.005, unjam_yaw_eps: 0.03, yaw_frictionloss: 2.0, contact_band: 0.02}}
+  - {name: p3_unjam, level: unjam, env_params: {f_target: 45.0, push_dist: 0.03, goal_eps: 0.005, unjam_yaw_eps: 0.03, yaw_frictionloss: 2.0, contact_band: 0.02, ki_force: 0.08}}
   - name: p4_walk_push
     level: push_walk
-    env_params: {push_dist: 0.30, s_scale: 0.25, w_stiffness_nominal: 2.0, box_frictionloss: 8.0, w_gait: 30.0, w_vel: 1.0, target_vx: 0.25, approach_time: 0.30, force_ramp_time: 0.30, gait_ramp_time: 0.5, gait_cadence: 0.8, gait_hip_amp: 0.15, gait_knee_amp: 0.30, gait_capture_gain: 0.25, gait_roll_amp: 0.15, gait_roll_capture_gain: 1.5}
+    env_params: {push_dist: 0.30, hand_contact_solref: [0.18, 1.0], emergency_retract_force: 20.0, emergency_knee_residual_levels: [1.0, 0.0, -0.5, -1.0], emergency_backup_steps: 3, walk_joint_reference_residual_scale: 0.20, s_scale: 0.25, w_stiffness_nominal: 2.0, box_frictionloss: 8.0, w_gait: 30.0, w_vel: 1.0, target_vx: 0.25, approach_time: 0.30, force_ramp_time: 0.30, gait_ramp_time: 0.5, gait_cadence: 0.8, gait_hip_amp: 0.15, gait_knee_amp: 0.30, gait_capture_gain: 0.25, gait_roll_amp: 0.15, gait_roll_capture_gain: 1.5}
+    method_params: {receding_shift_mode: certified_terminal_hold}
 
 metadata:
   protocol: mga_humanoid_push_paper

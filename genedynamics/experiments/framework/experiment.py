@@ -697,11 +697,30 @@ class ExperimentRunner:
 
         # 10. Compute metrics
         metric_env = result.get('execution_env') or env
-        metrics = self._compute_metrics(
-            trajectory, metric_env, obstacles, constraint_pipeline, level,
-            env_plugin=env_plugin, planning_result=result, planning_time=planning_time,
-            x0=result.get('initial_state', start_pos), seed=seed,
-        )
+        execution_status = result.get("execution_status") or {}
+        aborted = execution_status.get("state") == "aborted_unrecoverable"
+        # A cold rejection contains only x0, not a transition to replay or pad.
+        try:
+            metrics = {} if aborted and not trajectory.actions else self._compute_metrics(
+                trajectory, metric_env, obstacles, constraint_pipeline, level,
+                env_plugin=env_plugin, planning_result=result, planning_time=planning_time,
+                x0=result.get('initial_state', start_pos), seed=seed,
+            )
+        except Exception as exc:
+            if not aborted:
+                raise
+            metrics = {}
+            execution_status["partial_metrics_error"] = str(exc)
+        partial_metrics = None
+        if aborted:
+            partial_metrics = metrics
+            metrics = {
+                name: getattr(self.registry.get_plugin('metric', name),
+                              'execution_failure_metrics', None)
+                for name in self.config.metrics
+            }
+            # The task metric plugin declares failed outcomes. Short-prefix
+            # force/cost values remain separate, not a low-cost completed run.
         
         # 11. Prepare results
         # Add obstacle statistics for backward compatibility
@@ -742,14 +761,21 @@ class ExperimentRunner:
             'num_primitives_total': num_primitives_total,
             'cfs_enabled': cfs_enabled,
             'stepping_scene': stepping_scene,
+            **({'execution_status': execution_status,
+                'partial_metrics': partial_metrics} if aborted else {}),
         }
         
         # 12. Generate visualizations
         if self.config.visualizations:
             print("Generating visualizations (folders/images)...")
-            self._generate_visualizations(
-                experiment_result, metric_env, obstacles, env_plugin
-            )
+            try:
+                self._generate_visualizations(
+                    experiment_result, metric_env, obstacles, env_plugin
+                )
+            except Exception as exc:
+                if not aborted:
+                    raise
+                execution_status["visualization_error"] = str(exc)
         
         total_time = time.time() - experiment_start_time
         experiment_result['total_time'] = float(total_time)
@@ -773,6 +799,11 @@ class ExperimentRunner:
             print(f"[resume] Ignoring unreadable {result_path}: {exc}")
             return None
 
+        if (result.get("execution_status") or {}).get("state", "completed") != "completed":
+            raise ValueError(
+                f"Refusing to resume/overwrite aborted attempt {result_path}; "
+                "preserve its evidence and use a new output root for a new attempt"
+            )
         expected_config = convert_to_json_serializable(self.config.to_dict())
         complete = (
             result.get("level") == level
@@ -811,13 +842,34 @@ class ExperimentRunner:
             List of experiment result dictionaries
         """
         all_results = []
-        self.config.output_dir.mkdir(parents=True, exist_ok=True)
-        self._save_protocol_manifest()
         original_config = self.config
         run_configs = (
             [original_config.for_suite(suite) for suite in original_config.suites]
             if original_config.suites else [original_config]
         )
+        # Protect every selected failed attempt before writing provenance or
+        # executing even the first seed. This also applies without --resume:
+        # a new attempt needs a new output root, not overwritten evidence.
+        for run_config in run_configs:
+            for level in run_config.obstacle_levels:
+                for seed in run_config.seeds:
+                    path = (run_config.output_dir / f"level_{level}"
+                            / f"seed_{seed}" / "results.json")
+                    if not path.is_file():
+                        continue
+                    try:
+                        with open(path) as handle:
+                            saved = json.load(handle)
+                    except (OSError, json.JSONDecodeError):
+                        continue  # Preserve the existing unreadable-result policy.
+                    if ((saved.get("execution_status") or {}).get(
+                            "state", "completed") != "completed"):
+                        raise ValueError(
+                            f"Refusing to resume/overwrite aborted attempt {path}; "
+                            "preserve its evidence and use a new output root for a new attempt"
+                        )
+        self.config.output_dir.mkdir(parents=True, exist_ok=True)
+        self._save_protocol_manifest()
         try:
             for run_config in run_configs:
                 self.config = run_config
@@ -853,6 +905,7 @@ class ExperimentRunner:
         """Write the resolved formal protocol and checkpoint provenance."""
         import hashlib
         import subprocess
+        from genedynamics.experiments.utils.metrics import resolved_suite_budgets
 
         try:
             git_sha = subprocess.run(
@@ -906,6 +959,7 @@ class ExperimentRunner:
             "git_sha": git_sha,
             "git_dirty": dirty,
             "config": self.config.to_dict(),
+            "resolved_suite_budgets": resolved_suite_budgets(self.config),
             "checkpoints": checkpoints,
             "package_versions": versions,
         }
@@ -2916,6 +2970,9 @@ class ExperimentRunner:
             )
         )
         serializable_result['config_snapshot'] = result.get('config_snapshot')
+        for key in ('execution_status', 'partial_metrics'):
+            if key in result:
+                serializable_result[key] = convert_to_json_serializable(result[key])
         protocol = getattr(self, '_protocol_manifest', {})
         serializable_result['provenance'] = {
             key: protocol.get(key)
@@ -2971,6 +3028,10 @@ class ExperimentRunner:
                     ),
                 }
                 artifacts = planning_result.get("metric_artifacts", {})
+                if planning_result.get("execution_status"):
+                    executed["execution_status"] = convert_to_json_serializable(
+                        planning_result["execution_status"]
+                    )
                 if artifacts.get("task_signals") is not None:
                     executed["task_signals"] = convert_to_json_serializable(
                         artifacts["task_signals"]

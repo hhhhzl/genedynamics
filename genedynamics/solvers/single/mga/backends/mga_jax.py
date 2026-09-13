@@ -40,12 +40,14 @@ A `rollout_fn` may be injected for CPU tests (no mjx), exactly as `dial_jax` doe
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import jax
 import jax.numpy as jnp
 
+from genedynamics.core.types import ExecutionRejected
 from genedynamics.solvers.single.dial.backends.dial_jax import (
     make_sigma_control,
     make_traj_diffuse_factors,
@@ -68,6 +70,7 @@ class MgaBackendJax:
         Hnode: int = 4,
         Hsample: int = 16,
         Nsample: int = 2048,
+        candidate_rollout_batch_size: Optional[int] = None,
         temp_sample: float = 0.06,
         horizon_diffuse_factor: float = 0.9,
         traj_diffuse_factor: float = 0.5,
@@ -81,6 +84,9 @@ class MgaBackendJax:
         aug_lambda: float = 0.0,
         aug_rho: float = 1.0,
         use_soft_feasibility: bool = True,
+        stepwise_diffusion: bool = False,
+        stepwise_acceptance: bool = False,
+        lazy_emergency_scoring: bool = False,
         seed: int = 0,
         # --- optional seams (None => verbatim DIAL) ---
         noise_sampler: Any = None,
@@ -96,6 +102,10 @@ class MgaBackendJax:
             Hnode = int(cfg.get("Hnode", Hnode))
             Hsample = int(cfg.get("Hsample", Hsample))
             Nsample = int(cfg.get("Nsample", Nsample))
+            candidate_rollout_batch_size = cfg.get(
+                "candidate_rollout_batch_size",
+                candidate_rollout_batch_size,
+            )
             temp_sample = float(cfg.get("temp_sample", temp_sample))
             horizon_diffuse_factor = float(cfg.get("horizon_diffuse_factor", horizon_diffuse_factor))
             traj_diffuse_factor = float(cfg.get("traj_diffuse_factor", traj_diffuse_factor))
@@ -110,6 +120,15 @@ class MgaBackendJax:
             aug_rho = float(cfg.get("aug_rho", aug_rho))
             flags = getattr(solver, "flags", None)
             use_soft_feasibility = bool(getattr(flags, "use_soft_feasibility", use_soft_feasibility))
+            stepwise_diffusion = bool(
+                cfg.get("stepwise_diffusion", stepwise_diffusion)
+            )
+            stepwise_acceptance = bool(
+                cfg.get("stepwise_acceptance", stepwise_acceptance)
+            )
+            lazy_emergency_scoring = bool(
+                cfg.get("lazy_emergency_scoring", lazy_emergency_scoring)
+            )
             seed = int(getattr(solver, "seed", seed))
             rollout_fn = rollout_fn or getattr(solver, "_rollout_fn", None)
             step_fn = step_fn or getattr(solver, "_step_fn", None)
@@ -129,6 +148,11 @@ class MgaBackendJax:
         self.nu = int(nu)
         self.Hnode, self.Hsample = int(Hnode), int(Hsample)
         self.Nsample = int(Nsample)
+        self.candidate_rollout_batch_size = (
+            None
+            if candidate_rollout_batch_size is None
+            else int(candidate_rollout_batch_size)
+        )
         self.temp_sample = float(temp_sample)
         self.traj_diffuse_factor = float(traj_diffuse_factor)
         self.action_limit = float(action_limit)
@@ -137,6 +161,9 @@ class MgaBackendJax:
         self.beta0, self.betaT = float(beta0), float(betaT)
         self.aug_lambda, self.aug_rho = float(aug_lambda), float(aug_rho)
         self.use_soft_feasibility = bool(use_soft_feasibility)
+        self.stepwise_diffusion = bool(stepwise_diffusion)
+        self.stepwise_acceptance = bool(stepwise_acceptance)
+        self.lazy_emergency_scoring = bool(lazy_emergency_scoring)
         self.seed = int(seed)
 
         self.spline = NodeSpline.build(self.Hnode, self.Hsample, ctrl_dt)
@@ -220,6 +247,9 @@ class MgaBackendJax:
         self.emergency_plan_fn = getattr(
             self._task_contract_env, "emergency_plan", None
         )
+        self.emergency_plans_fn = getattr(
+            self._task_contract_env, "emergency_plans", None
+        )
         self.emergency_active_fn = getattr(
             self._task_contract_env, "emergency_plan_is_active", None
         )
@@ -242,8 +272,10 @@ class MgaBackendJax:
             getattr(solver, "prior_union_trust", False)
         )
         self.prior_mode = str(getattr(solver, "prior_mode", "guided"))
-        if self.prior_mode not in {"guided", "additive"}:
-            raise ValueError("prior_mode must be 'guided' or 'additive'")
+        if self.prior_mode not in {"guided", "warm_start", "additive"}:
+            raise ValueError(
+                "prior_mode must be 'guided', 'warm_start', or 'additive'"
+            )
         self.prior_atacom_incumbent = bool(
             getattr(solver, "prior_atacom_incumbent", False)
         )
@@ -281,11 +313,30 @@ class MgaBackendJax:
         self.prior_fallback_mode = str(
             getattr(solver, "prior_fallback_mode", "rl")
         )
+        self.receding_shift_mode = str(
+            getattr(solver, "receding_shift_mode", "legacy")
+        )
+        if self.receding_shift_mode not in {
+            "legacy", "zero", "terminal_hold", "certified_terminal_hold",
+        }:
+            raise ValueError(
+                "receding_shift_mode must be legacy, zero, terminal_hold, "
+                "or certified_terminal_hold"
+            )
         if self.prior_fallback_mode not in {"rl", "receding_incumbent"}:
             raise ValueError(
                 "prior_fallback_mode must be 'rl' or 'receding_incumbent', got "
                 f"{self.prior_fallback_mode!r}"
             )
+        # An environment capability alone must not alter ordinary baselines or
+        # acceptance-disabled MGA. Only a route that can select an executable
+        # emergency opts into explicit modes.
+        self._execution_context = None
+        self._model_execution_context = None
+        self._host_emergency_score_risk_fn = None
+        self.execution_step = None
+        self._committed_shift_mode = 0
+        self._configure_execution_context()
         self.reliability_model = getattr(solver, "reliability_model", None)
         # These are observed execution-state signals (tracking lag, queued
         # command and measured wrench), not nominal rollout predictions.  Use
@@ -398,8 +449,29 @@ class MgaBackendJax:
         # episode's worth of acceptance executables.  Keep one stable bound JIT
         # exactly as for the reverse scan.  This changes no score, risk, or gate
         # arithmetic; it only makes the compilation/cache boundary explicit.
-        self._accept_refinement_jit = jax.jit(self._accept_refinement)
+        self._accept_refinement_jit = (
+            self._accept_refinement
+            if self.stepwise_acceptance
+            else jax.jit(self._accept_refinement)
+        )
+        self._normal_candidate_scores_jit = None
+        self._emergency_candidate_scores_jit = None
+        if self.stepwise_acceptance and self.score_risk_fn is not None:
+            # Keep measured state as an explicit dynamic argument.  Creating a
+            # fresh lambda that closes over each receding state makes JAX see a
+            # new constant and compile one H-step MJX scorer per control step.
+            self._normal_candidate_scores_jit = jax.jit(
+                self._normal_candidate_scores
+            )
+            if self.emergency_score_risk_fn is not None:
+                self._emergency_candidate_scores_jit = jax.jit(
+                    self._emergency_candidate_scores
+                )
         self._select_additive_prior_jit = jax.jit(self._select_additive_prior)
+        # CPU can keep one reverse update as the compilation boundary.  This
+        # preserves the exact update/RNG order while avoiding an outer scan
+        # that inlines a large MJX candidate rollout multiple times.
+        self._reverse_step_jit = jax.jit(self._reverse_step)
 
     @property
     def _prior_active(self):
@@ -437,13 +509,20 @@ class MgaBackendJax:
         )
         env = getattr(solver, "dynamics", None)
         if is_brax_env(env):
+            batch_size = getattr(
+                solver, "candidate_rollout_batch_size", None
+            )
             # cfsmbd/mdcoas AL: augment the brax reward with the soft-feasibility
             # penalty from env.constraint_residual. The no-op default residual =>
             # 0 penalty => byte-identical to the plain rollout (== DIAL).
             if self.use_soft_feasibility:
                 self._augmented = True                       # rollout takes aug params at call time
-                return build_brax_rollout_augmented(env)
-            return build_brax_rollout(env)
+                return build_brax_rollout_augmented(
+                    env, candidate_batch_size=batch_size
+                )
+            return build_brax_rollout(
+                env, candidate_batch_size=batch_size
+            )
         adapter = getattr(solver, "_env_adapter", None)
         energy = getattr(solver, "_legacy_energy", None)
         if adapter is None or energy is None:
@@ -599,11 +678,20 @@ class MgaBackendJax:
 
         gate_diag = None
         gate_action = None
+        update_gate_action = None
         if self.geometry_gate_fn is not None:
             gate_diag = self.geometry_gate_fn(state, Ybar_curr, t0)
             gate_action = jnp.clip(
                 jnp.asarray(gate_diag["action"], Ybar_curr.dtype), 0.0, 1.0
             )[None, :]
+            if "update_action" in gate_diag:
+                update_gate_action = jnp.clip(
+                    jnp.asarray(
+                        gate_diag["update_action"], Ybar_curr.dtype
+                    ),
+                    0.0,
+                    1.0,
+                )[None, :]
         clean_gate_action = gate_action
         if gate_diag is not None and self._gate_controllability_only:
             # A controllability-aware task may keep its clean tangential
@@ -682,6 +770,16 @@ class MgaBackendJax:
                 Ybar_next = Ybar_retracted
         if self._candidate_projection_jit is not None:
             Ybar_next = self._candidate_projection_jit(state, Ybar_next)
+        if update_gate_action is not None:
+            # Optional task-owned epistemic gate.  ``action`` above retains
+            # the original MGA meaning (blend raw and manifold directions),
+            # preserving every task that omits this key.  A task with a
+            # trusted time-indexed incumbent can additionally freeze action
+            # blocks whose local realization is not yet observable, rather
+            # than replacing that incumbent with pure Gaussian motion.
+            Ybar_next = Ybar_curr + update_gate_action * (
+                Ybar_next - Ybar_curr
+            )
         info = {"rews": rews, "mean_reward": rews.mean(), "weights_max": weights.max()}
         if structured_nodes is not None:
             n_noise = self.Nsample - structured_nodes.shape[0]
@@ -707,8 +805,130 @@ class MgaBackendJax:
             })
         return rng, Ybar_next, info
 
+
+    def _configure_execution_context(self):
+        """Protocol 1 seals task-owned entry_prepared independently of entry
+        geometry validity. The task also seals the actual entry stiffness
+        matrix AND raw coordinates decoded from the last committed action
+        (cold start: nominal zero raw); nominal decoding cannot replace them.
+        Repeated UNLOAD preparation reuses the complete seal even
+        before commitment; an absent seal in an active context is unknown.
+        NORMAL preparation cancels only uncommitted entries. Actual NORMAL
+        execution ends the old session. These are task-state semantics; the
+        generic backend neither owns anchor fields nor serializes callables.
+        """
+        model = getattr(self._env, "mga_execution_context", None)
+        execution = getattr(self._task_contract_env, "mga_execution_context", None)
+        can_select_emergency = self.prior_acceptance and (
+            self.prior_mode == "additive"
+            or self.prior_fallback_mode == "receding_incumbent"
+        )
+        if not can_select_emergency or (model is None and execution is None):
+            return
+        expected = {"schema_version": 1, "normal_mode": 0, "emergency_mode": 1}
+        for label, context in (("model", model), ("execution", execution)):
+            if not isinstance(context, Mapping):
+                raise ValueError(f"MGA {label} execution context is missing")
+            # Callables are runtime capabilities, never a serializable contract.
+            # Compare only the small scalar protocol, not DR parameter values.
+            if any(type(context.get(k)) is not int or context[k] != v
+                   for k, v in expected.items()):
+                raise ValueError(f"MGA {label} execution context schema mismatch")
+            if any(not callable(context.get(k))
+                   for k in ("prepare_state", "mode_from_state", "step")):
+                raise TypeError(f"MGA {label} execution context hooks must be callable")
+        if not all(callable(hook) for hook in (
+            self.score_risk_fn, self.emergency_score_risk_fn,
+            self.emergency_plan_fn, self.risk_safe_fn,
+        )):
+            raise ValueError("MGA execution context requires complete task safety hooks")
+        self._model_execution_context = model
+        self._execution_context = execution
+        # When model and execution are the same task instance, this hook shares
+        # the already-compiled real-step executable.  A distinct nominal model
+        # keeps its own hook, preserving model/execution separation.
+        score_context = execution if self._env is self._task_contract_env else model
+        host_emergency = score_context.get("score_emergency_host")
+        if host_emergency is not None and not callable(host_emergency):
+            raise TypeError("MGA score_emergency_host hook must be callable")
+        self._host_emergency_score_risk_fn = host_emergency
+        self.execution_step = self._execute_with_context
+        self._shift_with_mode_jit = jax.jit(self._shift_with_mode)
+
+    @staticmethod
+    def _checked_execution_mode(mode):
+        mode = jnp.asarray(mode)
+        if mode.shape != () or not jnp.issubdtype(mode.dtype, jnp.integer):
+            raise ValueError("execution mode must be a scalar integer")
+        if not isinstance(mode, jax.core.Tracer) and int(np.asarray(mode)) not in (0, 1):
+            raise ValueError("unknown execution mode")
+        return mode.astype(jnp.int32)
+
+    def _incumbent_execution_mode(self, state, override=None):
+        mode = (
+            self._execution_context["mode_from_state"](state)
+            if override is None else override
+        )
+        return self._checked_execution_mode(mode)
+
+    def _normal_rollout_state(self, state):
+        # Set pending NORMAL explicitly. Preserve a COMMITTED unload's entry
+        # history, but cancel any uncommitted prepared entry when committed
+        # mode is NORMAL. prepare_state(NORMAL) is geometry-independent.
+        return self._model_execution_context["prepare_state"](
+            state, jnp.int32(0)
+        )
+
+    def _execute_with_context(self, state, action, plan_info):
+        if any(isinstance(leaf, jax.core.Tracer)
+               for leaf in jax.tree_util.tree_leaves((state, action, plan_info))):
+            raise ValueError("context execution callback must run on the host")
+        if not isinstance(plan_info, Mapping) or "execution_mode" not in plan_info:
+            raise ValueError("MGA acceptance lost its explicit execution mode")
+        if bool(np.asarray(plan_info.get("emergency_unrecoverable", 0.0)) > 0.5):
+            raise ExecutionRejected(
+                "no_revalidated_safe_candidate",
+                {
+                    "normal_refined_safe": bool(np.asarray(
+                        plan_info.get("refined_revalidated_safe", 0.0)
+                    )),
+                    "incumbent_safe": bool(np.asarray(
+                        plan_info.get("incumbent_revalidated_safe", 0.0)
+                    )),
+                    "emergency_safe": bool(np.asarray(
+                        plan_info.get("emergency_revalidated_safe", 0.0)
+                    )),
+                },
+            )
+        mode = self._checked_execution_mode(plan_info["execution_mode"])
+        # Reproduce the scoring preparation order from the current measured
+        # state, not a stale pending request or an anchor copied from a plan.
+        # Committed unload history survives this NORMAL preparation.
+        state = self._execution_context["prepare_state"](state, jnp.int32(0))
+        return self._execution_context["step"](state, action, mode)
+
+    def _shift_with_mode(self, plan_var, mode):
+        # mode is an explicit dynamic JIT argument, not a captured host cache.
+        terminal = (
+            self.spline.shift_nodes_certified_terminal_hold(plan_var)
+            if self.receding_shift_mode == "certified_terminal_hold"
+            else self.spline.shift_nodes_terminal_hold(plan_var)
+        )
+        ordinary = (
+            terminal if (
+                self.receding_shift_mode in {
+                    "terminal_hold", "certified_terminal_hold",
+                }
+                or (self.receding_shift_mode == "legacy" and self._prior_active
+                    and self.prior_fallback_mode == "receding_incumbent")
+            ) else self.spline.shift_nodes(plan_var)
+        )
+        return jnp.where(mode == 1, terminal, ordinary)
+
     # --- WarmStartPlanner protocol (consumed by the receding-horizon bridge) --
     def init_plan_var(self) -> jnp.ndarray:
+        if self._execution_context is not None:
+            self._committed_shift_mode = 0
         if self.atacom_prior is not None:
             reset = getattr(self.atacom_prior, "reset", None)
             if callable(reset):
@@ -717,7 +937,13 @@ class MgaBackendJax:
 
     def after_step(self, state, action, next_state) -> None:
         """Commit state carried by a structured expert after real execution."""
-        del state, action, next_state
+        del state, action
+        if self._execution_context is not None:
+            # This method is called only after REAL execution by the host
+            # controller. Planning always reads the dynamic mode from state.
+            self._committed_shift_mode = int(np.asarray(
+                self._incumbent_execution_mode(next_state)
+            ))
         if self.atacom_prior is not None:
             commit = getattr(self.atacom_prior, "commit", None)
             if callable(commit):
@@ -778,6 +1004,19 @@ class MgaBackendJax:
         (rng_out, Y), _ = jax.lax.scan(body, (rng, warm_start), jnp.arange(n))
         return Y
 
+    def _replan_stepwise(self, state, warm_start, schedule, rng, t0, U_rl):
+        """Host-loop reverse steps around one stable compiled update."""
+        Y = warm_start
+        for k in range(schedule.shape[0]):
+            noise_scale = schedule[k]
+            if not bool(np.all(np.isfinite(np.asarray(noise_scale)))):
+                continue
+            rng, Y, _ = self._reverse_step_jit(
+                state, rng, Y, noise_scale, jnp.int32(k), t0, U_rl
+            )
+            rng, Y = jax.block_until_ready((rng, Y))
+        return Y
+
     def _replan_scan_structured(
         self, state, warm_start, schedule, rng, t0, U_rl, structured_nodes,
         prior_centers,
@@ -826,7 +1065,7 @@ class MgaBackendJax:
         return Y, totals / counts
 
     def _rollout_node_candidates(self, state, nodes, t0):
-        dense = self.spline.node2u_batch(nodes)
+        dense = self._node2u_batch(nodes)
         if self._augmented:
             rewards = self._rollout_fn(
                 state, dense, t0, self.aug_lambda, self.aug_rho
@@ -835,10 +1074,83 @@ class MgaBackendJax:
             rewards = self._rollout_fn(state, dense, t0)
         return dense, rewards
 
+    def _node2u_batch(self, nodes):
+        """Expand nodes while preserving P4's certified endpoint bit-exactly."""
+        dense = self.spline.node2u_batch(nodes)
+        if self.receding_shift_mode == "certified_terminal_hold":
+            dense = dense.at[:, 0].set(nodes[:, 0])
+        return dense
+
+    def _node2u(self, nodes):
+        dense = self.spline.node2u(nodes)
+        if self.receding_shift_mode == "certified_terminal_hold":
+            dense = dense.at[0].set(nodes[0])
+        return dense
+
+    def _map_candidate_scores_unmaterialized(self, score_fn, candidates):
+        """Map candidate certificates without introducing a host barrier."""
+        batch_size = self.candidate_rollout_batch_size
+        if batch_size is None:
+            return jax.vmap(score_fn)(candidates)
+        if batch_size == 1:
+            return jax.lax.map(score_fn, candidates)
+        return jax.lax.map(
+                score_fn, candidates, batch_size=batch_size
+            )
+
+    def _materialize_candidate_scores(self, mapped):
+        if self.stepwise_acceptance:
+            mapped = jax.tree.map(
+                lambda value: value.block_until_ready(), mapped
+            )
+        return mapped
+
+    def _map_candidate_scores(self, score_fn, candidates):
+        """Map expensive candidate certificates with the rollout memory policy."""
+        return self._materialize_candidate_scores(
+            self._map_candidate_scores_unmaterialized(score_fn, candidates)
+        )
+
+    def _normal_candidate_scores(self, state, candidates):
+        aug_lambda = self.aug_lambda if self._augmented else 0.0
+        aug_rho = self.aug_rho if self._augmented else 0.0
+        return self._map_candidate_scores_unmaterialized(
+            lambda us: self.score_risk_fn(
+                state, us, aug_lambda, aug_rho
+            ),
+            candidates,
+        )
+
+    def _emergency_candidate_scores(self, state, candidates):
+        aug_lambda = self.aug_lambda if self._augmented else 0.0
+        aug_rho = self.aug_rho if self._augmented else 0.0
+        return self._map_candidate_scores_unmaterialized(
+            lambda us: self.emergency_score_risk_fn(
+                state, us, aug_lambda, aug_rho
+            ),
+            candidates,
+        )
+
     def _accept_refinement(
         self, state, fallback, refined, t0, atacom_incumbent=None,
-        emergency=None,
+        emergency=None, fallback_mode=None,
     ):
+        emergency_scored = jnp.asarray(emergency is not None)
+        emergency_candidates = None
+        if emergency is not None:
+            emergency_candidates = jnp.asarray(emergency)
+            if emergency_candidates.ndim == 2:
+                emergency_candidates = emergency_candidates[None]
+            if emergency_candidates.ndim != 3 or emergency_candidates.shape[0] < 1:
+                raise ValueError(
+                    "emergency candidate bank must have shape (K, Hnode, action_dim)"
+                )
+        if self._execution_context is not None:
+            fallback_mode = self._incumbent_execution_mode(state, fallback_mode)
+            original_fallback_mode = fallback_mode
+            state = self._normal_rollout_state(state)
+            if emergency is None:
+                raise ValueError("execution context requires an explicit emergency candidate")
         fallback_source = (
             "prior_risk_incumbent"
             if self.prior_fallback_mode == "receding_incumbent"
@@ -863,54 +1175,210 @@ class MgaBackendJax:
             info[fallback_source] = risks[0]
             return refined, info
 
-        # At the cold start there is no previously deployed plan to trust.  Do
-        # not alias it to ``refined``: both plans must retain separate identities
-        # so the task-owned safety contract can validate the first refinement.
+        # Keep fallback and refinement as separate candidates even at the cold
+        # start.  A cold fallback is not trusted implicitly, but a task-owned
+        # model-based certificate may validate it just like any other current-
+        # state candidate (including a nonzero task initializer).
         has_atacom_incumbent = atacom_incumbent is not None
-        first_replan = (
-            (t0 <= 0.0)
-            if (
-                self.prior_fallback_mode == "receding_incumbent"
-                and not has_atacom_incumbent
-            )
-            else jnp.asarray(False)
-        )
         base_candidates = (
             [fallback, atacom_incumbent, refined]
             if has_atacom_incumbent
             else [fallback, refined]
         )
-        candidates = jnp.stack(
-            base_candidates + ([emergency] if emergency is not None else []),
-            axis=0,
+        base_candidate_array = jnp.stack(base_candidates, axis=0)
+        candidates = (
+            jnp.concatenate([base_candidate_array, emergency_candidates], axis=0)
+            if emergency_candidates is not None else base_candidate_array
         )
         refined_idx = 2 if has_atacom_incumbent else 1
-        emergency_idx = candidates.shape[0] - 1 if emergency is not None else -1
-        dense = self.spline.node2u_batch(candidates)
+        emergency_start = len(base_candidates)
+        dense = self._node2u_batch(candidates)
         if self.score_risk_fn is not None:
             aug_lambda = self.aug_lambda if self._augmented else 0.0
             aug_rho = self.aug_rho if self._augmented else 0.0
             score_one = lambda us: self.score_risk_fn(
                 state, us, aug_lambda, aug_rho
             )
-            if emergency is not None and self.emergency_score_risk_fn is not None:
+            if self._execution_context is not None:
+                # Revalidate the shifted incumbent in its actual committed
+                # mode. Every newly refined/ATACOM proposal is NORMAL.
+                emergency_state = self._execution_context["prepare_state"](
+                    state, jnp.int32(1)
+                )
+                # prepare_state(UNLOAD) seals entry_prepared independently
+                # of entry_geometry_valid; an evaluated-invalid entry is also
+                # immutable. Repeated UNLOAD preparation by the nominal
+                # scorer must preserve the execution-frame entry even while
+                # committed mode is still NORMAL. Missing sealed context is
+                # unknown, never permission to recapture in model geometry.
+                emergency_score_one = lambda us: self.emergency_score_risk_fn(
+                    emergency_state, us, aug_lambda, aug_rho
+                )
+                base_count = len(base_candidates)
+                if self.stepwise_acceptance:
+                    base_scores, base_risks = self._materialize_candidate_scores(
+                        self._normal_candidate_scores_jit(
+                            state, dense[:base_count]
+                        )
+                    )
+                else:
+                    base_scores, base_risks = self._map_candidate_scores(
+                        score_one, dense[:base_count]
+                    )
+                # Reuse one full-H normal graph and one short task-owned
+                # emergency graph. A mode-specific fallback must not compile a second
+                # copy of the ordinary full-H MJX rollout.
+                if self.stepwise_acceptance:
+                    score_emergency = True
+                    if (
+                        self.lazy_emergency_scoring
+                        and self.reliability_model is None
+                    ):
+                        # Emergency safety is relevant only if an emergency can
+                        # actually be selected.  With a NORMAL incumbent and at
+                        # least one absolutely safe performance candidate, the
+                        # lexicographic selector cannot choose UNLOAD unless the
+                        # task explicitly overrides.  Avoid compiling a third
+                        # large MJX executable on memory-limited CPU hosts.
+                        base_safe = jax.vmap(self.risk_safe_fn)(base_risks)
+                        any_base_safe = bool(
+                            np.asarray(jax.device_get(jnp.any(base_safe)))
+                        )
+                        fallback_is_unload = int(
+                            np.asarray(jax.device_get(fallback_mode))
+                        ) == 1
+                        task_override = (
+                            bool(np.asarray(jax.device_get(
+                                self.emergency_override_fn(state)
+                            )))
+                            if self.emergency_override_fn is not None
+                            else False
+                        )
+                        score_emergency = (
+                            fallback_is_unload
+                            or task_override
+                            or not any_base_safe
+                        )
+                    if score_emergency:
+                        unload_candidates = jnp.concatenate([
+                            dense[0:1], dense[emergency_start:]
+                        ], axis=0)
+                        if self._host_emergency_score_risk_fn is not None:
+                            # The task advances functional state through its
+                            # existing execution-step cache, then scores the
+                            # realized transition without nesting another full
+                            # MJX step graph. Keep this host loop sequential:
+                            # emergency candidate banks are small and evaluated
+                            # only when the safety-first selector can use them.
+                            unload_outputs = []
+                            for candidate in unload_candidates:
+                                output = self._host_emergency_score_risk_fn(
+                                    emergency_state, candidate,
+                                    self.aug_lambda if self._augmented else 0.0,
+                                    self.aug_rho if self._augmented else 0.0,
+                                )
+                                # JAX dispatch is asynchronous.  A Python list
+                                # comprehension alone enqueues the complete
+                                # emergency bank and retains every intermediate
+                                # MJX state until the final stack is blocked,
+                                # defeating the intended low-memory host loop.
+                                # Materialize each candidate before launching
+                                # the next one so peak memory is independent of
+                                # the task-owned bank width.
+                                unload_outputs.append(
+                                    self._materialize_candidate_scores(output)
+                                )
+                            unload_scores = jnp.stack([
+                                output[0] for output in unload_outputs
+                            ])
+                            unload_risks = jnp.stack([
+                                output[1] for output in unload_outputs
+                            ])
+                            unload_scores, unload_risks = (
+                                self._materialize_candidate_scores(
+                                    (unload_scores, unload_risks)
+                                )
+                            )
+                        else:
+                            unload_scores, unload_risks = self._materialize_candidate_scores(
+                                self._emergency_candidate_scores_jit(
+                                    emergency_state, unload_candidates,
+                                )
+                            )
+                    else:
+                        unavailable_count = 1 + emergency_candidates.shape[0]
+                        unload_scores = jnp.concatenate([
+                            base_scores[0:1],
+                            jnp.full(
+                                (unavailable_count - 1,), -jnp.inf,
+                                dtype=base_scores.dtype,
+                            ),
+                        ])
+                        unload_risks = jnp.concatenate([
+                            base_risks[0:1],
+                            jnp.full(
+                                (unavailable_count - 1, base_risks.shape[-1]),
+                                jnp.inf, dtype=base_risks.dtype,
+                            ),
+                        ], axis=0)
+                        emergency_scored = jnp.asarray(False)
+                else:
+                    unload_scores, unload_risks = self._map_candidate_scores(
+                        emergency_score_one,
+                        jnp.concatenate([
+                            dense[0:1], dense[emergency_start:]
+                        ], axis=0),
+                    )
+                scores = base_scores.at[0].set(jnp.where(
+                    fallback_mode == 1, unload_scores[0], base_scores[0]
+                ))
+                risks = base_risks.at[0].set(jnp.where(
+                    fallback_mode == 1, unload_risks[0], base_risks[0]
+                ))
+                scores = jnp.concatenate([scores, unload_scores[1:]])
+                risks = jnp.concatenate([risks, unload_risks[1:]])
+                known_mode = (fallback_mode == 0) | (fallback_mode == 1)
+                # A corrupted dynamic mode cannot accidentally become an
+                # ordinary certified fallback inside an outer jit.
+                risks = jnp.where(known_mode, risks, jnp.inf)
+                scores = jnp.where(known_mode, scores, jnp.nan)
+            elif emergency_candidates is not None and self.emergency_score_risk_fn is not None:
                 # Performance candidates are certified against the task's
                 # robust inner set.  The explicitly task-owned emergency has a
                 # separate physical-set contract, so do not accidentally mark
                 # a safe unload as unrecoverable merely because the measured
                 # state is already inside the robustness buffer band.
-                base_scores, base_risks = jax.vmap(score_one)(dense[:-1])
-                emergency_score, emergency_risk = self.emergency_score_risk_fn(
-                    state, dense[-1], aug_lambda, aug_rho
+                if self.stepwise_acceptance:
+                    base_scores, base_risks = self._materialize_candidate_scores(
+                        self._normal_candidate_scores_jit(
+                            state, dense[:emergency_start]
+                        )
+                    )
+                else:
+                    base_scores, base_risks = self._map_candidate_scores(
+                        score_one, dense[:emergency_start]
+                    )
+                emergency_scores, emergency_risks = self._map_candidate_scores(
+                    lambda us: self.emergency_score_risk_fn(
+                        state, us, aug_lambda, aug_rho
+                    ),
+                    dense[emergency_start:],
                 )
                 scores = jnp.concatenate(
-                    [base_scores, emergency_score[None]], axis=0
+                    [base_scores, emergency_scores], axis=0
                 )
                 risks = jnp.concatenate(
-                    [base_risks, emergency_risk[None]], axis=0
+                    [base_risks, emergency_risks], axis=0
                 )
             else:
-                scores, risks = jax.vmap(score_one)(dense)
+                if self.stepwise_acceptance:
+                    scores, risks = self._materialize_candidate_scores(
+                        self._normal_candidate_scores_jit(state, dense)
+                    )
+                else:
+                    scores, risks = self._map_candidate_scores(
+                        score_one, dense
+                    )
         else:
             _, rewards = self._rollout_node_candidates(state, candidates, t0)
             scores = jnp.mean(rewards, axis=-1)
@@ -935,6 +1403,19 @@ class MgaBackendJax:
                 else self.reliability_model.support_score
             )
             support_scores = jax.vmap(support_fn)(reliability_features)
+            if self._execution_context is not None:
+                # This model is calibrated for NORMAL candidates only. A
+                # numeric action with a different execution mode is not the
+                # same candidate; do not present its prediction as applicable.
+                learned_risks = learned_risks.at[0].set(jnp.where(
+                    fallback_mode == 1, 0.0, learned_risks[0]
+                ))
+                support_scores = support_scores.at[0].set(jnp.where(
+                    fallback_mode == 1, 0.0, support_scores[0]
+                ))
+                if emergency_candidates is not None:
+                    learned_risks = learned_risks.at[emergency_start:].set(0.0)
+                    support_scores = support_scores.at[emergency_start:].set(0.0)
 
         atacom_selected = jnp.asarray(False)
         if has_atacom_incumbent:
@@ -972,12 +1453,39 @@ class MgaBackendJax:
                         <= self.reliability_deformation_limit
                     )
                 )
+            if self._execution_context is not None:
+                # A short emergency certificate is not a performance
+                # baseline for the normal H-step ATACOM candidate.
+                atacom_normal_safe = (
+                    self.risk_safe_fn(risks[1]) & jnp.isfinite(scores[1])
+                    & jnp.all(jnp.isfinite(risks[1]))
+                )
+                if learned_risks is not None:
+                    if self.reliability_hard_limits is not None:
+                        own_bound = jnp.all(
+                            learned_risks[1] <= self.reliability_hard_limits
+                        )
+                    else:
+                        own_bound = (
+                            (learned_risks[1, 0] <= self.reliability_force_limit)
+                            & (learned_risks[1, 2] <= self.reliability_deformation_limit)
+                        )
+                    supported = support_scores[1] <= 1.0
+                    atacom_normal_safe &= (
+                        supported & own_bound if self.reliability_ood_policy == "veto"
+                        else (~supported) | own_bound
+                    )
+                atacom_better = jnp.where(
+                    fallback_mode == 1, atacom_normal_safe, atacom_better
+                )
             atacom_selected = (
                 jnp.asarray(True)
                 if self.prior_atacom_default
                 else (cold_atacom | atacom_better)
             )
             fallback = jnp.where(atacom_selected, candidates[1], candidates[0])
+            if self._execution_context is not None:
+                fallback_mode = jnp.where(atacom_selected, jnp.int32(0), fallback_mode)
             fallback_score = jnp.where(
                 atacom_selected, scores[1], scores[0]
             )
@@ -1001,6 +1509,10 @@ class MgaBackendJax:
                 fallback_support = support_scores[0]
 
         improvement = scores[refined_idx] - fallback_score
+        if self._execution_context is not None:
+            # Finite storage placeholder only. Applicability-aware reporting
+            # must exclude this row; it is not a measured zero improvement.
+            improvement = jnp.where(fallback_mode == 0, improvement, 0.0)
         predicted_ok = improvement > self.prior_improvement_epsilon
 
         if risks is not None or self.risk_fn is not None:
@@ -1031,15 +1543,19 @@ class MgaBackendJax:
             if self.risk_safe_fn is not None:
                 refined_safe = self.risk_safe_fn(risks[refined_idx])
                 fallback_safe = self.risk_safe_fn(fallback_risk)
-                emergency_safe = (
-                    self.risk_safe_fn(risks[emergency_idx])
-                    if emergency is not None
-                    else jnp.asarray(False)
+                emergency_safe_all = (
+                    jax.vmap(self.risk_safe_fn)(risks[emergency_start:])
+                    if emergency_candidates is not None
+                    else jnp.zeros((0,), dtype=jnp.bool_)
                 )
             else:
                 refined_safe = risks[refined_idx, 0] <= 1e-8
                 fallback_safe = fallback_risk[0] <= 1e-8
-                emergency_safe = jnp.asarray(False)
+                emergency_safe_all = (
+                    risks[emergency_start:, 0] <= 1e-8
+                    if emergency_candidates is not None
+                    else jnp.zeros((0,), dtype=jnp.bool_)
+                )
             hard_force_ok = refined_safe
         else:
             risks = jnp.zeros(
@@ -1050,7 +1566,11 @@ class MgaBackendJax:
             hard_force_ok = jnp.asarray(True)
             refined_safe = jnp.asarray(True)
             fallback_safe = jnp.asarray(True)
-            emergency_safe = jnp.asarray(False)
+            emergency_safe_all = (
+                jnp.ones((emergency_candidates.shape[0],), dtype=jnp.bool_)
+                if emergency_candidates is not None
+                else jnp.zeros((0,), dtype=jnp.bool_)
+            )
 
         if learned_risks is not None:
             learned_support_ok = support_scores[refined_idx] <= 1.0
@@ -1066,6 +1586,8 @@ class MgaBackendJax:
                 learned_risks[refined_idx]
                 <= fallback_learned_risk + learned_tolerance
             )
+            if self._execution_context is not None:
+                learned_risk_ok = (fallback_mode == 1) | learned_risk_ok
             if self.reliability_hard_limits is not None:
                 learned_hard_ok_all = jnp.all(
                     learned_risks <= self.reliability_hard_limits,
@@ -1126,6 +1648,8 @@ class MgaBackendJax:
                 if self.reliability_ood_policy == "veto"
                 else ((~fallback_support_ok) | fallback_learned_hard_ok)
             )
+            if self._execution_context is not None:
+                fallback_learned_ok = (fallback_mode == 1) | fallback_learned_ok
             fallback_safe = (
                 fallback_safe & fallback_learned_ok
             )
@@ -1141,11 +1665,15 @@ class MgaBackendJax:
         # not a score improvement.  If neither performance candidate is safe,
         # deploy the task-owned emergency horizon (its own predicted safety is
         # reported because an existing violation may need time to dissipate).
-        incumbent_valid_safe = fallback_safe & (~first_replan)
+        incumbent_valid_safe = fallback_safe
         emergency_incumbent_active = (
-            self.emergency_active_fn(fallback)
-            if self.emergency_active_fn is not None
-            else jnp.asarray(False)
+            fallback_mode == 1
+            if self._execution_context is not None
+            else (
+                self.emergency_active_fn(fallback)
+                if self.emergency_active_fn is not None
+                else jnp.asarray(False)
+            )
         )
         performance_incumbent_valid = (
             incumbent_valid_safe & (~emergency_incumbent_active)
@@ -1154,10 +1682,23 @@ class MgaBackendJax:
             (~performance_incumbent_valid)
             | (predicted_ok & risk_ok & hard_force_ok)
         )
+        if emergency_candidates is not None:
+            emergency_index = jnp.argmax(jnp.where(
+                emergency_safe_all,
+                scores[emergency_start:],
+                -jnp.inf,
+            ))
+            selected_emergency = emergency_candidates[emergency_index]
+            selected_emergency_risk = risks[emergency_start + emergency_index]
+            emergency_safe = jnp.any(emergency_safe_all)
+        else:
+            selected_emergency = fallback
+            selected_emergency_risk = jnp.full_like(fallback_risk, jnp.inf)
+            emergency_safe = jnp.asarray(False)
         task_emergency_override = (
             self.emergency_override_fn(state)
             if (
-                emergency is not None
+                emergency_candidates is not None
                 and self.emergency_override_fn is not None
             )
             else jnp.asarray(False)
@@ -1165,12 +1706,14 @@ class MgaBackendJax:
         accepted = accepted & (~task_emergency_override)
         emergency_selected = task_emergency_override | (
             (~refined_safe) & (~incumbent_valid_safe)
-            if emergency is not None
+            if emergency_candidates is not None
             else jnp.asarray(False)
         )
         selected = jnp.where(accepted, refined, fallback)
-        if emergency is not None:
-            selected = jnp.where(emergency_selected, emergency, selected)
+        if emergency_candidates is not None:
+            selected = jnp.where(
+                emergency_selected, selected_emergency, selected
+            )
         selected_revalidated_safe = jnp.where(
             emergency_selected,
             emergency_safe,
@@ -1203,12 +1746,32 @@ class MgaBackendJax:
                 jnp.float32
             ),
         }
+        if self._execution_context is not None:
+            info["execution_mode"] = jnp.where(
+                emergency_selected, jnp.int32(1),
+                jnp.where(accepted, jnp.int32(0), fallback_mode),
+            )
+            info["emergency_validation_candidate_count"] = jnp.where(
+                emergency_scored,
+                jnp.float32(1 + emergency_candidates.shape[0]),
+                jnp.float32(0.0),
+            )
+            info["emergency_validation_applicable"] = emergency_scored.astype(
+                jnp.float32
+            )
+            info["prior_comparison_applicable"] = (fallback_mode == 0).astype(jnp.float32)
+            info["emergency_fallback_recovery"] = (
+                (original_fallback_mode == 1) & (info["execution_mode"] == 0)
+            ).astype(jnp.float32)
+            info["reliability_incumbent_applicable"] = (
+                (fallback_mode == 0) & (self.reliability_model is not None)
+            ).astype(jnp.float32)
         info[fallback_source] = fallback_risk
         if has_atacom_incumbent:
             info["prior_score_atacom"] = scores[1]
             info["prior_risk_atacom"] = risks[1]
-        if emergency is not None:
-            info["prior_risk_emergency"] = risks[emergency_idx]
+        if emergency_candidates is not None:
+            info["prior_risk_emergency"] = selected_emergency_risk
         if learned_risks is not None:
             info["reliability_risk_incumbent"] = fallback_learned_risk
             info["reliability_risk_refined"] = learned_risks[refined_idx]
@@ -1226,7 +1789,7 @@ class MgaBackendJax:
             candidates = jax.vmap(
                 lambda nodes: self._candidate_projection_jit(state, nodes)
             )(candidates)
-        dense = self.spline.node2u_batch(candidates)
+        dense = self._node2u_batch(candidates)
         scores, risks = jax.vmap(lambda us: self.score_risk_fn(
             state, us, self.aug_lambda if self._augmented else 0.0,
             self.aug_rho if self._augmented else 0.0,
@@ -1259,7 +1822,7 @@ class MgaBackendJax:
         index = jnp.argmax(jnp.where(safe, scores, -jnp.inf))
         return candidates[index], jnp.any(safe), scores[index]
 
-    def _replan_additive(self, state, incumbent, schedule, rng, t0):
+    def _replan_additive(self, state, incumbent, schedule, rng, t0, incumbent_mode=None):
         """Keep the no-prior search intact; experts can only add candidates.
 
         Gaussian RNG, starting point and realization context are identical
@@ -1268,6 +1831,9 @@ class MgaBackendJax:
         """
         if self.score_risk_fn is None or self.risk_safe_fn is None:
             raise ValueError("additive prior requires task score and safety hooks")
+        if self._execution_context is not None:
+            incumbent_mode = self._incumbent_execution_mode(state, incumbent_mode)
+            state = self._normal_rollout_state(state)
         if self._prepare_state_jit is not None:
             state = self._prepare_state_jit(state, incumbent, t0)
         gaussian = self._replan_scan_jit(
@@ -1276,14 +1842,19 @@ class MgaBackendJax:
         if self._candidate_projection_jit is not None:
             incumbent = self._candidate_projection_jit(state, incumbent)
             gaussian = self._candidate_projection_jit(state, gaussian)
+        emergency_factory = self.emergency_plans_fn or self.emergency_plan_fn
         emergency = (
-            self.emergency_plan_fn(state, incumbent, t0)
-            if self.emergency_plan_fn is not None else None
+            emergency_factory(state, incumbent, t0)
+            if emergency_factory is not None else None
         )
         if emergency is not None and self._candidate_projection_jit is not None:
             emergency = self._candidate_projection_jit(state, emergency)
+        acceptance_kw = (
+            {"fallback_mode": incumbent_mode}
+            if self._execution_context is not None else {}
+        )
         selected, info = self._accept_refinement_jit(
-            state, incumbent, gaussian, t0, None, emergency
+            state, incumbent, gaussian, t0, None, emergency, **acceptance_kw
         )
         info = {**info, "additive_prior_selected": jnp.float32(0.0),
                 "additive_prior_candidate_count": jnp.float32(0.0)}
@@ -1303,20 +1874,37 @@ class MgaBackendJax:
         )
         # The Gaussian decision has already been revalidated at this state,
         # including cold start. Do not invalidate it a second time at t=0.
+        second_acceptance_kw = (
+            {"fallback_mode": info["execution_mode"]}
+            if self._execution_context is not None else {}
+        )
         challenger, expert_info = self._accept_refinement_jit(
-            state, selected, expert, jnp.maximum(t0, 1.0), None, emergency
+            state, selected, expert, jnp.maximum(t0, 1.0), None, emergency,
+            **second_acceptance_kw,
         )
         # Never let a rejected expert replace the Gaussian fallback with a
         # second emergency. Adoption requires a strict score improvement.
-        adopted = (
-            any_safe & (expert_info["prior_accepted"] > 0.5)
-            & (expert_info["prior_predicted_improvement"] > self.prior_improvement_epsilon)
+        improves_normal = (
+            expert_info["prior_predicted_improvement"] > self.prior_improvement_epsilon
         )
+        if self._execution_context is not None:
+            # Returning from a certified one-step unload to a safe normal
+            # horizon is lexicographic recovery, not a cross-horizon score win.
+            improves_normal |= info["execution_mode"] == 1
+        adopted = any_safe & (expert_info["prior_accepted"] > 0.5) & improves_normal
         deployed = jnp.where(adopted, challenger, selected)
         combined = {
             k: jnp.where(adopted, expert_info[k], v) if k in expert_info else v
             for k, v in info.items()
         }
+        if self._execution_context is not None:
+            combined["emergency_fallback_recovery"] = jnp.maximum(
+                info["emergency_fallback_recovery"],
+                adopted.astype(jnp.float32) * expert_info["emergency_fallback_recovery"],
+            )
+            combined["additive_prior_comparison_applicable"] = expert_info[
+                "prior_comparison_applicable"
+            ]
         combined.update({
             "additive_prior_selected": adopted.astype(jnp.float32),
             "additive_prior_candidate_count": jnp.float32(candidates.shape[0]),
@@ -1327,10 +1915,19 @@ class MgaBackendJax:
         })
         return deployed, combined
 
-    def replan_with_info(self, state, warm_start, schedule, rng, t0=0.0):
+    def replan_with_info(
+        self, state, warm_start, schedule, rng, t0=0.0, incumbent_mode=None,
+    ):
         t0 = jnp.asarray(t0, jnp.float32)
         if self.prior_mode == "additive":
+            if self._execution_context is not None:
+                return self._replan_additive(
+                    state, warm_start, schedule, rng, t0, incumbent_mode
+                )
             return self._replan_additive(state, warm_start, schedule, rng, t0)
+        if self._execution_context is not None:
+            incumbent_mode = self._incumbent_execution_mode(state, incumbent_mode)
+            state = self._normal_rollout_state(state)
         receding_incumbent = warm_start
         if self._prior_active:
             lam = self.prior_lambda_shift
@@ -1434,8 +2031,14 @@ class MgaBackendJax:
             }
         else:
             # Exact legacy call: no RNG split, no candidate-shape change.
-            refined = self._replan_scan_jit(
-                state, warm_start, schedule, rng, t0, U_rl
+            refined = (
+                self._replan_stepwise(
+                    state, warm_start, schedule, rng, t0, U_rl
+                )
+                if self.stepwise_diffusion
+                else self._replan_scan_jit(
+                    state, warm_start, schedule, rng, t0, U_rl
+                )
             )
         # Receding-incumbent acceptance is a final model-based safety check, not
         # an RL-only feature.  It must remain active during the CPU pre-prior
@@ -1455,11 +2058,12 @@ class MgaBackendJax:
             if self._candidate_projection_jit is not None:
                 fallback = self._candidate_projection_jit(state, fallback)
                 refined = self._candidate_projection_jit(state, refined)
+            emergency_factory = self.emergency_plans_fn or self.emergency_plan_fn
             emergency = (
-                self.emergency_plan_fn(state, fallback, t0)
+                emergency_factory(state, fallback, t0)
                 if (
                     self.prior_fallback_mode == "receding_incumbent"
-                    and self.emergency_plan_fn is not None
+                    and emergency_factory is not None
                 )
                 else None
             )
@@ -1468,26 +2072,59 @@ class MgaBackendJax:
                 and self._candidate_projection_jit is not None
             ):
                 emergency = self._candidate_projection_jit(state, emergency)
+            acceptance_kw = (
+                {"fallback_mode": incumbent_mode}
+                if self._execution_context is not None else {}
+            )
             if self.prior_atacom_incumbent:
                 selected, acceptance_info = self._accept_refinement_jit(
-                    state, fallback, refined, t0, U_atacom, emergency
+                    state, fallback, refined, t0, U_atacom, emergency,
+                    **acceptance_kw,
                 )
             else:
                 selected, acceptance_info = self._accept_refinement_jit(
-                    state, fallback, refined, t0, None, emergency
+                    state, fallback, refined, t0, None, emergency,
+                    **acceptance_kw,
                 )
             return selected, {**acceptance_info, **proposal_info}
         return refined, proposal_info
 
     def replan(self, state, warm_start, schedule, rng, t0=0.0) -> jnp.ndarray:
+        if self._execution_context is not None:
+            raise ValueError("mode-aware MGA requires replan_with_info and contextual execution")
         return self.replan_with_info(
             state, warm_start, schedule, rng, t0=t0
         )[0]
 
     def first_action(self, plan_var) -> jnp.ndarray:
-        return self.spline.node2u(plan_var)[0]
+        return self._node2u(plan_var)[0]
 
     def shift(self, plan_var) -> jnp.ndarray:
+        if self._execution_context is not None:
+            if isinstance(plan_var, jax.core.Tracer):
+                raise ValueError("mode-aware host shift cannot be enclosed in jit")
+            return self._shift_with_mode_jit(
+                plan_var, jnp.int32(self._committed_shift_mode)
+            )
+        if self.receding_shift_mode == "certified_terminal_hold":
+            return self.spline.shift_nodes_certified_terminal_hold(plan_var)
+        if self.receding_shift_mode == "terminal_hold":
+            return self.spline.shift_nodes_terminal_hold(plan_var)
+        if self.receding_shift_mode == "zero":
+            # An additive expert must not change the ordinary Gaussian
+            # incumbent's tail semantics merely by being loaded.  Emergencies
+            # retain their unloaded tail: raw zero can encode nonzero force.
+            shifted = self.spline.shift_nodes(plan_var)
+            if (
+                self.prior_fallback_mode == "receding_incumbent"
+                and self.emergency_active_fn is not None
+            ):
+                shifted = jnp.where(
+                    self.emergency_active_fn(plan_var),
+                    self.spline.shift_nodes_terminal_hold(plan_var),
+                    shifted,
+                )
+            return shifted
         if (
             self._prior_active
             and self.prior_fallback_mode == "receding_incumbent"
@@ -1513,6 +2150,11 @@ class MgaBackendJax:
     def plan(self, x0: Any, rng_key: Optional[Any] = None) -> Dict[str, Any]:
         """Single-shot full-horizon plan (Ndiffuse_init reverse steps from cold),
         the whole reverse-diffuse jit-ed; candidate rollout vmap-ed over Nsample."""
+        if self._execution_context is not None:
+            raise ValueError(
+                "mode-aware MGA requires run_receding; action-only single-shot "
+                "rollout cannot discard the selected execution context"
+            )
         if rng_key is None:
             rng_key = jax.random.PRNGKey(self.seed)
         replan_jit = jax.jit(self.replan_with_info)
@@ -1522,7 +2164,7 @@ class MgaBackendJax:
             self.make_schedule(self.Ndiffuse_init),
             rng_key,
         )
-        us = self.spline.node2u(Y)
+        us = self._node2u(Y)
         _, reward_batch = self._rollout_node_candidates(
             x0, Y[None], jnp.float32(0.0)
         )

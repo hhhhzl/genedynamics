@@ -108,6 +108,19 @@ def test_terminal_hold_shift_preserves_planned_tail(spl):
     assert jnp.allclose(got, ref, rtol=1e-5, atol=1e-5)
 
 
+def test_certified_terminal_hold_preserves_immediate_dense_backup_exactly(spl):
+    rng = np.random.default_rng(41)
+    nodes = jnp.asarray(
+        rng.standard_normal((HNODE + 1, 3)), dtype=jnp.float32
+    )
+    dense = spl.node2u(nodes)
+    shifted = spl.shift_nodes_certified_terminal_hold(nodes)
+    shifted_dense = spl.node2u(shifted)
+
+    np.testing.assert_allclose(shifted_dense[0], dense[1], atol=1e-7)
+    np.testing.assert_allclose(shifted_dense[-1], dense[-1], atol=1e-6)
+
+
 def test_node2u_is_linear(spl):
     # Sanity: the map is linear (so the cached-matrix premise holds).
     rng = np.random.default_rng(5)
