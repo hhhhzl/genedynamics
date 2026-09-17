@@ -209,6 +209,18 @@ def test_h1_training_domains_and_durations_follow_canonical_suites():
 
     config = ExperimentConfig.from_yaml(CANONICAL_CONFIG)
     available = {suite["name"]: suite for suite in config.suites}
+    p2 = config.for_suite(available["p2_push_ood"])
+    assert tuple(p2.env_params["h2_size_range"]) == (
+        p2.env_params.get("box_half", 0.55),
+        p2.env_params.get("box_half", 0.55),
+    )
+    assert tuple(p2.env_params["h2_boxfric_range"]) == (20.0, 25.0)
+    assert p2.env_params["h2_boxfric_range"][0] > p2.env_params.get(
+        "box_frictionloss", 15.0
+    )
+    assert p2.env_params["f_target"] - p2.env_params[
+        "h2_boxfric_range"
+    ][1] >= 10.0
     for schema, names in SCHEMA_SUITES.items():
         specs = _domain_specs(schema, config)
         for name, spec in zip(names, specs):
@@ -406,6 +418,7 @@ def _physical_contact_geometry():
     no_reset_contact = float(forces["hand"]) < 1e-6 and float(forces["nonhand"]) < 1e-6
     p1 = make_env(
         HUMANOID_TASK, level="push_to_line", fixed_contact_target=True,
+        fixed_force_target=True,
     )
     p1s = p1.reset(jax.random.PRNGKey(7))
     c_lo = p1._hand_contact(
@@ -432,13 +445,41 @@ def _physical_contact_geometry():
         and np.all(unjam.sys.mj_model.geom_rgba[np.asarray(unjam._wall_geoms), 3] > 0.0)
         and np.all(np.abs(unjam.sys.mj_model.geom_pos[np.asarray(unjam._wall_geoms), 1]) < 1.0)
     )
+    goal_site = mujoco.mj_name2id(
+        mj, mujoco.mjtObj.mjOBJ_SITE.value, "goal_line"
+    )
+    box_joint = mujoco.mj_name2id(
+        mj, mujoco.mjtObj.mjOBJ_JOINT.value, "box_x"
+    )
+    goal_x = (
+        float(env._init_q[int(mj.jnt_qposadr[box_joint])])
+        + env._bcfg.push_dist + float(env._half)
+    )
+    goal_line_synced = bool(
+        np.isclose(float(env.sys.site_pos[goal_site, 0]), goal_x)
+        and np.isclose(float(mj.site_pos[goal_site, 0]), goal_x)
+        and float(mj.site_rgba[goal_site, 3]) > 0.0
+    )
+    p1_goal_site = mujoco.mj_name2id(
+        p1.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, "goal_line"
+    )
+    p3_goal_site = mujoco.mj_name2id(
+        unjam.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, "goal_line"
+    )
+    irrelevant_goal_lines_hidden = bool(
+        float(p1.sys.mj_model.site_rgba[p1_goal_site, 3]) == 0.0
+        and float(unjam.sys.mj_model.site_rgba[p3_goal_site, 3]) == 0.0
+    )
     ok = controller_matches_geom and abs(gap - env._bcfg.approach_gap) < 1e-5 \
         and no_reset_contact and lateral_locked and p1_contact_locked \
-        and walls_hidden and walls_p3_only
+        and walls_hidden and walls_p3_only and goal_line_synced \
+        and irrelevant_goal_lines_hidden
     print(f"  contact geometry: point=geom {controller_matches_geom}, gap={gap:.4f} m, "
           f"reset_force=({float(forces['hand']):.3g},{float(forces['nonhand']):.3g}), "
           f"L1-y/yaw-locked={lateral_locked}, P1-contact-locked={p1_contact_locked} "
-          f"walls-hidden={walls_hidden}, walls-P3-only={walls_p3_only} "
+          f"walls-hidden={walls_hidden}, walls-P3-only={walls_p3_only}, "
+          f"goal-line-synced={goal_line_synced}, "
+          f"irrelevant-goal-lines-hidden={irrelevant_goal_lines_hidden} "
           f"-> {'OK' if ok else 'FAIL'}")
     return ok
 
@@ -2139,6 +2180,17 @@ def test_h1_joint_target_affine_pd_and_bounds_contract():
         * (bounds[:, 1] - bounds[:, 0])
     )
     np.testing.assert_allclose(referenced_target, expected_reference, atol=1e-6)
+    reanchored_target = referenced.joint_targets(
+        ps, contact, residual, {"step": 1, "walk_reference_step": 0}, 12
+    )[:11]
+    normalized_reanchored = np.asarray(reference[0]) + 0.05 * 0.4
+    expected_reanchored = (
+        bounds[:, 0] + 0.5 * (normalized_reanchored + 1.0)
+        * (bounds[:, 1] - bounds[:, 0])
+    )
+    np.testing.assert_allclose(
+        reanchored_target, expected_reanchored, atol=1e-6
+    )
     referenced_derivative = jax.jacfwd(
         lambda u: referenced.joint_targets(
             ps, contact, u, {"step": 1}, 12
@@ -2175,6 +2227,50 @@ def test_h1_joint_target_affine_pd_and_bounds_contract():
                     np.full((11, 2), np.nan), np.tile([-4., 4.], (11, 1))):
         with pytest.raises(ValueError, match="planner_joint_bounds"):
             replace(wbc, planner_joint_bounds=invalid)
+
+
+def test_h1_fixed_stance_shares_whole_body_brace_across_ankles():
+    """The total hand-load brace must not be counted once per planted foot."""
+    from dataclasses import replace
+    from types import SimpleNamespace as NS
+
+    _, cfg, ps, wbc, contact = _joint_target_array_fixture()
+    fixed = replace(
+        wbc,
+        is_walk=False,
+        torque_limits=jnp.full_like(wbc.torque_limits, 1.0e6),
+        config=NS(**{
+            **vars(cfg),
+            "walk_leg_control": "legacy",
+            "leg_grav_comp": 0.0,
+            "stance_com_ankle_gain": 0.0,
+            "stance_com_ankle_damping": 0.0,
+        }),
+    )
+    action = jnp.zeros(12)
+    no_load = {**contact, "F_n": jnp.float32(0.0)}
+    loaded = fixed.torque(ps, contact, action, {"step": 0}, 12)
+    unloaded = fixed.torque(ps, no_load, action, {"step": 0}, 12)
+    brace = cfg.stance_force_ankle_gain * cfg.f_target
+    for _, _, ankle in fixed.sagittal_legs:
+        np.testing.assert_allclose(
+            loaded[ankle] - unloaded[ankle], 0.5 * brace, atol=1e-6
+        )
+
+    # An explicit task-owned support split remains authoritative.
+    one_foot = {
+        **contact,
+        "stance_support_weights": jnp.asarray([1.0, 0.0], jnp.float32),
+    }
+    explicit = fixed.torque(ps, one_foot, action, {"step": 0}, 12)
+    left_ankle = fixed.sagittal_legs[0][2]
+    right_ankle = fixed.sagittal_legs[1][2]
+    np.testing.assert_allclose(
+        explicit[left_ankle] - unloaded[left_ankle], brace, atol=1e-6
+    )
+    np.testing.assert_allclose(
+        explicit[right_ankle] - unloaded[right_ankle], 0.0, atol=1e-6
+    )
 
 
 def test_h1_full_action_walk_reference_consumes_only_joint_coordinates(tmp_path):
@@ -2231,6 +2327,11 @@ def test_h1_joint_target_initializer_emergency_and_policy_interface():
     env = NS(_is_walk=True, _walk_requires_locomotion=True,
              _bcfg=cfg, _n_planner=11, _whole_body_controller=wbc,
              _defaultN=wbc.default_pose,
+             # This fixture isolates the joint-target chart.  The physical
+             # pelvis/support capture law has its own integration test below;
+             # keep it neutral here while exercising the referenced emergency
+             # branch that now composes that law.
+             _walk_roll_capture_residual=lambda state: jnp.zeros(11),
              _supports_mga_execution_context=False,  # no physical entry geometry in this leg-only fixture
              _robot_binding=NS(qpos_indices=tuple(range(7, 26))), _robot_profile=profile,
              spec=PrimitiveSpec(pos_dim=5, stiff_dim=3, feed_dim=1),
@@ -2569,9 +2670,11 @@ def test_h1_walk_coast_goal_tapers_force_against_stopping_location():
                 xd=NS(vel=jnp.asarray([[vx, 0., 0.]])))
         return env.walk_force_scale(ps, info)
     # Same physical position: a box already coasting to the goal must unload,
-    # while a stationary box still receives approach force.  The world-frame
-    # Cartesian arm task must follow the same release; otherwise its position
-    # spring remains a hidden anchor after the nominal force reaches zero.
+    # while a stationary box still receives approach force.  The Cartesian
+    # target is recomputed from the measured box face, so its tracking gain
+    # remains fully active while the tapered force request is positive.  It
+    # releases discretely only at the coast condition instead of becoming a
+    # progressively weaker hidden contact tracker.
     assert float(scale(.20, np.sqrt(.20))) == 0.
     assert float(scale(.20, 0.)) > 0.
     arm_scale = jax.jit(lambda x, vx: HumanoidBoxPushEnv.walk_arm_task_scale(
@@ -2581,12 +2684,209 @@ def test_h1_walk_coast_goal_tapers_force_against_stopping_location():
         info,
     ))
     assert float(arm_scale(.20, np.sqrt(.20))) == 0.
-    assert float(arm_scale(.20, 0.)) > 0.
+    assert float(arm_scale(.20, 0.)) == 1.
+    intermediate_force_scale = float(scale(.20, .20))
+    assert 0.0 < intermediate_force_scale < 1.0
+    assert float(arm_scale(.20, .20)) == 1.0
     env._bcfg.walk_box_goal_mode = "position"
     np.testing.assert_allclose(scale(.20, np.sqrt(.20)), scale(.20, 0.), atol=0.)
     ps = NS(x=NS(pos=jnp.asarray([[.20, 0., .55]])),
             xd=NS(vel=jnp.asarray([[np.sqrt(.20), 0., 0.]])))
     assert float(HumanoidBoxPushEnv.walk_arm_task_scale(env, ps, info)) == 1.
+
+
+def test_h1_walk_coast_release_uses_task_owned_geometric_retract():
+    """The coast threshold must detach, not merely set desired force to zero."""
+    from types import SimpleNamespace as NS
+    from genedynamics.envs.domains.humanoid.box_push_brax import HumanoidBoxPushEnv
+
+    env = object.__new__(HumanoidBoxPushEnv)
+    env._walk_requires_locomotion = True
+    env._box_idx, env._walk_coast_deceleration = 1, 1.
+    env._bcfg = NS(
+        robot="h1", fast_force_loop=True,
+        walk_box_goal_mode="coast", goal_eps=.02, walk_stop_distance=.12,
+        walk_approach_force_floor=.35, emergency_retract_force=20.,
+    )
+    env._acquisition_box = object()
+    env._mga_inspection_mode = lambda info: jnp.asarray(
+        info.get("mga_execution_mode", 0), jnp.int32
+    )
+    env._empty_mga_execution_context = lambda: {
+        "mga_execution_mode": jnp.int32(0),
+        "mga_emergency_zero_force": jnp.bool_(False),
+    }
+    ordinary = {
+        "wrench": jnp.asarray([7., 0., 0.]),
+        "left": {
+            "wrench": jnp.asarray([7., 0., 0.]),
+            "p_hand": jnp.asarray([1., .2, 1.]),
+            "p_c": jnp.asarray([1.1, .2, 1.]),
+        },
+        "p_hand": jnp.asarray([1., -.2, 1.]),
+        "p_c": jnp.asarray([1.1, -.2, 1.]),
+        "F_n": jnp.float32(14.), "F_n_cmd": jnp.float32(14.),
+        "F_eff": jnp.float32(14.), "force_scale": jnp.float32(1.),
+        "arm_task_scale": jnp.float32(1.),
+        "arm_control_scale": jnp.float32(1.),
+        "arm_posture_position_scale": jnp.float32(1.),
+    }
+    env._normal_hand_contact = lambda *args, **kwargs: ordinary
+    env._mga_unload_info_is_ready = lambda info: jnp.bool_(False)
+    ps_release = NS(
+        x=NS(pos=jnp.asarray([[.20, 0., .55]])),
+        xd=NS(vel=jnp.asarray([[np.sqrt(.20), 0., 0.]])),
+    )
+    info = {"box_goal_x": jnp.float32(.30), "mga_execution_mode": jnp.int32(0)}
+    contact = env._hand_contact(ps_release, jnp.zeros(1), info)
+    np.testing.assert_array_equal(contact["wrench"], [-10., 0., 0.])
+    np.testing.assert_array_equal(contact["left"]["wrench"], [-10., 0., 0.])
+    np.testing.assert_array_equal(contact["p_c"], contact["p_hand"])
+    assert float(contact["F_n"]) == 0.
+    assert float(contact["arm_posture_position_scale"]) == 0.
+
+    ps_push = NS(
+        x=NS(pos=jnp.asarray([[.20, 0., .55]])),
+        xd=NS(vel=jnp.asarray([[0., 0., 0.]])),
+    )
+    pushing = env._hand_contact(ps_push, jnp.zeros(1), info)
+    np.testing.assert_array_equal(pushing["wrench"], [7., 0., 0.])
+
+
+def test_h1_normal_recovery_reuses_bounded_gait_roll_capture():
+    from types import SimpleNamespace as NS
+    from genedynamics.core.control.stiffness import PrimitiveSpec
+    from genedynamics.envs.domains.humanoid.box_push_brax import HumanoidBoxPushEnv
+    from genedynamics.robots.h1.profile import h1_profile
+
+    env = object.__new__(HumanoidBoxPushEnv)
+    env._is_walk = True
+    env._n_planner = 11
+    env._walk_joint_reference = jnp.zeros((10, 11))
+    env._roll_hips = (1, 6)
+    env._sag_legs = ((2, 3, 4), (7, 8, 9))
+    env._pelvis_idx = 1
+    env._torso_idx = 1
+    env._robot_profile = h1_profile()
+    env.spec = PrimitiveSpec(pos_dim=5, stiff_dim=3, feed_dim=1)
+    env._whole_body_controller = NS(
+        planner_joint_bounds=jnp.asarray([
+            [-.3, .3], [-.3, .3], [-1., 1.], [0., 1.74], [-.6, .4],
+            [-.3, .3], [-.3, .3], [-1., 1.], [0., 1.74], [-.6, .4],
+            [-.5, .5],
+        ])
+    )
+    env._bcfg = NS(
+        walk_leg_control="joint_target", emergency_reference_rewind_steps=6,
+        gait_roll_capture_gain=1.5, gait_roll_capture_lead=.1,
+        gait_roll_limit=.3, walk_joint_reference_residual_scale=.2,
+        walk_min_steps_per_foot=1, gait_hip_forward_sign=1.,
+        gait_capture_gain=.25, gait_capture_lead=.1, gait_hip_amp=.15,
+    )
+    pelvis_y, support_y, pelvis_vy = .08, -.02, .20
+    state = NS(info={"walk_forward_steps": jnp.zeros((2,), jnp.int32)},
+               pipeline_state=NS(
+        x=NS(rot=jnp.asarray([
+            [1., 0., 0., 0.]
+        ]), pos=jnp.asarray([[0., pelvis_y, 1.]])),
+        xd=NS(ang=jnp.zeros((1, 3)), vel=jnp.asarray([[0., pelvis_vy, 0.]])),
+    ))
+    env._foot_contact_loads = lambda ps: jnp.asarray([300., 300.])
+    env._support_feedback = lambda ps, loads: {
+        "support_reference_xy": jnp.asarray([0., support_y])
+    }
+    nodes = jnp.zeros((3, 23)).at[:, 15].set(.25).at[:, 20].set(-.25)
+    recovery = env.normal_recovery_plan(state, nodes)
+    capture_rad = np.clip(
+        1.5 * (pelvis_y - support_y + .1 * pelvis_vy), -.3, .3
+    )
+    radians_per_action = .5 * (.3 - (-.3)) * .2
+    expected = np.clip(capture_rad / radians_per_action, -1., 1.)
+    assert expected > 0.0
+    np.testing.assert_allclose(recovery[:, 13], expected, atol=1e-7)
+    np.testing.assert_allclose(recovery[:, 18], expected, atol=1e-7)
+    np.testing.assert_allclose(recovery[:, 15], [.25, .125, 0.], atol=1e-7)
+    np.testing.assert_allclose(recovery[:, 20], [-.25, -.125, 0.], atol=1e-7)
+    mask = np.ones(23, dtype=bool)
+    mask[[13, 15, 18, 20]] = False
+    np.testing.assert_array_equal(np.asarray(recovery)[:, mask], 0.)
+
+    momentum_state = NS(
+        info=state.info,
+        pipeline_state=NS(
+            x=state.pipeline_state.x,
+            xd=NS(
+                ang=jnp.asarray([[0., .72, 0.]]),
+                vel=state.pipeline_state.xd.vel,
+            ),
+        ),
+    )
+    bank = env.normal_recovery_plans(momentum_state, nodes)
+    assert bank.shape == (8, 3, 23)
+    np.testing.assert_array_equal(bank[0], recovery)
+    pitch_radians_per_action = .5 * (1. - (-1.)) * .2
+    pitch_residual = .1 * .72 / pitch_radians_per_action
+    expected_capture = recovery.at[1, 14].add(pitch_residual)
+    expected_capture = expected_capture.at[1, 19].add(pitch_residual)
+    np.testing.assert_allclose(bank[1], expected_capture, atol=1e-7)
+    expected_roll_release = recovery.at[1:, jnp.asarray([13, 18])].set(0.0)
+    np.testing.assert_array_equal(bank[2], expected_roll_release)
+    expected_combined = expected_roll_release.at[1, 14].add(pitch_residual)
+    expected_combined = expected_combined.at[1, 19].add(pitch_residual)
+    np.testing.assert_allclose(bank[3], expected_combined, atol=1e-7)
+    for bank_index, target in ((4, -.5), (6, -1.)):
+        expected_release = recovery.at[
+            1:, jnp.asarray([13, 18])
+        ].set(target)
+        np.testing.assert_array_equal(bank[bank_index], expected_release)
+        expected_combined = expected_release.at[1, 14].add(pitch_residual)
+        expected_combined = expected_combined.at[1, 19].add(pitch_residual)
+        np.testing.assert_allclose(
+            bank[bank_index + 1], expected_combined, atol=1e-7
+        )
+
+    # NORMAL rescue expresses a short DIAL phase lag in the same bounded
+    # residual chart and uses the solver-provided horizon to locate node
+    # knots.  It must not mutate the task clock or assume Hsample=16.
+    reference = jnp.arange(40, dtype=jnp.float32)[:, None] * jnp.linspace(
+        0.001, 0.004, 11, dtype=jnp.float32
+    )[None, :]
+    env._walk_joint_reference = reference
+    rescue_state = NS(
+        info={**momentum_state.info, "walk_reference_step": jnp.int32(7)},
+        pipeline_state=momentum_state.pipeline_state,
+    )
+    rescue = env.normal_rescue_plans(
+        rescue_state, nodes, horizon_steps=8
+    )
+    assert rescue.shape == (3, 3, 23)
+    node_offsets = jnp.asarray([0, 4, 8], jnp.int32)
+    current = node_offsets + 7
+    base = env.normal_recovery_plans(rescue_state, nodes)[-1]
+    for index, lag in enumerate((1, 2, 3)):
+        delayed = jnp.maximum(current - lag, 0)
+        delta = (reference[delayed] - reference[current]) / .2
+        expected_rescue = base.at[:, env.spec.total_width:].add(delta)
+        np.testing.assert_allclose(
+            rescue[index], jnp.clip(expected_rescue, -1., 1.), atol=1e-7
+        )
+
+
+def test_h1_walk_prior_waits_for_bilateral_supported_exchange():
+    from types import SimpleNamespace as NS
+    from genedynamics.envs.domains.humanoid.box_push_brax import HumanoidBoxPushEnv
+
+    env = object.__new__(HumanoidBoxPushEnv)
+    env._walk_requires_locomotion = True
+    env._bcfg = NS(walk_min_steps_per_foot=1)
+    assert not bool(env.mga_prior_applicable(NS(
+        info={"walk_forward_steps": jnp.asarray([1, 0], jnp.int32)}
+    )))
+    assert bool(env.mga_prior_applicable(NS(
+        info={"walk_forward_steps": jnp.asarray([1, 1], jnp.int32)}
+    )))
+    env._walk_requires_locomotion = False
+    assert bool(env.mga_prior_applicable(NS(info={})))
 
 
 def test_h1_walk_coast_prediction_does_not_override_physical_safety():
@@ -2871,7 +3171,8 @@ def test_h1_strict_joint_target_observation_real_reset_shape():
     assert "update_action" in gate
     update_gate = np.asarray(gate["update_action"])
     # No measured box contact at reset: retain searchable contact geometry,
-    # but preserve nominal stiffness/force and the DIAL leg reference.
+    # but preserve nominal stiffness/force and locally bounded leg authority
+    # about the DIAL reference.
     np.testing.assert_array_equal(update_gate[:env.spec.s_slice.start], 1.0)
     np.testing.assert_array_equal(update_gate[env.spec.s_slice], 0.0)
     np.testing.assert_array_equal(update_gate[env.spec.nu_slice], 0.0)
@@ -2888,9 +3189,54 @@ def test_h1_strict_joint_target_observation_real_reset_shape():
         projected[:, env.spec.total_width:],
         np.zeros((3, env._n_planner), dtype=np.float32),
     )
+    # Once the task has observed a supported left-leg swing, both legs may use
+    # the policy chart so the opposite leg can maintain support through the
+    # exchange.  The torso remains on the shared gait; all candidate sources
+    # receive the same clipped authority.
+    swing_state = state.replace(info={
+        **state.info,
+        "walk_swing_seen": jnp.asarray([True, False]),
+    })
+    projected_swing = env.project_mga_candidate(swing_state, candidates)
+    residual_limit = env._bcfg.policy_joint_reference_residual_scale
+    paired_leg_width = (env._n_planner - 1) // 2
+    expected_swing = np.zeros((3, env._n_planner), dtype=np.float32)
+    expected_swing[:, :2 * paired_leg_width] = np.clip(
+        np.asarray(
+            candidates[
+                :, env.spec.total_width:env.spec.total_width + 2 * paired_leg_width
+            ]
+        ),
+        -residual_limit,
+        residual_limit,
+    )
+    np.testing.assert_allclose(
+        projected_swing[:, env.spec.total_width:], expected_swing
+    )
+    planner = tuple(env._robot_profile.joint_groups["planner"])
     emergency = env.emergency_plan(state, candidates)
+    capture = env._walk_roll_capture_residual(state)
+    for hip in env._roll_hips:
+        coordinate = env.spec.total_width + planner.index(hip)
+        np.testing.assert_allclose(
+            emergency[:, coordinate], capture[planner.index(hip)], atol=1e-7
+        )
     projected_emergency = env.project_mga_candidate(state, emergency)
-    np.testing.assert_array_equal(projected_emergency, emergency)
+    # Candidate projection has NORMAL semantics and must not infer execution
+    # mode from the emergency plan's -1 force coordinate.  The backend owns
+    # explicit emergency provenance and therefore never sends its task-owned
+    # bank through this local proposal tube.
+    np.testing.assert_array_equal(
+        projected_emergency[:, env.spec.total_width:],
+        np.zeros((3, env._n_planner), dtype=np.float32),
+    )
+    emergency_bank = env.emergency_plans(state, candidates)
+    assert emergency_bank.shape == (16, 3, env.action_size)
+    projected_emergency_bank = env.project_mga_candidate(state, emergency_bank)
+    np.testing.assert_array_equal(
+        projected_emergency_bank[..., env.spec.total_width:],
+        np.zeros((16, 3, env._n_planner), dtype=np.float32),
+    )
     env._walk_joint_reference = saved_reference
     # Dynamic walking does not reject a valid single-support posture merely
     # because the pelvis is away from the two-foot midpoint.  It does reject
@@ -3133,6 +3479,62 @@ def _h1_support_phase_control():
     assert abs(float(legacy_tau[env._sag_legs[1][2]])) > 0.05
     print("  support: actual load independent of planned phase; ankle residual retained -> True")
     return True
+
+
+def test_h1_walk_reference_clock_uses_measured_monotone_phase_and_holds_unload():
+    from types import SimpleNamespace as NS
+    from genedynamics.envs.domains.humanoid.box_push_brax import (
+        HumanoidBoxPushEnv,
+    )
+
+    env = NS(
+        _bcfg=NS(emergency_reference_rewind_steps=4),
+        _walk_joint_reference=jnp.asarray([
+            [0.0, 0.0], [0.25, 0.0], [0.5, 0.0],
+            [0.75, 0.0], [1.0, 0.0],
+        ], jnp.float32),
+        _robot_binding=NS(qpos_indices=(0, 1)),
+        _n_planner=2,
+        _whole_body_controller=NS(
+            planner_action_from_joints=lambda joints: joints
+        ),
+    )
+    env._mga_inspection_mode = HumanoidBoxPushEnv._mga_inspection_mode
+    anchor, error = HumanoidBoxPushEnv._walk_reference_phase_anchor(
+        env, NS(qpos=jnp.asarray([0.52, 0.0], jnp.float32)),
+        {"walk_reference_step": jnp.int32(4)},
+    )
+    assert int(anchor) == 2
+    assert float(error) == pytest.approx(np.sqrt(0.0002), abs=1e-7)
+    next_clock = HumanoidBoxPushEnv._next_walk_reference_step
+    normal = {
+        "walk_reference_step": jnp.int32(112),
+        "mga_execution_mode": jnp.int32(0),
+        "mga_execution_request": jnp.int32(0),
+    }
+    assert int(next_clock(env, normal)) == 113
+    entering = {**normal, "mga_execution_request": jnp.int32(1)}
+    assert int(next_clock(env, entering, jnp.int32(110))) == 110
+    continuing = {
+        **entering,
+        "walk_reference_step": jnp.int32(110),
+        "walk_reference_recovery_anchor": jnp.int32(110),
+        "mga_execution_mode": jnp.int32(1),
+    }
+    assert int(next_clock(env, continuing, jnp.int32(109))) == 110
+    recovering = {**continuing, "mga_execution_request": jnp.int32(0)}
+    assert int(next_clock(env, recovering, jnp.int32(109))) == 111
+    reentering = {
+        **recovering,
+        "walk_reference_step": jnp.int32(111),
+        "mga_execution_mode": jnp.int32(0),
+        "mga_execution_request": jnp.int32(1),
+    }
+    next_reference, next_anchor = HumanoidBoxPushEnv._next_walk_reference_clock(
+        env, reentering, jnp.int32(109)
+    )
+    assert int(next_reference) == 110
+    assert int(next_anchor) == 110
 
 
 def _native_walk_probe(mode="support_phase_foot_level", *, n_steps=300, with_box=False,
@@ -3503,6 +3905,7 @@ def test_h1_unload_context_seals_actual_geometry_and_stiffness_across_models():
 
 def test_h1_unload_context_cancellation_continuation_and_normal_reentry():
     env, state = _h1_unload_context_array_fixture()
+    env._bcfg.emergency_min_dwell_steps = 2
     entry = env._prepare_mga_execution_state(state, 1)
     cancelled = env._prepare_mga_execution_state(entry, 0)
     assert not bool(cancelled.info["mga_unload_entry_prepared"])
@@ -3511,7 +3914,16 @@ def test_h1_unload_context_cancellation_continuation_and_normal_reentry():
     committed = entry.replace(info=committed_info)
     assert int(committed.info["mga_execution_mode"]) == 1
     assert int(committed.info["mga_execution_request"]) == -1
+    assert int(committed.info["mga_unload_age"]) == 1
+    assert not bool(env.normal_recovery_ready(committed))
     assert int(env._mga_inspection_mode(committed.info)) == 1
+    continued = env._prepare_mga_execution_state(committed, 1)
+    continued = continued.replace(info=env._mga_finish_context(
+        continued.info, dict(continued.info), jnp.bool_(False)
+    ))
+    assert int(continued.info["mga_execution_mode"]) == 1
+    assert int(continued.info["mga_unload_age"]) == 2
+    assert bool(env.normal_recovery_ready(continued))
     changed = committed.replace(pipeline_state=committed.pipeline_state._replace(
         geom_xpos=committed.pipeline_state.geom_xpos.at[2, 0].add(.05)))
     for prepared in (env._prepare_mga_execution_state(changed, 1),
@@ -3526,13 +3938,102 @@ def test_h1_unload_context_cancellation_continuation_and_normal_reentry():
     finished = normal.replace(info=env._mga_finish_context(
         normal.info, dict(normal.info), jnp.bool_(False)))
     assert int(finished.info["mga_execution_mode"]) == 0
+    assert int(finished.info["mga_unload_age"]) == 0
     assert not bool(finished.info["mga_unload_entry_prepared"])
     new_entry = env._prepare_mga_execution_state(finished, 1)
     assert bool(new_entry.info["mga_unload_entry_prepared"])
     # Absorbing padding does not commit a counterfactual mode request.
     padded_info = env._mga_finish_context(normal.info, dict(normal.info), jnp.bool_(True))
     assert int(padded_info["mga_execution_mode"]) == 1
+    assert int(padded_info["mga_unload_age"]) == 1
     assert bool(padded_info["mga_unload_entry_prepared"])
+
+
+def test_h1_fixed_task_unload_has_continuous_certified_normal_recovery():
+    env, state = _h1_unload_context_array_fixture()
+    env._is_walk = False
+    env._bcfg.f_min = 0.0
+    env._bcfg.f_max = 60.0
+    env._bcfg.f_target = 45.0
+    entry = env._prepare_mga_execution_state(state, 1)
+    nodes = env.emergency_plan(state, jnp.ones((4, 12)))
+
+    recovery = env.normal_recovery_plan(entry, nodes)
+    bank = env.normal_recovery_plans(entry, nodes)
+
+    assert recovery.shape == nodes.shape
+    assert bank.shape == (3, *nodes.shape)
+    np.testing.assert_array_equal(bank[0], recovery)
+    np.testing.assert_allclose(
+        bank[1, :, env.spec.nu_slice.start], [-1.0, -0.75, -0.5, -0.25],
+        atol=1e-7,
+    )
+    np.testing.assert_array_equal(
+        bank[2, :, env.spec.nu_slice], -np.ones((4, 1))
+    )
+    np.testing.assert_array_equal(
+        recovery[:, env.spec.s_slice],
+        np.tile(np.asarray(entry.info["mga_unload_stiffness_raw"]), (4, 1)),
+    )
+    np.testing.assert_allclose(
+        recovery[:, env.spec.nu_slice.start], [-1.0, -0.5, 0.0, 0.5],
+        atol=1e-7,
+    )
+    np.testing.assert_array_equal(
+        recovery[:, env.spec.r_slice], np.zeros((4, env.spec.pos_dim))
+    )
+
+
+def test_h1_fixed_displacement_task_has_geometry_then_load_rescue_bank():
+    env, state = _h1_unload_context_array_fixture()
+    env._is_walk = False
+    env._bcfg.fixed_force_target = False
+    env._bcfg.f_min = 0.0
+    env._bcfg.f_max = 60.0
+    env._bcfg.f_target = 45.0
+    nodes = jnp.linspace(-0.8, 0.8, 48, dtype=jnp.float32).reshape(4, 12)
+
+    bank = env.normal_rescue_plans(state, nodes, horizon_steps=16)
+
+    assert bank.shape == (10, *nodes.shape)
+    b_index = env.spec.r_slice.stop - 1
+    geometry_unchanged = np.ones(nodes.shape[-1], dtype=bool)
+    geometry_unchanged[b_index] = False
+    for candidate in bank[:2]:
+        np.testing.assert_array_equal(
+            candidate[:, geometry_unchanged], nodes[:, geometry_unchanged]
+        )
+        np.testing.assert_array_equal(candidate[0], nodes[0])
+    np.testing.assert_allclose(bank[:2, -1, b_index], [-0.5, -1.0], atol=1e-7)
+
+    load_unchanged = np.ones(nodes.shape[-1], dtype=bool)
+    load_unchanged[env.spec.nu_slice] = False
+    for candidate in bank[2::2]:
+        np.testing.assert_array_equal(
+            candidate[:, load_unchanged], nodes[:, load_unchanged]
+        )
+        np.testing.assert_array_equal(
+            candidate[0, env.spec.nu_slice], nodes[0, env.spec.nu_slice]
+        )
+    for candidate in bank[3::2]:
+        np.testing.assert_array_equal(
+            candidate[:, load_unchanged], nodes[:, load_unchanged]
+        )
+    expected_force = np.asarray([0.875, 0.75, 0.5, 0.0]) * 45.0
+    expected_nu = 2.0 * expected_force / 60.0 - 1.0
+    np.testing.assert_allclose(
+        bank[2::2, -1, env.spec.nu_slice].reshape(-1), expected_nu, atol=1e-7
+    )
+    np.testing.assert_allclose(
+        bank[3::2, :, env.spec.nu_slice.start],
+        np.repeat(expected_nu[:, None], nodes.shape[0], axis=1),
+        atol=1e-7,
+    )
+
+    env._bcfg.fixed_force_target = True
+    assert env.normal_rescue_plans(
+        state, nodes, horizon_steps=16
+    ) is None
 
 
 @pytest.mark.parametrize("invalid", ["corner", "interior", "deep", "nonfinite", "raw_outside", "bad_matrix"])

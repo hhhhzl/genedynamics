@@ -9,6 +9,6 @@ method_params:
     p1_force_30n: results/humanoid/box_push/_policies/atacom_p12_ppo_seed0.pkl
     p2_push_nominal: results/humanoid/box_push/_policies/atacom_p12_ppo_seed0.pkl
     p2_push_ood: results/humanoid/box_push/_policies/atacom_p12_ppo_seed0.pkl
-    p3_unjam: results/humanoid/box_push/_policies/atacom_p3_ppo_seed0.pkl
+    p3_unjam: results/humanoid/box_push/_policies/atacom_p3_ppo_seed101.pkl
     p4_walk_push: results/humanoid/box_push/_policies/atacom_p4_ppo_seed0.pkl
   Kc: 1.0

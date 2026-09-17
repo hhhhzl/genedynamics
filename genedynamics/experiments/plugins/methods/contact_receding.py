@@ -241,12 +241,34 @@ def make_mga(
 
             horizon_steps = int(cfg.get("Hsample", 16)) + 1
             payload = json.loads(Path(reliability_ckpt).read_text())
-            validator(payload, horizon_steps=horizon_steps)
+            # An unvalidated checkpoint may be loaded only as a diagnostic
+            # under the explicit model-based abstention policy.  It must not
+            # veto candidates (the backend checks promotion metadata); a
+            # promoted/authoritative gate still requires an exact active-task
+            # contract match.
+            allow_abstaining_ood = bool(
+                cfg.get("reliability_ood_policy") == "model_based"
+                and not bool((payload.get("metadata") or {}).get(
+                    "performance_validated", False
+                ))
+                and not bool((payload.get("metadata") or {}).get(
+                    "promotion_eligible", False
+                ))
+            )
+            validator(
+                payload,
+                horizon_steps=horizon_steps,
+                allow_abstaining_ood=allow_abstaining_ood,
+            )
             if execution_env is not None:
                 execution_validator = getattr(execution_env, "validate_reliability_checkpoint", None)
                 if execution_validator is None:
                     raise ValueError("reliability model/execution task contract mismatch")
-                execution_validator(payload, horizon_steps=horizon_steps)
+                execution_validator(
+                    payload,
+                    horizon_steps=horizon_steps,
+                    allow_abstaining_ood=allow_abstaining_ood,
+                )
         reliability_model = LinearReliabilityModel.load(reliability_ckpt)
         expected_features = getattr(env, "reliability_feature_size", None)
         if (
@@ -657,6 +679,20 @@ class RecedingContactMethodPlugin(MethodPlugin):
                 and config.get("learned_reliability", True)
                 and config.get("reliability_ckpt")
             )
+            if contract["learned_reliability"] and config.get("reliability_ckpt"):
+                metadata = getattr(solver, "reliability_model", None)
+                metadata = getattr(metadata, "metadata", {}) or {}
+                contract["reliability_gate_authoritative"] = bool(
+                    str(config.get("reliability_ood_policy", "veto")) == "veto"
+                    or (
+                        metadata.get("performance_validated", False)
+                        and metadata.get("promotion_eligible", False)
+                    )
+                )
+                contract["reliability_promotion_eligible"] = bool(
+                    metadata.get("performance_validated", False)
+                    and metadata.get("promotion_eligible", False)
+                )
         elif method in {"rl", "issa"}:
             contract["policy"] = bool(config.get("policy_ckpt"))
         elif method == "atacom":

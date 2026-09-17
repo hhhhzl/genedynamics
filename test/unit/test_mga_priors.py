@@ -342,6 +342,26 @@ def test_h1_reliability_contract_rejects_same_width_old_risk_horizon_and_policy(
     with pytest.raises(ValueError, match="contract mismatch"):
         env.validate_reliability_checkpoint(payload, horizon_steps=25)
 
+    # A development checkpoint may be inspected under model-based abstention
+    # even when its collected domain is not the active OOD contract.  The
+    # promotion flags remain false, so this path cannot silently become a
+    # learned veto.
+    env._bcfg.f_max = 60.0
+    diagnostic = deepcopy(payload)
+    diagnostic["metadata"] = {
+        "reliability_contracts": [],
+        "performance_validated": False,
+        "promotion_eligible": False,
+    }
+    env.validate_reliability_checkpoint(
+        diagnostic, horizon_steps=25, allow_abstaining_ood=True
+    )
+    diagnostic["metadata"]["promotion_eligible"] = True
+    with pytest.raises(ValueError, match="contract mismatch"):
+        env.validate_reliability_checkpoint(
+            diagnostic, horizon_steps=25, allow_abstaining_ood=True
+        )
+
 
 def test_h1_reliability_collection_requires_saved_contract_and_matching_sources():
     from copy import deepcopy
@@ -590,6 +610,141 @@ def test_h1_walk_expert_loader_does_not_double_add_shared_dial_reference(tmp_pat
         )
 
 
+def test_h1_walk_residual_expert_requires_current_safe_executed_prefix(tmp_path):
+    import json
+    from scripts.tasks.robot.humanoid.train_box_push_rl import _load_walk_expert
+
+    path = tmp_path / "trajectory.json"
+    interface = {"action_layout": {"action_size": 23}, "task": {"mode": "current"}}
+    actions = np.zeros((3, 23), dtype=float)
+    actions[:, 12:] = 0.025
+    payload = {
+        "actions": actions.tolist(),
+        "states": [{"obs": np.full(91, i, dtype=float).tolist()} for i in range(4)],
+        "execution_status": {
+            "state": "aborted_unrecoverable",
+            "executed_steps": 3,
+            "metrics_scope": "actual_execution_prefix_only",
+        },
+        "task_signals": {
+            "task_fallen": [0, 0, 0],
+            "walk_left_steps": [0, 1, 1],
+            "walk_right_steps": [0, 0, 1],
+            "physics_samples_valid": [1, 1, 1],
+            "physics_safety_margins": np.full((3, 5, 4), -0.1).tolist(),
+            "task_metadata": {
+                "reliability_contract": {"policy_interface": interface},
+            },
+        },
+    }
+    path.write_text(json.dumps(payload))
+    transform = {
+        "center": "time_indexed_dial_reference",
+        "action_bias": np.zeros(23).tolist(),
+        "action_scale": np.r_[np.full(12, 0.01), np.full(11, 0.05)].tolist(),
+    }
+    obs, target, report = _load_walk_expert(
+        path, observation_size=91, action_size=23,
+        action_transform=transform, policy_interface=interface,
+        expert_target="residual",
+    )
+    assert obs.shape == (3, 91)
+    np.testing.assert_array_equal(target[:, :12], 0.0)
+    np.testing.assert_allclose(target[:, 12:], 0.5)
+    assert report["target_semantics"] == (
+        "zero_contact_primitive_plus_model_based_leg_residual"
+    )
+
+    payload["task_signals"]["physics_safety_margins"][1][2][0] = 0.01
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="violation-free fast-loop"):
+        _load_walk_expert(
+            path, observation_size=91, action_size=23,
+            action_transform=transform, policy_interface=interface,
+            expert_target="residual",
+        )
+
+
+def test_h1_behavior_anchor_is_training_only_and_skips_success_padding():
+    from brax.envs.base import State
+    from scripts.tasks.robot.humanoid.train_box_push_rl import (
+        _BehaviorAnchoredH1Env,
+    )
+
+    class Env:
+        domains = (object(),)
+        action_size = observation_size = 2
+        backend = "generalized"
+        dt = 0.02
+
+        def reset(self, rng):
+            del rng
+            return None
+
+        def step(self, state, action):
+            del action
+            return state.replace(reward=jnp.float32(2.0))
+
+    wrapper = _BehaviorAnchoredH1Env(
+        Env(), lambda obs: jnp.ones_like(obs) * 0.5, weight=4.0,
+    )
+    state = State(
+        pipeline_state=None, obs=jnp.zeros(2), reward=jnp.float32(0.0),
+        done=jnp.float32(0.0), metrics={}, info={"success_padding": False},
+    )
+    assert float(wrapper.step(state, jnp.zeros(2)).reward) == pytest.approx(1.0)
+    padding = state.replace(info={"success_padding": True})
+    assert float(wrapper.step(padding, jnp.zeros(2)).reward) == pytest.approx(2.0)
+
+
+def test_h1_walk_expert_set_preserves_per_trajectory_provenance(monkeypatch):
+    import hashlib
+    import json
+    from scripts.tasks.robot.humanoid import train_box_push_rl as training
+
+    reports = {
+        "a.json": (2, "a" * 64, 0.1, 1, 2),
+        "b.json": (3, "b" * 64, 0.2, 2, 1),
+    }
+
+    def load(path, **kwargs):
+        del kwargs
+        count, digest, rmse, left, right = reports[str(path)]
+        return (
+            np.full((count, 4), count, np.float32),
+            np.full((count, 2), -count, np.float32),
+            {
+                "path": str(path), "sha256": digest,
+                "transitions": count, "verified_left_steps": left,
+                "verified_right_steps": right,
+                "absolute_leg_action_rmse": rmse,
+                "target_semantics": "model_based_residual",
+            },
+        )
+
+    monkeypatch.setattr(training, "_load_walk_expert", load)
+    obs, targets, report = training._load_walk_expert_set(
+        ["a.json", "b.json"], observation_size=4, action_size=2,
+        action_transform={}, expert_target="residual",
+    )
+    assert obs.shape == (5, 4)
+    assert targets.shape == (5, 2)
+    assert report["paths"] == ["a.json", "b.json"]
+    assert report["trajectory_sha256"] == ["a" * 64, "b" * 64]
+    assert report["trajectory_count"] == 2
+    assert report["transitions"] == 5
+    assert report["verified_left_steps"] == 1
+    assert report["verified_right_steps"] == 1
+    assert report["path"] is None
+    expected = hashlib.sha256(json.dumps(
+        ["a" * 64, "b" * 64], separators=(",", ":")
+    ).encode("utf-8")).hexdigest()
+    assert report["sha256"] == expected
+    assert report["absolute_leg_action_rmse"] == pytest.approx(
+        np.sqrt((2 * 0.1 ** 2 + 3 * 0.2 ** 2) / 5)
+    )
+
+
 def test_h1_walk_expert_initialization_is_globally_zero_about_shared_reference(
         tmp_path):
     import hashlib
@@ -636,7 +791,13 @@ def test_h1_walk_expert_initialization_is_globally_zero_about_shared_reference(
     logits = networks.policy_network.apply(normalizer, policy_params, observations)
     actions = networks.parametric_action_distribution.mode(logits)
     np.testing.assert_allclose(np.asarray(actions), 0.0, atol=1e-7)
+    distribution = networks.parametric_action_distribution.create_dist(logits)
+    np.testing.assert_allclose(np.asarray(distribution.scale), 0.25, atol=1e-6)
     assert report["initialization"] == "analytic_global_zero_policy_mean"
+    assert report["initial_exploration_std"] == pytest.approx(0.25)
+    assert report["exploration_initialization"] == (
+        "constant_tanh_normal_scale_head"
+    )
     assert report["pretrain_steps"] == 0
     assert report["requested_pretrain_steps"] == 10
 

@@ -190,7 +190,9 @@ def test_stepwise_acceptance_materialization_matches_fused_acceptance():
     for key in expected_info:
         if key == "emergency_validation_applicable":
             continue
-        np.testing.assert_array_equal(actual_info[key], expected_info[key])
+        np.testing.assert_array_equal(
+            actual_info[key], expected_info[key], err_msg=f"diagnostic key: {key}"
+        )
 
 
 def test_lazy_emergency_scoring_skips_unselectable_unload_certificate():
@@ -251,6 +253,148 @@ def test_lazy_emergency_scoring_prefers_task_host_certificate():
     )
     assert int(info["execution_mode"]) == 1
     assert task.host_calls == 2
+    assert float(info["emergency_validation_candidate_count"]) == 1.0
+
+
+def test_lazy_host_emergency_stops_after_first_safe_task_candidate():
+    class OrderedHostCertificateTask(_ContextToyTask):
+        def __init__(self):
+            super().__init__()
+            self.evaluated = []
+
+        @property
+        def mga_execution_context(self):
+            context = super().mga_execution_context
+
+            def score_emergency(state, actions, aug_lambda, aug_rho):
+                del aug_lambda, aug_rho
+                value = float(np.asarray(actions[0, 0]))
+                self.evaluated.append(value)
+                risk = jnp.zeros(4).at[1].set(value < 0.2)
+                return -jnp.square(jnp.asarray(value) - 0.3), risk
+
+            return {**context, "score_emergency_host": score_emergency}
+
+    task = OrderedHostCertificateTask()
+    backend = _context_backend(
+        model=task, execution=task,
+        candidate_rollout_batch_size=1,
+        stepwise_acceptance=True,
+        lazy_emergency_scoring=True,
+    )
+    state = task.reset()
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    emergency_bank = jnp.stack([
+        jnp.zeros((5, 2)).at[:, 0].set(0.3),
+        jnp.zeros((5, 2)).at[:, 0].set(0.6),
+    ])
+    selected, info = backend._accept_refinement_jit(
+        state, unsafe, unsafe, jnp.float32(1), None, emergency_bank,
+        fallback_mode=jnp.int32(0),
+    )
+    np.testing.assert_array_equal(selected, emergency_bank[0])
+    # One discarded prewarm plus the first ordered task candidate.  The second
+    # candidate is not evaluated merely to improve emergency reward.
+    np.testing.assert_allclose(task.evaluated, [0.3, 0.3])
+    assert float(info["emergency_validation_candidate_count"]) == 1.0
+
+
+def test_lazy_host_emergency_requires_a_certified_normal_successor():
+    class RecursiveRecoveryTask(_ContextToyTask):
+        @staticmethod
+        def normal_recovery_plan(state, nodes, t0=0):
+            del state, t0
+            return jnp.zeros_like(nodes).at[:, 0].set(0.3)
+
+        def step(self, state, action, mode=0):
+            result = super().step(state, action, mode)
+            if int(mode) == 1:
+                result = {
+                    **result,
+                    "initial_violation": jnp.asarray(action[0] < 0.2),
+                }
+            return result
+
+        @property
+        def mga_execution_context(self):
+            context = super().mga_execution_context
+
+            def score_emergency(state, actions, aug_lambda, aug_rho):
+                del state, aug_lambda, aug_rho
+                return jnp.mean(actions[:, 0]), jnp.zeros(4)
+
+            return {**context, "score_emergency_host": score_emergency}
+
+    task = RecursiveRecoveryTask()
+    backend = _context_backend(
+        model=task, execution=task,
+        candidate_rollout_batch_size=1,
+        stepwise_acceptance=True,
+        lazy_emergency_scoring=True,
+    )
+    state = task.reset()
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    emergency_bank = jnp.stack([
+        jnp.zeros((5, 2)).at[:, 0].set(0.1),
+        jnp.zeros((5, 2)).at[:, 0].set(0.3),
+    ])
+    selected, info = backend._accept_refinement_jit(
+        state, unsafe, unsafe, jnp.float32(1), None, emergency_bank,
+        fallback_mode=jnp.int32(0),
+    )
+    np.testing.assert_array_equal(selected, emergency_bank[1])
+    assert int(info["execution_mode"]) == 1
+    assert float(info["emergency_revalidated_safe"]) == 1.0
+    assert float(info["emergency_validation_candidate_count"]) == 2.0
+
+
+@pytest.mark.parametrize("include_safe_recovery", [False, True])
+def test_lazy_host_emergency_uses_ordered_normal_recovery_bank(
+    include_safe_recovery,
+):
+    class RecoveryBankTask(_ContextToyTask):
+        @staticmethod
+        def normal_recovery_plans(state, nodes, t0=0):
+            del state, t0
+            assert nodes.shape == (COMMON["Hnode"] + 1, COMMON["nu"])
+            unsafe = jnp.zeros_like(nodes).at[:, 0].set(0.1)
+            if not include_safe_recovery:
+                return unsafe[None]
+            safe = jnp.zeros_like(nodes).at[:, 0].set(0.3)
+            return jnp.stack([unsafe, safe])
+
+        @property
+        def mga_execution_context(self):
+            context = super().mga_execution_context
+
+            def score_emergency(state, actions, aug_lambda, aug_rho):
+                del state, actions, aug_lambda, aug_rho
+                return jnp.float32(0.0), jnp.zeros(4)
+
+            return {**context, "score_emergency_host": score_emergency}
+
+    task = RecoveryBankTask()
+    backend = _context_backend(
+        model=task, execution=task,
+        candidate_rollout_batch_size=1,
+        stepwise_acceptance=True,
+        lazy_emergency_scoring=True,
+    )
+    state = task.reset()
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    emergency = backend.emergency_plan_fn(state, unsafe)
+    selected, info = backend._accept_refinement_jit(
+        state, unsafe, unsafe, jnp.float32(1), None, emergency,
+        fallback_mode=jnp.int32(0),
+    )
+    np.testing.assert_array_equal(selected, emergency)
+    assert float(info["emergency_revalidated_safe"]) == float(
+        include_safe_recovery
+    )
+    assert float(info["emergency_unrecoverable"]) == float(
+        not include_safe_recovery
+    )
+    assert float(info["emergency_validation_candidate_count"]) == 1.0
 
 
 def test_steady_schedule_uses_static_shape_with_exact_masked_tail():
@@ -758,7 +902,9 @@ def test_context_atacom_replacement_restores_normal_identity():
     assert float(info["atacom_incumbent_selected"]) == 1
 
 
-@pytest.mark.parametrize("expert_case", ["safe", "unsafe", "unsupported"])
+@pytest.mark.parametrize(
+    "expert_case", ["safe", "unsafe", "unsupported", "inapplicable"]
+)
 def test_context_additive_recovery_is_safety_first_not_cross_horizon_score(expert_case):
     from types import SimpleNamespace
     backend = _context_backend(prior_mode="additive")
@@ -766,6 +912,8 @@ def test_context_additive_recovery_is_safety_first_not_cross_horizon_score(exper
     expert = initial.at[:, 0].set(-0.5 if expert_case == "unsafe" else 0.3)
     backend.prior = SimpleNamespace(warm_start=lambda _: expert)
     backend._replan_scan_jit = lambda *args: initial  # unsafe Gaussian choice
+    if expert_case == "inapplicable":
+        backend._prior_applicable_jit = lambda state: jnp.asarray(False)
     if expert_case == "unsupported":
         backend.reliability_sequence_feature_fn = lambda state, us: jnp.mean(us, axis=0)
         backend.reliability_model = SimpleNamespace(
@@ -785,9 +933,504 @@ def test_context_additive_recovery_is_safety_first_not_cross_horizon_score(exper
     else:
         assert int(info["execution_mode"]) == 1
         assert float(info["additive_prior_selected"]) == 0
+    assert float(info["additive_prior_support_applicable"]) == (
+        0.0 if expert_case == "inapplicable" else 1.0
+    )
     import json
     json.dumps({key: np.asarray(value).tolist() for key, value in info.items()},
                allow_nan=False)
+
+
+def test_context_task_owned_normal_recovery_requires_full_horizon_certificate():
+    from types import SimpleNamespace
+
+    class RecoveryTask(_ContextToyTask):
+        @staticmethod
+        def normal_recovery_plan(state, nodes, t0=0):
+            del state, t0
+            return jnp.zeros_like(nodes).at[:, 0].set(0.3)
+
+    task = RecoveryTask()
+    backend = _context_backend(
+        prior_mode="additive", model=task, execution=task
+    )
+    # A task-owned certified mode exit is not a sampled policy/Gaussian
+    # proposal and must retain authority outside that local search tube.
+    backend._candidate_projection_jit = lambda state, nodes: jnp.clip(
+        nodes, -0.05, 0.05
+    )
+    # Keep the ordinary Gaussian and learned proposal unsafe.  Recovery must
+    # therefore come only from the explicit task-owned NORMAL candidate.
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    backend._replan_scan_jit = lambda *args: unsafe
+    backend.prior = SimpleNamespace(warm_start=lambda _: unsafe)
+    state = task.reset(mode=1)
+    selected, info = backend.replan_with_info(
+        state, unsafe, backend.make_schedule(1),
+        jax.random.PRNGKey(71), t0=1,
+    )
+    np.testing.assert_array_equal(
+        selected, jnp.zeros_like(selected).at[:, 0].set(0.3)
+    )
+    assert int(info["execution_mode"]) == 0
+    assert float(info["normal_recovery_applicable"]) == 1.0
+    assert float(info["normal_recovery_revalidated_safe"]) == 1.0
+    assert float(info["normal_recovery_selected"]) == 1.0
+    assert float(info["emergency_fallback_recovery"]) == 1.0
+
+
+def test_context_learned_normal_model_abstains_on_hybrid_recovery_transition():
+    from types import SimpleNamespace
+
+    class RecoveryTask(_ContextToyTask):
+        @staticmethod
+        def normal_recovery_plan(state, nodes, t0=0):
+            del state, t0
+            return jnp.zeros_like(nodes).at[:, 0].set(0.3)
+
+    task = RecoveryTask()
+    backend = _context_backend(
+        prior_mode="additive", model=task, execution=task,
+    )
+    backend.reliability_hard_limits = jnp.asarray([0.5, 0.5, 0.5, 10.0])
+    backend.reliability_ood_policy = "model_based"
+    backend.reliability_sequence_feature_fn = (
+        lambda state, actions: jnp.mean(actions, axis=0)
+    )
+    backend.reliability_model = SimpleNamespace(
+        predict_upper=lambda features: jnp.asarray([0.9, 0.9, 0.9, 0.0]),
+        support_score=lambda features: jnp.float32(0.25),
+    )
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    backend._replan_scan_jit = lambda *args: unsafe
+    backend.prior = SimpleNamespace(warm_start=lambda _: unsafe)
+
+    selected, info = backend.replan_with_info(
+        task.reset(mode=1), unsafe, backend.make_schedule(1),
+        jax.random.PRNGKey(712), t0=1,
+    )
+
+    np.testing.assert_array_equal(
+        selected, jnp.zeros_like(selected).at[:, 0].set(0.3)
+    )
+    assert int(info["execution_mode"]) == 0
+    assert float(info["normal_recovery_selected"]) == 1.0
+    assert float(info["reliability_abstained"]) == 1.0
+
+
+def test_context_task_owned_normal_recovery_bank_selects_first_safe_member():
+    from types import SimpleNamespace
+
+    class RecoveryBankTask(_ContextToyTask):
+        @staticmethod
+        def normal_recovery_plans(state, nodes, t0=0):
+            del state, t0
+            unsafe = jnp.zeros_like(nodes).at[:, 0].set(-0.5)
+            safe = jnp.zeros_like(nodes).at[:, 0].set(0.3)
+            unused = jnp.zeros_like(nodes).at[:, 0].set(0.4)
+            return jnp.stack([unsafe, safe, unused])
+
+    task = RecoveryBankTask()
+    backend = _context_backend(
+        prior_mode="additive", model=task, execution=task
+    )
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    backend._replan_scan_jit = lambda *args: unsafe
+    backend.prior = SimpleNamespace(warm_start=lambda _: unsafe)
+    selected, info = backend.replan_with_info(
+        task.reset(mode=1), unsafe, backend.make_schedule(1),
+        jax.random.PRNGKey(711), t0=1,
+    )
+    np.testing.assert_array_equal(
+        selected, jnp.zeros_like(selected).at[:, 0].set(0.3)
+    )
+    assert float(info["normal_recovery_revalidated_safe"]) == 1.0
+    assert float(info["normal_recovery_selected"]) == 1.0
+    assert float(info["normal_recovery_candidate_count"]) == 3.0
+    assert int(info["normal_recovery_selected_index"]) == 1
+
+
+def test_context_task_owned_normal_rescue_selects_first_safe_member():
+    class RescueTask(_ContextToyTask):
+        @staticmethod
+        def normal_rescue_plans(state, nodes, horizon_steps, t0=0):
+            del state, t0
+            assert horizon_steps == COMMON["Hsample"]
+            unsafe = jnp.zeros_like(nodes).at[:, 0].set(-0.5)
+            safe = jnp.zeros_like(nodes).at[:, 0].set(0.3)
+            unused = jnp.zeros_like(nodes).at[:, 0].set(0.4)
+            return jnp.stack([unsafe, safe, unused])
+
+        def emergency_sequence_score_risk(self, state, us, *unused):
+            del state, us, unused
+            return jnp.float32(0.0), jnp.full((4,), jnp.inf)
+
+    task = RescueTask()
+    backend = _context_backend(
+        prior_mode="additive", model=task, execution=task
+    )
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    backend._replan_scan_jit = lambda *args: unsafe
+    selected, info = backend.replan_with_info(
+        task.reset(mode=0), unsafe, backend.make_schedule(1),
+        jax.random.PRNGKey(712), t0=1,
+    )
+    np.testing.assert_array_equal(
+        selected, jnp.zeros_like(selected).at[:, 0].set(0.3)
+    )
+    assert int(info["execution_mode"]) == 0
+    assert float(info["selected_revalidated_safe"]) == 1.0
+    assert float(info["emergency_unrecoverable"]) == 0.0
+    assert float(info["normal_rescue_applicable"]) == 1.0
+    assert float(info["normal_rescue_revalidated_safe"]) == 1.0
+    assert float(info["normal_rescue_selected"]) == 1.0
+    assert float(info["normal_rescue_candidate_count"]) == 3.0
+    assert int(info["normal_rescue_selected_index"]) == 1
+    np.testing.assert_array_equal(info["normal_rescue_last_risk"], jnp.zeros(4))
+    np.testing.assert_array_equal(
+        info["normal_rescue_candidate_risks"],
+        jnp.asarray([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ]),
+    )
+    measured = task.reset(mode=0)
+    executed = backend.execution_step(measured, selected[0], info)
+    backend.after_step(measured, selected[0], executed)
+    assert backend._committed_shift_task_recovery
+
+
+def test_context_task_owned_normal_rescue_precedes_safe_unload():
+    class RescueTask(_ContextToyTask):
+        @staticmethod
+        def normal_rescue_plans(state, nodes, horizon_steps, t0=0):
+            del state, t0
+            assert horizon_steps == COMMON["Hsample"]
+            return jnp.zeros_like(nodes).at[:, 0].set(0.3)[None]
+
+    task = RescueTask()
+    backend = _context_backend(
+        prior_mode="additive", model=task, execution=task
+    )
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    backend._replan_scan_jit = lambda *args: unsafe
+    selected, info = backend.replan_with_info(
+        task.reset(mode=0), unsafe, backend.make_schedule(1),
+        jax.random.PRNGKey(713), t0=1,
+    )
+    np.testing.assert_array_equal(
+        selected, jnp.zeros_like(selected).at[:, 0].set(0.3)
+    )
+    assert int(info["execution_mode"]) == 0
+    assert float(info["normal_rescue_selected"]) == 1.0
+    assert float(info["emergency_selected"]) == 0.0
+    assert float(info["emergency_unrecoverable"]) == 0.0
+
+
+def test_context_learned_model_abstains_on_task_owned_normal_rescue():
+    from types import SimpleNamespace
+
+    class RescueTask(_ContextToyTask):
+        @staticmethod
+        def normal_rescue_plans(state, nodes, horizon_steps, t0=0):
+            del state, horizon_steps, t0
+            return jnp.zeros_like(nodes).at[:, 0].set(0.3)[None]
+
+    task = RescueTask()
+    backend = _context_backend(
+        prior_mode="additive", model=task, execution=task,
+    )
+    backend.reliability_hard_limits = jnp.asarray([0.5, 0.5, 0.5, 10.0])
+    backend.reliability_ood_policy = "model_based"
+    backend.reliability_sequence_feature_fn = (
+        lambda state, actions: jnp.mean(actions, axis=0)
+    )
+    backend.reliability_model = SimpleNamespace(
+        predict_upper=lambda features: jnp.asarray([0.9, 0.9, 0.9, 0.0]),
+        support_score=lambda features: jnp.float32(0.25),
+    )
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    backend._replan_scan_jit = lambda *args: unsafe
+
+    selected, info = backend.replan_with_info(
+        task.reset(mode=0), unsafe, backend.make_schedule(1),
+        jax.random.PRNGKey(714), t0=1,
+    )
+
+    np.testing.assert_array_equal(
+        selected, jnp.zeros_like(selected).at[:, 0].set(0.3)
+    )
+    assert int(info["execution_mode"]) == 0
+    assert float(info["normal_rescue_selected"]) == 1.0
+    assert float(info["reliability_abstained"]) == 1.0
+
+
+def test_context_task_owned_normal_recovery_precedes_safe_generic_exit():
+    from types import SimpleNamespace
+
+    class RecoveryTask(_ContextToyTask):
+        @staticmethod
+        def normal_recovery_plan(state, nodes, t0=0):
+            del state, t0
+            return jnp.zeros_like(nodes).at[:, 0].set(0.3)
+
+    task = RecoveryTask()
+    backend = _context_backend(
+        prior_mode="additive", model=task, execution=task
+    )
+    # A generic NORMAL plan is safe and score-valid, but a committed UNLOAD
+    # must exit through the task-owned recovery that was used to certify the
+    # hybrid successor rather than silently changing recovery semantics.  A
+    # higher-scoring safe learned proposal is subject to the same priority;
+    # otherwise additive selection would overwrite the recovery after this
+    # first acceptance pass.
+    generic = jnp.zeros((5, 2)).at[:, 0].set(0.4)
+    backend._replan_scan_jit = lambda *args: generic
+    backend.prior = SimpleNamespace(
+        warm_start=lambda _: jnp.zeros_like(generic).at[:, 0].set(0.5)
+    )
+    state = task.reset(mode=1)
+    selected, info = backend.replan_with_info(
+        state, generic, backend.make_schedule(1),
+        jax.random.PRNGKey(72), t0=1,
+    )
+    np.testing.assert_array_equal(
+        selected, jnp.zeros_like(selected).at[:, 0].set(0.3)
+    )
+    assert int(info["execution_mode"]) == 0
+    assert float(info["normal_recovery_selected"]) == 1.0
+    assert float(info["additive_prior_selected"]) == 0.0
+
+
+def test_context_task_owned_normal_recovery_obeys_dwell_guard():
+    from types import SimpleNamespace
+
+    class RecoveryTask(_ContextToyTask):
+        @property
+        def mga_execution_context(self):
+            return {
+                **super().mga_execution_context,
+                "normal_recovery_ready": lambda state: state["unload_age"] >= 2,
+            }
+
+        @staticmethod
+        def normal_recovery_plan(state, nodes, t0=0):
+            del state, t0
+            return jnp.zeros_like(nodes).at[:, 0].set(0.3)
+
+    task = RecoveryTask()
+    backend = _context_backend(
+        prior_mode="additive", model=task, execution=task
+    )
+    emergency = jnp.zeros((5, 2)).at[:, 1].set(-1.0)
+    generic = jnp.zeros((5, 2)).at[:, 0].set(0.4)
+    backend._replan_scan_jit = lambda *args: generic
+    backend.prior = SimpleNamespace(
+        warm_start=lambda _: jnp.zeros_like(generic).at[:, 0].set(0.5)
+    )
+
+    waiting = {**task.reset(mode=1), "unload_age": jnp.int32(1)}
+    selected, info = backend.replan_with_info(
+        waiting, emergency, backend.make_schedule(1),
+        jax.random.PRNGKey(721), t0=1,
+    )
+    np.testing.assert_array_equal(selected, emergency)
+    assert int(info["execution_mode"]) == 1
+    assert float(info["normal_recovery_applicable"]) == 0.0
+    assert float(info["normal_transition_dwell_ready"]) == 0.0
+    assert float(info["additive_prior_selected"]) == 0.0
+
+    ready = {**task.reset(mode=1), "unload_age": jnp.int32(2)}
+    selected, info = backend.replan_with_info(
+        ready, emergency, backend.make_schedule(1),
+        jax.random.PRNGKey(722), t0=1,
+    )
+    np.testing.assert_array_equal(
+        selected, jnp.zeros_like(selected).at[:, 0].set(0.3)
+    )
+    assert int(info["execution_mode"]) == 0
+    assert float(info["normal_recovery_selected"]) == 1.0
+    assert float(info["normal_transition_dwell_ready"]) == 1.0
+    assert float(info["additive_prior_selected"]) == 0.0
+
+
+def test_lazy_host_emergency_certifies_complete_dwell_before_normal_recovery():
+    class DwellHostTask(_ContextToyTask):
+        def __init__(self):
+            super().__init__()
+            self.recovery_ages = []
+
+        @staticmethod
+        def reset(mode=0):
+            return {
+                **_ContextToyTask.reset(mode),
+                "unload_age": jnp.int32(0),
+            }
+
+        def step(self, state, action, mode=0):
+            result = super().step(state, action, mode)
+            result["unload_age"] = jnp.where(
+                jnp.asarray(mode) == 1,
+                state["unload_age"] + jnp.int32(1),
+                jnp.int32(0),
+            )
+            return result
+
+        def normal_recovery_plan(self, state, nodes, t0=0):
+            del t0
+            self.recovery_ages.append(int(np.asarray(state["unload_age"])))
+            return jnp.zeros_like(nodes).at[:, 0].set(0.3)
+
+        @property
+        def mga_execution_context(self):
+            context = super().mga_execution_context
+
+            def score_emergency(state, actions, aug_lambda, aug_rho):
+                del state, actions, aug_lambda, aug_rho
+                return jnp.float32(0.0), jnp.zeros(4)
+
+            return {
+                **context,
+                "normal_recovery_ready": (
+                    lambda state: state["unload_age"] >= 2
+                ),
+                "score_emergency_host": score_emergency,
+            }
+
+    task = DwellHostTask()
+    backend = _context_backend(
+        model=task,
+        execution=task,
+        candidate_rollout_batch_size=1,
+        stepwise_acceptance=True,
+        lazy_emergency_scoring=True,
+    )
+    state = task.reset()
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    emergency = jnp.zeros((5, 2)).at[:, 1].set(-1.0)
+    selected, info = backend._accept_refinement_jit(
+        state, unsafe, unsafe, jnp.float32(1), None, emergency,
+        fallback_mode=jnp.int32(0),
+    )
+    np.testing.assert_array_equal(selected, emergency)
+    assert task.recovery_ages == [2]
+    assert int(info["execution_mode"]) == 1
+    assert float(info["emergency_revalidated_safe"]) == 1.0
+
+
+def test_additive_revalidates_exact_shifted_incumbent_before_projection():
+    backend = _context_backend(prior_mode="additive")
+    # The task projection represents a local proposal tube.  Applying it to
+    # the previously certified incumbent would turn the safe 0.3 sequence
+    # into the unsafe 0.05 sequence before purportedly revalidating it.
+    backend._candidate_projection_jit = lambda state, nodes: jnp.clip(
+        nodes, -0.05, 0.05
+    )
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    backend._replan_scan_jit = lambda *args: unsafe
+    incumbent = jnp.zeros((5, 2)).at[:, 0].set(0.3)
+    # Only an explicitly committed task-owned recovery may bypass the local
+    # proposal projection. Ordinary incumbents retain the legacy projection.
+    backend._committed_shift_task_recovery = True
+    selected, info = backend.replan_with_info(
+        _ContextToyTask.reset(), incumbent, backend.make_schedule(1),
+        jax.random.PRNGKey(72), t0=1,
+    )
+    np.testing.assert_array_equal(selected, incumbent)
+    assert float(info["incumbent_revalidated_safe"]) == 1.0
+    assert float(info["incumbent_candidate_selected"]) == 1.0
+    assert int(info["execution_mode"]) == 0
+
+
+def test_additive_revalidates_exact_committed_unload_before_projection():
+    backend = _context_backend(prior_mode="additive")
+    backend._candidate_projection_jit = lambda state, nodes: jnp.clip(
+        nodes, -0.05, 0.05
+    )
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    backend._replan_scan_jit = lambda *args: unsafe
+    incumbent = (
+        jnp.zeros((5, 2)).at[:, 0].set(0.3).at[:, 1].set(-1.0)
+    )
+    selected, info = backend.replan_with_info(
+        _ContextToyTask.reset(mode=1), incumbent, backend.make_schedule(1),
+        jax.random.PRNGKey(731), t0=1,
+    )
+    np.testing.assert_array_equal(selected, incumbent)
+    assert int(info["execution_mode"]) == 1
+    assert float(info["emergency_incumbent_active"]) == 1.0
+    assert float(info["emergency_revalidated_safe"]) == 1.0
+
+
+def test_additive_ordinary_shifted_incumbent_keeps_local_projection():
+    backend = _context_backend(prior_mode="additive")
+    backend._candidate_projection_jit = lambda state, nodes: jnp.clip(
+        nodes, -0.05, 0.05
+    )
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    backend._replan_scan_jit = lambda *args: unsafe
+    incumbent = jnp.zeros((5, 2)).at[:, 0].set(0.3)
+    selected, info = backend.replan_with_info(
+        _ContextToyTask.reset(), incumbent, backend.make_schedule(1),
+        jax.random.PRNGKey(73), t0=1,
+    )
+    # Both locally projected performance candidates are unsafe in the toy
+    # contract, so the ordinary incumbent cannot borrow recovery authority.
+    assert int(info["execution_mode"]) == 1
+    assert float(info["incumbent_revalidated_safe"]) == 0.0
+    assert float(info["incumbent_candidate_selected"]) == 0.0
+
+
+def test_additive_task_emergency_bypasses_normal_candidate_projection():
+    backend = _context_backend(prior_mode="additive")
+    backend._candidate_projection_jit = lambda state, nodes: jnp.clip(
+        nodes, -0.05, 0.05
+    )
+    unsafe = jnp.zeros((5, 2)).at[:, 0].set(-0.5)
+    backend._replan_scan_jit = lambda *args: unsafe
+    selected, info = backend.replan_with_info(
+        _ContextToyTask.reset(), unsafe, backend.make_schedule(1),
+        jax.random.PRNGKey(74), t0=1,
+    )
+    expected = backend.emergency_plan_fn(
+        _ContextToyTask.reset(), unsafe
+    )
+    np.testing.assert_array_equal(selected, expected)
+    assert int(info["execution_mode"]) == 1
+    assert float(info["emergency_selected"]) == 1.0
+
+
+def test_task_recovery_provenance_commits_only_after_real_execution():
+    backend = _context_backend(prior_mode="additive")
+    state = _ContextToyTask.reset()
+    action = jnp.zeros(2)
+    recovery_info = {
+        "execution_mode": jnp.int32(0),
+        "normal_recovery_selected": jnp.float32(1),
+        "incumbent_candidate_selected": jnp.float32(0),
+    }
+    next_state = backend.execution_step(state, action, recovery_info)
+    assert not backend._committed_shift_task_recovery
+    backend.after_step(state, action, next_state)
+    assert backend._committed_shift_task_recovery
+
+    incumbent_info = {
+        "execution_mode": jnp.int32(0),
+        "normal_recovery_selected": jnp.float32(0),
+        "incumbent_candidate_selected": jnp.float32(1),
+    }
+    next_state = backend.execution_step(next_state, action, incumbent_info)
+    backend.after_step(state, action, next_state)
+    assert backend._committed_shift_task_recovery
+
+    refined_info = {
+        "execution_mode": jnp.int32(0),
+        "normal_recovery_selected": jnp.float32(0),
+        "incumbent_candidate_selected": jnp.float32(0),
+    }
+    next_state = backend.execution_step(next_state, action, refined_info)
+    backend.after_step(state, action, next_state)
+    assert not backend._committed_shift_task_recovery
 
 
 def test_context_disabled_acceptance_preserves_no_prior_degenerate_normal_replan():

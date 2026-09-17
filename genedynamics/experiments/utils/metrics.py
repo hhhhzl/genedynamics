@@ -627,6 +627,62 @@ def _representative_seeds(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     return selections
 
 
+def _certified_rejection_error(
+    data: Dict[str, Any], expected_steps: int, trajectory_path: Path,
+) -> str | None:
+    """Validate an algorithmic pre-physics rejection as a complete attempt.
+
+    A task-owned MGA certificate may intentionally refuse to execute when no
+    revalidated normal/incumbent/emergency candidate exists.  That is a failed
+    task attempt, not a missing experiment.  It is accepted only when the
+    persisted prefix and rejection boundary agree exactly; simulator errors
+    and arbitrary early exits remain incomplete.
+    """
+    status = data.get("execution_status") or {}
+    if status.get("state", "completed") == "completed":
+        return None
+    if status.get("state") != "aborted_unrecoverable":
+        return f"unknown execution state {status.get('state')!r}"
+    if status.get("reason") != "no_revalidated_safe_candidate":
+        return f"uncertified abort reason {status.get('reason')!r}"
+    requested = status.get("requested_steps")
+    executed = status.get("executed_steps")
+    rejected = status.get("rejected_step")
+    if requested != expected_steps:
+        return f"rejection requested_steps={requested!r}, expected {expected_steps}"
+    if (
+        not isinstance(executed, int)
+        or not 0 <= executed < expected_steps
+        or rejected != executed
+    ):
+        return (
+            "rejection boundary is inconsistent: "
+            f"executed={executed!r}, rejected={rejected!r}"
+        )
+    details = status.get("details") or {}
+    required = {"normal_refined_safe", "incumbent_safe", "emergency_safe"}
+    if not required.issubset(details) or any(
+        type(details[key]) is not bool for key in required
+    ):
+        return "rejection certificate details are missing or malformed"
+    if any(details.values()):
+        return "rejection claims a revalidated safe candidate existed"
+    if status.get("metrics_scope") != "actual_execution_prefix_only":
+        return "rejection metrics scope is not the actual execution prefix"
+    if not isinstance(data.get("partial_metrics"), dict):
+        return "rejection is missing prefix diagnostics"
+    if not trajectory_path.is_file():
+        return "rejection is missing its executed trajectory"
+    try:
+        with trajectory_path.open() as handle:
+            trajectory = json.load(handle)
+    except Exception as exc:
+        return f"invalid rejected trajectory: {exc}"
+    if len(trajectory.get("actions") or ()) != executed:
+        return "rejected trajectory length does not match executed_steps"
+    return None
+
+
 def _plot_metric_rows(rows: List[Dict[str, Any]], metric: str) -> List[Dict[str, Any]]:
     """Keep endpoint force diagnostics separate from physical-substep safety."""
     if metric in {"force_peak", "physics_force_peak", "physics_force_normalized_cvar95"}:
@@ -799,8 +855,15 @@ def verify_results(
                     continue
                 if data.get("seed") != seed or str(data.get("suite")) != name:
                     errors.append(f"identity mismatch {result_path}")
-                if (data.get("execution_status") or {}).get("state", "completed") != "completed":
-                    errors.append(f"execution aborted/incomplete {result_path}")
+                trajectory_path = seed_dir / "trajectory" / "trajectory.json"
+                rejection_error = _certified_rejection_error(
+                    data, resolved_config.n_steps, trajectory_path
+                )
+                if rejection_error is not None:
+                    errors.append(
+                        f"execution aborted/incomplete {result_path}: "
+                        f"{rejection_error}"
+                    )
                 snapshot = data.get("config_snapshot") or {}
                 snapshot_budget = snapshot.get("method_params") or {}
                 if snapshot.get("n_steps") != resolved_config.n_steps:
@@ -824,7 +887,7 @@ def verify_results(
                 for key in BUDGET_KEYS:
                     if snapshot_budget.get(key) != resolved_config.method_params.get(key):
                         errors.append(f"budget mismatch {key} in {result_path}")
-                if not (seed_dir / "trajectory" / "trajectory.json").is_file():
+                if not trajectory_path.is_file():
                     errors.append(f"missing executed trajectory for {result_path}")
                 if require_visuals:
                     artifacts = list((seed_dir / "trajectory").glob("*.png")) + list(

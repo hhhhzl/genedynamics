@@ -127,7 +127,10 @@ class HumanoidWholeBodyController:
             normalized_action = jnp.clip(action[primitive_width:], -1.0, 1.0)
             if self.planner_action_reference is not None:
                 index = jnp.clip(
-                    jnp.asarray(info["step"], jnp.int32),
+                    jnp.asarray(
+                        info.get("walk_reference_step", info["step"]),
+                        jnp.int32,
+                    ),
                     0,
                     self.planner_action_reference.shape[0] - 1,
                 )
@@ -241,7 +244,14 @@ class HumanoidWholeBodyController:
             brace_tau = cfg.stance_force_ankle_gain * load_scale * load
             com_x = pipeline_state.x.pos[self.pelvis_body_id - 1, 0]
             feet_x = pipeline_state.site_xpos[self.feet_site_ids, 0].mean()
-            support_weights = contact.get("stance_support_weights", jnp.ones(2))
+            # ``load`` and the COM correction are whole-body loads/moments,
+            # not per-foot quantities.  A fixed two-foot stance therefore
+            # shares them across the ankles; applying the full value to both
+            # feet double-counts the requested contact load.  Walking tasks
+            # provide explicit support weights in the direct branch above.
+            support_weights = contact.get(
+                "stance_support_weights", 0.5 * jnp.ones(2)
+            )
             if "support_reference_xy" in contact:
                 # The task supplies the same physical-support reference used by
                 # gait capture, including its continuous low-load/flight limit.

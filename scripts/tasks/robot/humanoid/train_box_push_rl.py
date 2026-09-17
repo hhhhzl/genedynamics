@@ -145,6 +145,57 @@ class _CompleteH1AutoReset(AutoResetWrapper):
         return super().step(state, action)
 
 
+class _BehaviorAnchoredH1Env:
+    """Add an explicit frozen-teacher auxiliary reward during PPO only.
+
+    The wrapped task, absolute action transform and deployment reward remain
+    unchanged.  This training-only term keeps a residual policy near a
+    violation-free model-based behavior while PPO improves it with the task
+    return.  It is opt-in and never used by canonical/legacy training unless
+    the CLI declares a positive anchor weight.
+    """
+
+    def __init__(self, env, teacher_action_fn, weight):
+        self.env = env
+        self.teacher_action_fn = teacher_action_fn
+        self.weight = jnp.float32(weight)
+
+    @property
+    def domains(self):
+        return self.env.domains
+
+    @property
+    def action_size(self):
+        return self.env.action_size
+
+    @property
+    def observation_size(self):
+        return self.env.observation_size
+
+    @property
+    def backend(self):
+        return self.env.backend
+
+    @property
+    def dt(self):
+        return self.env.dt
+
+    def reset(self, rng):
+        return self.env.reset(rng)
+
+    def step(self, state, residual_action):
+        teacher = jax.lax.stop_gradient(self.teacher_action_fn(state.obs))
+        residual_action = jnp.asarray(residual_action, jnp.float32)
+        penalty = self.weight * jnp.mean((residual_action - teacher) ** 2)
+        active = ~jnp.asarray(
+            state.info.get("success_padding", False), jnp.bool_
+        )
+        advanced = self.env.step(state, residual_action)
+        return advanced.replace(
+            reward=advanced.reward - jnp.where(active, penalty, 0.0)
+        )
+
+
 def wrap_h1_training(env, episode_length, action_repeat=1, randomization_fn=None):
     """H1-only replacement for the generic PPO training wrapper."""
     if randomization_fn is not None:
@@ -427,7 +478,7 @@ def _walk_curriculum_groups(schema: str, specs, enabled=False):
 
 
 def _load_walk_expert(path, *, observation_size, action_size, action_transform,
-                      policy_interface=None):
+                      policy_interface=None, expert_target="reference"):
     """Load one terminal-clean DIAL trajectory as PPO initialization data.
 
     The teacher remains an initialization only: PPO subsequently optimizes the
@@ -438,6 +489,8 @@ def _load_walk_expert(path, *, observation_size, action_size, action_transform,
     supervised; with that center, the policy learns a zero residual around
     the exact hash-locked reference and then PPO learns loaded corrections.
     """
+    if expert_target not in {"reference", "residual"}:
+        raise ValueError("walk expert target must be 'reference' or 'residual'")
     path = Path(path)
     payload = json.loads(path.read_text())
     actions = np.asarray(payload.get("actions"), np.float32)
@@ -456,13 +509,46 @@ def _load_walk_expert(path, *, observation_size, action_size, action_transform,
             or left.shape != (len(actions),) or right.shape != (len(actions),)
             or np.max(left, initial=0.0) < 1.0 or np.max(right, initial=0.0) < 1.0):
         raise ValueError("DIAL expert must contain a fall-free bilateral supported walk")
+    if expert_target == "residual":
+        # A model-based prefix is useful supervision even when its next
+        # receding decision had no certified continuation.  It must never be
+        # treated as a safety label for that rejected action: admit only the
+        # physically executed prefix, with complete fast-loop coverage and no
+        # observed safety-margin violation.  Exact task-interface equality
+        # prevents an old contact/retraction realization from being silently
+        # relabelled as current data.
+        recorded_interface = (
+            ((signals.get("task_metadata") or {}).get("reliability_contract") or {})
+            .get("policy_interface")
+        )
+        if policy_interface is None or recorded_interface != policy_interface:
+            raise ValueError(
+                "model-based residual expert policy interface mismatch"
+            )
+        execution = payload.get("execution_status") or {}
+        if (execution.get("executed_steps") != len(actions)
+                or execution.get("metrics_scope") != "actual_execution_prefix_only"):
+            raise ValueError(
+                "model-based residual expert must identify its actual executed prefix"
+            )
+        valid = np.asarray(signals.get("physics_samples_valid", ())).reshape(-1)
+        margins = np.asarray(signals.get("physics_safety_margins", ()), np.float64)
+        if (valid.shape != (len(actions),) or not np.all(valid > 0.5)
+                or margins.ndim != 3 or margins.shape[0] != len(actions)
+                or margins.shape[-1] != 4 or not np.all(np.isfinite(margins))
+                or np.any(margins > 0.0)):
+            raise ValueError(
+                "model-based residual expert requires complete violation-free "
+                "fast-loop evidence"
+            )
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     bias = np.asarray(action_transform["action_bias"], np.float32)
     scale = np.asarray(action_transform["action_scale"], np.float32)
     if bias.shape != (action_size,) or scale.shape != (action_size,) or np.any(scale <= 0.0):
         raise ValueError("DIAL expert requires the task-owned PPO action transform")
     primitive_width = int(action_size) - 11
-    if action_transform.get("center") == "time_indexed_dial_reference":
+    if (expert_target == "reference"
+            and action_transform.get("center") == "time_indexed_dial_reference"):
         layout = (policy_interface or {}).get("action_layout", {})
         if layout.get("planner_reference_sha256") != digest:
             raise ValueError(
@@ -478,7 +564,11 @@ def _load_walk_expert(path, *, observation_size, action_size, action_transform,
         residual = np.clip((actions - bias) / scale, -0.999, 0.999)
         residual[:, :primitive_width] = 0.0
         reconstructed = np.clip(bias + scale * residual, -1.0, 1.0)
-        target_semantics = "zero_contact_primitive_plus_verified_DIAL_leg_residual"
+        target_semantics = (
+            "zero_contact_primitive_plus_model_based_leg_residual"
+            if expert_target == "residual" else
+            "zero_contact_primitive_plus_verified_DIAL_leg_residual"
+        )
         leg_rmse = float(np.sqrt(np.mean(
             (reconstructed[:, primitive_width:] - actions[:, primitive_width:]) ** 2
         )))
@@ -493,9 +583,57 @@ def _load_walk_expert(path, *, observation_size, action_size, action_transform,
     }
 
 
+def _load_walk_expert_set(paths, **kwargs):
+    """Load an ordered, hash-identified set of verified walk trajectories."""
+    if isinstance(paths, (str, Path)):
+        paths = [paths]
+    else:
+        paths = list(paths)
+    if not paths:
+        raise ValueError("walk expert set must contain at least one trajectory")
+
+    loaded = [_load_walk_expert(path, **kwargs) for path in paths]
+    semantics = {report["target_semantics"] for _, _, report in loaded}
+    if len(semantics) != 1:
+        raise ValueError("walk expert trajectories use different target semantics")
+    observations = np.concatenate([item[0] for item in loaded], axis=0)
+    targets = np.concatenate([item[1] for item in loaded], axis=0)
+    reports = [item[2] for item in loaded]
+    digests = [report["sha256"] for report in reports]
+    collection_digest = hashlib.sha256(
+        json.dumps(digests, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    transitions = np.asarray(
+        [report["transitions"] for report in reports], np.float64
+    )
+    squared_error = np.asarray([
+        report["absolute_leg_action_rmse"] ** 2 for report in reports
+    ], np.float64)
+    report = {
+        "path": reports[0]["path"] if len(reports) == 1 else None,
+        "paths": [item["path"] for item in reports],
+        "sha256": digests[0] if len(digests) == 1 else collection_digest,
+        "trajectory_sha256": digests,
+        "trajectory_count": len(reports),
+        "transitions": int(np.sum(transitions)),
+        "verified_left_steps": int(min(
+            item["verified_left_steps"] for item in reports
+        )),
+        "verified_right_steps": int(min(
+            item["verified_right_steps"] for item in reports
+        )),
+        "absolute_leg_action_rmse": float(np.sqrt(
+            np.sum(transitions * squared_error) / np.sum(transitions)
+        )),
+        "target_semantics": semantics.pop(),
+    }
+    return observations, targets, report
+
+
 def _pretrain_walk_policy_from_expert(env, action_transform, policy_interface, path, *, seed,
                                       hidden_sizes, normalize_observations,
-                                      normalizer_std_eps, init_noise_std, steps):
+                                      normalizer_std_eps, init_noise_std, steps,
+                                      expert_target="reference"):
     """Fit the PPO policy mean to a verified DIAL gait, then return restore params."""
     if steps <= 0:
         raise ValueError("expert-pretrain-steps must be positive")
@@ -503,9 +641,10 @@ def _pretrain_walk_policy_from_expert(env, action_transform, policy_interface, p
     from brax.training.acme import running_statistics
     from brax.training.agents.ppo import networks as ppo_networks
 
-    observations, targets, report = _load_walk_expert(
+    observations, targets, report = _load_walk_expert_set(
         path, observation_size=env.observation_size, action_size=env.action_size,
         action_transform=action_transform, policy_interface=policy_interface,
+        expert_target=expert_target,
     )
     obs = jnp.asarray(observations)
     target = jnp.asarray(targets)
@@ -530,6 +669,33 @@ def _pretrain_walk_policy_from_expert(env, action_transform, policy_interface, p
     policy_params = networks.policy_network.init(policy_key)
     value_params = networks.value_network.init(value_key)
 
+    # Brax's current tanh-normal policy path builds a plain 2A-output MLP and
+    # does not consume ``init_noise_std`` (the argument is used only by its
+    # unsquashed normal policy module).  Leaving the scale half random made a
+    # BC-initialized H1 policy start PPO with roughly unit, state-dependent
+    # exploration and produced a catastrophic first-update KL.  Make the
+    # intended exploration contract explicit in the restored parameter tree:
+    # zero its state-dependent scale kernel and set the softplus bias so the
+    # actual pre-tanh standard deviation equals ``init_noise_std``.
+    min_std = 1.0e-3
+    if not np.isfinite(init_noise_std) or init_noise_std <= min_std:
+        raise ValueError("expert PPO init_noise_std must exceed 0.001")
+    network_params = dict(policy_params["params"])
+    output_name = f"hidden_{len(tuple(hidden_sizes))}"
+    if output_name not in network_params:
+        raise ValueError("Cannot locate PPO output layer for expert initialization")
+    output_params = dict(network_params[output_name])
+    kernel = output_params["kernel"]
+    bias = output_params["bias"]
+    if kernel.shape[-1] != 2 * int(env.action_size) or bias.shape != (
+            2 * int(env.action_size),):
+        raise ValueError("Unexpected PPO distribution head shape")
+    scale_logit = np.log(np.expm1(float(init_noise_std) - min_std))
+    output_params["kernel"] = kernel.at[:, env.action_size:].set(0.0)
+    output_params["bias"] = bias.at[env.action_size:].set(scale_logit)
+    network_params[output_name] = output_params
+    policy_params = {**policy_params, "params": network_params}
+
     # When the environment already adds the verified time-indexed DIAL joint
     # reference, the exact teacher is the zero residual for *every* state, not
     # only for the observations stored in the unloaded demonstration.  A
@@ -543,15 +709,9 @@ def _pretrain_walk_policy_from_expert(env, action_transform, policy_interface, p
     )
     if analytic_zero_center:
         network_params = dict(policy_params["params"])
-        output_name = f"hidden_{len(tuple(hidden_sizes))}"
-        if output_name not in network_params:
-            raise ValueError("Cannot locate PPO output layer for DIAL residual initialization")
         output_params = dict(network_params[output_name])
         kernel = output_params["kernel"]
         bias = output_params["bias"]
-        if kernel.shape[-1] != 2 * int(env.action_size) or bias.shape != (
-                2 * int(env.action_size),):
-            raise ValueError("Unexpected PPO distribution head shape")
         output_params["kernel"] = kernel.at[:, :env.action_size].set(0.0)
         output_params["bias"] = bias.at[:env.action_size].set(0.0)
         network_params[output_name] = output_params
@@ -580,6 +740,8 @@ def _pretrain_walk_policy_from_expert(env, action_transform, policy_interface, p
             "minimum_logged_action_mse": initial_loss,
             "target": report["target_semantics"],
             "initialization": "analytic_global_zero_policy_mean",
+            "initial_exploration_std": float(init_noise_std),
+            "exploration_initialization": "constant_tanh_normal_scale_head",
         })
         return (normalizer, policy_params, value_params), report
 
@@ -604,8 +766,35 @@ def _pretrain_walk_policy_from_expert(env, action_transform, policy_interface, p
         "final_action_mse": final_loss,
         "minimum_logged_action_mse": float(jnp.min(losses)),
         "target": report["target_semantics"],
+        "initial_exploration_std": float(init_noise_std),
+        "exploration_initialization": "constant_tanh_normal_scale_head",
     })
     return (normalizer, policy_params, value_params), report
+
+
+def _walk_behavior_anchor_action(params, env, *, hidden_sizes,
+                                 normalize_observations, init_noise_std):
+    """Rebuild the deterministic frozen BC action used by the PPO anchor."""
+    from brax.training.acme import running_statistics
+    from brax.training.agents.ppo import networks as ppo_networks
+
+    normalizer, policy_params, _ = params
+    networks = ppo_networks.make_ppo_networks(
+        observation_size=env.observation_size,
+        action_size=env.action_size,
+        preprocess_observations_fn=(
+            running_statistics.normalize
+            if normalize_observations else (lambda x, y: x)
+        ),
+        policy_hidden_layer_sizes=tuple(hidden_sizes),
+        init_noise_std=float(init_noise_std),
+    )
+
+    def action(obs):
+        logits = networks.policy_network.apply(normalizer, policy_params, obs)
+        return networks.parametric_action_distribution.mode(logits)
+
+    return action
 
 
 def _stage_episode_lengths(schema: str, resolved_suites, override=None, *, stage_count=None):
@@ -651,14 +840,49 @@ def main() -> int:
                         help="JSON HumanoidBoxPushConfig overrides for development walk/atacom_p4 only")
     parser.add_argument("--walk-curriculum", action="store_true",
                         help="Train walk PPO through a low-load gait stage before exact P4")
-    parser.add_argument("--expert-trajectory", default=None,
-                        help="Verified fall-free DIAL trajectory used only to initialize walk PPO")
+    parser.add_argument(
+        "--expert-trajectory", action="append", default=None,
+        help=(
+            "Verified fall-free reference or model-based trajectory used only "
+            "to initialize walk PPO; repeat the option for multiple verified "
+            "state distributions"
+        ),
+    )
+    parser.add_argument(
+        "--expert-target", choices=("reference", "residual"), default="reference",
+        help=(
+            "Interpret the expert as the shared DIAL reference (zero residual) "
+            "or as an interface-matched, violation-free model-based residual prefix"
+        ),
+    )
     parser.add_argument("--expert-pretrain-steps", type=int, default=2000)
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--cpu-low-memory", action="store_true")
     parser.add_argument("--normalizer-std-eps", type=float, default=0.05,
                         help="Compatibility statistics setting; unused by the unnormalized H1 policy")
     parser.add_argument("--max-policy-kl", type=float, default=10.0)
+    parser.add_argument(
+        "--learning-rate", type=float, default=None,
+        help=(
+            "Optional audited PPO learning-rate override; defaults to the "
+            "schema-specific locked training value"
+        ),
+    )
+    parser.add_argument(
+        "--init-noise-std", type=float, default=None,
+        help=(
+            "Optional audited pre-tanh PPO exploration standard deviation; "
+            "expert initialization writes it explicitly into the tanh-normal "
+            "scale head"
+        ),
+    )
+    parser.add_argument(
+        "--behavior-anchor-weight", type=float, default=0.0,
+        help=(
+            "Training-only squared-action penalty to a frozen residual expert; "
+            "requires --expert-target residual"
+        ),
+    )
     args = parser.parse_args()
     if any(not np.isfinite(value) or value <= 0
            for value in (args.normalizer_std_eps, args.max_policy_kl)):
@@ -670,6 +894,15 @@ def main() -> int:
     canonical_config = ExperimentConfig.from_yaml(CANONICAL_CONFIG)
     if args.expert_trajectory is not None and args.schema != "walk":
         raise ValueError("expert-trajectory is restricted to the walk PPO schema")
+    if args.expert_target != "reference" and args.expert_trajectory is None:
+        raise ValueError("expert-target residual requires expert-trajectory")
+    if (not np.isfinite(args.behavior_anchor_weight)
+            or args.behavior_anchor_weight < 0.0):
+        raise ValueError("behavior-anchor-weight must be finite and nonnegative")
+    if args.behavior_anchor_weight > 0.0 and args.expert_target != "residual":
+        raise ValueError(
+            "behavior-anchor-weight requires --expert-target residual"
+        )
     _validate_training_seed(args.seed, canonical_config)
     canonical_config_sha = hashlib.sha256(CANONICAL_CONFIG.read_bytes()).hexdigest()
     resolved_suites = _training_suites(args.schema, canonical_config)
@@ -692,6 +925,15 @@ def main() -> int:
         cpu_low_memory=args.cpu_low_memory,
         normalizer_std_eps=args.normalizer_std_eps,
     )
+    if args.learning_rate is not None:
+        if not np.isfinite(args.learning_rate) or args.learning_rate <= 0.0:
+            raise ValueError("learning-rate must be finite and positive")
+        kwargs["learning_rate"] = float(args.learning_rate)
+    if args.init_noise_std is not None:
+        if (not np.isfinite(args.init_noise_std)
+                or args.init_noise_std <= 1.0e-3):
+            raise ValueError("init-noise-std must exceed 0.001")
+        kwargs["init_noise_std"] = float(args.init_noise_std)
     history = []
     started = time.monotonic()
     source_hashes = _training_source_hashes(Path(__file__).resolve().parents[4], atacom=atacom)
@@ -708,6 +950,7 @@ def main() -> int:
     action_scale = None
     resolved_env_params = []
     atacom_transform = None
+    behavior_anchor = None
 
     current_stage = 0
 
@@ -743,10 +986,12 @@ def main() -> int:
             "policy_action_transform": policy_action_transform,
             "atacom_transform": atacom_transform,
             "expert_initialization": expert_initialization,
+            "behavior_anchor": behavior_anchor,
             "training_termination_contract": _H1_TERMINATION_CONTRACT,
             "ppo_update_contract": {
                 "learning_rate_schedule": kwargs["learning_rate_schedule"],
                 "learning_rate": kwargs["learning_rate"],
+                "init_noise_std": kwargs.get("init_noise_std"),
                 "unroll_length": kwargs["unroll_length"],
                 "discounting": kwargs["discounting"],
                 "num_updates_per_batch": kwargs["num_updates_per_batch"],
@@ -831,8 +1076,25 @@ def main() -> int:
                     normalizer_std_eps=args.normalizer_std_eps,
                     init_noise_std=kwargs.get("init_noise_std", 1.0),
                     steps=int(args.expert_pretrain_steps),
+                    expert_target=args.expert_target,
                 )
                 stage_kwargs["restore_params"] = restore_params
+                if args.behavior_anchor_weight > 0.0:
+                    teacher_action = _walk_behavior_anchor_action(
+                        restore_params, env,
+                        hidden_sizes=kwargs["policy_hidden_layer_sizes"],
+                        normalize_observations=kwargs["normalize_observations"],
+                        init_noise_std=kwargs.get("init_noise_std", 1.0),
+                    )
+                    env = _BehaviorAnchoredH1Env(
+                        env, teacher_action, args.behavior_anchor_weight,
+                    )
+                    behavior_anchor = {
+                        "weight": float(args.behavior_anchor_weight),
+                        "space": "normalized_residual_action",
+                        "teacher": "frozen_pre_ppo_behavior_cloning_mean",
+                        "expert_sha256": expert_initialization["sha256"],
+                    }
                 write_status("running")
             params, config = train_rl_policy(
                 env, algo="ppo", num_timesteps=int(stage_budget),
@@ -886,6 +1148,7 @@ def main() -> int:
         "action_scale": action_scale,
         "atacom_transform": atacom_transform,
         "expert_initialization": expert_initialization,
+        "behavior_anchor": behavior_anchor,
         "training_termination_contract": _H1_TERMINATION_CONTRACT,
         "training_protocol_source": {
             "path": "configs/humanoid/push_to_line/_base.yaml",
@@ -910,11 +1173,17 @@ def main() -> int:
         "ppo_update_contract": {
             "learning_rate_schedule": kwargs["learning_rate_schedule"],
             "learning_rate": kwargs["learning_rate"],
+            "init_noise_std": kwargs.get("init_noise_std"),
             "unroll_length": kwargs["unroll_length"],
             "discounting": kwargs["discounting"],
             "num_updates_per_batch": kwargs["num_updates_per_batch"],
-            "observation_normalization": "disabled",
-            "normalizer_std_eps_used_by_policy": False,
+            "observation_normalization": (
+                "running_statistics"
+                if kwargs["normalize_observations"] else "disabled"
+            ),
+            "normalizer_std_eps_used_by_policy": bool(
+                kwargs["normalize_observations"]
+            ),
         },
         "observed_stage_steps": _observed_training_steps(history),
         "training_wrapper": (

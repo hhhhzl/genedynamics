@@ -1,5 +1,11 @@
-base: ../main/mga.yaml
+base: no_learned_reliability.yaml
 name: no_stiffness
 output_dir: results/humanoid/push_to_line/ablation/no_stiffness
-method_params: {controller_method: mga_controllable_no_stiffness}
-metadata: {ablation_of: mga, ablated_component: use_stiffness, formal_suites: [p1_force_15n, p1_force_30n]}
+method_params:
+  controller_method: mga_controllable_no_stiffness
+metadata:
+  ablation_of: mga
+  ablated_component: use_stiffness
+  conditioned_on: no_learned_reliability
+  matched_control: no_learned_reliability
+  formal_suites: [p1_force_15n, p1_force_30n]

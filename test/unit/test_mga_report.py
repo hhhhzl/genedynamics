@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from genedynamics.experiments.utils.metrics import (
+    _certified_rejection_error,
     aggregate_receding_diagnostics,
     audit_configs,
     compare_runner_outputs,
@@ -144,6 +145,30 @@ def test_aborted_h1_seed_counts_against_ssr_without_prefix_force_advantage(tmp_p
     assert aborts["n"] == 2 and aborts["mean"] == .5
     representative = json.loads((output / "representative_seeds.json").read_text())
     assert len(representative) == 1 and representative[0]["seed"] == 110
+
+
+def test_verifier_accepts_only_self_consistent_certified_rejection(tmp_path):
+    trajectory = tmp_path / "trajectory.json"
+    trajectory.write_text(json.dumps({"actions": [[0.0], [0.0]]}))
+    payload = {
+        "execution_status": {
+            "state": "aborted_unrecoverable",
+            "reason": "no_revalidated_safe_candidate",
+            "details": {
+                "normal_refined_safe": False,
+                "incumbent_safe": False,
+                "emergency_safe": False,
+            },
+            "requested_steps": 100,
+            "executed_steps": 2,
+            "rejected_step": 2,
+            "metrics_scope": "actual_execution_prefix_only",
+        },
+        "partial_metrics": {"humanoid_box_push_metrics": {"safe_success": 0.0}},
+    }
+    assert _certified_rejection_error(payload, 100, trajectory) is None
+    payload["execution_status"]["details"]["emergency_safe"] = True
+    assert "safe candidate" in _certified_rejection_error(payload, 100, trajectory)
 
 
 def test_legacy_equivalence_compares_actions_and_scalar_metrics(tmp_path: Path):

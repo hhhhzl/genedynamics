@@ -210,6 +210,16 @@ class HumanoidBoxPushConfig(BaseEnvConfig):
     # receding-incumbent viability certificate. Fixed-stance tasks retain the
     # historical two-step default; P4 opts into three in its suite contract.
     emergency_backup_steps: int = 2
+    # Minimum number of actually committed UNLOAD intervals before a P4
+    # NORMAL recovery may be considered.  One preserves the historical
+    # immediate-exit behavior; larger values provide a short contact-release
+    # dwell whose every interval is still replanned and revalidated.
+    emergency_min_dwell_steps: int = 1
+    # Optional P4 recovery clock. On entry to UNLOAD, search this many previous
+    # external-DIAL frames for the closest measured planner-joint phase and
+    # hold the selected phase while UNLOAD is committed. The benchmark
+    # step/force/success clocks are never changed.
+    emergency_reference_rewind_steps: int = 0
     fast_force_loop: bool = True        # 200Hz servo under the 50Hz planner
     hand_contact_solref: tuple = (0.10, 1.0)  # explicit hand-box pair compliance
     wall_contact_solref: tuple = (0.10, 1.0)  # explicit P3 box-wall compliance
@@ -324,9 +334,9 @@ class HumanoidBoxPushConfig(BaseEnvConfig):
     # unconstrained unloaded-walking trace.
     walk_joint_reference_path: str = ""
     walk_joint_reference_residual_scale: float = 0.05
-    # Policy-only chart inside the solver's normalized joint residual.  MGA
-    # retains the complete task action interval; the learned prior makes local
-    # corrections around the verified trajectory instead of relearning gait.
+    # Policy chart inside the solver's normalized joint residual.  When a
+    # verified walking reference is active, ordinary MGA candidates share this
+    # bounded local authority instead of searching the complete joint interval.
     policy_joint_reference_residual_scale: float = 0.20
     # L1 lean-and-BRACE (human-like): the CoM must stay over the FEET (not topple onto the box), and
     # a staggered (front-foot-forward) stance is rewarded so the support extends forward -> it can
@@ -405,6 +415,22 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
                 or not isinstance(cfg.emergency_backup_steps, (int, np.integer))
                 or not 1 <= int(cfg.emergency_backup_steps) <= 8):
             raise ValueError("emergency_backup_steps must be an integer in [1, 8]")
+        if (isinstance(cfg.emergency_min_dwell_steps, bool)
+                or not isinstance(
+                    cfg.emergency_min_dwell_steps, (int, np.integer)
+                )
+                or not 1 <= int(cfg.emergency_min_dwell_steps) <= 8):
+            raise ValueError(
+                "emergency_min_dwell_steps must be an integer in [1, 8]"
+            )
+        if (isinstance(cfg.emergency_reference_rewind_steps, bool)
+                or not isinstance(
+                    cfg.emergency_reference_rewind_steps, (int, np.integer)
+                )
+                or int(cfg.emergency_reference_rewind_steps) < 0):
+            raise ValueError(
+                "emergency_reference_rewind_steps must be a nonnegative integer"
+            )
         if cfg.walk_force_startup_mode == "synchronized" and not (
             cfg.robot.lower() == "h1" and cfg.level.lower() == "push_walk"
             and cfg.walk_leg_control == "joint_target"
@@ -493,6 +519,24 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         ):
             raise ValueError(
                 "walk_joint_reference_path requires H1 joint_target locomotion P4"
+            )
+        if cfg.emergency_reference_rewind_steps > 0 and not (
+            cfg.robot.lower() == "h1" and self._is_walk
+            and cfg.walk_leg_control == "joint_target"
+            and cfg.walk_success_mode == "locomotion"
+            and bool(cfg.walk_joint_reference_path)
+        ):
+            raise ValueError(
+                "emergency reference rewind requires an H1 P4 DIAL reference"
+            )
+        if cfg.emergency_min_dwell_steps > 1 and not (
+            cfg.robot.lower() == "h1" and self._is_walk
+            and cfg.walk_leg_control == "joint_target"
+            and cfg.walk_success_mode == "locomotion"
+            and bool(cfg.walk_joint_reference_path)
+        ):
+            raise ValueError(
+                "emergency dwell requires an H1 P4 DIAL reference"
             )
         if (not np.isfinite(cfg.walk_joint_reference_residual_scale)
                 or not 0.0 <= cfg.walk_joint_reference_residual_scale <= 1.0):
@@ -768,8 +812,21 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         self._init_q = self._init_q.at[box_yaw_qadr].set(jnp.float32(yaw0))
         goal_site = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_SITE.value, "goal_line")
         if goal_site >= 0:
-            site_pos = self.sys.site_pos.at[goal_site, 0].set(jnp.float32(box_x0 + cfg.push_dist))
+            # Success is expressed by the box-centre target, but a physical
+            # push-to-line marker denotes where the leading face stops.  Draw
+            # it at the front edge of that terminal box pose so it remains
+            # visible instead of passing through the middle of the crate.
+            goal_x = jnp.float32(box_x0 + cfg.push_dist + half)
+            show_goal_line = not cfg.fixed_force_target and lvl != "unjam"
+            site_pos = self.sys.site_pos.at[goal_site, 0].set(goal_x)
             self.sys = self.sys.tree_replace({"site_pos": site_pos})
+            # MJX consumes ``self.sys`` while Brax's offline renderer reads the
+            # native model retained on ``sys.mj_model``.  Synchronize the
+            # position in both; marker RGBA exists only on the native model.
+            # P2/P4 show the actual reset-relative terminal face, whereas
+            # force-only P1 and geometry-correction P3 have no line objective.
+            mj.site_pos[goal_site, 0] = float(goal_x)
+            mj.site_rgba[goal_site, 3] = 0.4 if show_goal_line else 0.0
         self._whole_body_controller = HumanoidWholeBodyController(
             binding=self._robot_binding,
             config=self._bcfg,
@@ -828,7 +885,12 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             ]
             current = self._whole_body_controller.planner_action_from_joints(joints)
             index = jnp.clip(
-                jnp.asarray(state.info.get("step", 0), jnp.int32),
+                jnp.asarray(
+                    state.info.get(
+                        "walk_reference_step", state.info.get("step", 0)
+                    ),
+                    jnp.int32,
+                ),
                 0,
                 self._walk_joint_reference.shape[0] - 1,
             )
@@ -1009,12 +1071,11 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
                 "mode": "friction_only_coast",
                 "formula": "x + vx*abs(vx)/(2*executed_x_frictionloss/executed_box_mass)",
                 "state_frame": "box world x position and velocity at the reward pipeline state",
-                "assumption": "immediate hand release; one-dimensional Coulomb coasting",
+                "assumption": "task-owned hand retraction then one-dimensional Coulomb coasting",
                 "weight": float(cfg.w_box),
                 "force_taper": (
-                    "uses predicted stopping location; jointly releases normal force and "
-                    "world-frame Cartesian arm impedance while retaining joint-space posture, "
-                    "gravity, and damping; success remains actual-state only"
+                    "uses predicted stopping location; switches both hands to the task-owned "
+                    "retract realization; success remains actual-state only"
                 ),
                 "success_and_safety": "unchanged actual-state checks; prediction is not a certificate",
             }
@@ -1157,6 +1218,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             "contact_acquire_gap", "kp_force", "ki_force", "fast_force_loop",
             "fixed_force_target", "fixed_contact_target", "s_ref_diag", "s_scale",
             "d_damp", "emergency_retract_force", "emergency_backup_steps",
+            "emergency_min_dwell_steps", "emergency_reference_rewind_steps",
             "arm_grav_comp",
             "arm_posture_kp", "arm_posture_kd",
             "arm_null_damping", "stance_force_ankle_gain", "stance_force_hip_gain",
@@ -1187,8 +1249,16 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             "policy_interface": self.policy_interface,
         }
 
-    def validate_reliability_checkpoint(self, payload, *, horizon_steps):
-        """Reject old equal-width H1 bounds before constructing a controller."""
+    def validate_reliability_checkpoint(
+        self, payload, *, horizon_steps, allow_abstaining_ood=False
+    ):
+        """Validate H1 bounds before constructing a controller.
+
+        A development checkpoint can be inspected under the explicit
+        ``model_based`` OOD policy, but only in abstaining mode.  It is never
+        allowed to act as a learned veto until its active realization/domain
+        has been independently validated and promoted.
+        """
         expected = self.reliability_contract(horizon_steps)
         for name in ("feature_names", "risk_names", "state_feature_count",
                      "support_state_feature_count", "probability_risk_count",
@@ -1197,6 +1267,12 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
                 raise ValueError(f"H1 reliability checkpoint {name} mismatch")
         metadata = payload.get("metadata") or {}
         if expected not in metadata.get("reliability_contracts", []):
+            if (
+                allow_abstaining_ood
+                and not bool(metadata.get("performance_validated", False))
+                and not bool(metadata.get("promotion_eligible", False))
+            ):
+                return
             raise ValueError(
                 "H1 reliability contract mismatch: matching 24D features are insufficient; "
                 "collect and fit the active realization, risk definition and horizon"
@@ -1305,6 +1381,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         return {
             "mga_execution_mode": jnp.int32(0),
             "mga_execution_request": jnp.int32(-1),
+            "mga_unload_age": jnp.int32(0),
             "mga_emergency_zero_force": jnp.bool_(False),
             "mga_unload_entry_prepared": jnp.bool_(False),
             "mga_unload_geometry_valid": jnp.bool_(False),
@@ -1483,16 +1560,19 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             return step_jit(prepared, action)
 
         def score_emergency(state, actions, aug_lambda, aug_rho):
-            """Score the configured UNLOAD viability prefix.
+            """Score the UNLOAD prefix that will precede NORMAL recovery.
 
             This is intentionally a host capability.  Nesting ``self.step``
             inside a second H1 certificate JIT duplicates the complete MJX
             transition executable and exceeds memory-limited CPU containers.
             The two functional transitions are still model based: they advance
             a prepared copy of the measured state, never the real environment.
-            P4 uses the same configured prefix as normal candidates; a
-            one-step release must not be labelled recoverable if its immediate
-            successors already lose the physical safe set.
+            P4 normally uses the configured receding viability prefix. An
+            explicit minimum dwell changes the hybrid suffix actually being
+            deployed: certify exactly the remaining UNLOAD intervals, after
+            which the backend separately certifies the complete NORMAL
+            recovery horizon. Requiring additional fictitious UNLOAD steps
+            there can reject a safe dwell-to-recovery transition.
             """
             if any(isinstance(leaf, jax.core.Tracer)
                    for leaf in jax.tree_util.tree_leaves(
@@ -1506,6 +1586,17 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
                 int(self._bcfg.emergency_backup_steps)
                 if self._walk_requires_locomotion else 2
             )
+            if (
+                self._walk_requires_locomotion
+                and self._bcfg.emergency_min_dwell_steps > 1
+            ):
+                committed_age = int(np.asarray(jax.device_get(
+                    state.info.get("mga_unload_age", 0)
+                )))
+                backup_steps = max(
+                    1,
+                    int(self._bcfg.emergency_min_dwell_steps) - committed_age,
+                )
             for index in range(min(backup_steps, int(dense.shape[0]))):
                 prepared = self._prepare_mga_execution_state(
                     current, jnp.int32(1)
@@ -1527,14 +1618,22 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
                 self._aggregate_sequence_risks(jnp.stack(risks)),
             )
 
-        return {
+        context = {
             "schema_version": 1, "normal_mode": 0, "emergency_mode": 1,
             "prepare_state": self._prepare_mga_execution_state,
             "mode_from_state": lambda state: jnp.asarray(
                 state.info.get("mga_execution_mode", 0), jnp.int32),
+            "normal_recovery_ready": self.normal_recovery_ready,
             "step": execute,
             "score_emergency_host": score_emergency,
         }
+        return context
+
+    def normal_recovery_ready(self, state):
+        """Whether the committed UNLOAD dwell permits a NORMAL exit."""
+        return jnp.asarray(
+            state.info.get("mga_unload_age", 0), jnp.int32
+        ) >= jnp.int32(self._bcfg.emergency_min_dwell_steps)
 
     def _mga_interval_state(self, state):
         # An ordinary env.step (including a raw policy's rollout) defaults to
@@ -1551,9 +1650,23 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
 
     def _mga_finish_context(self, previous_info, info, terminal):
         mode = jnp.asarray(previous_info["mga_execution_request"], jnp.int32)
+        previous_mode = jnp.asarray(
+            previous_info["mga_execution_mode"], jnp.int32
+        )
         info["mga_execution_mode"] = jnp.where(
-            terminal, previous_info["mga_execution_mode"], mode)
+            terminal, previous_mode, mode)
         info["mga_execution_request"] = jnp.int32(-1)
+        previous_age = jnp.asarray(
+            previous_info.get("mga_unload_age", 0), jnp.int32
+        )
+        committed_age = jnp.where(
+            mode == 1,
+            jnp.where(previous_mode == 1, previous_age + 1, jnp.int32(1)),
+            jnp.int32(0),
+        )
+        info["mga_unload_age"] = jnp.where(
+            terminal, previous_age, committed_age
+        )
         clear = (~terminal) & (mode == 0)
         for key in ("mga_unload_entry_prepared", "mga_unload_geometry_valid",
                     "mga_unload_stiffness_valid"):
@@ -1641,6 +1754,23 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             result["approach_alpha"] = jnp.float32(1.0)
         return result
 
+    def _terminal_coast_hand_contact(self, ps, action, info, ordinary):
+        """Actively detach the hands once the P4 coast condition is reached.
+
+        Zeroing the requested normal force is not a physical release: a
+        walking robot can keep dragging the box through passive arm contact.
+        Reuse the task-owned retract realization so rollout scoring and the
+        executed transition see the same geometric separation.  This is a
+        terminal task mode, independent of whether MGA requested EMERGENCY.
+        """
+        retract_info = {
+            **info,
+            "mga_execution_mode": jnp.int32(1),
+        }
+        return self._zero_force_hand_contact(
+            ps, action, retract_info, ordinary
+        )
+
     def realized_hand_stiffness(self, state, action):
         """Match actual post-state realization, including a consumed UNLOAD request."""
         nominal = self._unpack(action)[4]
@@ -1657,12 +1787,23 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         context_info = {**self._empty_mga_execution_context(),
                         "force_int": jnp.float32(0.0), **info}
         mode = self._mga_inspection_mode(info)
+        terminal_coast = (
+            bool(getattr(self, "_walk_requires_locomotion", False))
+            and getattr(self._bcfg, "walk_box_goal_mode", "position") == "coast"
+            and self.walk_force_scale(ps, info) <= 0.0
+        )
         # Metric extraction visits already-executed, host-concrete states one
         # at a time.  Building a fresh lax.cond for every such state makes JAX
         # compile and retain a new conditional executable on every visit.  A
         # concrete mode can be selected on the host without changing either
         # branch; traced rollout/control paths must retain the dynamic cond.
-        if not isinstance(mode, jax.core.Tracer):
+        if not isinstance(mode, jax.core.Tracer) and not isinstance(
+            terminal_coast, jax.core.Tracer
+        ):
+            if bool(np.asarray(terminal_coast)):
+                return self._terminal_coast_hand_contact(
+                    ps, action, context_info, ordinary
+                )
             if int(np.asarray(mode)) != 1:
                 return ordinary
             return (
@@ -1676,19 +1817,27 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
                 )
             )
         return jax.lax.cond(
-            mode == 1,
+            terminal_coast,
+            lambda _: self._terminal_coast_hand_contact(
+                ps, action, context_info, ordinary
+            ),
             lambda _: jax.lax.cond(
-                self._mga_unload_info_is_ready(context_info)
-                & ~context_info["mga_emergency_zero_force"],
-                lambda __: self._unload_hand_contact(
-                    ps, action, context_info, ordinary
+                mode == 1,
+                lambda __: jax.lax.cond(
+                    self._mga_unload_info_is_ready(context_info)
+                    & ~context_info["mga_emergency_zero_force"],
+                    lambda ___: self._unload_hand_contact(
+                        ps, action, context_info, ordinary
+                    ),
+                    lambda ___: self._zero_force_hand_contact(
+                        ps, action, context_info, ordinary
+                    ),
+                    operand=None,
                 ),
-                lambda __: self._zero_force_hand_contact(
-                    ps, action, context_info, ordinary
-                ),
+                lambda __: ordinary,
                 operand=None,
             ),
-            lambda _: ordinary, operand=None,
+            operand=None,
         )
 
     def _normal_hand_contact(self, ps, action, info=None):
@@ -1748,13 +1897,14 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         F_each = 0.5 * F_eff
         right = self._one_hand(ps, self._rhand_body, self._rhand_geom, p_right, n_c, K_hand, F_each)
         left = self._one_hand(ps, self._lhand_body, self._lhand_geom, p_left, n_c, K_hand, F_each)
+        arm_task_scale = self.walk_arm_task_scale(ps, info)
         contact = dict(v_base=v_base, n_c=n_c, p_surface=p_surface,
                        F_n=F_n, F_n_cmd=F_n_cmd,
                        F_eff=F_eff, force_scale=force_scale,
                        approach_alpha=approach_alpha,
-                       arm_task_scale=self.walk_arm_task_scale(ps, info),
+                       arm_task_scale=arm_task_scale,
                        arm_control_scale=jnp.float32(1.0),
-                       arm_posture_position_scale=jnp.float32(1.0),
+                       arm_posture_position_scale=arm_task_scale,
                        left=left, **right)
         if not self._is_walk:
             # At low fixed-stance loads, bracing against a force that has not
@@ -1984,6 +2134,11 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
                 "walk_goal_ready": jnp.bool_(False),
                 "walk_goal_hold_time": jnp.float32(0.0),
             })
+            if (self._walk_joint_reference is not None
+                    and self._bcfg.emergency_reference_rewind_steps > 0):
+                info["walk_reference_step"] = jnp.int32(0)
+                info["walk_reference_recovery_anchor"] = jnp.int32(0)
+                info["walk_reference_phase_error"] = jnp.float32(0.0)
             if self._bcfg.walk_leg_control == "joint_target":
                 info["walk_foot_loaded"] = self._foot_contact_loads(state.pipeline_state) > 0.0
                 info["walk_swing_eligible"] = jnp.zeros((2,), jnp.bool_)
@@ -2012,23 +2167,27 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         return jnp.where(remaining > cfg.goal_eps, approaching, jnp.float32(0.0))
 
     def walk_arm_task_scale(self, ps, info):
-        """Release P4's world-frame hand anchor with its coast force taper.
+        """Keep P4 Cartesian tracking on the current box face.
 
-        The coast model assumes immediate hand release at its predicted
-        stopping location.  Scaling only the normal feed-forward force leaves
-        the Cartesian position impedance attached to a fixed world target;
-        after the crate coasts away that stale target pulls a correctly
-        walking torso backwards.  The task-space term therefore follows the
-        same taper.  Joint-space posture, damping, and gravity compensation
-        remain active in the whole-body controller, and every non-coast task
-        retains the historical unit scale.
+        ``_normal_hand_contact`` recomputes the target from the measured box
+        pose at every transition; it is not a fixed world anchor.  Keep full
+        face tracking while the coast policy still requests any push, rather
+        than weakening it continuously with the force taper and letting the
+        crate outrun the hands.  Once the predicted release condition makes
+        that request exactly zero, release both the Cartesian task and its
+        push-posture position term so the measured box can coast without a
+        hidden impedance push.  Arm damping and gravity compensation remain.
         """
         if not (
             self._walk_requires_locomotion
             and self._bcfg.walk_box_goal_mode == "coast"
         ):
             return jnp.float32(1.0)
-        return self.walk_force_scale(ps, info)
+        return jnp.where(
+            self.walk_force_scale(ps, info) > 0.0,
+            jnp.float32(1.0),
+            jnp.float32(0.0),
+        )
 
     def _global_force_startup_scale(self, info):
         """Fixed benchmark clock, independent of acquisition and the force action."""
@@ -2168,7 +2327,9 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
     def _walk_foot_target(self, info):
         """Foot-height objective: DIAL reference or the residual-mode CPG."""
         cfg = self._bcfg
-        t = jnp.asarray(info["step"], jnp.float32) * self.dt
+        t = jnp.asarray(
+            info.get("walk_reference_step", info["step"]), jnp.float32
+        ) * self.dt
         if cfg.walk_gait_reference == "legacy":
             duty, cad, amp = self._gait_params[self._gait]
             return get_foot_step(duty, cad, amp, self._gait_phase[self._gait], t)
@@ -2212,8 +2373,79 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         cfg = self._bcfg
         cadence = (self._gait_params[self._gait][1]
                    if cfg.walk_gait_reference == "legacy" else cfg.gait_cadence)
-        phase = 2.0 * jnp.pi * cadence * self.dt * jnp.asarray(info["step"], jnp.float32)
+        phase = (
+            2.0 * jnp.pi * cadence * self.dt
+            * jnp.asarray(
+                info.get("walk_reference_step", info["step"]), jnp.float32
+            )
+        )
         return jnp.asarray([jnp.sin(phase), jnp.cos(phase)], jnp.float32)
+
+    def _walk_reference_phase_anchor(self, ps, info):
+        """Select the closest measured DIAL phase in the backward window.
+
+        A fixed rewind can jump from the measured loaded gait into an unrelated
+        support phase.  Compare the actual normalized planner joints with the
+        already hash-locked DIAL reference and choose only among the current
+        frame and its configured preceding window.  This cannot look ahead or
+        change the benchmark clock; it only makes the task-owned UNLOAD entry
+        continuous with the state that will execute it.
+        """
+        reference_step = jnp.asarray(info["walk_reference_step"], jnp.int32)
+        rewind = int(self._bcfg.emergency_reference_rewind_steps)
+        offsets = jnp.arange(rewind + 1, dtype=jnp.int32)
+        indices = jnp.clip(
+            reference_step - offsets,
+            jnp.int32(0),
+            jnp.int32(self._walk_joint_reference.shape[0] - 1),
+        )
+        joints = ps.qpos[
+            jnp.asarray(self._robot_binding.qpos_indices[:self._n_planner])
+        ]
+        measured = self._whole_body_controller.planner_action_from_joints(
+            joints
+        )
+        errors = jnp.mean(
+            jnp.square(self._walk_joint_reference[indices] - measured), axis=-1
+        )
+        selected = jnp.argmin(errors)
+        return indices[selected], jnp.sqrt(errors[selected])
+
+    def _next_walk_reference_clock(self, info, phase_anchor=None):
+        """Advance gait time or apply a measured monotone phase governor."""
+        reference_step = jnp.asarray(info["walk_reference_step"], jnp.int32)
+        recovery_anchor = jnp.asarray(
+            info.get("walk_reference_recovery_anchor", 0), jnp.int32
+        )
+        mode = self._mga_inspection_mode(info)
+        committed = jnp.asarray(info.get("mga_execution_mode", 0), jnp.int32)
+        entering_unload = (mode == 1) & (committed == 0)
+        rewind = jnp.int32(self._bcfg.emergency_reference_rewind_steps)
+        proposed_anchor = (
+            jnp.maximum(reference_step - rewind, jnp.int32(0))
+            if phase_anchor is None
+            else jnp.asarray(phase_anchor, jnp.int32)
+        )
+        # Repeated NORMAL/UNLOAD switches must not accumulate rewinds.  Keep
+        # the largest previously certified recovery phase; later episodes may
+        # move it forward but can never drag the gait reference backward.
+        next_anchor = jnp.where(
+            entering_unload,
+            jnp.maximum(recovery_anchor, proposed_anchor),
+            recovery_anchor,
+        )
+        next_step = jnp.where(
+            mode == 1,
+            jnp.where(entering_unload, next_anchor, reference_step),
+            reference_step + jnp.int32(1),
+        )
+        return next_step, next_anchor
+
+    def _next_walk_reference_step(self, info, phase_anchor=None):
+        """Compatibility helper for tests and non-mutating clock inspection."""
+        return HumanoidBoxPushEnv._next_walk_reference_clock(
+            self, info, phase_anchor
+        )[0]
 
     def step(self, state: State, action: jax.Array) -> State:
         if self._supports_mga_execution_context:
@@ -2287,6 +2519,16 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
                 nan=-1e3, posinf=-1e3, neginf=-1e3,
             )
         info["step"] = state.info["step"] + 1
+        if "walk_reference_step" in state.info:
+            phase_anchor, phase_error = self._walk_reference_phase_anchor(
+                ps, state.info
+            )
+            next_reference, next_anchor = self._next_walk_reference_clock(
+                state.info, phase_anchor,
+            )
+            info["walk_reference_step"] = next_reference
+            info["walk_reference_recovery_anchor"] = next_anchor
+            info["walk_reference_phase_error"] = phase_error
         info["force_int"] = force_int
         measured = self._box_contact_force(ps)
         detected = self._contact_acquisition_detected(ps, action, state.info, measured)
@@ -3038,7 +3280,6 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         )
 
     def project_mga_candidate(self, state, nodes):
-        del state
         projected = jnp.clip(nodes, -1.0, 1.0)
         if not (
             self._walk_requires_locomotion
@@ -3049,18 +3290,146 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
 
         # The shared time-indexed reference is the verified locomotion prior.
         # P4's contact model predicts the hand/box interaction, but it does not
-        # identify a safe whole-body gait correction from that geometry.  Keep
-        # ordinary MGA candidates on the reference gait and refine only the
-        # contact primitive.  Otherwise a candidate can improve short-horizon
-        # box progress by moving the pelvis ahead of the support exchange and
-        # enter a state from which no unload plan can prevent a fall.
+        # support unconstrained whole-body gait search.  Preserve only the same
+        # bounded local joint residual available to the learned policy prior;
+        # Gaussian/refined candidates therefore cannot obtain extra authority.
+        # Residual authority is additionally restricted to a measured support
+        # exchange.  Both legs remain available while either leg is in a
+        # verified swing: the policy can maintain the opposite support as it
+        # corrects landing.  Double support and the torso stay on the shared
+        # reference, so a short-horizon progress score cannot move the body
+        # ahead of support between exchanges.
+        # The full model certificate and terminal recovery core still decide
+        # whether any such swing correction is executable.
         #
-        # Task-owned emergency plans are different: their bounded knee bank is
-        # explicitly revalidated from the measured state and must remain
-        # available when normal/refined candidates are unsafe.
-        normal = projected.at[:, self.spec.total_width:].set(0.0)
-        emergency = self.emergency_plan_is_active(projected)
-        return jnp.where(emergency, projected, normal)
+        # Task-owned emergency plans are different, but their identity is an
+        # explicit backend candidate source and execution mode.  Do not infer
+        # that mode here from a numeric force coordinate: a perfectly ordinary
+        # terminal-coast NORMAL plan can share the same value.  The backend
+        # bypasses this NORMAL proposal tube only for the explicit emergency
+        # bank or a shifted incumbent whose committed mode is UNLOAD, and
+        # still applies the solver-wide action bound.
+        residual_limit = jnp.float32(
+            self._bcfg.policy_joint_reference_residual_scale
+        )
+        swing_seen = jnp.asarray(
+            state.info.get("walk_swing_seen", jnp.zeros((2,), jnp.bool_)),
+            jnp.float32,
+        )
+        paired_leg_width = (self._n_planner - 1) // 2
+        exchange_active = jnp.any(swing_seen).astype(jnp.float32)
+        swing_mask = jnp.concatenate([
+            jnp.full((paired_leg_width,), exchange_active, jnp.float32),
+            jnp.full((paired_leg_width,), exchange_active, jnp.float32),
+            jnp.zeros(
+                (self._n_planner - 2 * paired_leg_width,), jnp.float32
+            ),
+        ])
+        normal = projected.at[..., self.spec.total_width:].set(
+            jnp.clip(
+                projected[..., self.spec.total_width:],
+                -residual_limit,
+                residual_limit,
+            ) * swing_mask
+        )
+        return normal
+
+    def mga_prior_applicable(self, state):
+        """Declare the task state in which a learned P4 correction is valid.
+
+        The external DIAL reference and model-based refinement own gait
+        acquisition.  Before one physically supported landing per foot, a
+        short-horizon learned correction can improve box/contact score while
+        preventing the opposite touchdown just beyond the horizon.  That is
+        an out-of-support use of the loaded-contact prior, not evidence that
+        the candidate is unsafe at the current 20 ms interval.  Enable the
+        prior only after the task memory records a bilateral support exchange;
+        all non-P4 tasks retain their existing always-applicable behavior.
+        """
+        if not self._walk_requires_locomotion:
+            return jnp.asarray(True)
+        steps = jnp.asarray(
+            state.info.get("walk_forward_steps", jnp.zeros((2,), jnp.int32))
+        )
+        required = max(int(self._bcfg.walk_min_steps_per_foot), 1)
+        return jnp.all(steps >= required)
+
+    def _walk_roll_capture_residual(self, state):
+        """Map DIAL's measured lateral capture correction into the leg chart."""
+        residual = jnp.zeros((self._n_planner,), jnp.float32)
+        ps = state.pipeline_state
+        support_y = self._support_feedback(
+            ps, self._foot_contact_loads(ps)
+        )["support_reference_xy"][1]
+        pelvis = self._pelvis_idx - 1
+        capture_rad = jnp.clip(
+            self._bcfg.gait_roll_capture_gain * (
+                ps.x.pos[pelvis, 1]
+                - support_y
+                + self._bcfg.gait_roll_capture_lead * ps.xd.vel[pelvis, 1]
+            ),
+            -self._bcfg.gait_roll_limit,
+            self._bcfg.gait_roll_limit,
+        )
+        planner = tuple(self._robot_profile.joint_groups["planner"])
+        bounds = jnp.asarray(
+            self._whole_body_controller.planner_joint_bounds, jnp.float32
+        )
+        reference_scale = jnp.float32(
+            self._bcfg.walk_joint_reference_residual_scale
+        )
+        for hip in self._roll_hips:
+            hip_in_planner = planner.index(hip)
+            radians_per_action = (
+                0.5
+                * (bounds[hip_in_planner, 1] - bounds[hip_in_planner, 0])
+                * reference_scale
+            )
+            residual = residual.at[hip_in_planner].set(jnp.clip(
+                capture_rad
+                / jnp.maximum(radians_per_action, jnp.finfo(jnp.float32).eps),
+                -1.0,
+                1.0,
+            ))
+        return residual
+
+    def _walk_pitch_momentum_recovery_residual(self, state):
+        """Map measured torso pitch momentum into the DIAL hip chart.
+
+        UNLOAD can leave the torso moving through the nominal DIAL posture even
+        when its current pose is physically safe.  Extrapolate that measured
+        pitch rate over the existing gait capture lead time, then express the
+        resulting bounded joint correction in the same normalized residual
+        coordinates used by the external reference.  This is a recovery
+        proposal only: the model-based NORMAL certificate remains responsible
+        for accepting or rejecting it.
+        """
+        residual = jnp.zeros((self._n_planner,), jnp.float32)
+        pitch_rate = state.pipeline_state.xd.ang[self._torso_idx - 1, 1]
+        capture_rad = (
+            jnp.float32(self._bcfg.gait_capture_lead) * pitch_rate
+        )
+        planner = tuple(self._robot_profile.joint_groups["planner"])
+        bounds = jnp.asarray(
+            self._whole_body_controller.planner_joint_bounds, jnp.float32
+        )
+        reference_scale = jnp.float32(
+            self._bcfg.walk_joint_reference_residual_scale
+        )
+        for hip, _, _ in self._sag_legs:
+            hip_in_planner = planner.index(hip)
+            radians_per_action = (
+                0.5
+                * (bounds[hip_in_planner, 1] - bounds[hip_in_planner, 0])
+                * reference_scale
+            )
+            residual = residual.at[hip_in_planner].set(jnp.clip(
+                capture_rad
+                / jnp.maximum(radians_per_action, jnp.finfo(jnp.float32).eps),
+                -1.0,
+                1.0,
+            ))
+        return residual
 
     def emergency_plan(self, state, reference_nodes, t0=0.0):
         """Task-owned UNLOAD preserves measured entry stiffness; legacy uses its old hold."""
@@ -3089,6 +3458,12 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
                 hold_current=getattr(self, "_walk_joint_reference", None) is None,
             )
             if getattr(self, "_walk_joint_reference", None) is not None:
+                # Apply the measured lateral capture law from the project CPG;
+                # the backend still rejects this UNLOAD candidate unless its
+                # physical two-interval and NORMAL-successor checks both pass.
+                emergency = emergency.at[:, self.spec.total_width:].set(
+                    self._walk_roll_capture_residual(state)
+                )
                 # The large DIAL-style crate can enter the nominal foot-swing
                 # envelope after the hands unload.  Flex both knees inside the
                 # task's bounded residual chart so the recursive successor
@@ -3138,8 +3513,296 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
                 candidates.append(candidate)
         return jnp.stack(candidates, axis=0)
 
+    def normal_recovery_plan(self, state, reference_nodes, t0=0.0):
+        """Reference-following NORMAL proposal with continuous leg recovery.
+
+        Returning blindly to a zero residual can leave a late support exchange
+        just outside the terminal upright core even though the preceding
+        UNLOAD is physically safe.  Reuse the existing DIAL gait's roll
+        capture law to place both hips under the measured torso motion.  Keep
+        the emergency knee-clearance residual continuous at the mode boundary,
+        then taper it to the nominal reference across the recovery horizon.
+        The backend still accepts this proposal only after the complete NORMAL
+        horizon passes the unchanged model-based certificate.
+        """
+        del t0
+        if not self._is_walk:
+            # Fixed-stance tasks also need an explicit hybrid-mode exit. Once
+            # an UNLOAD plan becomes the shifted incumbent, Gaussian
+            # refinement alone is not a recovery contract: its centre remains
+            # the zero-force sentinel and can keep the task unloaded forever.
+            # Re-enter NORMAL continuously from the sealed entry stiffness and
+            # ramp only the requested normal force over the node horizon. The
+            # backend still checks the complete physical rollout before this
+            # proposal can replace the UNLOAD incumbent.
+            recovery = jnp.zeros_like(reference_nodes)
+            stiffness = jnp.asarray(
+                state.info["mga_unload_stiffness_raw"], recovery.dtype
+            )
+            recovery = recovery.at[:, self.spec.s_slice].set(stiffness)
+            cfg = self._bcfg
+            force_span = max(float(cfg.f_max - cfg.f_min), 1.0e-6)
+            target_nu = jnp.clip(
+                2.0 * (jnp.float32(cfg.f_target) - cfg.f_min) / force_span - 1.0,
+                -1.0,
+                1.0,
+            )
+            force_ramp = jnp.linspace(
+                -1.0,
+                target_nu,
+                int(reference_nodes.shape[0]),
+                dtype=recovery.dtype,
+            )
+            return recovery.at[:, self.spec.nu_slice].set(force_ramp[:, None])
+        if not (
+            self._is_walk
+            and self._bcfg.walk_leg_control == "joint_target"
+            and getattr(self, "_walk_joint_reference", None) is not None
+            and self._bcfg.emergency_reference_rewind_steps > 0
+        ):
+            return None
+        # Zero primitive coordinates restore the task's nominal force and
+        # stiffness; zero joint residual follows the re-anchored external gait
+        # reference.  The lateral correction deliberately uses the same
+        # measured pelvis-over-support capture point as ``BipedalGait``.  Torso
+        # roll is not that signal and can have the opposite sign during a
+        # supported lateral translation.
+        #
+        # ``gait_roll_capture_gain`` is expressed in rad / m, whereas this
+        # method returns the normalized residual around the external DIAL
+        # reference.  Convert the physical correction through the exact
+        # planner joint range and reference-residual scale before applying the
+        # solver-wide [-1, 1] action bound.  The backend must still certify the
+        # complete NORMAL horizon before this task-owned proposal may execute.
+        recovery = jnp.zeros_like(reference_nodes)
+        recovery = recovery.at[:, self.spec.total_width:].set(
+            self._walk_roll_capture_residual(state)
+        )
+        planner = tuple(self._robot_profile.joint_groups["planner"])
+        knee_coordinates = jnp.asarray([
+            self.spec.total_width + planner.index(knee)
+            for _, knee, _ in self._sag_legs
+        ])
+        # ``reference_nodes`` is the exact committed/considered UNLOAD plan,
+        # so its first node is the only correct entry-side knee posture.  A
+        # linear node-space fade gives the spline a continuous first control
+        # while returning to zero residual at the certified horizon terminal.
+        knee_entry = jnp.clip(
+            reference_nodes[0, knee_coordinates], -1.0, 1.0
+        )
+        fade = jnp.linspace(
+            1.0, 0.0, int(reference_nodes.shape[0]), dtype=recovery.dtype
+        )
+        return recovery.at[:, knee_coordinates].set(
+            fade[:, None] * knee_entry[None, :]
+        )
+
+    def normal_recovery_plans(self, state, reference_nodes, t0=0.0):
+        """Ordered P4 recovery bank with bounded momentum/roll release.
+
+        The first candidate preserves the existing roll capture and continuous
+        knee fade.  The second adds one early, spline-smoothed hip-pitch pulse
+        derived from measured torso angular velocity.  Its first and terminal
+        pitch nodes are unchanged, so it neither jumps at the UNLOAD/NORMAL
+        boundary nor leaves a permanent pitch offset in the shared DIAL
+        reference.
+
+        A large measured lateral capture error can saturate both hip-roll
+        residuals. Holding that saturated correction for the entire horizon
+        can keep driving the torso after it has crossed the support point. The
+        remaining ordered pairs preserve the exact entry node, then sweep the
+        later hip-roll nodes through zero, half reversal and full reversal;
+        each level is followed by its pitch-momentum combination.  This is a
+        bounded anti-windup chart, symmetric in the measured capture sign, not
+        a change to joint authority. MGA checks the bank sequentially and can
+        execute only a fully revalidated member.
+        """
+        nominal = self.normal_recovery_plan(state, reference_nodes, t0)
+        if nominal is None:
+            return None
+        if not self._is_walk:
+            # Try the nominal target first, then two strictly less forceful
+            # exits.  All candidates share the same sealed stiffness and
+            # NORMAL contact realization; only the end of the monotone force
+            # ramp changes.  A conservative exit is useful when the current
+            # stance can safely reacquire geometry but cannot yet certify the
+            # full requested load over one H16 window.
+            full = nominal
+            zero = nominal.at[:, self.spec.nu_slice].set(-1.0)
+            half = nominal.at[:, self.spec.nu_slice].set(
+                0.5 * (full[:, self.spec.nu_slice] - 1.0)
+            )
+            return jnp.stack([full, half, zero], axis=0)
+        if int(nominal.shape[0]) < 3:
+            return nominal[None]
+        capture = nominal
+        pitch_residual = self._walk_pitch_momentum_recovery_residual(state)
+        capture = capture.at[1, self.spec.total_width:].add(pitch_residual)
+        capture = jnp.clip(capture, -1.0, 1.0)
+        planner = tuple(self._robot_profile.joint_groups["planner"])
+        roll_coordinates = jnp.asarray([
+            self.spec.total_width + planner.index(hip)
+            for hip in self._roll_hips
+        ])
+        entry_sign = jnp.sign(nominal[0, roll_coordinates])
+        candidates = [nominal, capture]
+        for reversal in (0.0, -0.5, -1.0):
+            roll_target = jnp.float32(reversal) * entry_sign
+            roll_release = nominal.at[1:, roll_coordinates].set(
+                roll_target[None, :]
+            )
+            combined = roll_release.at[
+                1, self.spec.total_width:
+            ].add(pitch_residual)
+            candidates.extend([
+                roll_release,
+                jnp.clip(combined, -1.0, 1.0),
+            ])
+        return jnp.stack(candidates, axis=0)
+
+    def normal_rescue_plans(
+        self, state, reference_nodes, horizon_steps, t0=0.0,
+    ):
+        """Task-owned NORMAL candidates for a failed ordinary replan.
+
+        Fixed-stance displacement tasks first lower the contact point along
+        the existing rear-face chart while retaining the incumbent force and
+        realized stiffness.  This reduces the external moment without removing
+        the ankle brace that balances a high requested load.  Only then try
+        monotonically shedding the requested normal load.  Every proposal is
+        still accepted solely by the complete model certificate.  The
+        force-step task is deliberately excluded: changing its commanded load
+        or contact point would invalidate the P1 tracking experiment.
+
+        A certified UNLOAD-to-NORMAL recovery can leave the physical joints a
+        few control frames behind the external DIAL reference.  The shifted
+        recovery remains safe over its immediate backup, yet its newly
+        appended horizon tail can then miss the terminal upright core.  Rather
+        than rewinding the task clock or increasing residual authority,
+        express one to three frames of reference lag in the existing residual
+        chart and add it to the strongest ordered momentum/roll recovery.
+
+        ``horizon_steps`` comes from the solver contract.  Node offsets use
+        the same uniform knot grid as DIAL's quadratic spline, so the task does
+        not assume a particular Hsample/Hnode pair.  These are proposals only:
+        the backend calls this hook after every ordinary path is unsafe and
+        may execute only the first complete NORMAL horizon certified by the
+        unchanged model-based gate.
+        """
+        del t0
+        if not self._is_walk:
+            if self._bcfg.fixed_force_target:
+                return None
+            node_count = int(reference_nodes.shape[0])
+            if node_count < 2:
+                return None
+            cfg = self._bcfg
+            force_span = max(float(cfg.f_max - cfg.f_min), 1.0e-6)
+            start_nu = jnp.clip(
+                reference_nodes[0, self.spec.nu_slice], -1.0, 1.0
+            )
+            candidates = []
+            # ``b`` is always the final coordinate of the task's position
+            # chart (with or without an optional base prefix).  Keep node zero
+            # exactly continuous, then lower the rear-face contact target.
+            # The ordered mid/low bank lets the certificate choose the least
+            # geometry change that restores a safe horizon.
+            b_index = self.spec.r_slice.stop - 1
+            start_b = jnp.clip(reference_nodes[0, b_index], -1.0, 1.0)
+            for target_b in (-0.5, -1.0):
+                b_ramp = jnp.linspace(
+                    start_b,
+                    jnp.float32(target_b),
+                    node_count,
+                    dtype=reference_nodes.dtype,
+                )
+                candidates.append(reference_nodes.at[:, b_index].set(b_ramp))
+            # Ordered from the smallest intervention that can keep useful
+            # pushing authority to a zero-force NORMAL hold.  The first node
+            # is exactly the committed action; only future knots are tapered.
+            for fraction in (0.875, 0.75, 0.5, 0.0):
+                target_force = jnp.clip(
+                    jnp.float32(fraction * cfg.f_target),
+                    jnp.float32(cfg.f_min),
+                    jnp.float32(cfg.f_max),
+                )
+                target_nu = jnp.clip(
+                    2.0 * (target_force - cfg.f_min) / force_span - 1.0,
+                    -1.0,
+                    1.0,
+                )
+                force_ramp = jnp.linspace(
+                    start_nu.squeeze(-1),
+                    target_nu,
+                    node_count,
+                    dtype=reference_nodes.dtype,
+                )
+                candidate = reference_nodes.at[:, self.spec.nu_slice].set(
+                    force_ramp[:, None]
+                )
+                candidates.append(candidate)
+                # If the safe-set boundary is inside the first knot interval,
+                # a slow ramp keeps the unsafe load active too long.  Expose
+                # the corresponding immediate load shed as a separate,
+                # still fully certified NORMAL candidate.
+                candidates.append(
+                    reference_nodes.at[:, self.spec.nu_slice].set(target_nu)
+                )
+            return jnp.stack(candidates, axis=0)
+        if not (
+            self._is_walk
+            and self._bcfg.walk_leg_control == "joint_target"
+            and getattr(self, "_walk_joint_reference", None) is not None
+            and self._bcfg.emergency_reference_rewind_steps > 0
+        ):
+            return None
+        horizon_steps = int(horizon_steps)
+        if horizon_steps < 1:
+            raise ValueError("normal rescue requires a positive horizon")
+        recovery_bank = self.normal_recovery_plans(
+            state, reference_nodes, 0.0
+        )
+        if recovery_bank is None:
+            return None
+        base = recovery_bank[-1]
+        node_count = int(reference_nodes.shape[0])
+        node_offsets = jnp.rint(jnp.linspace(
+            0.0, float(horizon_steps), node_count
+        )).astype(jnp.int32)
+        phase = jnp.asarray(state.info["walk_reference_step"], jnp.int32)
+        current = jnp.clip(
+            phase + node_offsets,
+            jnp.int32(0),
+            jnp.int32(self._walk_joint_reference.shape[0] - 1),
+        )
+        residual_scale = jnp.float32(
+            self._bcfg.walk_joint_reference_residual_scale
+        )
+        if float(residual_scale) <= 0.0:
+            return None
+        candidates = []
+        for lag in (1, 2, 3):
+            delayed = jnp.maximum(current - jnp.int32(lag), jnp.int32(0))
+            delta = jnp.clip(
+                (
+                    self._walk_joint_reference[delayed]
+                    - self._walk_joint_reference[current]
+                ) / residual_scale,
+                -1.0,
+                1.0,
+            )
+            candidate = base.at[:, self.spec.total_width:].add(delta)
+            candidates.append(jnp.clip(candidate, -1.0, 1.0))
+        return jnp.stack(candidates, axis=0)
+
     def emergency_plan_is_active(self, nodes):
-        return jnp.all(nodes[:, self.spec.nu_slice] <= -1.0 + 1.0e-4)
+        # Plans may be a single ``(H, A)`` sequence or a task-owned bank with
+        # arbitrary leading batch dimensions.  Reduce horizon and feedforward
+        # action axes while preserving only candidate-bank axes.
+        return jnp.all(
+            nodes[..., self.spec.nu_slice] <= -1.0 + 1.0e-4,
+            axis=(-2, -1),
+        )
 
     def emergency_plan_should_override(self, state):
         ps = state.pipeline_state

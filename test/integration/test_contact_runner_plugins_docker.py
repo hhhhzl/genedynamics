@@ -624,7 +624,7 @@ def test_mga_result_persists_receding_diagnostics(tmp_path):
 @pytest.mark.requires_brax
 @pytest.mark.slow
 @pytest.mark.parametrize("suite_name", [
-    "p1_force_15n", "p3_unjam", "p4_walk_push",
+    "p1_force_15n", "p2_push_ood", "p3_unjam", "p4_walk_push",
 ])
 @pytest.mark.parametrize("config_path", [
     "configs/humanoid/push_to_line/main/mga.yaml",

@@ -4,7 +4,18 @@ method: mga
 output_dir: results/humanoid/push_to_line/main/mga
 method_params:
   controller_method: mga_controllable_gate
+  # Exact low-memory materialization of the same N64/H16 computation.  These
+  # switches change batching/compilation boundaries only; backend equivalence
+  # tests cover fused versus stepwise diffusion and acceptance.
+  candidate_rollout_batch_size: 1
+  stepwise_diffusion: true
+  stepwise_acceptance: true
+  lazy_emergency_scoring: true
   learned_reliability: true
+  # Keep the complete Gaussian refinement stream intact.  The PPO horizon is
+  # an independently certified expert candidate, not a center that is allowed
+  # to drag every Gaussian proposal under OOD dynamics.
+  prior_mode: additive
   policy_ckpt_by_suite:
     p1_force_15n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
     p1_force_30n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
@@ -19,6 +30,11 @@ method_params:
   prior_fallback_mode: receding_incumbent
   prior_acceptance: true
   prior_risk_tolerance: [0.0, 0.0, 0.0, 1.0]
-  reliability_support_mode: state
+  # The H1 predictor is calibrated on state--candidate pairs.  Candidate-OOD
+  # proposals must therefore abstain on joint support and defer to the task's
+  # complete model-based sequence certificate instead of turning a learned
+  # false positive into a permanent veto.
+  reliability_support_mode: joint
+  reliability_ood_policy: model_based
   reliability_hard_limits: [0.5, 0.5, 0.5, 10.0]
   reliability_risk_tolerance: [1.0, 1.0, 1.0, 10.0]

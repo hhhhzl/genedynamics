@@ -250,6 +250,22 @@ class MgaBackendJax:
         self.emergency_plans_fn = getattr(
             self._task_contract_env, "emergency_plans", None
         )
+        self.normal_recovery_plan_fn = getattr(
+            self._task_contract_env, "normal_recovery_plan", None
+        )
+        self.normal_recovery_plans_fn = getattr(
+            self._task_contract_env, "normal_recovery_plans", None
+        )
+        self.normal_rescue_plans_fn = getattr(
+            self._task_contract_env, "normal_rescue_plans", None
+        )
+        self.prior_applicable_fn = getattr(
+            self._task_contract_env, "mga_prior_applicable", None
+        )
+        self._prior_applicable_jit = (
+            jax.jit(self.prior_applicable_fn)
+            if self.prior_applicable_fn is not None else None
+        )
         self.emergency_active_fn = getattr(
             self._task_contract_env, "emergency_plan_is_active", None
         )
@@ -334,8 +350,16 @@ class MgaBackendJax:
         self._execution_context = None
         self._model_execution_context = None
         self._host_emergency_score_risk_fn = None
+        self._normal_recovery_ready_fn = None
+        self._host_emergency_prewarmed = False
         self.execution_step = None
         self._committed_shift_mode = 0
+        # Provenance for the warm start carried across one real receding step.
+        # A task-owned NORMAL recovery can intentionally lie outside a narrow
+        # learned/Gaussian proposal tube.  Ordinary sampled/refined plans must
+        # not inherit that authority merely because they are also incumbents.
+        self._committed_shift_task_recovery = False
+        self._pending_shift_task_recovery = False
         self._configure_execution_context()
         self.reliability_model = getattr(solver, "reliability_model", None)
         # These are observed execution-state signals (tracking lag, queued
@@ -391,6 +415,24 @@ class MgaBackendJax:
             raise ValueError(
                 "reliability_ood_policy must be 'veto' or 'model_based'"
             )
+        # A model-based OOD policy may use learned confidence only after the
+        # checkpoint has been independently validated and promoted.  The
+        # frozen H1 development artifact is intentionally marked
+        # ``promotion_eligible: false``; keeping its predictions as a hard
+        # veto would turn false negatives into a permanent zero-progress
+        # controller.  We still compute and log its predictions, but let the
+        # task-owned physical certificate own acceptance until promotion.
+        reliability_metadata = (
+            getattr(self.reliability_model, "metadata", {}) or {}
+        )
+        self.reliability_promotion_eligible = bool(
+            reliability_metadata.get("performance_validated", False)
+            and reliability_metadata.get("promotion_eligible", False)
+        )
+        self.reliability_gate_authoritative = bool(
+            self.reliability_ood_policy == "veto"
+            or self.reliability_promotion_eligible
+        )
         flags = getattr(solver, "flags", None)
         self.use_rl_prior = bool(getattr(flags, "use_rl_prior", True))
         self._gate_controllability_only = bool(
@@ -852,6 +894,10 @@ class MgaBackendJax:
         if host_emergency is not None and not callable(host_emergency):
             raise TypeError("MGA score_emergency_host hook must be callable")
         self._host_emergency_score_risk_fn = host_emergency
+        recovery_ready = execution.get("normal_recovery_ready")
+        if recovery_ready is not None and not callable(recovery_ready):
+            raise TypeError("MGA normal_recovery_ready hook must be callable")
+        self._normal_recovery_ready_fn = recovery_ready
         self.execution_step = self._execute_with_context
         self._shift_with_mode_jit = jax.jit(self._shift_with_mode)
 
@@ -901,6 +947,24 @@ class MgaBackendJax:
                 },
             )
         mode = self._checked_execution_mode(plan_info["execution_mode"])
+        # Record candidate provenance before the real step, then commit it in
+        # after_step only if execution actually succeeds.  A shifted recovery
+        # remains a recovery only while the exact incumbent is reselected;
+        # adopting any refined/expert/emergency candidate ends the exemption.
+        selected_new_recovery = bool(np.asarray(
+            plan_info.get("normal_recovery_selected", 0.0)
+        ) > 0.5) or bool(np.asarray(
+            plan_info.get("normal_rescue_selected", 0.0)
+        ) > 0.5)
+        selected_recovery_incumbent = (
+            self._committed_shift_task_recovery
+            and bool(np.asarray(
+                plan_info.get("incumbent_candidate_selected", 0.0)
+            ) > 0.5)
+        )
+        self._pending_shift_task_recovery = (
+            selected_new_recovery or selected_recovery_incumbent
+        )
         # Reproduce the scoring preparation order from the current measured
         # state, not a stale pending request or an anchor copied from a plan.
         # Committed unload history survives this NORMAL preparation.
@@ -929,6 +993,8 @@ class MgaBackendJax:
     def init_plan_var(self) -> jnp.ndarray:
         if self._execution_context is not None:
             self._committed_shift_mode = 0
+            self._committed_shift_task_recovery = False
+            self._pending_shift_task_recovery = False
         if self.atacom_prior is not None:
             reset = getattr(self.atacom_prior, "reset", None)
             if callable(reset):
@@ -944,6 +1010,10 @@ class MgaBackendJax:
             self._committed_shift_mode = int(np.asarray(
                 self._incumbent_execution_mode(next_state)
             ))
+            self._committed_shift_task_recovery = (
+                self._pending_shift_task_recovery
+            )
+            self._pending_shift_task_recovery = False
         if self.atacom_prior is not None:
             commit = getattr(self.atacom_prior, "commit", None)
             if callable(commit):
@@ -1133,9 +1203,11 @@ class MgaBackendJax:
 
     def _accept_refinement(
         self, state, fallback, refined, t0, atacom_incumbent=None,
-        emergency=None, fallback_mode=None,
+        emergency=None, fallback_mode=None, learned_abstain=False,
     ):
+        normal_transition_ready = jnp.asarray(True)
         emergency_scored = jnp.asarray(emergency is not None)
+        emergency_validation_candidate_count = jnp.float32(0.0)
         emergency_candidates = None
         if emergency is not None:
             emergency_candidates = jnp.asarray(emergency)
@@ -1148,6 +1220,18 @@ class MgaBackendJax:
         if self._execution_context is not None:
             fallback_mode = self._incumbent_execution_mode(state, fallback_mode)
             original_fallback_mode = fallback_mode
+            # A task-owned dwell is a hybrid mode-transition constraint, not
+            # merely a filter on one particular recovery proposal.  While an
+            # actually committed UNLOAD has not completed that dwell, no
+            # Gaussian, learned, or ATACOM NORMAL candidate may bypass it.
+            # The shifted UNLOAD incumbent and explicit emergency bank remain
+            # eligible and are revalidated in their actual execution mode.
+            if self._normal_recovery_ready_fn is not None:
+                normal_transition_ready = jnp.where(
+                    fallback_mode == 1,
+                    self._normal_recovery_ready_fn(state),
+                    jnp.asarray(True),
+                )
             state = self._normal_rollout_state(state)
             if emergency is None:
                 raise ValueError("execution context requires an explicit emergency candidate")
@@ -1221,6 +1305,25 @@ class MgaBackendJax:
                             state, dense[:base_count]
                         )
                     )
+                    if (
+                        self.lazy_emergency_scoring
+                        and self._host_emergency_score_risk_fn is not None
+                        and not self._host_emergency_prewarmed
+                    ):
+                        # Compile the emergency transition/score signatures
+                        # while the process still holds only its first normal
+                        # planning executable. Deferring this first compilation
+                        # until a late viability loss can exceed a memory-limited
+                        # CPU container after many receding calls. One candidate
+                        # has the same dynamic shapes as the complete bank; its
+                        # value is discarded and cannot affect selection.
+                        warmup = self._host_emergency_score_risk_fn(
+                            emergency_state, dense[emergency_start],
+                            self.aug_lambda if self._augmented else 0.0,
+                            self.aug_rho if self._augmented else 0.0,
+                        )
+                        self._materialize_candidate_scores(warmup)
+                        self._host_emergency_prewarmed = True
                 else:
                     base_scores, base_risks = self._map_candidate_scores(
                         score_one, dense[:base_count]
@@ -1270,40 +1373,255 @@ class MgaBackendJax:
                             # MJX step graph. Keep this host loop sequential:
                             # emergency candidate banks are small and evaluated
                             # only when the safety-first selector can use them.
-                            unload_outputs = []
-                            for candidate in unload_candidates:
-                                output = self._host_emergency_score_risk_fn(
-                                    emergency_state, candidate,
-                                    self.aug_lambda if self._augmented else 0.0,
-                                    self.aug_rho if self._augmented else 0.0,
-                                )
-                                # JAX dispatch is asynchronous.  A Python list
-                                # comprehension alone enqueues the complete
-                                # emergency bank and retains every intermediate
-                                # MJX state until the final stack is blocked,
-                                # defeating the intended low-memory host loop.
-                                # Materialize each candidate before launching
-                                # the next one so peak memory is independent of
-                                # the task-owned bank width.
-                                unload_outputs.append(
-                                    self._materialize_candidate_scores(output)
-                                )
-                            unload_scores = jnp.stack([
-                                output[0] for output in unload_outputs
-                            ])
-                            unload_risks = jnp.stack([
-                                output[1] for output in unload_outputs
-                            ])
-                            unload_scores, unload_risks = (
-                                self._materialize_candidate_scores(
-                                    (unload_scores, unload_risks)
-                                )
+                            progressive = (
+                                self.lazy_emergency_scoring
+                                and self.reliability_model is None
                             )
+                            if progressive:
+                                # Emergency candidates are ordered by the task,
+                                # with its primary recovery first.  Safety is
+                                # lexicographic here: once a recovery has a
+                                # current-state certificate, evaluating the
+                                # remaining bank merely optimizes emergency
+                                # reward and can retain/compile many complete
+                                # MJX states on a memory-limited CPU host.
+                                #
+                                # Revalidate a committed shifted UNLOAD
+                                # incumbent first.  A NORMAL fallback is never
+                                # silently reinterpreted as UNLOAD; start with
+                                # the first explicitly task-owned candidate.
+                                unload_scores = jnp.full(
+                                    (unload_candidates.shape[0],), -jnp.inf,
+                                    dtype=base_scores.dtype,
+                                ).at[0].set(base_scores[0])
+                                unload_risks = jnp.full(
+                                    (
+                                        unload_candidates.shape[0],
+                                        base_risks.shape[-1],
+                                    ),
+                                    jnp.inf,
+                                    dtype=base_risks.dtype,
+                                ).at[0].set(base_risks[0])
+                                evaluation_indices = []
+                                if fallback_is_unload:
+                                    evaluation_indices.append(0)
+                                evaluation_indices.extend(
+                                    range(1, int(unload_candidates.shape[0]))
+                                )
+                                evaluated = 0
+                                for candidate_index in evaluation_indices:
+                                    output = self._host_emergency_score_risk_fn(
+                                        emergency_state,
+                                        unload_candidates[candidate_index],
+                                        self.aug_lambda if self._augmented else 0.0,
+                                        self.aug_rho if self._augmented else 0.0,
+                                    )
+                                    score, risk = self._materialize_candidate_scores(
+                                        output
+                                    )
+                                    if (
+                                        self.normal_recovery_plan_fn is not None
+                                        or self.normal_recovery_plans_fn is not None
+                                    ):
+                                        unload_candidate = unload_candidates[
+                                            candidate_index
+                                        ]
+                                        successor = emergency_state
+                                        recovery_ready = False
+                                        recovery_entry_index = 0
+                                        # Certify the complete task-owned
+                                        # UNLOAD dwell before evaluating its
+                                        # NORMAL successor. The host loop is
+                                        # bounded by the already fixed action
+                                        # horizon and uses the same contextual
+                                        # model step as actual deployment.
+                                        dwell_limit = (
+                                            1
+                                            if self._normal_recovery_ready_fn is None
+                                            else int(unload_candidate.shape[0])
+                                        )
+                                        for dwell_index in range(dwell_limit):
+                                            successor = (
+                                                self._model_execution_context[
+                                                    "step"
+                                                ](
+                                                    successor,
+                                                    unload_candidate[dwell_index],
+                                                    jnp.int32(1),
+                                                )
+                                            )
+                                            recovery_entry_index = dwell_index
+                                            recovery_ready = (
+                                                True
+                                                if self._normal_recovery_ready_fn is None
+                                                else bool(np.asarray(jax.device_get(
+                                                    self._normal_recovery_ready_fn(
+                                                        successor
+                                                    )
+                                                )))
+                                            )
+                                            if recovery_ready:
+                                                break
+                                        # The task recovery uses row zero as
+                                        # its exact entry-side posture. Align
+                                        # that row with the last simulated
+                                        # UNLOAD interval while retaining the
+                                        # static horizon shape.
+                                        recovery_reference_dense = (
+                                            unload_candidate.at[0].set(
+                                                unload_candidate[
+                                                    recovery_entry_index
+                                                ]
+                                            )
+                                        )
+                                        # Task recovery hooks operate in the
+                                        # same node space as the receding plan.
+                                        # ``unload_candidate`` is already a
+                                        # dense sequence here; passing it
+                                        # through directly makes a node-space
+                                        # pulse collapse to one 20 ms action
+                                        # during pre-certification, while the
+                                        # committed exit later expands that
+                                        # pulse through the spline. Refit once
+                                        # and pin the exact entry action so
+                                        # both paths certify identical recovery
+                                        # semantics.
+                                        recovery_reference = self.spline.u2node(
+                                            recovery_reference_dense
+                                        ).at[0].set(recovery_reference_dense[0])
+                                        recoveries = (
+                                            self._task_normal_recovery_bank(
+                                                successor,
+                                                recovery_reference,
+                                                0.0,
+                                                unload_candidates.dtype,
+                                            )
+                                            if recovery_ready else None
+                                        )
+                                        # Reuse the already compiled normal
+                                        # scorer; do not add a second MJX graph.
+                                        if recoveries is not None:
+                                            recovery_state = (
+                                                self._model_execution_context[
+                                                    "prepare_state"
+                                                ](successor, jnp.int32(0))
+                                            )
+                                            # The task orders least-invasive
+                                            # recovery first. Evaluate one at
+                                            # a time and stop at the first
+                                            # candidate whose NORMAL horizon,
+                                            # combined with this UNLOAD dwell,
+                                            # is certified. This is the same
+                                            # bank used after UNLOAD commits.
+                                            first_combined_risk = None
+                                            for recovery in recoveries:
+                                                recovery_dense = self._node2u(
+                                                    recovery
+                                                )
+                                                recovery_batch = jnp.broadcast_to(
+                                                    recovery_dense,
+                                                    (
+                                                        base_count,
+                                                        *recovery_dense.shape,
+                                                    ),
+                                                )
+                                                _, recovery_risks = (
+                                                    self._materialize_candidate_scores(
+                                                        self._normal_candidate_scores_jit(
+                                                            recovery_state,
+                                                            recovery_batch,
+                                                        )
+                                                    )
+                                                )
+                                                combined_risk = jnp.maximum(
+                                                    risk, recovery_risks[0]
+                                                )
+                                                if first_combined_risk is None:
+                                                    first_combined_risk = combined_risk
+                                                if bool(np.asarray(jax.device_get(
+                                                    self.risk_safe_fn(combined_risk)
+                                                ))):
+                                                    risk = combined_risk
+                                                    break
+                                            else:
+                                                # Preserve finite diagnostics
+                                                # from the least-intervening
+                                                # failed recovery while still
+                                                # marking the emergency path
+                                                # unsafe.
+                                                risk = first_combined_risk
+                                        elif self._normal_recovery_ready_fn is not None:
+                                            # A finite emergency prefix that
+                                            # cannot reach the task-owned exit
+                                            # within the fixed horizon is not
+                                            # recursively viable.
+                                            risk = jnp.full_like(risk, jnp.inf)
+                                    unload_scores = unload_scores.at[
+                                        candidate_index
+                                    ].set(score)
+                                    unload_risks = unload_risks.at[
+                                        candidate_index
+                                    ].set(risk)
+                                    evaluated += 1
+                                    safe = bool(np.asarray(jax.device_get(
+                                        self.risk_safe_fn(risk)
+                                    )))
+                                    # A task override requests an explicit
+                                    # task-owned plan, so a safe shifted
+                                    # incumbent at index zero does not satisfy
+                                    # it.  Any safe task-owned recovery does.
+                                    if safe and (
+                                        candidate_index > 0 or not task_override
+                                    ):
+                                        break
+                                emergency_validation_candidate_count = (
+                                    jnp.float32(evaluated)
+                                )
+                                unload_scores, unload_risks = (
+                                    self._materialize_candidate_scores(
+                                        (unload_scores, unload_risks)
+                                    )
+                                )
+                            else:
+                                unload_outputs = []
+                                for candidate in unload_candidates:
+                                    output = self._host_emergency_score_risk_fn(
+                                        emergency_state, candidate,
+                                        self.aug_lambda if self._augmented else 0.0,
+                                        self.aug_rho if self._augmented else 0.0,
+                                    )
+                                    # JAX dispatch is asynchronous.  A Python
+                                    # list comprehension alone enqueues the
+                                    # complete emergency bank and retains every
+                                    # intermediate MJX state until the final
+                                    # stack is blocked, defeating the intended
+                                    # low-memory host loop. Materialize each
+                                    # candidate before launching the next one.
+                                    unload_outputs.append(
+                                        self._materialize_candidate_scores(output)
+                                    )
+                                unload_scores = jnp.stack([
+                                    output[0] for output in unload_outputs
+                                ])
+                                unload_risks = jnp.stack([
+                                    output[1] for output in unload_outputs
+                                ])
+                                unload_scores, unload_risks = (
+                                    self._materialize_candidate_scores(
+                                        (unload_scores, unload_risks)
+                                    )
+                                )
+                                emergency_validation_candidate_count = jnp.float32(
+                                    unload_candidates.shape[0]
+                                )
                         else:
                             unload_scores, unload_risks = self._materialize_candidate_scores(
                                 self._emergency_candidate_scores_jit(
                                     emergency_state, unload_candidates,
                                 )
+                            )
+                            emergency_validation_candidate_count = jnp.float32(
+                                unload_candidates.shape[0]
                             )
                     else:
                         unavailable_count = 1 + emergency_candidates.shape[0]
@@ -1323,11 +1641,15 @@ class MgaBackendJax:
                         ], axis=0)
                         emergency_scored = jnp.asarray(False)
                 else:
+                    unload_candidates = jnp.concatenate([
+                        dense[0:1], dense[emergency_start:]
+                    ], axis=0)
                     unload_scores, unload_risks = self._map_candidate_scores(
                         emergency_score_one,
-                        jnp.concatenate([
-                            dense[0:1], dense[emergency_start:]
-                        ], axis=0),
+                        unload_candidates,
+                    )
+                    emergency_validation_candidate_count = jnp.float32(
+                        unload_candidates.shape[0]
                     )
                 scores = base_scores.at[0].set(jnp.where(
                     fallback_mode == 1, unload_scores[0], base_scores[0]
@@ -1471,9 +1793,8 @@ class MgaBackendJax:
                             & (learned_risks[1, 2] <= self.reliability_deformation_limit)
                         )
                     supported = support_scores[1] <= 1.0
-                    atacom_normal_safe &= (
-                        supported & own_bound if self.reliability_ood_policy == "veto"
-                        else (~supported) | own_bound
+                    atacom_normal_safe &= self._reliability_gate_mask(
+                        supported, own_bound
                     )
                 atacom_better = jnp.where(
                     fallback_mode == 1, atacom_normal_safe, atacom_better
@@ -1483,6 +1804,8 @@ class MgaBackendJax:
                 if self.prior_atacom_default
                 else (cold_atacom | atacom_better)
             )
+            if self._execution_context is not None:
+                atacom_selected &= normal_transition_ready
             fallback = jnp.where(atacom_selected, candidates[1], candidates[0])
             if self._execution_context is not None:
                 fallback_mode = jnp.where(atacom_selected, jnp.int32(0), fallback_mode)
@@ -1573,6 +1896,19 @@ class MgaBackendJax:
             )
 
         if learned_risks is not None:
+            # A NORMAL proposal considered while the measured incumbent is a
+            # committed task-owned UNLOAD is a hybrid recovery transition.
+            # The learned model is fitted only on ordinary NORMAL candidate
+            # windows; it must abstain here and leave the complete task-owned
+            # model rollout as the authority.  Without this distinction a
+            # supported-but-miscalibrated learned balance head can veto every
+            # recovery forever, even though UNLOAD itself is only a temporary
+            # safe mode.
+            recovery_transition = (
+                ((fallback_mode == 1) | jnp.asarray(learned_abstain, jnp.bool_))
+                if self._execution_context is not None
+                else jnp.asarray(False)
+            )
             learned_support_ok = support_scores[refined_idx] <= 1.0
             learned_tolerance = (
                 jnp.zeros_like(self.reliability_risk_tolerance)
@@ -1587,7 +1923,7 @@ class MgaBackendJax:
                 <= fallback_learned_risk + learned_tolerance
             )
             if self._execution_context is not None:
-                learned_risk_ok = (fallback_mode == 1) | learned_risk_ok
+                learned_risk_ok = recovery_transition | learned_risk_ok
             if self.reliability_hard_limits is not None:
                 learned_hard_ok_all = jnp.all(
                     learned_risks <= self.reliability_hard_limits,
@@ -1624,14 +1960,12 @@ class MgaBackendJax:
             # acceptance; it does not turn "unknown" into "unsafe forever".
             # The default remains the conservative legacy veto used by tasks
             # without that certificate.
-            learned_acceptance_ok = (
-                learned_support_ok & learned_risk_ok & learned_hard_ok
-                if self.reliability_ood_policy == "veto"
-                else (
-                    (~learned_support_ok)
-                    | (learned_risk_ok & learned_hard_ok)
-                )
+            learned_acceptance_ok = self._reliability_acceptance_mask(
+                learned_support_ok,
+                learned_risk_ok,
+                learned_hard_ok,
             )
+            learned_acceptance_ok = recovery_transition | learned_acceptance_ok
             risk_ok = risk_ok & learned_acceptance_ok
             # A learned realization bound is part of final revalidation, not
             # merely a test of whether refinement improves over the shifted
@@ -1643,10 +1977,8 @@ class MgaBackendJax:
                 refined_safe & learned_acceptance_ok
             )
             fallback_support_ok = fallback_support <= 1.0
-            fallback_learned_ok = (
-                fallback_support_ok & fallback_learned_hard_ok
-                if self.reliability_ood_policy == "veto"
-                else ((~fallback_support_ok) | fallback_learned_hard_ok)
+            fallback_learned_ok = self._reliability_gate_mask(
+                fallback_support_ok, fallback_learned_hard_ok
             )
             if self._execution_context is not None:
                 fallback_learned_ok = (fallback_mode == 1) | fallback_learned_ok
@@ -1654,9 +1986,10 @@ class MgaBackendJax:
                 fallback_safe & fallback_learned_ok
             )
             hard_force_ok = hard_force_ok & (
-                learned_hard_ok
-                if self.reliability_ood_policy == "veto"
-                else ((~learned_support_ok) | learned_hard_ok)
+                recovery_transition
+                | self._reliability_gate_mask(
+                    learned_support_ok, learned_hard_ok
+                )
             )
 
         # Safety is lexicographic over performance.  A shifted incumbent is a
@@ -1682,6 +2015,8 @@ class MgaBackendJax:
             (~performance_incumbent_valid)
             | (predicted_ok & risk_ok & hard_force_ok)
         )
+        if self._execution_context is not None:
+            accepted &= normal_transition_ready
         if emergency_candidates is not None:
             emergency_index = jnp.argmax(jnp.where(
                 emergency_safe_all,
@@ -1720,6 +2055,9 @@ class MgaBackendJax:
             jnp.where(accepted, refined_safe, incumbent_valid_safe),
         )
         emergency_unrecoverable = emergency_selected & (~emergency_safe)
+        incumbent_candidate_selected = (
+            (~accepted) & (~emergency_selected) & (~atacom_selected)
+        )
         info = {
             "prior_accepted": accepted.astype(jnp.float32),
             "prior_predicted_improvement": improvement,
@@ -1729,6 +2067,9 @@ class MgaBackendJax:
             "prior_risk_ok": risk_ok.astype(jnp.float32),
             "prior_force_veto": (~hard_force_ok).astype(jnp.float32),
             "atacom_incumbent_selected": atacom_selected.astype(jnp.float32),
+            "incumbent_candidate_selected": (
+                incumbent_candidate_selected.astype(jnp.float32)
+            ),
             "incumbent_revalidated_safe": incumbent_valid_safe.astype(jnp.float32),
             "refined_revalidated_safe": refined_safe.astype(jnp.float32),
             "emergency_selected": emergency_selected.astype(jnp.float32),
@@ -1753,7 +2094,7 @@ class MgaBackendJax:
             )
             info["emergency_validation_candidate_count"] = jnp.where(
                 emergency_scored,
-                jnp.float32(1 + emergency_candidates.shape[0]),
+                emergency_validation_candidate_count,
                 jnp.float32(0.0),
             )
             info["emergency_validation_applicable"] = emergency_scored.astype(
@@ -1766,6 +2107,9 @@ class MgaBackendJax:
             info["reliability_incumbent_applicable"] = (
                 (fallback_mode == 0) & (self.reliability_model is not None)
             ).astype(jnp.float32)
+            info["normal_transition_dwell_ready"] = (
+                normal_transition_ready.astype(jnp.float32)
+            )
         info[fallback_source] = fallback_risk
         if has_atacom_incumbent:
             info["prior_score_atacom"] = scores[1]
@@ -1778,9 +2122,16 @@ class MgaBackendJax:
             info["reliability_support_incumbent"] = fallback_support
             info["reliability_support_refined"] = support_scores[refined_idx]
             info["reliability_abstained"] = (
-                (support_scores[refined_idx] > 1.0)
-                & (self.reliability_ood_policy == "model_based")
+                recovery_transition
+                | (~jnp.asarray(self.reliability_gate_authoritative))
+                | (
+                    (support_scores[refined_idx] > 1.0)
+                    & (self.reliability_ood_policy == "model_based")
+                )
             ).astype(jnp.float32)
+            info["reliability_gate_authoritative"] = jnp.asarray(
+                self.reliability_gate_authoritative, jnp.float32
+            )
         return selected, info
 
     def _select_additive_prior(self, state, candidates):
@@ -1814,13 +2165,272 @@ class MgaBackendJax:
                 else ((learned[:, 0] <= self.reliability_force_limit)
                       & (learned[:, 2] <= self.reliability_deformation_limit))
             )
-            safe &= (
-                supported & bounded if self.reliability_ood_policy == "veto"
-                else (~supported) | bounded
-            )
+            safe &= self._reliability_gate_mask(supported, bounded)
         safe &= jnp.isfinite(scores) & jnp.all(jnp.isfinite(risks), axis=-1)
         index = jnp.argmax(jnp.where(safe, scores, -jnp.inf))
         return candidates[index], jnp.any(safe), scores[index]
+
+    def _reliability_gate_mask(self, supported, bounded):
+        """Return the acceptance mask for learned confidence constraints.
+
+        ``model_based`` is an abstaining policy outside calibration and while a
+        checkpoint is still a development artifact.  In that state the
+        learned model remains observable through diagnostics but cannot veto a
+        candidate that passed the task-owned physical certificate.  The
+        explicit ``veto`` policy remains conservative and authoritative.
+        """
+        if self.reliability_ood_policy == "veto":
+            return supported & bounded
+        if not self.reliability_gate_authoritative:
+            return jnp.ones_like(supported, dtype=bool)
+        return (~supported) | bounded
+
+    def _reliability_acceptance_mask(self, supported, risk_ok, hard_ok):
+        if self.reliability_ood_policy == "veto":
+            return supported & risk_ok & hard_ok
+        if not self.reliability_gate_authoritative:
+            return jnp.ones_like(supported, dtype=bool)
+        return (~supported) | (risk_ok & hard_ok)
+
+    def _task_normal_recovery_bank(
+        self, state, recovery_incumbent, t0, dtype,
+    ):
+        """Normalize the task's legacy plan or ordered plan bank."""
+        recovery = (
+            self.normal_recovery_plans_fn(state, recovery_incumbent, t0)
+            if self.normal_recovery_plans_fn is not None
+            else self.normal_recovery_plan_fn(state, recovery_incumbent, t0)
+        )
+        if recovery is None:
+            return None
+        recoveries = jnp.asarray(recovery, dtype)
+        if recoveries.ndim == recovery_incumbent.ndim:
+            recoveries = recoveries[None]
+        if (
+            recoveries.ndim != recovery_incumbent.ndim + 1
+            or recoveries.shape[1:] != recovery_incumbent.shape
+        ):
+            raise ValueError(
+                "normal recovery plan bank shape "
+                f"{recoveries.shape} is incompatible with incumbent shape "
+                f"{recovery_incumbent.shape}"
+            )
+        return recoveries
+
+    def _attempt_task_normal_recovery(
+        self, state, recovery_incumbent, selected, info, t0, emergency,
+        incumbent_mode=None,
+    ):
+        """Revalidate a task-owned NORMAL exit from a committed emergency.
+
+        A shifted UNLOAD incumbent can remain physically safe while its fixed
+        recovery posture drifts away from the normal controller's viable set.
+        Tasks that own such a hybrid transition may expose one deterministic
+        NORMAL proposal, or an ordered bank of bounded proposals, plus an
+        optional task-state dwell guard.  Once that guard opens, the same
+        full-horizon model certificate used for ordinary candidates must mark
+        a proposal safe before the mode can change.  Ordered banks are checked
+        one at a time and stop at the first certified member, so the task can
+        put its least-intervening recovery first without materializing another
+        large MJX candidate batch.
+        """
+        diagnostics = {
+            "normal_recovery_applicable": jnp.float32(0.0),
+            "normal_recovery_revalidated_safe": jnp.float32(0.0),
+            "normal_recovery_selected": jnp.float32(0.0),
+            "normal_recovery_candidate_count": jnp.float32(0.0),
+            "normal_recovery_selected_index": jnp.int32(-1),
+            "normal_recovery_last_risk": jnp.zeros((4,), jnp.float32),
+        }
+        recovery_mode = (
+            info.get("execution_mode", jnp.int32(0))
+            if incumbent_mode is None else jnp.asarray(incumbent_mode, jnp.int32)
+        )
+        if (
+            self._execution_context is None
+            or (
+                self.normal_recovery_plan_fn is None
+                and self.normal_recovery_plans_fn is None
+            )
+            or int(np.asarray(jax.device_get(recovery_mode))) != 1
+        ):
+            return selected, {**info, **diagnostics}
+        if (
+            self._normal_recovery_ready_fn is not None
+            and not bool(np.asarray(jax.device_get(
+                self._normal_recovery_ready_fn(state)
+            )))
+        ):
+            return selected, {**info, **diagnostics}
+
+        recoveries = self._task_normal_recovery_bank(
+            state, recovery_incumbent, t0, selected.dtype
+        )
+        if recoveries is None:
+            return selected, {**info, **diagnostics}
+        # This proposal is a task-owned hybrid-mode exit, not a sampled
+        # Gaussian/RL candidate.  The generic candidate projection can encode
+        # a deliberately tiny policy trust tube (P4 uses 0.05), which would
+        # silently erase the task's bounded capture action before validation.
+        # Keep only the solver-wide action bound here.  The unchanged complete
+        # NORMAL model horizon below remains the authority that can accept it.
+        chosen_candidate = selected
+        chosen_info = None
+        selected_index = -1
+        any_safe = False
+        last_recovery_risk = diagnostics["normal_recovery_last_risk"]
+        for index in range(int(recoveries.shape[0])):
+            bounded = jnp.clip(
+                recoveries[index], -self.action_limit, self.action_limit
+            )
+            candidate, recovery_info = self._accept_refinement_jit(
+                state, recovery_incumbent, bounded, jnp.maximum(t0, 1.0), None,
+                emergency, fallback_mode=jnp.int32(1),
+            )
+            recovery_safe = recovery_info["refined_revalidated_safe"] > 0.5
+            last_recovery_risk = recovery_info["prior_risk_refined"]
+            any_safe |= bool(np.asarray(jax.device_get(recovery_safe)))
+            recovered = (
+                recovery_safe
+                & (recovery_info["selected_revalidated_safe"] > 0.5)
+                & (recovery_info["execution_mode"] == 0)
+            )
+            if bool(np.asarray(jax.device_get(recovered))):
+                chosen_candidate = candidate
+                chosen_info = recovery_info
+                selected_index = index
+                break
+
+        recovered_host = chosen_info is not None
+        merged = {**info, **chosen_info} if recovered_host else info
+        merged.update({
+            "normal_recovery_applicable": jnp.float32(1.0),
+            "normal_recovery_revalidated_safe": jnp.float32(any_safe),
+            "normal_recovery_selected": jnp.float32(recovered_host),
+            "normal_recovery_candidate_count": jnp.float32(recoveries.shape[0]),
+            "normal_recovery_selected_index": jnp.int32(selected_index),
+            "normal_recovery_last_risk": last_recovery_risk,
+        })
+        return chosen_candidate, merged
+
+    def _attempt_task_normal_rescue(
+        self, state, rescue_incumbent, selected, info, t0, emergency,
+        incumbent_mode=None,
+    ):
+        """Try a task-owned NORMAL rescue after every primary path is unsafe.
+
+        This hook is deliberately narrower than NORMAL recovery from a
+        committed emergency.  It is considered only while the measured task
+        mode is already NORMAL and no ordinary NORMAL candidate survived.
+        It runs before committing an otherwise-safe UNLOAD transition, since
+        a certified lower-load NORMAL successor preserves task progress and
+        avoids an unnecessary hybrid-mode switch.  The task receives the
+        solver horizon length so a time-indexed reference can construct
+        node-aligned candidates without hard-coding a particular spline grid.
+        Every rescue is checked by the unchanged complete NORMAL certificate;
+        the first safe member wins, otherwise the original emergency or
+        unrecoverable decision is preserved.
+        """
+        diagnostics = {
+            "normal_rescue_applicable": jnp.float32(0.0),
+            "normal_rescue_revalidated_safe": jnp.float32(0.0),
+            "normal_rescue_selected": jnp.float32(0.0),
+            "normal_rescue_candidate_count": jnp.float32(0.0),
+            "normal_rescue_selected_index": jnp.int32(-1),
+            # Keep an inapplicable rescue diagnostic finite so trajectory
+            # metadata remains JSON-serializable.  Applicability and the
+            # candidate count carry the semantic distinction; infinity here
+            # would only create a non-portable artifact.
+            "normal_rescue_last_risk": jnp.zeros((4,)),
+            "normal_rescue_candidate_risks": jnp.zeros((0, 4)),
+            "normal_rescue_forced_selection": jnp.float32(0.0),
+        }
+        mode = (
+            info.get("execution_mode", jnp.int32(0))
+            if incumbent_mode is None else jnp.asarray(incumbent_mode, jnp.int32)
+        )
+        selected_safe_normal = (
+            (info["selected_revalidated_safe"] > 0.5)
+            & (info.get("execution_mode", jnp.int32(0)) == 0)
+        )
+        if (
+            self._execution_context is None
+            or self.normal_rescue_plans_fn is None
+            or int(np.asarray(jax.device_get(mode))) != 0
+            or bool(np.asarray(jax.device_get(selected_safe_normal)))
+        ):
+            return selected, {**info, **diagnostics}
+
+        rescue = self.normal_rescue_plans_fn(
+            state, rescue_incumbent, int(self.Hsample), t0
+        )
+        if rescue is None:
+            return selected, {**info, **diagnostics}
+        rescues = jnp.asarray(rescue, selected.dtype)
+        if rescues.ndim == rescue_incumbent.ndim:
+            rescues = rescues[None]
+        if (
+            rescues.ndim != rescue_incumbent.ndim + 1
+            or rescues.shape[1:] != rescue_incumbent.shape
+        ):
+            raise ValueError(
+                "normal rescue plan bank shape "
+                f"{rescues.shape} is incompatible with incumbent shape "
+                f"{rescue_incumbent.shape}"
+            )
+
+        chosen_candidate = selected
+        chosen_info = None
+        selected_index = -1
+        any_safe = False
+        last_rescue_risk = diagnostics["normal_rescue_last_risk"]
+        candidate_risks = []
+        for index in range(int(rescues.shape[0])):
+            bounded = jnp.clip(
+                rescues[index], -self.action_limit, self.action_limit
+            )
+            candidate, rescue_info = self._accept_refinement_jit(
+                state, rescue_incumbent, bounded, jnp.maximum(t0, 1.0),
+                None, emergency, fallback_mode=jnp.int32(0),
+                learned_abstain=jnp.asarray(True),
+            )
+            # A NORMAL rescue is deliberately outside performance ordering:
+            # it exists to replace a safe-but-unproductive UNLOAD before that
+            # mode is committed.  The candidate itself must still pass the
+            # unchanged complete NORMAL certificate (and learned reliability
+            # has already abstained above), but it need not beat the failed
+            # incumbent's task score.  Reconcile the diagnostics with the
+            # explicit task-owned selection when this condition holds.
+            rescue_safe = rescue_info["refined_revalidated_safe"] > 0.5
+            last_rescue_risk = rescue_info["prior_risk_refined"]
+            candidate_risks.append(last_rescue_risk)
+            any_safe |= bool(np.asarray(jax.device_get(rescue_safe)))
+            if bool(np.asarray(jax.device_get(rescue_safe))):
+                chosen_candidate = candidate
+                chosen_info = {
+                    **rescue_info,
+                    "selected_revalidated_safe": jnp.float32(1.0),
+                    "emergency_selected": jnp.float32(0.0),
+                    "emergency_unrecoverable": jnp.float32(0.0),
+                    "execution_mode": jnp.int32(0),
+                    "normal_rescue_forced_selection": jnp.float32(1.0),
+                }
+                selected_index = index
+                break
+
+        rescued_host = chosen_info is not None
+        merged = {**info, **chosen_info} if rescued_host else info
+        merged.update({
+            "normal_rescue_applicable": jnp.float32(1.0),
+            "normal_rescue_revalidated_safe": jnp.float32(any_safe),
+            "normal_rescue_selected": jnp.float32(rescued_host),
+            "normal_rescue_candidate_count": jnp.float32(rescues.shape[0]),
+            "normal_rescue_selected_index": jnp.int32(selected_index),
+            "normal_rescue_last_risk": last_rescue_risk,
+            "normal_rescue_candidate_risks": jnp.stack(candidate_risks),
+            "normal_rescue_forced_selection": jnp.float32(rescued_host),
+        })
+        return chosen_candidate, merged
 
     def _replan_additive(self, state, incumbent, schedule, rng, t0, incumbent_mode=None):
         """Keep the no-prior search intact; experts can only add candidates.
@@ -1840,21 +2450,58 @@ class MgaBackendJax:
             state, incumbent, schedule, rng, t0, incumbent
         )
         if self._candidate_projection_jit is not None:
-            incumbent = self._candidate_projection_jit(state, incumbent)
+            if self._committed_shift_task_recovery:
+                # Preserve only the explicitly tracked task-owned recovery.
+                # Its complete model horizon, not the proposal tube, is its
+                # deployment certificate.
+                incumbent = jnp.clip(
+                    incumbent, -self.action_limit, self.action_limit
+                )
+            elif self._execution_context is not None:
+                # A committed UNLOAD incumbent is also a task-owned candidate
+                # with an explicit execution identity.  Projecting it through
+                # the NORMAL proposal tube before revalidation changes the
+                # very fallback whose safety is being checked (P4 used to
+                # erase its knee-clearance residual here).  Preserve it only
+                # while the measured state says the committed mode is UNLOAD;
+                # ordinary NORMAL incumbents retain the historical projection.
+                incumbent = jnp.where(
+                    incumbent_mode == 1,
+                    jnp.clip(
+                        incumbent, -self.action_limit, self.action_limit
+                    ),
+                    self._candidate_projection_jit(state, incumbent),
+                )
+            else:
+                incumbent = self._candidate_projection_jit(state, incumbent)
             gaussian = self._candidate_projection_jit(state, gaussian)
         emergency_factory = self.emergency_plans_fn or self.emergency_plan_fn
         emergency = (
             emergency_factory(state, incumbent, t0)
             if emergency_factory is not None else None
         )
-        if emergency is not None and self._candidate_projection_jit is not None:
-            emergency = self._candidate_projection_jit(state, emergency)
+        if emergency is not None:
+            # Emergency identity is explicit in the candidate source and its
+            # eventual execution_mode.  A task-owned recovery must retain its
+            # independently certified action (for P4, the knee bank) instead
+            # of passing through a NORMAL policy/Gaussian proposal tube.
+            emergency = jnp.clip(
+                emergency, -self.action_limit, self.action_limit
+            )
         acceptance_kw = (
             {"fallback_mode": incumbent_mode}
             if self._execution_context is not None else {}
         )
         selected, info = self._accept_refinement_jit(
             state, incumbent, gaussian, t0, None, emergency, **acceptance_kw
+        )
+        selected, info = self._attempt_task_normal_recovery(
+            state, incumbent, selected, info, t0, emergency,
+            incumbent_mode=incumbent_mode,
+        )
+        selected, info = self._attempt_task_normal_rescue(
+            state, incumbent, selected, info, t0, emergency,
+            incumbent_mode=incumbent_mode,
         )
         info = {**info, "additive_prior_selected": jnp.float32(0.0),
                 "additive_prior_candidate_count": jnp.float32(0.0)}
@@ -1872,6 +2519,12 @@ class MgaBackendJax:
         expert, any_safe, expert_score = self._select_additive_prior_jit(
             state, candidates
         )
+        support_applicable = (
+            self._prior_applicable_jit(state)
+            if self._prior_applicable_jit is not None
+            else jnp.asarray(True)
+        )
+        any_safe = any_safe & support_applicable
         # The Gaussian decision has already been revalidated at this state,
         # including cold start. Do not invalidate it a second time at t=0.
         second_acceptance_kw = (
@@ -1891,7 +2544,24 @@ class MgaBackendJax:
             # Returning from a certified one-step unload to a safe normal
             # horizon is lexicographic recovery, not a cross-horizon score win.
             improves_normal |= info["execution_mode"] == 1
-        adopted = any_safe & (expert_info["prior_accepted"] > 0.5) & improves_normal
+        # A task-owned NORMAL recovery is the certified successor paired with
+        # the previously committed UNLOAD transition.  Once that successor
+        # has been selected, a policy proposal must not overwrite it merely
+        # because its task score is higher.  Besides breaking the recursive
+        # hybrid certificate, doing so made the diagnostics claim that both
+        # the recovery and the additive prior were deployed on the same step.
+        # The learned prior remains eligible on ordinary NORMAL replans and
+        # when no task-owned recovery can be certified.
+        recovery_transition = (
+            (info.get("normal_recovery_selected", jnp.float32(0.0)) > 0.5)
+            | (info.get("normal_rescue_selected", jnp.float32(0.0)) > 0.5)
+        )
+        adopted = (
+            any_safe
+            & (expert_info["prior_accepted"] > 0.5)
+            & improves_normal
+            & ~recovery_transition
+        )
         deployed = jnp.where(adopted, challenger, selected)
         combined = {
             k: jnp.where(adopted, expert_info[k], v) if k in expert_info else v
@@ -1908,6 +2578,9 @@ class MgaBackendJax:
         combined.update({
             "additive_prior_selected": adopted.astype(jnp.float32),
             "additive_prior_candidate_count": jnp.float32(candidates.shape[0]),
+            "additive_prior_support_applicable": support_applicable.astype(
+                jnp.float32
+            ),
             "additive_prior_any_safe": any_safe.astype(jnp.float32),
             "additive_prior_improvement": expert_info["prior_predicted_improvement"],
             "additive_prior_score": expert_score,
@@ -2056,7 +2729,27 @@ class MgaBackendJax:
                 else U_rl
             )
             if self._candidate_projection_jit is not None:
-                fallback = self._candidate_projection_jit(state, fallback)
+                preserve_task_recovery = (
+                    self.prior_fallback_mode == "receding_incumbent"
+                    and self._committed_shift_task_recovery
+                )
+                if preserve_task_recovery:
+                    fallback = jnp.clip(
+                        fallback, -self.action_limit, self.action_limit
+                    )
+                elif (
+                    self._execution_context is not None
+                    and self.prior_fallback_mode == "receding_incumbent"
+                ):
+                    fallback = jnp.where(
+                        incumbent_mode == 1,
+                        jnp.clip(
+                            fallback, -self.action_limit, self.action_limit
+                        ),
+                        self._candidate_projection_jit(state, fallback),
+                    )
+                else:
+                    fallback = self._candidate_projection_jit(state, fallback)
                 refined = self._candidate_projection_jit(state, refined)
             emergency_factory = self.emergency_plans_fn or self.emergency_plan_fn
             emergency = (
@@ -2067,11 +2760,10 @@ class MgaBackendJax:
                 )
                 else None
             )
-            if (
-                emergency is not None
-                and self._candidate_projection_jit is not None
-            ):
-                emergency = self._candidate_projection_jit(state, emergency)
+            if emergency is not None:
+                emergency = jnp.clip(
+                    emergency, -self.action_limit, self.action_limit
+                )
             acceptance_kw = (
                 {"fallback_mode": incumbent_mode}
                 if self._execution_context is not None else {}

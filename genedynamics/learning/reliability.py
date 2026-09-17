@@ -10,7 +10,7 @@ share the same latency-aware semantics.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -111,6 +111,11 @@ class LinearReliabilityModel:
     probability_risk_count: int = 2
     classification_probabilities: bool = False
     basis_mode: str = _LINEAR_BASIS
+    # Provenance is kept with the fitted model so deployment can distinguish a
+    # calibrated/promoted checkpoint from a development artifact.  This is
+    # deliberately metadata-only: it never enters the predictor or changes
+    # the serialized feature/risk contract.
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
     def fit(
@@ -270,6 +275,7 @@ class LinearReliabilityModel:
             probability_risk_count=int(probability_risk_count),
             classification_probabilities=bool(classification_probabilities),
             basis_mode=basis_mode,
+            metadata={},
         )
 
     def predict(self, features: Any):
@@ -360,7 +366,7 @@ class LinearReliabilityModel:
             "upper_residual": self.upper_residual.tolist(),
             "support_radius": self.support_radius.tolist(),
             "calibration_quantile": self.calibration_quantile,
-            "metadata": dict(metadata or {}),
+            "metadata": dict(self.metadata) | dict(metadata or {}),
         }
         with Path(path).open("w") as f:
             json.dump(payload, f, indent=2)
@@ -393,6 +399,7 @@ class LinearReliabilityModel:
                 payload.get("classification_probabilities", False)
             ),
             basis_mode=str(payload.get("basis_mode", _LINEAR_BASIS)),
+            metadata=dict(payload.get("metadata") or {}),
         )
 
 
