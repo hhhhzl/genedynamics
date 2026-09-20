@@ -1,9 +1,0 @@
-base: ../main/mga.yaml
-name: no_stiffness
-output_dir: results/arm/surface_scan/ablation/no_stiffness
-method_params: {controller_method: mga_controllable_no_stiffness}
-metadata:
-  formal_suites: [hybrid_stripes, hybrid_center_hard, hybrid_center_soft]
-  ablation_of: mga
-  ablated_component: use_stiffness
-  paper_scope: hybrid

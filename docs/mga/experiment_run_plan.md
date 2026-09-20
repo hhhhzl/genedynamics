@@ -452,8 +452,8 @@ configs/
 │   │   └── ablation/
 │   │       ├── no_controllability_geometry.yaml
 │   │       ├── no_retraction.yaml
-│   │       ├── no_stiffness.yaml
-│   │       └── fixed_or_euclidean_stiffness.yaml
+│   │       ├── no_rl_prior.yaml
+│   │       └── no_learned_reliability.yaml
 │   └── peg_insert/
 │       ├── _base.yaml
 │       ├── main/mga.yaml
@@ -469,7 +469,7 @@ configs/
         └── ablation/
             ├── no_rl_prior.yaml
             ├── no_learned_reliability.yaml
-            ├── no_tangent.yaml
+            ├── no_controllability_geometry.yaml
             ├── no_retraction.yaml
             └── no_stiffness.yaml
 ```
@@ -504,10 +504,12 @@ hybrid_center_hard
 hybrid_center_soft
 ```
 
-All eight algorithms run all thirteen suites.  The four stiffness/geometry
-ablations run only the three hybrid suites, where spatial material switching
-makes their causal effect identifiable.  An algorithm row may not omit the
-hybrid suites.
+All eight algorithms and all four causal ablations run all thirteen suites.
+This evaluates learned components, controllability geometry, and retraction
+across rigid, soft, unseen, and hybrid conditions without selecting only the
+hybrid cases where contact/material switching is most pronounced.  The main
+text may emphasize the most diagnostic hybrid comparisons, but the complete
+paired matrix remains available in the appendix.
 
 ### 6.2 PegInsert suite list
 
@@ -536,20 +538,23 @@ P1 has a force-step success contract, not a line-reaching success contract. Its
 metrics are rise time, settling time, overshoot, steady-state force error, force
 violation, and balance margin. P2--P4 use task-specific safe push success.
 
-All eight algorithms run all six H1 suites.  H1 ablations are deliberately
-targeted instead of repeated on suites that cannot identify the mechanism:
+All eight algorithms run all six H1 suites.  The four primary H1 ablations are
+now aligned with Surface and run every suite, so a row has the same causal
+meaning across the two tasks:
 
 ```text
-no_rl_prior:             p2_push_ood, p3_unjam, p4_walk_push
-no_learned_reliability:  p2_push_ood, p3_unjam, p4_walk_push
-no_tangent:              p3_unjam
-no_retraction:           p3_unjam
-no_stiffness:            p1_force_15n, p1_force_30n
+no_rl_prior:                    all P1--P4 suites
+no_learned_reliability:         all P1--P4 suites
+no_controllability_geometry:    all P1--P4 suites
+no_retraction:                  all P1--P4 suites
+no_stiffness:                   p1_force_15n, p1_force_30n
 ```
 
-The first two isolate learned proposal/reliability components under OOD or
-contact-mode change; the next two isolate whole-body contact-manifold geometry
-in P3; the final one isolates impedance geometry in the force-step task.
+The first four are the cross-task causal matrix.  The final one is retained as
+the P1-specific impedance diagnostic.  The former P3 `no_tangent` formal YAML
+is removed rather than renamed: tangent projection and the finite-difference
+realized-response lift are different mechanisms, so relabeling its old results
+would not be a valid controllability-geometry ablation.
 
 ---
 
@@ -1002,8 +1007,8 @@ Implementation record (2026-08-24):
 - `--development-root` mirrors canonical project-relative output paths under an
   isolated root and records `run_class: development` plus the canonical path.
   It creates no development YAML tree and cannot alter formal output paths.
-- The formal surface script restricts causal ablations to the three hybrid
-  suites; the shared verifier applies the identical suite selection.
+- The formal surface script and shared verifier run all four causal ablations
+  on all thirteen suites.
 
 ### P7 — Run a two-seed integration matrix
 
@@ -1020,7 +1025,7 @@ Surface scan:
 
 - Run every rigid/soft geometry for MGA and DIAL.
 - Specifically confirm that `convex` now completes.
-- Run all three hybrid maps for MGA and the key stiffness ablation.
+- Run all three hybrid maps for MGA and the key geometry/retraction ablations.
 
 PegInsert:
 
@@ -3060,13 +3065,13 @@ the dedicated ATACOM backend tests passed.
 
 The frozen verification record is:
 
-- 35 formal YAMLs pass unified-runner dry-run;
+- 35 canonical YAMLs pass the configuration audit;
 - the checkpoint/protocol/causal audit reports exactly
-  `Surface=1160`, `Peg=300`, `H1=580`, total `2040`, with zero errors;
+  `Surface=1560`, `Peg=300`, `H1=740`, total `2600`, with zero errors;
 - all eight H1 algorithms execute a development step in P1/P2, P3, and P4
   checkpoint/action schemas (24 cases total);
-- all five targeted H1 causal ablations execute their declared development
-  gate (5 cases total);
+- the four aligned H1 causal ablations and the P1 `no_stiffness` diagnostic
+  execute their declared development gates;
 - the Peg MGA one-step run persists prior, revalidation, and emergency
   diagnostics; all three tasks persist schema-v2 task signals;
 - 56 focused unit/audit tests and 22 non-slow unified-runner/plugin tests pass.
@@ -3080,12 +3085,11 @@ compute on broad baselines.
 
 1. MGA, Model-based Only, standalone RL, and DIAL on all thirteen suites.
 2. MPPI, PegasusFlow, ISSA, and ATACOM on all thirteen suites.
-3. Run `no_controllability_geometry`, `no_stiffness`,
-   `fixed_or_euclidean_stiffness`, and `no_retraction` on the three hybrid
-   suites only.
+3. Run `no_rl_prior`, `no_learned_reliability`,
+   `no_controllability_geometry`, and `no_retraction` on all thirteen suites.
 4. Verify completeness before aggregation.
 
-Count: `8 * 13 * 10 + 4 * 3 * 10 = 1160` runs.
+Count: `8 * 13 * 10 + 4 * 13 * 10 = 1560` runs.
 
 #### P9.2 PegInsert
 
@@ -3102,16 +3106,16 @@ All ten configurations run all three suites.  Count:
 1. After the P8 H1 extension passes, run MGA, Model-based Only,
    standalone RL, and DIAL on all six suites.
 2. Run MPPI, PegasusFlow, ISSA, and ATACOM on all six suites.
-3. Run `no_rl_prior` and `no_learned_reliability` on P2-OOD/P3/P4;
-   `no_tangent` and `no_retraction` on P3; and `no_stiffness` on both P1 force
-   steps.
+3. Run `no_rl_prior`, `no_learned_reliability`,
+   `no_controllability_geometry`, and `no_retraction` on all six suites; run
+   `no_stiffness` on both P1 force steps.
 4. Interpret P1 with force-step metrics rather than line-goal success, P3 as
    the primary whole-body geometry comparison, and P4 according to its actual
    generalization outcome.
 
-Count: `8 * 6 * 10 + 2 * 3 * 10 + 2 * 1 * 10 + 1 * 2 * 10 = 580` runs.
+Count: `8 * 6 * 10 + 4 * 6 * 10 + 1 * 2 * 10 = 740` runs.
 
-The complete frozen protocol is therefore `1160 + 300 + 580 = 2040` runs.
+The complete frozen protocol is therefore `1560 + 300 + 740 = 2600` runs.
 This count excludes development smokes, checkpoint training/calibration, and
 any optional stress-test appendix.
 

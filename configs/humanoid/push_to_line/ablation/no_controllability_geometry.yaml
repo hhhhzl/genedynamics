@@ -1,8 +1,8 @@
 base: ../main/mga.yaml
 name: no_controllability_geometry
-output_dir: results/arm/surface_scan/ablation/no_controllability_geometry
+output_dir: results/humanoid/push_to_line/ablation/no_controllability_geometry
 method_params: {controller_method: mga_component_gate}
 metadata:
   ablation_of: mga
   ablated_component: use_controllability_geometry
-  paper_scope: all_surface_suites
+  formal_suites: [p1_force_15n, p1_force_30n, p2_push_nominal, p2_push_ood, p3_unjam, p4_walk_push]

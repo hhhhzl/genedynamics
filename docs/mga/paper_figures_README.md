@@ -1,6 +1,6 @@
 # MGA：三页实验图表与叙事安排
 
-审计日期：2026-09-12。本文整理已经讨论确定的展示方案，并以当前论文、配置和落盘结果限定结论。三页指实验部分的总版面预算，包含图、表、caption 和解释文字；不是每个环境各占一页。
+审计日期：2026-09-19。本文整理已经讨论确定的展示方案，并以当前论文、配置和落盘结果限定结论。三页指实验部分的总版面预算，包含图、表、caption 和解释文字；不是每个环境各占一页。
 
 配套文档：[H1 P1–P4 报告缺口与修复顺序](humanoid_report_README.md)。完整工程历史见 [experiment_run_plan.md](experiment_run_plan.md)。当前论文实际位置是 [`latex/latex_mga`](../../latex/latex_mga)，不是仓库根目录下的 `latex_mga`。
 
@@ -59,13 +59,67 @@ Task | Setting | Metric | RL | ISSA | ATACOM | MPPI | DIAL | PegasusFlow | w/o R
 
 Panel A 是全部八算法的 spatial mechanism strip，可排成 2×4 小图。固定同一 suite、同一 seed、同一视角与色标，每格叠加目标路径和实际 EE 路径。优先使用确实跨过 hard–soft 边界的 hybrid 案例，背景表示真实 stiffness map；轨迹颜色只表示一个量，例如归一化法向力。标出未覆盖区和失去接触的位置。八算法包括 MBO，不用不同方法各自最好看的 seed。
 
-Panel B 在相同弧长/材料坐标下，对齐背景材料 stiffness 与执行的法向 stiffness `nᵀ K n`。再用紧凑曲线展示法向力或形变及阈值。重点比较 MGA、no-stiffness、no-controllability-geometry；这部分回答“为什么需要可实现响应与刚度几何”。实际测得的响应相关性不能替代对应的单因素消融。
+Panel B 在相同弧长/材料坐标下，对齐背景材料 stiffness 与执行的法向 stiffness `nᵀ K n`。再用紧凑曲线展示法向力或形变及阈值。重点比较 MGA、no-controllability-geometry 和 no-retraction；这部分回答“为什么需要可实现响应与流形部署”。`no_rl_prior` 与 `no_learned_reliability` 在全部 13 个 suites 的配对结果放入主表/Appendix，用来回答 learned components 是否跨 rigid、soft、unseen 和 hybrid 条件提供收益。实际测得的响应相关性不能替代对应的单因素消融。
 
 Panel C 可用小型散点/配对差值图概括 hard、soft、hybrid 的 coverage–force/deformation tradeoff。空间不够时移到 Appendix，保留 A+B。不同 geometry 的结果仍在完整表和媒体索引里，不把一个 hybrid 示例称为所有曲面验证。
 
 coverage 必须由整条已执行 EE 轨迹计算；“访问过的最远弧长”和“容差内实际访问过的路径比例”分开记录。只看最终点或 command 进度不能证明覆盖。
 
-目前的支持来自旧扫描比较和 P7/P8 hybrid 开发记录。P8 记录了 hybrid 完整覆盖、零观察到的力违规，但 learned reliability 在这些 OOD 材料切换上大多 abstain。它支持 task-owned model-based certificate 的作用，不能写成 learned reliability 在 hybrid 上准确识别了所有危险。当前工作区还没有 `results/arm/surface_scan/` 正式结果根目录，因此正式 13-suite 表仍需对应的锁定数据。
+### 4.1 Surface seed 0--1 版式开发结果
+
+`results/arm/surface_scan` 现已包含全部八个算法与四个消融在 13 个 suites、seeds 0--1 上的完整结果，共 312 个 task runs。续跑容器正常退出；每个方法均有 26 个 `results.json`、26 条轨迹、13 个 suite summary、`overall_summary.json` 和 `protocol_manifest.json`。这些数值只用于冻结版式和统计实现；正式论文数字在相同定义下用 seeds 0--9 替换，不再改变图的编码、阈值或布局。
+
+Surface 主文采用容忍一个离散接触瞬态的 operational SSR：
+
+```text
+coverage >= 0.90
+AND settled_contact_loss_rate <= 0.10
+AND force_violation_rate <= 0.01
+```
+
+其中 coverage 使用整条 executed EE trajectory、实际接触 mask 和 5 mm 路径容差；settled contact loss 排除前 10 个接触建立步。100-step 协议下，1% force-violation tolerance 至多容忍约一个离散控制采样的瞬态。Appendix 同时报告 `force_violation_rate == 0` 的 strict SSR，避免 operational tolerance 隐藏真实越界。该口径在查看 seeds 2--9 之前冻结。
+
+当前 operational SSR（成功数/运行数）为：
+
+| 方法 | Hard | Soft | Hybrid | Overall |
+|---|---:|---:|---:|---:|
+| Standalone RL | 0/10 | 0/10 | 0/6 | 0.0% |
+| ISSA | 0/10 | 1/10 | 0/6 | 3.8% |
+| ATACOM | 2/10 | 6/10 | 4/6 | 46.2% |
+| MPPI | 3/10 | 2/10 | 2/6 | 26.9% |
+| DIAL | 6/10 | 7/10 | 3/6 | 61.5% |
+| PegasusFlow | 1/10 | 2/10 | 1/6 | 15.4% |
+| Model-based Only | 7/10 | 9/10 | 6/6 | 84.6% |
+| **MGA** | **8/10** | **10/10** | **6/6** | **92.3%** |
+
+主表仍将 SSR 与 nCVaR95 成对阅读。当前分组均值如下；每格为 `coverage / nCVaR95`，nCVaR95 是实际法向力 CVaR95 除以该 suite 的 `f_max`：
+
+| 方法 | Hard | Soft | Hybrid |
+|---|---:|---:|---:|
+| Standalone RL | .349 / .607 | .388 / .519 | .399 / .600 |
+| ISSA | .413 / .596 | .525 / .534 | .441 / .714 |
+| ATACOM | .786 / .534 | .919 / .425 | .884 / .606 |
+| MPPI | .994 / 1.056 | .975 / .960 | .779 / .874 |
+| DIAL | .966 / .955 | .995 / .818 | .838 / .766 |
+| PegasusFlow | .878 / 1.184 | .956 / 1.089 | .690 / .844 |
+| Model-based Only | .891 / .581 | .974 / .435 | .922 / .642 |
+| **MGA** | **.908 / .551** | **.995 / .415** | **1.000 / .659** |
+
+这两组开发数据支持的 Surface 结论是：MGA 不必在每个单项力指标上最小，而是在 geometry/compliance shift 下取得最高的安全完成率；Soft 达到 10/10，Hybrid 达到 6/6。MBO 是有竞争力的强基线，DIAL/ATACOM 也有非零且可观的成功率，因此叙事不是“其他算法完全不能工作”，而是 MGA 改善 progress--safety tradeoff。Hard 的 `rigid_unseen` 仍是 MGA 的主要失败来源，不隐藏在总体均值中。
+
+消融的 operational SSR 为 MGA 24/26、w/o RL prior 24/26、w/o controllability geometry 24/26、w/o retraction 17/26。SSR 饱和时，prior 和 geometry 的贡献用 paired nCVaR95/coverage 解释：RL prior 在 Hybrid 将 nCVaR95 从 .728 降至 .659；controllability geometry 将整体 nCVaR95 从 .551 降至 .524；retraction 则直接把 SSR 从 65.4% 提升至 92.3%。`no_learned_reliability` 与 MGA 的全部物理任务指标相同，因为当前 learned reliability 对所有这些运行 abstain 且不拥有 authoritative promotion；Surface 不用它证明 learned reliability，相关验证由 PegInsert Sensing-OOD 承担。
+
+### 4.2 Scanning 在仿真综合图中的 60% 版面
+
+Scanning 占 Scanning/PegInsert 综合页左侧 60%，不重复主表已经给出的 SSR/nCVaR95。按两列内部网格组织：上部约 58% 高度用于执行结果，下部约 42% 高度用于机制时间/空间对齐。
+
+**上部：八算法 spatial execution strip。** 使用固定的 `hybrid_stripes, seed=0`，排成 2×4 小图，方法顺序与主表一致：RL、ISSA、ATACOM、MPPI、DIAL、PegasusFlow、MBO、MGA。所有小图使用同一相机、同一路径范围和同一 `[0, 1]` force-utilization 色标；背景画真实 hard/soft stiffness bands，黑色细线为 reference path，彩色线为 executed、contact-valid EE path，灰色虚段只表示未覆盖参考区。标题只给方法缩写，角标给 coverage，不在图内重复 SSR/nCVaR95。seed 0 对所有方法固定，不能逐方法挑最好 seed。当前该 suite 上 MGA coverage 为 1.000；ATACOM/MBO 为 .901/.931，而 MPPI、DIAL、PegasusFlow 为 .822/.782/.327，能够直观看到同一材料切换下的覆盖差异。
+
+**下部：一条 MGA hard--soft transition 的 realization trace。** 仍使用 `hybrid_stripes, seed=0`，共享横轴为 executed material/path coordinate `scan_xi`，而不是把不同接触时刻直接做跨 seed 平均。第一行用浅色背景画 `k_surf` 区域，并叠加执行的法向 stiffness `n^T K n`；第二行画实际 `F_n/f_max` 与安全线 1，同时用短标记注明 contact loss、retraction/emergency 或 gate rejection 的真实事件；第三行只在空间允许时画累计 contact-valid coverage，否则移至 Appendix。主文不再加入第二个 SSR 柱状图，也不画没有候选级日志支持的虚构 proposal cloud。
+
+这两个 panel 可以直接由现有轨迹生成：`task_signals` 已保存 `positions`、`reference_path`、`coverage_valid_mask`、`scan_xi`、`k_surf`、`normal_stiffness`、`force`、`f_max`、`in_contact` 与 gate signals；每步 `infos` 保存 prior acceptance、revalidation、emergency 和 reliability 状态。版式阶段读取 seeds 0--1，最终仅替换聚合表/置信区间和必要的代表性标注，spatial strip 的预先固定 seed 与视觉编码保持不变。
+
+P8 的旧 hybrid 记录只作为机制开发历史；论文统计现在统一从 `results/arm/surface_scan` 读取。当前 learned reliability 在材料切换上 abstain，支持的是 task-owned model-based certificate，而不是“learned reliability 准确识别所有 hybrid 风险”。
 
 ## 5. PegInsert 主图：保留一个随时间变化的指标
 
@@ -96,7 +150,7 @@ ID 与全部 baseline 保留原来的 canonical 记录；MGA 与 no-prior 的 Po
 
 ## 6. H1 主图：P3 讲几何，P4 讲真实全身扩展
 
-Panel A：P3 俯视图，画箱体轮廓的时间序列、yaw、手部接触位置与允许的目标区。用 MGA 与 DIAL/PegasusFlow，以及 no-tangent/no-retraction 的失败轨迹解释 contact geometry。只有任务实际有障碍时才画墙，不能给 P1/P2/P4 加同一堵墙来制造视觉效果。
+Panel A：P3 俯视图，画箱体轮廓的时间序列、yaw、手部接触位置与允许的目标区。用 MGA 与 DIAL/PegasusFlow，以及 no-controllability-geometry/no-retraction 的失败轨迹解释 realized contact geometry。只有任务实际有障碍时才画墙，不能给 P1/P2/P4 加同一堵墙来制造视觉效果。
 
 Panel B：P4 侧视 motion strip，标记箱体、pelvis 和左右脚落脚位置；紧凑地附上 foot-contact 时间条与手力/限制。需要同时看见身体前移、支撑前移和左右脚 lift–land，不能用箱体到线或滑脚冒充 walking。
 

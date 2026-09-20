@@ -290,10 +290,6 @@ def test_development_root_mirrors_canonical_output_and_marks_provenance(
          "use_controllability_geometry"),
         ("no_retraction.yaml", "mga_controllable_no_retraction",
          "use_retraction"),
-        ("no_stiffness.yaml", "mga_controllable_no_stiffness",
-         "use_stiffness"),
-        ("fixed_or_euclidean_stiffness.yaml",
-         "mga_controllable_euclid_stiffness", "log_spd_stiffness"),
     ],
 )
 def test_surface_ablation_inherits_full_contract_and_changes_one_component(
@@ -326,20 +322,50 @@ def test_surface_ablation_inherits_full_contract_and_changes_one_component(
     assert ablation.metadata["ablated_component"] == component
 
 
-def test_peg_ablation_configs_change_only_the_named_component():
+def test_humanoid_controllability_ablation_matches_surface_contract():
     from genedynamics.solvers.single.mga.core.method_registry import (
         diff_flags,
         resolve_method,
     )
 
     full = ExperimentConfig.from_yaml(
-        ROOT / "configs/arm/peg_insert/main/mga.yaml"
+        ROOT / "configs/humanoid/push_to_line/main/mga.yaml"
+    )
+    ablation = ExperimentConfig.from_yaml(
+        ROOT
+        / "configs/humanoid/push_to_line/ablation/no_controllability_geometry.yaml"
+    )
+    assert ablation.method == "mga"
+    assert ablation.seeds == full.seeds
+    assert ablation.suites == full.suites
+    assert ablation.n_steps == full.n_steps
+    inherited = dict(ablation.method_params)
+    inherited["controller_method"] = full.method_params["controller_method"]
+    assert inherited == full.method_params
+    assert diff_flags(
+        resolve_method(full.method_params["controller_method"]),
+        resolve_method(ablation.method_params["controller_method"]),
+    ) == ("use_controllability_geometry",)
+    assert ablation.metadata["formal_suites"] == [
+        suite["name"] for suite in full.suites
+    ]
+
+
+@pytest.mark.parametrize("family", ["surface_scan", "peg_insert"])
+def test_arm_learned_ablation_configs_change_only_the_named_component(family):
+    from genedynamics.solvers.single.mga.core.method_registry import (
+        diff_flags,
+        resolve_method,
+    )
+
+    full = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm" / family / "main/mga.yaml"
     )
     no_prior = ExperimentConfig.from_yaml(
-        ROOT / "configs/arm/peg_insert/ablation/no_rl_prior.yaml"
+        ROOT / "configs/arm" / family / "ablation/no_rl_prior.yaml"
     )
     no_reliability = ExperimentConfig.from_yaml(
-        ROOT / "configs/arm/peg_insert/ablation/no_learned_reliability.yaml"
+        ROOT / "configs/arm" / family / "ablation/no_learned_reliability.yaml"
     )
     for ablation in (no_prior, no_reliability):
         assert ablation.method == "mga"
@@ -364,11 +390,21 @@ def test_peg_ablation_configs_change_only_the_named_component():
         "controller_method": full.method_params["controller_method"],
         "policy_ckpt": full.method_params["policy_ckpt"],
     })
+    for key in ("atacom_policy_ckpt", "prior_atacom_samples"):
+        if key in full.method_params:
+            restored_prior[key] = full.method_params[key]
+        else:
+            restored_prior.pop(key, None)
     assert restored_prior == full.method_params
 
     restored_reliability = dict(no_reliability.method_params)
-    restored_reliability.update({
-        "learned_reliability": True,
-        "reliability_ckpt": full.method_params["reliability_ckpt"],
-    })
+    if "learned_reliability" in full.method_params:
+        restored_reliability["learned_reliability"] = full.method_params[
+            "learned_reliability"
+        ]
+    else:
+        restored_reliability.pop("learned_reliability", None)
+    restored_reliability["reliability_ckpt"] = full.method_params[
+        "reliability_ckpt"
+    ]
     assert restored_reliability == full.method_params

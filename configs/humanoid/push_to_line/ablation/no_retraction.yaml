@@ -2,4 +2,4 @@ base: ../main/mga.yaml
 name: no_retraction
 output_dir: results/humanoid/push_to_line/ablation/no_retraction
 method_params: {controller_method: mga_controllable_no_retraction}
-metadata: {ablation_of: mga, ablated_component: use_retraction, formal_suites: [p3_unjam]}
+metadata: {ablation_of: mga, ablated_component: use_retraction, formal_suites: [p1_force_15n, p1_force_30n, p2_push_nominal, p2_push_ood, p3_unjam, p4_walk_push]}

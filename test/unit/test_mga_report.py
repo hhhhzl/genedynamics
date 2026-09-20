@@ -56,11 +56,11 @@ def test_formal_mga_configs_pass_checkpoint_and_causal_protocol_audit():
     assert report["ok"], report["errors"]
     assert report["config_count"] == 35
     assert report["run_count_by_task"] == {
-        "manipulator_surface_scan": 1160,
+        "manipulator_surface_scan": 1560,
         "manipulator_peg_insert": 300,
-        "humanoid_box_push": 580,
+        "humanoid_box_push": 740,
     }
-    assert report["formal_run_count"] == 2040
+    assert report["formal_run_count"] == 2600
     assert report["warnings"]
     assert all("explicitly waived" in warning for warning in report["warnings"])
 

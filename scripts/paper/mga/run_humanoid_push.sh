@@ -60,22 +60,18 @@ for config in "${configs[@]}"; do
     "${common_args[@]}" "${primary_suite_args[@]}"
 done
 
-reliability_suites=(p2_push_ood p3_unjam p4_walk_push)
-if [[ "$scope" == "p123" ]]; then
-  reliability_suites=(p2_push_ood p3_unjam)
-fi
-for config in \
-  configs/humanoid/push_to_line/ablation/no_rl_prior.yaml \
-  configs/humanoid/push_to_line/ablation/no_learned_reliability.yaml; do
+aligned_ablation_configs=(
+  configs/humanoid/push_to_line/ablation/no_rl_prior.yaml
+  configs/humanoid/push_to_line/ablation/no_learned_reliability.yaml
+  configs/humanoid/push_to_line/ablation/no_controllability_geometry.yaml
+  configs/humanoid/push_to_line/ablation/no_retraction.yaml
+)
+for config in "${aligned_ablation_configs[@]}"; do
   "$python_bin" -m genedynamics.experiments.runner "$config" \
-    "${common_args[@]}" --suites "${reliability_suites[@]}"
+    "${common_args[@]}" "${primary_suite_args[@]}"
 done
-"$python_bin" -m genedynamics.experiments.runner \
-  configs/humanoid/push_to_line/ablation/no_tangent.yaml "${common_args[@]}" \
-  --suite p3_unjam
-"$python_bin" -m genedynamics.experiments.runner \
-  configs/humanoid/push_to_line/ablation/no_retraction.yaml "${common_args[@]}" \
-  --suite p3_unjam
+# P1 keeps the task-specific impedance ablation in addition to the four
+# cross-task ablations above.
 "$python_bin" -m genedynamics.experiments.runner \
   configs/humanoid/push_to_line/ablation/no_stiffness.yaml "${common_args[@]}" \
   --suites p1_force_15n p1_force_30n

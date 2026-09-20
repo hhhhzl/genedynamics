@@ -92,7 +92,7 @@ metadata:
     accepted: true
     reason: evaluation_seeds_0_9_overlap_frozen_training_seed_0_and_calibration_seed_1
   narrative: geometry_and_compliance
-  expected_formal_task_runs: 1160
+  expected_formal_task_runs: 1560
   learned_component_lock:
     policy:
       path: results/arm/impedence/_policies/shared_ppo_seed0.pkl

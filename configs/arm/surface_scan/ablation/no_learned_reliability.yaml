@@ -1,0 +1,10 @@
+base: ../main/mga.yaml
+name: no_learned_reliability
+output_dir: results/arm/surface_scan/ablation/no_learned_reliability
+method_params:
+  learned_reliability: false
+  reliability_ckpt: null
+metadata:
+  ablation_of: mga
+  ablated_component: learned_reliability
+  paper_scope: all_surface_suites

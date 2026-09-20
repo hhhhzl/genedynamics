@@ -1,5 +1,0 @@
-base: ../main/mga.yaml
-name: no_tangent
-output_dir: results/humanoid/push_to_line/ablation/no_tangent
-method_params: {controller_method: mga_controllable_gate_no_tangent}
-metadata: {ablation_of: mga, ablated_component: use_tangent_projection, formal_suites: [p3_unjam]}

@@ -159,7 +159,8 @@ def _audit_checkpoint_lock(
         required_names = {
             "mga", "model_based_only", "standalone_rl", "dial",
             "mppi", "pegasusflow", "issa", "atacom",
-            "no_rl_prior", "no_learned_reliability", "no_tangent",
+            "no_rl_prior", "no_learned_reliability",
+            "no_controllability_geometry",
             "no_retraction", "no_stiffness",
         }
         actual_names = {cfg.name for _, cfg in task_records}

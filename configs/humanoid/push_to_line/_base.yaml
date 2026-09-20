@@ -62,7 +62,9 @@ metadata:
     reason: evaluation_seeds_0_9_overlap_frozen_training_seed_0_and_calibration_seed_1
   narrative: whole_body_contact_geometry
   evidence_scope: full_eight_algorithm
-  expected_formal_task_runs: 580
+  # Eight algorithms and four cross-task MGA ablations run all six suites;
+  # the P1-only no-stiffness diagnostic contributes another twenty runs.
+  expected_formal_task_runs: 740
   learned_component_lock:
     policy_fixed:
       path: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl

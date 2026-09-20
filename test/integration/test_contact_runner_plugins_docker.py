@@ -337,9 +337,6 @@ def test_runner_dry_run_supports_isolated_multi_seed_multi_suite(
     [
         ("no_controllability_geometry.yaml", "mga_component_gate", "log_spd"),
         ("no_retraction.yaml", "mga_controllable_no_retraction", "log_spd"),
-        ("no_stiffness.yaml", "mga_controllable_no_stiffness", "none"),
-        ("fixed_or_euclidean_stiffness.yaml",
-         "mga_controllable_euclid_stiffness", "euclid"),
     ],
 )
 def test_surface_ablation_yaml_dispatches_controller_and_stiffness_chart(
@@ -395,17 +392,23 @@ def test_mga_rejects_missing_learned_component_contract():
 
 
 @pytest.mark.parametrize(
-    "filename,controller_method,learned_reliability",
+    "family,task,filename,controller_method,learned_reliability",
     [
-        ("no_rl_prior.yaml", "mga_controllable_gate_no_rl_prior", True),
-        ("no_learned_reliability.yaml", "mga_controllable_gate", False),
+        ("surface_scan", "manipulator_surface_scan", "no_rl_prior.yaml",
+         "mga_controllable_gate_no_rl_prior", True),
+        ("surface_scan", "manipulator_surface_scan",
+         "no_learned_reliability.yaml", "mga_controllable_gate", False),
+        ("peg_insert", "manipulator_peg_insert", "no_rl_prior.yaml",
+         "mga_controllable_gate_no_rl_prior", True),
+        ("peg_insert", "manipulator_peg_insert",
+         "no_learned_reliability.yaml", "mga_controllable_gate", False),
     ],
 )
-def test_peg_ablation_yaml_dispatches_exact_component_contract(
-    monkeypatch, filename, controller_method, learned_reliability,
+def test_arm_learned_ablation_yaml_dispatches_exact_component_contract(
+    monkeypatch, family, task, filename, controller_method, learned_reliability,
 ):
     cfg = ExperimentConfig.from_yaml(
-        ROOT / "configs/arm/peg_insert/ablation" / filename
+        ROOT / "configs/arm" / family / "ablation" / filename
     )
     captured = {}
 
@@ -419,7 +422,7 @@ def test_peg_ablation_yaml_dispatches_exact_component_contract(
     )
 
     class Env:
-        _experiment_task = "manipulator_peg_insert"
+        _experiment_task = task
         _experiment_execution_env = None
 
     planner = MGAMethodPlugin().create_planner(
@@ -672,7 +675,7 @@ def test_h1_paper_algorithm_checkpoints_execute_one_development_step(
 @pytest.mark.parametrize("config_path,suite_name", [
     ("configs/humanoid/push_to_line/ablation/no_rl_prior.yaml", "p3_unjam"),
     ("configs/humanoid/push_to_line/ablation/no_learned_reliability.yaml", "p2_push_ood"),
-    ("configs/humanoid/push_to_line/ablation/no_tangent.yaml", "p3_unjam"),
+    ("configs/humanoid/push_to_line/ablation/no_controllability_geometry.yaml", "p3_unjam"),
     ("configs/humanoid/push_to_line/ablation/no_retraction.yaml", "p3_unjam"),
     ("configs/humanoid/push_to_line/ablation/no_stiffness.yaml", "p1_force_15n"),
 ])

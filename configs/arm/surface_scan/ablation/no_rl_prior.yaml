@@ -1,0 +1,12 @@
+base: ../main/mga.yaml
+name: no_rl_prior
+output_dir: results/arm/surface_scan/ablation/no_rl_prior
+method_params:
+  controller_method: mga_controllable_gate_no_rl_prior
+  policy_ckpt: null
+  atacom_policy_ckpt: null
+  prior_atacom_samples: 0
+metadata:
+  ablation_of: mga
+  ablated_component: use_rl_prior
+  paper_scope: all_surface_suites
