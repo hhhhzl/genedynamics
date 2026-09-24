@@ -1,0 +1,77 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>MGA_ENV_LOADING</title>
+<style>html,body{margin:0;overflow:hidden;background:#f5f5f3}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"/reports/mga/paper_figures/scenes/brax_web/three.module.js"}}</script>
+</head><body><script type="module">
+import * as THREE from 'three';
+import {createScene} from '/reports/mga/paper_figures/scenes/brax_web/system.js';
+try {
+ const settings={"payload": "/reports/mga/paper_figures/scenes/humanoid_force_regulation.brax.json", "name": "humanoid_p1", "state": -1, "width": 600, "height": 400, "high": false, "palette": {"robot": "#3A4655", "box": "#C7B384", "corridor": "#9FB8B5", "goal": "#5C8F2E", "background": "#F7F8F6", "checker": [175, 205, 205, 175], "srgb_materials": true, "box_srgb_materials": false}};
+ const system=await (await fetch(settings.payload)).json();
+ const scene=createScene(system);
+ const state=system.states.x.at(settings.state);
+ const palette=settings.palette;
+ function materialColor(material,value,srgb=palette.srgb_materials){
+   material.color.set(value);
+   if(srgb)material.color.convertSRGBToLinear();
+ }
+ scene.background=new THREE.Color(palette.background);
+ scene.fog=new THREE.Fog(palette.background,8,20);
+ for(const [name,geoms] of Object.entries(system.geoms)){
+   const group=scene.getObjectByName(name.replaceAll('/','_'));
+   const index=geoms[0].link_idx;
+   if(index>=0){
+     group.position.fromArray(state.pos[index]);
+     const q=state.rot[index];group.quaternion.set(q[1],q[2],q[3],q[0]);
+   }
+   geoms.forEach((geom,j)=>group.children[j].traverse(o=>{
+     if(!o.isMesh)return;
+     o.material.opacity=1;o.material.transparent=false;
+     o.material.depthWrite=true;o.material.shininess=8;
+     o.material.specular.set(0x101010);
+     o.castShadow=geom.name!=='Plane';o.receiveShadow=true;
+     if(geom.name==='Plane'){
+       const d=o.material.map.image.data;
+       palette.checker.forEach((v,k)=>{d[k*4]=v;d[k*4+1]=v;d[k*4+2]=v;d[k*4+3]=255;});
+       o.material.map.repeat.set(3800,3800);o.material.map.needsUpdate=true;
+       o.material.color.set(0xffffff);
+     }else if(name==='box_body'){
+       materialColor(o.material,palette.box,palette.box_srgb_materials??palette.srgb_materials);
+     }else if(name==='world'){
+       materialColor(o.material,palette.corridor);
+     }else{
+       materialColor(o.material,palette.robot);
+     }
+   }));
+ }
+ if(system.paper.goal){
+   const g=system.paper.goal;
+   const marker=new THREE.Mesh(new THREE.BoxGeometry(...g.half_size.map(v=>2*v)),
+       new THREE.MeshPhongMaterial({transparent:true,opacity:.70}));
+   materialColor(marker.material,palette.goal);
+   marker.position.fromArray(g.position);scene.add(marker);
+ }
+ const hemi=new THREE.HemisphereLight(0xffffff,0xa7a7a0,.72);scene.add(hemi);
+ const key=new THREE.DirectionalLight(0xffffff,.78);
+ key.position.set(-3,-4,7);key.castShadow=true;
+ Object.assign(key.shadow.camera,{left:-3,right:3,top:3,bottom:-3,near:.1,far:20});
+ key.shadow.mapSize.set(2048,2048);key.shadow.bias=-.00015;key.shadow.normalBias=.002;
+ key.shadow.radius=4;scene.add(key);
+ const fill=new THREE.DirectionalLight(0xffffff,.12);fill.position.set(3,2,4);scene.add(fill);
+ const aspect=settings.width/settings.height;
+ const halfHeight=settings.high?1.22:1.08;
+ const camera=new THREE.OrthographicCamera(-halfHeight*aspect,halfHeight*aspect,halfHeight,-halfHeight,.01,100);
+ camera.up.set(0,0,1);
+ camera.position.fromArray(settings.high?[-.35,-3.8,5.6]:[-.55,-4.5,2.4]);
+ camera.lookAt(...(settings.high?[.70,0,.64]:[.60,0,.88]));
+ const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+ renderer.setPixelRatio(1);renderer.setSize(settings.width,settings.height);
+ renderer.outputEncoding=THREE.sRGBEncoding;
+ renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+ document.body.appendChild(renderer.domElement);
+ renderer.render(scene,camera);
+ window.mgaEnvironment={scene,camera,renderer,system,settings};
+ document.title='MGA_ENV_READY';
+ await fetch('/__capture_ready__/'+settings.name);
+}catch(error){document.title='MGA_ENV_ERROR';document.body.textContent=error.stack;}
+</script></body></html>

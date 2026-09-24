@@ -4,6 +4,27 @@
 
 配套文档：[H1 P1–P4 报告缺口与修复顺序](humanoid_report_README.md)。完整工程历史见 [experiment_run_plan.md](experiment_run_plan.md)。当前论文实际位置是 [`latex/latex_mga`](../../latex/latex_mga)，不是仓库根目录下的 `latex_mga`。
 
+## 当前论文更新：Scanning seeds 0–9
+
+2026-09-22：Scanning 主表、正文引用数字和 Appendix G 的聚合图/统计已切换到全部 seeds 0–9。数据仅来自 `results/arm/surface_scan`；主表八个方法 × 13 suites × 10 seeds 的 1,040 条结果均齐全。方法顺序为 ISSA、ATACOM、MPPI、DIAL、PegasusFlow、MGA、w/o RL prior、w/o LRC；`no_retraction` 对应 w/o LRC。
+
+分组仍为 Hard 4、Soft 4、Hybrid 3、Unseen 2，不把 unseen 再算入 Hard/Soft。每个 seed 内对组内 suites 等权平均，再对十个 seed 均值求均值与总体标准差；SSR 阈值、归一化力阈值和失败保留规则不变。主图及 Visualizations 的固定 seed 0 示例不随统计扩容重新挑选。下文 seed 0–1 的版式开发记录保留为历史，不是当前论文统计或最终方法列表。
+
+| 分组 | MGA：SSR / nCVaR95 | w/o RL prior：SSR / nCVaR95 | w/o LRC：SSR / nCVaR95 |
+|---|---:|---:|---:|
+| Hard | 100.0% / .498 | 100.0% / .486 | 67.5% / .521 |
+| Soft | 100.0% / .466 | 100.0% / .488 | 70.0% / .498 |
+| Hybrid | 100.0% / .658 | 96.7% / .738 | 56.7% / .702 |
+| Unseen | 50.0% / .429 | 55.0% / .433 | 75.0% / .502 |
+
+跨 13 suites，MGA、w/o RL prior、w/o LRC 的 operational success 分别为 120/130、120/130、87/130；zero-violation success 为 119/130、117/130、86/130。接触有效覆盖率分别为 96.03±1.38%、97.10±1.26%、84.75±6.19%。w/o LRC 的终点进度仍达 99.88%，但 43 次失败中 42 次仅覆盖不足、1 次仅接触保持不足，因此“推进到终点不等于忠实覆盖”仍是 Surface 的主要证据。Unseen 上 MGA 未取得最高成功率，这一边界保留在正文。
+
+对应入口仍是 `scripts/paper/mga/plot_surface_mechanism.py`（默认 seeds 0–9，`--appendix` 生成聚合附图）；输出仍在 `reports/mga/paper_figures`，论文副本在 `latex/latex_mga/figures/exp`。主表位于 `tex/peg_insert_results.tex`，统计定义位于 `sections/appendix_environments.tex`，连续量与 strict-success 敏感性检查位于 `sections/appendix.tex`。
+
+Peg 主图 (f) 保留同一固定示例、全部未平滑真实 wrench 样本及首次完成标记；峰值为 MGA .791、w/o prior .870、DIAL .901、ISSA .974。ISSA 是现有 nominal execution reference，不能作为匹配的 Sensing-OOD 对比；图内脚注删除，来源限定保留在 caption 和图的 JSON 中。该示例支持较低峰值，不意味着 MGA 在所有 seeds 上 force tail 最低或完成最快。
+
+(g) 展示同一次执行的计划选择日志：prior proposal 被采用、refined plan 未通过模型复核、task-owned emergency 被选择。它不是三种互斥接触模式，也不是实际违规或 jam 计数。该示例 emergency 在首次完成后发生，且由 task override 触发，不能用来证明 jamming recovery；它与 (f) 的实际执行响应应分开解释。
+
 ## 1. 三页怎么放
 
 | 页 | 内容与建议占比（含 caption） | 读者应得到的结论 |

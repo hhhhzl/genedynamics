@@ -1,0 +1,49 @@
+{
+  "figure_type": "environment overview; no experimental measurements or results plotted",
+  "panel_aspect_ratio": "3:2, with all insets inside each original canvas",
+  "original_arm_images_preserved": true,
+  "humanoid_box": "v1 Brax-reference box material #C7B384, without sRGB-to-linear conversion; other manuscript colors unchanged",
+  "arm_image_transform": "Uniform scaling only; original background, camera, materials and colors preserved.",
+  "individual_png_sizes": {
+    "scanning.png": [
+      810,
+      540
+    ],
+    "peg_insert.png": [
+      510,
+      340
+    ],
+    "push_to_line.png": [
+      558,
+      372
+    ]
+  },
+  "palette": "Manuscript teal #1F7A78, indigo #4B2E83, orange #D9660E, slate #3A4655 and associated pale fills",
+  "sources": [
+    {
+      "path": "latex/latex_mga/figures/envs/scanning.png",
+      "sha256": "e9047ed4321b7f5dc75b937940e338ab6b6f0529739f60d8c81be92bde9da8cd"
+    },
+    {
+      "path": "latex/latex_mga/figures/envs/peg_insert.png",
+      "sha256": "a5b27ae8be29edcd28dd3c7481345253e5e629f4c059164e79b27d75401e8e31"
+    },
+    {
+      "path": "scripts/paper/mga/output/env_overview_v4/assets/humanoid_hero.png",
+      "sha256": "766e84c7daf6dcbd29ce4f503116fb48532c57b1bdb4bdf70619fbdf7d6af235"
+    }
+  ],
+  "schematics": {
+    "scanning_materials": "Hard/Soft have the same nominal planar geometry. Spring icons and probe penetration depict contact response, not deformation of the rendered mesh.",
+    "hybrid": "Three symbolic task-chart stiffness maps; colors are not world-space surface texture. Hybrid is planar only.",
+    "shapes": "Representative normalized shape-family illustrations, not reconstructed or measured heightfields.",
+    "peg_pose": "Nominal dashed outline and offset/rotated socket. Offset magnified for visibility, not an actual rollout pose.",
+    "peg_sensing": "Same geometry as ID; arrows denote true versus biased wrench observations, not physical motion."
+  },
+  "references": [
+    "latex/latex_mga/sections/appendix_environments.tex",
+    "latex/latex_mga/sections/exp.tex"
+  ],
+  "humanoid_arrows": "Schematic task-intent annotations (force / translation / yaw), not trajectories or measured displacements.",
+  "manuscript_modified": false
+}
