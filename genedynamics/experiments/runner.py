@@ -97,6 +97,28 @@ from genedynamics.experiments.plugins import (
 )
 
 
+def _formal_readiness_errors(config: ExperimentConfig) -> list[str]:
+    """Return execution blockers for a canonical formal result directory.
+
+    Development runs deliberately use the same resolved algorithm config, so
+    they must remain available while learned components are being trained and
+    calibrated.  Canonical formal output, however, stays closed until the
+    shared protocol explicitly declares itself frozen.
+    """
+    metadata = config.metadata or {}
+    if metadata.get("run_class") == "development":
+        return []
+    if not metadata.get("formal_experiment", True):
+        return []
+    status = str(metadata.get("protocol_status", "")).strip()
+    if status and not status.startswith("frozen"):
+        return [
+            f"formal protocol is {status!r}; use --development-root for probes "
+            "and freeze the shared protocol before writing canonical results"
+        ]
+    return []
+
+
 def main():
     """Main entry point for running experiments from config files."""
     parser = argparse.ArgumentParser(
@@ -243,6 +265,33 @@ def main():
         print(f"Output directory: {config.output_dir}")
         print(f"Run class: {config.metadata.get('run_class', 'unspecified')}")
         return
+
+    readiness_errors = _formal_readiness_errors(config)
+    if readiness_errors:
+        print("Formal execution is not ready:")
+        for error in readiness_errors:
+            print(f"  - {error}")
+        raise SystemExit(2)
+
+    if (config.metadata or {}).get("require_checkpoint_files", False):
+        missing = []
+        for key, value in config.method_params.items():
+            if not isinstance(key, str) or not key.endswith("_ckpt") or not value:
+                continue
+            checkpoint = Path(str(value)).expanduser()
+            if not checkpoint.is_absolute():
+                checkpoint = Path.cwd() / checkpoint
+            if not checkpoint.is_file():
+                missing.append((key, value))
+        if missing:
+            print("Required learned components are not ready:")
+            for key, value in missing:
+                print(f"  - {key}: {value}")
+            print(
+                "Train and freeze the PegInsert components before running "
+                "the formal matrix; archived checkpoints are not resumed."
+            )
+            raise SystemExit(2)
     
     # Create experiment runner
     runner = ExperimentRunner(config)
@@ -261,9 +310,21 @@ def main():
     print()
     
     results = runner.run_all(resume=args.resume)
-    
-    print(f"\nCompleted {len(results)} experiments")
+
+    failures = runner.failures
+    print(
+        f"\nCompleted {len(results)} experiments; "
+        f"failed {len(failures)} experiments"
+    )
     print(f"Results saved to: {config.output_dir}")
+    if failures:
+        print("Failed experiments:")
+        for failure in failures:
+            print(
+                f"  - level={failure['level']}, seed={failure['seed']}: "
+                f"{failure['error_type']}: {failure['error']}"
+            )
+        raise SystemExit(1)
 
 
 def register_all_plugins(runner: ExperimentRunner):

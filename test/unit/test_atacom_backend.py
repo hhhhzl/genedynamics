@@ -48,6 +48,23 @@ class _ToyConstraintEnv:
         return state.replace(obs=state.obs.at[0].set(action[0]))
 
 
+class _ToyPredictiveConstraintEnv(_ToyConstraintEnv):
+    """State safety is static, while the known dynamics expose control authority."""
+
+    def constraint_residual(self, state, action):
+        del action
+        return jnp.zeros((0,), state.obs.dtype), jnp.asarray(
+            [state.obs[1] - 0.5], state.obs.dtype
+        )
+
+    def atacom_constraint_residual(self, state, action):
+        # Discrete counterpart of g(q) + K_g J_g(q) q_dot: the candidate
+        # action controls the predicted next safety coordinate.
+        return jnp.zeros((0,), action.dtype), jnp.asarray(
+            [state.obs[1] + action[1] - 0.5], action.dtype
+        )
+
+
 def _augmented_constraint(env, state, action, slack):
     f = env.manifold_residual(state, action[None]).reshape(-1)
     g = env.constraint_residual(state, action)[1].reshape(-1)
@@ -98,6 +115,31 @@ def test_error_correction_reduces_augmented_constraint_norm():
     assert float(jnp.linalg.norm(after)) < float(jnp.linalg.norm(before))
     assert action.shape == (4,)
     assert slack_next.shape == (1,)
+
+
+def test_task_owned_predictive_constraint_supplies_action_safety_jacobian():
+    env = _ToyPredictiveConstraintEnv()
+    state = env.reset(jax.random.PRNGKey(0)).replace(
+        obs=jnp.asarray([0.0, 0.8], jnp.float32)
+    )
+    zero = jnp.zeros((env.action_size,), jnp.float32)
+    static_g = env.constraint_residual(state, zero)[1]
+    static_jacobian = jax.jacobian(
+        lambda u: env.constraint_residual(state, u)[1]
+    )(zero)
+    predictive_jacobian = jax.jacobian(
+        lambda u: env.atacom_constraint_residual(state, u)[1]
+    )(zero)
+    np.testing.assert_allclose(static_jacobian, 0.0)
+    assert float(jnp.linalg.norm(predictive_jacobian)) > 0.9
+
+    slack = init_slack(env, state)
+    transform = make_atacom_transform(env, Kc=1.0, time_step=1.0)
+    action, _ = transform(
+        state, jnp.zeros((atacom_null_dim(env),), jnp.float32), slack
+    )
+    corrected_g = env.atacom_constraint_residual(state, action)[1]
+    assert float(corrected_g[0]) < float(static_g[0])
 
 
 def test_wrapper_exposes_3d_policy_action_and_executes_4d_control():

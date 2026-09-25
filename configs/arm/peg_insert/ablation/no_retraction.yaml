@@ -1,0 +1,8 @@
+base: ../main/mga.yaml
+name: no_retraction
+output_dir: results/arm/peg_insert/ablation/no_retraction
+method_params:
+  controller_method: mga_controllable_no_retraction
+metadata:
+  ablation_of: mga
+  ablated_component: use_retraction

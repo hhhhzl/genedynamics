@@ -37,12 +37,22 @@ class AtacomEnvWrapper(_BraxWrapper):
     wrap it with its own ``EpisodeWrapper`` / ``VmapWrapper`` / ``AutoResetWrapper`` unchanged.
     """
 
-    def __init__(self, env: Any, *, Kc: float = 1.0, action_limit: float = 1.0) -> None:
+    def __init__(self, env: Any, *, Kc: float = 1.0,
+                 action_limit: float = 1.0, alpha_limit: float | None = None,
+                 step_env: Any = None) -> None:
         self.env = env                                       # (brax Wrapper just stores self.env)
+        self.step_env = step_env or env
         self._nu = int(env.action_size)
         self._n_f, self._n_g = atacom_constraint_dims(env)
         self._null = atacom_null_dim(env)
-        self.alpha_max = float(action_limit)
+        # Upstream ATACOM first scales the normalized tangent command by
+        # ``alpha_max`` and then applies the plant's acceleration/control
+        # bounds to the projected command.  Keeping those limits separate is
+        # essential for asymmetric task charts (PegInsert needs the full
+        # control range to issue its zero-force terminal command).
+        self.alpha_max = float(
+            action_limit if alpha_limit is None else alpha_limit
+        )
         dt = float(getattr(getattr(env, "_config", None), "dt", 0.02))
         self._transform = jax.jit(make_atacom_transform(
             env, Kc=Kc, time_step=dt, action_limit=action_limit
@@ -66,12 +76,12 @@ class AtacomEnvWrapper(_BraxWrapper):
                                    "atacom_u": jnp.zeros((self._nu,), jnp.float32)})
 
     def reset(self, rng):
-        return self._augment(self.env.reset(rng))
+        return self._augment(self.step_env.reset(rng))
 
     def step(self, state, alpha):
         s = state.info["atacom_s"]
         u, s_new = self._transform(state, jnp.asarray(alpha) * self.alpha_max, s)
-        new = self.env.step(state, u)
+        new = self.step_env.step(state, u)
         return new.replace(info={**new.info, "atacom_s": s_new, "atacom_u": u})
 
 

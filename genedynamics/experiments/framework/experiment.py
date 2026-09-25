@@ -140,6 +140,10 @@ class ExperimentRunner:
         self.config = config
         self.registry = PluginRegistry()
         self.results: List[Dict[str, Any]] = []
+        # The runner keeps successful matrix entries even when another entry
+        # fails, but the CLI and persisted summary must still expose the
+        # failure.  Otherwise a killed/failed batch looks like a complete run.
+        self.failures: List[Dict[str, Any]] = []
         
         # Validate configuration
         errors = config.validate()
@@ -338,6 +342,15 @@ class ExperimentRunner:
             'env_params': self.config.env_params,
             'execution_env_params': self.config.execution_env_params,
             'suite': (self.config.metadata or {}).get('suite', level),
+            # Internal execution scope used by method plugins to guard
+            # development-only mechanisms.  These fields are never forwarded
+            # to solver constructors.
+            'experiment_run_class': (self.config.metadata or {}).get(
+                'run_class', 'formal'
+            ),
+            'experiment_formal_experiment': (self.config.metadata or {}).get(
+                'formal_experiment', True
+            ),
         }
         # Pass top-level scheduler_config so method plugins (e.g. MBD3D) can read
         # Ndiffuse / beta0 / betaT / M_k / T_k from diffusion_schedulers.
@@ -842,6 +855,7 @@ class ExperimentRunner:
             List of experiment result dictionaries
         """
         all_results = []
+        self.failures = []
         original_config = self.config
         run_configs = (
             [original_config.for_suite(suite) for suite in original_config.suites]
@@ -888,18 +902,84 @@ class ExperimentRunner:
                             self.results.append(result)
                             self._save_result(result)
                         except Exception as e:
-                            print(f"Error in level={level}, seed={seed}: {e}")
+                            failure = {
+                                "level": level,
+                                "seed": seed,
+                                "error_type": type(e).__name__,
+                                "error": str(e),
+                            }
+                            suite = run_config.metadata.get("suite")
+                            if suite is not None:
+                                failure["suite"] = suite
+                            self.failures.append(failure)
+                            print(
+                                f"Error in level={level}, seed={seed} "
+                                f"({failure['error_type']}): {e}"
+                            )
                             import traceback
                             traceback.print_exc()
         finally:
             self.config = original_config
 
-        self._save_summary(all_results)
+        # A CLI invocation may intentionally cover only one suite or seed.
+        # Rebuild summaries from every compatible completed result on disk so
+        # a later batch cannot replace a 30-run aggregate with its last run.
+        failed_keys = {
+            (str(item["level"]), int(item["seed"])) for item in self.failures
+        }
+        persisted = self._collect_completed_results(exclude=failed_keys)
+        self._save_summary(persisted if persisted else all_results)
 
         if getattr(self.config, "auto_report", True):
             self._generate_report()
 
         return all_results
+
+    def _collect_completed_results(
+        self, *, exclude: Optional[set[tuple[str, int]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Load compatible completed trials already present in output_dir.
+
+        Dispatch fields and suite-owned overrides legitimately differ between
+        files.  The immutable identity is the algorithm/task/protocol at the
+        same canonical output root.  A protocol change therefore requires a
+        new root or an explicit archive, which is exactly the formal workflow.
+        """
+        exclude = exclude or set()
+        expected = self.config.to_dict()
+        expected_protocol = str((self.config.metadata or {}).get("protocol", ""))
+        records: List[Dict[str, Any]] = []
+        for path in sorted(self.config.output_dir.glob("level_*/seed_*/results.json")):
+            try:
+                with path.open() as handle:
+                    result = json.load(handle)
+            except (OSError, json.JSONDecodeError):
+                continue
+            key = (str(result.get("level")), int(result.get("seed", -1)))
+            if key in exclude:
+                continue
+            if (result.get("execution_status") or {}).get(
+                "state", "completed"
+            ) != "completed":
+                continue
+            snapshot = result.get("config_snapshot")
+            if not isinstance(snapshot, dict):
+                continue
+            identity_matches = all(
+                snapshot.get(name) == expected.get(name)
+                for name in ("name", "env_name", "method", "output_dir")
+            )
+            saved_protocol = str(
+                (snapshot.get("metadata") or {}).get("protocol", "")
+            )
+            if not identity_matches or saved_protocol != expected_protocol:
+                continue
+            if not isinstance(result.get("metrics"), dict):
+                continue
+            if not isinstance(result.get("planning_time"), (int, float)):
+                continue
+            records.append(result)
+        return sorted(records, key=lambda row: (str(row["level"]), int(row["seed"])))
 
     def _save_protocol_manifest(self) -> None:
         """Write the resolved formal protocol and checkpoint provenance."""
@@ -3149,17 +3229,13 @@ class ExperimentRunner:
         Args:
             all_results: List of all experiment results
         """
-        if not all_results:
-            return
-        
         # Compute level summaries
         level_summaries = {}
-        configured_levels = (
-            [str(suite["name"]) for suite in self.config.suites]
-            if self.config.suites else self.config.obstacle_levels
-        )
+        configured_levels = sorted({str(r["level"]) for r in all_results})
         for level in configured_levels:
-            level_results = [r for r in all_results if r['level'] == level]
+            level_results = [
+                r for r in all_results if str(r['level']) == str(level)
+            ]
             if level_results:
                 pt_list = [r['planning_time'] for r in level_results]
                 n_pt = len(pt_list)
@@ -3253,9 +3329,11 @@ class ExperimentRunner:
         n_all = len(pt_all)
         overall_summary = {
             'total_experiments': n_all,
-            'avg_planning_time': float(np.mean(pt_all)),
+            'avg_planning_time': float(np.mean(pt_all)) if pt_all else None,
             'std_planning_time': float(np.std(pt_all)) if n_all > 1 else 0.0,
             'level_summaries': level_summaries,
+            'failed_experiments': len(self.failures),
+            'failures': list(self.failures),
             'metrics': {
                 metric_name: _aggregate_numeric_tree([
                     (r.get('metrics') or {}).get(metric_name)

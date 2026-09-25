@@ -3243,37 +3243,28 @@ The experiment package is paper-ready only when all gates below are true.
 
 ### PegInsert final freeze
 
-PegInsert now has one versionless paper protocol, `mga_peg_insert_paper`, and
+PegInsert now has one versionless paper protocol, `mga_peg_insert_core_only`, and
 one canonical configuration/result tree under `configs/arm/peg_insert` and
 `results/arm/peg_insert`. Pre-freeze runs remain historical evidence only and
 must not be pooled with the final matrix. Pose-OOD and Sensing-OOD seeds 0--9
 were inspected during development, so they are evaluation-on-reused-seeds
 rather than an untouched holdout; state this limitation explicitly.
 
-The three changes are:
+The final decision is core-only MGA. It retains additive RL proposals,
+model-based scoring and rollout, manifold/tangent shaping, local residual
+correction, execution-time revalidation, receding incumbent, and task-owned
+emergency recovery. It does not load a learned reliability checkpoint. The
+P4 development candidate remains unpromoted because four completed paired
+comparisons showed identical insertion/full-window safe success and mixed
+tail-risk changes versus the core controller. P4 artifacts remain available
+for audit but are not formal dependencies or paper rows.
 
-1. Stabilize PegInsert ridge-logistic reliability fitting with backtracking.
-   Reuse the original fit seeds 100/101 and calibration seed 102, excluding
-   evaluation seeds 0--9. The frozen checkpoint is
-   `results/arm/peg_insert/_policies/reliability.json`, SHA-256
-   `45ea1b37bc99fd41192956b28d47c81fb0125689955da95840b2110ac7c96db1`.
-   Joint support checks use all 32 state features plus candidate features.
-   Out-of-support predictions abstain under the existing `model_based` policy;
-   this is not an absolute OOD safety certificate.
-2. Enable the opt-in `prior_mode: additive` for PegInsert MGA. Preserve the
-   no-prior Gaussian refinement stream; assess one deterministic and eight
-   stochastic RL horizons with the same model-based score/risk and learned
-   gate. A rejected expert cannot replace the already revalidated Gaussian
-   decision. Log adoption, candidate count and predicted score improvement.
-   The 64-sample Gaussian budget is unchanged, but Full MGA now performs nine
-   extra expert evaluations per replan: this is not equal-total-compute evidence.
-   Other tasks retain the existing `guided` default.
-3. Correct the task reward so misalignment does not discount unfinished
-   insertion cost. Add contact-weighted misalignment cost while preserving
-   the depth objective. Physics, force/torque limits, success definition,
-   episode length, OOD parameters and the frozen PPO checkpoint stay unchanged.
-   This changes the PegInsert optimization objective for every algorithm;
-   pre-freeze baseline rewards must not be pooled with final-protocol rewards.
+The formal learned-component lock therefore contains only the frozen raw PPO
+and ATACOM tangent PPO checkpoints. `no_rl_prior` differs from MGA only by
+`use_rl_prior`; the historical `no_learned_reliability` entry is a non-formal
+alias of canonical MGA and is not run. The second formal ablation is frozen as
+`no_retraction` (w/o LRC). `no_tangent` is not part of the PegInsert formal
+protocol.
 
 Execution uses only the existing paper script and unified runner:
 
@@ -3281,19 +3272,21 @@ Execution uses only the existing paper script and unified runner:
 scripts/paper/mga/run_peg_insert.sh
 ```
 
-The script evaluates all ten final configurations with seeds 0--9 and writes
-the canonical three-suite matrix. `--resume` may reuse only complete,
-config-matching runs. The reliability checkpoint path, digest, reward,
-physics, budgets and suite definitions are frozen before execution. Do not
-tune from partial final results. The existing development directories and logs
-are retained only for audit and are not formal paper inputs.
+The script evaluates eight final configurations with seeds 0--9 and writes the
+240-run canonical three-suite matrix. `--resume` may reuse only complete,
+config-matching runs. Policy digests, reward, physics, budgets and suite
+definitions are frozen before execution. Do not tune from partial final
+results. The existing development directories and logs are retained only for
+audit and are not formal paper inputs.
 
 Results retain the usual project-relative layout below each development root.
 Use `genedynamics.experiments.utils.metrics` and
 `genedynamics.experiments.utils.vis` for reports and rendering. Report safe
 success, raw success, insertion depth, violations, force/torque peaks, jam,
-emergency frequency, reliability support/rejections and RL adoption. A
-nominal predicted improvement does not establish true closed-loop dominance.
+emergency frequency, model revalidation/rejections and RL adoption. A
+nominal predicted improvement does not establish true closed-loop dominance;
+reliability diagnostics are development-only and are not expected in the
+core-only formal MGA results.
 Keep scanning configs, checkpoints, reward and existing results unchanged.
 
 ### Original three-task formal entry points

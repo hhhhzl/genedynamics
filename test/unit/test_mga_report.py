@@ -46,21 +46,22 @@ def _result(root: Path, algorithm: str, seed: int, safe: float, force: float):
     }), encoding="utf-8")
 
 
-def test_formal_mga_configs_pass_checkpoint_and_causal_protocol_audit():
+def test_formal_mga_configs_accept_frozen_peg_core_only_protocol():
     root = Path(__file__).resolve().parents[2]
     report = audit_configs([
         str(root / "configs/arm/surface_scan"),
         str(root / "configs/arm/peg_insert"),
         str(root / "configs/humanoid/push_to_line"),
     ])
-    assert report["ok"], report["errors"]
-    assert report["config_count"] == 35
+    assert report["ok"]
+    assert report["errors"] == []
+    assert report["config_count"] == 39
     assert report["run_count_by_task"] == {
         "manipulator_surface_scan": 1560,
-        "manipulator_peg_insert": 300,
+        "manipulator_peg_insert": 240,
         "humanoid_box_push": 740,
     }
-    assert report["formal_run_count"] == 2600
+    assert report["formal_run_count"] == 2540
     assert report["warnings"]
     assert all("explicitly waived" in warning for warning in report["warnings"])
 

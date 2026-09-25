@@ -2,4 +2,4 @@ base: ../_base.yaml
 name: issa
 method: issa
 output_dir: results/arm/peg_insert/baseline/issa
-method_params: {controller_method: issa, policy_ckpt: results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl, n_dirs: 8, n_iters: 20, adamba_bound: 0.001, safety_threshold: 0.0, enforce_absolute: true}
+method_params: {controller_method: issa, policy_ckpt: results/arm/peg_insert/_policies/shared_ppo_seed0.pkl, n_dirs: 8, n_iters: 20, adamba_bound: 0.001, safety_threshold: 0.0, enforce_absolute: true}

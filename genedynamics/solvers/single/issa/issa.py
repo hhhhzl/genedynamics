@@ -31,15 +31,16 @@ class IssaSolver:
     def __init__(self, env: Any, act_fn: Callable[[Any, Any], Any], *, n_dirs: int = 20,
                  n_iters: int = 50, bound: float = 1e-4, threshold: float = 0.0,
                  enforce_absolute: bool = True, action_limit: float = 1.0,
-                 seed: int = 0) -> None:
+                 seed: int = 0, step_env: Any = None) -> None:
         make_projection = _get_issa_backend("jax")
         self.projection = make_projection(
             env, n_dirs=n_dirs, n_iters=n_iters, bound=bound,
             threshold=threshold, enforce_absolute=enforce_absolute,
-            action_limit=action_limit, seed=seed,
+            action_limit=action_limit, seed=seed, step_env=step_env,
         )
         self._ctrl = RLPolicyController(
-            env, act_fn, action_projection=self.projection, seed=seed
+            step_env or env, act_fn,
+            action_projection=self.projection, seed=seed
         )
 
     def run_receding(self, x0: Any, n_steps: int, rng: Any, **kwargs: Any):

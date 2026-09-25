@@ -187,8 +187,170 @@ def _surface_record_from_result(path: Path) -> dict[str, Any]:
     }
 
 
+def _peg_insert_record_from_result(
+    path: Path,
+    result: dict[str, Any] | None = None,
+    trajectory_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Convert one unified-runner PegInsert rollout to the fit schema.
+
+    PegInsert's persisted task signals are already measured in the hidden
+    execution environment.  Consuming those signals directly is important:
+    replaying the submitted actions in the nominal model would erase the pose,
+    sensing, latency, and contact-parameter mismatch that reliability is meant
+    to learn.
+    """
+    if result is None:
+        with path.open() as handle:
+            result = json.load(handle)
+    snapshot = dict(result.get("config_snapshot") or {})
+    task = str(snapshot.get("env_name", ""))
+    if task != "manipulator_peg_insert":
+        raise ValueError(f"{path} is not a PegInsert result")
+    execution = dict(result.get("execution_status") or {})
+    if execution and execution.get("state", "completed") != "completed":
+        raise ValueError(f"incomplete PegInsert rollout cannot be fitted: {path}")
+
+    trajectory_path = path.parent / "trajectory" / "trajectory.json"
+    if trajectory_payload is None:
+        with trajectory_path.open() as handle:
+            trajectory_payload = json.load(handle)
+    actions = np.asarray(trajectory_payload.get("actions") or (), np.float32)
+    signals = dict(trajectory_payload.get("task_signals") or {})
+    if actions.ndim != 2 or actions.shape[1:] != (13,):
+        raise ValueError(
+            f"invalid PegInsert action array in {trajectory_path}: "
+            f"{actions.shape}"
+        )
+    if not len(actions) or not np.all(np.isfinite(actions)):
+        raise ValueError(f"non-finite or empty PegInsert actions: {trajectory_path}")
+    expected_steps = int(snapshot.get("n_steps", len(actions)))
+    if len(actions) != expected_steps:
+        raise ValueError(
+            f"PegInsert fit requires the complete {expected_steps}-step "
+            f"execution, got {len(actions)} in {trajectory_path}"
+        )
+
+    required = (
+        "pose", "angle_vec", "measured_lateral_force",
+        "measured_axial_force", "measured_bending_torque",
+        "measured_wrench_delta", "contact_count", "stall_steps",
+        "force_violation", "torque_violation", "jammed", "axial_force",
+    )
+    missing = [name for name in required if name not in signals]
+    if missing:
+        raise ValueError(
+            f"PegInsert task signals missing in {trajectory_path}: "
+            f"{', '.join(missing)}"
+        )
+    arrays = {name: np.asarray(signals[name]) for name in required}
+    bad_lengths = {}
+    for name, value in arrays.items():
+        length = None if value.ndim == 0 else int(len(value))
+        if length != len(actions):
+            bad_lengths[name] = length
+    if bad_lengths:
+        raise ValueError(
+            f"PegInsert task signals must match {len(actions)} actions: "
+            f"{bad_lengths}"
+        )
+    nonfinite = [
+        name for name, value in arrays.items()
+        if not np.all(np.isfinite(value))
+    ]
+    if nonfinite:
+        raise ValueError(
+            f"non-finite PegInsert task signals in {trajectory_path}: "
+            f"{', '.join(nonfinite)}"
+        )
+    if arrays["pose"].shape != (len(actions), 3):
+        raise ValueError(
+            f"PegInsert pose must have shape ({len(actions)}, 3), got "
+            f"{arrays['pose'].shape}"
+        )
+    if arrays["angle_vec"].shape != (len(actions), 3):
+        raise ValueError(
+            f"PegInsert angle_vec must have shape ({len(actions)}, 3), got "
+            f"{arrays['angle_vec'].shape}"
+        )
+    controls = signals.get("controls")
+    if controls is not None:
+        controls_array = np.asarray(controls, np.float32)
+        if controls_array.shape != actions.shape or not np.allclose(
+            controls_array, actions, rtol=0.0, atol=1.0e-7
+        ):
+            raise ValueError(
+                f"PegInsert persisted controls disagree with actions: "
+                f"{trajectory_path}"
+            )
+
+    # Resolve the execution-task parameters in the same order as the runner:
+    # base env parameters first, then the suite's hidden execution overrides.
+    # These are only normalization/latency constants; the physical labels
+    # above always come from the persisted execution trajectory.
+    params = dict(snapshot.get("env_params") or {})
+    params.update(snapshot.get("execution_env_params") or {})
+    defaults = {
+        "socket_depth": 0.040,
+        "lateral_force_limit": 20.0,
+        "f_min": 0.0,
+        "f_max": 30.0,
+        "f_cmd_pad": 10.0,
+        "bending_torque_limit": 1.5,
+        "jam_dwell_steps": 4,
+        "f_target": 10.0,
+        "action_delay_steps": 0,
+        "sensor_delay_steps": 0,
+        "approach_gap": 0.008,
+        "translation_step": (0.001, 0.001, 0.0015),
+        "rotation_step": 0.015,
+    }
+    series = {
+        "actions": actions.tolist(),
+        **{name: arrays[name].tolist() for name in required},
+        **{name: params.get(name, default) for name, default in defaults.items()},
+    }
+    checkpoint = (
+        (result.get("provenance") or {}).get("checkpoints", {})
+        .get("policy_ckpt", {})
+    )
+    return {
+        "task": task,
+        "suite": str(result.get("suite", result.get("level", ""))),
+        "level": str(params.get("level", "wide")),
+        "seed": int(result["seed"]),
+        "policy_training_seed": (
+            (snapshot.get("metadata") or {}).get("policy_training_seed")
+        ),
+        "policy_checkpoint_sha256": checkpoint.get("sha256"),
+        "behavior_method": str(snapshot.get("method", "")),
+        "behavior_name": str(snapshot.get("name", "")),
+        "sample_source": "executed_commit_horizon",
+        "source_result": str(path),
+        "source_result_sha256": _sha256(path),
+        "source_trajectory_sha256": _sha256(trajectory_path),
+        "series": series,
+    }
+
+
+def _record_from_result(path: Path) -> dict[str, Any]:
+    with path.open() as handle:
+        result = json.load(handle)
+    task = str((result.get("config_snapshot") or {}).get("env_name", ""))
+    if task == "manipulator_surface_scan":
+        return _surface_record_from_result(path)
+    if task == "manipulator_peg_insert":
+        trajectory_path = path.parent / "trajectory" / "trajectory.json"
+        with trajectory_path.open() as handle:
+            trajectory_payload = json.load(handle)
+        return _peg_insert_record_from_result(
+            path, result=result, trajectory_payload=trajectory_payload
+        )
+    raise ValueError(f"unsupported reliability task in {path}: {task!r}")
+
+
 def _result_records(paths: list[str]) -> list[dict[str, Any]]:
-    return [_surface_record_from_result(path) for path in _result_files(paths)]
+    return [_record_from_result(path) for path in _result_files(paths)]
 
 
 def _assert_disjoint_protocol(
@@ -251,6 +413,24 @@ def _report(model, x, y) -> dict[str, Any]:
     }
     if model.classification_probabilities:
         count = int(model.probability_risk_count)
+        class_counts = {}
+        auroc = {}
+        for index, name in enumerate(model.risk_names[:count]):
+            positive = prediction[y[:, index] > 0.5, index]
+            negative = prediction[y[:, index] <= 0.5, index]
+            class_counts[name] = {
+                "positive": int(len(positive)),
+                "negative": int(len(negative)),
+            }
+            auroc[name] = (
+                float(np.mean(
+                    (positive[:, None] > negative[None, :])
+                    + 0.5 * (positive[:, None] == negative[None, :])
+                ))
+                if len(positive) and len(negative) else None
+            )
+        report["class_counts"] = class_counts
+        report["probability_auroc"] = auroc
         report["probability_brier"] = {
             name: float(value)
             for name, value in zip(
@@ -285,19 +465,32 @@ def main(argv: list[str] | None = None) -> int:
         help="disjoint unified-runner results.json files or roots for conformal calibration",
     )
     parser.add_argument("--test-metrics", nargs="*", default=[])
+    parser.add_argument(
+        "--test-results", nargs="*", default=[],
+        help="held-out unified-runner results used only for reporting",
+    )
     parser.add_argument("--output")
     parser.add_argument("--load-checkpoint")
     parser.add_argument("--ridge", type=float, default=1.0e-3)
     parser.add_argument("--quantile", type=float, default=0.95)
     parser.add_argument("--protocol", default=None)
     parser.add_argument("--evaluation-seeds", nargs="*", type=int, default=[])
+    parser.add_argument(
+        "--required-policy-sha256", default=None,
+        help="require this policy artifact in both fit and calibration splits",
+    )
     args = parser.parse_args(argv)
 
     if args.load_checkpoint:
-        if not args.test_metrics:
-            raise ValueError("--load-checkpoint requires --test-metrics")
+        if not (args.test_metrics or args.test_results):
+            raise ValueError(
+                "--load-checkpoint requires --test-metrics/--test-results"
+            )
         model = LinearReliabilityModel.load(args.load_checkpoint)
-        test_x, test_y, _ = samples_from_records(_records(args.test_metrics))
+        test_records = [
+            *_records(args.test_metrics), *_result_records(args.test_results),
+        ]
+        test_x, test_y, _ = samples_from_records(test_records)
         print(json.dumps({
             "checkpoint": args.load_checkpoint,
             "held_out_test": _report(model, test_x, test_y),
@@ -317,6 +510,21 @@ def main(argv: list[str] | None = None) -> int:
     calibration_records.extend(_result_records(args.calibration_results))
     if not train_records or not calibration_records:
         raise ValueError("seed split produced an empty training or calibration set")
+    if args.required_policy_sha256:
+        for label, split_records in (
+            ("training", train_records),
+            ("calibration", calibration_records),
+        ):
+            hashes = {
+                str(record["policy_checkpoint_sha256"])
+                for record in split_records
+                if record.get("policy_checkpoint_sha256")
+            }
+            if hashes != {args.required_policy_sha256}:
+                raise ValueError(
+                    f"{label} split policy hashes {sorted(hashes)} do not "
+                    f"exactly match required {args.required_policy_sha256}"
+                )
 
     train_x, train_y, train_provenance = samples_from_records(train_records)
     cal_x, cal_y, cal_provenance = samples_from_records(calibration_records)
@@ -326,6 +534,18 @@ def main(argv: list[str] | None = None) -> int:
         set(args.evaluation_seeds),
     )
     peg_insert = train_x.shape[1] == len(PEG_INSERT_FEATURE_NAMES)
+    if peg_insert:
+        for label, values in (("training", train_y), ("calibration", cal_y)):
+            for index, name in enumerate(PEG_INSERT_RISK_NAMES[:3]):
+                positive = int(np.count_nonzero(values[:, index] > 0.5))
+                negative = int(np.count_nonzero(values[:, index] <= 0.5))
+                if not positive or not negative:
+                    raise ValueError(
+                        f"PegInsert {label} split lacks both classes for "
+                        f"{name}: positive={positive}, negative={negative}; "
+                        "collect stress trajectories instead of fitting a "
+                        "degenerate reliability head"
+                    )
     model = LinearReliabilityModel.fit(
         train_x,
         train_y,
@@ -362,6 +582,23 @@ def main(argv: list[str] | None = None) -> int:
         }),
         "evaluation_seeds_excluded": sorted(set(args.evaluation_seeds)),
         "split_disjoint": True,
+        "required_policy_sha256": args.required_policy_sha256,
+        "fit_scope": "development_fit_only",
+        "performance_validated": False,
+        "promotion_eligible": False,
+        "promotion_blocking_reasons": [
+            "independent_paired_validation_not_performed",
+        ],
+        "training_policy_checkpoint_sha256": sorted({
+            str(record["policy_checkpoint_sha256"])
+            for record in train_records
+            if record.get("policy_checkpoint_sha256")
+        }),
+        "calibration_policy_checkpoint_sha256": sorted({
+            str(record["policy_checkpoint_sha256"])
+            for record in calibration_records
+            if record.get("policy_checkpoint_sha256")
+        }),
         "training_files": [
             *list(args.metrics), *list(args.training_results),
         ],
@@ -391,17 +628,57 @@ def main(argv: list[str] | None = None) -> int:
             else "manipulator_surface_scan"
         ),
     }
+    if peg_insert:
+        metadata.update({
+            "training_sample_sources": dict(Counter(
+                x.get("sample_source", "legacy_metric_record")
+                for x in train_provenance
+            )),
+            "calibration_sample_sources": dict(Counter(
+                x.get("sample_source", "legacy_metric_record")
+                for x in cal_provenance
+            )),
+            "training_behavior_methods": dict(Counter(
+                str(x.get("behavior_method", "unknown"))
+                for x in train_provenance
+            )),
+            "calibration_behavior_methods": dict(Counter(
+                str(x.get("behavior_method", "unknown"))
+                for x in cal_provenance
+            )),
+            "training_behavior_names": dict(Counter(
+                str(x.get("behavior_name", "unknown"))
+                for x in train_provenance
+            )),
+            "calibration_behavior_names": dict(Counter(
+                str(x.get("behavior_name", "unknown"))
+                for x in cal_provenance
+            )),
+        })
     output = Path(args.output)
+    if output.exists() or output.is_symlink():
+        raise FileExistsError(
+            f"reliability output already exists; choose a new path: {output}"
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
-    model.save(output, metadata=metadata)
+    temporary = output.with_name(f".{output.name}.tmp")
+    if temporary.exists() or temporary.is_symlink():
+        raise FileExistsError(
+            f"stale temporary reliability output: {temporary}"
+        )
+    model.save(temporary, metadata=metadata)
+    temporary.replace(output)
 
     report = {
         "checkpoint": str(output),
         "train": _report(model, train_x, train_y),
         "calibration": _report(model, cal_x, cal_y),
     }
-    if args.test_metrics:
-        test_x, test_y, _ = samples_from_records(_records(args.test_metrics))
+    if args.test_metrics or args.test_results:
+        test_records = [
+            *_records(args.test_metrics), *_result_records(args.test_results),
+        ]
+        test_x, test_y, _ = samples_from_records(test_records)
         report["held_out_test"] = _report(model, test_x, test_y)
     print(json.dumps(report, indent=2))
     return 0

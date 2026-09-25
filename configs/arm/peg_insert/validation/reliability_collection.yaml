@@ -1,0 +1,42 @@
+base: ../ablation/no_learned_reliability.yaml
+name: reliability_collection
+output_dir: results/arm/peg_insert/validation/reliability_collection
+
+# Development-only trajectories for the frozen 44-D PegInsert reliability
+# contract.  The controller is exactly the P3 MGA core: the learned gate is
+# absent, while the frozen raw policy and all model-based mechanisms remain.
+suites:
+  - {name: id_wide, level: wide}
+  - name: ood_pose
+    level: wide
+    execution_env_params:
+      level: ood
+      ood_clearance_range: [0.0015, 0.0015]
+      ood_friction_range: [0.6, 0.6]
+      ood_position_range: 0.0010
+      ood_angle_range: 0.0122173
+      ood_solref_time_range: [0.03, 0.03]
+  - name: torque_stress
+    level: wide
+    execution_env_params:
+      level: wide
+      bending_torque_limit: 0.4
+      torsional_torque_limit: 0.05
+  - name: jam_stress
+    level: tight
+    execution_env_params:
+      level: tight
+      jam_dwell_steps: 2
+      jam_force_fraction: 0.20
+      jam_progress_tol: 0.0005
+
+metadata:
+  formal_experiment: false
+  run_class: development
+  purpose: reliability_fit_and_calibration_collection
+  sample_contract: executed_mga_core_commit_horizons
+  collection_policy_sha256: 14f1b13176c871927b216e969c5251199e4f8bab0d4c00115cce333547ae137c
+  training_seeds: [106, 112]
+  calibration_seeds: [107, 113]
+  formal_evaluation_seeds_excluded: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  paired_validation_seeds_excluded: [110, 111]

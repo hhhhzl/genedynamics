@@ -594,6 +594,12 @@ def _peg_insert_samples_from_records(records):
                 "seed": record.get("seed"),
                 "policy_training_seed": record.get("policy_training_seed"),
                 "step": t,
+                "sample_source": record.get(
+                    "sample_source", "legacy_metric_record"
+                ),
+                "source_result": record.get("source_result"),
+                "behavior_method": record.get("behavior_method"),
+                "behavior_name": record.get("behavior_name"),
             })
     return (
         np.asarray(xs, np.float32).reshape(-1, len(PEG_INSERT_FEATURE_NAMES)),

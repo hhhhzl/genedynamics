@@ -20,7 +20,11 @@ from genedynamics.experiments.plugins.methods import (
     PegasusFlowContactMethodPlugin,
     StandaloneRLMethodPlugin,
 )
-from genedynamics.experiments.runner import main as runner_main, register_all_plugins
+from genedynamics.experiments.runner import (
+    _formal_readiness_errors,
+    main as runner_main,
+    register_all_plugins,
+)
 from genedynamics.experiments.plugins.methods.contact_receding import make_controller
 
 
@@ -332,6 +336,17 @@ def test_runner_dry_run_supports_isolated_multi_seed_multi_suite(
     assert "Run class: development" in output
 
 
+def test_frozen_core_only_peg_protocol_allows_canonical_formal_execution():
+    cfg = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/peg_insert/baseline/mppi.yaml"
+    )
+    assert cfg.metadata["protocol_status"] == "frozen_core_only"
+    assert _formal_readiness_errors(cfg) == []
+
+    cfg.use_development_output_root(ROOT / "results/_development/p1_guard_test")
+    assert _formal_readiness_errors(cfg) == []
+
+
 @pytest.mark.parametrize(
     "filename,controller_method,stiffness_mode",
     [
@@ -391,6 +406,62 @@ def test_mga_rejects_missing_learned_component_contract():
         )
 
 
+def test_peg_insert_candidate_can_be_authoritative_only_for_development(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    candidate_metadata = {
+        "task": "manipulator_peg_insert",
+        "fit_scope": "development_fit_only",
+        "performance_validated": False,
+        "promotion_eligible": False,
+    }
+
+    def fake_make_controller(task, method, **kwargs):
+        solver = SimpleNamespace(
+            reliability_model=SimpleNamespace(metadata=candidate_metadata),
+            reliability_validation_authoritative=bool(
+                kwargs.get("reliability_validation_authoritative", False)
+            ),
+        )
+        return kwargs["model_env"], solver
+
+    monkeypatch.setattr(
+        "genedynamics.experiments.plugins.methods.contact_receding.make_controller",
+        fake_make_controller,
+    )
+
+    class Env:
+        _experiment_task = "manipulator_peg_insert"
+        _experiment_execution_env = None
+
+    common = {
+        "task": "manipulator_peg_insert",
+        "controller_method": "mga_controllable_gate",
+        "learned_reliability": True,
+        "policy_ckpt": "policy.pkl",
+        "reliability_ckpt": "candidate.json",
+        "reliability_ood_policy": "model_based",
+        "reliability_validation_authoritative": True,
+        "experiment_formal_experiment": False,
+    }
+    with pytest.raises(ValueError, match="development-only PegInsert"):
+        MGAMethodPlugin().create_planner(
+            Env(), None, {**common, "experiment_run_class": "formal"}
+        )
+
+    planner = MGAMethodPlugin().create_planner(
+        Env(), None, {**common, "experiment_run_class": "development"}
+    )
+    assert planner.component_contract["reliability_gate_authoritative"] is True
+    assert (
+        planner.component_contract["reliability_validation_authoritative"]
+        is True
+    )
+    assert planner.component_contract["reliability_promotion_eligible"] is False
+
+
 @pytest.mark.parametrize(
     "family,task,filename,controller_method,learned_reliability",
     [
@@ -399,7 +470,7 @@ def test_mga_rejects_missing_learned_component_contract():
         ("surface_scan", "manipulator_surface_scan",
          "no_learned_reliability.yaml", "mga_controllable_gate", False),
         ("peg_insert", "manipulator_peg_insert", "no_rl_prior.yaml",
-         "mga_controllable_gate_no_rl_prior", True),
+         "mga_controllable_gate_no_rl_prior", False),
         ("peg_insert", "manipulator_peg_insert",
          "no_learned_reliability.yaml", "mga_controllable_gate", False),
     ],

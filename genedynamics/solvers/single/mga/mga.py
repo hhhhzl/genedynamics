@@ -139,6 +139,7 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         reliability_hard_limits: Any = None,
         reliability_support_mode: str = "joint",
         reliability_ood_policy: str = "veto",
+        reliability_validation_authoritative: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(dynamics, energy, backend, **kwargs)
@@ -251,6 +252,9 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         )
         self.reliability_support_mode = str(reliability_support_mode)
         self.reliability_ood_policy = str(reliability_ood_policy)
+        self.reliability_validation_authoritative = bool(
+            reliability_validation_authoritative
+        )
 
         self.config.update(
             dict(
@@ -286,6 +290,9 @@ class MGASolver(BaseModelBasedDiffusionSolver):
                 reliability_force_limit=self.reliability_force_limit,
                 reliability_deformation_limit=self.reliability_deformation_limit,
                 reliability_ood_policy=self.reliability_ood_policy,
+                reliability_validation_authoritative=(
+                    self.reliability_validation_authoritative
+                ),
                 method=str(method),
             )
         )

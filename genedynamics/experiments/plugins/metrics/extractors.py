@@ -408,7 +408,16 @@ def peg_insert_signals(trajectory, env, obstacles, constraints, **kw) -> Dict[st
         d["torque_violation"].reshape(-1),
         d["jammed_once"].reshape(-1),
     ]))
-    strict_safe_success = d["success"].reshape(-1) * (unsafe_seen <= 0.5)
+    # Historical PegInsert results used a prefix-safe event: completion counted
+    # when no violation had happened *yet*, even if the fixed-length execution
+    # violated a wrench limit afterwards.  Preserve that diagnostic explicitly,
+    # while the clean-room formal SSR requires the entire recorded execution to
+    # remain inside the physical force/torque and jam limits.
+    prefix_safe_success = d["success"].reshape(-1) * (unsafe_seen <= 0.5)
+    whole_execution_safe = bool(unsafe_seen.size) and bool(unsafe_seen[-1] <= 0.5)
+    whole_safe_success = (
+        d["success"].reshape(-1) * float(whole_execution_safe)
+    )
     rho = d["rho"].reshape(-1)
     infos = [row for row in kw.get("infos", ()) if isinstance(row, dict)]
     diagnostic_signals = {}
@@ -446,7 +455,10 @@ def peg_insert_signals(trajectory, env, obstacles, constraints, **kw) -> Dict[st
         "jammed_once": d["jammed_once"].reshape(-1),
         "recovered": d["recovered"].reshape(-1),
         "success": d["success"].reshape(-1),
-        "strict_safe_success": strict_safe_success,
+        # Backward-compatible signal name for archived plotting tools.
+        "strict_safe_success": prefix_safe_success,
+        "prefix_safe_success": prefix_safe_success,
+        "whole_safe_success": whole_safe_success,
         "contact_mode": d["contact_mode"].reshape(-1),
         "in_contact": d["contact"].reshape(-1),
         "penetration": d["penetration"].reshape(-1),
@@ -471,7 +483,9 @@ def peg_insert_signals(trajectory, env, obstacles, constraints, **kw) -> Dict[st
 PEG_INSERT_METRICS = [
     {"name": "event_occurred", "as": "insertion_success", "bind": {"mask": "success"}},
     {"name": "event_occurred", "as": "safe_insertion_success",
-     "bind": {"mask": "strict_safe_success"}},
+     "bind": {"mask": "whole_safe_success"}},
+    {"name": "event_occurred", "as": "prefix_safe_insertion_success",
+     "bind": {"mask": "prefix_safe_success"}},
     {"name": "maximum", "as": "max_insertion_depth", "bind": {"x": "insertion_depth"}},
     {"name": "terminal_value", "as": "terminal_insertion_depth", "bind": {"x": "insertion_depth"}},
     {"name": "first_event_time", "as": "completion_time", "bind": {"mask": "success"}},
@@ -506,6 +520,11 @@ def peg_insert_metrics_plugin(name: str = "peg_insert_metrics"):
     return GeneralMetricsPlugin(
         [*PEG_INSERT_METRICS], extractor=peg_insert_signals, name=name,
         persist_signals=True,
+        execution_failure_metrics={
+            "insertion_success": 0.0,
+            "safe_insertion_success": 0.0,
+            "prefix_safe_insertion_success": 0.0,
+        },
     )
 
 

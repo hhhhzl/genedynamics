@@ -1,0 +1,37 @@
+base: ../main/mga.yaml
+name: reliability_gate_validation
+output_dir: results/arm/peg_insert/validation/reliability_gate
+
+# The fitted checkpoint remains explicitly unpromoted.  This switch is
+# accepted by the method plugin only for development-only PegInsert runs and
+# makes the gate authoritative under the same model_based OOD policy used by
+# the final controller.  Canonical MGA never enables this override.
+method_params:
+  learned_reliability: true
+  reliability_ckpt: results/_development/peg_insert_p4_reliability/reliability_candidate.json
+  reliability_validation_authoritative: true
+
+metadata:
+  formal_experiment: false
+  run_class: development
+  purpose: independent_paired_reliability_gate_validation
+  validation_of: mga
+  required_pair: no_learned_reliability
+  validation_seeds: [110, 111]
+  fit_and_calibration_seeds_excluded: [106, 107, 112, 113]
+  formal_evaluation_seeds_excluded: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  learned_component_lock:
+    reliability:
+      path: results/_development/peg_insert_p4_reliability/reliability_candidate.json
+      sha256: 7a809dbd0dd673495df30d0b6e402b189bf4d5640e1c0cc4088213124ffee325
+      protocol: mga_peg_insert_reliability_cleanroom_development
+      training_seeds: [106, 112]
+      calibration_seeds: [107, 113]
+      training_budget:
+        unit: executed_commit_horizon_rows
+        value: 756
+      calibration_budget:
+        unit: executed_commit_horizon_rows
+        value: 756
+      performance_validated: false
+      promotion_eligible: false

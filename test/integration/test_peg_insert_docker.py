@@ -84,6 +84,85 @@ def _roll(env, state, actions):
     return state, states
 
 
+def test_atacom_viability_constraint_has_contact_action_authority():
+    """PegInsert must expose the dynamics Jacobian required by ATACOM.
+
+    The ordinary reporting residual is intentionally a measurement of the
+    current physical wrench and therefore has zero action Jacobian.  ATACOM's
+    task-owned viability chart must instead forecast that wrench through the
+    nominal transition, as required by its controllable-state construction.
+    """
+    env = make_env(INSERT_TASK, level="wide", atacom_viability_gain=0.02)
+    state = env.reset(jax.random.PRNGKey(91))
+    insertion = _action(env, z=1.0, force=12.0)
+    _, states = _roll(env, state, [insertion] * 25)
+    state = next(
+        candidate for candidate in states
+        if int(candidate.info["contact_count"]) > 0
+    )
+    zero = jnp.zeros((env.action_size,), jnp.float32)
+    static_jacobian = jax.jacfwd(
+        lambda u: env.constraint_residual(state, u)[1]
+    )(zero)
+    viability_jacobian = jax.jacfwd(
+        lambda u: env.atacom_constraint_residual(state, u)[1]
+    )(zero)
+    jax.block_until_ready(viability_jacobian)
+    np.testing.assert_allclose(static_jacobian, 0.0, atol=1.0e-8)
+    assert np.all(np.isfinite(np.asarray(viability_jacobian)))
+    assert float(jnp.linalg.norm(viability_jacobian)) > 1.0e-4
+
+
+def test_atacom_peg_exploration_rollout_remains_finite():
+    from genedynamics.solvers.single.atacom.wrapper import AtacomEnvWrapper
+
+    env = make_env(INSERT_TASK, level="wide", atacom_viability_gain=0.02)
+    wrapped = AtacomEnvWrapper(env, Kc=1.0, action_limit=1.0)
+    state = wrapped.reset(jax.random.PRNGKey(92))
+    step = jax.jit(wrapped.step)
+    key = jax.random.PRNGKey(93)
+    for index in range(64):
+        key, sample = jax.random.split(key)
+        alpha = jax.random.uniform(
+            sample, (wrapped.action_size,), minval=-1.0, maxval=1.0
+        )
+        state = step(state, alpha)
+        jax.block_until_ready(state.obs)
+        finite = (
+            bool(jnp.all(jnp.isfinite(state.obs)))
+            and bool(jnp.isfinite(state.reward))
+            and bool(jnp.all(jnp.isfinite(state.info["atacom_u"])))
+            and bool(jnp.all(jnp.isfinite(state.info["atacom_s"])))
+        )
+        assert finite, f"ATACOM became non-finite at exploration step {index}"
+
+
+def test_atacom_terminal_manifold_unloads_after_success():
+    from genedynamics.solvers.single.atacom.backends.atacom_jax import (
+        atacom_null_dim,
+        init_slack,
+        make_atacom_transform,
+    )
+
+    env = make_env(INSERT_TASK, level="wide", atacom_viability_gain=0.02)
+    state = env.reset(jax.random.PRNGKey(94))
+    state = state.replace(info={
+        **state.info,
+        "success": jnp.asarray(1.0, jnp.float32),
+    })
+    transform = jax.jit(make_atacom_transform(
+        env, Kc=1.0, time_step=env.dt, action_limit=1.0,
+    ))
+    control, _ = transform(
+        state,
+        jnp.zeros((atacom_null_dim(env),), jnp.float32),
+        init_slack(env, state),
+    )
+    jax.block_until_ready(control)
+    assert float(control[2]) < -0.20
+    assert float(env._force_cmd(control[env.spec.nu_slice][0])) < 1.0
+
+
 def _p0_physics():
     env = make_env(INSERT_TASK, level="wide")
     state = env.reset(jax.random.PRNGKey(0))
@@ -607,7 +686,7 @@ def _p3_hidden_execution():
     se1 = jax.jit(execution.step)(se, action)
     delayed = float(se1.info["command_pose"][2]) < float(sn1.info["command_pose"][2]) - 1.0e-5
 
-    _, solver = make_mga(
+    model_task, solver = make_mga(
         INSERT_TASK,
         "mga_controllable_gate",
         level="wide",
@@ -632,11 +711,11 @@ def _p3_hidden_execution():
         )
     )
     task_contract = (
-        backend._task_contract_env is solver.execution_env
+        backend._task_contract_env is model_task
         and getattr(solver.candidate_projection_fn, "__self__", None)
-        is solver.execution_env
+        is model_task
         and getattr(backend.reliability_sequence_feature_fn, "__self__", None)
-        is solver.execution_env
+        is model_task
         and ood_capture_profile
     )
     topology = (
@@ -663,21 +742,32 @@ def _p3_hidden_execution():
 
 def _p4_algorithms_metrics():
     root = Path("configs/arm/peg_insert")
-    paths = [root / "main/mga.yaml", *sorted((root / "baseline").glob("*.yaml"))]
+    paths = [
+        root / "main/mga.yaml",
+        root / "ablation/no_rl_prior.yaml",
+        root / "ablation/no_retraction.yaml",
+        root / "baseline/issa.yaml",
+        root / "baseline/atacom.yaml",
+        root / "baseline/mppi.yaml",
+        root / "baseline/dial.yaml",
+        root / "baseline/pegasusflow.yaml",
+    ]
     configs = [ExperimentConfig.from_yaml(path) for path in paths]
     names = {cfg.name for cfg in configs}
     suites = {suite["name"] for suite in configs[0].suites}
     config_ok = names == {
         "dial", "mppi", "pegasusflow", "issa", "atacom",
-        "standalone_rl", "model_based_only", "mga",
+        "no_rl_prior", "no_retraction", "mga",
     } and suites == {
         "id_wide", "ood_pose", "ood_sensing"
     } and len(configs) == 8
     for cfg in configs:
         uses_policy = cfg.name in {
-            "issa", "atacom", "standalone_rl", "mga",
+            "issa", "atacom", "mga", "no_retraction",
         }
-        config_ok = config_ok and (("policy_ckpt" in cfg.method_params) == uses_policy)
+        config_ok = config_ok and (
+            bool(cfg.method_params.get("policy_ckpt")) == uses_policy
+        )
     full = next(cfg for cfg in configs if cfg.name == "mga")
     config_ok = config_ok and "atacom_policy_ckpt" not in full.method_params
     config_ok = config_ok and full.method_params["prior_stochastic_samples"] == 8
@@ -724,7 +814,8 @@ def _p4_algorithms_metrics():
         result, env, None, None, x0=x0, planning_time=0.1
     )
     required = {
-        "insertion_success", "max_insertion_depth", "completion_time",
+        "insertion_success", "safe_insertion_success",
+        "prefix_safe_insertion_success", "max_insertion_depth", "completion_time",
         "peak_lateral_force", "peak_axial_force", "peak_bending_torque",
         "force_torque_violation_rate", "jam_rate", "recovery_success",
         "cumulative_safety_cost",

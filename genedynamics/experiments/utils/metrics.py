@@ -71,6 +71,13 @@ def _audit_checkpoint_lock(
         return
     reference_path, reference = task_records[0]
     metadata = dict(reference.metadata or {})
+    lock_status = str(metadata.get("learned_component_lock_status", "frozen"))
+    if lock_status.startswith("pending"):
+        errors.append(
+            f"{task}: learned component lock is {lock_status}; "
+            "fresh training/calibration must finish before formal execution"
+        )
+        return
     overlap_waiver = dict(metadata.get("formal_seed_overlap_waiver") or {})
     overlap_accepted = overlap_waiver.get("accepted") is True
     if overlap_accepted and not str(overlap_waiver.get("reason", "")).strip():
@@ -181,6 +188,12 @@ def _audit_checkpoint_lock(
         return
 
     for path, cfg in task_records:
+        # Development/diagnostic configs may intentionally reference an
+        # unpromoted candidate.  The learned-component lock governs canonical
+        # paper runs only; development artifacts remain auditable through
+        # their own provenance without becoming formal dependencies.
+        if not (cfg.metadata or {}).get("formal_experiment", True):
+            continue
         controller = str(
             cfg.method_params.get("controller_method", cfg.method)
         )
@@ -359,7 +372,14 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
         by_task[record[1].env_name].append(record)
     run_count_by_task: Dict[str, int] = {}
     for task, task_records in by_task.items():
-        reference = task_records[0][1]
+        formal_task_records = [
+            (path, cfg) for path, cfg in task_records
+            if (cfg.metadata or {}).get("formal_experiment", True)
+        ]
+        reference = (
+            formal_task_records[0][1]
+            if formal_task_records else task_records[0][1]
+        )
         full_cfg = next(
             (cfg for _, cfg in task_records if cfg.name == "mga"), None
         )
@@ -375,15 +395,22 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
             if cfg.name in names:
                 errors.append(f"{task}: duplicate algorithm name {cfg.name!r}")
             names.add(cfg.name)
-            current = {
-                "seeds": cfg.seeds,
-                "n_steps": cfg.n_steps,
-                "suites": cfg.suites,
-                "budget": {key: cfg.method_params.get(key) for key in BUDGET_KEYS},
-                "resolved_suite_budgets": resolved_suite_budgets(cfg),
-            }
-            if current != ref_protocol:
-                errors.append(f"{path}: paired protocol differs from {task_records[0][0]}")
+            is_formal = (cfg.metadata or {}).get("formal_experiment", True)
+            if is_formal:
+                current = {
+                    "seeds": cfg.seeds,
+                    "n_steps": cfg.n_steps,
+                    "suites": cfg.suites,
+                    "budget": {
+                        key: cfg.method_params.get(key) for key in BUDGET_KEYS
+                    },
+                    "resolved_suite_budgets": resolved_suite_budgets(cfg),
+                }
+                if current != ref_protocol:
+                    errors.append(
+                        f"{path}: paired protocol differs from "
+                        f"{formal_task_records[0][0]}"
+                    )
             controller = cfg.method_params.get("controller_method", cfg.method)
             if cfg.method in {"mppi", "pegasusflow", "issa", "atacom", "standalone_rl"}:
                 if controller.startswith("mga") or controller == "dial":
@@ -417,9 +444,14 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
             unknown = sorted(set(formal_suites).difference(available_suites))
             if unknown:
                 errors.append(f"{path}: unknown formal_suites {unknown}")
-            run_count_by_task[task] = run_count_by_task.get(task, 0) + (
-                len(cfg.seeds) * len(formal_suites)
-            )
+            # Diagnostic controllers remain available through the same runner
+            # and config inheritance, but are not silently counted as paper
+            # experiments.  The default is formal for every existing task, so
+            # this opt-out does not alter legacy matrices.
+            if is_formal:
+                run_count_by_task[task] = run_count_by_task.get(task, 0) + (
+                    len(cfg.seeds) * len(formal_suites)
+                )
         _audit_checkpoint_lock(task, task_records, errors, warnings)
         expected = (reference.metadata or {}).get("expected_formal_task_runs")
         if expected is not None and run_count_by_task[task] != int(expected):

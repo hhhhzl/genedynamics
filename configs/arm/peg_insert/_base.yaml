@@ -28,6 +28,7 @@ env_params:
   risk_safety_margin: 0.8
   realization_probe_horizon: 3
   realization_probe_eps: 0.04
+  atacom_viability_gain: 0.02
 
 method_params:
   Hsample: 8
@@ -53,45 +54,47 @@ suites:
     execution_env_params: {level: wide, force_sensor_bias: [0.5, -0.5, 0.0], torque_sensor_bias: [0.02, -0.02, 0.01]}
 
 metadata:
-  protocol: mga_peg_insert_paper
+  protocol: mga_peg_insert_core_only
+  protocol_status: frozen_core_only
+  require_checkpoint_files: true
   formal_seeds: true
   formal_seed_overlap_waiver:
     accepted: true
     reason: evaluation_seeds_0_9_overlap_frozen_policy_training_seed_0
   narrative: contact_switch_and_safe_recovery
-  expected_formal_task_runs: 300
+  expected_formal_task_runs: 240
+  safety_metric_contract:
+    primary: safe_insertion_success
+    definition: insertion_success_and_no_violation_anywhere_in_64_step_execution
+    legacy_diagnostic: prefix_safe_insertion_success
+    execution_window_steps: 64
+    completion_hold_steps: 3
+    incomplete_or_aborted_execution_is_failure: true
+  learned_component_lock_status: frozen_core_only
+  reliability_status: retired_after_neutral_development_validation
   learned_component_lock:
     policy:
-      path: results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl
-      sha256: 76dd7c1cf95283a6fcf7b4c9b4bb79d4c25e7bfcdcd70e844b89f5ac4d72b161
+      path: results/arm/peg_insert/_policies/shared_ppo_seed0.pkl
+      sha256: 14f1b13176c871927b216e969c5251199e4f8bab0d4c00115cce333547ae137c
       protocol: manipulator_peg_insert_shared_mga_v1
       training_seeds: [0]
       training_budget: {unit: environment_steps, value: 200000}
       training_domains: [wide_seed100, tight_seed101, ood_seed102, ood_seed103]
       architecture: ppo_mlp_16x16
-      selection_rule: max_dev_success_safety_pareto
-      selected_step: 100000
+      selection_rule: final_budget_after_independent_health_gate
+      selected_step: 200000
     atacom_policy:
-      path: results/arm/peg_insert_cpu/_policies/shared_atacom_ppo_seed0.pkl
-      sha256: c7a75f8279fc68a50936652928b151262b5ff71c3ab28c4ea99b5c562e9db88f
+      path: results/arm/peg_insert/_policies/shared_atacom_ppo_seed0.pkl
+      sha256: 39378bad6d0698c8befb1ca58fbe983fd1d633b91a000d6303acd89210a46fff
       protocol: manipulator_peg_insert_shared_atacom_v1
       training_seeds: [0]
       training_budget: {unit: environment_steps, value: 200000}
       training_domains: [wide_seed100, tight_seed101, ood_seed102, ood_seed103]
       architecture: ppo_mlp_16x16_atacom_tangent_action
-      selection_rule: max_dev_success_safety_pareto
-      selected_step: 50000
-    reliability:
-      path: results/arm/peg_insert_cpu/_policies/reliability_q95.json
-      sha256: 54b7e822b05bb5cbcedc90ef379ffe85bcbb410b68a7d2922b0c05e94a9f14fa
-      # Provenance identifier embedded in this already-frozen artifact.
-      protocol: mdac_peg_insert_reliability_v1
-      training_seeds: [100, 101]
-      calibration_seeds: [102]
-      training_budget: {unit: environment_transitions, value: 1078}
-      training_domains: [id_tight, id_wide, ood_compound, pareto_force15, pareto_force22]
-      architecture: standardized_ridge_logistic_split_conformal
-      selection_rule: single_frozen_fit_no_evaluation_selection
+      transform: {Kc: 1.0, alpha_limit: 0.58, action_limit: 0.58, time_step: 0.02}
+      configuration_selection: max_dev_safe_success_then_risk
+      selection_rule: final_budget_after_independent_health_gate
+      selected_step: 200000
   training:
     rl:
       algo: ppo
@@ -101,8 +104,9 @@ metadata:
       seed: 0
       expected_action_size: 13
       expected_observation_mode: contact
-      select_best_eval: true
+      select_best_eval: false
       select_best_eval_metric: eval/episode_reward
+      selection_mode: independent_development_health_gate
       action_bias: [0.0, 0.0, 0.65, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.2]
       action_scale: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.2]
       training_env_params:
@@ -111,8 +115,8 @@ metadata:
         w_safety: 50.0
         w_jam: 8.0
         w_force: 0.5
-      checkpoint: results/arm/peg_insert_cpu/_policies/shared_ppo_seed{seed}.pkl
-      atacom_checkpoint: results/arm/peg_insert_cpu/_policies/shared_atacom_ppo_seed{seed}.pkl
+      checkpoint: results/arm/peg_insert/_policies/shared_ppo_seed{seed}.pkl
+      atacom_checkpoint: results/arm/peg_insert/_policies/shared_atacom_ppo_seed{seed}.pkl
       train_kwargs:
         learning_rate: 0.0001
         batch_size: 8
@@ -123,6 +127,7 @@ metadata:
         num_evals: 101
         num_eval_envs: 1
         deterministic_eval: true
+        run_evals: false
       domain_templates:
         - {level: wide, domain_seed: 100}
         - {level: tight, domain_seed: 101}
@@ -133,4 +138,5 @@ metadata:
         num_domains: 4
         domain_seed_start: 100
       held_out:
-        evaluation_seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        selection_seeds: [104, 105]
+        formal_evaluation_seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

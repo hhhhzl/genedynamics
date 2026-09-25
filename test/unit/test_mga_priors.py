@@ -28,6 +28,7 @@ from genedynamics.experiments.utils.metrics import (
 )
 from scripts.tasks.robot.arm.train_mga_reliability import (
     _assert_disjoint_protocol,
+    _peg_insert_record_from_result,
 )
 from scripts.tasks.robot.humanoid.train_box_push_reliability import (
     FEATURE_NAMES as H1_FEATURE_NAMES,
@@ -289,6 +290,21 @@ def test_h1_policy_interface_checks_semantics_and_preserves_legacy_loads():
     _validate_policy_interface(env, checkpoint, atacom=transform)
     with pytest.raises(ValueError, match="transform mismatch"):
         _validate_policy_interface(env, checkpoint, atacom={**transform, "Kc": 2.0})
+    peg_transform = {**transform, "alpha_limit": 0.58}
+    peg_env = SimpleNamespace(
+        policy_interface=None,
+        _config=SimpleNamespace(dt=0.02),
+        atacom_constraint_residual=lambda state, action: (state, action),
+    )
+    peg_checkpoint = {
+        "atacom_transform": {**peg_transform, "time_step": 0.02},
+    }
+    _validate_policy_interface(peg_env, peg_checkpoint, atacom=peg_transform)
+    with pytest.raises(ValueError, match="transform mismatch"):
+        _validate_policy_interface(
+            peg_env, peg_checkpoint,
+            atacom={**peg_transform, "alpha_limit": 0.6},
+        )
 
 
 def _h1_reliability_contract_env(*, walk=False):
@@ -1435,6 +1451,69 @@ def test_peg_insert_reliability_labels_the_committed_horizon():
     assert provenance[0]["step"] == 1
 
 
+def test_peg_insert_unified_result_preserves_hidden_execution_signals(tmp_path):
+    import json
+
+    n = 5
+    run = tmp_path / "level_ood_sensing" / "seed_106"
+    trajectory_dir = run / "trajectory"
+    trajectory_dir.mkdir(parents=True)
+    actions = np.zeros((n, 13), np.float32)
+    actions[:, 2] = 0.25
+    scalar = [0.0] * n
+    signals = {
+        "controls": actions.tolist(),
+        "pose": np.zeros((n, 3), np.float32).tolist(),
+        "angle_vec": np.zeros((n, 3), np.float32).tolist(),
+        "measured_lateral_force": [0.70710677] * n,
+        "measured_axial_force": scalar,
+        "measured_bending_torque": scalar,
+        "measured_wrench_delta": scalar,
+        "contact_count": scalar,
+        "stall_steps": scalar,
+        "force_violation": [0.0, 0.0, 0.0, 1.0, 0.0],
+        "torque_violation": scalar,
+        "jammed": scalar,
+        "axial_force": scalar,
+    }
+    trajectory = {"actions": actions.tolist(), "task_signals": signals}
+    trajectory_path = trajectory_dir / "trajectory.json"
+    trajectory_path.write_text(json.dumps(trajectory), encoding="utf-8")
+    result = {
+        "suite": "ood_sensing",
+        "level": "wide",
+        "seed": 106,
+        "config_snapshot": {
+            "env_name": "manipulator_peg_insert",
+            "method": "mga",
+            "name": "reliability_collection",
+            "env_params": {"f_max": 30.0, "jam_dwell_steps": 4},
+            "execution_env_params": {
+                "level": "wide", "action_delay_steps": 1,
+                "sensor_delay_steps": 1,
+            },
+            "metadata": {"policy_training_seed": 0},
+        },
+        "provenance": {"checkpoints": {"policy_ckpt": {"sha256": "a" * 64}}},
+    }
+    result_path = run / "results.json"
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+
+    record = _peg_insert_record_from_result(result_path)
+    assert record["sample_source"] == "executed_commit_horizon"
+    assert record["series"]["action_delay_steps"] == 1
+    assert record["series"]["sensor_delay_steps"] == 1
+    assert record["series"]["measured_lateral_force"] == [0.70710677] * n
+    assert record["policy_checkpoint_sha256"] == "a" * 64
+    assert record["behavior_method"] == "mga"
+    x, y, provenance = samples_from_records([record])
+    assert x.shape == (n - 1, len(PEG_INSERT_FEATURE_NAMES))
+    assert y[0, 0] == 1.0
+    assert provenance[0]["sample_source"] == "executed_commit_horizon"
+    assert provenance[0]["source_result"] == str(result_path)
+    assert provenance[0]["behavior_method"] == "mga"
+
+
 def test_peg_insert_reliability_extends_labels_for_execution_delay():
     n = 6
     actions = np.zeros((n, 13), np.float32)
@@ -1522,6 +1601,106 @@ def test_peg_insert_reliability_jam_labels_require_applied_insertion_intent():
         "series": insertion_series,
     }])
     assert np.max(jam_y[:, 2]) == 1.0
+
+
+def test_peg_insert_reliability_promotion_requires_paired_non_regression(
+    tmp_path,
+):
+    import hashlib
+    import json
+
+    from scripts.tasks.robot.arm.promote_mga_reliability import audit
+
+    policy_hash = "a" * 64
+    candidate = tmp_path / "candidate.json"
+    candidate.write_text(json.dumps({"metadata": {
+        "task": "manipulator_peg_insert",
+        "fit_scope": "development_fit_only",
+        "performance_validated": False,
+        "promotion_eligible": False,
+        "training_seeds": [106],
+        "calibration_seeds": [107],
+        "training_policy_checkpoint_sha256": [policy_hash],
+        "calibration_policy_checkpoint_sha256": [policy_hash],
+    }}))
+    candidate_hash = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    learned_root = tmp_path / "learned"
+    control_root = tmp_path / "control"
+
+    def write_result(root, seed, *, learned, safe):
+        run = root / f"seed_{seed}"
+        trajectory = run / "trajectory"
+        trajectory.mkdir(parents=True, exist_ok=True)
+        (trajectory / "trajectory.json").write_text(json.dumps({
+            "actions": [[float(learned), 0.0] for _ in range(2)],
+        }))
+        method_params = {
+            "controller_method": "mga_controllable_gate",
+            "learned_reliability": learned,
+            "reliability_ckpt": "candidate.json" if learned else None,
+        }
+        if learned:
+            method_params["reliability_validation_authoritative"] = True
+        payload = {
+            "suite": "id_wide",
+            "seed": seed,
+            "config_snapshot": {
+                "env_name": "manipulator_peg_insert",
+                "method_params": method_params,
+                "env_params": {"level": "wide"},
+                "execution_env_params": {},
+            },
+            "component_contract": {
+                "learned_reliability": learned,
+                "reliability_gate_authoritative": learned,
+                "reliability_validation_authoritative": learned,
+                "reliability_promotion_eligible": False,
+            },
+            "provenance": {"checkpoints": {
+                "policy_ckpt": {"sha256": policy_hash},
+                **({"reliability_ckpt": {"sha256": candidate_hash}}
+                   if learned else {}),
+            }},
+            "metrics": {"peg_insert_metrics": {
+                "insertion_success": 1.0,
+                "safe_insertion_success": float(safe),
+                "max_insertion_depth": 0.033,
+            }},
+            "diagnostics": (
+                {"reliability_abstained": 0.1} if learned else {}
+            ),
+        }
+        (run / "results.json").write_text(json.dumps(payload))
+
+    for seed in (110, 111):
+        write_result(learned_root, seed, learned=True, safe=True)
+        write_result(control_root, seed, learned=False, safe=True)
+    report = audit(
+        candidate,
+        [str(learned_root)],
+        [str(control_root)],
+        required_suites=("id_wide",),
+        minimum_seeds=2,
+        formal_seeds=set(range(10)),
+        expected_policy_sha256=policy_hash,
+    )
+    assert report["passed"] is True
+    assert report["changed_action_pairs"] == 2
+
+    write_result(learned_root, 111, learned=True, safe=False)
+    blocked = audit(
+        candidate,
+        [str(learned_root)],
+        [str(control_root)],
+        required_suites=("id_wide",),
+        minimum_seeds=2,
+        formal_seeds=set(range(10)),
+        expected_policy_sha256=policy_hash,
+    )
+    assert (
+        "candidate_safe_success_below_control"
+        in blocked["blocking_reasons"]
+    )
 
 
 def test_no_acceptance_skips_counterfactual_rollouts():
@@ -1778,6 +1957,101 @@ def test_best_eval_selector_pairs_params_with_later_metrics():
     assert selector.score == pytest.approx(0.8)
     assert selector.metrics["eval/episode_reward"] == pytest.approx(-2.0)
     np.testing.assert_allclose(selector.params, [1.0])
+
+
+def test_arm_cpu_low_memory_batch_matches_vector_width():
+    """The canonical four-env PegInsert PPO must pass Brax's batch invariant."""
+    from scripts.tasks.robot.arm.train_rl_baseline import (
+        _cpu_low_memory_ppo_kwargs,
+    )
+
+    kwargs = _cpu_low_memory_ppo_kwargs(4)
+    assert kwargs["policy_hidden_layer_sizes"] == (16, 16)
+    assert kwargs["batch_size"] * kwargs["num_minibatches"] % 4 == 0
+    with pytest.raises(ValueError, match="num_envs must be positive"):
+        _cpu_low_memory_ppo_kwargs(0)
+
+
+def test_arm_atacom_training_options_match_deployment_contract():
+    from scripts.tasks.robot.arm.train_rl_baseline import (
+        _atacom_training_options,
+    )
+
+    assert _atacom_training_options({}) == {
+        "Kc": 1.0,
+        "action_limit": 1.0,
+        "alpha_limit": 1.0,
+    }
+    assert _atacom_training_options({
+        "method_params": {
+            "Kc": 2.0, "action_limit": 1.0, "alpha_limit": 0.6,
+        },
+    }) == {"Kc": 2.0, "action_limit": 1.0, "alpha_limit": 0.6}
+    with pytest.raises(ValueError, match="Kc"):
+        _atacom_training_options({"method_params": {"Kc": 0.0}})
+    with pytest.raises(ValueError, match="action_limit"):
+        _atacom_training_options({"method_params": {"action_limit": 1.1}})
+    with pytest.raises(ValueError, match="alpha_limit"):
+        _atacom_training_options({"method_params": {"alpha_limit": 0.0}})
+
+
+def test_arm_policy_validation_health_gate_and_checkpoint_provenance(tmp_path):
+    import json
+
+    from scripts.tasks.robot.arm.train_rl_baseline import (
+        _policy_validation_summary,
+    )
+
+    sha256 = "a" * 64
+    for suite in ("id_wide", "ood_pose"):
+        for seed in (104, 105):
+            path = tmp_path / f"level_{suite}" / f"seed_{seed}" / "results.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({
+                "level": suite,
+                "seed": seed,
+                "provenance": {"checkpoints": {
+                    "policy_ckpt": {"sha256": sha256},
+                }},
+                "metrics": {"peg_insert_metrics": {
+                    "insertion_success": 1.0,
+                    "safe_insertion_success": 0.0,
+                    "max_insertion_depth": 0.04,
+                    "force_torque_violation_rate": 0.1,
+                    "jam_rate": 1.0,
+                    "rho_cvar95": 1.2,
+                }},
+            }), encoding="utf-8")
+
+    summary = _policy_validation_summary(
+        tmp_path,
+        expected_suites=("id_wide", "ood_pose"),
+        expected_seeds=(104, 105),
+        evaluated_sha256=sha256,
+    )
+    assert summary["run_count"] == 4
+    assert summary["insertion_success_rate"] == 1.0
+    assert summary["safe_insertion_success_rate"] == 0.0
+    with pytest.raises(ValueError, match="nonzero whole-window safe"):
+        _policy_validation_summary(
+            tmp_path,
+            expected_suites=("id_wide", "ood_pose"),
+            expected_seeds=(104, 105),
+            evaluated_sha256=sha256,
+            require_nonzero_safe_success=True,
+        )
+
+    changed = tmp_path / "level_id_wide/seed_104/results.json"
+    payload = json.loads(changed.read_text())
+    payload["provenance"]["checkpoints"]["policy_ckpt"]["sha256"] = "b" * 64
+    changed.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="used policy sha256"):
+        _policy_validation_summary(
+            tmp_path,
+            expected_suites=("id_wide", "ood_pose"),
+            expected_seeds=(104, 105),
+            evaluated_sha256=sha256,
+        )
 
 
 def test_panda_residual_action_wrapper_adds_and_clips_bias():

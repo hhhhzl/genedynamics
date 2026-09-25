@@ -11,7 +11,15 @@ fi
   configs/arm/surface_scan configs/arm/peg_insert configs/humanoid/push_to_line
 "$python_bin" -m genedynamics.experiments.utils.metrics verify \
   configs/arm/surface_scan/main configs/arm/surface_scan/baseline \
-  configs/arm/peg_insert configs/humanoid/push_to_line/main \
+  configs/arm/peg_insert/main/mga.yaml \
+  configs/arm/peg_insert/ablation/no_rl_prior.yaml \
+  configs/arm/peg_insert/ablation/no_retraction.yaml \
+  configs/arm/peg_insert/baseline/issa.yaml \
+  configs/arm/peg_insert/baseline/atacom.yaml \
+  configs/arm/peg_insert/baseline/mppi.yaml \
+  configs/arm/peg_insert/baseline/dial.yaml \
+  configs/arm/peg_insert/baseline/pegasusflow.yaml \
+  configs/humanoid/push_to_line/main \
   configs/humanoid/push_to_line/baseline \
   --require-visuals
 "$python_bin" -m genedynamics.experiments.utils.metrics verify \

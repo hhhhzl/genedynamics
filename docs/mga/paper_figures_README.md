@@ -128,7 +128,7 @@ AND force_violation_rate <= 0.01
 
 这两组开发数据支持的 Surface 结论是：MGA 不必在每个单项力指标上最小，而是在 geometry/compliance shift 下取得最高的安全完成率；Soft 达到 10/10，Hybrid 达到 6/6。MBO 是有竞争力的强基线，DIAL/ATACOM 也有非零且可观的成功率，因此叙事不是“其他算法完全不能工作”，而是 MGA 改善 progress--safety tradeoff。Hard 的 `rigid_unseen` 仍是 MGA 的主要失败来源，不隐藏在总体均值中。
 
-消融的 operational SSR 为 MGA 24/26、w/o RL prior 24/26、w/o controllability geometry 24/26、w/o retraction 17/26。SSR 饱和时，prior 和 geometry 的贡献用 paired nCVaR95/coverage 解释：RL prior 在 Hybrid 将 nCVaR95 从 .728 降至 .659；controllability geometry 将整体 nCVaR95 从 .551 降至 .524；retraction 则直接把 SSR 从 65.4% 提升至 92.3%。`no_learned_reliability` 与 MGA 的全部物理任务指标相同，因为当前 learned reliability 对所有这些运行 abstain 且不拥有 authoritative promotion；Surface 不用它证明 learned reliability，相关验证由 PegInsert Sensing-OOD 承担。
+消融的 operational SSR 为 MGA 24/26、w/o RL prior 24/26、w/o controllability geometry 24/26、w/o retraction 17/26。SSR 饱和时，prior 和 geometry 的贡献用 paired nCVaR95/coverage 解释：RL prior 在 Hybrid 将 nCVaR95 从 .728 降至 .659；controllability geometry 将整体 nCVaR95 从 .551 降至 .524；retraction 则直接把 SSR 从 65.4% 提升至 92.3%。`no_learned_reliability` 与 MGA 的全部物理任务指标相同，因为当前 learned reliability 对所有这些运行 abstain 且不拥有 authoritative promotion。PegInsert 的独立 P4 study 同样没有形成稳定控制增益，因此正式 PegInsert MGA 冻结为 core-only；论文不再用三个任务中的任一个声称 learned reliability 带来性能提升。
 
 ### 4.2 Scanning 在仿真综合图中的 60% 版面
 
@@ -156,7 +156,12 @@ P8 的旧 hybrid 记录只作为机制开发历史；论文统计现在统一从
 
 ### 5.1 当前 PegInsert 论文数据源
 
-论文当前采用的 OOD 结果已经整合到 `results/arm/peg_insert`。现在从该根目录读取 MGA 与 w/o RL prior，可得到论文表中的同一组数字：
+> 2026-09-24 clean-room reset：下述论文结果已整体归档到
+> `results/_archive/peg_insert_protocol_reset_20260924/local/paper_composite`。
+> 活动目录 `results/arm/peg_insert` 不再包含这些旧数字；在 P5 正式补跑前，
+> 不得从归档自动恢复或把旧数据与新协议混合聚合。
+
+论文此前采用的 OOD 结果曾整合在 `results/arm/peg_insert`。从归档根目录读取 MGA 与 w/o RL prior，可复现当时论文表中的同一组数字：
 
 | 方法 | ID SSR / nCVaR95 | Pose-OOD SSR / nCVaR95 | Sensing-OOD SSR / nCVaR95 |
 |---|---|---|---|
@@ -167,7 +172,9 @@ ID 与全部 baseline 保留原来的 canonical 记录；MGA 与 no-prior 的 Po
 
 这些文件的内部 `config_snapshot` 保留原始执行路径和 protocol metadata，用来维持 provenance。当前论文结果仍是“原 ID/baseline + 升级后的 MGA/no-prior OOD”的组合，而不是一次新执行的统一 final 矩阵。已有叙事“ID 打平 no-prior、Sensing 改善、Pose 仍输 PegasusFlow”适用于这份明确锁定的组合。
 
-后续画主表、时间曲线和 GIF 统一以 `results/arm/peg_insert` 为入口，并读取 `paper_result_manifest.json` 确认来源。若以后要求所有算法在新的公共 reward/additive 协议下严格公平，则另行完整补跑，不能把本次目录整合描述成重新执行。
+新主表、时间曲线和 GIF 仍统一以 `results/arm/peg_insert` 为入口，但只能在
+clean-room 240-run 矩阵完成后生成。旧 `paper_result_manifest.json` 位于归档，
+只描述历史 composite 来源，不能作为新结果的 provenance。
 
 ## 6. H1 主图：P3 讲几何，P4 讲真实全身扩展
 

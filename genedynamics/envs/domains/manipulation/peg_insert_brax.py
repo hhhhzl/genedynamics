@@ -41,7 +41,11 @@ from genedynamics.core.control.cartesian_impedance import (
     map_cartesian_wrench,
     orientation_error,
 )
-from genedynamics.core.control.stiffness import PrimitiveSpec, stiffness_log_to_pd
+from genedynamics.core.control.stiffness import (
+    PrimitiveSpec,
+    stiffness_log_to_pd,
+    svec2sym,
+)
 from genedynamics.envs.composition import MjcfSceneComposer, PegToolSpec, SocketSpec
 from genedynamics.robots import RobotBinding, get_robot_registry
 from genedynamics.robots.profile import (
@@ -209,6 +213,12 @@ class PegInsertConfig:
     realization_control_max_action: float = 0.25
     observation_mode: str = "contact"
     clean_manifold_force: bool = True
+    # ATACOM's viability condition is g + K_g * g_dot <= 0.  The task action
+    # is a Cartesian impedance primitive rather than a generalized
+    # acceleration, so the controllable next wrench is supplied by the known
+    # impedance/tracking model.  One control interval is the non-conservative
+    # discrete counterpart of the paper's viability condition.
+    atacom_viability_gain: float = 0.020
 
 
 def _resolved_physics(cfg: PegInsertConfig) -> Dict[str, object]:
@@ -1172,6 +1182,152 @@ class PegInsertEnv(PipelineEnv):
             ]
         )
         return h, g
+
+    def atacom_constraint_residual(self, state, action):
+        """ATACOM chart with action-responsive wrench viability constraints.
+
+        The original ATACOM construction acts on the tangent space of
+        viability constraints ``g(q) + K_g J_g(q) q_dot <= 0``.  PegInsert's
+        policy does not command generalized acceleration directly: it commands
+        a Cartesian impedance primitive and the contact wrench appears only
+        after the low-level controller and contact dynamics are realized.
+        Consequently, the current-state wrench rows in
+        :meth:`constraint_residual` have zero action Jacobian and cannot steer
+        an ATACOM action.
+
+        Use the known low-level impedance/tracking model to form the forward
+        difference
+
+            g_dot(s, u) = (g_model(s, u) - g(s)) / dt,
+
+        and return ``g(s) + K_g g_dot(s, u)``.  This is the discrete task-space
+        counterpart of the paper's viability condition and its assumption of
+        a sufficiently accurate model or tracking controller.  Unlike
+        differentiating through nonsmooth MJX contact, the chart is smooth,
+        finite, and cheap enough to be applied at every policy step.  It also
+        keeps the baseline's nominal safety model separate from the hidden
+        execution environment.  The equality chart remains the existing
+        command/force manifold.
+        """
+        action = jnp.asarray(action)
+        nominal_equality = jnp.asarray(
+            self.manifold_residual(state, action[None])
+        ).reshape((self.manifold_constraint_size,))
+        current_g = jnp.asarray(
+            self.constraint_residual(state, action)[1]
+        ).reshape((self.inequality_constraint_size,))
+        delta, svec, force_raw = self._unpack(jnp.clip(action, -1.0, 1.0))
+        # The PPO episode terminates when insertion succeeds, whereas the
+        # paper protocol deliberately observes a fixed post-completion window.
+        # Continuing to use the approach manifold there would command the
+        # target insertion force at the socket bottom, making a stall/jam
+        # inevitable despite a safe completion.  Treat completion as the
+        # task's absorbing safe set: unload the axial force and apply the same
+        # small retreat used by the task-owned recovery controller.  This is
+        # still an ATACOM equality chart (not a reward or policy heuristic),
+        # and the policy retains its tangent stiffness degrees of freedom.
+        raw_pose = jnp.asarray(action[self.spec.r_slice])
+        terminal_pose_target = jnp.asarray(
+            [0.0, 0.0, -0.25, 0.0, 0.0, 0.0], action.dtype
+        )
+        terminal_pose = raw_pose - terminal_pose_target
+        terminal_force = (
+            force_raw - self._config.f_min
+        ) / max(self._config.f_max, 1.0)
+        terminal_equality = (
+            jnp.concatenate([terminal_pose, terminal_force[None]])
+            if self._config.clean_manifold_force
+            else terminal_pose
+        )
+        equality = jnp.where(
+            state.info["success"] > 0.5,
+            terminal_equality,
+            nominal_equality,
+        )
+        command_pose = state.info["command_pose"] + delta
+        command_pose = command_pose.at[:2].set(
+            jnp.clip(command_pose[:2], -0.012, 0.012)
+        )
+        command_pose = command_pose.at[2].set(
+            jnp.clip(
+                command_pose[2],
+                -self._config.approach_gap,
+                self._config.socket_depth + 0.002,
+            )
+        )
+        command_pose = command_pose.at[3:].set(
+            jnp.clip(command_pose[3:], -0.18, 0.18)
+        )
+        force_cmd = jnp.clip(force_raw, self._config.f_min, self._config.f_max)
+        p_des, R_des = self._command_target(command_pose)
+        p, R, _, _, lin_v, ang_v = end_effector_kinematics(
+            self.sys,
+            state.pipeline_state,
+            self._root_site,
+            self._ee_body,
+        )
+        # The ordinary stiffness conversion uses an eigendecomposition.  Its
+        # eigenvector derivative is undefined at the repeated eigenvalues of
+        # the nominal isotropic stiffness.  Matrix exponential is the same
+        # log-Euclidean map and supplies ATACOM with a finite Frechet
+        # derivative at that point.
+        stiffness_chart = svec2sym(svec, _STIFF_D)
+        stiffness = jax.scipy.linalg.expm(
+            0.5 * (stiffness_chart + stiffness_chart.T)
+        )
+        measured = self.wrench_components(state.info["measured_wrench"])
+        effective_force = jnp.clip(
+            force_cmd
+            + self._config.kp_force
+            * (force_cmd - measured["axial_force"])
+            + state.info["force_int"],
+            self._config.f_min,
+            self._config.f_max + self._config.f_cmd_pad,
+        )
+        modeled_force = (
+            stiffness @ (p_des - p)
+            - self._config.translational_damping * lin_v
+            + effective_force * self._socket_axis
+        )
+        modeled_moment = (
+            self._config.rotational_stiffness * orientation_error(R, R_des)
+            - self._config.rotational_damping * ang_v
+        )
+        modeled_local = jnp.concatenate(
+            [
+                self._socket_rot.T @ modeled_force,
+                self._socket_rot.T @ modeled_moment,
+            ]
+        )
+        # Euclidean norms are nondifferentiable at exactly zero, which is a
+        # common and desirable command in free space.  ATACOM requires a
+        # finite C2 chart, so use the zero-preserving smooth norm only for its
+        # nominal constraint model; reported physical metrics remain exact.
+        norm_eps = jnp.asarray(1.0e-6, action.dtype)
+
+        def smooth_norm(value):
+            return jnp.sqrt(jnp.sum(value * value) + norm_eps**2) - norm_eps
+
+        modeled_lateral = smooth_norm(modeled_local[:2])
+        modeled_axial = smooth_norm(modeled_local[2:3])
+        modeled_bending = smooth_norm(modeled_local[3:5])
+        modeled_torsional = smooth_norm(modeled_local[5:6])
+        predicted_g = jnp.asarray(
+            [
+                modeled_lateral / self._config.lateral_force_limit - 1.0,
+                modeled_axial / self._config.f_max - 1.0,
+                modeled_bending / self._config.bending_torque_limit - 1.0,
+                modeled_torsional / self._config.torsional_torque_limit - 1.0,
+            ],
+            action.dtype,
+        )
+        dt = jnp.asarray(max(float(self._config.dt), 1.0e-6), action.dtype)
+        gain = jnp.asarray(
+            max(float(self._config.atacom_viability_gain), float(self._config.dt)),
+            action.dtype,
+        )
+        viability = current_g + gain * (predicted_g - current_g) / dt
+        return equality, viability
 
     def soft_feasibility_residual(self, state, action, ctx=None):
         """Hard safety residual used by the augmented rollout.

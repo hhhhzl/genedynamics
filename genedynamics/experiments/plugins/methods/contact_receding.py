@@ -32,6 +32,27 @@ def _validate_policy_interface(
         actual = getattr(execution_env, "policy_interface", None)
         if expected != actual and (expected is not None or actual is not None):
             raise ValueError(f"{label} model/execution policy interface mismatch")
+    require_atacom_contract = atacom is not None and (
+        expected is not None
+        or callable(getattr(env, "atacom_constraint_residual", None))
+    )
+    if require_atacom_contract:
+        contract = dict(atacom)
+        recorded_transform = policy_config.get("atacom_transform")
+        if (
+            not callable(getattr(env, "atacom_constraint_residual", None))
+            and isinstance(recorded_transform, dict)
+            and "alpha_limit" not in recorded_transform
+        ):
+            # Preserve already-frozen Humanoid checkpoints created before the
+            # tangent/output limit names were separated for PegInsert.
+            contract.pop("alpha_limit", None)
+        transform = {
+            **contract,
+            "time_step": float(getattr(getattr(env, "_config", None), "dt", 0.02)),
+        }
+        if recorded_transform != transform:
+            raise ValueError(f"{label} ATACOM training/deployment transform mismatch")
     if expected is None:
         return  # Preserve legacy H1 and other tasks' checkpoint behavior.
     if policy_config.get("policy_interface") != expected:
@@ -49,13 +70,6 @@ def _validate_policy_interface(
         for key in ("action_bias", "action_scale"):
             if policy_config.get(key) != expected_action_transform[key]:
                 raise ValueError(f"{label} {key} does not match its policy action transform")
-    if atacom is not None:
-        transform = {
-            **atacom,
-            "time_step": float(getattr(getattr(env, "_config", None), "dt", 0.02)),
-        }
-        if policy_config.get("atacom_transform") != transform:
-            raise ValueError(f"{label} ATACOM training/deployment transform mismatch")
 
 
 def _task_env_kwargs(
@@ -195,6 +209,9 @@ def make_mga(
         _validate_policy_interface(env, atacom_config, label="ATACOM prior", execution_env=execution_env, atacom={
             "Kc": float(cfg.get("atacom_Kc", 1.0)),
             "action_limit": float(cfg.get("action_limit", 1.0)),
+            "alpha_limit": float(cfg.get(
+                "atacom_alpha_limit", cfg.get("action_limit", 1.0)
+            )),
         })
         expected = atacom_null_dim(env)
         if int(atacom_config.get("action_size", -1)) != expected:
@@ -223,6 +240,9 @@ def make_mga(
             ctrl_dt=float(cfg.get("ctrl_dt", 0.02)),
             Kc=float(cfg.get("atacom_Kc", 1.0)),
             action_limit=float(cfg.get("action_limit", 1.0)),
+            alpha_limit=float(cfg.get(
+                "atacom_alpha_limit", cfg.get("action_limit", 1.0)
+            )),
         )
 
     reliability_model = None
@@ -345,9 +365,12 @@ def make_mga(
                 gate_controllability=flags.use_geometry_gate,
             )
 
-    task_contract_env = execution_env or env
+    # Projection is part of the controller's nominal model.  The execution
+    # environment may contain hidden hole pose/clearance/friction and must only
+    # advance the physical state; observed execution signals still arrive in
+    # ``state.info`` and are therefore available to the nominal task hook.
     candidate_projection_fn = (
-        getattr(task_contract_env, "project_mga_candidate", None)
+        getattr(env, "project_mga_candidate", None)
         if flags.use_geometry_gate
         else None
     )
@@ -415,7 +438,9 @@ def _build_baseline_solver(method, env, backend, *, execution_env=None, **cfg):
             noise_shape_fn=str(cfg.get("noise_shape_fn", "linear")),
             noise_decay_fn=str(cfg.get("noise_decay_fn", "exponential")),
             noise_final_ratio=float(cfg.get("noise_final_ratio", 0.1)),
-            action_limit=action_limit, seed=seed,
+            action_limit=action_limit,
+            step_fn=(execution_env.step if execution_env is not None else None),
+            seed=seed,
         )
     if method in {"rl", "atacom", "issa"}:
         from genedynamics.learning.train_rl_policy import build_policy_act, load_policy
@@ -427,7 +452,11 @@ def _build_baseline_solver(method, env, backend, *, execution_env=None, **cfg):
         _validate_policy_interface(
             env, policy_config, label=method,
             execution_env=execution_env,
-            atacom={"Kc": float(cfg.get("Kc", 1.0)), "action_limit": action_limit}
+            atacom={
+                "Kc": float(cfg.get("Kc", 1.0)),
+                "action_limit": action_limit,
+                "alpha_limit": float(cfg.get("alpha_limit", action_limit)),
+            }
             if method == "atacom" else None,
         )
         expected_action_size = int(env.action_size)
@@ -451,13 +480,16 @@ def _build_baseline_solver(method, env, backend, *, execution_env=None, **cfg):
         if method == "rl":
             from genedynamics.solvers.common.rl_policy_controller import RLPolicyController
 
-            return RLPolicyController(env, act_fn, seed=seed)
+            return RLPolicyController(execution_env or env, act_fn, seed=seed)
         if method == "atacom":
             from genedynamics.solvers.single.atacom.atacom import AtacomSolver
 
             return AtacomSolver(
                 env, act_fn, Kc=float(cfg.get("Kc", 1.0)),
-                action_limit=action_limit, seed=seed,
+                action_limit=action_limit,
+                alpha_limit=float(cfg.get("alpha_limit", action_limit)),
+                seed=seed,
+                step_env=execution_env,
             )
         from genedynamics.solvers.single.issa.issa import IssaSolver
 
@@ -469,6 +501,7 @@ def _build_baseline_solver(method, env, backend, *, execution_env=None, **cfg):
             threshold=float(cfg.get("safety_threshold", 0.0)),
             enforce_absolute=bool(cfg.get("enforce_absolute", True)),
             action_limit=action_limit, seed=seed,
+            step_env=execution_env,
         )
     raise NotImplementedError(f"baseline method '{method}' not recognized")
 
@@ -537,6 +570,8 @@ _FACTORY_KEYS = {
 _CHECKPOINT_KEYS = ("policy_ckpt", "atacom_policy_ckpt", "reliability_ckpt")
 _PLUGIN_KEYS = {
     "learned_reliability",
+    "experiment_run_class",
+    "experiment_formal_experiment",
     *{f"{key}_by_suite" for key in _CHECKPOINT_KEYS},
 }
 
@@ -593,6 +628,29 @@ class RecedingContactMethodPlugin(MethodPlugin):
         method = canonical_method_name(
             config.get("controller_method", self._default_controller_method)
         )
+        validation_authoritative = bool(
+            config.get("reliability_validation_authoritative", False)
+        )
+        if validation_authoritative:
+            if (
+                self.name != "mga"
+                or task != INSERT_TASK
+                or config.get("experiment_run_class") != "development"
+                or bool(config.get("experiment_formal_experiment", True))
+            ):
+                raise ValueError(
+                    "reliability_validation_authoritative is restricted to "
+                    "development-only PegInsert MGA validation"
+                )
+            if (
+                not bool(config.get("learned_reliability", True))
+                or not config.get("reliability_ckpt")
+                or str(config.get("reliability_ood_policy")) != "model_based"
+            ):
+                raise ValueError(
+                    "authoritative reliability validation requires the learned "
+                    "candidate under the final model_based OOD policy"
+                )
         if self.name == "mga":
             if method not in METHOD_TABLE:
                 raise ValueError("mga must resolve to an MGA method contract")
@@ -660,6 +718,21 @@ class RecedingContactMethodPlugin(MethodPlugin):
         )
         if model_env is not env:
             raise RuntimeError("contact controller silently replaced the model environment")
+        if validation_authoritative:
+            candidate_metadata = dict(
+                getattr(getattr(solver, "reliability_model", None), "metadata", {})
+                or {}
+            )
+            if (
+                candidate_metadata.get("task") != INSERT_TASK
+                or candidate_metadata.get("fit_scope") != "development_fit_only"
+                or bool(candidate_metadata.get("performance_validated", False))
+                or bool(candidate_metadata.get("promotion_eligible", False))
+            ):
+                raise ValueError(
+                    "authoritative development validation requires an unpromoted "
+                    "PegInsert development-fit reliability candidate"
+                )
         contract: Dict[str, Any] = {
             "plugin": self.name,
             "controller_method": method,
@@ -682,22 +755,36 @@ class RecedingContactMethodPlugin(MethodPlugin):
             if contract["learned_reliability"] and config.get("reliability_ckpt"):
                 metadata = getattr(solver, "reliability_model", None)
                 metadata = getattr(metadata, "metadata", {}) or {}
+                validation_gate = bool(
+                    getattr(
+                        solver, "reliability_validation_authoritative", False
+                    )
+                )
                 contract["reliability_gate_authoritative"] = bool(
                     str(config.get("reliability_ood_policy", "veto")) == "veto"
+                    or validation_gate
                     or (
                         metadata.get("performance_validated", False)
                         and metadata.get("promotion_eligible", False)
                     )
                 )
+                contract["reliability_validation_authoritative"] = validation_gate
                 contract["reliability_promotion_eligible"] = bool(
                     metadata.get("performance_validated", False)
                     and metadata.get("promotion_eligible", False)
                 )
         elif method in {"rl", "issa"}:
             contract["policy"] = bool(config.get("policy_ckpt"))
+            if method == "issa":
+                contract["execution_environment_semantics"] = (
+                    "nominal_projection_execution_step"
+                )
         elif method == "atacom":
             contract["policy"] = bool(config.get("policy_ckpt"))
             contract["tangent_policy"] = True
+            contract["execution_environment_semantics"] = (
+                "nominal_manifold_execution_step"
+            )
         return _ContactPlanner(
             solver=solver,
             env=env,

@@ -2,4 +2,7 @@ base: ../_base.yaml
 name: standalone_rl
 method: standalone_rl
 output_dir: results/arm/peg_insert/baseline/standalone_rl
-method_params: {controller_method: rl, policy_ckpt: results/arm/peg_insert_cpu/_policies/shared_ppo_seed0.pkl}
+method_params: {controller_method: rl, policy_ckpt: results/arm/peg_insert/_policies/shared_ppo_seed0.pkl}
+metadata:
+  formal_experiment: false
+  run_class: diagnostic

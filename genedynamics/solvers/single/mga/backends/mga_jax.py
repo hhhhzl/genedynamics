@@ -238,12 +238,12 @@ class MgaBackendJax:
         self.risk_compare_fn = getattr(
             self._env, "sequence_risk_is_no_worse", None
         )
-        # Score/risk rollouts deliberately remain on the nominal model.  The
-        # task-owned executable emergency, by contrast, must use the execution
-        # task's true socket frame and observed jam state when one is supplied.
-        self._task_contract_env = (
-            getattr(solver, "execution_env", None) or self._env
-        )
+        # Every decision hook stays on the nominal task model.  Hidden OOD
+        # geometry/dynamics belong only to the physical transition; observable
+        # wrench/contact evidence is already carried by the execution state.
+        # Calling methods on execution_env here would disclose the true hole
+        # frame, clearance and friction to the controller.
+        self._task_contract_env = self._env
         self.emergency_plan_fn = getattr(
             self._task_contract_env, "emergency_plan", None
         )
@@ -429,9 +429,17 @@ class MgaBackendJax:
             reliability_metadata.get("performance_validated", False)
             and reliability_metadata.get("promotion_eligible", False)
         )
+        # An unpromoted checkpoint may become authoritative only in the
+        # explicitly guarded PegInsert paired-validation run.  The method
+        # plugin rejects this override outside development, so canonical
+        # deployment still requires promotion metadata.
+        self.reliability_validation_authoritative = bool(
+            getattr(solver, "reliability_validation_authoritative", False)
+        )
         self.reliability_gate_authoritative = bool(
             self.reliability_ood_policy == "veto"
             or self.reliability_promotion_eligible
+            or self.reliability_validation_authoritative
         )
         flags = getattr(solver, "flags", None)
         self.use_rl_prior = bool(getattr(flags, "use_rl_prior", True))

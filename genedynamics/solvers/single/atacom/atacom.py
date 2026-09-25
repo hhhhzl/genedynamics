@@ -23,10 +23,15 @@ class AtacomSolver:
     """Tangent-space (manifold-resident) policy, deployed closed-loop on the inner env."""
 
     def __init__(self, env: Any, act_fn: Callable[[Any, Any], Any], *, Kc: float = 1.0,
-                 action_limit: float = 1.0, seed: int = 0) -> None:
+                 action_limit: float = 1.0, alpha_limit: float | None = None,
+                 seed: int = 0,
+                 step_env: Any = None) -> None:
         from genedynamics.solvers.single.atacom.wrapper import AtacomEnvWrapper
         self.env = env                                   # inner env (for metrics / control space)
-        self.wrapper = AtacomEnvWrapper(env, Kc=Kc, action_limit=action_limit)
+        self.wrapper = AtacomEnvWrapper(
+            env, Kc=Kc, action_limit=action_limit,
+            alpha_limit=alpha_limit, step_env=step_env,
+        )
         self.act_fn = act_fn                             # obs -> tangent action α (null dim)
         self.seed = int(seed)
 

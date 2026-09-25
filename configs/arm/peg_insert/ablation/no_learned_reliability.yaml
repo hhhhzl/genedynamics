@@ -5,5 +5,7 @@ method_params:
   learned_reliability: false
   reliability_ckpt: null
 metadata:
-  ablation_of: mga
-  ablated_component: learned_reliability
+  legacy_alias_of: mga
+  purpose: retired_after_core_only_freeze
+  formal_experiment: false
+  run_class: diagnostic

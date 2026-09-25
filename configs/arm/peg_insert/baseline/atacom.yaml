@@ -2,4 +2,4 @@ base: ../_base.yaml
 name: atacom
 method: atacom
 output_dir: results/arm/peg_insert/baseline/atacom
-method_params: {controller_method: atacom, policy_ckpt: results/arm/peg_insert_cpu/_policies/shared_atacom_ppo_seed0.pkl, Kc: 1.0}
+method_params: {controller_method: atacom, policy_ckpt: results/arm/peg_insert/_policies/shared_atacom_ppo_seed0.pkl, Kc: 1.0, alpha_limit: 0.58, action_limit: 0.58}

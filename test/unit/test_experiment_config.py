@@ -229,6 +229,96 @@ def test_resume_reuses_only_complete_matching_results(tmp_path: Path):
     assert calls == [("first", 1)]
 
 
+def test_summary_rebuilds_all_compatible_batches_from_disk(tmp_path: Path):
+    import json
+
+    cfg = ExperimentConfig(
+        name="batched", output_dir=tmp_path, env_name="dummy", method="dummy",
+        seeds=[0], suites=[{"name": "first"}], metrics=[], visualizations=[],
+        auto_report=False, metadata={"protocol": "frozen-v1"},
+    )
+    for level, seed in (("first", 0), ("second", 1)):
+        output = tmp_path / f"level_{level}" / f"seed_{seed}"
+        output.mkdir(parents=True)
+        snapshot = cfg.to_dict()
+        snapshot["seeds"] = [seed]
+        snapshot["suites"] = []
+        result = {
+            "level": level,
+            "seed": seed,
+            "planning_time": float(seed + 1),
+            "metrics": {},
+            "config_snapshot": snapshot,
+        }
+        (output / "results.json").write_text(
+            json.dumps(result), encoding="utf-8"
+        )
+
+    runner = ExperimentRunner(cfg)
+    records = runner._collect_completed_results()
+    assert [(row["level"], row["seed"]) for row in records] == [
+        ("first", 0), ("second", 1),
+    ]
+    runner._save_summary(records)
+    summary = json.loads((tmp_path / "overall_summary.json").read_text())
+    assert summary["total_experiments"] == 2
+    assert set(summary["level_summaries"]) == {"level_first", "level_second"}
+
+
+def test_failed_rerun_is_not_masked_by_an_old_completed_result(tmp_path: Path):
+    import json
+
+    cfg = ExperimentConfig(
+        name="batched", output_dir=tmp_path, env_name="dummy", method="dummy",
+        seeds=[0], metrics=[], visualizations=[], auto_report=False,
+        metadata={"protocol": "frozen-v1"},
+    )
+    output = tmp_path / "level_0" / "seed_0"
+    output.mkdir(parents=True)
+    result = {
+        "level": 0,
+        "seed": 0,
+        "planning_time": 1.0,
+        "metrics": {},
+        "config_snapshot": cfg.to_dict(),
+    }
+    (output / "results.json").write_text(json.dumps(result), encoding="utf-8")
+    runner = ExperimentRunner(cfg)
+    runner.failures = [{
+        "level": 0, "seed": 0, "error_type": "RuntimeError", "error": "boom",
+    }]
+    assert runner._collect_completed_results(exclude={("0", 0)}) == []
+    runner._save_summary([])
+    summary = json.loads((tmp_path / "overall_summary.json").read_text())
+    assert summary["total_experiments"] == 0
+    assert summary["failed_experiments"] == 1
+
+
+def test_run_all_records_partial_failures(tmp_path: Path):
+    cfg = ExperimentConfig(
+        name="failures", output_dir=tmp_path, env_name="dummy", method="dummy",
+        seeds=[0, 1], metrics=[], visualizations=[], auto_report=False,
+    )
+    runner = ExperimentRunner(cfg)
+    runner._save_protocol_manifest = lambda: None
+    runner._save_result = lambda result: None
+    runner._save_summary = lambda results: None
+
+    def run_one(level, seed):
+        if seed == 0:
+            raise RuntimeError("synthetic failure")
+        return {"level": level, "seed": seed}
+
+    runner.run_single_experiment = run_one
+    assert runner.run_all() == [{"level": 0, "seed": 1}]
+    assert runner.failures == [{
+        "level": 0,
+        "seed": 0,
+        "error_type": "RuntimeError",
+        "error": "synthetic failure",
+    }]
+
+
 def test_resume_reruns_config_mismatch(tmp_path: Path):
     cfg = ExperimentConfig(
         name="resumable",
@@ -351,7 +441,7 @@ def test_humanoid_controllability_ablation_matches_surface_contract():
     ]
 
 
-@pytest.mark.parametrize("family", ["surface_scan", "peg_insert"])
+@pytest.mark.parametrize("family", ["surface_scan"])
 def test_arm_learned_ablation_configs_change_only_the_named_component(family):
     from genedynamics.solvers.single.mga.core.method_registry import (
         diff_flags,
@@ -408,3 +498,39 @@ def test_arm_learned_ablation_configs_change_only_the_named_component(family):
         "reliability_ckpt"
     ]
     assert restored_reliability == full.method_params
+
+
+def test_peg_insert_core_only_freeze_retires_learned_reliability_ablation():
+    from genedynamics.solvers.single.mga.core.method_registry import (
+        diff_flags,
+        resolve_method,
+    )
+
+    full = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/peg_insert/main/mga.yaml"
+    )
+    no_prior = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/peg_insert/ablation/no_rl_prior.yaml"
+    )
+    retired = ExperimentConfig.from_yaml(
+        ROOT / "configs/arm/peg_insert/ablation/no_learned_reliability.yaml"
+    )
+    assert full.metadata["protocol_status"] == "frozen_core_only"
+    assert full.metadata["learned_component_lock_status"] == "frozen_core_only"
+    assert full.method_params["learned_reliability"] is False
+    assert full.method_params["reliability_ckpt"] is None
+    assert retired.method_params == full.method_params
+    assert retired.metadata["legacy_alias_of"] == "mga"
+    assert retired.metadata["formal_experiment"] is False
+    assert no_prior.method_params["learned_reliability"] is False
+    assert no_prior.method_params["reliability_ckpt"] is None
+    assert diff_flags(
+        resolve_method(full.method_params["controller_method"]),
+        resolve_method(no_prior.method_params["controller_method"]),
+    ) == ("use_rl_prior",)
+    restored_prior = dict(no_prior.method_params)
+    restored_prior.update({
+        "controller_method": full.method_params["controller_method"],
+        "policy_ckpt": full.method_params["policy_ckpt"],
+    })
+    assert restored_prior == full.method_params

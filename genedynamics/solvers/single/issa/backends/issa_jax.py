@@ -22,10 +22,11 @@ class IssaProjection:
     def __init__(self, env: Any, *, n_dirs: int = 20, n_iters: int = 50,
                  bound: float = 1e-4, threshold: float = 0.0,
                  enforce_absolute: bool = True, action_limit: float = 1.0,
-                 seed: int = 0) -> None:
+                 seed: int = 0, step_env: Any = None) -> None:
         if not hasattr(env, "safety_index"):
             raise ValueError("ISSA requires env.safety_index(state)")
         self.env = env
+        self.step_env = step_env or env
         self.n_dirs = int(n_dirs)
         self.n_iters = int(n_iters)
         self.bound = float(bound)
@@ -38,6 +39,7 @@ class IssaProjection:
         self._key0 = jax.random.PRNGKey(self.seed)
         self.last_info: Dict[str, Any] = {}
         self._transition_jit = jax.jit(self._transition)
+        self._execution_step_jit = jax.jit(self.step_env.step)
 
     def _transition(self, state: Any, action: jax.Array):
         """Return the realized next state and its ISSA transition margin."""
@@ -266,15 +268,15 @@ class IssaProjection:
     def project_and_step_with_info(self, state: Any, action: Any):
         """Project an action and return the already-realized next state.
 
-        Reusing this transition avoids compiling a second H1 ``env.step`` in
-        the policy controller.  The returned state is exactly the state used
-        by ISSA's safety test for the selected action.
+        Candidate certification stays on the nominal model.  The selected
+        action advances ``step_env`` so hidden OOD dynamics remain execution
+        effects instead of becoming the ISSA projection model.
         """
         nominal = jnp.clip(
             jnp.asarray(action), -self.action_limit, self.action_limit
         )
-        next_state, nominal_margin = self._transition_jit(state, nominal)
-        jax.block_until_ready((next_state, nominal_margin))
+        model_next_state, nominal_margin = self._transition_jit(state, nominal)
+        jax.block_until_ready((model_next_state, nominal_margin))
         if float(nominal_margin) <= 0.0:
             info = {
                 "found_safe": jnp.asarray(True),
@@ -282,13 +284,19 @@ class IssaProjection:
                 "margin": nominal_margin,
                 "intervention": jnp.asarray(0.0, nominal.dtype),
             }
+            next_state = (
+                model_next_state
+                if self.step_env is self.env
+                else self._execution_step_jit(state, nominal)
+            )
+            jax.block_until_ready(next_state)
             self.last_info = info
             return nominal, next_state, info
-        del next_state
+        del model_next_state
         step = state.info.get("step", jnp.asarray(0, jnp.int32))
         key = jax.random.fold_in(self._key0, step.astype(jnp.uint32))
         projected, info = self._adamba_host(state, nominal, key)
-        next_state, _ = self._transition_jit(state, projected)
+        next_state = self._execution_step_jit(state, projected)
         jax.block_until_ready(next_state)
         self.last_info = info
         return projected, next_state, info
@@ -334,11 +342,12 @@ class IssaProjection:
 def make_issa_projection(env: Any, *, n_dirs: int = 20, n_iters: int = 50,
                          bound: float = 1e-4, threshold: float = 0.0,
                          enforce_absolute: bool = True,
-                         action_limit: float = 1.0, seed: int = 0) -> IssaProjection:
+                         action_limit: float = 1.0, seed: int = 0,
+                         step_env: Any = None) -> IssaProjection:
     return IssaProjection(
         env, n_dirs=n_dirs, n_iters=n_iters, bound=bound,
         threshold=threshold, enforce_absolute=enforce_absolute,
-        action_limit=action_limit, seed=seed,
+        action_limit=action_limit, seed=seed, step_env=step_env,
     )
 
 

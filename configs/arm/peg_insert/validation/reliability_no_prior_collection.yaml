@@ -1,0 +1,30 @@
+base: ../ablation/no_rl_prior.yaml
+name: reliability_no_prior_collection
+output_dir: results/arm/peg_insert/validation/reliability_no_prior_collection
+
+# Development-only source for the candidate family without an RL proposal.
+# P4 has not produced a learned gate yet, so collection disables that missing
+# component while retaining the no-prior MGA refinement, revalidation,
+# incumbent, and task-owned recovery mechanisms.
+method_params:
+  learned_reliability: false
+  reliability_ckpt: null
+
+suites:
+  - name: jam_stress
+    level: tight
+    execution_env_params:
+      level: tight
+      jam_dwell_steps: 2
+      jam_force_fraction: 0.20
+      jam_progress_tol: 0.0005
+
+metadata:
+  formal_experiment: false
+  run_class: development
+  purpose: reliability_no_rl_prior_candidate_collection
+  sample_contract: executed_no_rl_prior_mga_commit_horizons
+  training_seeds: [106, 112]
+  calibration_seeds: [107, 113]
+  formal_evaluation_seeds_excluded: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  paired_validation_seeds_excluded: [110, 111]

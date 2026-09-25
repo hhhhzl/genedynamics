@@ -34,12 +34,15 @@ class AtacomHorizonPrior:
         ctrl_dt: float = 0.02,
         Kc: float = 1.0,
         action_limit: float = 1.0,
+        alpha_limit: float | None = None,
     ) -> None:
         self.env = env
         self.tangent_prior = tangent_prior
         self.output_dim = int(env.action_size)
         self._dense_horizon = int(Hsample) + 1
-        self._alpha_max = float(action_limit)
+        self._alpha_max = float(
+            action_limit if alpha_limit is None else alpha_limit
+        )
         self._spline = NodeSpline.build(
             int(Hnode), int(Hsample), float(ctrl_dt)
         )

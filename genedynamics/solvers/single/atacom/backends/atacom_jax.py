@@ -16,6 +16,28 @@ import jax
 import jax.numpy as jnp
 
 
+def _constraint_residual(env: Any, state: Any, action: jnp.ndarray):
+    """Return the constraint chart owned by an ATACOM-capable task.
+
+    The generic contract remains ``constraint_residual`` so existing surface
+    scanning and humanoid tasks keep their exact behavior.  Contact tasks may
+    instead expose ``atacom_constraint_residual`` when their safety variables
+    are state quantities whose response to the action must be obtained through
+    the known dynamics.  This mirrors ATACOM's requirement that the constraint
+    Jacobian be taken through the controllable dynamics rather than treating a
+    measured state constraint as an action-independent algebraic row.
+    """
+    hook = getattr(env, "atacom_constraint_residual", None)
+    if hook is not None:
+        return hook(state, action)
+    # The legacy/general task contract may expose additional equality
+    # diagnostics whose width is unrelated to ATACOM's action manifold.  Only
+    # an explicit ATACOM hook may replace ``manifold_residual``; fallback tasks
+    # retain their exact pre-existing equality chart and contribute only g.
+    _, g = env.constraint_residual(state, action)
+    return jnp.zeros((0,), dtype=jnp.asarray(action).dtype), g
+
+
 def atacom_constraint_dims(env: Any) -> Tuple[int, int]:
     """Read and validate the task-owned equality/inequality dimensions."""
     if not hasattr(env, "manifold_constraint_size"):
@@ -81,7 +103,20 @@ def make_atacom_transform(env: Any, *, Kc: float = 1.0,
 
     def constraint_at(state, u):
         f = jnp.asarray(env.manifold_residual(state, u[None])).reshape((n_f,))
-        g = jnp.asarray(env.constraint_residual(state, u)[1]).reshape((n_g,))
+        task_f, task_g = _constraint_residual(env, state, u)
+        task_f = jnp.asarray(task_f).reshape((-1,))
+        if task_f.size == n_f:
+            # A task-specific ATACOM chart may supply a dynamics-aware
+            # equality residual as well.  PegInsert deliberately keeps the
+            # existing action manifold, while the hook remains complete for
+            # future task-owned inverse-dynamics charts.
+            f = task_f
+        elif task_f.size != 0:
+            raise ValueError(
+                "ATACOM equality residual width must be zero or match "
+                f"manifold_constraint_size: {task_f.size} != {n_f}"
+            )
+        g = jnp.asarray(task_g).reshape((n_g,))
         return jnp.concatenate([f, g])
 
     def transform(state, alpha, slack):
@@ -96,7 +131,12 @@ def make_atacom_transform(env: Any, *, Kc: float = 1.0,
             jnp.zeros((n_f,), dtype=alpha.dtype),
             0.5 * slack ** 2,
         ])
-        Ju = jax.jacobian(lambda u: constraint_at(state, u))(u_ref)
+        # MJX's iterative contact solver contains dynamic ``while_loop``
+        # primitives, for which reverse-mode differentiation is undefined.
+        # ATACOM needs the small control Jacobian (13 columns for PegInsert),
+        # so forward mode is both the valid differentiation mode and the
+        # direct analogue of the analytic constraint Jacobian in the paper.
+        Ju = jax.jacfwd(lambda u: constraint_at(state, u))(u_ref)
         Js = jnp.concatenate([
             jnp.zeros((n_f, n_g), dtype=alpha.dtype),
             jnp.diag(slack),
@@ -126,9 +166,8 @@ def make_atacom_transform(env: Any, *, Kc: float = 1.0,
 def init_slack(env: Any, state: Any) -> jnp.ndarray:
     """Initialize ``s = sqrt(max(-2g, 0))`` as in upstream ATACOM."""
     _, n_g = atacom_constraint_dims(env)
-    g = jnp.asarray(env.constraint_residual(
-        state, jnp.zeros((int(env.action_size),), dtype=jnp.float32)
-    )[1]).reshape((n_g,))
+    action = jnp.zeros((int(env.action_size),), dtype=jnp.float32)
+    g = jnp.asarray(_constraint_residual(env, state, action)[1]).reshape((n_g,))
     return jnp.sqrt(jnp.maximum(-2.0 * g, 0.0))
 
 
