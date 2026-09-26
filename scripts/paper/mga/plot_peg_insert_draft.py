@@ -1,6 +1,7 @@
 """Paper-style appendix figures and a narrow preview from saved PegInsert runs.
 
-Use --appendix and/or --main-preview for the canonical composite paper data.
+Use --appendix and/or --main-preview with --data-root for the frozen 240-run
+paper dataset. Canonical mode rejects the historical composite protocol.
 The old guided-only draft is available explicitly through --legacy. No solver
 is rerun and no executed trajectory is represented as a candidate sample.
 """
@@ -36,14 +37,14 @@ TEAL = "#168f92"
 RED = "#d95653"
 GRAY = "#9b9fa4"
 PAPER_METHODS = (
-    ("baseline/standalone_rl", "RL"), ("baseline/issa", "ISSA"),
+    ("main/mga", "MGA"), ("ablation/no_rl_prior", "w/o RL prior"),
+    ("ablation/no_retraction", "w/o LRC"), ("baseline/issa", "ISSA"),
     ("baseline/atacom", "ATACOM"), ("baseline/mppi", "MPPI"),
     ("baseline/dial", "DIAL"), ("baseline/pegasusflow", "PegasusFlow"),
-    ("ablation/no_rl_prior", "w/o RL prior"), ("main/mga", "MGA"),
 )
-PAIR = ("main/mga", "ablation/no_rl_prior")
-OOD_INELIGIBLE = {"baseline/standalone_rl", "baseline/issa",
-                  "baseline/atacom", "baseline/pegasusflow"}
+PAIR = ("main/mga", "ablation/no_rl_prior", "ablation/no_retraction")
+PREVIEW_SUITE = "ood_pose"
+EXPECTED_PROTOCOL = "mga_peg_insert_core_only"
 
 
 def read_runs(data_root, method, suite):
@@ -83,10 +84,10 @@ def style():
     })
 
 
-def save(fig, output, name):
-    fig.savefig(output / f"{name}.pdf", dpi=400, bbox_inches="tight", pad_inches=0.06)
-    fig.savefig(output / f"{name}.png", dpi=300,
-                bbox_inches="tight", pad_inches=0.06)
+def save(fig, output, name, *, fixed_canvas=False):
+    options = {} if fixed_canvas else {"bbox_inches": "tight", "pad_inches": .06}
+    fig.savefig(output / f"{name}.pdf", dpi=400, **options)
+    fig.savefig(output / f"{name}.png", dpi=300, **options)
     plt.close(fig)
 
 
@@ -257,23 +258,34 @@ def relpath(path):
         return str(path)
 
 
-def eligible(method, suite):
-    return suite == "id_wide" or method not in OOD_INELIGIBLE
+def validate_frozen_result(result, path, suite, seed):
+    """Reject mixed historical records without imposing a proposal-mode label."""
+    config = result["config_snapshot"]
+    metadata = config["metadata"]
+    contract = metadata.get("safety_metric_contract", {})
+    if (int(result["seed"]) != seed or result["suite"] != suite
+            or metadata.get("protocol") != EXPECTED_PROTOCOL
+            or metadata.get("protocol_status") != "frozen_core_only"
+            or metadata.get("expected_formal_task_runs") != 240
+            or config.get("n_steps") != 64 or config.get("device") != "cpu"
+            or config["method_params"].get("Nsample") != 64
+            or contract.get("primary") != "safe_insertion_success"
+            or contract.get("execution_window_steps") != 64
+            or contract.get("definition") != "insertion_success_and_no_violation_anywhere_in_64_step_execution"
+            or config["method_params"].get("learned_reliability", False)):
+        raise ValueError(f"Not a matching frozen 240-run CPU record: {path}")
 
 
 def result_records(data_root):
-    """Read small result records only; excluded OOD cells remain explicitly empty."""
+    """Read exactly eight methods, three suites, and seeds 0--9 from one root."""
     records = {}
     for suite, _ in SUITES:
         for method, _ in PAPER_METHODS:
-            if not eligible(method, suite):
-                continue
             records[method, suite] = []
             for seed in range(10):
                 path = data_root / method / f"level_{suite}/seed_{seed}/results.json"
                 result = json.loads(path.read_text())
-                if int(result["seed"]) != seed:
-                    raise ValueError(f"Seed mismatch: {path}")
+                validate_frozen_result(result, path, suite, seed)
                 records[method, suite].append((result, path))
     return records
 
@@ -314,28 +326,27 @@ def summarize_records(records, data_root):
             "successful_completion_time_physical_seconds": mean_sd(physical),
             "historical_completion_time_timeout_inclusive_seconds": mean_sd([m["completion_time"] for m in metrics]),
             "recorded_protocols": sorted({r["config_snapshot"]["metadata"]["protocol"] for r, _ in entries}),
-            "recorded_prior_modes": sorted({r["config_snapshot"]["method_params"].get("prior_mode", "guided")
+            "recorded_prior_modes": sorted({r["config_snapshot"]["method_params"].get("prior_mode", "not_applicable")
                                              for r, _ in entries}),
             "result_paths": [relpath(path) for _, path in entries],
+            "result_sha256": [hashlib.sha256(path.read_bytes()).hexdigest() for _, path in entries],
         }
     return {
         "source_root": relpath(data_root),
-        "manifest": relpath(data_root / "paper_result_manifest.json"),
+        "protocol": EXPECTED_PROTOCOL, "run_count": sum(len(v) for v in records.values()),
         "seeds": list(range(10)), "statistics": stats,
-        "outcome_figure_methods": ["main/mga", "ablation/no_rl_prior", "baseline/mppi", "baseline/dial"],
+        "outcome_figure_methods": [method for method, _ in PAPER_METHODS],
         "definitions": {
-            "outcome": "Safe completion = saved strict SSR; unsafe completion = raw completion without strict SSR; incomplete = no raw completion. Categories partition all ten trials.",
-            "strict_safe_success": "At least one completion sample with no wrench-limit violation or jam up to that sample; not a guarantee that the remaining fixed-length record is safe.",
+            "outcome": "Safe completion = saved full-record SSR; unsafe completion = raw completion with a wrench-limit violation or jam anywhere in the record; incomplete = no raw completion. Categories partition all ten trials.",
+            "strict_safe_success": "Insertion success with neither force_torque_violation nor jammed in any of the 64 execution samples. Prefix-safe completion is a separate legacy diagnostic and is not used for outcomes.",
             "rho": "Maximum of true lateral force/20 N, axial force/30 N, bending torque/1.5 N m, and torsional torque/1 N m.",
             "time_axis": "Physical post-step sample time: (sample index + 1)*dt. Initial state is t=0; all 64 execution samples are retained through 1.28 s.",
             "completion_time": "Successful-trial means exclude failures. Historical saved completion_time uses index*dt and substitutes 1.28 s for failure; physical completion time adds one control period to a successful saved index time.",
             "sd": "Population standard deviation across trials, matching canonical aggregate convention.",
         },
-        "excluded_ood_methods": sorted(OOD_INELIGIBLE),
-        "exclusion_reason": "Documented execution-environment routing defect: these OOD recordings ran in nominal planning environment. Not eligible as matched OOD evidence; see docs/mga/peg_insert_rerun_README.md.",
         "limitations": [
-            "Canonical root is a historical composite: MGA/no-prior ID guided; OOD additive. No unified rerun is implied.",
-            "No matched PegInsert no-LRC results are available.",
+            "All figures use one complete frozen CPU root; no historical runs or nominal substitutions are pooled.",
+            "Learned reliability is disabled in this protocol.",
             "No per-candidate node or rollout geometry is logged. Decision scalars are not candidate trajectories.",
             "No controller experiment was run to generate these figures.",
         ],
@@ -374,35 +385,32 @@ def paint_socket(image):
 
 
 def outcome_figure(records, output, colors):
-    fig, axes = plt.subplots(1, 3, figsize=(7.1, 2.35), sharey=True)
-    chart_methods = [("main/mga", "MGA"), ("ablation/no_rl_prior", "w/o RL prior"),
-                     ("baseline/mppi", "MPPI"), ("baseline/dial", "DIAL")]
+    fig, axes = plt.subplots(1, 3, figsize=(7, 2.15), sharey=True)
+    chart_methods = PAPER_METHODS
     fills = [colors["MGATeal"], colors["MGAOrange"], "#D5DAE0"]
     for ax, (suite, title) in zip(axes, SUITES):
         for row, (method, _) in enumerate(chart_methods):
-            if not eligible(method, suite):
-                raise ValueError("Ineligible OOD method in selective comparison")
-            left = 0
+            bottom = 0
             for category, fill in enumerate(fills):
                 count = sum(outcome(r) == category for r, _ in records[method, suite])
                 if count:
-                    ax.barh(row, count, left=left, height=.65, color=fill,
+                    ax.bar(row, count, bottom=bottom, width=.76, color=fill,
                             edgecolor="white", linewidth=.4)
-                    ax.text(left + count / 2, row, str(count), ha="center", va="center",
-                            fontsize=7, color="white" if category < 2 else "#3A4655")
-                left += count
-        ax.set(xlim=(0, 10), xticks=[0, 5, 10], xlabel="Trials (n = 10)")
-        ax.set_title(title, fontweight="bold", pad=8)
+                    ax.text(row, bottom + count / 2, str(count), ha="center", va="center",
+                            fontsize=6.2, color="white" if category < 2 else "#3A4655")
+                bottom += count
+        ax.set(ylim=(0, 10.6), yticks=[0, 5, 10])
+        ax.set_xticks(range(len(chart_methods)),
+                      ["MGA", "w/o prior", "w/o LRC", "ISSA", "ATACOM", "MPPI", "DIAL", "PF"],
+                      rotation=55, ha="right")
+        ax.set_title(title, fontweight="bold", pad=6)
         ax.set_axisbelow(True)
-        ax.grid(axis="x", color=".91", lw=.5)
-        ax.tick_params(axis="y", length=0)
-    axes[0].set_yticks(range(len(chart_methods)))
-    axes[0].set_yticklabels([label for _, label in chart_methods], fontsize=7)
-    axes[0].invert_yaxis()
+        ax.grid(axis="y", color=".91", lw=.5)
+    axes[0].set_ylabel("Trials (n = 10)")
     bordered_legend(fig, [Patch(facecolor=c, label=l) for c, l in zip(fills,
-                    ["Safe completion", "Unsafe completion", "Incomplete"])], y=.025, ncol=3)
-    fig.subplots_adjust(left=.13, right=.99, top=.86, bottom=.33, wspace=.16)
-    save(fig, output, "peg_outcome_decomposition")
+                    ["Safe completion", "Unsafe completion", "Incomplete"])], y=.008, ncol=3)
+    fig.subplots_adjust(left=.06, right=.99, top=.85, bottom=.36, wspace=.13)
+    save(fig, output, "peg_outcome_decomposition", fixed_canvas=True)
 
 
 def validated_signals(run):
@@ -410,6 +418,8 @@ def validated_signals(run):
     signals = trajectory["task_signals"]
     n = len(trajectory["actions"])
     dt = float(signals["dt"])
+    if n != 64 or len(trajectory["states"]) != 65 or not np.isclose(dt, .02):
+        raise ValueError("Canonical figures require all 64 execution samples at 0.02 s")
     for key in ("rho", "insertion_depth", "success", "strict_safe_success"):
         if len(signals[key]) != n or not np.isfinite(signals[key]).all():
             raise ValueError(f"Invalid execution signal {key}")
@@ -418,6 +428,14 @@ def validated_signals(run):
                               ("bending_torque", 1.5), ("torsional_torque", 1))])
     if not np.allclose(rho, signals["rho"], atol=1e-6):
         raise ValueError("Saved rho differs from true wrench utilization")
+    metrics = result["metrics"]["peg_insert_metrics"]
+    full_safe = (np.any(np.asarray(signals["success"]) > .5)
+                 and not np.any(np.asarray(signals["force_torque_violation"]) > .5)
+                 and not np.any(np.asarray(signals["jammed"]) > .5))
+    if full_safe != bool(metrics["safe_insertion_success"] > .5):
+        raise ValueError("Saved SSR differs from the full 64-step safety contract")
+    if not np.isclose(np.mean(np.sort(rho)[-4:]), metrics["rho_cvar95"], atol=1e-6):
+        raise ValueError("Saved tail metric differs from the highest four utilization samples")
     hit = np.flatnonzero(np.asarray(signals["success"]) > .5)
     if hit.size and not np.isclose(hit[0] * dt, result["metrics"]["peg_insert_metrics"]["completion_time"]):
         raise ValueError("Completion metric index convention changed")
@@ -425,11 +443,12 @@ def validated_signals(run):
 
 
 def paired_trace_figure(groups, output, colors, seed):
-    fig, axes = plt.subplots(2, 3, figsize=(7.1, 4.0), sharex=True, sharey="row")
+    fig, axes = plt.subplots(2, 3, figsize=(7, 3.25), sharex=True, sharey="row")
     max_rho = max(max(run[1]["task_signals"]["rho"])
                   for runs in groups.values() for run in runs)
     method_styles = [("main/mga", colors["MGATeal"], "-"),
-                     ("ablation/no_rl_prior", colors["MGAIndigo"], "--")]
+                     ("ablation/no_rl_prior", colors["MGAIndigo"], "--"),
+                     ("ablation/no_retraction", colors["MGAOrange"], ":")]
     for col, (suite, title) in enumerate(SUITES):
         for method, color, ls in method_styles:
             for run in groups[method, suite]:
@@ -455,23 +474,21 @@ def paired_trace_figure(groups, output, colors, seed):
             ax.set(xlim=(0, 1.28), xticks=[0, .4, .8, 1.2])
         axes[1, col].set_xlabel("Physical time (s)")
     axes[0, 0].set(ylabel="Insertion depth (mm)", ylim=(-1, 42), yticks=[0, 16, 32, 40])
-    axes[1, 0].set(ylabel=r"True wrench utilization $\rho$", ylim=(0, max(1.3, 1.03 * max_rho)), yticks=[0, .5, 1])
+    axes[1, 0].set(ylabel=r"Wrench utilization $\rho$", ylim=(0, max(1.3, 1.03 * max_rho)), yticks=[0, .5, 1])
     handles = [Line2D([], [], color=c, ls=ls, lw=1.5, label=l)
-               for (_, c, ls), l in zip(method_styles, ["MGA", "w/o RL prior"])]
+               for (_, c, ls), l in zip(method_styles, ["MGA", "w/o RL prior", "w/o LRC"])]
     handles += [Line2D([], [], marker=m, color="#52627A", ls="none", ms=3,
                       markerfacecolor="white", label=l) for m, l in
                 [("o", "Safe completion"), ("x", "Unsafe completion"), ("|", "Incomplete endpoint")]]
-    bordered_legend(fig, handles, y=.055, ncol=5, fontsize=6)
-    fig.text(.5, .025, "All paired trials; one common execution emphasized. Full records retained after completion. Dotted depth line is not the full success criterion.",
-             ha="center", fontsize=6)
-    fig.subplots_adjust(left=.09, right=.985, top=.92, bottom=.24, wspace=.15, hspace=.22)
-    save(fig, output, "peg_paired_depth_rho")
+    bordered_legend(fig, handles, y=.055, ncol=3, fontsize=6)
+    fig.subplots_adjust(left=.09, right=.985, top=.92, bottom=.28, wspace=.15, hspace=.22)
+    save(fig, output, "peg_paired_depth_rho", fixed_canvas=True)
 
 
 def decision_rows(run):
     infos = run[1]["infos"]
     if any("additive_prior_selected" not in info for info in infos):
-        raise ValueError("Preview requires recorded additive source decisions")
+        raise ValueError("Preview requires the recorded prior-selection diagnostic")
     return {
         "additive_prior_selected": [int(info["additive_prior_selected"] > .5) for info in infos],
         "refined_not_revalidated_safe": [int(info["refined_revalidated_safe"] <= .5) for info in infos],
@@ -480,22 +497,32 @@ def decision_rows(run):
     }
 
 
-def native_event_images(mga, scene_dir, seed):
+def validated_scene_metadata(mga, scene_dir, seed, suite):
+    scene_metadata = json.loads((scene_dir / "metadata.json").read_text())[f"peg_{suite}"]
+    source = Path(scene_metadata["trajectory"])
+    source = source if source.is_absolute() else ROOT / source
+    if (scene_metadata["seed"] != seed or source.resolve() != mga[3].resolve()
+            or scene_metadata["trajectory_sha256"] != hashlib.sha256(mga[3].read_bytes()).hexdigest()):
+        raise ValueError("Native scene metadata does not match the illustrated trajectory")
+    return scene_metadata
+
+
+def native_event_images(mga, scene_dir, seed, suite=PREVIEW_SUITE):
     """Verify actual image-state provenance instead of inferring it from names."""
     signals, time, hit = validated_signals(mga)
     contact = np.flatnonzero(np.asarray(signals["in_contact"]) > .5)
+    if not contact.size:
+        raise ValueError("The illustrated execution has no recorded contact")
     frame_info = [("initial", "Initial", 0),
                   ("first_contact", "Contact", int(contact[0]) + 1),
                   ("first_completion", "Complete" if hit is not None else "Final state",
                    hit + 1 if hit is not None else len(mga[1]["states"]) - 1)]
-    scene_metadata = json.loads((scene_dir / "metadata.json").read_text())["peg_ood_sensing"]
-    if scene_metadata["seed"] != seed or scene_metadata["trajectory"] != relpath(mga[3]):
-        raise ValueError("Native scene metadata does not match the illustrated trajectory")
+    scene_metadata = validated_scene_metadata(mga, scene_dir, seed, suite)
     rendered_events = {frame["image"]: frame
                        for frame in scene_metadata["event_closeups"]["frames"]}
     images = []
     for suffix, label, state_index in frame_info:
-        path = scene_dir / f"peg_ood_sensing_closeup_{suffix}.png"
+        path = scene_dir / f"peg_{suite}_closeup_{suffix}.png"
         if not path.exists():
             raise FileNotFoundError(f"Native Peg preview closeup required: {path}")
         actual = rendered_events[path.name]
@@ -506,14 +533,56 @@ def native_event_images(mga, scene_dir, seed):
     return images
 
 
-def geometry_contact_figure(groups, output, scene_dir, colors, seed):
-    suite = "ood_sensing"
+def rollout_gallery(groups, output, scene_dir, seed):
+    """Compose the three native recorded rollouts when all suites are supplied."""
+    scene_metadata = json.loads((scene_dir / "metadata.json").read_text())
+    if not all(f"peg_{suite}" in scene_metadata for suite, _ in SUITES):
+        return
+    fig, axes = plt.subplots(3, 5, figsize=(12, 7))
+    fig.subplots_adjust(left=.015, right=.995, top=.88, bottom=.055,
+                        hspace=.34, wspace=.018)
+    fig.suptitle("Peg insertion | MGA", x=.015, y=.975, ha="left",
+                 fontsize=16, fontweight="bold")
+    frames = []
+    for row, ((suite, _), title) in enumerate(zip(SUITES, ["ID", "Pose-OOD", "Sensing-OOD"])):
+        mga = next(run for run in groups["main/mga", suite] if int(run[0]["seed"]) == seed)
+        metadata = validated_scene_metadata(mga, scene_dir, seed, suite)
+        recorded = {frame["image"]: frame for frame in metadata["closeup"]["frames"]}
+        dt = float(mga[1]["task_signals"]["dt"])
+        for column, state_index in enumerate([0, 16, 32, 48, 64]):
+            path = scene_dir / f"peg_{suite}_closeup_frame_{column}.png"
+            actual = recorded[path.name]
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if (actual["state_index"] != state_index or actual["image_sha256"] != digest
+                    or not np.isclose(actual["time_seconds"], state_index * dt)):
+                raise ValueError(f"Native gallery frame provenance mismatch: {path}")
+            ax = axes[row, column]
+            ax.imshow(plt.imread(path))
+            ax.axis("off")
+            ax.text(.5, -.045, f"t = {state_index * dt:.2f} s", transform=ax.transAxes,
+                    ha="center", va="top", fontsize=10)
+            frames.append({"suite": suite, "path": relpath(path), "state_index": state_index,
+                           "physical_time_seconds": state_index * dt, "image_sha256": digest,
+                           "trajectory": relpath(mga[3]), "trajectory_sha256": metadata["trajectory_sha256"]})
+        axes[row, 0].text(0, 1.05, title, transform=axes[row, 0].transAxes,
+                          fontsize=12, fontweight="bold")
+    save(fig, output, "peg_rollouts", fixed_canvas=True)
+    (output / "peg_rollouts.json").write_text(json.dumps({
+        "method": "main/mga", "seed": seed, "canvas_inches": [12, 7],
+        "state_indices": [0, 16, 32, 48, 64], "scene_metadata": relpath(scene_dir / "metadata.json"),
+        "definition": "Native saved-state replay only; no policy or dynamics rerun. All frames retain their recorded source-state and image hashes.",
+        "frames": frames,
+    }, indent=2, allow_nan=False) + "\n")
+
+
+def geometry_contact_figure(groups, output, scene_dir, colors, seed, data_root):
+    suite = PREVIEW_SUITE
     mga = next(run for run in groups["main/mga", suite] if int(run[0]["seed"]) == seed)
     images = native_event_images(mga, scene_dir, seed)
     max_error = max(max(run[1]["task_signals"]["lateral_error"])
-                    for method in PAIR for run in groups[method, suite]) * 1000
+                    for method in PAIR[:2] for run in groups[method, suite]) * 1000
     xmax = max(3.1, max_error * 1.06)
-    fig = plt.figure(figsize=(7.1, 3.5))
+    fig = plt.figure(figsize=(7, 3))
     fig.text(.023, .955, "(a) Executed contact", fontsize=8, fontweight="bold")
     for index, ((path, label, state_index), y) in enumerate(zip(images, [.685, .442, .199])):
         ax = fig.add_axes([.023, y, .20, .223])
@@ -526,7 +595,7 @@ def geometry_contact_figure(groups, output, scene_dir, colors, seed):
     for column, (method, title, color, ls) in enumerate([
             ("main/mga", "(b) MGA", colors["MGATeal"], "-"),
             ("ablation/no_rl_prior", "(c) w/o RL prior", colors["MGAIndigo"], "--")]):
-        ax = fig.add_axes([.305 + column * .35, .23, .315, .67])
+        ax = fig.add_axes([.305 + column * .35, .29, .315, .61])
         ax.add_patch(Rectangle((0, 32), 1.2, 10, facecolor=colors["MGATeal"],
                                alpha=.11, edgecolor="none", zorder=0))
         ax.plot([0, 1.2, 1.2], [32, 32, 42], color=colors["MGATeal"], lw=.75, ls=":")
@@ -580,10 +649,10 @@ def geometry_contact_figure(groups, output, scene_dir, colors, seed):
                Line2D([], [], color="#52627A", marker="s", markerfacecolor="white", ls="none", ms=3, label="First contact"),
                Line2D([], [], color="#52627A", marker="D", markerfacecolor="white", ls="none", ms=3, label="First completion")]
     bordered_legend(fig, handles, y=.025, ncol=3, fontsize=6)
-    save(fig, output, "peg_geometry_contact")
+    save(fig, output, "peg_geometry_contact", fixed_canvas=True)
     metadata = {
-        "suite": suite, "methods": list(PAIR), "seeds": list(range(10)),
-        "source_manifest": "results/arm/peg_insert/paper_result_manifest.json",
+        "suite": suite, "methods": list(PAIR[:2]), "seeds": list(range(10)),
+        "source_root": relpath(data_root),
         "image_export_dpi": 400,
         "emphasized_seed": seed, "native_snapshot_seed": seed,
         "selection": "Common fixed seed 0; all ten trajectories shown per method; this example is not selected for maximum separation.",
@@ -595,56 +664,19 @@ def geometry_contact_figure(groups, output, scene_dir, colors, seed):
         "warning": "Shading shows necessary positional conditions only. Orientation, wrench limits, jam history, and success hold time also govern safe success. Executed paths are not candidate horizons or a safe set.",
         "exceedance_encoding": "Orange crosses mark each recorded state with true rho>1; orange segments terminate at such states. Circle endpoints are last recorded states, not completion markers.",
         "window": "All64 post-step samples through1.28s, including evolving states after first completion; no smoothing.",
-        "caption": "Sensing-OOD executed geometry and contact load. Native MGA closeups show the initial pose, first contact, and first completion of the fixed common example (seed0). Right: executed lateral error versus insertion depth for all10 runs of MGA and its no-prior ablation; the same example is emphasized. Orange crosses and segments mark true wrench-limit exceedances. Squares and diamonds mark first contact and completion on the emphasized paths; hollow circles are last recorded states. The shaded positional target is necessary but not sufficient for safe success. All records, including post-completion motion, are retained.",
+        "caption": "Pose-OOD executed geometry and contact load. Native MGA closeups show the initial pose, first contact, and first completion of the fixed common example (seed 0). Right: executed lateral error versus insertion depth for all 10 runs of MGA and its no-prior ablation; the same example is emphasized. Orange crosses and segments mark true wrench-limit exceedances. Squares and diamonds mark first contact and completion on the emphasized paths; hollow circles are last recorded states. The shaded positional target is necessary but not sufficient for safe success. All records, including post-completion motion, are retained.",
     }
     (output / "peg_geometry_contact.json").write_text(json.dumps(metadata, indent=2, allow_nan=False) + "\n")
 
 
-def issa_nominal_reference(data_root, seed):
-    """Use the requested historical record only with an audited disclosure.
-
-    Do not allow a later corrected OOD run to inherit the historical reference
-    label silently: changed execution evidence requires a fresh review.
-    """
-    source_paths = {}
-    saved = {}
-    for suite in ("id_wide", "ood_sensing"):
-        path = data_root / "baseline/issa" / f"level_{suite}/seed_{seed}/results.json"
-        trajectory_path = path.parent / "trajectory/trajectory.json"
-        saved[suite] = (json.loads(path.read_text()), json.loads(trajectory_path.read_text()),
-                        path, trajectory_path)
-        source_paths[suite] = {"result": relpath(path), "trajectory": relpath(trajectory_path),
-                               "result_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                               "trajectory_sha256": hashlib.sha256(trajectory_path.read_bytes()).hexdigest()}
-    nominal, reference = saved["id_wide"], saved["ood_sensing"]
-    equal_signals = {key: nominal[1]["task_signals"][key] == reference[1]["task_signals"][key]
-                     for key in ("rho", "lateral_force", "measured_lateral_force", "insertion_depth")}
-    equal_q = (len(nominal[1]["states"]) == len(reference[1]["states"])
-               and all(a["q"] == b["q"] for a, b in zip(nominal[1]["states"], reference[1]["states"])))
-    signals = reference[1]["task_signals"]
-    measured_true_delta = float(np.max(np.abs(np.asarray(signals["measured_lateral_force"])
-                                                - np.asarray(signals["lateral_force"]))))
-    if not (all(equal_signals.values()) and equal_q and measured_true_delta == 0):
-        raise ValueError("ISSA archive no longer matches nominal-reference evidence; review the disclosure before plotting")
-    audit = {"sources": source_paths, "identical_to_id_signals": equal_signals,
-             "all_saved_q_identical_to_id": equal_q,
-             "max_abs_measured_minus_true_lateral_force_N": measured_true_delta,
-             "recorded_execution_env_params": reference[0]["config_snapshot"].get("execution_env_params"),
-             "recorded_protocol": reference[0]["config_snapshot"]["metadata"]["protocol"],
-             "provenance_git_sha": reference[0]["provenance"].get("git_sha"),
-             "interpretation": "The requested current ISSA Sensing-OOD directory contains nominal executions, identical to ID despite configured nonzero sensor biases. Plotted only as a nominal-execution reference, with disclosure retained in the paper caption and provenance; not matched Sensing-OOD evidence or a ranking participant."}
-    return reference, audit
-
-
 def main_preview(groups, records, output, scene_dir, colors, seed, summary, data_root):
-    suite = "ood_sensing"
+    suite = PREVIEW_SUITE
     paired = {method: next(run for run in groups[method, suite] if int(run[0]["seed"]) == seed)
               for method in PAIR}
-    for method in ("baseline/dial",):
+    for method in ("baseline/dial", "baseline/issa"):
         result, path = next((r, p) for r, p in records[method, suite] if int(r["seed"]) == seed)
         trajectory_path = path.parent / "trajectory/trajectory.json"
         paired[method] = (result, json.loads(trajectory_path.read_text()), path, trajectory_path)
-    paired["baseline/issa"], issa_audit = issa_nominal_reference(data_root, seed)
     mga = paired["main/mga"]
     signals, time, hit = validated_signals(mga)
     images = native_event_images(mga, scene_dir, seed)
@@ -700,9 +732,9 @@ def main_preview(groups, records, output, scene_dir, colors, seed, summary, data
                              "definition": "Counts of saved post-step states in the common inclusive physical-time window, not an integrated duration or a pooled statistic."},
                          "safe_success": int(outcome(run[0]) == 0),
                          "raw_success": int(outcome(run[0]) != 2),
-                         "jam_any": int(run[0]["metrics"]["peg_insert_metrics"]["jam_rate"] > .5),
-                         "comparison_role": "nominal_execution_reference_only" if method == "baseline/issa"
-                         else "eligible_sensing_ood_execution"})
+                         "jam_any": int(np.any(np.asarray(s["jammed"]) > .5)),
+                         "comparison_role": "matched_pose_ood_execution",
+                         "trajectory_sha256": hashlib.sha256(run[3].read_bytes()).hexdigest()})
     ax.axhline(1, color=colors["MGAOrangeInk"], ls=":", lw=.8)
     ax.text(1.25, 1.01, "Limit", ha="right", va="bottom", fontsize=5.7)
     ax.set(xlim=(0, 1.28), ylim=(0, max(1.12, max_rho * 1.08)), xticks=[0, .4, .8, 1.2], yticks=[0, .5, 1], ylabel=r"True $\rho(t)$")
@@ -759,30 +791,36 @@ def main_preview(groups, records, output, scene_dir, colors, seed, summary, data
         "artifact": "main_panel_preview_only_not_inserted_in_manuscript",
         "canvas_inches": [peg_width, 3.25], "manuscript_width_fractions": [.64, .01, .35],
         "image_export_dpi": 400,
-        "illustrated_seed": seed, "seed_rule": "Common seed 0, also MGA Sensing-OOD median representative; not selected to maximize separation.",
+        "illustrated_suite": suite,
+        "illustrated_seed": seed, "seed_rule": "Common fixed seed 0; not selected to maximize separation or represent a median.",
         "examples": metadata,
-        "curve_display": "All unsmoothed true-rho samples,64 per method through1.28s; no clipping. MGA has a white contrast halo and baseline traces are lighter; values and temporal samples are unchanged. The raw-peak strip reports exact maxima of this common fixed example, not aggregate superiority, stability, or speed. MGA, no-prior, and DIAL are eligible Sensing-OOD executions. ISSA is the explicitly requested nominal-execution reference from the current archive, not a matched Sensing-OOD ranking. MPPI is not shown.",
-        "reference_only_methods": ["baseline/issa"],
-        "reference_disclosure": "ISSA: nominal execution reference",
-        "reference_disclosure_location": "Paper caption and JSON provenance; graph footer and asterisk removed at the user's request.",
-        "issa_archive_audit": issa_audit,
+        "curve_display": "All unsmoothed true-rho samples, 64 per method through 1.28 s; no clipping. MGA has a white contrast halo and baseline traces are lighter; values and temporal samples are unchanged. The raw-peak strip reports exact maxima of this common fixed example, not aggregate superiority, stability, or speed. All four traces are matched Pose-OOD executions from the same frozen root. The remaining methods appear in the full outcome comparison.",
         "frame_sources": [{"path": relpath(path), "label": label, "state_index": index,
                            "physical_time_seconds": index * dt} for path, label, index in images],
         "scene_metadata": relpath(scene_dir / "metadata.json"),
         "decision_rows": rows,
-        "decision_definition": "Each bar occupies the executed control interval [k*dt,(k+1)*dt]. Prior adopted = additive_prior_selected: the accepted expert horizon replaced the Gaussian/fallback selection and supplies the next receding control; the full horizon is not executed open-loop. Refined unsafe = the final logged refined_revalidated_safe == 0, including active model/reliability checks, not a measured physical violation. Emergency = emergency_selected, not necessarily all candidates failing. A successful model certificate is not a guarantee of physical safety.",
+        "decision_definition": "Each bar occupies the executed control interval [k*dt,(k+1)*dt]. Prior adopted = logged additive_prior_selected: the accepted expert horizon supplies the next receding control; the full horizon is not executed open-loop. Refined unsafe = the final logged refined_revalidated_safe == 0, not a measured physical violation. Emergency = emergency_selected, not necessarily all candidates failing. Learned reliability is disabled. A successful model certificate is not a guarantee of physical safety.",
         "decision_audit": {
             "prior_adoptions": sum(rows["additive_prior_selected"]),
             "refined_check_failures": sum(rows["refined_not_revalidated_safe"]),
             "refined_failure_steps": [i for i, v in enumerate(rows["refined_not_revalidated_safe"]) if v],
-            "failure_context": "In all six failed-refinement replans, additive_prior_selected=0, incumbent_revalidated_safe=1, and emergency_selected=0: the incumbent remains available. This is not a count of rejected RL particles or physical violations.",
+            "failure_context": [{"step": i, "physical_interval_seconds": [i * dt, (i + 1) * dt],
+                                 "prior_selected": rows["additive_prior_selected"][i],
+                                 "incumbent_revalidated_safe": info.get("incumbent_revalidated_safe"),
+                                 "emergency_selected": rows["emergency_selected"][i]}
+                                for i, info in enumerate(mga[1]["infos"])
+                                if rows["refined_not_revalidated_safe"][i]],
             "emergency_steps": [i for i, v in enumerate(rows["emergency_selected"]) if v],
-            "emergency_event": "The single event is step51, interval[1.02,1.04)s, with emergency_task_override=1 while incumbent/refined certificates are both safe. It occurs after first completion at0.94s; it is not a jam-rescue example.",
+            "emergency_events": [{"step": i, "physical_interval_seconds": [i * dt, (i + 1) * dt],
+                                  "emergency_task_override": info.get("emergency_task_override"),
+                                  "incumbent_revalidated_safe": info.get("incumbent_revalidated_safe"),
+                                  "refined_revalidated_safe": info.get("refined_revalidated_safe")}
+                                 for i, info in enumerate(mga[1]["infos"]) if rows["emergency_selected"][i]],
             "selected_model_certificate_passes": sum(rows["selected_revalidated_safe"]),
             "replans": len(rows["selected_revalidated_safe"]),
             "limitation": "A trace-level audit of which branch supplied the next control, not a controlled demonstration of causality, per-candidate geometry, all safety-gate tests, or universal contact stability."},
-        "all_sensing_source_adoptions": sum(sum(decision_rows(run)["additive_prior_selected"]) for run in groups["main/mga", suite]),
-        "all_sensing_replans": sum(len(run[1]["infos"]) for run in groups["main/mga", suite]),
+        "all_pose_source_adoptions": sum(sum(decision_rows(run)["additive_prior_selected"]) for run in groups["main/mga", suite]),
+        "all_pose_replans": sum(len(run[1]["infos"]) for run in groups["main/mga", suite]),
         "no_candidate_geometry": "The figure contains executed data and logged decisions, not candidate clouds, projection trajectories, or fabricated jam events.",
     })
     (output / "peg_insert_preview.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
@@ -827,7 +865,8 @@ print(json.dumps(metadata, indent=2))
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-root", type=Path, default=ROOT / "results/arm/peg_insert")
+    parser.add_argument("--data-root", type=Path,
+                        help="Required in canonical mode: one complete frozen 240-run result root")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--appendix", action="store_true", help="Outcome and paired depth/rho appendix figures")
     parser.add_argument("--main-preview", action="store_true", help="Narrow main panel preview; requires native scene PNGs")
@@ -842,6 +881,11 @@ def main():
         parser.error("Legacy and canonical paper modes must be run separately")
     if not (args.legacy or args.appendix or args.main_preview or args.combined_preview):
         parser.error("Select --appendix, --main-preview, --combined-preview, or explicit --legacy")
+    if args.data_root is None:
+        if not args.legacy:
+            parser.error("Canonical mode requires explicit --data-root; historical data is never substituted")
+        args.data_root = ROOT / "results/arm/peg_insert"
+    args.data_root = args.data_root.resolve()
     if (args.main_preview or args.appendix) and args.seed != 0:
         parser.error("Native scene assets are fixed to seed 0; other seeds require matched scene assets")
     args.output_dir = args.output_dir or (ROOT / "latex/latex_mga/output/pdf" if args.legacy
@@ -859,7 +903,8 @@ def main():
             appendix_dir.mkdir(parents=True, exist_ok=True)
             outcome_figure(records, appendix_dir, colors)
             paired_trace_figure(groups, appendix_dir, colors, args.seed)
-            geometry_contact_figure(groups, appendix_dir, args.scene_dir, colors, args.seed)
+            geometry_contact_figure(groups, appendix_dir, args.scene_dir, colors, args.seed, args.data_root)
+            rollout_gallery(groups, appendix_dir, args.scene_dir, args.seed)
             (appendix_dir / "peg_additional_metrics.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
         if args.main_preview:
             main_preview(groups, records, args.output_dir, args.scene_dir, colors, args.seed, summary, args.data_root)
@@ -867,7 +912,7 @@ def main():
             combined_preview(args.output_dir, args.surface_pdf, args.pdf_python)
         print(json.dumps({"output_dir": str(args.output_dir), "appendix": args.appendix,
                           "main_preview": args.main_preview, "seed": args.seed,
-                          "excluded_ood_methods": sorted(OOD_INELIGIBLE)}, indent=2))
+                          "protocol": EXPECTED_PROTOCOL, "run_count": summary["run_count"]}, indent=2))
         return
     style()
     groups = {(method, suite): read_runs(args.data_root, method, suite)
