@@ -27,8 +27,8 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[3]
-SUITES = (("id_wide", "Nominal"), ("ood_pose", "Pose mismatch"),
-          ("ood_sensing", "Sensing mismatch"))
+SUITES = (("id_wide", "Nominal"), ("ood_pose", "Pose Mismatch"),
+          ("ood_sensing", "Sensing Mismatch"))
 METHODS = (("baseline/standalone_rl", "Standalone RL"),
            ("ablation/no_rl_prior", "MGA w/o RL prior"),
            ("main/mga", "MGA"))
@@ -583,7 +583,7 @@ def geometry_contact_figure(groups, output, scene_dir, colors, seed, data_root):
                     for method in PAIR[:2] for run in groups[method, suite]) * 1000
     xmax = max(3.1, max_error * 1.06)
     fig = plt.figure(figsize=(7, 3))
-    fig.text(.023, .955, "(a) Executed contact", fontsize=8, fontweight="bold")
+    fig.text(.023, .955, "(a) Executed Contact", fontsize=8, fontweight="bold")
     for index, ((path, label, state_index), y) in enumerate(zip(images, [.685, .442, .199])):
         ax = fig.add_axes([.023, y, .20, .223])
         ax.imshow(plt.imread(path))
@@ -594,7 +594,7 @@ def geometry_contact_figure(groups, output, scene_dir, colors, seed, data_root):
     details = []
     for column, (method, title, color, ls) in enumerate([
             ("main/mga", "(b) MGA", colors["MGATeal"], "-"),
-            ("ablation/no_rl_prior", "(c) w/o RL prior", colors["MGAIndigo"], "--")]):
+            ("ablation/no_rl_prior", "(c) w/o RL Prior", colors["MGAIndigo"], "--")]):
         ax = fig.add_axes([.305 + column * .35, .29, .315, .61])
         ax.add_patch(Rectangle((0, 32), 1.2, 10, facecolor=colors["MGATeal"],
                                alpha=.11, edgecolor="none", zorder=0))
@@ -863,6 +863,78 @@ print(json.dumps(metadata, indent=2))
                     str(output / "peg_insert_preview.pdf"), str(output)], check=True)
 
 
+def refresh_contact_scenes(args):
+    """Refresh only the three native replay images in the current appendix PDF.
+
+    Current vector curves, event timestamps, fonts and layout are authoritative;
+    this mode never reruns the chart generator or substitutes historical runs.
+    """
+    import io
+    import tempfile
+    import pymupdf
+    from PIL import Image
+
+    run_dir = args.data_root / "main/mga" / f"level_{PREVIEW_SUITE}" / f"seed_{args.seed}"
+    result_path, trajectory_path = run_dir / "results.json", run_dir / "trajectory/trajectory.json"
+    run = (json.loads(result_path.read_text()), json.loads(trajectory_path.read_text()),
+           result_path, trajectory_path)
+    frames = native_event_images(run, args.scene_dir, args.seed)
+    pdf_path = args.figure_pdf or ROOT / "latex/latex_mga/figures/exp/appendix/peg_geometry_contact.pdf"
+    document = pymupdf.open(pdf_path)
+    if len(document) != 1:
+        raise ValueError("Expected the existing one-page Peg geometry figure")
+    page = document[0]
+    text_before = page.get_text()
+    selected = sorted([(item, page.get_image_rects(item[0])[0])
+                       for item in page.get_images(full=True)
+                       if len(page.get_image_rects(item[0])) == 1], key=lambda entry: entry[1].y0)
+    if len(selected) != 3 or any(rect.x1 > page.rect.width * .25 for _, rect in selected):
+        raise ValueError("Current PDF no longer has exactly three left-hand replay frames")
+    before = page.get_pixmap(matrix=pymupdf.Matrix(3, 3), alpha=False)
+    dt = float(run[1]["task_signals"]["dt"])
+    for (item, rect), (path, label, index) in zip(selected, frames):
+        if f"{label} | {index * dt:.2f} s" not in text_before:
+            raise ValueError("Saved event time differs from the current caption; refusing to relabel")
+        with Image.open(path) as image:
+            rgb = image.convert("RGB")
+            if not np.isclose(rgb.width / rgb.height, rect.width / rect.height, atol=1e-5):
+                raise ValueError("Replay aspect ratio differs; do not distort saved geometry")
+            stream = io.BytesIO()
+            rgb.save(stream, format="PNG")
+        page.replace_image(item[0], stream=stream.getvalue())
+    after = page.get_pixmap(matrix=pymupdf.Matrix(3, 3), alpha=False)
+    old_pixels = np.frombuffer(before.samples, np.uint8).reshape(before.height, before.width, before.n)
+    new_pixels = np.frombuffer(after.samples, np.uint8).reshape(after.height, after.width, after.n)
+    outside = np.ones(old_pixels.shape[:2], bool)
+    for _, rect in selected:
+        outside[max(0, int(rect.y0*3)-2):int(np.ceil(rect.y1*3))+2,
+                max(0, int(rect.x0*3)-2):int(np.ceil(rect.x1*3))+2] = False
+    if page.get_text() != text_before or not np.array_equal(old_pixels[outside], new_pixels[outside]):
+        raise ValueError("Text or pixels outside replay scenes changed")
+    with tempfile.TemporaryDirectory(prefix="mga-peg-scene-refresh-", dir="/private/tmp") as scratch:
+        generated = Path(scratch) / pdf_path.name
+        document.save(generated, garbage=3, deflate=True)
+        document.close()
+        generated.replace(pdf_path)
+    record = json.loads((args.scene_dir / "metadata.json").read_text())[f"peg_{PREVIEW_SUITE}"]
+    record.setdefault("published_figures", {})[str(pdf_path)] = {
+        "frames": [{"image": path.name, "state_index": index,
+                    "image_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+                   for path, _, index in frames],
+        "camera": record["closeup"]["camera"],
+        "pdf_sha256": hashlib.sha256(pdf_path.read_bytes()).hexdigest(),
+        "outside_scene_pixel_equality_verified_at_216_dpi": True,
+        "data_recomputed": False,
+    }
+    # Merge only this scene entry; other render jobs may be writing concurrently.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("mga_scene_refresh", ROOT / "scripts/paper/mga/render_mechanism_scenes.py")
+    scenes = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(scenes)
+    scenes._persist_scene_metadata(args.scene_dir / "metadata.json", {f"peg_{PREVIEW_SUITE}": record})
+    print(f"Refreshed replay images only; current curves/text preserved: {pdf_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path,
@@ -876,7 +948,18 @@ def main():
     parser.add_argument("--legacy", action="store_true", help="Old guided-only proposal-weight draft; cannot consume additive OOD")
     parser.add_argument("--scene-dir", type=Path, default=ROOT / "reports/mga/paper_figures/appendix/scenes")
     parser.add_argument("--seed", type=int, default=0, choices=range(10))
+    parser.add_argument("--refresh-contact-scenes", action="store_true",
+                        help="Update only native replay images in the current appendix geometry PDF")
+    parser.add_argument("--figure-pdf", type=Path,
+                        help="Existing one-page geometry PDF for --refresh-contact-scenes")
     args = parser.parse_args()
+    if args.refresh_contact_scenes:
+        if args.data_root is None or args.legacy or args.appendix or args.main_preview or args.combined_preview:
+            parser.error("Scene refresh requires --data-root and must be separate from chart generation")
+        args.data_root = args.data_root.resolve()
+        return refresh_contact_scenes(args)
+    if args.figure_pdf is not None:
+        parser.error("--figure-pdf requires --refresh-contact-scenes")
     if args.legacy and (args.appendix or args.main_preview or args.combined_preview):
         parser.error("Legacy and canonical paper modes must be run separately")
     if not (args.legacy or args.appendix or args.main_preview or args.combined_preview):

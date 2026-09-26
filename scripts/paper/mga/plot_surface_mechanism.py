@@ -649,7 +649,7 @@ def plot_surface_appendix(root, output, seeds):
     fig.subplots_adjust(left=.21, right=.98, top=.88, bottom=.18, wspace=.13)
     offsets = np.linspace(-.17, .17, len(seeds))
     for ax, field, title in zip(axes, ("terminal_progress_percent", "coverage_percent"),
-                               ("(a) Terminal path progress", "(b) Contact-valid coverage")):
+                               ("(a) Terminal Path Progress", "(b) Contact-Valid Coverage")):
         for i, suite in enumerate(APPENDIX_SUITES):
             a = np.asarray(data["per_suite"]["main/mga"][suite][field]["values"])
             b = np.asarray(data["per_suite"]["ablation/no_retraction"][suite][field]["values"])
@@ -670,7 +670,7 @@ def plot_surface_appendix(root, output, seeds):
         ax.tick_params(axis="y", length=0, pad=5)
         ax.grid(axis="x", color=colors["divider"], alpha=.15, linewidth=.5)
     axes[1].axvline(90, color=colors["slate"], ls=(0, (3, 3)), lw=.6, alpha=.7)
-    fig.suptitle("Realized path fidelity across surface conditions", x=.21,
+    fig.suptitle("Realized Path Fidelity Across Surface Conditions", x=.21,
                  ha="left", y=.98, fontsize=10, fontweight="bold")
     handles = [Line2D([], [], marker=marker, color=colors[key], lw=0, markersize=5, label=label)
                for _, label, key, marker in (APPENDIX_METHODS[0], APPENDIX_METHODS[2])]
@@ -697,12 +697,12 @@ def plot_surface_appendix(root, output, seeds):
                            linewidths=.3, edgecolors="white", zorder=3)
                 ax.scatter(x.mean(), y.mean(), color=colors[key], marker=marker, s=62,
                            linewidths=.8, edgecolors="white", zorder=4)
-            ax.set_title(f"({chr(97 + 2 * i + j)}) {group}: " + ("contact load" if j == 0 else "deformation"), loc="left")
+            ax.set_title(f"({chr(97 + 2 * i + j)}) {group}: " + ("Contact Load" if j == 0 else "Deformation"), loc="left")
             ax.set(xlabel="Contact-valid coverage (%)", xlim=(48, 102), xticks=[50, 75, 100],
                    ylabel="Force nCVaR95" if j == 0 else "Deformation CVaR95 (mm)")
             ax.grid(alpha=.15, lw=.5)
             ax.margins(y=.18)
-    fig.suptitle("Coverage, contact load, and deformation", x=.105, ha="left", y=.98,
+    fig.suptitle("Coverage, Contact Load, and Deformation", x=.105, ha="left", y=.98,
                  fontsize=10, fontweight="bold")
     fig.text(.105, .915, f"Suites have equal weight within each seed. Paired comparisons use the same {len(seeds)} seeds.", fontsize=7.3)
     handles = [Line2D([], [], marker=marker, color=colors[key], lw=0, markersize=5,
@@ -742,12 +742,12 @@ def plot_surface_execution_geometry(root, output, scene_dir, seed):
     fig = plt.figure(figsize=(7.2, 2.85))
     context = fig.add_axes([.012, .23, .285, .62])
     context.imshow(plt.imread(image_path)); context.axis("off")
-    fig.text(.014, .93, "(a) Soft-convex contact", fontsize=8.2, fontweight="bold")
+    fig.text(.014, .93, "(a) Soft-Convex Contact", fontsize=8.2, fontweight="bold")
     path_ax = fig.add_axes([.39, .48, .24, .35])
     coverage_ax = fig.add_axes([.39, .295, .24, .12])
     error_ax = fig.add_axes([.745, .27, .24, .56])
-    fig.text(.39, .93, "(b) Executed path and visits", fontsize=8.2, fontweight="bold")
-    fig.text(.745, .93, "(c) 3-D path error", fontsize=8.2, fontweight="bold")
+    fig.text(.39, .93, "(b) Executed Path and Visits", fontsize=8.2, fontweight="bold")
+    fig.text(.745, .93, "(c) 3-D Path Error", fontsize=8.2, fontweight="bold")
     ref_xy = (ref - origin)[:, :2] * 1000
     reference_arc = np.r_[0, np.cumsum(np.linalg.norm(np.diff(ref, axis=0), axis=1))]
     reference_arc = 100 * reference_arc / reference_arc[-1]
@@ -991,12 +991,12 @@ def plot_surface_execution_curves(root, output, seeds):
     draw_curves(axes[1], "force_excess_impulse_ns", plot_order)
     axes[0].set(xlabel="Physical time (s)", ylabel="Contact-valid coverage (%)",
                 ylim=(-2, 103), yticks=[0, 25, 50, 75, 100])
-    axes[0].set_title("(a) Visited reference path", loc="left", fontweight="bold", pad=7)
+    axes[0].set_title("(a) Visited Reference Path", loc="left", fontweight="bold", pad=7)
     cost_max = max(max(v["curves"]["force_excess_impulse_ns"]["ci95_upper"])
                    for v in data["methods"].values())
     axes[1].set(xlabel="Physical time (s)", ylabel=r"$C_F(t)$ (N s)",
                 ylim=(-.025 * cost_max, 1.07 * cost_max))
-    axes[1].set_title("(b) Accumulated force excess", loc="left", fontweight="bold", pad=7)
+    axes[1].set_title("(b) Accumulated Force Excess", loc="left", fontweight="bold", pad=7)
     variants = ["ablation/no_rl_prior", "ablation/no_retraction", "main/mga"]
     zoom_max = max(max(data["methods"][m]["curves"]["force_excess_impulse_ns"]["ci95_upper"])
                    for m in variants)
@@ -1004,7 +1004,7 @@ def plot_surface_execution_curves(root, output, seeds):
     inset = axes[1].inset_axes([.20, .58, .48, .36])
     draw_curves(inset, "force_excess_impulse_ns", variants, inset=True)
     inset.set_ylim(-.025 * zoom_top, zoom_top)
-    inset.set_title("MGA variants (linear)", fontsize=6.8, loc="left", pad=2)
+    inset.set_title("MGA Variants (Linear)", fontsize=6.8, loc="left", pad=2)
     inset.tick_params(labelsize=6.5, pad=1, length=1.5)
     inset.set_yticks([0, zoom_top / 2, zoom_top])
     inset.set_yticklabels([f"{value:.2f}" for value in (0, zoom_top / 2, zoom_top)])

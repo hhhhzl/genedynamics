@@ -41,6 +41,8 @@ sys.path.insert(0, str(ROOT))
 RENDER_STYLE = "surface-blue-gif-reference-thin-skirt"
 HUMANOID_RENDER_STYLE = "brax-web-first-last-contrast-silhouettes"
 FILMSTRIP_SCENE = "surface_rigid_bumpy"
+APPENDIX_ARM_STYLE = "manuscript-side-cameras-mint-socket"
+PEG_SOCKET_RGBA = (176 / 255, 214 / 255, 210 / 255, 1.0)
 
 SCENES = {
     "surface_hybrid_stripes": ("surface", "arm/surface_scan", "hybrid_stripes"),
@@ -572,7 +574,7 @@ def _export_brax_web(env, model, trajectory, indices, last, name, output_dir):
     source = Path(brax.__file__).parent / "visualizer/js/system.js"
     shutil.copyfile(source, asset_dir / "system.js")
     html_path = output_dir / f"{name}.brax.html"
-    html_path.write_text(_BRAX_WEB_HTML.replace("__PAYLOAD__", json_path.name))
+    html_path.write_text(_brax_web_html(json_path.name))
     return {"image_size": [width, height], "native_render_size": [width, height],
             "crop_xyxy": [0, 0, width, height], "camera": camera,
             "view": "top" if name == "humanoid_unjamming" else "side-oblique",
@@ -609,6 +611,7 @@ import {createScene} from './brax_web/system.js';
 try {
  const system = await (await fetch('./__PAYLOAD__')).json();
  const p=system.paper;
+ const corridorMaterial=__CORRIDOR_MATERIAL__;
  THREE.Object3D.DEFAULT_UP.set(0,0,1);
  const scene=createScene(system);
  const maskScenes=[new THREE.Scene(),new THREE.Scene()];
@@ -631,6 +634,12 @@ try {
          const d=o.material.map.image.data;
          for(let k=0;k<4;k++){const v=[105,150,150,105][k];d[k*4]=v;d[k*4+1]=v;d[k*4+2]=v;d[k*4+3]=255;}
          o.material.map.repeat.set(5000,5000);o.material.map.needsUpdate=true;
+       }else if(name==='world'){
+         // Same appearance-only wall material as the environment overview.
+         // Saved collision geometry, camera and executed transforms stay intact.
+         o.material.color.set(corridorMaterial.color);
+         if(corridorMaterial.srgb)o.material.color.convertSRGBToLinear();
+         o.material.opacity=1;o.material.transparent=false;o.material.depthWrite=true;
        }
      }});
    }
@@ -702,17 +711,28 @@ try {
  overlayScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),overlayMaterial));
  renderer.setRenderTarget(null);renderer.autoClear=false;renderer.render(overlayScene,overlayCamera);renderer.autoClear=true;
  document.title='MGA_Brax_READY';window.mgaBrax={renderer,scene,camera,system};
+ await fetch('/__capture_ready__/'+p.name);
 } catch(error){document.title='MGA_Brax_ERROR';document.body.textContent=error.stack;console.error(error);}
 </script></body></html>'''
 
 
-def _capture_brax_web(output_dir, force=False):
+def _brax_web_html(payload):
+    """Keep corridor appearance shared with the clean environment overview."""
+    from render_env_humanoid import PALETTES
+    palette = PALETTES["manuscript"]
+    material = {"color": palette["corridor"], "srgb": palette["srgb_materials"]}
+    return (_BRAX_WEB_HTML.replace("__PAYLOAD__", payload)
+            .replace("__CORRIDOR_MATERIAL__", json.dumps(material)))
+
+
+def _capture_brax_web(output_dir, force=False, suite=None):
     """Capture exported Brax Web pages with an isolated local headless Chrome."""
     import functools
     import http.server
     import shutil
     import subprocess
     import threading
+    import time
     import urllib.request
 
     chrome = (shutil.which("google-chrome") or shutil.which("chromium") or
@@ -723,9 +743,17 @@ def _capture_brax_web(output_dir, force=False):
     if not asset.exists():
         with urllib.request.urlopen("https://unpkg.com/three@0.150.1/build/three.module.js", timeout=30) as response:
             asset.write_bytes(response.read())
+    ready = set()
     class QuietHandler(http.server.SimpleHTTPRequestHandler):
         def log_message(self, format, *args):
             pass
+        def do_GET(self):
+            if self.path.startswith('/__capture_ready__/'):
+                ready.add(self.path.rsplit('/', 1)[-1])
+                self.send_response(200)
+                self.end_headers()
+            else:
+                super().do_GET()
     handler = functools.partial(QuietHandler, directory=str(output_dir.resolve()))
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
@@ -736,8 +764,10 @@ def _capture_brax_web(output_dir, force=False):
         for name, item in metadata.items():
             if not name.startswith("humanoid") or not item.get("web_html"):
                 continue
+            if suite is not None and SCENES[name][2] != suite:
+                continue
             screenshot = (output_dir / f"{name}.png").resolve()
-            html = _BRAX_WEB_HTML.replace("__PAYLOAD__", item["web_payload"])
+            html = _brax_web_html(item["web_payload"])
             html_hash = hashlib.sha256(html.encode()).hexdigest()
             payload_hash = hashlib.sha256((output_dir / item["web_payload"]).read_bytes()).hexdigest()
             if (not force and not item.get("capture_pending", True)
@@ -751,8 +781,9 @@ def _capture_brax_web(output_dir, force=False):
             (output_dir / item["web_html"]).write_text(html)
             width, height = item["image_size"]
             with tempfile.TemporaryDirectory(prefix="mga-brax-chrome-") as profile:
-                command = [chrome, "--headless", "--hide-scrollbars", "--no-first-run", "--disable-dev-shm-usage",
+                command = [chrome, "--headless=new", "--hide-scrollbars", "--no-first-run", "--disable-dev-shm-usage",
                            "--no-default-browser-check", "--use-gl=angle", "--use-angle=swiftshader",
+                           "--disable-background-networking", "--disable-component-update", "--disable-sync",
                            "--enable-unsafe-swiftshader", "--force-device-scale-factor=1",
                            f"--user-data-dir={profile}", f"--window-size={width},{height}",
                            "--virtual-time-budget=12000", "--run-all-compositor-stages-before-draw",
@@ -760,9 +791,34 @@ def _capture_brax_web(output_dir, force=False):
                            f"http://127.0.0.1:{server.server_port}/{item['web_html']}"]
                 if hasattr(os, "geteuid") and os.geteuid() == 0:
                     command.insert(1, "--no-sandbox")  # isolated disposable Linux capture container
-                result = subprocess.run(command, capture_output=True, text=True, timeout=60)
-            if result.returncode or "<title>MGA_Brax_READY</title>" not in result.stdout:
-                raise RuntimeError(f"Brax Web capture failed for {name}: {result.stdout[-1600:]} {result.stderr[-1000:]}")
+                # macOS Chrome may stay alive after capture; require the same
+                # ready handshake and fresh screenshot as the env renderer.
+                before = screenshot.stat().st_mtime_ns if screenshot.exists() else -1
+                with tempfile.TemporaryFile(mode="w+") as stdout, tempfile.TemporaryFile(mode="w+") as stderr:
+                    process = subprocess.Popen(command, stdout=stdout, stderr=stderr, text=True)
+                    deadline = time.monotonic() + 40
+                    captured = False
+                    try:
+                        while time.monotonic() < deadline:
+                            fresh = screenshot.exists() and screenshot.stat().st_mtime_ns != before
+                            if name in ready and fresh and screenshot.stat().st_size > 1000:
+                                time.sleep(.25)
+                                captured = True
+                                break
+                            if process.poll() is not None:
+                                break
+                            time.sleep(.1)
+                    finally:
+                        if process.poll() is None:
+                            process.terminate()
+                        try:
+                            process.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait(timeout=5)
+                    if not captured:
+                        stdout.seek(0); stderr.seek(0)
+                        raise RuntimeError(f"Brax Web capture failed for {name}: {stdout.read()[-1600:]} {stderr.read()[-1000:]}")
             item["capture_pending"] = False
             item["visual_alpha_override"] = {"final_box": 1.0, "source_box": 0.6,
                 "initial_box_fill": False,
@@ -775,6 +831,14 @@ def _capture_brax_web(output_dir, force=False):
             item["box_motion_annotation"]["center_path_color"] = "#A94F0B"
             item["box_motion_annotation"]["visible"] = name != "humanoid_force_regulation"
             item["robot_pose_annotation"] = _robot_pose_annotation()
+            from render_env_humanoid import PALETTES
+            item["corridor_material"] = {
+                "source": "scripts/paper/mga/render_env_humanoid.py:PALETTES[manuscript]",
+                "color": PALETTES["manuscript"]["corridor"],
+                "srgb_materials": PALETTES["manuscript"]["srgb_materials"],
+                "opacity": 1.0,
+                "appearance_only": True,
+            }
             item["ghost_opacity"] = [0.16]
             item["render_style"] = HUMANOID_RENDER_STYLE
             item["three_module_sha256"] = hashlib.sha256(asset.read_bytes()).hexdigest()
@@ -791,12 +855,12 @@ def _capture_brax_web(output_dir, force=False):
 
 
 APPENDIX_GROUPS = {
-    "surface_hard_rollouts": ("Surface scanning: rigid", [f"surface_rigid_{s}" for s in ("plane", "cylinder", "convex", "bumpy")]),
-    "surface_soft_rollouts": ("Surface scanning: compliant", [f"surface_soft_{s}" for s in ("plane", "cylinder", "convex", "bumpy")]),
-    "surface_hybrid_rollouts": ("Surface scanning: spatially hybrid", [f"surface_hybrid_{s}" for s in ("stripes", "center_hard", "center_soft")]),
-    "surface_unseen_rollouts": ("Surface scanning: unseen", ["surface_rigid_unseen", "surface_soft_unseen"]),
-    "peg_rollouts": ("Peg insertion", ["peg_id_wide", "peg_ood_pose", "peg_ood_sensing"]),
-    "humanoid_rollouts": ("Humanoid contact tasks", ["humanoid_force_regulation", "humanoid_fixed_stance_push", "humanoid_unjamming"]),
+    "surface_hard_rollouts": ("Surface Scanning: Rigid", [f"surface_rigid_{s}" for s in ("plane", "cylinder", "convex", "bumpy")]),
+    "surface_soft_rollouts": ("Surface Scanning: Compliant", [f"surface_soft_{s}" for s in ("plane", "cylinder", "convex", "bumpy")]),
+    "surface_hybrid_rollouts": ("Surface Scanning: Spatially Hybrid", [f"surface_hybrid_{s}" for s in ("stripes", "center_hard", "center_soft")]),
+    "surface_unseen_rollouts": ("Surface Scanning: Unseen", ["surface_rigid_unseen", "surface_soft_unseen"]),
+    "peg_rollouts": ("Peg Insertion", ["peg_id_wide", "peg_ood_pose", "peg_ood_sensing"]),
+    "humanoid_rollouts": ("Humanoid Contact Tasks", ["humanoid_force_regulation", "humanoid_fixed_stance_push", "humanoid_unjamming"]),
 }
 
 
@@ -837,12 +901,21 @@ def _appendix_arm_camera(model, states, task, closeup=False):
     import mujoco
     import numpy as np
     camera = mujoco.MjvCamera()
-    camera.azimuth, camera.elevation = 128, -19
+    camera.type = mujoco.mjtCamera.mjCAMERA_FREE
+    data = mujoco.MjData(model)
     if task == "surface":
-        camera.lookat[:] = [0.26, 0.0, 0.45]
-        camera.distance = 1.35
+        # Same side-contact prescription as main panel (a)'s Side frame.
+        # Focus once at the first-third pose, then keep the camera fixed across
+        # all five frames. Each surface uses its own native tool position.
+        focus_index = int(round((len(states) - 1) / 3))
+        data.qpos[:] = states[focus_index]["q"]
+        data.qvel[:] = states[focus_index]["qd"]
+        mujoco.mj_forward(model, data)
+        ee = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "ee")
+        if ee < 0:
+            raise ValueError("Surface side view requires the native ee site")
+        return _camera(model, "surface", view="side_contact", focus=data.site_xpos[ee].copy())
     else:
-        data = mujoco.MjData(model)
         data.qpos[:] = states[0]["q"]
         data.qvel[:] = states[0]["qd"]
         mujoco.mj_forward(model, data)
@@ -853,17 +926,30 @@ def _appendix_arm_camera(model, states, task, closeup=False):
             center = np.mean(data.geom_xpos[candidates], axis=0)
         else:
             center = data.site_xpos[site].copy()
-        camera.lookat[:] = center + ([0, 0, 0.01] if closeup else [-.055, 0, .045])
-        camera.distance = .27 if closeup else .95
-        if closeup:
-            camera.azimuth, camera.elevation = 128, -25
+        # Identical native camera to main panel (e), not a top-down closeup.
+        camera.lookat[:] = center + [0, 0, -.01]
+        camera.distance, camera.azimuth, camera.elevation = .42, 78, -16
     return camera
+
+
+def _peg_manuscript_appearance(model):
+    """Presentation-only socket material and light shared with main panel (e)."""
+    import mujoco
+    for gid in range(model.ngeom):
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gid) or ""
+        if name.startswith("socket_"):
+            model.geom_rgba[gid] = PEG_SOCKET_RGBA
+    model.vis.headlight.ambient[:] = [.55, .55, .55]
+    model.vis.headlight.diffuse[:] = [.70, .70, .70]
+    model.vis.headlight.specular[:] = [.04, .04, .04]
+    model.mat_reflectance[:] = 0
+    model.mat_specular[:] = .12
 
 
 def _render_appendix_arm(model, states, indices, camera, output, *, name):
     import imageio.v3 as imageio
     import mujoco
-    width, height = 810, 540
+    width, height = 870, 580
     model.vis.global_.offwidth = max(model.vis.global_.offwidth, width)
     model.vis.global_.offheight = max(model.vis.global_.offheight, height)
     option = mujoco.MjvOption()
@@ -887,22 +973,130 @@ def _render_appendix_arm(model, states, indices, camera, output, *, name):
         "azimuth": float(camera.azimuth), "elevation": float(camera.elevation)}}
 
 
+def _render_appendix_gifs(args):
+    """Animate saved arm states with the exact verified Visualization camera.
+
+    Replay decimates 50-Hz saved states to 25 fps, with no interpolated poses,
+    new control actions or simulation steps. The final pose holds for 800 ms.
+    """
+    import gc
+    import jax
+    import mujoco
+    import numpy as np
+    from PIL import Image
+
+    source_metadata = _read_json(args.scene_metadata)
+    manifest_path = args.output_dir / "metadata.json"
+    for name, item in source_metadata.items():
+        if item.get("task") != args.task or (args.suite and item["suite"] != args.suite):
+            continue
+        if item["seed"] != args.seed or item.get("style") != APPENDIX_ARM_STYLE:
+            raise ValueError(f"GIF must match the current Visualization seed/style: {name}")
+        sources = {field: ROOT / item[field] for field in ("result", "trajectory")}
+        for field, path in sources.items():
+            if hashlib.sha256(path.read_bytes()).hexdigest() != item[field + "_sha256"]:
+                raise ValueError(f"Visualization source changed: {path}")
+        result, trajectory = (_read_json(sources[field]) for field in ("result", "trajectory"))
+        _, last = _appendix_indices(trajectory)
+        if last != item["last_unpadded_state"]:
+            raise ValueError(f"Visualization physical execution window changed: {name}")
+        dt = float(item["dt"])
+        stride = max(1, round(1 / (25 * dt)))
+        indices = list(range(0, last + 1, stride))
+        if indices[-1] != last:
+            indices.append(last)
+        durations = [int(round((b-a)*dt*1000/10))*10 for a, b in zip(indices, indices[1:])] + [800]
+        path = args.output_dir / f"mga_{name}.gif"
+        previous = _read_json(manifest_path).get(name, {}) if manifest_path.exists() else {}
+        if path.exists() and not args.force:
+            if (previous.get("trajectory_sha256") == item["trajectory_sha256"]
+                    and previous.get("camera") == item["camera"]
+                    and previous.get("gif_sha256") == hashlib.sha256(path.read_bytes()).hexdigest()):
+                print(f"Verified GIF present: {path.name}", flush=True)
+                continue
+            raise FileExistsError(f"Preserving existing GIF; use --force only to regenerate: {path}")
+        print(f"Saved-state GIF: {name}, {len(indices)} frames through {last*dt:.2f} s", flush=True)
+        env = _execution_env(result)
+        native = _native_model(env)
+        model, checks = _restore_panda_visuals(native, trajectory["states"], indices)
+        _manuscript_sky(model)
+        if item["task"] == "peg":
+            _peg_manuscript_appearance(model)
+        camera = mujoco.MjvCamera()
+        camera.type = mujoco.mjtCamera.mjCAMERA_FREE
+        camera.lookat[:] = item["camera"]["lookat"]
+        for field in ("distance", "azimuth", "elevation"):
+            setattr(camera, field, item["camera"][field])
+        width, height = item["image_size"]
+        model.vis.global_.offwidth = max(model.vis.global_.offwidth, width)
+        model.vis.global_.offheight = max(model.vis.global_.offheight, height)
+        option = mujoco.MjvOption()
+        option.sitegroup[:] = 0
+        data = mujoco.MjData(model)
+        frames = []
+        with mujoco.Renderer(model, height=height, width=width, max_geom=10000) as renderer:
+            for index in indices:
+                state = trajectory["states"][index]
+                data.qpos[:] = state["q"]
+                data.qvel[:] = state["qd"]
+                mujoco.mj_forward(model, data)
+                renderer.update_scene(data, camera=camera, scene_option=option)
+                renderer.scene.flags[mujoco.mjtRndFlag.mjRND_FOG] = False
+                renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = True
+                frames.append(Image.fromarray(renderer.render().copy()))
+        # One episode-wide palette prevents frame-wise quantization flicker.
+        sample_indices = np.unique(np.rint(np.linspace(0, len(frames)-1, 9)).astype(int))
+        swatch = Image.new("RGB", (320 * len(sample_indices), round(320 * height / width)))
+        for column, index in enumerate(sample_indices):
+            swatch.paste(frames[index].resize((320, swatch.height), Image.Resampling.LANCZOS), (column * 320, 0))
+        palette = swatch.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+        encoded = [frame.quantize(palette=palette, dither=Image.Dither.NONE) for frame in frames]
+        encoded[0].save(path, save_all=True, append_images=encoded[1:], duration=durations,
+                        loop=0, optimize=False, disposal=2)
+        with Image.open(path) as gif:
+            total_ms = 0
+            for i in range(gif.n_frames):
+                gif.seek(i)
+                total_ms += gif.info["duration"]
+            if gif.n_frames < 2 or gif.size != (width, height) or total_ms != sum(durations):
+                raise ValueError(f"GIF validation failed: {path}")
+            encoded_count = gif.n_frames
+        _persist_scene_metadata(manifest_path, {name: {
+            "gif": path.name, "gif_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "method": "MGA", "task": item["task"], "suite": item["suite"], "seed": item["seed"],
+            **{field: item[field] for field in ("result", "result_sha256", "trajectory", "trajectory_sha256", "camera", "style")},
+            "visualization_metadata": str(args.scene_metadata), "state_indices": indices,
+            "time_seconds": [index*dt for index in indices], "image_size": [width, height],
+            "last_unpadded_state": last, "physical_duration_seconds": last*dt,
+            "gif_duration_ms": total_ms, "frame_durations_ms": durations, "encoded_frame_count": encoded_count,
+            "playback": "Real-time saved-state replay at 25 fps; 800 ms final-pose pause; infinite loop",
+            "interpolated_poses": 0, "simulation_steps_executed": 0, "controller_rollouts_executed": 0,
+            "visual_restoration": checks,
+        }})
+        print(f"Written {path.name}: {path.stat().st_size / 1024**2:.2f} MiB", flush=True)
+        del frames, encoded, env, native, model
+        jax.clear_caches()
+        gc.collect()
+    return 0
+
+
 def _render_appendix(args):
     metadata_path = args.output_dir / "metadata.json"
     metadata = _read_json(metadata_path) if metadata_path.exists() else {}
     for name, (task, domain, suite) in _appendix_scenes().items():
         if args.task not in ("all", task) or (args.suite and args.suite != suite):
             continue
-        result_path = ROOT / "results" / domain / "main/mga" / f"level_{suite}" / f"seed_{args.seed}" / "results.json"
+        result_path = args.results_root / domain / "main/mga" / f"level_{suite}" / f"seed_{args.seed}" / "results.json"
         trajectory_path = result_path.parent / "trajectory/trajectory.json"
         result, trajectory = _read_json(result_path), _read_json(trajectory_path)
         trajectory_hash = hashlib.sha256(trajectory_path.read_bytes()).hexdigest()
         result_hash = hashlib.sha256(result_path.read_bytes()).hexdigest()
         indices, last = _appendix_indices(trajectory)
         previous = metadata.get(name, {})
+        scene_style = APPENDIX_ARM_STYLE if task != "humanoid" else "appendix-native-five-frames-v1"
         if (not args.force and previous.get("trajectory_sha256") == trajectory_hash
                 and previous.get("result_sha256") == result_hash
-                and previous.get("style") == "appendix-native-five-frames-v1"
+                and previous.get("style") == scene_style
                 and previous.get("state_indices") == indices
                 and (task == "humanoid" or all((args.output_dir / f["image"]).exists() for f in previous.get("frames", [])))
                 and previous.get("state_indices")):
@@ -912,8 +1106,8 @@ def _render_appendix(args):
         dt = float(result["config_snapshot"].get("env_params", {}).get("dt", .02))
         env = _execution_env(result)
         model = _native_model(env)
-        record = {"result": str(result_path.relative_to(ROOT)), "result_sha256": result_hash,
-            "trajectory": str(trajectory_path.relative_to(ROOT)), "trajectory_sha256": trajectory_hash,
+        record = {"result": str(result_path.relative_to(ROOT) if result_path.is_relative_to(ROOT) else result_path), "result_sha256": result_hash,
+            "trajectory": str(trajectory_path.relative_to(ROOT) if trajectory_path.is_relative_to(ROOT) else trajectory_path), "trajectory_sha256": trajectory_hash,
             "seed": args.seed, "suite": suite, "task": task, "method": "MGA",
             "state_indices": indices, "time_seconds": [i * dt for i in indices],
             "last_unpadded_state": last, "saved_state_count": len(trajectory["states"]),
@@ -921,7 +1115,7 @@ def _render_appendix(args):
             "selection": "Five uniformly spaced distinct saved physical states through the last executed state; exclude only explicit success_padding transitions, not done=true states",
             "time_convention": "State i follows i control transitions; t=i*dt; initial state t=0",
             "dt": dt, "simulation_steps_executed": 0, "controller_rollouts_executed": 0,
-            "style": "appendix-native-five-frames-v1",
+            "style": scene_style,
             "execution_env_params": result["config_snapshot"].get("execution_env_params", {}),
             "geometry_source": "Saved result config_snapshot, including execution_env_params and recorded seed",
             "hybrid_note": "Stiffness is a task-chart field, not visible painted material; no invented stripes or deformation" if "hybrid" in suite else None}
@@ -933,17 +1127,22 @@ def _render_appendix(args):
         else:
             model, checks = _restore_panda_visuals(model, trajectory["states"], indices)
             _manuscript_sky(model)
+            if task == "peg":
+                _peg_manuscript_appearance(model)
             camera = _appendix_arm_camera(model, trajectory["states"], task)
             record.update(_render_appendix_arm(model, trajectory["states"], indices, camera, args.output_dir, name=name))
             record["visual_restoration"] = checks
             record["rendering"] = "Native MuJoCo forward kinematics of saved q/qd, official Panda link visuals, manuscript blue-checker native materials"
+            record["camera_reference"] = "surface_peg_mechanisms (a), Side" if task == "surface" else "surface_peg_mechanisms (e)"
+            if task == "peg":
+                record["socket_visual_rgba"] = list(PEG_SOCKET_RGBA)
             if task == "peg":
                 close_camera = _appendix_arm_camera(model, trajectory["states"], task, closeup=True)
                 closeup = _render_appendix_arm(model, trajectory["states"], indices, close_camera, args.output_dir, name=f"{name}_closeup")
                 record["closeup"] = closeup
-                if suite == "ood_sensing":
-                    contact = next((i for i, state in enumerate(trajectory["states"][:last+1])
-                                    if state.get("info", {}).get("contact_count", 0) > 0), None)
+                if suite in ("id_wide", "ood_pose", "ood_sensing"):
+                    contact = next((i + 1 for i, value in enumerate(trajectory.get("task_signals", {}).get("in_contact", []))
+                                    if value > .5 and i + 1 <= last), None)
                     completion = next((i for i, state in enumerate(trajectory["states"][:last+1])
                                        if i > 0 and state.get("done", 0)), None)
                     event_indices = [0] + ([contact] if contact is not None else []) + ([completion] if completion is not None else []) + [last]
@@ -1211,7 +1410,7 @@ def _draw_appendix_stiffness_header(fig, map_item, label, row_top, frame_top, co
     text(.14, row_top-.49, map_item["display_line"], 15, va="top")
     if not compact:
         text(.14, row_top-.84, map_item["display_note"], 14, va="top")
-    text(7.04, row_top-(.49 if compact else .62), "Nominal chart\n" + r"$(\tilde\xi,\eta)\in[0,1]^2$", 14,
+    text(7.04, row_top-(.49 if compact else .62), "Nominal Chart\n" + r"$(\tilde\xi,\eta)\in[0,1]^2$", 14,
          ha="right", va="center", linespacing=1.4)
     map_size = .8 if compact else 1.06
     ax = fig.add_axes([7.26/12, (frame_top+(.12 if compact else .14))/height,
@@ -1297,7 +1496,7 @@ def _assemble_appendix(output_dir, selected_groups=None):
     _persist_scene_metadata(output_dir / "metadata.json", verified)
     plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10, "pdf.fonttype": 42})
     labels = {"peg_id_wide": "ID", "peg_ood_pose": "Pose-OOD", "peg_ood_sensing": "Sensing-OOD",
-        "humanoid_force_regulation": "Force regulation · 15 N", "humanoid_fixed_stance_push": "Fixed-stance push · nominal",
+        "humanoid_force_regulation": "Force Regulation · 15 N", "humanoid_fixed_stance_push": "Fixed-Stance Push · Nominal",
         "humanoid_unjamming": "Unjamming"}
     grids_metadata_path = output_dir.parent / "rollout_grids_metadata.json"
     assembled = _read_json(grids_metadata_path) if selected_groups and grids_metadata_path.exists() else {}
@@ -1309,7 +1508,9 @@ def _assemble_appendix(output_dir, selected_groups=None):
             continue
         rows = len(names)
         with_maps = verified[names[0]]["task"] == "surface"
-        compact_maps = filename in ("surface_hybrid_rollouts", "surface_unseen_rollouts")
+        # One compact chart header across all surface families; retain the
+        # same map, numeric scale and typography without redundant note rows.
+        compact_maps = with_maps
         row_height = 2.76 if compact_maps else 3.18
         header_height = .98 if compact_maps else 1.35
         figure_height = rows * row_height + .75 if with_maps else rows * 2.08 + 1.03
@@ -1319,7 +1520,7 @@ def _assemble_appendix(output_dir, selected_groups=None):
                                    wspace=.018, hspace=.40)
         for row, name in enumerate(names):
             item = verified[name]
-            label = labels.get(name, name.removeprefix("surface_").replace("_", " ").capitalize())
+            label = labels.get(name, name.removeprefix("surface_").replace("_", " ").title())
             if with_maps:
                 row_top = figure_height - .67 - row * row_height
                 frame_top = row_top - header_height
@@ -1376,19 +1577,35 @@ def main(argv=None):
     parser.add_argument("--task", choices=["all", "surface", "peg", "humanoid"], default="all")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "reports/mga/paper_figures/scenes")
+    parser.add_argument("--results-root", type=Path, default=ROOT / "results",
+                        help="Read-only result tree containing arm/ and/or humanoid/; used by appendix replay")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--capture-brax", action="store_true",
                         help="Host-only: capture the exported genuine Brax Web humanoid pages")
     parser.add_argument("--appendix", action="store_true",
                         help="Render five true chronological saved poses for each appendix suite")
+    parser.add_argument("--gifs", action="store_true",
+                        help="With --appendix --task surface/peg: animate saved states using verified Visualization cameras")
+    parser.add_argument("--scene-metadata", type=Path,
+                        default=ROOT / "reports/mga/paper_figures/appendix/scenes/metadata.json",
+                        help="Existing Visualization provenance and cameras used by --gifs")
     parser.add_argument("--assemble-only", action="store_true",
                         help="Assemble appendix grids from already rendered frames")
     parser.add_argument("--grid", action="append", choices=list(APPENDIX_GROUPS),
                         help="Appendix assemble-only: update only this grid (repeatable), preserving others")
     parser.add_argument("--stiffness-maps-only", action="store_true",
                         help="Export exact task-owned scanning chart maps and verify saved stiffness signals")
-    parser.add_argument("--suite", help="Appendix: render one exact suite name")
+    parser.add_argument("--suite", help="Render one exact suite name (appendix or main Brax capture)")
     args = parser.parse_args(argv)
+    args.results_root = args.results_root.resolve()
+    if args.gifs:
+        if (not args.appendix or args.task not in ("surface", "peg") or args.assemble_only
+                or args.capture_brax or args.stiffness_maps_only):
+            parser.error("--gifs requires --appendix --task surface/peg and no static-image operation")
+        if args.output_dir == ROOT / "reports/mga/paper_figures/scenes":
+            args.output_dir = ROOT / "reports/mga/paper_figures/gifs"
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        return _render_appendix_gifs(args)
     if args.appendix:
         if args.output_dir == ROOT / "reports/mga/paper_figures/scenes":
             args.output_dir = ROOT / "reports/mga/paper_figures/appendix/scenes"
@@ -1402,7 +1619,10 @@ def main(argv=None):
         return _render_appendix(args)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     if args.capture_brax:
-        return _capture_brax_web(args.output_dir, args.force)
+        if args.suite is not None and args.suite not in {
+                value[2] for value in SCENES.values() if value[0] == "humanoid"}:
+            parser.error("Main Brax capture --suite must be a humanoid suite")
+        return _capture_brax_web(args.output_dir, args.force, args.suite)
     import numpy as np
     metadata_path = args.output_dir / "metadata.json"
     metadata = _read_json(metadata_path) if metadata_path.exists() else {}

@@ -106,7 +106,7 @@ def appearance(model):
         elif name == "probe":
             model.geom_rgba[gid] = [217/255, 102/255, 14/255, 1]
         elif name.startswith("socket_"):
-            model.geom_rgba[gid] = [117/255, 93/255, 156/255, 1]
+            model.geom_rgba[gid] = [176/255, 214/255, 210/255, 1]
     model.vis.headlight.ambient[:] = [.55, .55, .55]
     model.vis.headlight.diffuse[:] = [.65, .65, .65]
     model.vis.headlight.specular[:] = [.05, .05, .05]

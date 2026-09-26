@@ -34,11 +34,6 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from genedynamics.experiments.plugins.metrics.extractors import (  # noqa: E402
-    _humanoid_evaluation_view,
-)
-
-
 FORCE_METHODS = (
     ("main/mga", "MGA", "teal", "-"),
     ("baseline/mppi", "MPPI", "goal_border", "--"),
@@ -115,6 +110,8 @@ def palette():
 
 
 def load_run(data_root, method, suite, seed):
+    from genedynamics.experiments.plugins.metrics.extractors import _humanoid_evaluation_view
+
     directory = data_root / method / f"level_{suite}" / f"seed_{seed}"
     result_path = directory / "results.json"
     trajectory_path = directory / "trajectory/trajectory.json"
@@ -728,7 +725,7 @@ def plot_humanoid_safe_completion(root, output, seeds):
            yticks=[0, 20, 40, 60, 80, 100], xlabel="Physical execution time (s)",
            ylabel="Safe completion (%)")
     ax.grid(axis="y", color=colors["gray"], alpha=.22, lw=.5)
-    fig.text(.12, .947, "Safe completion during unjamming", fontsize=10.5, fontweight="bold")
+    fig.text(.12, .947, "Safe Completion During Unjamming", fontsize=10.5, fontweight="bold")
     fig.text(.12, .884, "Controlled MGA ablations | 10 paired seeds | empirical fractions", fontsize=8)
     legend = fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(.51, .112),
                         ncol=3, frameon=True, fancybox=False, edgecolor=colors["gray"],
@@ -806,7 +803,7 @@ def plot_humanoid_appendix(root, output, seeds):
     ax.set(xlabel="Peak hand force (N)", ylabel="Steady force MAE (N)", xlim=(14, 73))
     ax.grid(alpha=.15, lw=.5)
     ax.margins(y=.15)
-    fig.suptitle("15 N force regulation: impact and steady tracking", x=.105, ha="left",
+    fig.suptitle("15 N Force Regulation: Impact and Steady Tracking", x=.105, ha="left",
                  y=.98, fontsize=10, fontweight="bold")
     fig.text(.105, .9, "Each mark represents one execution. Large markers show method means.", fontsize=7.3)
     fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(.53, .042), ncol=3,
@@ -889,7 +886,7 @@ def plot_humanoid_appendix(root, output, seeds):
             "normalized_force_tail": stats([r.metrics["physics_force_normalized_cvar95"] for r in push])}
         continuation["sources"].extend(appendix_run_source(r) for r in push)
     axes[0].set_ylabel("Seed")
-    fig.suptitle("Unjamming: completion and safety-triggered stops", x=.09,
+    fig.suptitle("Unjamming: Completion and Safety-Triggered Stops", x=.09,
                  ha="left", y=.98, fontsize=10, fontweight="bold")
     handles = [Line2D([], [], marker=marker, color=colors["slate"], lw=0, markersize=5, label=label_text)
                for marker, label_text in (("o", "Safe completion"), ("x", "No safe candidate was found, so execution stopped."))]
@@ -921,11 +918,11 @@ def plot_humanoid_execution_geometry(root, output, scene_dir, seed):
     fig = plt.figure(figsize=(7.2, 2.95))
     context = fig.add_axes([.012, .25, .285, .60])
     context.imshow(plt.imread(image_path)); context.axis("off")
-    fig.text(.014, .93, "(a) Constrained box contact", fontsize=8.2, fontweight="bold")
+    fig.text(.014, .93, "(a) Constrained Box Contact", fontsize=8.2, fontweight="bold")
     pose_ax = fig.add_axes([.395, .25, .235, .60])
     force_ax = fig.add_axes([.75, .25, .235, .60])
-    fig.text(.395, .93, "(b) Executed box pose", fontsize=8.2, fontweight="bold")
-    fig.text(.75, .93, "(c) Load and progress", fontsize=8.2, fontweight="bold")
+    fig.text(.395, .93, "(b) Executed Box Pose", fontsize=8.2, fontweight="bold")
+    fig.text(.75, .93, "(c) Load and Progress", fontsize=8.2, fontweight="bold")
     origin = float(np.asarray(runs[0].signals["start_pos"]).reshape(-1)[0])
     target = float(np.asarray(runs[0].signals["target"]).reshape(-1)[0])
     target_progress = (target - origin) * 1000
@@ -1010,11 +1007,108 @@ def plot_humanoid_execution_geometry(root, output, scene_dir, seed):
     save_humanoid_appendix(fig, output, "humanoid_execution_geometry", report)
 
 
+def refresh_saved_scene(args):
+    """Replace one embedded scene without recomputing or redrawing any curve.
+
+    This presentation-only path deliberately needs no simulation dependencies.
+    It preserves the current PDF text, vector plots and all other raster assets.
+    """
+    import io
+    import os
+    import tempfile
+
+    import pymupdf
+    from PIL import Image, ImageOps
+
+    scene_dir = args.scene_dir or args.output_dir / "scenes"
+    summary_path = args.output_dir / "humanoid_mechanism_data.json"
+    summary = json.loads(summary_path.read_text())
+    metadata = json.loads((scene_dir / "metadata.json").read_text())
+    key = args.refresh_scene
+    image_path = scene_dir / SCENES[key]
+    record = metadata[image_path.stem]
+    previous = summary["scene_inputs"][key]["verified_render_metadata"]
+    for field in ("result", "result_sha256", "trajectory", "trajectory_sha256",
+                  "seed", "state_indices", "camera", "image_size", "time_seconds"):
+        if record[field] != previous[field]:
+            raise ValueError(f"Appearance-only refresh changed {field}; stop: {image_path}")
+    if record.get("capture_pending", True):
+        raise ValueError(f"Scene capture has not completed: {image_path}")
+    for field in ("result", "trajectory"):
+        source = ROOT / record[field]
+        if hashlib.sha256(source.read_bytes()).hexdigest() != record[field + "_sha256"]:
+            raise ValueError(f"Scene {field} differs from the saved formal data: {source}")
+    if hashlib.sha256(image_path.read_bytes()).hexdigest() != record["image_sha256"]:
+        raise ValueError(f"Scene image hash mismatch: {image_path}")
+
+    pdf_path = args.figure_pdf or args.output_dir / "humanoid_mechanism.pdf"
+    document = pymupdf.open(pdf_path)
+    if len(document) != 1:
+        raise ValueError("Expected the existing one-page mechanism figure")
+    page = document[0]
+    layout = summary["layout"]
+    bounds = (layout["force_scene_bounds_inches"] if key == "force" else
+              layout["equal_panel_bounds_inches"][1 if key == "push" else 2])
+    x, y, width, height = bounds
+    figure_height = layout["size_inches"][1]
+    expected = pymupdf.Rect(x*72, (figure_height-y-height)*72,
+                           (x+width)*72, (figure_height-y)*72)
+    candidates = [item for item in page.get_images(full=True)
+                  if len(page.get_image_rects(item[0])) == 1
+                  and max(abs(a-b) for a, b in zip(page.get_image_rects(item[0])[0], expected)) < .02]
+    if len(candidates) != 1:
+        raise ValueError("Current PDF layout does not uniquely match the scene; refusing to guess")
+    chosen = candidates[0]
+    old_text = page.get_text()
+    other_images = {item[0]: hashlib.sha256(document.xref_stream(item[0])).hexdigest()
+                    for item in page.get_images(full=True) if item[0] != chosen[0]}
+    before = page.get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False)
+    # Match the existing plot's centered, aspect-preserving cover rectangle.
+    with Image.open(image_path) as source:
+        resized = ImageOps.fit(source.convert("RGB"), (chosen[2], chosen[3]),
+                               method=Image.Resampling.LANCZOS, centering=(.5, .5))
+        stream = io.BytesIO()
+        resized.save(stream, format="PNG")
+    page.replace_image(chosen[0], stream=stream.getvalue())
+    if page.get_text() != old_text or any(
+            hashlib.sha256(document.xref_stream(xref)).hexdigest() != digest
+            for xref, digest in other_images.items()):
+        raise ValueError("Unrelated PDF text or image changed during the scene refresh")
+    after = page.get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=False)
+    old_pixels = np.frombuffer(before.samples, dtype=np.uint8).reshape(before.height, before.width, before.n)
+    new_pixels = np.frombuffer(after.samples, dtype=np.uint8).reshape(after.height, after.width, after.n)
+    unchanged = np.ones(old_pixels.shape[:2], dtype=bool)
+    unchanged[max(0, int(expected.y0*2)-2):int(np.ceil(expected.y1*2))+2,
+              max(0, int(expected.x0*2)-2):int(np.ceil(expected.x1*2))+2] = False
+    if not np.array_equal(old_pixels[unchanged], new_pixels[unchanged]):
+        raise ValueError("Pixels outside the requested scene changed; refusing to save")
+    with tempfile.NamedTemporaryFile(dir=pdf_path.parent, suffix=".pdf", delete=False) as temporary:
+        temporary_path = Path(temporary.name)
+    document.save(temporary_path, garbage=3, deflate=True)
+    if args.figure_pdf is None:
+        page.get_pixmap(matrix=pymupdf.Matrix(350/72, 350/72), alpha=False).save(pdf_path.with_suffix(".png"))
+    document.close()
+    os.replace(temporary_path, pdf_path)
+    summary["scene_inputs"][key]["verified_render_metadata"] = record
+    summary["scene_inputs"][key]["path"] = source_path(image_path)
+    summary["scene_refresh"] = {
+        "panel": key, "source_scene_sha256": record["image_sha256"],
+        "preserved": "Current PDF text, vector curves, numerical evidence, other images, and all pixels outside the scene rectangle",
+        "data_recomputed": False, "outside_scene_pixel_equality_verified_at_144_dpi": True,
+    }
+    summary_path.write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
+    print(f"Refreshed only {key}: {pdf_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path, default=ROOT / "results/humanoid/push_to_line")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "reports/mga/paper_figures")
     parser.add_argument("--scene-dir", type=Path)
+    parser.add_argument("--refresh-scene", choices=tuple(SCENES),
+                        help="Replace only this scene in the existing PDF, preserving current plots and text")
+    parser.add_argument("--figure-pdf", type=Path,
+                        help="With --refresh-scene, update this existing PDF instead of the report copy")
     parser.add_argument("--seed", type=int, default=0, help="Common illustrative seed; never best per method")
     parser.add_argument("--seeds", type=parse_seeds, default=parse_seeds("0-9"))
     parser.add_argument("--require-scenes", action="store_true", help="Fail rather than emit scene placeholders")
@@ -1022,6 +1116,13 @@ def main():
     parser.add_argument("--appendix-geometry-only", action="store_true", help="With --appendix, render only simulation-linked execution geometry")
     parser.add_argument("--completion-curve", action="store_true", help="Write only the paired H1 unjamming safe-completion preview; requires seeds 0-9")
     args = parser.parse_args()
+    if args.refresh_scene:
+        if args.appendix or args.appendix_geometry_only or args.completion_curve:
+            parser.error("--refresh-scene is a separate presentation-only operation")
+        refresh_saved_scene(args)
+        return
+    if args.figure_pdf:
+        parser.error("--figure-pdf requires --refresh-scene")
     if args.completion_curve:
         if args.appendix or args.appendix_geometry_only:
             parser.error("--completion-curve is separate from --appendix")

@@ -9,6 +9,7 @@ No simulation, policy rollout, or manufactured motion is used.
 from __future__ import annotations
 
 import argparse
+import base64
 import functools
 import hashlib
 import http.server
@@ -23,6 +24,8 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "reports/mga/paper_figures/scenes"
 OUTPUT = ROOT / "scripts/paper/mga/output/env_overview_v4/assets"
+APPENDIX_SOURCE = ROOT / "reports/mga/paper_figures/appendix/scenes"
+GIF_OUTPUT = ROOT / "reports/mga/paper_figures/gifs"
 
 PALETTES = {
     "manuscript": {
@@ -122,10 +125,209 @@ try {
  document.body.appendChild(renderer.domElement);
  renderer.render(scene,camera);
  window.mgaEnvironment={scene,camera,renderer,system,settings};
+ window.mgaEnvironment.setState=index=>{
+   const next=system.states.x[index];
+   for(const [name,geoms] of Object.entries(system.geoms)){
+     const link=geoms[0].link_idx;
+     if(link<0)continue;
+     const group=scene.getObjectByName(name.replaceAll('/','_'));
+     group.position.fromArray(next.pos[link]);
+     const q=next.rot[link];group.quaternion.set(q[1],q[2],q[3],q[0]);
+   }
+   renderer.render(scene,camera);
+ };
  document.title='MGA_ENV_READY';
  await fetch('/__capture_ready__/'+settings.name);
 }catch(error){document.title='MGA_ENV_ERROR';document.body.textContent=error.stack;}
 </script></body></html>'''
+
+
+def _sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _export_gif_payloads(output_dir):
+    """Export saved-state FK, with the same source verification as Visualizations."""
+    from render_mechanism_scenes import (
+        _appendix_indices, _execution_env, _export_brax_web, _native_model,
+    )
+
+    source = json.loads((APPENDIX_SOURCE / "metadata.json").read_text())
+    payload_dir = output_dir / "humanoid_saved_states"
+    payload_dir.mkdir(parents=True, exist_ok=True)
+    records = {}
+    for name, item in source.items():
+        if item.get("task") != "humanoid":
+            continue
+        result_path, trajectory_path = ROOT / item["result"], ROOT / item["trajectory"]
+        if (_sha256(result_path) != item["result_sha256"] or
+                _sha256(trajectory_path) != item["trajectory_sha256"]):
+            raise ValueError(f"Source changed since Visualizations: {name}")
+        result = json.loads(result_path.read_text())
+        trajectory = json.loads(trajectory_path.read_text())
+        _, last = _appendix_indices(trajectory)
+        if last != item["last_unpadded_state"]:
+            raise ValueError(f"Executed endpoint changed: {name}")
+        # Sample real saved states at 25 fps. Include odd-indexed final states.
+        indices = list(range(0, last + 1, 2))
+        if indices[-1] != last:
+            indices.append(last)
+        env = _execution_env(result)
+        model = _native_model(env)
+        exported = _export_brax_web(env, model, trajectory, indices, last, name, payload_dir)
+        payload = payload_dir / exported["web_payload"]
+        saved_payload = json.loads(payload.read_text())
+        original = json.loads((APPENDIX_SOURCE / item["web_payload"]).read_text())
+        if saved_payload["geoms"] != original["geoms"]:
+            raise ValueError(f"Render geometry changed since Visualizations: {name}")
+        records[name] = {
+            "method": "MGA", "suite": item["suite"], "seed": item["seed"],
+            "source_result": item["result"], "result_sha256": item["result_sha256"],
+            "source_trajectory": item["trajectory"], "trajectory_sha256": item["trajectory_sha256"],
+            "state_indices": indices, "last_unpadded_state": last,
+            "excluded_padding_states": len(trajectory["states"]) - last - 1,
+            "dt": item["dt"], "time_seconds": [index * item["dt"] for index in indices],
+            "payload": str(payload.relative_to(output_dir)), "payload_sha256": _sha256(payload),
+            "camera": item["camera"], "palette": item["palette"],
+            "dimensions": [810, 540], "simulation_steps_executed": 0,
+            "controller_rollouts_executed": 0, "interpolated_states": 0,
+            "brax_fk_max_position_error_m": exported["brax_fk_max_position_error_m"],
+            "rendering": "Saved q/qd -> Brax forward kinematics -> native Brax Web scene -> Three.js",
+        }
+        print(f"Exported {name}: {len(indices)} real saved states, t=0..{last * item['dt']:.2f} s", flush=True)
+    (output_dir / "humanoid_gifs.json").write_text(json.dumps(records, indent=2) + "\n")
+
+
+def _capture_gifs(output_dir):
+    """Capture every exported pose from one fixed camera, without interpolating."""
+    from PIL import Image
+
+    metadata_path = output_dir / "humanoid_gifs.json"
+    records = json.loads(metadata_path.read_text())
+    output_dir = output_dir.resolve()
+    chrome = (shutil.which("google-chrome") or shutil.which("chromium") or
+              "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    completed = set()
+    errors = {}
+    received = {}
+    frame_dir = output_dir / "humanoid_saved_states"
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            pieces = self.path.strip("/").split("/")
+            content = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            if len(pieces) == 3 and pieces[0] == "__gif_frame__" and pieces[1] in records:
+                name, index = pieces[1], int(pieces[2])
+                if not 0 <= index < len(records[name]["state_indices"]):
+                    self.send_error(400)
+                    return
+                if not content.startswith(b"data:image/png;base64,"):
+                    self.send_error(400)
+                    return
+                target = frame_dir / f"{name}_{index:04d}.png"
+                target.write_bytes(base64.b64decode(content.partition(b",")[2], validate=True))
+                received.setdefault(name, set()).add(index)
+            elif len(pieces) == 2 and pieces[0] == "__gif_done__" and pieces[1] in records:
+                completed.add(pieces[1])
+            elif len(pieces) == 2 and pieces[0] == "__gif_error__" and pieces[1] in records:
+                errors[pieces[1]] = content.decode()
+            else:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.end_headers()
+
+    server = http.server.ThreadingHTTPServer(
+        ("127.0.0.1", 0), functools.partial(Handler, directory=str(ROOT)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    capture = r'''
+ try {
+   for(let index=0;index<system.states.x.length;index++){
+     window.mgaEnvironment.setState(index);
+     const response=await fetch('/__gif_frame__/'+settings.name+'/'+index,
+       {method:'POST',body:renderer.domElement.toDataURL('image/png')});
+     if(!response.ok)throw Error('Frame upload failed: '+index);
+   }
+   await fetch('/__gif_done__/'+settings.name,{method:'POST',body:'done'});
+ }catch(error){
+   await fetch('/__gif_error__/'+settings.name,{method:'POST',body:error.stack});
+ }
+'''
+    try:
+        for name, item in records.items():
+            payload = output_dir / item["payload"]
+            if _sha256(payload) != item["payload_sha256"]:
+                raise ValueError(f"Saved-state payload changed: {name}")
+            settings = {"payload": "/" + str(payload.relative_to(ROOT)), "name": name,
+                        "state": 0, "width": 810, "height": 540,
+                        "high": name == "humanoid_unjamming", "palette": item["palette"]}
+            html = frame_dir / f"{name}.gif.html"
+            html.write_text(HTML.replace("__SETTINGS__", json.dumps(settings)).replace(
+                " await fetch('/__capture_ready__/'+settings.name);", capture))
+            with tempfile.TemporaryDirectory(prefix="mga-humanoid-gif-chrome-") as profile:
+                command = [chrome, "--headless=new", "--hide-scrollbars", "--no-first-run",
+                           "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+                           "--no-default-browser-check", "--disable-background-networking", "--disable-sync",
+                           "--force-device-scale-factor=1", f"--user-data-dir={profile}", "--window-size=810,540",
+                           f"http://127.0.0.1:{server.server_port}/{html.relative_to(ROOT)}"]
+                with tempfile.TemporaryFile(mode="w+") as diagnostic:
+                    process = subprocess.Popen(command, stdout=diagnostic, stderr=diagnostic)
+                    deadline = time.monotonic() + 180
+                    try:
+                        while name not in completed and name not in errors:
+                            if process.poll() is not None or time.monotonic() > deadline:
+                                diagnostic.seek(0)
+                                raise RuntimeError(f"Capture stopped {name}: {diagnostic.read()[-2000:]}")
+                            time.sleep(.1)
+                    finally:
+                        process.terminate()
+                        try:
+                            process.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait(timeout=5)
+            if name in errors:
+                raise RuntimeError(errors[name])
+            if received[name] != set(range(len(item["state_indices"]))):
+                raise ValueError(f"Incomplete frame sequence: {name}")
+            paths = [frame_dir / f"{name}_{i:04d}.png" for i in range(len(item["state_indices"]))]
+            frames = [Image.open(path).convert("RGB") for path in paths]
+            # A shared palette avoids frame-to-frame color flicker. Preserve real
+            # timing, including a possible final 20-ms step, then hold 800 ms.
+            swatches = Image.new("RGB", (270 * len(frames), 180))
+            for i, frame in enumerate(frames):
+                swatches.paste(frame.resize((270, 180)), (i * 270, 0))
+            palette = swatches.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+            frames = [frame.quantize(palette=palette, dither=Image.Dither.NONE) for frame in frames]
+            durations = [round((b - a) * item["dt"] * 1000)
+                         for a, b in zip(item["state_indices"][:-1], item["state_indices"][1:])] + [800]
+            gif = output_dir / f"mga_{name}.gif"
+            frames[0].save(gif, save_all=True, append_images=frames[1:], duration=durations,
+                           loop=0, disposal=2, optimize=False)
+            with Image.open(gif) as check:
+                count = check.n_frames
+                if count != len(paths) or check.size != (810, 540):
+                    raise ValueError(f"GIF frame validation failed: {name}")
+                saved_durations = []
+                for i in range(count):
+                    check.seek(i)
+                    saved_durations.append(check.info["duration"])
+                if saved_durations != durations:
+                    raise ValueError(f"GIF timing changed: {name}")
+            item.update(gif=gif.name, gif_sha256=_sha256(gif), frame_count=count,
+                        frame_duration_ms=durations, final_pause_ms=800, playback_speed=1.0,
+                        image_source_sha256=[_sha256(path) for path in paths],
+                        total_gif_duration_seconds=sum(durations) / 1000,
+                        dynamic_pose_frames_verified=True,
+                        script_sha256=_sha256(Path(__file__)))
+            metadata_path.write_text(json.dumps(records, indent=2) + "\n")
+            print(f"Rendered {gif}: {count} frames; {sum(durations) / 1000:.2f} s", flush=True)
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def main():
@@ -134,7 +336,20 @@ def main():
     parser.add_argument("--only", choices=tuple(VIEWS))
     parser.add_argument("--palette", choices=tuple(PALETTES), default="manuscript-v1-box",
                         help="Manuscript colors, or the original warm Brax reference palette")
+    parser.add_argument("--export-gif-payloads", action="store_true",
+                        help="Export genuine 25-fps saved-state Brax FK; requires the experiment dependencies")
+    parser.add_argument("--gifs", action="store_true",
+                        help="Capture exported saved-state GIFs using the Visualizations camera and appearance")
     args = parser.parse_args()
+    if args.export_gif_payloads or args.gifs:
+        if args.output_dir == OUTPUT:
+            args.output_dir = GIF_OUTPUT
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        if args.export_gif_payloads:
+            _export_gif_payloads(args.output_dir)
+        if args.gifs:
+            _capture_gifs(args.output_dir)
+        return
     args.output_dir.mkdir(parents=True, exist_ok=True)
     chrome = (shutil.which("google-chrome") or shutil.which("chromium") or
               "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")

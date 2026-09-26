@@ -819,5 +819,149 @@ def build_fixed():
     print(png_path)
 
 
+# Exact title allowlist: axis labels, legends, annotations, and galleries are
+# deliberately excluded. This preserves measured data and saved-state images.
+APPENDIX_TITLES = {
+    "surface_coverage_progress": {
+        "(a) Terminal path progress": "(a) Terminal Path Progress",
+        "(b) Contact-valid coverage": "(b) Contact-Valid Coverage",
+        "Realized path fidelity across surface conditions": "Realized Path Fidelity Across Surface Conditions",
+    },
+    "surface_contact_tradeoff": {
+        "(a) Soft: contact load": "(a) Soft: Contact Load",
+        "(b) Soft: deformation": "(b) Soft: Deformation",
+        "(c) Hybrid: contact load": "(c) Hybrid: Contact Load",
+        "(d) Hybrid: deformation": "(d) Hybrid: Deformation",
+        "Coverage, contact load, and deformation": "Coverage, Contact Load, and Deformation",
+    },
+    "surface_execution_geometry": {
+        "(a) Soft-convex contact": "(a) Soft-Convex Contact",
+        "(b) Executed path and visits": "(b) Executed Path and Visits",
+        "(c) 3-D path error": "(c) 3-D Path Error",
+    },
+    "peg_outcome_decomposition": {
+        "Pose mismatch": "Pose Mismatch", "Sensing mismatch": "Sensing Mismatch",
+    },
+    "peg_paired_depth_rho": {
+        "Pose mismatch": "Pose Mismatch", "Sensing mismatch": "Sensing Mismatch",
+    },
+    "peg_geometry_contact": {
+        "(a) Executed contact": "(a) Executed Contact",
+        "(c) w/o RL prior": "(c) w/o RL Prior",
+    },
+    "humanoid_force_tradeoff": {
+        "15 N force regulation: impact and steady tracking": "15 N Force Regulation: Impact and Steady Tracking",
+    },
+    "humanoid_continuation": {
+        "(b) w/o RL prior": "(b) w/o RL Prior",
+        "Unjamming: completion and safety-triggered stops": "Unjamming: Completion and Safety-Triggered Stops",
+    },
+    "humanoid_execution_geometry": {
+        "(a) Constrained box contact": "(a) Constrained Box Contact",
+        "(b) Executed box pose": "(b) Executed Box Pose",
+        "(c) Load and progress": "(c) Load and Progress",
+    },
+}
+
+
+def revise_appendix_titles(names=None):
+    """Case-only PDF title edits; verify every non-title rendered pixel stays put."""
+    import hashlib
+    import shutil
+    import tempfile
+
+    backup = Path(tempfile.mkdtemp(prefix="mga-appendix-titles-", dir="/private/tmp"))
+    folder = ROOT / "latex/latex_mga/figures/exp/appendix"
+    regular, bold = font_paths()
+    measurements = {False: pymupdf.Font(fontfile=str(regular)),
+                    True: pymupdf.Font(fontfile=str(bold))}
+    audit = []
+    for name in names or APPENDIX_TITLES:
+        mapping = APPENDIX_TITLES[name]
+        path = folder / f"{name}.pdf"
+        shutil.copy2(path, backup / path.name)
+        doc = pymupdf.open(path)
+        if len(doc) != 1:
+            raise ValueError(f"Expected a single-page figure: {path}")
+        page = doc[0]
+        selected = [span for span in spans(page) if span["text"] in mapping]
+        texts = {span["text"] for span in spans(page)}
+        if any(old not in texts and new not in texts for old, new in mapping.items()):
+            raise ValueError(f"Expected title missing from {path}")
+        if not selected:
+            print(f"Already title-cased: {path}")
+            doc.close()
+            continue
+        before_pix = page.get_pixmap(matrix=pymupdf.Matrix(3, 3), alpha=False)
+        before = np.frombuffer(before_pix.samples, np.uint8).reshape(before_pix.height, before_pix.width, 3)
+        replacements = []
+        for span in selected:
+            old, size = span["text"], float(span["size"])
+            new = mapping[old]
+            is_bold = "bold" in span["font"].lower()
+            width = measurements[is_bold].text_length(new, fontsize=size)
+            origin = list(span["origin"])
+            centered = (name in {"peg_outcome_decomposition", "peg_paired_depth_rho"}
+                        or (name == "surface_coverage_progress" and old.startswith("("))
+                        or (name == "humanoid_continuation" and old.startswith("("))
+                        or (name == "peg_geometry_contact" and old.startswith("(c)")))
+            if centered:
+                origin[0] = (span["bbox"][0] + span["bbox"][2] - width) / 2
+            if origin[0] < 0 or origin[0] + width > page.rect.width:
+                raise ValueError(f"Title would overflow: {name}: {new}")
+            bbox = pymupdf.Rect(span["bbox"])
+            page.add_redact_annot(bbox, fill=(1, 1, 1), cross_out=False)
+            new_box = pymupdf.Rect(origin[0], bbox.y0, origin[0] + width, bbox.y1)
+            replacements.append((span, new, origin, is_bold, bbox | new_box))
+        page.apply_redactions(images=0, graphics=0, text=0)
+        page.insert_font(fontname="MGAAppendixRegular", fontfile=str(regular))
+        page.insert_font(fontname="MGAAppendixBold", fontfile=str(bold))
+        mask = np.zeros(before.shape[:2], bool)
+        for span, new, origin, is_bold, rect in replacements:
+            page.insert_text(origin, new, fontsize=span["size"],
+                             fontname="MGAAppendixBold" if is_bold else "MGAAppendixRegular",
+                             color=color_of(span))
+            rect = rect + (-1, -1, 1, 1)
+            x0, y0 = max(0, int(rect.x0 * 3)), max(0, int(rect.y0 * 3))
+            x1, y1 = min(mask.shape[1], int(np.ceil(rect.x1 * 3))), min(mask.shape[0], int(np.ceil(rect.y1 * 3)))
+            mask[y0:y1, x0:x1] = True
+        staged = backup / f"{name}_revised.pdf"
+        doc.subset_fonts()
+        doc.save(staged, garbage=4, deflate=True)
+        doc.close()
+        checked = pymupdf.open(staged)
+        after_pix = checked[0].get_pixmap(matrix=pymupdf.Matrix(3, 3), alpha=False)
+        after = np.frombuffer(after_pix.samples, np.uint8).reshape(after_pix.height, after_pix.width, 3)
+        changed = np.any(before != after, axis=2)
+        outside = int(np.count_nonzero(changed & ~mask))
+        if outside:
+            raise ValueError(f"Non-title pixels changed in {name}: {outside}; original retained")
+        after_pix.save(backup / f"{name}_qa.png")
+        for _, new, _, _, _ in replacements:
+            if new not in checked[0].get_text():
+                raise ValueError(f"Replacement text did not survive: {name}: {new}")
+        checked.close()
+        shutil.copyfile(staged, path)
+        audit.append({"file": str(path), "changed_titles": {
+            span["text"]: new for span, new, *_ in replacements},
+            "outside_title_changed_pixels_at_3x": outside,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+        print(f"Title case only; unchanged non-title pixels: {path}")
+    (backup / "audit.json").write_text(json.dumps(audit, indent=2) + "\n")
+    print(f"Backups and visual QA: {backup}")
+
+
 if __name__ == "__main__":
-    build_fixed()
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--appendix-titles", action="store_true",
+                        help="Only title-case allowlisted additional-results PDF headings; no galleries")
+    parser.add_argument("--appendix-title-files", nargs="+", choices=list(APPENDIX_TITLES),
+                        help="Optional subset of additional-results figure stems")
+    arguments = parser.parse_args()
+    if arguments.appendix_title_files and not arguments.appendix_titles:
+        parser.error("--appendix-title-files requires --appendix-titles")
+    if arguments.appendix_titles:
+        revise_appendix_titles(arguments.appendix_title_files)
+    else:
+        build_fixed()
