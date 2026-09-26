@@ -808,7 +808,7 @@ def plot_humanoid_appendix(root, output, seeds):
     ax.margins(y=.15)
     fig.suptitle("15 N force regulation: impact and steady tracking", x=.105, ha="left",
                  y=.98, fontsize=10, fontweight="bold")
-    fig.text(.105, .9, "Each mark is one saved execution; large markers denote method means.", fontsize=7.3)
+    fig.text(.105, .9, "Each mark represents one execution. Large markers show method means.", fontsize=7.3)
     fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(.53, .042), ncol=3,
                frameon=False, columnspacing=2, fontsize=7.6)
     fig.text(.105, .026, "Lower-left is better. Deterministic ISSA/ATACOM seeds coincide.", fontsize=7)
@@ -876,8 +876,8 @@ def plot_humanoid_appendix(root, output, seeds):
         continuation["methods"][method] = {"counts": counts, "n": len(rows),
                                            "per_seed": rows, "conditional": conditional}
         continuation["sources"].extend(appendix_run_source(r) for r in runs)
-        ax.set_title(f"({chr(97 + index)}) {label_text}\n{counts['safe_completion']}/{len(rows)} complete; "
-                     f"{counts['certified_rejection']} rejected", fontsize=8.2, color=colors[key], pad=8)
+        ax.set_title(f"({chr(97 + index)}) {label_text}\n{counts['safe_completion']}/{len(rows)} completed, with "
+                     f"{counts['certified_rejection']} rejected.", fontsize=8.2, color=colors[key], pad=8)
         ax.set(xlim=(0, 2.05), xticks=[0, .5, 1, 1.5, 2], xlabel="Executed time (s)",
                ylim=(len(seeds) - .4, -.6))
         ax.set_yticks(range(len(seeds))); ax.set_yticklabels(seeds)
@@ -892,7 +892,7 @@ def plot_humanoid_appendix(root, output, seeds):
     fig.suptitle("Unjamming: completion and safety-triggered stops", x=.09,
                  ha="left", y=.98, fontsize=10, fontweight="bold")
     handles = [Line2D([], [], marker=marker, color=colors["slate"], lw=0, markersize=5, label=label_text)
-               for marker, label_text in (("o", "Safe completion"), ("x", "No safe candidate; action not executed"))]
+               for marker, label_text in (("o", "Safe completion"), ("x", "No safe candidate was found, so execution stopped."))]
     fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(.54, .035),
                ncol=2, frameon=False, fontsize=7.3)
     save_humanoid_appendix(fig, output, "humanoid_continuation", continuation)

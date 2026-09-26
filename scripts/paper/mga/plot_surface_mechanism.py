@@ -689,12 +689,12 @@ def plot_surface_appendix(root, output, seeds):
             ax.margins(y=.18)
     fig.suptitle("Coverage, contact load, and deformation", x=.105, ha="left", y=.98,
                  fontsize=10, fontweight="bold")
-    fig.text(.105, .915, f"Equal suite averages within each seed; paired comparisons preserve the same {len(seeds)} seeds.", fontsize=7.3)
+    fig.text(.105, .915, f"Suites have equal weight within each seed. Paired comparisons use the same {len(seeds)} seeds.", fontsize=7.3)
     handles = [Line2D([], [], marker=marker, color=colors[key], lw=0, markersize=5,
                       label=label_text) for _, label_text, key, marker in APPENDIX_METHODS]
     fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(.53, .033),
                ncol=3, frameon=False, fontsize=8)
-    fig.text(.105, .023, "Small points: seed averages. Large markers: means. Gray links: matched seeds. Better: right and down.", fontsize=7)
+    fig.text(.105, .023, "Small points show seed averages. Large markers show means. Gray links pair seeds. Better outcomes lie rightward and lower.", fontsize=7)
     save_appendix_surface(fig, output, "surface_contact_tradeoff", data)
 
 

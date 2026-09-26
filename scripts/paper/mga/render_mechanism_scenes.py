@@ -1222,7 +1222,7 @@ def _draw_appendix_stiffness_header(fig, map_item, label, row_top, frame_top, co
     if map_item["kind"] == "categorical_rigid":
         ax.set_facecolor("#E4E7EA")
         text(8.75, frame_top+(.68 if compact else .82), "Rigid contact", 15, va="center")
-        text(8.75, frame_top+(.40 if compact else .49), "Categorical; no finite K", 14, va="center")
+        text(8.75, frame_top+(.40 if compact else .49), "No finite K is assigned.", 14, va="center")
     else:
         ax.imshow(np.asarray(map_item["values_N_per_m"])/1000, origin="lower", extent=[0,1,0,1],
                   cmap=cmap, norm=norm, interpolation="nearest", aspect="equal")
