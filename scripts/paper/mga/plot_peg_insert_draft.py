@@ -353,13 +353,35 @@ def summarize_records(records, data_root):
     }
 
 
-def bordered_legend(fig, handles, *, y, ncol, fontsize=6.5):
+def bordered_legend(fig, handles, *, y, ncol, fontsize=5.7):
     legend = fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(.5, y),
                         ncol=ncol, frameon=True, fontsize=fontsize, handlelength=2,
                         columnspacing=1.1, borderpad=.55, fancybox=False)
     legend.get_frame().set_edgecolor("#9A9A9A")
     legend.get_frame().set_linewidth(.5)
     legend.get_frame().set_alpha(1)
+
+
+def paint_socket(image):
+    """Match the Figure 2 socket: the same light teal, with the original shading."""
+    array = np.asarray(image)
+    scale = 255.0 if array.dtype != np.uint8 and np.max(array) <= 1 else 1.0
+    rgb = np.clip(array[..., :3].astype(np.float32) * scale, 0, 255)
+    red, green, blue = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    socket = (blue > 150) & ((blue - red) > 85) & (green < 125) & (red < 90)
+    if not np.any(socket):
+        return array
+    teal = np.array([176, 214, 210], np.float32)
+    luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    painted = np.clip(teal * (luminance / float(luminance[socket].mean()))[..., None], 0, 255)
+    rgb[socket] = painted[socket]
+    if array.shape[-1] == 4:
+        painted_image = array.copy()
+        painted_image[..., :3] = rgb.astype(array.dtype) if array.dtype == np.uint8 else rgb / scale
+        return painted_image
+    if array.dtype == np.uint8:
+        return rgb.astype(np.uint8)
+    return rgb / scale
 
 
 def outcome_figure(records, output, colors):
@@ -662,14 +684,14 @@ def main_preview(groups, records, output, scene_dir, colors, seed, summary, data
     # 0.64/0.35 widths. The remaining 0.01 of the row is a blank gutter.
     peg_width = 4.2 * .35 / .64
     fig = plt.figure(figsize=(peg_width, 3.25))
-    fig.text(.02, .975, "(e) Recorded contact progression", fontsize=6.2, fontweight="bold")
+    fig.text(.02, .975, "(e) Recorded Contact Progression", fontsize=6.8, fontweight="bold")
     for i, (path, label, index) in enumerate(images):
         ax = fig.add_axes([.018 + i * .328, .755, .315, .205])
-        ax.imshow(plt.imread(path))
+        ax.imshow(paint_socket(plt.imread(path)))
         ax.set_axis_off()
         ax.text(.5, -.02, f"{label}  {index * signals['dt']:.2f} s",
-                transform=ax.transAxes, ha="center", va="top", fontsize=5.1)
-    fig.text(.02, .692, "(f) Executed wrench response", fontsize=6.2, fontweight="bold")
+                transform=ax.transAxes, ha="center", va="top", fontsize=5.7)
+    fig.text(.02, .692, "(f) Executed Wrench Response", fontsize=6.8, fontweight="bold")
     ax = fig.add_axes([.16, .435, .81, .24])
     metadata = []
     curve_styles = [("baseline/issa", colors["ISSA"], (0, (2.5, 1)), .70),
@@ -714,25 +736,27 @@ def main_preview(groups, records, output, scene_dir, colors, seed, summary, data
                          "comparison_role": "matched_pose_ood_execution",
                          "trajectory_sha256": hashlib.sha256(run[3].read_bytes()).hexdigest()})
     ax.axhline(1, color=colors["MGAOrangeInk"], ls=":", lw=.8)
-    ax.text(1.25, 1.01, "limit", ha="right", va="bottom", fontsize=5)
-    ax.set(xlim=(0, 1.28), ylim=(0, max(1.12, max_rho * 1.08)), xticks=[0, .4, .8, 1.2], yticks=[0, 1, 2] if max_rho > 2 else [0, .5, 1], ylabel=r"True $\rho(t)$")
-    ax.tick_params(labelsize=5.3, pad=1)
-    ax.yaxis.label.set_size(6)
+    ax.text(1.25, 1.01, "Limit", ha="right", va="bottom", fontsize=5.7)
+    ax.set(xlim=(0, 1.28), ylim=(0, max(1.12, max_rho * 1.08)), xticks=[0, .4, .8, 1.2], yticks=[0, .5, 1], ylabel=r"True $\rho(t)$")
+    ax.tick_params(labelsize=5.7, pad=1)
+    ax.yaxis.label.set_size(5.7)
     ax.grid(axis="y", color=".93", lw=.4)
     # A small numerical strip exposes the exact raw peak without smoothing,
     # selecting another seed, or suppressing any baseline excursion.
-    fig.text(.025, .373, "Raw peak\n" + r"$\rho$", fontsize=4.8, va="center")
+    fig.add_artist(Rectangle((0.015, 0.342), 0.970, 0.072, transform=fig.transFigure,
+                             facecolor="white", edgecolor="#9A9A9A", linewidth=0.55, zorder=2))
+    fig.text(.04, .378, "Raw peak\n" + r"$\rho$", fontsize=5.7, va="center", zorder=3)
     example_by_method = {entry["method"]: entry for entry in metadata}
     for x, method, label, color in [
-            (.265, "main/mga", "MGA", colors["MGATeal"]),
-            (.49, "ablation/no_rl_prior", "w/o prior", colors["MGAIndigo"]),
-            (.71, "baseline/dial", "DIAL", colors["MGAOrange"]),
-            (.925, "baseline/issa", "ISSA", colors["ISSA"])]:
-        fig.text(x, .391, label, ha="center", fontsize=4.7, color=color)
-        fig.text(x, .363, f"{example_by_method[method]['peak_true_rho']:.3f}",
-                 ha="center", fontsize=5.9, color=color,
+            (.30, "main/mga", "MGA", colors["MGATeal"]),
+            (.50, "ablation/no_rl_prior", "w/o prior", colors["MGAIndigo"]),
+            (.70, "baseline/dial", "DIAL", colors["MGAOrange"]),
+            (.88, "baseline/issa", "ISSA", colors["ISSA"])]:
+        fig.text(x, .392, label, ha="center", fontsize=5.7, color=color, zorder=3)
+        fig.text(x, .358, f"{example_by_method[method]['peak_true_rho']:.3f}",
+                 ha="center", fontsize=5.7, color=color, zorder=3,
                  fontweight="bold" if method == "main/mga" else "normal")
-    fig.text(.02, .317, "(g) Logged plan selection", fontsize=6.2, fontweight="bold")
+    fig.text(.02, .317, "(g) Logged Plan Selection", fontsize=6.8, fontweight="bold")
     decision = fig.add_axes([.285, .172, .685, .122])
     rows = decision_rows(mga)
     keys = ["additive_prior_selected", "refined_not_revalidated_safe", "emergency_selected"]
@@ -746,9 +770,9 @@ def main_preview(groups, records, output, scene_dir, colors, seed, summary, data
     decision.set(xlim=(0, 1.28), ylim=(2.55, -.55), xticks=[0, .4, .8, 1.2],
                  yticks=[0, 1, 2], yticklabels=["Prior adopted", "Refined unsafe", "Emergency"],
                  xlabel="Physical time (s)")
-    decision.tick_params(axis="y", length=0, pad=3, labelsize=5.2)
-    decision.tick_params(axis="x", labelsize=5.2, pad=1)
-    decision.xaxis.label.set_size(5.5)
+    decision.tick_params(axis="y", length=0, pad=3, labelsize=5.7)
+    decision.tick_params(axis="x", labelsize=5.7, pad=1)
+    decision.xaxis.label.set_size(5.7)
     decision.xaxis.labelpad = 1
     for spine in decision.spines.values():
         spine.set_visible(False)
@@ -758,7 +782,7 @@ def main_preview(groups, records, output, scene_dir, colors, seed, summary, data
                Line2D([], [], color=colors["MGAOrange"], ls=":", label="DIAL"),
                Line2D([], [], marker="o", ms=3, markerfacecolor="white", color="#52627A",
                       ls="none", label="Complete")]
-    bordered_legend(fig, handles, y=.008, ncol=3, fontsize=5)
+    bordered_legend(fig, handles, y=.008, ncol=3, fontsize=5.7)
     # Preserve the declared narrow canvas instead of content-dependent resizing.
     fig.savefig(output / "peg_insert_preview.pdf", dpi=400)
     fig.savefig(output / "peg_insert_preview.png", dpi=300)
