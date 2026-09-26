@@ -23,7 +23,7 @@ from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 import matplotlib.patheffects as path_effects
 from matplotlib.lines import Line2D
-from matplotlib.patches import Polygon
+from matplotlib.patches import Polygon, Rectangle
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -72,7 +72,7 @@ def style():
         "font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans"],
         "mathtext.fontset": "dejavusans", "font.size": 6.5,
         "axes.labelsize": 6.5, "axes.titlesize": 6.5,
-        "xtick.labelsize": 5.7, "ytick.labelsize": 5.7,
+        "xtick.labelsize": 5.7, "ytick.labelsize": 5.7,  # same size as the framed keys under (b) and (c)
         "axes.linewidth": 0.5, "lines.linewidth": 1.0,
         "axes.spines.top": False, "axes.spines.right": False,
         "xtick.major.size": 2, "ytick.major.size": 2,
@@ -139,6 +139,10 @@ def physical_time(run):
     return (np.arange(len(run["signals"]["positions"])) + 1) * dt
 
 
+# In-figure labels and the keys under the panels share one size. Panel titles stay larger.
+ANNOTATION_SIZE = 5.7
+
+
 def label(fig, x, y, letter, text):
     fig.text(x, y, f"({letter}) {text}", fontweight="bold", va="bottom", fontsize=6.8)
 
@@ -177,7 +181,7 @@ def draw_scene(fig, scene_dir, seed, run):
         t = float(times[0] if isinstance(times, list) else times)
         view = ("Overview", "Side", "Top", "Oblique")[i]
         ax.text(0.025, 0.05, f"{view}  {t:.2f} s", transform=ax.transAxes,
-                fontsize=5.1, color="white", bbox=dict(facecolor="#233F55", alpha=.8,
+                fontsize=ANNOTATION_SIZE, color="white", bbox=dict(facecolor="#233F55", alpha=.8,
                                                        edgecolor="none", pad=1.1))
 
 
@@ -325,29 +329,38 @@ def draw_strip(fig, runs, colors):
                ylim=(lower[:, 1].min()-1, face[:, 1].max()+5))
         ax.set_axis_off()
         title_color = colors["MGATeal"] if method == "main/mga" else colors["slate"]
-        ax.set_title(title, color=title_color, fontsize=6.1,
+        ax.set_title(title, color=title_color, fontsize=ANNOTATION_SIZE,
                      fontweight="bold" if method == "main/mga" else "normal", pad=1)
         coverage = 100 * run["metrics"]["trajectory_path_coverage"]
         ax.text(.97, .01, f"{coverage:.1f}%", transform=ax.transAxes,
-                ha="right", va="bottom", fontsize=6, color=title_color)
-    cax = fig.add_axes([0.80, 0.434, 0.17, 0.008])
-    bar = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), cax=cax,
-                      orientation="horizontal", ticks=[0, .5, 1],
-                      extend="max" if max_util > 1 else "neither")
-    bar.outline.set_linewidth(0.4)
-    bar.ax.tick_params(labelsize=5, size=1, pad=.5)
-    fig.text(.66, .431, r"$F_n/F_{\max}$", fontsize=5.7)
-    material_ax = fig.add_axes([.265, .434, .21, .008])
+                ha="right", va="bottom", fontsize=ANNOTATION_SIZE, color=title_color)
+    # One framed key under (b), above the (c) title, same border as the (c) legend.
+    # Groups, left to right: nominal stiffness, force scale, reference.
+    fig.add_artist(Rectangle((0.012, 0.408), 0.976, 0.040, transform=fig.transFigure,
+                             facecolor="white", edgecolor=colors["divider"],
+                             linewidth=0.55, zorder=3))
+    key_y = 0.428
+    fig.text(0.022, key_y, r"Nominal $k$ (kN/m)", fontsize=ANNOTATION_SIZE,
+             va="center", ha="left", zorder=5)
+    material_ax = fig.add_axes([0.195, 0.421, 0.10, 0.014], zorder=5)
     material_bar = fig.colorbar(plt.cm.ScalarMappable(norm=material_norm, cmap=material_cmap),
-                               cax=material_ax, orientation="horizontal",
-                               ticks=[cfg["k_soft"] / 1000, cfg["k_hard"] / 1000])
-    material_bar.ax.set_xticklabels(["2 (soft)", "8 (hard)"])
-    material_bar.ax.tick_params(labelsize=5, size=1, pad=.5)
+                               cax=material_ax, orientation="horizontal")
+    material_bar.ax.tick_params(length=0, labelbottom=False)
     material_bar.outline.set_linewidth(.4)
-    fig.text(.015, .431, r"Nominal $k$ (kN/m)", fontsize=5.5)
-    fig.add_artist(Line2D([.515, .55], [.438, .438], transform=fig.transFigure,
-                         color=colors["slate"], ls="--", lw=.65))
-    fig.text(.56, .431, "Ref.", fontsize=5.2)
+    fig.text(0.305, key_y, "2 (Soft)", fontsize=ANNOTATION_SIZE, va="center", ha="left", zorder=5)
+    fig.text(0.375, key_y, "8 (Hard)", fontsize=ANNOTATION_SIZE, va="center", ha="left", zorder=5)
+    fig.text(0.475, key_y, r"$F_n/F_{\max}$", fontsize=ANNOTATION_SIZE,
+             va="center", ha="left", zorder=5)
+    cax = fig.add_axes([0.575, 0.421, 0.10, 0.014], zorder=5)
+    bar = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), cax=cax,
+                      orientation="horizontal", extend="max" if max_util > 1 else "neither")
+    bar.ax.tick_params(length=0, labelbottom=False)
+    bar.outline.set_linewidth(0.4)
+    for x, tick in ((0.685, "0.0"), (0.735, "0.5"), (0.785, "1.0")):
+        fig.text(x, key_y, tick, fontsize=ANNOTATION_SIZE, va="center", ha="left", zorder=5)
+    fig.add_artist(Line2D([.855, .895], [key_y, key_y], transform=fig.transFigure,
+                         color=colors["slate"], ls="--", lw=.65, zorder=5))
+    fig.text(.905, key_y, "Ref.", fontsize=ANNOTATION_SIZE, va="center", ha="left", zorder=5)
 
 
 def response_trend(values):
@@ -434,21 +447,23 @@ def draw_response(fig, by_method, colors):
         ax.xaxis.labelpad = 1.2
     # Same row-major legend order as H1: MGA / MPPI / DIAL, then PF / ATACOM / ISSA.
     legend_handles = [handles[i] for i in (0, 3, 1, 4, 2, 5)]
-    legend = fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(.27, .071),
-               ncol=3, frameon=True, fancybox=False, framealpha=1,
+    legend_handles.append(Line2D([], [], marker="^", color=colors["slate"], lw=0,
+                                 markersize=4.2, label="Raw peak"))
+    legend = fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(.29, .071),
+               ncol=4, frameon=True, fancybox=False, framealpha=1,
                facecolor="white", edgecolor=colors["divider"],
-               fontsize=5.4, handlelength=1.5, labelspacing=.3,
+               fontsize=ANNOTATION_SIZE, handlelength=1.5, labelspacing=.3,
                handletextpad=.35, columnspacing=.7, borderaxespad=0, borderpad=.3)
     legend.get_frame().set_linewidth(.55)
-    force_ax.text(.98, .90, "limit", transform=force_ax.transAxes, ha="right", fontsize=4.9,
-                  color=colors["slate"])
-    force_ax.annotate("target", (.98, float(np.asarray(mga["signals"]["force_des"])[-1])),
+    force_ax.text(.98, .90, "Limit", transform=force_ax.transAxes, ha="right",
+                  fontsize=ANNOTATION_SIZE, color=colors["slate"])
+    force_ax.annotate("Target", (.98, float(np.asarray(mga["signals"]["force_des"])[-1])),
                       xycoords=force_ax.get_yaxis_transform(), xytext=(0, -2),
-                      textcoords="offset points", ha="right", va="top", fontsize=4.9,
+                      textcoords="offset points", ha="right", va="top", fontsize=ANNOTATION_SIZE,
                       color=colors["divider"])
     max_time, max_force = max(peak_records, key=lambda pair: pair[1])
-    force_ax.annotate("raw peak", (max_time, max_force), xytext=(5, -1),
-                      textcoords="offset points", fontsize=4.5, color=colors["slate"],
+    force_ax.annotate("Raw peak", (max_time, max_force), xytext=(5, -1),
+                      textcoords="offset points", fontsize=ANNOTATION_SIZE, color=colors["slate"],
                       ha="left" if max_time < time[-1] * .8 else "right", va="center")
 
 
@@ -464,7 +479,7 @@ def draw_lrc(fig, runs, colors):
     tolerance = float(runs[0]["signals"]["path_tolerance"]) * 1000
     ax.axhspan(0, tolerance, color=colors["goal_fill"], alpha=.6, zorder=0)
     ax.axhline(tolerance, color=colors["goal"], ls=":", lw=.7)
-    ax.text(.03, tolerance + .3, "5 mm tolerance", fontsize=5, color=colors["goal"])
+    ax.text(.03, tolerance + .3, "5 mm tolerance", fontsize=ANNOTATION_SIZE, color=colors["goal"])
     ax.set(xlim=(0, physical_time(runs[0])[-1]), ylim=(0, 12.5),
            xticks=[0, 1, 2], yticks=[0, 5, 10], xlabel="Time (s)", ylabel="3-D path error\n(mm)")
     ax.xaxis.labelpad = 1.2
@@ -473,12 +488,12 @@ def draw_lrc(fig, runs, colors):
     legend = fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(.795, .057), ncol=2,
                frameon=True, fancybox=False, framealpha=1,
                facecolor="white", edgecolor=colors["divider"],
-               fontsize=6.2, handlelength=1.5, handletextpad=.35,
+               fontsize=ANNOTATION_SIZE, handlelength=1.5, handletextpad=.35,
                columnspacing=.7, borderaxespad=0, borderpad=.35)
     legend.get_frame().set_linewidth(.55)
     coverage = [100 * r["metrics"]["trajectory_path_coverage"] for r in runs]
     ax.text(.04, .94, f"Coverage: {coverage[0]:.1f}% / {coverage[1]:.1f}%",
-            transform=ax.transAxes, va="top", fontsize=5.3)
+            transform=ax.transAxes, va="top", fontsize=ANNOTATION_SIZE)
 
 
 def baseline_selection(root, seeds):
@@ -517,12 +532,12 @@ def make_figure(runs, scene_run, hybrid_runs, lrc_runs, scene_dir, colors, seed)
     # Left 60% of a landscape 7 x 3.25 in composition. The restored (d)
     # shares the bottom row with (c), rather than adding another tall row.
     fig = plt.figure(figsize=(4.2, 3.25))
-    label(fig, .015, .959, "a", "Bumpy-surface scanning: shape and contact")
+    label(fig, .015, .959, "a", "Bumpy-Surface Scanning: Shape and Contact")
     draw_scene(fig, scene_dir, seed, scene_run)
-    label(fig, .015, .724, "b", "Hybrid map and paths (3-D contact coverage)")
+    label(fig, .015, .724, "b", "Hybrid Map and Paths (3-D Contact Coverage)")
     draw_strip(fig, runs, colors)
-    label(fig, .015, .377, "c", "Hybrid response (3-pt mean)")
-    label(fig, .54, .377, "d", "LRC on a curved surface")
+    label(fig, .015, .377, "c", "Hybrid Response (3-pt Mean)")
+    label(fig, .54, .377, "d", "LRC on a Curved Surface")
     draw_response(fig, dict(zip((method for method, *_ in RESPONSE_METHODS), hybrid_runs)), colors)
     draw_lrc(fig, lrc_runs, colors)
     return fig
