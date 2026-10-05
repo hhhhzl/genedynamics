@@ -1,6 +1,6 @@
 {
   "_help": "AUTO-GENERATED to match the MuJoCo render (render_deploy_humanoid). Walls gray, obstacles teal, start green, goal blue; sizes match the overlay.",
-  "site": "zone_d",
+  "site": "zone_a",
   "obstacles": [
     {
       "id": "wall_left",
@@ -35,27 +35,19 @@
       "color": "B8BFCC47"
     },
     {
-      "id": "ball_L1",
+      "id": "lateral_wall",
       "type": "obstacle",
-      "shape": "sphere",
+      "shape": "box",
       "pos": [
-        2.0,
-        0.25,
-        1.0
+        1.85,
+        0.0,
+        0.33
       ],
-      "radius": 0.06,
-      "color": "5494996B"
-    },
-    {
-      "id": "ball_R1",
-      "type": "obstacle",
-      "shape": "sphere",
-      "pos": [
-        2.5,
-        -0.25,
-        1.0
+      "half": [
+        0.15,
+        0.05,
+        0.33
       ],
-      "radius": 0.06,
       "color": "5494996B"
     },
     {

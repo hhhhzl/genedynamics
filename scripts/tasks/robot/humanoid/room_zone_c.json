@@ -1,0 +1,368 @@
+{
+  "_help": "AUTO-GENERATED to match the MuJoCo render (render_deploy_humanoid). Walls gray, obstacles teal, start green, goal blue; sizes match the overlay.",
+  "site": "zone_c",
+  "obstacles": [
+    {
+      "id": "wall_left",
+      "type": "wall",
+      "shape": "box",
+      "pos": [
+        2.0,
+        0.8125,
+        0.33
+      ],
+      "half": [
+        2.0,
+        0.0125,
+        0.33
+      ],
+      "color": "B8BFCC47"
+    },
+    {
+      "id": "wall_right",
+      "type": "wall",
+      "shape": "box",
+      "pos": [
+        2.0,
+        -0.8125,
+        0.33
+      ],
+      "half": [
+        2.0,
+        0.0125,
+        0.33
+      ],
+      "color": "B8BFCC47"
+    },
+    {
+      "id": "squeeze_L",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        2.0,
+        0.55,
+        0.33
+      ],
+      "half": [
+        0.5,
+        0.25,
+        0.33
+      ],
+      "color": "5494996B"
+    },
+    {
+      "id": "squeeze_R",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        2.0,
+        -0.55,
+        0.33
+      ],
+      "half": [
+        0.5,
+        0.25,
+        0.33
+      ],
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_L_entry_0",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        1.2548,
+        0.7512,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 191.25,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_L_entry_1",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        1.2921,
+        0.6611,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 213.75,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_L_entry_2",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        1.3611,
+        0.5921,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 236.25,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_L_entry_3",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        1.4512,
+        0.5548,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 258.75,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_R_entry_0",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        1.4512,
+        -0.5548,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 101.25,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_R_entry_1",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        1.3611,
+        -0.5921,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 123.75,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_R_entry_2",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        1.2921,
+        -0.6611,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 146.25,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_R_entry_3",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        1.2548,
+        -0.7512,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 168.75,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_L_exit_0",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        2.5488,
+        0.5548,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 281.25,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_L_exit_1",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        2.6389,
+        0.5921,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 303.75,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_L_exit_2",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        2.7079,
+        0.6611,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 326.25,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_L_exit_3",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        2.7452,
+        0.7512,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 348.75,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_R_exit_0",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        2.7452,
+        -0.7512,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 11.25,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_R_exit_1",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        2.7079,
+        -0.6611,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 33.75,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_R_exit_2",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        2.6389,
+        -0.5921,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 56.25,
+      "color": "5494996B"
+    },
+    {
+      "id": "qc_R_exit_3",
+      "type": "obstacle",
+      "shape": "box",
+      "pos": [
+        2.5488,
+        -0.5548,
+        0.33
+      ],
+      "half": [
+        0.25,
+        0.1219,
+        0.33
+      ],
+      "yaw_deg": 78.75,
+      "color": "5494996B"
+    },
+    {
+      "id": "start",
+      "type": "goal",
+      "shape": "cylinder",
+      "pos": [
+        0.5,
+        0.0,
+        0.005
+      ],
+      "radius": 0.1,
+      "height": 0.01,
+      "color": "2EC76BCC"
+    },
+    {
+      "id": "goal",
+      "type": "goal",
+      "shape": "cylinder",
+      "pos": [
+        3.3,
+        0.0,
+        0.005
+      ],
+      "radius": 0.1,
+      "height": 0.01,
+      "color": "2E94F5CC"
+    }
+  ]
+}
