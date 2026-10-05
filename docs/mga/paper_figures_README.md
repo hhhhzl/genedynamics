@@ -2,7 +2,7 @@
 
 审计日期：2026-09-19。本文整理已经讨论确定的展示方案，并以当前论文、配置和落盘结果限定结论。三页指实验部分的总版面预算，包含图、表、caption 和解释文字；不是每个环境各占一页。
 
-配套文档：[H1 P1–P4 报告缺口与修复顺序](humanoid_report_README.md)。完整工程历史见 [experiment_run_plan.md](experiment_run_plan.md)。当前论文实际位置是 [`latex/latex_mga`](../../latex/latex_mga)，不是仓库根目录下的 `latex_mga`。
+配套文档：[H1 四任务报告缺口与修复顺序](humanoid_report_README.md)。完整工程历史见 [experiment_run_plan.md](experiment_run_plan.md)。当前论文实际位置是 [`latex/latex_mga`](../../latex/latex_mga)，不是仓库根目录下的 `latex_mga`。
 
 ## 当前论文更新：Scanning seeds 0–9
 
@@ -33,7 +33,7 @@ Peg 主图 (f) 保留同一固定示例、全部未平滑真实 wrench 样本及
 | 第 2 页 | PegInsert 时间图约 40%；H1 机制图约 40%；解释约 20% | PegInsert 说明 prior 与 model-based 的互补和局限；H1 说明接触几何如何扩展到物体与全身运动 |
 | 第 3 页 | Scanning + insertion 实机综合图约 65%；平台、重复试验、解释约 35% | 用真实执行轨迹说明部署可行性，与仿真的受控机制比较形成互补 |
 
-最终是一个通用表、三个仿真图组、一个实机图组。H1 主图优先 P3，P4 是通过严格 walking 验证后的扩展面板。P1/P2 的完整图、全部曲线和消融放 Appendix。
+最终是一个通用表、三个仿真图组、一个实机图组。H1 主图优先 Unjamming，Walk-and-Push 是通过严格 walking 验证后的扩展面板。Force Regulation/Fixed-Stance Push 的完整图、全部曲线和消融放 Appendix。
 
 比例是排版起点。缩版时先减少重复 panel 和装饰图，保留坐标、单位、阈值与清晰的字，不把所有信息缩成不可读的整页拼图。
 
@@ -45,7 +45,7 @@ Peg 主图 (f) 保留同一固定示例、全部未平滑真实 wrench 样本及
 |---|---|---|---|
 | Scanning | 几何和接触响应变化时，manifold refinement 能否兼顾已执行路径覆盖、接触力和形变？ | C3，辅以 C2 | hybrid 对 stiffness/geometry 有开发证据；不把扫描优势全部归因于 RL prior |
 | PegInsert | policy proposal 经 model-based refinement/revalidation 后，是否比直接 RL 或去掉 prior 更容易安全完成插入？ | C1 + C2，C3 提供 refinement 机制 | 分 ID、Pose-OOD、Sensing-OOD 报告；prior 的好处是条件性的 |
-| H1 push | 同一框架能否处理解卡/偏航纠正，并进一步协调支撑、手部接触和物体运动？ | C3 向 whole-body 扩展，结合 C2；C1 待 full-MGA 验证 | P3 是主机制任务，P4 是扩展；当前开发结果尚不能证明 full-MGA 全身优势 |
+| H1 push | 同一框架能否处理解卡/偏航纠正，并进一步协调支撑、手部接触和物体运动？ | C3 向 whole-body 扩展，结合 C2；C1 待 full-MGA 验证 | Unjamming 是主机制任务，Walk-and-Push 是扩展；当前开发结果尚不能证明 full-MGA 全身优势 |
 | 实机 | model-based 执行组件能否在真实机器人上完成曲面接触扫描和入孔对齐？ | 部署可行性 | 已记录实机没有 RL prior；入管案例未激活 contact-force refinement，不能作为 full-MGA 或 jam recovery 的实机证明 |
 
 可靠性与 gate 用来解释“何时相信修正、何时拒绝候选”，不单凭 gate 接受率给出可靠性正确或绝对 OOD 安全的结论。需要对应的错误预测、执行风险和消融证据。
@@ -64,11 +64,11 @@ Task | Setting | Metric | RL | ISSA | ATACOM | MPPI | DIAL | PegasusFlow | w/o R
 
 - Surface Scan → Hard / Soft / Hybrid → SSR、nCVaR95。Hard/Soft 各覆盖 plane、cylinder、convex、bumpy、unseen，Hybrid 覆盖三种 stiffness map；每个 suite 等权，并说明分组规则。Appendix 逐一展开全部 13 suites。
 - PegInsert → ID / Pose-OOD / Sensing-OOD → SSR、nCVaR95，保留三组，不混成总均值。
-- H1 → P3 Unjamming / P4 Walk-and-push → SSR、nCVaR95；P4 只有通过新协议验证后才能填入。P1/P2 完整指标放 Appendix。
+- H1 → Unjamming / Walk-and-Push → SSR、nCVaR95；Walk-and-Push 只有通过新协议验证后才能填入。Force Regulation/Fixed-Stance Push 完整指标放 Appendix。
 
 指标解释：
 
-1. SSR 是“完成该任务且满足该任务规定的安全条件”的跨 seed 比例。PegInsert 要求插入成功、全规定评估窗口无 F/T 违规且无 jam；H1 还要检查非手接触、姿态/跌倒，P4 要检查真实步行。Surface 必须明确覆盖/接触/安全门槛，不直接借用 PegInsert 定义。
+1. SSR 是“完成该任务且满足该任务规定的安全条件”的跨 seed 比例。PegInsert 要求插入成功、全规定评估窗口无 F/T 违规且无 jam；H1 还要检查非手接触、姿态/跌倒，Walk-and-Push 要检查真实步行。Surface 必须明确覆盖/接触/安全门槛，不直接借用 PegInsert 定义。
 2. nCVaR95 是每条轨迹归一化接触载荷中最高 5% 样本的均值，再跨 seed 汇总。PegInsert 使用四项 wrench utilization 的最大值：横向力/20 N、轴向力/30 N、弯矩/1.5 N·m、扭矩/1.0 N·m。Surface 可由实际法向力除以对应 `f_max` 计算；H1 当前字段为 `physics_force_normalized_cvar95`，使用真实物理子步手力。
 3. 这列主要度量接触载荷尾部及其距限制的余量，不独立度量时间振荡。低 nCVaR95 也可能来自停滞或不接触，所以必须和 SSR 一起读。Surface 的形变、H1 的平衡不包含在这个“接触力尾部”标量里，要在任务图与完整指标中保留。
 4. 同一任务内方法必须用相同采样频率、评估窗口和终止规则。不同任务可以有不同物理采样率，但不能把三任务的 nCVaR95 再平均成一个“总体安全排名”。短暂超限可能仍对应 nCVaR95 < 1，是否违规由完整轨迹的阈值判断。
@@ -176,13 +176,13 @@ ID 与全部 baseline 保留原来的 canonical 记录；MGA 与 no-prior 的 Po
 clean-room 240-run 矩阵完成后生成。旧 `paper_result_manifest.json` 位于归档，
 只描述历史 composite 来源，不能作为新结果的 provenance。
 
-## 6. H1 主图：P3 讲几何，P4 讲真实全身扩展
+## 6. H1 主图：Unjamming 讲几何，Walk-and-Push 讲真实全身扩展
 
-Panel A：P3 俯视图，画箱体轮廓的时间序列、yaw、手部接触位置与允许的目标区。用 MGA 与 DIAL/PegasusFlow，以及 no-controllability-geometry/no-retraction 的失败轨迹解释 realized contact geometry。只有任务实际有障碍时才画墙，不能给 P1/P2/P4 加同一堵墙来制造视觉效果。
+Panel A：Unjamming 俯视图，画箱体轮廓的时间序列、yaw、手部接触位置与允许的目标区。用 MGA 与 DIAL/PegasusFlow，以及 no-controllability-geometry/no-retraction 的失败轨迹解释 realized contact geometry。只有任务实际有障碍时才画墙，不能给 Force Regulation/Fixed-Stance Push/Walk-and-Push 加同一堵墙来制造视觉效果。
 
-Panel B：P4 侧视 motion strip，标记箱体、pelvis 和左右脚落脚位置；紧凑地附上 foot-contact 时间条与手力/限制。需要同时看见身体前移、支撑前移和左右脚 lift–land，不能用箱体到线或滑脚冒充 walking。
+Panel B：Walk-and-Push 侧视 motion strip，标记箱体、pelvis 和左右脚落脚位置；紧凑地附上 foot-contact 时间条与手力/限制。需要同时看见身体前移、支撑前移和左右脚 lift–land，不能用箱体到线或滑脚冒充 walking。
 
-P1 的 15/30 N 阶跃响应、P2 的 10 cm nominal/mass–friction OOD 曲线，以及 P3/P4 的全部力、支撑、yaw 与消融放 Appendix。当前 P4 仍未通过，主图可以预留版面，不能填“理想成功数据”作为实测结果。具体缺口和修复验收见 [H1 README](humanoid_report_README.md)。
+Force Regulation 的 15/30 N 阶跃响应、Fixed-Stance Push 的 10 cm nominal/mass–friction OOD 曲线，以及 Unjamming/Walk-and-Push 的全部力、支撑、yaw 与消融放 Appendix。当前 Walk-and-Push 仍未通过，主图可以预留版面，不能填“理想成功数据”作为实测结果。具体缺口和修复验收见 [H1 README](humanoid_report_README.md)。
 
 ## 7. 实机一页：轨迹覆盖与真实执行
 
@@ -216,4 +216,4 @@ latex/latex_mga/figures/exp/                 # 论文采用的最终图
 
 共享指标、统计和绘图扩展放在 `genedynamics/experiments/plugins/metrics/`、`plugins/visualizations/`、`utils/` 的对应现有模块；`scripts/paper/mga/` 调用它们。现有 `plot_peg_insert_draft.py` 只是旧 guided 数据的视觉草稿，不能当作 final additive 全图生成器，也不能把已执行轨迹画成“候选 proposal 分布”。
 
-建议下一次正式出图顺序：先锁定数据来源和比较口径 → 核对必需 task signals → 输出通用表 → 画 Scanning/PegInsert → H1 验收后填 P3/P4 → 提取实机轨迹 → 汇总 GIF 索引 → 编译 PDF 检查三页布局。没有单候选轨迹日志时，不制作声称展示 RL 候选优于 Gaussian 的机制图。
+建议下一次正式出图顺序：先锁定数据来源和比较口径 → 核对必需 task signals → 输出通用表 → 画 Scanning/PegInsert → H1 验收后填 Unjamming/Walk-and-Push → 提取实机轨迹 → 汇总 GIF 索引 → 编译 PDF 检查三页布局。没有单候选轨迹日志时，不制作声称展示 RL 候选优于 Gaussian 的机制图。

@@ -35,15 +35,15 @@ from genedynamics.learning.train_rl_policy import (
 
 
 TASK = "humanoid_box_push"
-SCHEMAS = ("fixed", "walk", "atacom_p12", "atacom_p3", "atacom_p4")
+SCHEMAS = ("fixed", "walk", "atacom_force_push", "atacom_unjamming", "atacom_walk_and_push")
 CANONICAL_CONFIG = Path(__file__).resolve().parents[4] / "configs/humanoid/push_to_line/_base.yaml"
-_P12_SUITES = ("p1_force_15n", "p1_force_30n", "p2_push_nominal", "p2_push_ood")
+_FORCE_PUSH_SUITES = ("force_regulation_15n", "force_regulation_30n", "fixed_stance_push_nominal", "fixed_stance_push_ood")
 SCHEMA_SUITES = {
-    "fixed": (*_P12_SUITES, "p3_unjam"),
-    "walk": ("p4_walk_push",),
-    "atacom_p12": _P12_SUITES,
-    "atacom_p3": ("p3_unjam",),
-    "atacom_p4": ("p4_walk_push",),
+    "fixed": (*_FORCE_PUSH_SUITES, "unjamming"),
+    "walk": ("walk_and_push",),
+    "atacom_force_push": _FORCE_PUSH_SUITES,
+    "atacom_unjamming": ("unjamming",),
+    "atacom_walk_and_push": ("walk_and_push",),
 }
 _H1_TRANSITION_METRICS = (
     "h1_active_steps", "h1_success_padding_steps",
@@ -322,11 +322,11 @@ def _ppo_training_kwargs(*, schema, atacom, num_envs, cpu_low_memory,
             policy_hidden_layer_sizes=(16, 16),
         )
     elif schema == "walk":
-        # P4 exposes the full DIAL-derived 11-joint target chart.  Learning a
+        # Walk-and-Push exposes the full DIAL-derived 11-joint target chart.  Learning a
         # dynamic alternating gait from the 91D state needs temporal credit
         # and state normalization; the tiny fixed-stance CPU network is not a
-        # meaningful locomotion architecture.  This remains P4-only and does
-        # not alter P1--P3, Surface, or Peg checkpoints.
+        # meaningful locomotion architecture.  This remains Walk-and-Push-only and does
+        # not alter Force Regulation, Fixed-Stance Push, and Unjamming, Surface, or Peg checkpoints.
         kwargs.update(
             batch_size=16,
             num_minibatches=4,
@@ -338,7 +338,7 @@ def _ppo_training_kwargs(*, schema, atacom, num_envs, cpu_low_memory,
             init_noise_std=0.25,
         )
     if schema == "walk":
-        # The verified DIAL sequence is the policy centre, so P4 learns local
+        # The verified DIAL sequence is the policy centre, so Walk-and-Push learns local
         # loaded-contact corrections rather than rediscovering locomotion.
         # A smaller fixed step and bounded initial variance prevent the first
         # PPO update from erasing the BC initialization (observed as a large
@@ -367,11 +367,11 @@ def _domain_specs(schema: str, config=None):
 
 
 def _development_env_specs(schema, specs, raw_overrides):
-    """Apply explicit development P4 overrides without changing canonical YAML."""
+    """Apply explicit development Walk-and-Push overrides without changing canonical YAML."""
     if raw_overrides is None:
         return specs, {}
-    if schema not in {"walk", "atacom_p4"}:
-        raise ValueError("env-overrides are restricted to walk and atacom_p4 development training")
+    if schema not in {"walk", "atacom_walk_and_push"}:
+        raise ValueError("env-overrides are restricted to walk and atacom_walk_and_push development training")
     overrides = json.loads(raw_overrides)
     if not isinstance(overrides, dict):
         raise ValueError("env-overrides must be a JSON object")
@@ -386,7 +386,7 @@ def _development_env_specs(schema, specs, raw_overrides):
                 or spec.get("use_base", False)
                 or spec.get("walk_success_mode", "legacy") != "locomotion"
                 or spec.get("walk_leg_control", "legacy") != "joint_target"):
-            raise ValueError("P4 development overrides require H1 push_walk, locomotion and joint_target")
+            raise ValueError("Walk-and-Push development overrides require H1 push_walk, locomotion and joint_target")
     return resolved, overrides
 
 
@@ -434,14 +434,14 @@ def _environment_policy_action_transform(domains):
 
 
 def _walk_curriculum_groups(schema: str, specs, enabled=False):
-    """Optional P4-only low-load-to-task curriculum with one action contract.
+    """Optional Walk-and-Push-only low-load-to-task curriculum with one action contract.
 
     DIAL can optimize a fresh joint sequence online, whereas PPO must first
     discover a supported gait through long-horizon exploration.  The warm-up
     stage keeps the same H1 scene, observation layout, action chart and goal;
     it only removes commanded contact load and task penalties that are
     irrelevant before the feet can exchange support.  The final stage is the
-    exact requested P4 domain and is the only interface exported.
+    exact requested Walk-and-Push domain and is the only interface exported.
     """
     if not enabled:
         return [specs[:-1], specs[-1:]] if schema == "fixed" else [specs]
@@ -462,7 +462,7 @@ def _walk_curriculum_groups(schema: str, specs, enabled=False):
         "fixed_force_target": True,
         # The training-only unloaded stage lowers the physical force ceiling
         # to 1 N.  Keep the task-owned retract inside that same contract;
-        # otherwise a valid final P4 emergency magnitude makes construction of
+        # otherwise a valid final Walk-and-Push emergency magnitude makes construction of
         # the deliberately low-load warm-up environment fail validation.
         "emergency_retract_force": 0.0,
         "s_ref_diag": 0.0,
@@ -837,9 +837,9 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--out")
     parser.add_argument("--env-overrides", default=None,
-                        help="JSON HumanoidBoxPushConfig overrides for development walk/atacom_p4 only")
+                        help="JSON HumanoidBoxPushConfig overrides for development walk/atacom_walk_and_push only")
     parser.add_argument("--walk-curriculum", action="store_true",
-                        help="Train walk PPO through a low-load gait stage before exact P4")
+                        help="Train walk PPO through a low-load gait stage before exact Walk-and-Push")
     parser.add_argument(
         "--expert-trajectory", action="append", default=None,
         help=(
@@ -912,7 +912,7 @@ def main() -> int:
     if args.env_overrides is not None:
         development_root = CANONICAL_CONFIG.parents[3] / "results" / "_development"
         if not output.resolve().is_relative_to(development_root.resolve()):
-            raise ValueError("P4 env-overrides require --out under results/_development")
+            raise ValueError("Walk-and-Push env-overrides require --out under results/_development")
     stage_episode_lengths = _stage_episode_lengths(
         args.schema, resolved_suites, args.episode_length, stage_count=len(groups),
     )
@@ -1011,8 +1011,8 @@ def main() -> int:
         })
 
     kwargs["progress_fn"] = progress
-    # P3's nearby wall changes MJX's static contact-candidate pytree.  It
-    # cannot be mixed with open P1/P2 through lax.switch, even though policy
+    # Unjamming's nearby wall changes MJX's static contact-candidate pytree.  It
+    # cannot be mixed with open Force Regulation/Fixed-Stance Push through lax.switch, even though policy
     # observation/action shapes match.  Train one shared fixed policy through
     # an explicit two-stage curriculum.  Brax restores normalizer/policy/value
     # parameters; its optimizer and env-step counter restart in each stage.
@@ -1034,7 +1034,7 @@ def main() -> int:
                 None if atacom else _environment_policy_action_transform(domains)
             )
             if stage and stage_interface != policy_interface:
-                # The P4 curriculum changes reward/loading only; the final
+                # The Walk-and-Push curriculum changes reward/loading only; the final
                 # environment owns the exported task interface.  Structural
                 # action/observation compatibility is checked explicitly.
                 if not args.walk_curriculum:
@@ -1046,7 +1046,7 @@ def main() -> int:
             if stage and stage_policy_action_transform != policy_action_transform:
                 raise ValueError("Cannot restore PPO parameters across different policy action transforms")
             if args.env_overrides is not None and stage_interface is None:
-                raise ValueError("New P4 development environment must expose its policy_interface")
+                raise ValueError("New Walk-and-Push development environment must expose its policy_interface")
             policy_interface = stage_interface
             policy_action_transform = stage_policy_action_transform
             atacom_transform = stage_transform
@@ -1120,8 +1120,8 @@ def main() -> int:
                 restore = checkpoints[-1]
                 if args.cpu_low_memory:
                     # The restorable parameter checkpoint and tiny params
-                    # arrays remain live; completed P1/P2 physics executables
-                    # need not coexist with P3's different contact graph.
+                    # arrays remain live; completed Force Regulation/Fixed-Stance Push physics executables
+                    # need not coexist with Unjamming's different contact graph.
                     env = None
                     domains = None
                     jax.clear_caches()

@@ -166,8 +166,8 @@ def validate_scenes(groups, scene_dir, seed, required):
     metadata_path = scene_dir / "metadata.json"
     metadata = json.loads(metadata_path.read_text()) if metadata_path.exists() else {}
     verified = {}
-    for key, suite in (("force", "p1_force_15n"), ("push", "p2_push_nominal"),
-                       ("unjam", "p3_unjam")):
+    for key, suite in (("force", "force_regulation_15n"), ("push", "fixed_stance_push_nominal"),
+                       ("unjam", "unjamming")):
         path = scene_dir / SCENES[key]
         if not path.exists():
             if required:
@@ -335,10 +335,11 @@ def scene_direction_arrows(axes, scene_dir, scene_metadata, colors):
                                     path_effects.Normal()])
 
         first, final = paper["box_poses"][0], paper["box_poses"][-1]
-        p0, p1 = np.asarray(first["position"]), np.asarray(final["position"])
+        initial_position = np.asarray(first["position"])
+        final_position = np.asarray(final["position"])
         r0, r1 = np.asarray(first["rotation"]), np.asarray(final["rotation"])
         half = np.asarray(paper["box_half_size"])
-        displacement = p1 - p0
+        displacement = final_position - initial_position
         yaw0, yaw1 = np.arctan2(r0[1, 0], r0[0, 0]), np.arctan2(r1[1, 0], r1[0, 0])
         delta_yaw = float(np.arctan2(np.sin(yaw1 - yaw0), np.cos(yaw1 - yaw0)))
         item = {"payload": source_path(payload_path), "payload_sha256": record["web_payload_sha256"],
@@ -352,7 +353,7 @@ def scene_direction_arrows(axes, scene_dir, scene_metadata, colors):
             # uses outward normal R[-1,0,0], and hand_contact_wrench applies
             # -desired_force*normal. Thus the commanded push direction is R[:,0].
             direction = r1[:, 0]
-            anchor = p1 + r1 @ np.array([-half[0], -0.20, 0.42])
+            anchor = final_position + r1 @ np.array([-half[0], -0.20, 0.42])
             start = project(anchor)
             screen_direction = project(anchor + direction) - start
             screen_direction /= np.linalg.norm(screen_direction)
@@ -366,7 +367,7 @@ def scene_direction_arrows(axes, scene_dir, scene_metadata, colors):
         else:
             if np.linalg.norm(displacement[:2]) <= 1e-8:
                 raise ValueError(f"No nonzero actual box translation for a motion arrow: {key}")
-            anchor = p1 + ([0, -half[1], 0.10] if key == "push"
+            anchor = final_position + ([0, -half[1], 0.10] if key == "push"
                            else [0, -0.20, half[2] + 0.015])
             center = project(anchor)
             screen_direction = project(anchor + displacement) - center
@@ -378,7 +379,7 @@ def scene_direction_arrows(axes, scene_dir, scene_metadata, colors):
                         world_direction=(displacement / np.linalg.norm(displacement)).tolist(),
                         display_length_inches=0.42)
             if key == "unjam" and abs(delta_yaw) > 1e-8:
-                center_world = p1 + [0, 0.10, half[2] + 0.02]
+                center_world = final_position + [0, 0.10, half[2] + 0.02]
                 angles = np.deg2rad(np.linspace(140, 140 + np.sign(delta_yaw) * 100, 45))
                 arc_world = center_world + np.column_stack((0.30 * np.cos(angles),
                                                            0.30 * np.sin(angles), np.zeros_like(angles)))
@@ -463,7 +464,7 @@ def create_figure(groups, scene_dir, seed, colors, require_scenes, scene_metadat
     force_end = 0.0
     plotted_peaks = {}
     for method, label, color, line_style in FORCE_METHODS:
-        run = next(r for r in groups[(method, "p1_force_15n")] if r.seed == seed)
+        run = next(r for r in groups[(method, "force_regulation_15n")] if r.seed == seed)
         time, force = force_trace(run)
         if not len(force) or not np.all(np.isfinite(force)):
             raise ValueError(f"Missing or nonfinite executed force samples: {run.trajectory_path}")
@@ -483,12 +484,12 @@ def create_figure(groups, scene_dir, seed, colors, require_scenes, scene_metadat
                       ms=2.7 if method == "main/mga" else 2.0,
                       mec="white", mew=0.35, zorder=6)
         force_handles.append(line)
-    reference_run = next(r for r in groups[("main/mga", "p1_force_15n")] if r.seed == seed)
+    reference_run = next(r for r in groups[("main/mga", "force_regulation_15n")] if r.seed == seed)
     reference_time, _ = force_trace(reference_run)
     n_substeps = np.asarray(reference_run.signals["physics_hand_force"]).shape[1]
     reference = np.repeat(np.asarray(reference_run.signals["task_force_reference"]), n_substeps)
     for method, *_ in FORCE_METHODS:
-        other = next(r for r in groups[(method, "p1_force_15n")] if r.seed == seed)
+        other = next(r for r in groups[(method, "force_regulation_15n")] if r.seed == seed)
         other_time, _ = force_trace(other)
         other_ref = np.repeat(np.asarray(other.signals["task_force_reference"]),
                               np.asarray(other.signals["physics_hand_force"]).shape[1])
@@ -517,7 +518,7 @@ def create_figure(groups, scene_dir, seed, colors, require_scenes, scene_metadat
                       fontsize=5.8, color=colors[color],
                       bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.9, "pad": 0.3})
 
-    example = groups[("main/mga", "p3_unjam")][0]
+    example = groups[("main/mga", "unjamming")][0]
     params = example.result["config_snapshot"]["env_params"]
     distance_tol = float(example.signals["goal_tolerance"]) * 1000
     yaw_tol = np.rad2deg(float(params["unjam_yaw_eps"]))
@@ -527,7 +528,7 @@ def create_figure(groups, scene_dir, seed, colors, require_scenes, scene_metadat
                   color=colors["goal_border"], lw=0.65)
     max_yaw = 0.0
     for method, _, color, line_style in PHASE_METHODS:
-        for run in groups[(method, "p3_unjam")]:
+        for run in groups[(method, "unjamming")]:
             remaining, yaw = phase_trace(run)
             max_yaw = max(max_yaw, float(yaw.max()))
             bold = run.seed == seed
@@ -671,7 +672,7 @@ def plot_humanoid_safe_completion(root, output, seeds):
                     ROOT / "genedynamics/experiments/plugins/metrics/extractors.py")
     report = {
         "figure": "Safe completion during unjamming",
-        "suite": "p3_unjam", "seeds": seeds, "trials_per_method": len(seeds),
+        "suite": "unjamming", "seeds": seeds, "trials_per_method": len(seeds),
         "curve_definition": "F_m(t) = sum_i 1[verified safe completion in trial i at time <= t] / 10",
         "time_definition": "Physical execution time: (zero-based post-transition success row + 1) * recorded control dt",
         "failure_rule": "Aborted, unsafe and incomplete attempts never contribute a completion event and remain in the fixed denominator at every deadline",
@@ -692,7 +693,7 @@ def plot_humanoid_safe_completion(root, output, seeds):
     handles = []
     common_dt = common_horizon = None
     for (method, label_text, key), ls in zip(APPENDIX_CONTINUATION_METHODS, ("-", "--", "-.")):
-        rows = [safe_completion_record(load_run(root, method, "p3_unjam", seed)) for seed in seeds]
+        rows = [safe_completion_record(load_run(root, method, "unjamming", seed)) for seed in seeds]
         for row in rows:
             if common_dt is None:
                 common_dt, common_horizon = row["dt_s"], row["horizon_s"]
@@ -748,7 +749,7 @@ def plot_humanoid_appendix(root, output, seeds):
     style(colors)
     plt.rcParams.update({"font.size": 8, "axes.labelsize": 8, "axes.titlesize": 8.5,
                          "xtick.labelsize": 7, "ytick.labelsize": 7})
-    groups = {method: [load_run(root, method, "p1_force_15n", seed) for seed in seeds]
+    groups = {method: [load_run(root, method, "force_regulation_15n", seed) for seed in seeds]
               for method, *_ in FORCE_METHODS}
     fields = ("physics_force_peak", "physics_steady_force_tracking_mae",
               "physics_force_normalized_cvar95", "physics_force_rise_time",
@@ -757,7 +758,7 @@ def plot_humanoid_appendix(root, output, seeds):
         {"path": source_path(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
         for path in (ROOT / "genedynamics/evaluation/metrics.py",
                      ROOT / "genedynamics/experiments/plugins/metrics/extractors.py")]
-    force_data = {"seeds": seeds, "suite": "p1_force_15n", "methods": {}, "sources": [],
+    force_data = {"seeds": seeds, "suite": "force_regulation_15n", "methods": {}, "sources": [],
                   "palette_source": source_path(color_path),
                   "metric_sources": metric_sources,
                   "semantics": [
@@ -811,7 +812,7 @@ def plot_humanoid_appendix(root, output, seeds):
     fig.text(.105, .026, "Lower-left is better. Deterministic ISSA/ATACOM seeds coincide.", fontsize=7)
     save_humanoid_appendix(fig, output, "humanoid_force_tradeoff", force_data)
 
-    continuation = {"seeds": seeds, "suite": "p3_unjam", "methods": {}, "p2_nominal": {},
+    continuation = {"seeds": seeds, "suite": "unjamming", "methods": {}, "fixed_stance_push_nominal": {},
                     "sources": [], "palette_source": source_path(color_path),
                     "metric_sources": metric_sources,
                     "semantics": [
@@ -824,7 +825,7 @@ def plot_humanoid_appendix(root, output, seeds):
     fig, axes = plt.subplots(1, 3, figsize=(7.2, 3.5), sharex=True, sharey=True)
     fig.subplots_adjust(left=.09, right=.985, top=.80, bottom=.21, wspace=.18)
     for index, (ax, (method, label_text, key)) in enumerate(zip(axes, APPENDIX_CONTINUATION_METHODS)):
-        runs = [load_run(root, method, "p3_unjam", seed) for seed in seeds]
+        runs = [load_run(root, method, "unjamming", seed) for seed in seeds]
         rows = []
         for row_index, run in enumerate(runs):
             times, _ = force_trace(run)
@@ -880,8 +881,8 @@ def plot_humanoid_appendix(root, output, seeds):
         ax.set_yticks(range(len(seeds))); ax.set_yticklabels(seeds)
         ax.grid(axis="x", alpha=.15, lw=.5)
         ax.spines["left"].set_visible(False); ax.tick_params(axis="y", length=0)
-        push = [load_run(root, method, "p2_push_nominal", seed) for seed in seeds]
-        continuation["p2_nominal"][method] = {
+        push = [load_run(root, method, "fixed_stance_push_nominal", seed) for seed in seeds]
+        continuation["fixed_stance_push_nominal"][method] = {
             "safe_successes": sum(int(r.metrics["safe_success"]) for r in push), "n": len(push),
             "normalized_force_tail": stats([r.metrics["physics_force_normalized_cvar95"] for r in push])}
         continuation["sources"].extend(appendix_run_source(r) for r in push)
@@ -898,7 +899,7 @@ def plot_humanoid_appendix(root, output, seeds):
 def plot_humanoid_execution_geometry(root, output, scene_dir, seed):
     """Native context plus recorded pose/load paths; no candidate replay."""
     output.mkdir(parents=True, exist_ok=True)
-    runs = [load_run(root, method, "p3_unjam", seed)
+    runs = [load_run(root, method, "unjamming", seed)
             for method, *_ in APPENDIX_CONTINUATION_METHODS]
     metadata_path = scene_dir / "metadata.json"
     native = json.loads(metadata_path.read_text())["humanoid_unjamming"]
@@ -937,7 +938,7 @@ def plot_humanoid_execution_geometry(root, output, scene_dir, seed):
     force_ax.axhline(float(runs[0].signals["f_max"]), color=colors["slate"], ls=(0, (3, 3)), lw=.6)
     force_ax.text(.03, float(runs[0].signals["f_max"]) + 1.3, "60 N limit", fontsize=6.7,
                    transform=force_ax.get_yaxis_transform(), va="bottom")
-    report = {"suite": "p3_unjam", "illustrative_seed": seed,
+    report = {"suite": "unjamming", "illustrative_seed": seed,
               "selection": "Same predeclared common seed as main figures; no method-specific selection",
               "context": {"metadata": source_path(metadata_path), "entry": "humanoid_unjamming",
                           "image": source_path(image_path), "image_sha256": frame["image_sha256"],
@@ -1144,9 +1145,9 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
     scene_dir = args.scene_dir or args.output_dir / "scenes"
     colors, colors_path = palette()
-    requests = {(method, "p1_force_15n") for method, *_ in FORCE_METHODS}
-    requests.update((method, "p3_unjam") for method, *_ in PHASE_METHODS)
-    requests.add(("main/mga", "p2_push_nominal"))
+    requests = {(method, "force_regulation_15n") for method, *_ in FORCE_METHODS}
+    requests.update((method, "unjamming") for method, *_ in PHASE_METHODS)
+    requests.add(("main/mga", "fixed_stance_push_nominal"))
     groups = {(method, suite): [load_run(args.data_root, method, suite, seed)
                                 for seed in args.seeds]
               for method, suite in sorted(requests)}
@@ -1200,16 +1201,16 @@ def main():
         "force_peak_N": {}, "fixed_stance": {}, "unjamming": {}, "sources": [],
     }
     for method, *_ in FORCE_METHODS:
-        runs = groups[(method, "p1_force_15n")]
+        runs = groups[(method, "force_regulation_15n")]
         summary["force_peak_N"][method] = stats([r.metrics["physics_force_peak"] for r in runs])
-    push_runs = groups[("main/mga", "p2_push_nominal")]
+    push_runs = groups[("main/mga", "fixed_stance_push_nominal")]
     summary["fixed_stance"] = {
         "successes": sum(float(r.metrics["task_success"]) for r in push_runs),
         "n": len(push_runs),
         "normalized_force_tail": stats([r.metrics["physics_force_normalized_cvar95"] for r in push_runs]),
     }
     for method, *_ in PHASE_METHODS:
-        runs = groups[(method, "p3_unjam")]
+        runs = groups[(method, "unjamming")]
         summary["unjamming"][method] = {
             "task_successes": sum(float(r.metrics["task_success"]) for r in runs),
             "n": len(runs), "endpoints": [

@@ -458,7 +458,7 @@ def test_h1_checkpoint_loaders_reject_old_matching_dimension_policy(monkeypatch,
 
 
 @pytest.mark.parametrize("consumer", ["atacom", "atacom_prior"])
-def test_h1_p3_loaders_reject_old_one_dimensional_tangent_policy(monkeypatch, consumer):
+def test_h1_unjamming_loaders_reject_old_one_dimensional_tangent_policy(monkeypatch, consumer):
     from genedynamics.envs.domains.humanoid.box_push_brax import HumanoidBoxPushEnv
     from genedynamics.experiments.plugins.methods.contact_receding import make_controller, make_mga
     from genedynamics.learning import train_rl_policy as learning
@@ -468,7 +468,7 @@ def test_h1_p3_loaders_reject_old_one_dimensional_tangent_policy(monkeypatch, co
                           manifold_constraint_size=HumanoidBoxPushEnv.manifold_constraint_size.fget(task),
                           inequality_constraint_size=3)
     checkpoint = {"action_size": 1, "observation_size": 76,
-                  "protocol": "humanoid_box_push_atacom_p3_ppo_v1"}
+                  "protocol": "humanoid_box_push_atacom_unjamming_ppo_v1"}
     monkeypatch.setattr(learning, "load_policy", lambda path: (None, checkpoint))
     with pytest.raises(ValueError, match="action mismatch:.*expected 2"):
         if consumer == "atacom_prior":
@@ -477,7 +477,7 @@ def test_h1_p3_loaders_reject_old_one_dimensional_tangent_policy(monkeypatch, co
             make_controller("humanoid_box_push", "atacom", model_env=env, policy_ckpt="old.pkl")
 
 
-def test_h1_p3_training_exports_new_tangent_width_without_changing_raw_policy(monkeypatch):
+def test_h1_unjamming_training_exports_new_tangent_width_without_changing_raw_policy(monkeypatch):
     from brax.training.agents.ppo import train as ppo_train
     from genedynamics.envs.domains.humanoid.box_push_brax import HumanoidBoxPushEnv
     from genedynamics.learning.train_rl_policy import train_rl_policy
@@ -502,7 +502,7 @@ def test_h1_p3_training_exports_new_tangent_width_without_changing_raw_policy(mo
     assert calls == [2, 12]
 
 
-def test_h1_training_p4_overrides_are_explicit_scoped_and_do_not_mutate_canonical():
+def test_h1_training_walk_and_push_overrides_are_explicit_scoped_and_do_not_mutate_canonical():
     from scripts.tasks.robot.humanoid.train_box_push_rl import (
         _development_env_specs, _stage_episode_lengths, _walk_curriculum_groups,
     )
@@ -510,7 +510,7 @@ def test_h1_training_p4_overrides_are_explicit_scoped_and_do_not_mutate_canonica
     specs = [{"level": "push_walk", "push_dist": 0.30}]
     unchanged, overrides = _development_env_specs("walk", specs, None)
     assert unchanged == specs and overrides == {}
-    for schema in ("walk", "atacom_p4"):
+    for schema in ("walk", "atacom_walk_and_push"):
         resolved, overrides = _development_env_specs(schema, specs,
             '{"walk_leg_control":"joint_target","walk_success_mode":"locomotion","gait_cadence":0.7}')
         assert resolved[0]["walk_leg_control"] == "joint_target"
@@ -535,9 +535,9 @@ def test_h1_training_p4_overrides_are_explicit_scoped_and_do_not_mutate_canonica
     assert groups[0][0]["w_contact"] == groups[0][0]["w_nonhand"] == 0.0
     assert groups[1][0]["f_target"] == 30.0
     with pytest.raises(ValueError, match="single-domain walk"):
-        _walk_curriculum_groups("atacom_p4", [{"level": "push_walk"}], True)
+        _walk_curriculum_groups("atacom_walk_and_push", [{"level": "push_walk"}], True)
     for schema, raw in (
-        ("fixed", '{}'), ("atacom_p3", '{}'), ("walk", '[]'),
+        ("fixed", '{}'), ("atacom_unjamming", '{}'), ("walk", '[]'),
         ("walk", '{"unknown_field":1}'), ("walk", '{}'),
         ("walk", '{"walk_leg_control":"joint_target","walk_success_mode":"legacy"}'),
         ("walk", '{"walk_leg_control":"joint_target","walk_success_mode":"locomotion","level":"unjam"}'),
@@ -879,8 +879,8 @@ def test_h1_training_exports_actual_underlying_interface_and_atacom_options():
     config = ExperimentConfig(name="atacom", env_name="humanoid_box_push", method="atacom",
                               output_dir="results/_development/test",
                               method_params={"Kc": 2.0, "action_limit": 0.8},
-                              suites=[{"name": "p4_walk_push", "level": "push_walk"}])
-    assert _atacom_training_options("atacom_p4", config) == {"Kc": 2.0, "action_limit": 0.8}
+                              suites=[{"name": "walk_and_push", "level": "push_walk"}])
+    assert _atacom_training_options("atacom_walk_and_push", config) == {"Kc": 2.0, "action_limit": 0.8}
     legacy = SimpleNamespace(_bcfg=Config(), _config=Config(), policy_interface=None)
     with pytest.raises(ValueError, match="share policy interface"):
         _environment_training_contract([domain, legacy])

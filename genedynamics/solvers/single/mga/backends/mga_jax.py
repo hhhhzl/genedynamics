@@ -1153,7 +1153,7 @@ class MgaBackendJax:
         return dense, rewards
 
     def _node2u_batch(self, nodes):
-        """Expand nodes while preserving P4's certified endpoint bit-exactly."""
+        """Expand nodes while preserving Walk-and-Push's certified endpoint bit-exactly."""
         dense = self.spline.node2u_batch(nodes)
         if self.receding_shift_mode == "certified_terminal_hold":
             dense = dense.at[:, 0].set(nodes[:, 0])
@@ -2278,7 +2278,7 @@ class MgaBackendJax:
             return selected, {**info, **diagnostics}
         # This proposal is a task-owned hybrid-mode exit, not a sampled
         # Gaussian/RL candidate.  The generic candidate projection can encode
-        # a deliberately tiny policy trust tube (P4 uses 0.05), which would
+        # a deliberately tiny policy trust tube (Walk-and-Push uses 0.05), which would
         # silently erase the task's bounded capture action before validation.
         # Keep only the solver-wide action bound here.  The unchanged complete
         # NORMAL model horizon below remains the authority that can accept it.
@@ -2469,7 +2469,7 @@ class MgaBackendJax:
                 # A committed UNLOAD incumbent is also a task-owned candidate
                 # with an explicit execution identity.  Projecting it through
                 # the NORMAL proposal tube before revalidation changes the
-                # very fallback whose safety is being checked (P4 used to
+                # very fallback whose safety is being checked (Walk-and-Push used to
                 # erase its knee-clearance residual here).  Preserve it only
                 # while the measured state says the committed mode is UNLOAD;
                 # ordinary NORMAL incumbents retain the historical projection.
@@ -2491,7 +2491,7 @@ class MgaBackendJax:
         if emergency is not None:
             # Emergency identity is explicit in the candidate source and its
             # eventual execution_mode.  A task-owned recovery must retain its
-            # independently certified action (for P4, the knee bank) instead
+            # independently certified action (for Walk-and-Push, the knee bank) instead
             # of passing through a NORMAL policy/Gaussian proposal tube.
             emergency = jnp.clip(
                 emergency, -self.action_limit, self.action_limit

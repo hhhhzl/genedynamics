@@ -532,7 +532,7 @@ def _humanoid_goal_signals(box_x, box_yaw, task_success, goal_x, cfg):
     """Keep physical box error separate from the task's completion contract.
 
     Retain the legacy geometric residual separately from true task completion.
-    Locomotion P4 must satisfy the environment's walking and dwell conditions;
+    Locomotion Walk-and-Push must satisfy the environment's walking and dwell conditions;
     reaching the line with the box alone is not a completed walking task.
     """
     residual = np.abs(np.asarray(box_x).reshape(-1) - goal_x)

@@ -17,12 +17,12 @@ method_params:
   # to drag every Gaussian proposal under OOD dynamics.
   prior_mode: additive
   policy_ckpt_by_suite:
-    p1_force_15n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
-    p1_force_30n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
-    p2_push_nominal: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
-    p2_push_ood: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
-    p3_unjam: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
-    p4_walk_push: results/humanoid/box_push/_policies/walk_ppo_seed0.pkl
+    force_regulation_15n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    force_regulation_30n: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    fixed_stance_push_nominal: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    fixed_stance_push_ood: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    unjamming: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+    walk_and_push: results/humanoid/box_push/_policies/walk_ppo_seed0.pkl
   reliability_ckpt: results/humanoid/box_push/_policies/reliability_q95.json
   prior_stochastic_samples: 8
   prior_atacom_samples: 0

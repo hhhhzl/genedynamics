@@ -102,9 +102,9 @@ H1_RELIABILITY_SCHEMA = {
     "feature_time": "pre_transition_state_and_complete_dense_candidate",
     "horizon": "Hsample_plus_one_post_transitions",
     "risk_definitions": [
-        "fixed_tasks:max_horizon,p4_receding:executed_interval_plus_shifted_backup(initial_and_post_substeps)(hand_force_gt_fmax)",
-        "fixed_tasks:max_horizon,p4_receding:executed_interval_plus_shifted_backup(initial_and_post_substeps)(nonhand_force_gt_0.5N_or_torso_up_lt_0_or_height_lt_0.6_reset_height)",
-        "fixed_tasks:horizon_tail_balance,p4_receding:max(executed_interval_plus_shifted_backup_balance,normal_horizon_terminal_recovery_core);emergency_uses_physical_balance_only",
+        "fixed_tasks:max_horizon,walk_and_push_receding:executed_interval_plus_shifted_backup(initial_and_post_substeps)(hand_force_gt_fmax)",
+        "fixed_tasks:max_horizon,walk_and_push_receding:executed_interval_plus_shifted_backup(initial_and_post_substeps)(nonhand_force_gt_0.5N_or_torso_up_lt_0_or_height_lt_0.6_reset_height)",
+        "fixed_tasks:horizon_tail_balance,walk_and_push_receding:max(executed_interval_plus_shifted_backup_balance,normal_horizon_terminal_recovery_core);emergency_uses_physical_balance_only",
         "mean_endpoint_abs_hand_force_minus_time_ramped_tapered_benchmark_over_max_ftarget_1",
     ],
     "physics_sampling": "post_each_fast_force_mjx_substep_no_endpoint_replication",
@@ -172,10 +172,10 @@ class HumanoidBoxPushConfig(BaseEnvConfig):
     f_min: float = 0.0
     f_max: float = 60.0
     f_target: float = 30.0
-    # Protocol switch for the P1 force-servo gate.  The experiment owns the
-    # requested force in P1, so a planner may not lower it to improve safety.
+    # Protocol switch for the Force Regulation force-servo gate.  The experiment owns the
+    # requested force in Force Regulation, so a planner may not lower it to improve safety.
     fixed_force_target: bool = False
-    # P1 is a force-regulation experiment, not a box-to-line task.  Its
+    # Force Regulation is a force-regulation experiment, not a box-to-line task.  Its
     # episode-level pass is evaluated from the recorded 4 ms force tape: the
     # force must rise, remain inside this terminal band for the requested
     # hold, and satisfy the shared physical safety margins throughout.
@@ -183,8 +183,8 @@ class HumanoidBoxPushConfig(BaseEnvConfig):
     force_step_band_fraction: float = 0.10
     force_step_band_absolute: float = 1.0
     force_step_hold_time: float = 0.20
-    # P1 also owns the rear-face center contact location.  This isolates the
-    # stiffness-chart geometry; P2+ unlock contact-point selection.
+    # Force Regulation also owns the rear-face center contact location.  This isolates the
+    # stiffness-chart geometry; Fixed-Stance Push+ unlock contact-point selection.
     fixed_contact_target: bool = False
     face_logit_temperature: float = 0.10  # bounded logits express effectively discrete face charts
     unjam_face_logit_bias: tuple = (1.0, -1.0, -1.0)
@@ -196,33 +196,33 @@ class HumanoidBoxPushConfig(BaseEnvConfig):
     kp_force: float = 0.3               # fast proportional feedback on measured total hand force
     ki_force: float = 1.0               # per-physics-substep force-integral gain
     force_int_max: float = 30.0         # anti-windup clamp (N)
-    # Total two-hand outward wrench used only after the first zero-wrench P4
+    # Total two-hand outward wrench used only after the first zero-wrench Walk-and-Push
     # UNLOAD interval.  Delaying it by one control period avoids an impulsive
     # switch at compressed contact while preventing the walking body from
     # carrying passive hands back into the box on the recursive successor.
     emergency_retract_force: float = 20.0
-    # P4 scores this small robot-owned knee-residual bank with the same
+    # Walk-and-Push scores this small robot-owned knee-residual bank with the same
     # two-interval physical certificate used for deployment.  A single fixed
     # flexion direction is not valid across gait phases: it can clear an ankle
     # at one state but drive the opposite knee into the crate at another.
     emergency_knee_residual_levels: tuple = (1.0, 0.0, -0.5, -1.0)
     # Number of real 20 ms intervals covered by the task-owned emergency and
     # receding-incumbent viability certificate. Fixed-stance tasks retain the
-    # historical two-step default; P4 opts into three in its suite contract.
+    # historical two-step default; Walk-and-Push opts into three in its suite contract.
     emergency_backup_steps: int = 2
-    # Minimum number of actually committed UNLOAD intervals before a P4
+    # Minimum number of actually committed UNLOAD intervals before a Walk-and-Push
     # NORMAL recovery may be considered.  One preserves the historical
     # immediate-exit behavior; larger values provide a short contact-release
     # dwell whose every interval is still replanned and revalidated.
     emergency_min_dwell_steps: int = 1
-    # Optional P4 recovery clock. On entry to UNLOAD, search this many previous
+    # Optional Walk-and-Push recovery clock. On entry to UNLOAD, search this many previous
     # external-DIAL frames for the closest measured planner-joint phase and
     # hold the selected phase while UNLOAD is committed. The benchmark
     # step/force/success clocks are never changed.
     emergency_reference_rewind_steps: int = 0
     fast_force_loop: bool = True        # 200Hz servo under the 50Hz planner
     hand_contact_solref: tuple = (0.10, 1.0)  # explicit hand-box pair compliance
-    wall_contact_solref: tuple = (0.10, 1.0)  # explicit P3 box-wall compliance
+    wall_contact_solref: tuple = (0.10, 1.0)  # explicit Unjamming box-wall compliance
     mu_hand: float = 0.6            # hand-box Coulomb friction (g_fric)
     v_base_scale: float = 0.15      # H4-B base-lean command scale
     # H2 domain randomization ranges
@@ -279,12 +279,12 @@ class HumanoidBoxPushConfig(BaseEnvConfig):
     target_vx: float = 0.25        # L2 forward walk speed (slow push-walk)
     # Opt-in locomotion objective, independently validated from box-force control.
     # Legacy keeps the original term definitions and does not evaluate effort.
-    walk_objective_mode: str = "legacy"  # legacy | dial (H1 strict joint-target P4)
+    walk_objective_mode: str = "legacy"  # legacy | dial (H1 strict joint-target Walk-and-Push)
     walk_velocity_ramp_time: float = 2.0
     walk_height_target: float = 1.2
     w_walk_effort: float = 0.0
-    walk_box_goal_mode: str = "position"  # position | coast (strict H1 joint-target P4)
-    walk_force_startup_mode: str = "legacy"  # legacy | synchronized (strict H1 joint-target P4)
+    walk_box_goal_mode: str = "position"  # position | coast (strict H1 joint-target Walk-and-Push)
+    walk_force_startup_mode: str = "legacy"  # legacy | synchronized (strict H1 joint-target Walk-and-Push)
     gait_ramp_time: float = 0.5    # smoothly engage the CPG after reset
     gait_cadence: float = 0.8
     gait_swing_frac: float = 0.45
@@ -311,7 +311,7 @@ class HumanoidBoxPushConfig(BaseEnvConfig):
     walk_success_hold_time: float = 0.20
     walk_success_max_box_speed: float = 0.08
     # A dynamic gait cannot satisfy the fixed-stance CoM-at-feet-centre test
-    # throughout single-support exchange.  P4 certifies an earlier posture
+    # throughout single-support exchange.  Walk-and-Push certifies an earlier posture
     # envelope instead; the lower terminal-fall threshold remains unchanged.
     walk_safety_min_torso_up: float = 0.90
     walk_safety_min_height_ratio: float = 0.70
@@ -436,7 +436,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             and cfg.walk_leg_control == "joint_target"
             and cfg.walk_success_mode == "locomotion"
         ):
-            raise ValueError("synchronized force startup requires H1 joint_target locomotion P4")
+            raise ValueError("synchronized force startup requires H1 joint_target locomotion Walk-and-Push")
         if cfg.walk_box_goal_mode not in {"position", "coast"}:
             raise ValueError("walk_box_goal_mode must be 'position' or 'coast'")
         if cfg.walk_box_goal_mode == "coast" and not (
@@ -444,14 +444,14 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             and cfg.walk_leg_control == "joint_target"
             and cfg.walk_success_mode == "locomotion"
         ):
-            raise ValueError("coast box goal requires H1 joint_target locomotion P4")
+            raise ValueError("coast box goal requires H1 joint_target locomotion Walk-and-Push")
         if cfg.walk_objective_mode not in {"legacy", "dial"}:
             raise ValueError("walk_objective_mode must be 'legacy' or 'dial'")
         if cfg.walk_objective_mode == "dial":
             if not (cfg.robot.lower() == "h1" and cfg.level.lower() == "push_walk"
                     and cfg.walk_leg_control == "joint_target"
                     and cfg.walk_success_mode == "locomotion"):
-                raise ValueError("dial walk objective requires H1 joint_target locomotion P4")
+                raise ValueError("dial walk objective requires H1 joint_target locomotion Walk-and-Push")
             for name in ("walk_velocity_ramp_time", "walk_height_target"):
                 value = float(getattr(cfg, name))
                 if not np.isfinite(value) or value <= 0.0:
@@ -518,7 +518,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             and cfg.walk_success_mode == "locomotion"
         ):
             raise ValueError(
-                "walk_joint_reference_path requires H1 joint_target locomotion P4"
+                "walk_joint_reference_path requires H1 joint_target locomotion Walk-and-Push"
             )
         if cfg.emergency_reference_rewind_steps > 0 and not (
             cfg.robot.lower() == "h1" and self._is_walk
@@ -527,7 +527,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             and bool(cfg.walk_joint_reference_path)
         ):
             raise ValueError(
-                "emergency reference rewind requires an H1 P4 DIAL reference"
+                "emergency reference rewind requires an H1 Walk-and-Push DIAL reference"
             )
         if cfg.emergency_min_dwell_steps > 1 and not (
             cfg.robot.lower() == "h1" and self._is_walk
@@ -536,7 +536,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             and bool(cfg.walk_joint_reference_path)
         ):
             raise ValueError(
-                "emergency dwell requires an H1 P4 DIAL reference"
+                "emergency dwell requires an H1 Walk-and-Push DIAL reference"
             )
         if (not np.isfinite(cfg.walk_joint_reference_residual_scale)
                 or not 0.0 <= cfg.walk_joint_reference_residual_scale <= 1.0):
@@ -766,15 +766,15 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         if lvl != "unjam":
             gp = self.sys.geom_pos.at[self._wall_geoms, 1].set(
                 jnp.array([50.0, -50.0], jnp.float32))
-            # P1/P2/P4 are the original open push-to-line / walk-and-push
-            # tasks.  The corridor is P3-only, so remove it from both physics
+            # Force Regulation/Fixed-Stance Push/Walk-and-Push are the original open push-to-line / walk-and-push
+            # tasks.  The corridor is Unjamming-only, so remove it from both physics
             # reach and rendering instead of merely parking visible walls a
             # few metres away.
             gr = self.sys.geom_rgba.at[self._wall_geoms, 3].set(0.0)
             self.sys = self.sys.tree_replace({"geom_pos": gp, "geom_rgba": gr})
             # Brax physics consumes the arrays above, while its MuJoCo image
             # renderer reconstructs the scene from ``sys.mj_model``.  Keep the
-            # native render model synchronized or P3 walls leak into every GIF.
+            # native render model synchronized or Unjamming walls leak into every GIF.
             wall_ids = np.asarray(self._wall_geoms, dtype=int)
             mj.geom_pos[wall_ids, 1] = np.asarray([50.0, -50.0])
             mj.geom_rgba[wall_ids, 3] = 0.0
@@ -823,8 +823,8 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             # MJX consumes ``self.sys`` while Brax's offline renderer reads the
             # native model retained on ``sys.mj_model``.  Synchronize the
             # position in both; marker RGBA exists only on the native model.
-            # P2/P4 show the actual reset-relative terminal face, whereas
-            # force-only P1 and geometry-correction P3 have no line objective.
+            # Fixed-Stance Push/Walk-and-Push show the actual reset-relative terminal face, whereas
+            # force-only Force Regulation and geometry-correction Unjamming have no line objective.
             mj.site_pos[goal_site, 0] = float(goal_x)
             mj.site_rgba[goal_site, 3] = 0.4 if show_goal_line else 0.0
         self._whole_body_controller = HumanoidWholeBodyController(
@@ -1083,7 +1083,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
 
     @property
     def policy_action_transform(self):
-        """Task-owned residual chart used only to learn a P4 policy prior.
+        """Task-owned residual chart used only to learn a Walk-and-Push policy prior.
 
         The solver action remains the absolute 23D task action documented by
         :attr:`policy_interface`.  PPO, however, should explore around the
@@ -1140,10 +1140,10 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
     def manifold_constraint_size(self) -> int:
         """Action-controllable equality dimension used by ATACOM.
 
-        Fixed stance constrains the six stiffness coordinates and force.  P3
+        Fixed stance constrains the six stiffness coordinates and force.  Unjamming
         additionally constrains its three face logits, leaving both lateral
         and vertical contact coordinates free for correction after release.
-        P4 leaves stiffness/contact selection to the whole-body
+        Walk-and-Push leaves stiffness/contact selection to the whole-body
         policy and retains only the desired-force equality.
         """
         if self._is_walk:
@@ -1156,7 +1156,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
 
     @property
     def reliability_feature_size(self) -> int:
-        # Fixed across P1--P4 despite the different action dimensions.
+        # Fixed across all four Humanoid tasks despite the different action dimensions.
         return 24
 
     @staticmethod
@@ -1496,7 +1496,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         # Fixed-stance tasks can retract along a sealed contact normal.  During
         # locomotion, a switching/moving contact can make that world-frame
         # position spring inject an impact even when its geometric direction
-        # is valid.  P4 instead uses the Cartesian zero-wrench branch below,
+        # is valid.  Walk-and-Push instead uses the Cartesian zero-wrench branch below,
         # together with null-space joint damping and gravity compensation.
         # Invalid geometry also uses that direction-free branch.
         zero_force = (mode == 1) & (
@@ -1567,7 +1567,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             transition executable and exceeds memory-limited CPU containers.
             The two functional transitions are still model based: they advance
             a prepared copy of the measured state, never the real environment.
-            P4 normally uses the configured receding viability prefix. An
+            Walk-and-Push normally uses the configured receding viability prefix. An
             explicit minimum dwell changes the hybrid suffix actually being
             deployed: certify exactly the remaining UNLOAD intervals, after
             which the backend separately certifies the complete NORMAL
@@ -1693,7 +1693,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             "F_eff": effective, "force_scale": jnp.float32(0.0),
             "approach_alpha": jnp.float32(1.0),
             # Keep the normal/UNLOAD pytrees identical. Historical H1 walk
-            # has no measured-support hook; fixed/strict P4 already own it.
+            # has no measured-support hook; fixed/strict Walk-and-Push already own it.
             **({"support_load": jnp.clip(measured, 0.0, self._bcfg.f_target)}
                if "support_load" in ordinary else {}),
         }
@@ -1707,7 +1707,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         """Stop task-space pushing for one receding emergency interval.
 
         A Cartesian velocity damper or a posture/gravity hold can both inject
-        an impact when switched at an already compressed rigid contact.  P4's
+        an impact when switched at an already compressed rigid contact.  Walk-and-Push's
         two-step recursive certificate therefore evaluates a zero-wrench arm
         release while keeping the shared DIAL gait reference continuous.  The
         measured successor is replanned after the first 20 ms interval.
@@ -1755,7 +1755,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         return result
 
     def _terminal_coast_hand_contact(self, ps, action, info, ordinary):
-        """Actively detach the hands once the P4 coast condition is reached.
+        """Actively detach the hands once the Walk-and-Push coast condition is reached.
 
         Zeroing the requested normal force is not a physical release: a
         walking robot can keep dragging the box through passive arm contact.
@@ -1927,8 +1927,8 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         elif self._walk_requires_locomotion:
             # A requested push is not an external load once the hand loses
             # contact during locomotion.  Scope measured support allocation to
-            # strict P4: fixed-stance P1--P3 retain their validated commanded-
-            # load schedule above, while historical non-locomotion P4 remains
+            # strict Walk-and-Push: fixed-stance Force Regulation, Fixed-Stance Push, and Unjamming retain their validated commanded-
+            # load schedule above, while historical non-locomotion Walk-and-Push remains
             # unchanged.
             contact["support_load"] = jnp.minimum(F_n, measured)
         if self._walk_requires_locomotion:
@@ -2167,7 +2167,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         return jnp.where(remaining > cfg.goal_eps, approaching, jnp.float32(0.0))
 
     def walk_arm_task_scale(self, ps, info):
-        """Keep P4 Cartesian tracking on the current box face.
+        """Keep Walk-and-Push Cartesian tracking on the current box face.
 
         ``_normal_hand_contact`` recomputes the target from the measured box
         pose at every transition; it is not a fixed world anchor.  Keep full
@@ -2633,7 +2633,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         ])
 
     def _balance_safety_residual(self, ps):
-        """Fixed-support CoM margin or P4's dynamic posture envelope.
+        """Fixed-support CoM margin or Walk-and-Push's dynamic posture envelope.
 
         The original DIAL gait deliberately moves the pelvis away from the
         two-foot midpoint during supported exchange.  Treating that static
@@ -2661,12 +2661,12 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         ) - self._bcfg.support_radius)
 
     def _walk_terminal_recovery_residual(self, ps):
-        """P4 terminal set strictly inside the physical posture envelope.
+        """Walk-and-Push terminal set strictly inside the physical posture envelope.
 
         A state can satisfy the hard torso-up/height boundary while already
         carrying enough angular momentum that no two-interval unload remains
         safe.  Normal receding candidates therefore end inside the midpoint
-        between the nominal upright posture and each hard P4 boundary.  This
+        between the nominal upright posture and each hard Walk-and-Push boundary.  This
         task-owned inner set is used only at the model horizon terminal state;
         task-owned emergency candidates retain the unchanged physical set.
         """
@@ -2802,7 +2802,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             # Vendor H1 push-crate scores unwanted contacts with a bounded
             # contact count.  Keep our force-aware signal, but prevent a
             # single catastrophic rollout from setting the reward scale for
-            # the entire diffusion batch.  This changes only P4 ranking: the
+            # the entire diffusion batch.  This changes only Walk-and-Push ranking: the
             # physical 0.5 N violation margin and MGA gate remain unbounded.
             nonhand_ratio_sq = jnp.minimum(nonhand_ratio_sq, 1.0)
         r_nonhand = -nonhand_ratio_sq
@@ -2961,9 +2961,9 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         f_span = max(self._bcfg.f_max - self._bcfg.f_min, 1e-6)
         dS = self._bcfg.s_scale * u[s0:s1]
         F = self._force_cmd(u[self.spec.nu_slice][0])
-        # Fixed-stance P1--P3 use the validated nominal stiffness chart.  P3
+        # Fixed-stance Force Regulation, Fixed-Stance Push, and Unjamming use the validated nominal stiffness chart.  Unjamming
         # retains both bounded contact coordinates as genuine model-based
-        # degrees of freedom; P4 instead leaves stiffness free for
+        # degrees of freedom; Walk-and-Push instead leaves stiffness free for
         # dynamic walk/contact adaptation.
         residuals = []
         if not self._is_walk:
@@ -3079,7 +3079,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         return self.reliability_features_sequence(state, action[None, :])
 
     def reliability_features_sequence(self, state, actions):
-        """Observable fixed-width state/candidate features for P1--P4."""
+        """Observable fixed-width state/candidate features for all four Humanoid tasks."""
         ps = state.pipeline_state
         cfg = self._bcfg
         forces = self._box_contact_forces(ps)
@@ -3196,7 +3196,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         return score, self._apply_initial_physics_risk(prepared, risk)
 
     def _aggregate_sequence_risks(self, risks):
-        """Separate P4's recursive backup certificate from horizon prediction."""
+        """Separate Walk-and-Push's recursive backup certificate from horizon prediction."""
         if self._walk_requires_locomotion:
             # The first row certifies the 20 ms interval deployed now; the
             # remaining configured rows provide a short viability buffer for
@@ -3232,11 +3232,11 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             return s2, (score, risk)
 
         terminal_state, (scores, risks) = jax.lax.scan(body, state, actions)
-        # Receding P4 deploys exactly one 20 ms control interval before
+        # Receding Walk-and-Push deploys exactly one 20 ms control interval before
         # measuring and replanning.  Certifying an unchanged eight-step
         # suffix as if it would be executed open-loop can reject a safe first
         # action and destroy the support exchange.  Certifying only that first
-        # interval can instead enter a state with no safe successor.  The P4
+        # interval can instead enter a state with no safe successor.  The Walk-and-Push
         # hard risk therefore covers the deployed interval and its first
         # shifted-incumbent backup, including every 4 ms MJX substep.  The
         # complete rollout still supplies score/force prediction, and fixed
@@ -3289,7 +3289,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             return projected
 
         # The shared time-indexed reference is the verified locomotion prior.
-        # P4's contact model predicts the hand/box interaction, but it does not
+        # Walk-and-Push's contact model predicts the hand/box interaction, but it does not
         # support unconstrained whole-body gait search.  Preserve only the same
         # bounded local joint residual available to the learned policy prior;
         # Gaussian/refined candidates therefore cannot obtain extra authority.
@@ -3335,7 +3335,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         return normal
 
     def mga_prior_applicable(self, state):
-        """Declare the task state in which a learned P4 correction is valid.
+        """Declare the task state in which a learned Walk-and-Push correction is valid.
 
         The external DIAL reference and model-based refinement own gait
         acquisition.  Before one physically supported landing per foot, a
@@ -3344,7 +3344,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         an out-of-support use of the loaded-contact prior, not evidence that
         the candidate is unsafe at the current 20 ms interval.  Enable the
         prior only after the task memory records a bilateral support exchange;
-        all non-P4 tasks retain their existing always-applicable behavior.
+        all non-Walk-and-Push tasks retain their existing always-applicable behavior.
         """
         if not self._walk_requires_locomotion:
             return jnp.asarray(True)
@@ -3479,9 +3479,9 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         return emergency
 
     def emergency_plans(self, state, reference_nodes, t0=0.0):
-        """Return certified alternatives for P4's gait-phase-dependent unload.
+        """Return certified alternatives for Walk-and-Push's gait-phase-dependent unload.
 
-        Other task modes retain the original one-plan contract.  Strict H1 P4
+        Other task modes retain the original one-plan contract.  Strict H1 Walk-and-Push
         combines only the two sagittal knee residuals; the hand unload,
         stiffness seal, DIAL reference, horizon and all safety limits remain
         identical.  The MGA backend evaluates every row from the measured
@@ -3598,7 +3598,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         )
 
     def normal_recovery_plans(self, state, reference_nodes, t0=0.0):
-        """Ordered P4 recovery bank with bounded momentum/roll release.
+        """Ordered Walk-and-Push recovery bank with bounded momentum/roll release.
 
         The first candidate preserves the existing roll capture and continuous
         knee fade.  The second adds one early, spline-smoothed hip-pitch pulse
@@ -3672,7 +3672,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         monotonically shedding the requested normal load.  Every proposal is
         still accepted solely by the complete model certificate.  The
         force-step task is deliberately excluded: changing its commanded load
-        or contact point would invalidate the P1 tracking experiment.
+        or contact point would invalidate the Force Regulation tracking experiment.
 
         A certified UNLOAD-to-NORMAL recovery can leave the physical joints a
         few control frames behind the external DIAL reference.  The shifted
@@ -3827,7 +3827,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         return jnp.max(self._safety_margins(ps, forces, g[0]))
 
     def _walk_task_memory_features(self, ps, info):
-        """Minimal event memory and nonperiodic clocks for the strict P4 policy.
+        """Minimal event memory and nonperiodic clocks for the strict Walk-and-Push policy.
 
         Physical q/qdot and the periodic gait phase do not identify a pending
         valid landing, its reference, or elapsed contact-force ramp.  Defaults

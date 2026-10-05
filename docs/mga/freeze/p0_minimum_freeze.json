@@ -150,7 +150,7 @@
         0,
         1
       ],
-      "suite": "p3_unjam"
+      "suite": "unjamming"
     },
     {
       "algorithm": "model_based_mdac",
@@ -172,7 +172,7 @@
         0,
         1
       ],
-      "suite": "p3_unjam"
+      "suite": "unjamming"
     }
   ],
   "package_versions": {
@@ -1118,7 +1118,7 @@
           "seeds": [
             0
           ],
-          "suite": "p1_force_15n"
+          "suite": "force_regulation_15n"
         },
         {
           "algorithm": "dial",
@@ -1138,7 +1138,7 @@
           "seeds": [
             0
           ],
-          "suite": "p1_force_30n"
+          "suite": "force_regulation_30n"
         },
         {
           "algorithm": "dial",
@@ -1158,7 +1158,7 @@
           "seeds": [
             0
           ],
-          "suite": "p2_push_nominal"
+          "suite": "fixed_stance_push_nominal"
         },
         {
           "algorithm": "dial",
@@ -1178,7 +1178,7 @@
           "seeds": [
             0
           ],
-          "suite": "p2_push_ood"
+          "suite": "fixed_stance_push_ood"
         },
         {
           "algorithm": "dial",
@@ -1199,7 +1199,7 @@
             0,
             1
           ],
-          "suite": "p3_unjam"
+          "suite": "unjamming"
         },
         {
           "algorithm": "dial",
@@ -1220,7 +1220,7 @@
             0,
             1
           ],
-          "suite": "p4_walk_push"
+          "suite": "walk_and_push"
         },
         {
           "algorithm": "model_based_mdac",
@@ -1240,7 +1240,7 @@
           "seeds": [
             0
           ],
-          "suite": "p1_force_15n"
+          "suite": "force_regulation_15n"
         },
         {
           "algorithm": "model_based_mdac",
@@ -1260,7 +1260,7 @@
           "seeds": [
             0
           ],
-          "suite": "p1_force_30n"
+          "suite": "force_regulation_30n"
         },
         {
           "algorithm": "model_based_mdac",
@@ -1280,7 +1280,7 @@
           "seeds": [
             0
           ],
-          "suite": "p2_push_nominal"
+          "suite": "fixed_stance_push_nominal"
         },
         {
           "algorithm": "model_based_mdac",
@@ -1300,7 +1300,7 @@
           "seeds": [
             0
           ],
-          "suite": "p2_push_ood"
+          "suite": "fixed_stance_push_ood"
         },
         {
           "algorithm": "model_based_mdac",
@@ -1321,7 +1321,7 @@
             0,
             1
           ],
-          "suite": "p3_unjam"
+          "suite": "unjamming"
         },
         {
           "algorithm": "model_based_mdac",
@@ -1342,7 +1342,7 @@
             0,
             1
           ],
-          "suite": "p4_walk_push"
+          "suite": "walk_and_push"
         }
       ],
       "path": "results/humanoid/box_push"
@@ -1424,7 +1424,7 @@
         "legacy_current_metrics_sha256": "b533b8727ae6039af29857cdff69141bf5f1a02747e8f8e34c9d2ccc02cbacc9",
         "matched_metrics_and_diagnostics": 35,
         "max_action_difference": 0.0,
-        "suite": "p3_unjam",
+        "suite": "unjamming",
         "task": "humanoid_box_push"
       },
       {
@@ -1439,7 +1439,7 @@
         "legacy_current_metrics_sha256": "be7b877fa7a78b154f589654858f9e766507e07f1a790df01efba14a196998b3",
         "matched_metrics_and_diagnostics": 32,
         "max_action_difference": 0.0,
-        "suite": "p3_unjam",
+        "suite": "unjamming",
         "task": "humanoid_box_push"
       }
     ],

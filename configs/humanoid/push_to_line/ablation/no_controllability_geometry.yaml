@@ -5,4 +5,4 @@ method_params: {controller_method: mga_component_gate}
 metadata:
   ablation_of: mga
   ablated_component: use_controllability_geometry
-  formal_suites: [p1_force_15n, p1_force_30n, p2_push_nominal, p2_push_ood, p3_unjam, p4_walk_push]
+  formal_suites: [force_regulation_15n, force_regulation_30n, fixed_stance_push_nominal, fixed_stance_push_ood, unjamming, walk_and_push]

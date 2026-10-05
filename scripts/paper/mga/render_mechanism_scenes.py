@@ -43,14 +43,16 @@ HUMANOID_RENDER_STYLE = "brax-web-first-last-contrast-silhouettes"
 FILMSTRIP_SCENE = "surface_rigid_bumpy"
 APPENDIX_ARM_STYLE = "manuscript-side-cameras-mint-socket"
 PEG_SOCKET_RGBA = (176 / 255, 214 / 255, 210 / 255, 1.0)
+ANNOTATION_STYLE = "saved-state-time-force-footer-v1"
+FORCE_FOOTER_HEIGHT = 48
 
 SCENES = {
     "surface_hybrid_stripes": ("surface", "arm/surface_scan", "hybrid_stripes"),
     "surface_soft_convex": ("surface", "arm/surface_scan", "soft_convex"),
     "surface_rigid_bumpy": ("surface", "arm/surface_scan", "rigid_bumpy"),
-    "humanoid_force_regulation": ("humanoid", "humanoid/push_to_line", "p1_force_15n"),
-    "humanoid_fixed_stance_push": ("humanoid", "humanoid/push_to_line", "p2_push_nominal"),
-    "humanoid_unjamming": ("humanoid", "humanoid/push_to_line", "p3_unjam"),
+    "humanoid_force_regulation": ("humanoid", "humanoid/push_to_line", "force_regulation_15n"),
+    "humanoid_fixed_stance_push": ("humanoid", "humanoid/push_to_line", "fixed_stance_push_nominal"),
+    "humanoid_unjamming": ("humanoid", "humanoid/push_to_line", "unjamming"),
 }
 
 
@@ -973,6 +975,137 @@ def _render_appendix_arm(model, states, indices, camera, output, *, name):
         "azimuth": float(camera.azimuth), "elevation": float(camera.elevation)}}
 
 
+def _saved_force_annotations(trajectory, task, indices, dt):
+    """Align recorded execution forces to states, not commands or wall time."""
+    import numpy as np
+
+    definitions = {
+        "surface": "Executed surface-normal contact force (Winkler reaction for hybrid contact)",
+        "peg": "Magnitude of true peg contact force; norm(true_wrench[:3]), without sensor bias",
+        "humanoid": "Sum of absolute active hand-box normal contact forces across both hands",
+    }
+    states, signals = trajectory["states"], trajectory.get("task_signals", {})
+    if task not in definitions:
+        raise ValueError(f"Unsupported force annotation task: {task}")
+    records = []
+    for index in indices:
+        value, source = None, "Initial force was not recorded; do not substitute a zero or future sample"
+        if task == "peg":
+            wrench = np.asarray(states[index]["info"]["true_wrench"], dtype=float)
+            if wrench.shape != (6,) or not np.isfinite(wrench).all():
+                raise ValueError(f"Invalid true wrench at state {index}")
+            value = float(np.linalg.norm(wrench[:3]))
+            source = f"states[{index}].info.true_wrench[:3]"
+            if index > 0:
+                reference = np.hypot(signals["axial_force"][index-1], signals["lateral_force"][index-1])
+                if not np.isclose(value, reference, atol=5e-5, rtol=1e-6):
+                    raise ValueError(f"Peg force/state alignment mismatch at state {index}")
+        elif index > 0:
+            if len(signals["force"]) != len(states)-1:
+                raise ValueError("Post-step force samples must align with states[1:]")
+            value = float(signals["force"][index-1])
+            source = f"task_signals.force[{index-1}]"
+            if task == "humanoid":
+                info = states[index]["info"]
+                if not info.get("physics_samples_valid", False):
+                    raise ValueError(f"No valid executed physics sample at state {index}")
+                if not np.isclose(value, info["physics_hand_force"][-1], atol=5e-5, rtol=1e-6):
+                    raise ValueError(f"Humanoid force/state alignment mismatch at state {index}")
+        if value is not None and not np.isfinite(value):
+            raise ValueError(f"Nonfinite recorded force at state {index}")
+        records.append({"state_index": int(index), "time_seconds": float(index*dt),
+                        "force_N": value, "source": source})
+    return {"definition": definitions[task], "unit": "N",
+            "alignment": "State i is at t=i*dt; post-step sample i-1 belongs to state i; no interpolation or smoothing",
+            "missing_initial_display": "--", "records": records}
+
+
+def _force_time_label(record, compact=False):
+    force = "--" if record["force_N"] is None else f"{record['force_N']:.1f}"
+    if compact:
+        return f"t={record['time_seconds']:.2f} s  |  F={force} N"
+    return f"t = {record['time_seconds']:.2f} s   |   F = {force} N"
+
+
+def _annotate_force_frame(frame, record):
+    """Add a readable footer without covering or rescaling the simulation."""
+    from PIL import Image, ImageDraw, ImageFont
+    from matplotlib import font_manager
+
+    image = Image.new("RGB", (frame.width, frame.height + FORCE_FOOTER_HEIGHT), "white")
+    image.paste(frame.convert("RGB"), (0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.line((0, frame.height, frame.width, frame.height), fill="#9A9A9A", width=1)
+    font = ImageFont.truetype(font_manager.findfont("DejaVu Sans"), 25)
+    label = _force_time_label(record)
+    draw.text((frame.width/2, frame.height + FORCE_FOOTER_HEIGHT/2), label,
+              font=font, anchor="mm", fill="#3A4655")
+    return image
+
+
+def _annotate_saved_gifs(output_dir):
+    """Annotate verified existing GIFs on the host, retaining all frame timing."""
+    import shutil
+    import numpy as np
+    from PIL import Image
+
+    for manifest_name in ("metadata.json", "humanoid_gifs.json"):
+        manifest_path = output_dir / manifest_name
+        if not manifest_path.exists():
+            continue
+        records = _read_json(manifest_path)
+        for name, item in records.items():
+            path = output_dir / item["gif"]
+            if hashlib.sha256(path.read_bytes()).hexdigest() != item["gif_sha256"]:
+                raise ValueError(f"GIF changed outside its verified renderer: {path}")
+            trajectory_path = ROOT / item.get("trajectory", item.get("source_trajectory"))
+            if hashlib.sha256(trajectory_path.read_bytes()).hexdigest() != item["trajectory_sha256"]:
+                raise ValueError(f"GIF trajectory changed: {trajectory_path}")
+            if item.get("annotation_style") == ANNOTATION_STYLE:
+                print(f"Verified annotated GIF present: {path.name}", flush=True)
+                continue
+            task = item.get("task", "humanoid")
+            dt = float(item.get("dt", item["time_seconds"][1]/item["state_indices"][1]))
+            annotation = _saved_force_annotations(_read_json(trajectory_path), task, item["state_indices"], dt)
+            with Image.open(path) as gif:
+                native_size = gif.size
+                if gif.n_frames != len(annotation["records"]):
+                    raise ValueError(f"Frame/state mapping mismatch: {path}")
+                frames, durations = [], []
+                for i, record in enumerate(annotation["records"]):
+                    gif.seek(i)
+                    durations.append(gif.info["duration"])
+                    frames.append(_annotate_force_frame(gif.convert("RGB"), record))
+            swatch_indices = np.unique(np.rint(np.linspace(0, len(frames)-1, 9)).astype(int))
+            swatch = Image.new("RGB", (320*len(swatch_indices), round(320*frames[0].height/frames[0].width)))
+            for column, index in enumerate(swatch_indices):
+                swatch.paste(frames[index].resize((320, swatch.height)), (320*column, 0))
+            palette = swatch.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+            encoded = [frame.quantize(palette=palette, dither=Image.Dither.NONE) for frame in frames]
+            backup = output_dir / "unannotated" / path.name
+            backup.parent.mkdir(exist_ok=True)
+            if backup.exists() and hashlib.sha256(backup.read_bytes()).hexdigest() != item["gif_sha256"]:
+                raise FileExistsError(f"Preserving an unrelated GIF backup: {backup}")
+            if not backup.exists():
+                shutil.copy2(path, backup)
+            encoded[0].save(path, save_all=True, append_images=encoded[1:], duration=durations,
+                            loop=0, optimize=False, disposal=2)
+            with Image.open(path) as check:
+                assert check.n_frames == len(frames) and check.size == frames[0].size
+                for i, duration in enumerate(durations):
+                    check.seek(i)
+                    assert check.info["duration"] == duration
+            item.update(unannotated_gif_sha256=item["gif_sha256"],
+                        gif_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                        annotation_style=ANNOTATION_STYLE, force_annotations=annotation,
+                        native_image_size=list(native_size), image_size=list(frames[0].size))
+            if "dimensions" in item:
+                item["dimensions"] = list(frames[0].size)
+            _persist_scene_metadata(manifest_path, {name: item})
+            print(f"Annotated {path.name}: {len(frames)} frames; timing unchanged", flush=True)
+    return 0
+
+
 def _render_appendix_gifs(args):
     """Animate saved arm states with the exact verified Visualization camera.
 
@@ -990,13 +1123,15 @@ def _render_appendix_gifs(args):
     for name, item in source_metadata.items():
         if item.get("task") != args.task or (args.suite and item["suite"] != args.suite):
             continue
-        if item["seed"] != args.seed or item.get("style") != APPENDIX_ARM_STYLE:
-            raise ValueError(f"GIF must match the current Visualization seed/style: {name}")
+        if item.get("style") != APPENDIX_ARM_STYLE:
+            raise ValueError(f"GIF must match the current Visualization style: {name}")
         sources = {field: ROOT / item[field] for field in ("result", "trajectory")}
         for field, path in sources.items():
             if hashlib.sha256(path.read_bytes()).hexdigest() != item[field + "_sha256"]:
                 raise ValueError(f"Visualization source changed: {path}")
         result, trajectory = (_read_json(sources[field]) for field in ("result", "trajectory"))
+        if int(result["seed"]) != int(item["seed"]):
+            raise ValueError(f"GIF source seed differs from its provenance: {name}")
         _, last = _appendix_indices(trajectory)
         if last != item["last_unpadded_state"]:
             raise ValueError(f"Visualization physical execution window changed: {name}")
@@ -1011,7 +1146,8 @@ def _render_appendix_gifs(args):
         if path.exists() and not args.force:
             if (previous.get("trajectory_sha256") == item["trajectory_sha256"]
                     and previous.get("camera") == item["camera"]
-                    and previous.get("gif_sha256") == hashlib.sha256(path.read_bytes()).hexdigest()):
+                    and previous.get("gif_sha256") == hashlib.sha256(path.read_bytes()).hexdigest()
+                    and previous.get("annotation_style") == ANNOTATION_STYLE):
                 print(f"Verified GIF present: {path.name}", flush=True)
                 continue
             raise FileExistsError(f"Preserving existing GIF; use --force only to regenerate: {path}")
@@ -1044,9 +1180,12 @@ def _render_appendix_gifs(args):
                 renderer.scene.flags[mujoco.mjtRndFlag.mjRND_FOG] = False
                 renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = True
                 frames.append(Image.fromarray(renderer.render().copy()))
+        annotation = _saved_force_annotations(trajectory, item["task"], indices, dt)
+        frames = [_annotate_force_frame(frame, record)
+                  for frame, record in zip(frames, annotation["records"])]
         # One episode-wide palette prevents frame-wise quantization flicker.
         sample_indices = np.unique(np.rint(np.linspace(0, len(frames)-1, 9)).astype(int))
-        swatch = Image.new("RGB", (320 * len(sample_indices), round(320 * height / width)))
+        swatch = Image.new("RGB", (320 * len(sample_indices), round(320 * frames[0].height / width)))
         for column, index in enumerate(sample_indices):
             swatch.paste(frames[index].resize((320, swatch.height), Image.Resampling.LANCZOS), (column * 320, 0))
         palette = swatch.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
@@ -1058,7 +1197,7 @@ def _render_appendix_gifs(args):
             for i in range(gif.n_frames):
                 gif.seek(i)
                 total_ms += gif.info["duration"]
-            if gif.n_frames < 2 or gif.size != (width, height) or total_ms != sum(durations):
+            if gif.n_frames < 2 or gif.size != frames[0].size or total_ms != sum(durations):
                 raise ValueError(f"GIF validation failed: {path}")
             encoded_count = gif.n_frames
         _persist_scene_metadata(manifest_path, {name: {
@@ -1066,7 +1205,10 @@ def _render_appendix_gifs(args):
             "method": "MGA", "task": item["task"], "suite": item["suite"], "seed": item["seed"],
             **{field: item[field] for field in ("result", "result_sha256", "trajectory", "trajectory_sha256", "camera", "style")},
             "visualization_metadata": str(args.scene_metadata), "state_indices": indices,
-            "time_seconds": [index*dt for index in indices], "image_size": [width, height],
+            "selection": item.get("selection", {"rule": "Original Visualization example"}),
+            "time_seconds": [index*dt for index in indices], "image_size": list(frames[0].size),
+            "native_image_size": [width, height], "annotation_style": ANNOTATION_STYLE,
+            "force_annotations": annotation,
             "last_unpadded_state": last, "physical_duration_seconds": last*dt,
             "gif_duration_ms": total_ms, "frame_durations_ms": durations, "encoded_frame_count": encoded_count,
             "playback": "Real-time saved-state replay at 25 fps; 800 ms final-pose pause; infinite loop",
@@ -1484,6 +1626,13 @@ def _assemble_appendix(output_dir, selected_groups=None):
                     raise ValueError(f"Task-owned field implementation changed: {name}")
         for frame in item.get("closeup", {}).get("frames", []):
             frame["time_seconds"] = frame["state_index"] * item["dt"]
+        annotated_frames = item["frames"] + item.get("closeup", {}).get("frames", [])
+        annotation = _saved_force_annotations(trajectory, item["task"],
+                                               [frame["state_index"] for frame in annotated_frames], item["dt"])
+        for frame, record in zip(annotated_frames, annotation["records"]):
+            frame.update(time_seconds=record["time_seconds"], force_N=record["force_N"],
+                         force_source=record["source"])
+        item["force_annotation_definition"] = annotation["definition"]
         if item["task"] == "humanoid":
             for unused in ("ghost_opacity", "robot_pose_annotation", "box_motion_annotation", "visual_alpha_override"):
                 item.pop(unused, None)
@@ -1539,7 +1688,7 @@ def _assemble_appendix(output_dir, selected_groups=None):
                 ax.set_xticks([]); ax.set_yticks([])
                 for spine in ax.spines.values():
                     spine.set_visible(False)
-                ax.set_xlabel(f"t = {frame['time_seconds']:.2f} s", fontsize=15, labelpad=3, color="#3A4655")
+                ax.set_xlabel(_force_time_label(frame, compact=True), fontsize=12.5, labelpad=3, color="#3A4655")
                 if column == 0 and not with_maps:
                     ax.text(0, 1.055, label, transform=ax.transAxes, ha="left", va="bottom", fontsize=16,
                             color="#3A4655", fontweight="bold")
@@ -1551,7 +1700,12 @@ def _assemble_appendix(output_dir, selected_groups=None):
         plt.close(fig)
         assembled[filename] = {"scene_rows": names, "frames_per_row": 5,
             "seed": 0, "sources": str((output_dir / "metadata.json").relative_to(ROOT)),
-            "typography_pt": {"title": 18, "row_label": 16, "timestamp": 15},
+            "typography_pt": {"title": 18, "row_label": 16, "time_force_label": 12.5},
+            "force_annotations": {name: {"definition": verified[name]["force_annotation_definition"],
+                "records": [{key: frame[key] for key in ("state_index", "time_seconds", "force_N", "force_source")}
+                            for frame in (verified[name]["closeup"]["frames"]
+                                if verified[name]["task"] == "peg" else verified[name]["frames"])]}
+                for name in names},
             "stiffness_maps": {"source": str(maps_path.relative_to(ROOT)),
                 "source_sha256": hashlib.sha256(maps_path.read_bytes()).hexdigest(),
                 "scene_rows": names, "display": "Separate transformed reference-chart panel; native frames unchanged",
@@ -1586,9 +1740,11 @@ def main(argv=None):
                         help="Render five true chronological saved poses for each appendix suite")
     parser.add_argument("--gifs", action="store_true",
                         help="With --appendix --task surface/peg: animate saved states using verified Visualization cameras")
+    parser.add_argument("--annotate-gifs", action="store_true",
+                        help="Host-only: add source-aligned t/F footers to verified existing GIFs; preserve playback timing")
     parser.add_argument("--scene-metadata", type=Path,
                         default=ROOT / "reports/mga/paper_figures/appendix/scenes/metadata.json",
-                        help="Existing Visualization provenance and cameras used by --gifs")
+                        help="GIF source hashes, per-scene seeds and Visualization cameras; may use an audited successful-run selection")
     parser.add_argument("--assemble-only", action="store_true",
                         help="Assemble appendix grids from already rendered frames")
     parser.add_argument("--grid", action="append", choices=list(APPENDIX_GROUPS),
@@ -1598,6 +1754,12 @@ def main(argv=None):
     parser.add_argument("--suite", help="Render one exact suite name (appendix or main Brax capture)")
     args = parser.parse_args(argv)
     args.results_root = args.results_root.resolve()
+    if args.annotate_gifs:
+        if args.gifs or args.appendix or args.capture_brax or args.assemble_only or args.stiffness_maps_only:
+            parser.error("--annotate-gifs is a standalone saved-GIF operation")
+        if args.output_dir == ROOT / "reports/mga/paper_figures/scenes":
+            args.output_dir = ROOT / "reports/mga/paper_figures/gifs"
+        return _annotate_saved_gifs(args.output_dir)
     if args.gifs:
         if (not args.appendix or args.task not in ("surface", "peg") or args.assemble_only
                 or args.capture_brax or args.stiffness_maps_only):

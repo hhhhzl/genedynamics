@@ -320,7 +320,9 @@ def make_figure(output, dpi):
     image_panel(fig, rect(2, .02, .20, .58, .58), sources[2])
     line(2, [.62, .62], [inset_bottom, inset_top])
     for i, (key, title) in enumerate([
-        ("p1", "Force\nRegulation"), ("p2", "Fixed-stance\nPush"), ("p3", "Unjamming"),
+        ("force_regulation", "Force\nRegulation"),
+        ("fixed_stance_push", "Fixed-stance\nPush"),
+        ("unjamming", "Unjamming"),
     ]):
         y = band_y(i, inset_bottom, other_band)
         label_h = .09
@@ -329,9 +331,9 @@ def make_figure(output, dpi):
         fig.text(cols[2]+cw*(peg_x+peg_w/2), y+other_band-.008, title,
                  ha="center", va="top", fontsize=15, weight="bold", color=INK,
                  linespacing=0.9)
-        if key == "p1":
+        if key == "force_regulation":
             start, end, curve = (.42, .59), (.60, .59), 0
-        elif key == "p2":
+        elif key == "fixed_stance_push":
             start, end, curve = (.50, .12), (.78, .12), 0
         else:
             start, end, curve = (.55, .71), (.73, .49), -.6

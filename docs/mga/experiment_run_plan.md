@@ -213,10 +213,10 @@ Those claims require the ablations specified later in this plan.
 The audited H1 results compare DIAL with `model_based_only`; they are not a
 comparison with the final RL-prior/reliability MGA.
 
-- P3 unjamming: model-based MGA succeeds safely on 2/2 seeds; DIAL succeeds on
+- Unjamming unjamming: model-based MGA succeeds safely on 2/2 seeds; DIAL succeeds on
   0/2.
-- P4 walk-and-push: both methods succeed safely on 2/2 seeds.
-- P1 and P2 currently have only one completed seed per method.
+- Walk-and-Push walk-and-push: both methods succeed safely on 2/2 seeds.
+- Force Regulation and Fixed-Stance Push currently have only one completed seed per method.
 
 The supported claim is:
 
@@ -227,7 +227,7 @@ The supported claim is:
 The current evidence does not support:
 
 - a claim that MGA has been validated on H1;
-- a claim that MGA is statistically superior on P4;
+- a claim that MGA is statistically superior on Walk-and-Push;
 - a claim that RL prior or learned reliability improves whole-body pushing.
 
 ---
@@ -287,8 +287,8 @@ show an improvement under the same safety shell.
 > Does task-owned contact geometry enable unjamming and transfer from
 > fixed-stance object interaction to coupled whole-body walk-and-push control?
 
-P1 is controller validation, P2 is nominal/OOD fixed-stance pushing, P3 is the
-main geometry task, and P4 is a whole-body generalization extension. P4 is not
+Force Regulation is controller validation, Fixed-Stance Push is nominal/OOD fixed-stance pushing, Unjamming is the
+main geometry task, and Walk-and-Push is a whole-body generalization extension. Walk-and-Push is not
 presented as a win unless the formal multi-seed results actually show one.
 
 ---
@@ -526,32 +526,32 @@ quietly merged into a formal suite after inspecting formal seeds.
 ### 6.3 H1 suite list
 
 ```text
-p1_force_15n
-p1_force_30n
-p2_push_nominal
-p2_push_ood
-p3_unjam
-p4_walk_push
+force_regulation_15n
+force_regulation_30n
+fixed_stance_push_nominal
+fixed_stance_push_ood
+unjamming
+walk_and_push
 ```
 
-P1 has a force-step success contract, not a line-reaching success contract. Its
+Force Regulation has a force-step success contract, not a line-reaching success contract. Its
 metrics are rise time, settling time, overshoot, steady-state force error, force
-violation, and balance margin. P2--P4 use task-specific safe push success.
+violation, and balance margin. Fixed-Stance Push--Walk-and-Push use task-specific safe push success.
 
 All eight algorithms run all six H1 suites.  The four primary H1 ablations are
 now aligned with Surface and run every suite, so a row has the same causal
 meaning across the two tasks:
 
 ```text
-no_rl_prior:                    all P1--P4 suites
-no_learned_reliability:         all P1--P4 suites
-no_controllability_geometry:    all P1--P4 suites
-no_retraction:                  all P1--P4 suites
-no_stiffness:                   p1_force_15n, p1_force_30n
+no_rl_prior:                    all suites of the four Humanoid tasks
+no_learned_reliability:         all suites of the four Humanoid tasks
+no_controllability_geometry:    all suites of the four Humanoid tasks
+no_retraction:                  all suites of the four Humanoid tasks
+no_stiffness:                   force_regulation_15n, force_regulation_30n
 ```
 
 The first four are the cross-task causal matrix.  The final one is retained as
-the P1-specific impedance diagnostic.  The former P3 `no_tangent` formal YAML
+the Force Regulation-specific impedance diagnostic.  The former Unjamming `no_tangent` formal YAML
 is removed rather than renamed: tangent projection and the finite-difference
 realized-response lift are different mechanisms, so relabeling its old results
 would not be a valid controllability-geometry ablation.
@@ -591,10 +591,10 @@ Rules for learned methods:
 - PegInsert currently uses a 200k learned-policy protocol. Retain it unless a
   preregistered budget study changes all learned methods together.
 - H1 must use suite-aware frozen checkpoint bindings because its primitive
-  dimension changes in P4 and its ATACOM equality dimension changes in P3:
-  one raw PPO checkpoint shared by Full/standalone-RL/ISSA for P1--P3, one raw
-  PPO checkpoint for P4, and separate ATACOM tangent checkpoints for P1/P2,
-  P3, and P4.  A YAML path alone is not a valid binding; the resolved suite,
+  dimension changes in Walk-and-Push and its ATACOM equality dimension changes in Unjamming:
+  one raw PPO checkpoint shared by Full/standalone-RL/ISSA for the three fixed-base tasks, one raw
+  PPO checkpoint for Walk-and-Push, and separate ATACOM tangent checkpoints for Force Regulation/Fixed-Stance Push,
+  Unjamming, and Walk-and-Push.  A YAML path alone is not a valid binding; the resolved suite,
   action/observation dimensions, protocol, and checkpoint hash are audited.
 - H1 requires a fixed-dimensional task-wide learned-reliability contract (or a
   preregistered fixed-stance/walk split if one contract is demonstrably
@@ -711,25 +711,25 @@ Figures:
 
 ### 9.3 H1 push
 
-P1 data/figures:
+Force Regulation data/figures:
 
 - 15 N and 30 N force-step response;
 - rise/settling time;
 - peak/overshoot/steady-state MAE;
 - force violation and balance margin.
 
-P2--P4 data/figures:
+Fixed-Stance Push--Walk-and-Push data/figures:
 
 - safe push success;
 - goal error/progress/completion time;
-- yaw error and yaw recovery for P3;
+- yaw error and yaw recovery for Unjamming;
 - fall and balance violation;
 - force peak/CVaR/impulse;
 - friction-cone violation/slip;
 - non-hand collision;
 - wall contact/force where wall contact is task-defined;
-- P3 top-down box/yaw/contact trajectory;
-- P4 motion strip and executed GIF.
+- Unjamming top-down box/yaw/contact trajectory;
+- Walk-and-Push motion strip and executed GIF.
 
 ---
 
@@ -845,7 +845,7 @@ Actions:
 3. Support model and hidden/OOD execution environments.
 4. Expose state/action dimensions and position extraction only where meaningful.
 5. Register the plugins in the unified runner.
-6. Add smoke tests for all surface families, Peg suites, and H1 P1--P4 resets.
+6. Add smoke tests for all surface families, Peg suites, and all four H1 task resets.
 
 Acceptance:
 
@@ -919,7 +919,7 @@ Run one seed per task through both the legacy harness and the new unified path:
 ```text
 surface scan: rigid_cylinder, MGA and DIAL
 PegInsert: id_wide, MGA and DIAL
-H1: p3_unjam, model-based MGA and DIAL
+H1: unjamming, model-based MGA and DIAL
 ```
 
 Compare:
@@ -1034,7 +1034,8 @@ PegInsert:
 
 H1:
 
-- Run P1--P4 for DIAL and Model-based Only.
+- Run Force Regulation, Fixed-Stance Push, Unjamming, and Walk-and-Push for
+  DIAL and Model-based Only.
 - Run MGA only if its checkpoint/component contract is complete.
 
 Acceptance:
@@ -1065,8 +1066,9 @@ Execution record (2026-08-25):
   than raw success alone.
 - H1 supports the model-based geometry narrative without claiming a nonexistent
   learned MGA contract. Model-based Only removes the DIAL 30 N force spike,
-  wins P2 nominal and P3 safe success, and ties DIAL at 1.0 safe success on P4.
-  DIAL is stronger on the two-seed P2 OOD success rate. P1 is a force-step test,
+  wins Fixed-Stance Push nominal and Unjamming safe success, and ties DIAL at
+  1.0 safe success on Walk-and-Push. DIAL is stronger on the two-seed
+  Fixed-Stance Push OOD success rate. Force Regulation is a force-step test,
   so its zero task `safe_success` is not interpreted as failure; force peak,
   tracking error, balance, and violation metrics are the relevant endpoints.
 - The overall P7 promotion gate does **not** pass yet. Surface rigid convex is
@@ -1233,10 +1235,10 @@ reopened for H1 and P9 is **not authorized** until this extension passes.
 
 The H1 learned-artifact minimum is:
 
-- raw PPO, fixed stance P1--P3 (`action_size=12`), shared by MGA,
+- raw PPO for the three fixed-base tasks (`action_size=12`), shared by MGA,
   standalone RL, and ISSA;
-- raw PPO, P4 walk (`action_size=23`), shared by the same three methods;
-- ATACOM tangent PPO for P1/P2 (`action_size=5`), P3 (`action_size=1`), and P4
+- raw PPO, Walk-and-Push walk (`action_size=23`), shared by the same three methods;
+- ATACOM tangent PPO for Force Regulation/Fixed-Stance Push (`action_size=5`), Unjamming (`action_size=1`), and Walk-and-Push
   (`action_size=22`);
 - one fixed-dimensional H1 reliability checkpoint, or a preregistered
   fixed-stance/walk pair if the single-contract development test fails.
@@ -1277,7 +1279,7 @@ outside this repair scope.
   proposal plus eight stochastic expert horizons add nine certifications.
   Report this extra work and runtime; equal `Nsample` alone is not an
   equal-total-rollout claim.
-  The first P3 seed-0 comparison failed: yaw error improved from 0.0724 to
+  The first Unjamming seed-0 comparison failed: yaw error improved from 0.0724 to
   0.0128 rad, but final box error worsened from 0.0127 to 0.1604 m; balance
   and non-hand-contact violation rates were 25% and 21%, versus zero before.
   Safe success remained zero. The unvalidated three YAML overrides were
@@ -1299,7 +1301,7 @@ outside this repair scope.
   training reset/domain coverage and pass stability checks before replacing
   any frozen checkpoint; all H1 methods sharing a changed policy must be
   reevaluated together.
-- Legacy P4 terminates on box position alone. For DIAL seed 0, the box moves
+- Legacy Walk-and-Push terminates on box position alone. For DIAL seed 0, the box moves
   about 29 cm while the support center moves about **1 cm backward**. These
   results are short-push evidence, not walk-and-push evidence. The opt-in
   locomotion contract requires body/support advance, forward swing-and-land
@@ -1307,8 +1309,8 @@ outside this repair scope.
   and stance-only foot constraints are under development validation.
 - The first 300-step, zero-action locomotion probe failed to walk and fell;
   tightening success criteria alone is not a controller repair. Keep the
-  canonical P4 YAML unchanged until a physical walking probe succeeds.
-  The unified runner now supports a per-suite `n_steps` (e.g. 300 for P4),
+  canonical Walk-and-Push YAML unchanged until a physical walking probe succeeds.
+  The unified runner now supports a per-suite `n_steps` (e.g. 300 for Walk-and-Push),
   with same-suite cross-method budget checks and stale-result rejection.
 
 Repair validation status: 94 merged regression tests pass, plus the H1
@@ -1320,7 +1322,7 @@ advance 0.054 m, and peak hand force 108.24 N. Its 0.856 m box displacement
 is not a walking success. True locomotion remains unvalidated. Canonical
 task YAMLs and frozen checkpoints are unchanged.
 The six-run reliability development fit is diagnostic only: binary Brier
-scores are 0.2292/0.2372 and P3/P4 train/calibration trajectories repeat.
+scores are 0.2292/0.2372 and Unjamming/Walk-and-Push train/calibration trajectories repeat.
 It has not replaced the frozen reliability model. The repaired PPO trainer
 now obtains task parameters/durations from the canonical YAML and rejects
 missing domain coverage or divergent exports; fresh training is recorded below.
@@ -1346,20 +1348,20 @@ completed job or passing unit tests alone cannot advance this gate.
    Retrain reliability only from the matching pre-state/candidate/future-risk
    contract; report duplicate trajectories, effective calibration units,
    prediction error, support abstention, and continuous-risk coverage.
-   Calibration trajectories must be separate from seeds 110/111. P4 needs
+   Calibration trajectories must be separate from seeds 110/111. Walk-and-Push needs
    a physically valid gait/controller probe before a new walking policy is
-   trained; legacy P4 smoke cannot satisfy that requirement.
+   trained; legacy Walk-and-Push smoke cannot satisfy that requirement.
 2. **Paired development gate.** Once the preceding checks pass, compare MGA,
-   no RL prior, Model-based Only, and DIAL on P2-OOD/P3/P4 with seeds 110/111
-   (24 evaluations). Verify the P1 15/30 N force-control regression separately
+   no RL prior, Model-based Only, and DIAL on Fixed-Stance Push-OOD/Unjamming/Walk-and-Push with seeds 110/111
+   (24 evaluations). Verify the Force Regulation 15/30 N force-control regression separately
    before promotion. Keep reward, safety thresholds, low-level controller,
    suite duration, and evaluation seeds identical across compared methods;
    record all extra prior/certification rollouts and wall time. Require MGA's
    safe-success count not to regress against no RL prior or Model-based Only
    in any tested suite. Require at least one repeatable paired benefit in
    success, force-tail cost, or completion time, without hiding a safety
-   regression; report losses and ties as well. P3 must meet position and yaw
-   jointly. P4 must meet actual forward landings, body/support advance, box
+   regression; report losses and ties as well. Unjamming must meet position and yaw
+   jointly. Walk-and-Push must meet actual forward landings, body/support advance, box
    goal and dwell—not box motion alone. Inspect trajectories/GIFs and
    emergency/revalidation diagnostics. Two seeds are a development filter,
    not a statistically established paper-level advantage.
@@ -1370,15 +1372,15 @@ completed job or passing unit tests alone cannot advance this gate.
    configs, checkpoints and archived results remain outside this repair.
 4. **Formal reruns are conditional.** The H1 matrix is 580 evaluations
    (480 main + 100 targeted ablations). Replacing the shared H1 PPO,
-   reliability, ATACOM policies and P4 task affects 380 evaluations: P4's
-   100, plus P1--P3's 200 learned-method runs and 80 ablations. The other
-   200 P1--P3 policy-free baseline runs are reusable only after execution
+   reliability, ATACOM policies and Walk-and-Push task affects 380 evaluations: 100
+   Walk-and-Push evaluations, plus the three fixed-base tasks' 200 learned-method runs and 80 ablations. The other
+   200 policy-free baseline runs for the three fixed-base tasks are reusable only after execution
    equivalence and provenance checks. If shared dynamics/controller changes
    invalidate that equivalence, rerun the additional affected cases too.
    Do not enqueue formal work while either the MGA or walking gate fails.
 
    The read-only reuse audit finds clean `dd8a4b` provenance for all 200
-   archived P1--P3 policy-free runs. MBO's 50 runs use `mga_base` without
+   archived policy-free runs for the three fixed-base tasks. MBO's 50 runs use `mga_base` without
    an effective prior/reliability model or receding-incumbent override;
    this path does not call the changed emergency candidate. DIAL likewise
    bypasses that branch; MPPI/PegasusFlow use independent backends. This
@@ -1388,8 +1390,8 @@ completed job or passing unit tests alone cannot advance this gate.
 
 Training check execution: the first fixed-stance smoke (seed 101, requested
 4096 steps, `fixed_smoke_seed101`) completed both 2048-step PPO stages but
-was **rejected before policy export**. P1/P2 covered all four domains and
-ended with KL 0.1346; P3's last logged episode-window KL was 0.0243, but
+was **rejected before policy export**. Force Regulation/Fixed-Stance Push covered all four domains and
+ended with KL 0.1346; Unjamming's last logged episode-window KL was 0.0243, but
 the full-stage KL was 3105.7422. The last window must not conceal the
 stage-wide failure. Its Orbax stage checkpoints remain diagnostic artifacts,
 not accepted policies. Source inspection of the installed Brax trainer shows
@@ -1416,7 +1418,7 @@ Seven training-contract tests and eight reliability-contract tests passed
 before this second smoke; passing contracts did not predict training success.
 
 The third smoke (`fixed_raw_observation_smoke_seed101`) **passed the training
-health gate**, completing 4096 steps in 542.45 s. P1/P2 and P3 final KL were
+health gate**, completing 4096 steps in 542.45 s. Force Regulation/Fixed-Stance Push and Unjamming final KL were
 0.000279 and 0.069182, respectively, with finite parameters, actual coverage
 of every stage domain and a constant learning rate of 0.0001. Its checkpoint
 SHA256 is `d60d779453bcb6177e5d8a07b400c0100783dac9925e8662e1079ff501aa21c0`.
@@ -1425,13 +1427,13 @@ the old normalizer-floor CLI is explicitly recorded as unused by this policy.
 This artifact is tagged `pipeline_smoke` / `performance_validated=false`.
 It must not be used as the full-budget prior in the paired or formal matrix.
 Deployment-action sanity checks also passed on the existing development
-observation records: P2-OOD saturation fell from 100% (all 12 old policy
-channels constant) to 0--0.58%, with no constant channels; P3 saturation was
+observation records: Fixed-Stance Push-OOD saturation fell from 100% (all 12 old policy
+channels constant) to 0--0.58%, with no constant channels; Unjamming saturation was
 0.50%. This is an observation/action check, not a new rollout or performance
-comparison, and the duplicated P3 records are not independent trials.
+comparison, and the duplicated Unjamming records are not independent trials.
 The subsequent 200k fixed-policy attempt (seed 101, eight environments, same
-fixed learning rate and KL gate) **failed at 103k observed steps**: P1/P2
-completed 100k, but P3 reached episode KL 1.2591 at 3k, above the unchanged
+fixed learning rate and KL gate) **failed at 103k observed steps**: Force Regulation/Fixed-Stance Push
+completed 100k, but Unjamming reached episode KL 1.2591 at 3k, above the unchanged
 limit of 1.0. No `fixed_ppo_seed101.pkl` was exported. Its failure and complete
 logged history remain under `_policies/_training/fixed_ppo_seed101/`.
 Before this failure, first-stage median episode return already worsened from
@@ -1460,9 +1462,9 @@ parameters. Wall time was 625.53 s, with sampled memory below the container's
 checkpoint is `_policies/fixed_temporal_credit_check_seed101.pkl`, SHA256
 `52122932360351f19e6b30c6a38779685852c7eaed839abdf39c6154d45d196c`.
 Its observation-only deployment check is also finite and nonconstant on the
-existing P2-OOD/P3 development records: P2-OOD action saturation is 0--0.58%
-(old policy 100%, all 12 channels constant), and P3 saturation is 0.33%.
-This reuses archived observations, not new physics; duplicated P3 records
+existing Fixed-Stance Push-OOD/Unjamming development records: Fixed-Stance Push-OOD action saturation is 0--0.58%
+(old policy 100%, all 12 channels constant), and Unjamming saturation is 0.33%.
+This reuses archived observations, not new physics; duplicated Unjamming records
 remain duplicates and these numbers are not a performance comparison.
 The same setting subsequently **completed 200k steps** (100k per stage) in
 865.34 s, exporting `_policies/fixed_temporal_credit_ppo_seed101.pkl`, SHA256
@@ -1470,12 +1472,12 @@ The same setting subsequently **completed 200k steps** (100k per stage) in
 Final stage KL was 0.000123 / 0.058508; parameters/domain coverage passed the
 existing health gate. All recorded startup source hashes still matched at
 completion audit. Within each stage, the first/last ten logged reward-window
-medians were -1467/-1023 (P1/P2) and -6608/-5051 (P3); this is a training
+medians were -1467/-1023 (Force Regulation/Fixed-Stance Push) and -6608/-5051 (Unjamming); this is a training
 trend, not a closed-loop evaluation or cross-run causal comparison.
 The full-budget checkpoint's observation-only inference is finite and
-nonconstant, with P2-OOD saturation 0--0.41% and P3 0.25% on the same archived
+nonconstant, with Fixed-Stance Push-OOD saturation 0--0.41% and Unjamming 0.25% on the same archived
 development observations. It still has `performance_validated=false`.
-The next fixed-prior check uses the existing unified runner on P2-OOD/P3 and
+The next fixed-prior check uses the existing unified runner on Fixed-Stance Push-OOD/Unjamming and
 seeds 101/102 (four new standalone-RL trajectories), isolated under
 `fixed_prior_validation/`. Seed 101 overlaps training and these are pipeline/
 closed-loop diagnostics, not the held-out paired 110/111 matrix. No comparable
@@ -1484,17 +1486,17 @@ in for them. Neither a successful export nor finite actions satisfy the
 paired performance gate.
 
 All four fixed-prior closed-loop diagnostics subsequently completed and passed
-the persisted-trajectory, checkpoint and source-hash checks. P2-OOD seeds
+the persisted-trajectory, checkpoint and source-hash checks. Fixed-Stance Push-OOD seeds
 101/102 reached the line (goal errors 2.48/1.79 mm; force peaks 31.45/42.82 N;
 no force-limit events), but both had safe success zero: non-hand collision
-rates were 21%/19% and balance-violation rates 11%/7%. P3 produced identical
+rates were 21%/19% and balance-violation rates 11%/7%. Unjamming produced identical
 trajectories for both seeds: progress 3.23%, goal error 29.03 mm, yaw error
 0.08168 rad, force peak 63.49 N and force-violation rate 1%; task/safe success
 were both zero. These are standalone-prior diagnostics, not new full-MGA
-results; the duplicate P3 trajectories do not provide independent evidence.
+results; the duplicate Unjamming trajectories do not provide independent evidence.
 The training/inference repair is real, but useful and safe closed-loop prior
 performance has not been established. Fresh sequence-reliability collection
-uses canonical MBO and MPPI, P2-OOD/P3, training seed 101 and calibration seed
+uses canonical MBO and MPPI, Fixed-Stance Push-OOD/Unjamming, training seed 101 and calibration seed
 102 (eight trajectories), under `reliability_collection/`. Fitting must inspect
 class coverage, duplicate sources and the small number of independent
 trajectories before any paired MGA evaluation or promotion.
@@ -1541,9 +1543,9 @@ The matched support-phase test also failed, now at 74 steps (1.48 s), with
 body displacement -0.645 m and zero valid landings. Its planned stance / actual
 contact allocation and total feedback authority require further diagnosis;
 the airborne-foot error is real, but its removal has not established a
-working gait. No walking policy training or formal P4 rollout is started.
+working gait. No walking policy training or formal Walk-and-Push rollout is started.
 The completed fixed-stance temporal-credit 200k training did not use these
-opt-in walking settings and cannot validate P4.
+opt-in walking settings and cannot validate Walk-and-Push.
 Read-only diagnosis identifies earlier mode/reference errors than the final
 fall: at 0.40 s both feet carry 203/324 N, but planned-phase weights are [0,1],
 halving the configured total support gain. At 0.58--0.60 s the still-loaded
@@ -1559,7 +1561,7 @@ No such untested controller change is made during the current fixed-policy
 training: its startup source hashes must remain interpretable.
 
 After the fixed-policy training completed and its source hashes were checked,
-the next isolated P4 candidate was implemented in the existing controller/env
+the next isolated Walk-and-Push candidate was implemented in the existing controller/env
 hooks. It uses measured foot-floor normal loads, not planned swing flags:
 with `d=max(F_L+F_R, m_robot*g)`, ankle weights are `2 F_i/d`, and the shared
 capture/balance-control reference is the load-weighted foot reference with
@@ -1597,20 +1599,20 @@ in the CPU queue; no full-MGA comparison or formal matrix is queued yet.
 
 **2026-09-09 queue revision after the fixed-stance failure audit.** Do not
 execute the fit above automatically. The four MBO collections are complete;
-MPPI P2-OOD is finishing, with the remaining collection/fit held for a targeted
+MPPI Fixed-Stance Push-OOD is finishing, with the remaining collection/fit held for a targeted
 controller check. Fixed-stance WBC still braces against commanded force even
-when measured hand contact is zero (the strict P4 path already uses measured
-load). In MBO P2-OOD seed 102, hand contact is absent at steps 12--41, while
+when measured hand contact is zero (the strict Walk-and-Push path already uses measured
+load). In MBO Fixed-Stance Push-OOD seed 102, hand contact is absent at steps 12--41, while
 the independent pre-clipping ankle brace term rises from -19.60 to -101.25 Nm
 per ankle; non-hand collision starts at step 42. This is a temporal/mechanistic
 diagnosis, not yet proof that this term alone causes the failure. Replay the
 complete MJX state to step 12 and compare the same recorded action suffix
 under the original WBC and its existing `support_load=min(command,measured)`
-hook, without changing actions or task thresholds. Use raw-P3 step 35, where
+hook, without changing actions or task thresholds. Use raw-Unjamming step 35, where
 command and measurement nearly agree, as a one-step negative control. Preserve
 all collected records; if the low-level dynamics changes, do not present an
 old-controller reliability fit as calibrated for the repaired controller.
-The isolated P4 neutral-reference checks remain next; no formal freeze or
+The isolated Walk-and-Push neutral-reference checks remain next; no formal freeze or
 performance acceptance follows from these diagnostics alone.
 
 The matched-state intervention subsequently completed with strict 1e-5
@@ -1619,26 +1621,26 @@ The first two attempts stopped at a numerical replay check because they JIT-
 compiled reset, unlike the contact-task runner's eager reset; these attempts
 did not test the physical intervention. The completed artifact is
 `measured_support_counterfactual_20260909T152606259336Z/results.json` below the
-H1 repair development root. For the P2-OOD seed102 42-step suffix, non-hand
+H1 repair development root. For the Fixed-Stance Push-OOD seed102 42-step suffix, non-hand
 force peak fell from 1408.27 N to zero, and body displacement from 0.29287 m
 to 0.06956 m. Both branches failed task success; the measured-load branch
-made essentially no box progress. In the P3 one-step negative control, where
+made essentially no box progress. In the Unjamming one-step negative control, where
 command and measured load were nearly equal, body displacement differed by
 0.62 micrometres and box progress was unchanged. This supports repairing
 false load compensation, not claiming improved closed-loop success.
 
 The existing task-owned `support_load` hook is now used for fixed stance as
-well as strict locomotion. The legacy box-only P4 path remains unchanged.
+well as strict locomotion. The legacy box-only Walk-and-Push path remains unchanged.
 No reward, force threshold, contact target or hand-impedance equation changes.
-Recheck closed-loop P1/P2/P3 before retraining; do not immediately fit the old
+Recheck closed-loop Force Regulation/Fixed-Stance Push/Unjamming before retraining; do not immediately fit the old
 collection or declare the repaired task solved from a fixed-action suffix.
 
 The collection checkpoint is now six verified trajectories: four MBO and two
-MPPI P2-OOD runs. Both post-save interruptions were in the temporary queue's
+MPPI Fixed-Stance Push-OOD runs. Both post-save interruptions were in the temporary queue's
 validator (`level` in newly returned rows versus `suite` in saved JSON), not
 missing simulations. Their 100 actions, 101 states, task signals and source
 hashes were checked; do not rerun or overwrite them. The remaining two MPPI
-P3 collections and reliability fit are held pending the controller diagnosis.
+Unjamming collections and reliability fit are held pending the controller diagnosis.
 
 The neutral-reference standing A failed at 74 steps (1.48 s), with body drift
 -0.796 m and pitch -0.861 rad, so its dependent gait B was not run. Removing
@@ -1659,12 +1661,12 @@ the feedback point alone is therefore insufficient; do not promote this
 runtime-only proxy or start its dependent walking test. Diagnose the remaining
 posture/COM modes before selecting a further intervention.
 
-**P4 execution revision: reference the vendored DIAL task first.** Stop the
+**Walk-and-Push execution revision: reference the vendored DIAL task first.** Stop the
 isolated neutral-reference/controller-gain sequence here. Failure of a zero-
 action CPG is not evidence that closed-loop planning or learned feedback cannot
 walk. The vendored `UnitreeH1PushCrateEnv` optimizes 19 absolute joint targets;
 its gait is a reward reference, not a prescribed joint CPG. Our 23-dimensional
-P4 instead exposes a 12-dimensional contact primitive plus only 11 bounded
+Walk-and-Push instead exposes a 12-dimensional contact primitive plus only 11 bounded
 CPG residuals. At reset the hip/knee/ankle target intervals are
 [-0.7,-0.5]/[0.7,0.9]/[-0.7,-0.5] rad, versus DIAL's
 [-1,1]/[0,1.74]/[-0.6,0.4]. Larger action dimension does not establish equal
@@ -1688,14 +1690,14 @@ walk-and-push success or with a 100-step/64-sample run.
    thereby change the force-control tasks.
 2. Evaluate an opt-in task/controller realization with the existing 12 hand
    coordinates unchanged and the last 11 coordinates mapped to robot-owned
-   joint-target ranges. This is an algorithm-independent P4 interface, not a
+   joint-target ranges. This is an algorithm-independent Walk-and-Push interface, not a
    special permission for MGA. A reward/initialization gait reference must
    not silently overwrite the optimized joints.
 3. Account for initialization, receding tails and emergency actions in the
    new coordinates. Zero is a joint-range midpoint, not a safe stance. Recheck
    physical support, actual landings and force metrics in closed-loop tests;
    no zero-action gait-success prerequisite is imposed on the planner.
-4. Revalidate/retrain P4 policy and reliability components if this realization
+4. Revalidate/retrain Walk-and-Push policy and reliability components if this realization
    is adopted. An unchanged 23-dimensional shape does not make checkpoints
    semantically compatible. Keep canonical YAML, formal results and the other
    two tasks unchanged until the new development gates pass.
@@ -1721,7 +1723,7 @@ peak hand/nonhand-box normal force was 528.1/655.3 N. Its original loop
 continued through 263 done states, all caused by crossing task sampling
 joint bounds, not torso-height/flip termination. These bounds are not the
 physical joint limits. This is evidence for direct-joint planning authority,
-**not** a force-safe P4 success or a formal comparison result. The standard
+**not** a force-safe Walk-and-Push success or a formal comparison result. The standard
 trajectory GIF is a render of saved q/qd, with no physics replay.
 
 The opt-in `joint_target` realization is implemented in the existing robot
@@ -1738,7 +1740,7 @@ manifold stance rows, although it no longer prescribes low-level joint motion.
 Only this new mode exposes reward-phase sin/cos (H1 observation 76 -> 78) and
 a JSON policy-interface contract. Old residual-action checkpoints are rejected
 even if action width matches. The existing H1 trainer can receive explicit
-development P4 overrides and an episode length; no new YAML or runner is used.
+development Walk-and-Push overrides and an episode length; no new YAML or runner is used.
 Six array contracts and a real-H1 reset/interface check passed (the latter
 executed zero physics steps). The optional receding-initializer tests passed
 14 cases. The latest five-file unit suite passed 110 tests, including all
@@ -1747,7 +1749,7 @@ to the 110. These interface tests do not establish walking or safety.
 
 The first new-task DIAL closed-loop check completed under
 `joint_target_closed_loop/`, seed 110, 300 steps, N64/H24/node6/4+10 and
-temperature 0.05. Relative to canonical P4, task overrides are exactly
+temperature 0.05. Relative to canonical Walk-and-Push, task overrides are exactly
 `joint_target`, `locomotion`, leg gravity compensation 0, `slow_walk`, legacy
 gait reward reference, and a 0.50 m push distance. Other rewards, the 60 N hand
 limit, box dynamics and strict landing/success thresholds remain unchanged.
@@ -1782,7 +1784,7 @@ metrics pipeline before these runs. Do not change the 60 N safety limit,
 silently tune reward weights, or promote formal results from this contrast.
 
 For fixed stance, the first closed-loop measured-support regression is also
-complete at `measured_support/fixed_stance_regression/`: model-based-only P3,
+complete at `measured_support/fixed_stance_regression/`: model-based-only Unjamming,
 seed 101, 100 steps/N64/H16. It reaches the position/yaw goal at step 46
 (3.572 mm position error, 0.02604 rad yaw error), with no fall, nonhand-box
 collision or balance violation. A single 64.64 N impact at step 19 exceeds
@@ -1791,7 +1793,7 @@ The post-success trajectory is absorbing, not 54 additional physical steps.
 This repairs progress but does not pass the safety gate; no claim of MGA
 dominance or permission for formal reruns follows from it.
 
-Two matched-action P3 diagnostics are complete under `measured_support/`.
+Two matched-action Unjamming diagnostics are complete under `measured_support/`.
 `acquisition_reference_counterfactual_20260909T162720974575Z/` replays both
 100-action branches from the same eager reset; original replay error is
 exactly zero. Replacing only the interpolated acquisition reference with
@@ -1820,7 +1822,7 @@ Both finite, nonpenetrating hand gaps must lie in the existing 20 mm approach
 band, or the existing measured-force trigger must fire. The non-sphere/G1
 fallback is unchanged and is not covered by the H1 claim. Eight focused
 acquisition/direct-joint tests passed; the real reset check executed no physics
-steps. Seven metric-extractor tests passed, and a real P4 reset confirmed that
+steps. Seven metric-extractor tests passed, and a real Walk-and-Push reset confirmed that
 the seven new raw diagnostic signals persist through the full extractor.
 The matched load queue at `matched_load/` locks these source hashes until
 both 300-step runs finish (both are now complete with unchanged hashes). This is a development mechanism contrast, not a
@@ -1835,7 +1837,7 @@ fires at step 102 (torso 0.57696 m < 0.588 m), whereas the old metric's fixed
 forward landing at step 64, after backward landings by both feet; the old
 site-height counter misses it. A stricter offline event count requiring an
 observed unload edge and continuously supported opposite foot yields left 0,
-right 1, still a failed P4. Do not describe the motion as either no stepping
+right 1, still a failed Walk-and-Push. Do not describe the motion as either no stepping
 at all or successful forward walking.
 
 Before the first simultaneous loss of foot load (steps 1--69), gait tracking
@@ -1871,14 +1873,14 @@ clearance/4 cm forward-displacement thresholds. Loaded sliding, toe roll,
 in-place lifts and full-air intervals do not manufacture forward steps.
 Support progress uses recorded landings, not moving site positions.
 
-Strict P4 observations append 13 task-memory coordinates (91 total), while
+Strict Walk-and-Push observations append 13 task-memory coordinates (91 total), while
 preserving the original 78-dimensional prefix and the 23-dimensional action
 interface: swing/load eligibility, relative landing displacement, step counts,
 goal dwell and independently saturated startup/acquisition clocks. Other
 realizations keep their previous 76/78-dimensional observations. Exact policy
 interface checks reject old checkpoints; dimension padding is not retraining.
 
-**Terminal-objective consistency gate.** The successful P3 trace above earns
+**Terminal-objective consistency gate.** The successful Unjamming trace above earns
 0.81235 on completion but zero on every success-padding step; its previous ten
 active rewards average 0.96744. PPO termination cuts bootstrap, so auto-reset
 does not credit the next episode to the completing action. This creates a
@@ -1916,15 +1918,15 @@ rewards. Audit the post-fall objective before claiming full terminal consistency
 do not silently change it during the source-frozen closed-loop pair.
 
 The next source-frozen closed-loop queue is
-`physical_contact_contract/`: first DIAL P4 seed 110, 300 steps, N64/H24/node6,
+`physical_contact_contract/`: first DIAL Walk-and-Push seed 110, 300 steps, N64/H24/node6,
 4+10 diffusion, temperature 0.05 and original 8 N resistance; then model-based
-only P3 seed 101, 100 steps, N64/H16/node4 and the canonical 2+10 schedule.
-The P4 overrides and reward/safety weights are otherwise those of the matched
+only Unjamming seed 101, 100 steps, N64/H16/node4 and the canonical 2+10 schedule.
+The Walk-and-Push overrides and reward/safety weights are otherwise those of the matched
 8 N arm. The updated source/asset hashes, task-memory and physical safety
 signals are recorded. These runs are development checks, not formal seed
 selection or a claim that full-MGA has passed its deployment gate.
 
-If corrected-clearance P4 still fails, the next prespecified single-factor
+If corrected-clearance Walk-and-Push still fails, the next prespecified single-factor
 contrast is `w_prog: 8 -> 0`, retaining `w_box=5`, the 0.5 m goal and all
 locomotion/safety thresholds. A second, separate contrast may replace only
 the cold-plan mean with the vendor's affine joint midpoint, retaining the
@@ -1935,7 +1937,7 @@ tail, so changing initialization alone is not an exact reproduction of the
 vendor's execute/shift/replan schedule. Do not combine these contrasts into
 one unexplained gain change or copy the vendor's force-unsafe objective.
 
-The corrected-clearance DIAL P4 run is complete (1147.2 s, unchanged hashes):
+The corrected-clearance DIAL Walk-and-Push run is complete (1147.2 s, unchanged hashes):
 task/SSR 0, goal error 0.6817 m, final box progress 1.1817 m, left/right steps
 0/0 and hand peak 54.63 N. Offline reconstruction matches all saved load,
 eligibility, swing and step-count states over the 75 pre-fall transitions
@@ -1949,25 +1951,25 @@ step 76 (1.52 s). Compared using the same physical definitions, the old 8 N
 trace falls at step 102 and has one valid right step: force-limit violations
 decreased, but locomotion became worse. No promotion is justified.
 
-The first P3 attempt in that queue stopped after its first physical step
-because the inline progress logger requested P4-only walk-memory fields.
+The first Unjamming attempt in that queue stopped after its first physical step
+because the inline progress logger requested Walk-and-Push-only walk-memory fields.
 It produced no complete trajectory/performance result. Its two audit artifacts
-are retained in `_failed_attempts/mbo_p3_missing_walk_log_fields/`; the corrected
-logger uses the extractor's existing zero defaults for fixed stance. Only P3
-is retried, with identical runtime hashes, and the single-factor P4 progress
+are retained in `_failed_attempts/mbo_unjamming_missing_walk_log_fields/`; the corrected
+logger uses the extractor's existing zero defaults for fixed stance. Only Unjamming
+is retried, with identical runtime hashes, and the single-factor Walk-and-Push progress
 contrast waits for successful completion of that queue. A logger error is not
 counted as an environment failure or hidden as a successful run.
 
-The retried P3 physics and standard result writing completed: 100 actions,
+The retried Unjamming physics and standard result writing completed: 100 actions,
 101 states, task/SSR 0, position error 0.24068 m, yaw error 0.07153 rad,
 hand peak 67.56 N (two over-limit steps), three balance-violation steps,
 no fall and no nonhand-box collision. A final inline validator incorrectly
-required P4-only raw foot diagnostics; independent post-save validation of
+required Walk-and-Push-only raw foot diagnostics; independent post-save validation of
 the common signals, finite states/actions, task metadata, hashes and summaries
 passed without another simulation. The diagnostic status retains this error;
 the queue's completion means valid data, not a performance pass.
 
-P3's geometric acquisition is at step 36, first measured contact at 42 and
+Unjamming's geometric acquisition is at step 36, first measured contact at 42 and
 clearance release at 49 (yaw 0.06134). The best yaw is 0.05591 at step 51;
 the required 0.03 rad is never reached. Box position alone enters tolerance
 at post-steps 72--73, while yaw remains 0.07091--0.07133. The historical
@@ -1976,7 +1978,7 @@ The force peak comes later at step 82 and cannot explain the earlier failure
 to meet position and yaw together. Saved outer-step integrator endpoints stay
 within [-23.15, 27.69] N; do not claim saturation or PI causality from them.
 
-The next scoped P3 change, pending the P4 source-frozen contrasts, is to remove
+The next scoped Unjamming change, pending the Walk-and-Push source-frozen contrasts, is to remove
 only the clean chart's forced lateral-contact `a` equality. Geometric release
 at 5 mm clearance must not disable subsequent yaw correction: the current
 chart fixes `a` to the centre after release, leaving only vertical `b` free.
@@ -1988,8 +1990,8 @@ impact worse. The new proposal restores optimizer freedom rather than fixing
 another hand-designed contact location. Its performance remains untested, and
 the retained 45 N command equality still cannot by itself guarantee braking.
 
-The prespecified `w_prog=0` P4 contrast is complete at
-`box_progress_contrast/dial_p4_progress/` (1111.6 s, unchanged runtime hashes).
+The prespecified `w_prog=0` Walk-and-Push contrast is complete at
+`box_progress_contrast/dial_walk_and_push_progress/` (1111.6 s, unchanged runtime hashes).
 It still has task/SSR 0 and zero valid forward steps on both feet. First fall
 is delayed from step 76 to 104 (1.52 to 2.08 s), and pre-fall peak hand force
 decreases from 45.82 to 38.77 N. These are partial improvements, not walking:
@@ -2024,18 +2026,18 @@ float32 numerical tolerance, without resimulation or changing any physical
 safety/performance threshold. The diagnostic status retains the original
 assertion error. Neither this initialization nor `w_prog=0` is promoted.
 
-After both P4 contrasts completed, the scoped P3 free-contact patch was
-applied in the existing task and tests. P3 now has ten clean equalities and
+After both Walk-and-Push contrasts completed, the scoped Unjamming free-contact patch was
+applied in the existing task and tests. Unjamming now has ten clean equalities and
 two optimizer-controlled contact coordinates; raw action/observation widths
-and P1/P2/P4 branches remain unchanged. New contracts cover both sides of
+and Force Regulation/Fixed-Stance Push/Walk-and-Push branches remain unchanged. New contracts cover both sides of
 geometric release, actual tangent filtering, rank/dimensions, rejection of
 old 1D ATACOM heads and export of a 2D head without changing the shared raw
 fixed policy. Physics and regression results must be checked before this
 mechanism is considered validated.
 
 All six new contract cases passed in the existing `dev-cpu:local` image
-(6.62 s; 92 unrelated cases deselected). The subsequent P3/MBO seed101
-100-step N64 closed loop at `free_contact_geometry/mbo_p3/` completed in
+(6.62 s; 92 unrelated cases deselected). The subsequent Unjamming/MBO seed101
+100-step N64 closed loop at `free_contact_geometry/mbo_unjamming/` completed in
 341.4 s with unchanged hashes, but failed task/SSR: goal error 0.04096 m,
 yaw error 0.08085 rad, hand peak 103.92 N, two force violations and four
 nonhand-collision transitions. There was no fall. This patch restores a
@@ -2095,7 +2097,7 @@ departed/tensile contact is insufficient. The task's sampling AL and sequence
 acceptance score share this soft residual; raw constraints, ATACOM's input,
 real force/nonhand/balance/fall risk, the ten-row chart, and task physics and
 reward remain unchanged. This is a desired-wrench compatibility cost, not a
-measurement of actual friction or a new safety certificate. The next P3
+measurement of actual friction or a new safety certificate. The next Unjamming
 seed101/N64/100-step development run compares against the failed free-coordinate
 reference above; inspect pre-contact direction, actual contact acquisition,
 joint yaw-and-position completion, and force/nonhand violations.
@@ -2104,7 +2106,7 @@ Ten focused contact-score/terminal/safety/chart contracts passed in 6.67 s
 contracts, not MJX closed-loop validation. The H1 environment at this freeze
 has SHA256 `9bbd2575933eeccd7c9297cc5349dfc51a6df5279311d0cc7197f8557da8aef0`.
 
-The matching `contact_mode_scoring/mbo_p3/` closed loop completed in 350.19 s
+The matching `contact_mode_scoring/mbo_unjamming/` closed loop completed in 350.19 s
 and remained unsuccessful/unsafe. Importantly, it **did** correct yaw: steps
 52--56 satisfy the 0.03-rad limit, reaching signed yaw -0.000365 at step 54.
 It then over-rotates to -0.09209 at 80 and finishes at -0.05905. During the
@@ -2130,23 +2132,23 @@ half-width 0.55 m and hand spacing offsets +/-0.21 m, the current shared
 center can put the left target outside the box face. It is 42.43 mm outside
 at 84 and only 7.90 mm inside at 85, following center changes of -139.69 mm
 at 83--84 and -50.33 mm at 84--85. Wall loading already precedes this event.
-Pre-register the next geometry-only repair: on H1/P3 rear-face contact,
+Pre-register the next geometry-only repair: on H1/Unjamming rear-face contact,
 parameterize the common center over half-span
 `actual_half - abs(hand_offset) - contact_edge_margin = 0.30 m`, retaining
 both hands' fixed spacing and 4 cm edge margin. Do not independently clamp
 hands or simultaneously tune PI, force, reward, or safety limits. This is a
 real physical-chart change (raw `a=0` center becomes 0.15 rather than
-0.275 m), not a no-op guard. Preserve P1/P2/P4/G1 exactly and explicitly
+0.275 m), not a no-op guard. Preserve Force Regulation/Fixed-Stance Push/Walk-and-Push/G1 exactly and explicitly
 leave side/mixed-face semantics outside this first repair's claim.
 
 The implementation audit narrows the face-selection claim further: canonical
-P3 CFS includes three equality rows on raw face logits, so final refined
+Unjamming CFS includes three equality rows on raw face logits, so final refined
 commands are near-rear, not a validated learned side-face selector. Raw
 samples are scored before that retraction and can still use mixed faces.
 Neither the existing right-hand residual nor the four physical-risk channels
 certify both targets' finite-face membership. The span correction must not
 introduce an all-face geometry-safe label. Its next single-case physical
-check is `rear_contact_span/mbo_p3`, seed101,100 steps,Nsample64,Hsample16,
+check is `rear_contact_span/mbo_unjamming`, seed101,100 steps,Nsample64,Hsample16,
 Hnode4,2+10 updates, temperature0.06, using the existing unified runner and
 unchanged model-based-only algorithm. Compare against `contact_mode_scoring`
 under the same H1 metric contract. Inspect actual hand/box contact, the joint
@@ -2160,14 +2162,14 @@ The rear-span implementation and its regression checks are now in place:
 and3 prior-interface checks), with AST and diff checks clean. The constructor
 compares actual half-extent against the sum of hand offset and edge margin;
 the zero-span0.25 m boundary is rejected without a tolerance that would mask
-invalid geometry. P1/P2/P4/G1 target arithmetic matches the independent old
-formula exactly; P3 retains76D observations,12D actions,10 clean equalities
+invalid geometry. Force Regulation/Fixed-Stance Push/Walk-and-Push/G1 target arithmetic matches the independent old
+formula exactly; Unjamming retains76D observations,12D actions,10 clean equalities
 and2 ATACOM tangent coordinates. These tests do not execute a physical
 rollout or establish side/mixed-face safety. H1 environment source SHA256 is
 `fb9165a65578844a467b3ad9776324438bf5545680ce5416a8a37698d7926945`.
 The single100-step rear-span physical check then completed in358.82 s with
 all standard artifacts, finite states and an unchanged source hash. For the
-first time in these matched model-based-only P3 checks, actual task success
+first time in these matched model-based-only Unjamming checks, actual task success
 occurs on transition67 (zero-based completion metric66): position error
 0.003207 m and absolute yaw0.009550 rad. The67 active transitions have no
 fall, balance violation or nonhand collision. However, hand force peaks at
@@ -2175,9 +2177,9 @@ fall, balance violation or nonhand collision. However, hand force peaks at
 force CVaR95 is109.647 N. Safe success remains zero. Preserve all100 raw rows,
 including33 explicitly marked unexecuted success-padding rows, but do not
 use padding to dilute risk. This is a task-completion improvement, not a
-safety/performance promotion. P3's current completion rule is position plus
+safety/performance promotion. Unjamming's current completion rule is position plus
 yaw without fall; release is a separately reported latch, and there is no
-P4-style velocity/dwell condition. Completion therefore does not establish
+Walk-and-Push-style velocity/dwell condition. Completion therefore does not establish
 a stationary or sustained post-goal recovery. Next inspect the pre-impact
 target/contact/PI sequence and the common active interval with the previous
 case before changing any force-loop mechanism.
@@ -2249,7 +2251,7 @@ hold the integral at its actual anchor value, or hold only the additive
 two-ankle brace torque at its anchor value. Preserve the other feedback paths,
 all four saved actions and original clipping. A reduced peak with lost motion
 is not a closed-loop repair, and two effective interventions would not identify
-a unique cause. Recheck the ordinary archived prefix after any P4-only source
+a unique cause. Recheck the ordinary archived prefix after any Walk-and-Push-only source
 edit; record that source difference explicitly.
 Both interventions completed in162.32 s with295 physics steps and all
 archive/anchor/control/source gates passing. Baseline / held integral / held
@@ -2304,11 +2306,11 @@ increases from0.5767 to0.9139 mm and yaw correction from7.724 to9.655 mrad.
 Every outer interval nevertheless contains an unsafe substep, and both
 branches are correctly rejected. This is a local feedback-timescale result,
 not a safe controller or evidence that the reduced gain establishes45 N from
-reset. The next isolated P3 check must use a complete reset-to-goal rollout;
-do not combine that gain change with the next P4 objective test.
+reset. The next isolated Unjamming check must use a complete reset-to-goal rollout;
+do not combine that gain change with the next Walk-and-Push objective test.
 
-That full-reset P3 check subsequently passed on development seed101 in375.51 s
-(`integral_rate/mbo_p3/validation.json`). The only configuration intervention
+That full-reset Unjamming check subsequently passed on development seed101 in375.51 s
+(`integral_rate/mbo_unjamming/validation.json`). The only configuration intervention
 is `ki_force: 1 -> 0.08`; the solver remains the archived `mga_base` development
 controller, not full MGA or the canonical no-RL-prior ablation. All100 actions
 and101 states are retained: completion is State67/1.34 s, followed by33
@@ -2330,7 +2332,7 @@ confirmed unchanged at[0.1,0.1,0.1] kg m^2, mass8 kg and half-extents0.55 m.
 The virtual wrench-based friction-cone diagnostic still flags52.24% of outer
 samples: the physical SSR pass does not certify every AL/manifold residual.
 Preserve source/input hashes and this distinction. A second development seed,
-P1/P2 retention and the separate actual-unload contract are still required
+Force Regulation/Fixed-Stance Push retention and the separate actual-unload contract are still required
 before task-wide gain promotion or full-MGA training/acceptance claims.
 
 The separate physical UNLOAD support-path comparison is complete at
@@ -2352,7 +2354,7 @@ the contact geometry and force remains about17.6 N; the positive clearances
 of their commanded targets are not achieved hand clearances. Continuous
 fixed-anchor unloading, actual retained stiffness, NORMAL re-entry and
 invalid-entry behavior remain unvalidated. This fixed-stance support result
-does not transfer to P4's direct joint-target path, which has no additive
+does not transfer to Walk-and-Push's direct joint-target path, which has no additive
 brace controller. All executed unloading substeps must remain in physical
 safety statistics even where the normal-only reliability model abstains.
 
@@ -2408,13 +2410,13 @@ task success/SSR0 and tracking error against the benchmark45 N; it validates
 unloading, not task completion or full-MGA superiority. All150 UNLOAD samples
 remain in safety statistics despite normal-only reliability abstention.
 
-Next, freeze one current runtime for five development checks: P3 MBO seed102
-at KI0.08, P1 15 N seed101 at KI1/0.08, and P2 nominal10 cm seed101 at KI1/0.08.
+Next, freeze one current runtime for five development checks: Unjamming MBO seed102
+at KI0.08, Force Regulation 15 N seed101 at KI1/0.08, and Fixed-Stance Push nominal10 cm seed101 at KI1/0.08.
 The latter two are genuine same-source, same-seed single-factor pairs. The
-earlier successful P3 seed101 predates this execution-context integration;
+earlier successful Unjamming seed101 predates this execution-context integration;
 report that source difference instead of calling it an identical-source
-two-seed cohort. MBO here is `mga_base`, not `no_rl_prior` or full MGA. P1
-30 N/P2-OOD retention, a fresh learned prior/reliability and true receding
+two-seed cohort. MBO here is `mga_base`, not `no_rl_prior` or full MGA. Force Regulation
+30 N/Fixed-Stance Push-OOD retention, a fresh learned prior/reliability and true receding
 MGA gate execution remain outside these five checks.
 
 The fixed-candidate gate-to-execution diagnostic is complete under
@@ -2441,18 +2443,18 @@ reliability was active. Task/strict-safe success remain0 for this one-step
 unloading diagnostic; do not report it as full-MGA task performance.
 
 The first of these five checks has completed at
-`integral_rate/p3_unjam_ki0p08_seed102/`, in582.46 s. It has task/strict-safe
+`integral_rate/unjamming_ki0p08_seed102/`, in582.46 s. It has task/strict-safe
 success1, completion index68 (69 actual transitions/345 valid4 ms samples),
 goal error4.035 mm and yaw error0.028918 rad. Physical peak is44.8293 N and
 nCVaR95 is0.735622; force/nonhand/balance/fall violations are all zero with
 coverage1. The31 success-padding transitions remain in the100-action tape
 but not the physical denominator. All871 pinned source files and three
 input artifacts are unchanged. This is a current-runtime MBO feasibility
-result, not a fresh full-MGA or same-source two-seed result. The paired P1/P2
+result, not a fresh full-MGA or same-source two-seed result. The paired Force Regulation/Fixed-Stance Push
 checks continue in their preregistered order; no gain or formal configuration
 has been promoted.
 
-The P1 15 N same-seed pair is now complete (KI1:553.50 s; KI0.08:563.10 s),
+The Force Regulation 15 N same-seed pair is now complete (KI1:553.50 s; KI0.08:563.10 s),
 with identical initial q/qd/observation, unchanged871-source/three-input hashes,
 and100 active transitions/500 valid physical samples in each run. Both have
 zero force/nonhand/balance/fall violations. Lower KI reduces peak37.8199 to
@@ -2460,11 +2462,11 @@ zero force/nonhand/balance/fall violations. Lower KI reduces peak37.8199 to
 MAE from3.07037 to3.32890 N. Under the same saved full-reference mask
 (outer50--100,255 physical samples), mean force changes15.00276 to15.08022 N
 and MAE0.010839 to0.114619 N. This is a peak/settling tradeoff, not uniform
-improvement. P1's unchanged line-goal success/SSR is0 because its box is fixed;
+improvement. Force Regulation's unchanged line-goal success/SSR is0 because its box is fixed;
 interpret the force-step and physical-risk data rather than treating that
 unreachable position goal as a force-control failure.
 
-The P2 nominal pair is also complete (KI1:565.20 s; KI0.08 completed in the
+The Fixed-Stance Push nominal pair is also complete (KI1:565.20 s; KI0.08 completed in the
 same fixed queue). Both reach the10 cm line with strict-safe success1, full
 physical coverage and zero force/nonhand/balance/fall violations. KI1 completes
 at index36 with1.154 mm error; KI0.08 completes at index39 with0.735 mm error.
@@ -2474,7 +2476,7 @@ tracking measure while slowing completion and slightly worsening peak/tail
 force. Neither run reaches a completed30 N benchmark interval before success,
 so no steady30 N statistic is inferred. The two results retain unchanged
 871-source/three-input hashes and185/200 actual4 ms samples; success padding
-is excluded. Together with the P1 and P3 checks, this rejects a global KI0.08
+is excluded. Together with the Force Regulation and Unjamming checks, this rejects a global KI0.08
 promotion. Keep KI suite-specific only if a later frozen contract and
 independent validation justify it.
 
@@ -2495,30 +2497,30 @@ physics source, checkpoint, or historical result was changed by this pass.
 
 The current fixed-schema PPO training/export health check also completed:
 seed101, eight environments, exactly4800 transitions split2400/2400 between
-the P1/P2 and P3 curriculum stages, elapsed443.41 s. The recorded maximum KL
+the Force Regulation/Fixed-Stance Push and Unjamming curriculum stages, elapsed443.41 s. The recorded maximum KL
 is0.00012979 in stage0 and0.00084324 in stage1, with a finite exported76D/12D
-policy. Stage0 includes genuine goal padding; the recorded P3 episodes have
+policy. Stage0 includes genuine goal padding; the recorded Unjamming episodes have
 100 active steps and no goal completion. The checkpoint is
 `_policies/fixed_contact_geometry_check_seed101.pkl` under this development
 root, SHA256
 `94bedbc2367be78d647e4509b814d5fcf80a5ec5cd8bb7dc1d7f3e10ce238721`.
 The actual loader subsequently consumed that hash on352 active pre-action
-observations from four saved seed101 development traces (P2-OOD and P3,
+observations from four saved seed101 development traces (Fixed-Stance Push-OOD and Unjamming,
 model-based and historical raw RL). All outputs were finite, none reached
 absolute0.98, and maximum absolute action was0.83536. This is an off-policy
-numerical audit, not a closed-loop prior-performance result; nominal P1/P2
+numerical audit, not a closed-loop prior-performance result; nominal Force Regulation/Fixed-Stance Push
 retention is still untested. An earlier inference-only pass included a
-historical P1 seed0 input, was discarded before saving an audit, and is not
+historical Force Regulation seed0 input, was discarded before saving an audit, and is not
 used for model selection; the final saved audit uses only development101.
 Do not promote this4800-step checkpoint or train the full budget against the
-known-invalid P3 bilateral chart. Apply and check that physical mapping first.
+known-invalid Unjamming bilateral chart. Apply and check that physical mapping first.
 
-A separate read-only emergency audit found a real contract gap: in P1,
+A separate read-only emergency audit found a real contract gap: in Force Regulation,
 `fixed_force_target=True` makes ordinary `_force_cmd` return15/30 N even for
 the emergency template's minimum force coordinate. In other H1 tasks a zero
 force command can still leave positive integral or positional-impedance
 loading. The current candidate therefore cannot be called a verified
-zero-force retract. Preserve ordinary P1 force-step semantics; do not infer
+zero-force retract. Preserve ordinary Force Regulation force-step semantics; do not infer
 an emergency mode from floating-point action patterns. A genuine task-owned
 unload transition needs explicit execution context, the same transition in
 candidate scoring/execution/replay, bounded retreat, integral handling and
@@ -2536,7 +2538,7 @@ cold-mean contrast also yields no valid walking, the next feasibility screen
 must isolate closed-loop DIAL locomotion: release Cartesian hand control,
 remove box contact and contact-task scoring, and preserve leg authority,
 locomotion weights, timing and search budget. This deliberately removes a
-task block; it is not a one-parameter P4 comparison or a replacement formal
+task block; it is not a one-parameter Walk-and-Push comparison or a replacement formal
 environment. Require six seconds without a physical fall, at least one valid
 forward landing per foot, 0.20 m body and 0.15 m landing-support progress.
 Also retain balance/flight diagnostics. Passing this screen establishes only
@@ -2567,7 +2569,7 @@ and y velocity. Removing contact therefore does not by itself fix walking,
 but this result does not establish that eleven-joint planning is infeasible.
 
 Pre-register one further unloaded **locomotion-objective-block** contrast,
-not a reward sweep or a formal P4 result. Preserve the entire previous
+not a reward sweep or a formal Walk-and-Push result. Preserve the entire previous
 screen's physics, hand release, 23D action/11 planned joints, initialization,
 budget, alive/balance/force penalties, terminal rules and physical gate. Only
 replace its gait, velocity, upright, height, heading and angular-rate terms
@@ -2698,9 +2700,9 @@ is0.998672 and height1.005128 m. The final50-step body-frame forward velocity
 reconstructed from q/qd averages0.25634 m/s, consistent with the0.25 target.
 Standard outputs, exit0 and both source-hash checks passed in1012.71 s.
 The archived cross-case source difference is only the independently checked
-P3 span edit in `box_push_brax.py`; do not claim identical source files across
+Unjamming span edit in `box_push_brax.py`; do not claim identical source files across
 the two screens. This is the first **unloaded DIAL feasibility pass**, not a
-loaded P4 task success, force-safe success or validation of full-MGA.
+loaded Walk-and-Push task success, force-safe success or validation of full-MGA.
 
 Static balance still requires scrutiny: the old two-foot-mean proxy is
 positive on11/300 states, only159--163 and278--283, with maximum0.032049 m.
@@ -2717,7 +2719,7 @@ objective as a task-scoped opt-in, then assess the loaded force/velocity/stop
 protocol and paired MGA behavior before canonical promotion. No arm/Peg
 configuration, checkpoint or historical result is part of this change.
 
-The vendored implementation remains the P4 reference, not a substitute task
+The vendored implementation remains the Walk-and-Push reference, not a substitute task
 contract. `baselines/dial-mpc/dial_mpc/envs/unitree_h1_env.py`, in
 `UnitreeH1PushCrateEnv.step`, defines the two-second velocity ramp, body-frame
 xy velocity tracking, pelvis upright, wrapped torso yaw, torso-height and
@@ -2742,13 +2744,13 @@ No canonical YAML or loaded-force protocol has been promoted. Environment
 SHA256 is `9cd8d3845a7616496577c669d853b1ed55f6c6de0136ff659aaeb0c539d9f51b`.
 
 The first source-integrated loaded check was launched on2026-09-09 at
-22:52 UTC under `p4_loaded_task_speed_objective/`: DIAL, development seed110,
+22:52 UTC under `walk_and_push_loaded_task_speed_objective/`: DIAL, development seed110,
 300 steps,64 samples,H24,node6,4+10 diffusion steps and temperature0.05. Only
-eight locomotion-objective fields differ from the archived loaded P4 config;
+eight locomotion-objective fields differ from the archived loaded Walk-and-Push config;
 the8 kg box,8 N slide frictionloss,30 N target,60 N force limit,0.5 m line,
 contact geometry, arm impedance, `ki_force=1`, stopping/dwell and real-landing
 requirements are retained. The11 planned joints use the existing DIAL-derived
-absolute-target chart; this direct mode has no additive P3 ankle-brace term.
+absolute-target chart; this direct mode has no additive Unjamming ankle-brace term.
 Unlike the successful unloaded diagnostic, Cartesian hand contact is active
 and arm posture gains remain the loaded task's12/1.5. Preserve these differences
 when interpreting the result. Record physical substeps and endpoint metrics
@@ -2757,7 +2759,7 @@ stop events. This run is development-only, not a formal replacement.
 The first attempt stopped before any physical step because the diagnostic
 read mass/friction from the original native template instead of the modified
 execution `env.sys`. Preserve its manifest under
-`p4_loaded_task_speed_objective_preflight_failed/`. The corrected preflight
+`walk_and_push_loaded_task_speed_objective_preflight_failed/`. The corrected preflight
 verifies8/8 on the actual MJX arrays and records the native template's30/12
 separately; the same-parameter first physical attempt restarted at22:56 UTC.
 After all preflights passed, its first plan compiled in approximately218 s.
@@ -2770,7 +2772,7 @@ velocity1.30470 m/s. It first reaches the goal band at step40, but still moves
 at1.31439 m/s: the body has advanced only4.9 cm, support has moved backward,
 and goal hold never begins. It exits the band at41 and the robot first falls
 at63/1.26 s. No target lies beyond the finite side edge before these failures;
-such targets appear only after the fall. P4 selects only the rear face, so a
+such targets appear only after the fall. Walk-and-Push selects only the rear face, so a
 negative hand-force contribution retracts the hand rather than pulling a
 non-adhered box back from overshoot.
 
@@ -2798,7 +2800,7 @@ unload at steps12--16, then the right and left feet recontact27.3 and37.0 cm
 behind their initial placements at17 and19. A later attempted swing is
 cancelled by flight at40. This is not a valid alternating forward walk.
 Likewise, the final body/support displacements
-are not valid locomotion achievements after the latched fall. No loaded P4
+are not valid locomotion achievements after the latched fall. No loaded Walk-and-Push
 version or training checkpoint is promoted by this result.
 
 The next isolated contrast is implemented as `walk_box_goal_mode: coast`,
@@ -2819,7 +2821,7 @@ Thirteen selected coast/legacy contracts passed in56.98 s with no physical
 rollout: actual mass/friction validation, signed stopping location, unchanged
 non-reward transition fields/padding, zero-speed equality,91D width and
 policy-interface incompatibility for old objective checkpoints. The coast-only
-300-step DIAL check launched at23:52:43 UTC under `p4_loaded_coast_goal/`,
+300-step DIAL check launched at23:52:43 UTC under `walk_and_push_loaded_coast_goal/`,
 seed110,N64,H24,node6,4+10 diffusion steps,temperature0.05. Runtime preflight
 confirms that the sole configuration difference from the previous loaded
 check is `walk_box_goal_mode`; `ki_force=1` remains unchanged. Freeze source
@@ -2861,7 +2863,7 @@ does not control other score terms or prove a candidate-selection cause;
 also, progress already saturates at the actual line and does not pay for
 extra displacement beyond it. Removing that term tests whether it encourages
 excessive line-before-stop acceleration. The new run launched at00:14:55 UTC
-on2026-09-10 under `p4_loaded_coast_no_progress/`, seed110,300 steps,N64 and
+on2026-09-10 under `walk_and_push_loaded_coast_no_progress/`, seed110,300 steps,N64 and
 the identical coast source hashes. It is a development contrast, not a new
 formal YAML or permission to mix in UNLOAD, gain or sample-budget changes.
 
@@ -2889,7 +2891,7 @@ COM y is0.5964 m versus0.1913 m in the preceding coast run. Removing progress
 reduces early stopping overshoot and delays falling, but does not establish
 overall locomotion or safety improvement. No third reward sweep is launched.
 
-Recheck the vendored DIAL coordinate and timing semantics before further P4
+Recheck the vendored DIAL coordinate and timing semantics before further Walk-and-Push
 changes. The current opt-in objective matches its torso body-frame xy velocity,
 wrapped torso yaw, pelvis-up vector,1.2 m torso-height target and slow-walk
 foot-height phase. These checks do not make the complete environments equal:
@@ -2925,10 +2927,10 @@ interpretation of an exclusively position-impedance approach impact: early
 feed-forward and integral are also active. It reconstructs scalar commands,
 not unrecorded Cartesian errors, per-hand wrenches or world-x forces; the
 later state-dependent taper cannot be reconstructed at4 ms from outer poses.
-First test a P4-only synchronized startup ramp with unchanged acquisition,
+First test a Walk-and-Push-only synchronized startup ramp with unchanged acquisition,
 force target, physical limits, KI, action sequence and rewards. Do not change
 the benchmark to excuse early loading or infer full walking from a replay.
-The read-only evidence is saved in `p4_startup_force_clock_audit.json` below
+The read-only evidence is saved in `walk_and_push_startup_force_clock_audit.json` below
 the repair development root (SHA256
 `df06c2e97b7bdaf95c225dcd5bbcdd22f510a32f4e2efd4ebecefac1556d459a`).
 It includes all225 scalar substep reconstructions and original artifact hashes.
@@ -2952,16 +2954,16 @@ walking success or justify a formal freeze.
 A separate source audit also limits direct asset reuse: both the vendor and
 local scene specify box diagonal inertia0.1 kg m^2, but the vendor has only
 one x-slide whereas this task has x/y slides and a yaw hinge. Non-unjam
-suites, including P4, constrain y/yaw to +/-1e-6 with soft joint limits;
-P4 is not a freely moving planar-yaw box, nor exactly the vendor's one-joint
-system. P3 retains the free planar coordinates. Runtime mass/
+suites, including Walk-and-Push, constrain y/yaw to +/-1e-6 with soft joint limits;
+Walk-and-Push is not a freely moving planar-yaw box, nor exactly the vendor's one-joint
+system. Unjamming retains the free planar coordinates. Runtime mass/
 size changes do not update this inertia. The local8 kg,half-width0.55 m cube
 would have Izz=1.6133 kg m^2 *if uniform density were intended*, versus the
 inherited0.1; a concentrated internal mass is a different possible model.
 This is an unvalidated mass-distribution assumption, not proof of the impact
-root cause or permission to change inertia to obtain a pass. P3's yaw
-frictionloss2 also differs from P4's8. Record actual runtime arrays in the
-next P3 preflight and keep this audit separate from the current objective/
+root cause or permission to change inertia to obtain a pass. Unjamming's yaw
+frictionloss2 also differs from Walk-and-Push's8. Record actual runtime arrays in the
+next Unjamming preflight and keep this audit separate from the current objective/
 integral contrasts.
 
 Before loaded validation, audit the force/velocity contract explicitly. With
@@ -3012,7 +3014,7 @@ and feet remain behind and failure is still 52 steps away. This supports the
 short-horizon shaping contrast first; failure padding is a separate RL/MPC
 protocol issue, not an established safety improvement.
 
-This is only a low-level controller repair. P4's existing model-based balance/
+This is only a low-level controller repair. Walk-and-Push's existing model-based balance/
 tip certificate still uses the two-foot mean. Before promotion, actual support
 geometry must be separated from the smooth control reference. A static pelvis
 to two-site distance is not a dynamic balance certificate; a nominal flight
@@ -3031,16 +3033,16 @@ the task's requested ramp/taper reference. Physical support event bookkeeping
 is implemented, but this does not upgrade the retained static two-foot balance
 proxy into a validated dynamic certificate. Learned reliability must be
 recalibrated under an explicit matching label/horizon contract before full-MGA
-is evaluated. Fixed-stance validation does not establish P4 walking.
+is evaluated. Fixed-stance validation does not establish Walk-and-Push walking.
 
-Historical P4 isolated feasibility check (superseded by the direct-joint
+Historical Walk-and-Push isolated feasibility check (superseded by the direct-joint
 closed-loop decision above): the opt-in support-phase/foot-level controller
 passed its control contract but the Native MuJoCo screen fell backward at
 1.46 s with zero valid forward landings and no hand contact. This screen
 reuses the task controller and task-memory update, but Native physics is not
 MJX validation. It establishes neither a working nominal gait nor an
 impossibility result for nonzero leg residuals. Do not use success of this
-zero-action CPG screen as a prerequisite for direct-joint MPC. The P4 formal
+zero-action CPG screen as a prerequisite for direct-joint MPC. The Walk-and-Push formal
 promotion gate stays closed pending the actual closed-loop result.
 
 At the 2026-08-27 execution gate, the H1 extension was marked complete. No formal
@@ -3050,11 +3052,11 @@ formal performance advantage before the paired P9 matrix is complete.
 
 | Frozen component | Non-formal protocol | SHA256 |
 |---|---|---|
-| Fixed-stance raw PPO | seed 0; 200k steps; P1/P2 then P3 curriculum; final fixed-budget checkpoint | `1fe928bd143d7c03df8fcfe381aad4fc27a81ee50825187270f76643d394cf7d` |
-| P4 walk raw PPO | seed 0; 200k steps; final fixed-budget checkpoint | `9f5d25b9b078e7c3d87b5d2c72adf943e45682055a9ddc4c4a4983ef19a55d0e` |
-| ATACOM P1/P2 tangent PPO | seed 0; 200k steps; tangent width 5 | `242212e7604799a178414ff2028386757b4825a12ce017ce2f3323bc2ded81d0` |
-| ATACOM P3 tangent PPO | seed 0; 200k steps; tangent width 1 | `887494c81832d024317b1960c95279cc6e8f456e2e7e491a45bd5faff0e01ec9` |
-| ATACOM P4 tangent PPO | seed 0; 200k steps; tangent width 22 | `66955be8bc550cbf249cb7b2cb1feeec4e3a10f0f73246f00ed822f4e05a1bd7` |
+| Fixed-stance raw PPO | seed 0; 200k steps; Force Regulation/Fixed-Stance Push then Unjamming curriculum; final fixed-budget checkpoint | `1fe928bd143d7c03df8fcfe381aad4fc27a81ee50825187270f76643d394cf7d` |
+| Walk-and-Push walk raw PPO | seed 0; 200k steps; final fixed-budget checkpoint | `9f5d25b9b078e7c3d87b5d2c72adf943e45682055a9ddc4c4a4983ef19a55d0e` |
+| ATACOM Force Regulation/Fixed-Stance Push tangent PPO | seed 0; 200k steps; tangent width 5 | `242212e7604799a178414ff2028386757b4825a12ce017ce2f3323bc2ded81d0` |
+| ATACOM Unjamming tangent PPO | seed 0; 200k steps; tangent width 1 | `887494c81832d024317b1960c95279cc6e8f456e2e7e491a45bd5faff0e01ec9` |
+| ATACOM Walk-and-Push tangent PPO | seed 0; 200k steps; tangent width 22 | `66955be8bc550cbf249cb7b2cb1feeec4e3a10f0f73246f00ed822f4e05a1bd7` |
 | H1 reliability | 600 seed-0 model-based development transitions; 600 disjoint seed-1 calibration transitions; one fixed 24-feature fit | `80303f6cb8d426244170d298111279f3bd75e6e274132c39a0ea41b2474e299b` |
 
 H1's balance/friction inequalities contain structurally zero instantaneous
@@ -3068,9 +3070,9 @@ The frozen verification record is:
 - 35 canonical YAMLs pass the configuration audit;
 - the checkpoint/protocol/causal audit reports exactly
   `Surface=1560`, `Peg=300`, `H1=740`, total `2600`, with zero errors;
-- all eight H1 algorithms execute a development step in P1/P2, P3, and P4
+- all eight H1 algorithms execute a development step in Force Regulation/Fixed-Stance Push, Unjamming, and Walk-and-Push
   checkpoint/action schemas (24 cases total);
-- the four aligned H1 causal ablations and the P1 `no_stiffness` diagnostic
+- the four aligned H1 causal ablations and the Force Regulation `no_stiffness` diagnostic
   execute their declared development gates;
 - the Peg MGA one-step run persists prior, revalidation, and emergency
   diagnostics; all three tasks persist schema-v2 task signals;
@@ -3108,9 +3110,9 @@ All ten configurations run all three suites.  Count:
 2. Run MPPI, PegasusFlow, ISSA, and ATACOM on all six suites.
 3. Run `no_rl_prior`, `no_learned_reliability`,
    `no_controllability_geometry`, and `no_retraction` on all six suites; run
-   `no_stiffness` on both P1 force steps.
-4. Interpret P1 with force-step metrics rather than line-goal success, P3 as
-   the primary whole-body geometry comparison, and P4 according to its actual
+   `no_stiffness` on both Force Regulation force steps.
+4. Interpret Force Regulation with force-step metrics rather than line-goal success, Unjamming as
+   the primary whole-body geometry comparison, and Walk-and-Push according to its actual
    generalization outcome.
 
 Count: `8 * 6 * 10 + 4 * 6 * 10 + 1 * 2 * 10 = 740` runs.
@@ -3223,10 +3225,10 @@ The experiment package is paper-ready only when all gates below are true.
 
 - All eight algorithms complete all six suites with the preregistered
   suite-aware checkpoint binding.
-- P1 uses force-step metrics.
+- Force Regulation uses force-step metrics.
 - The five targeted ablations are complete on their declared suites.
-- P3 validates or falsifies tangent/retraction geometry statistically.
-- P4 is described according to its actual comparative outcome.
+- Unjamming validates or falsifies tangent/retraction geometry statistically.
+- Walk-and-Push is described according to its actual comparative outcome.
 - MGA, MBO, RL, ISSA, and ATACOM labels match their effective components
   and checkpoint hashes.
 
@@ -3254,9 +3256,9 @@ The final decision is core-only MGA. It retains additive RL proposals,
 model-based scoring and rollout, manifold/tangent shaping, local residual
 correction, execution-time revalidation, receding incumbent, and task-owned
 emergency recovery. It does not load a learned reliability checkpoint. The
-P4 development candidate remains unpromoted because four completed paired
+Walk-and-Push development candidate remains unpromoted because four completed paired
 comparisons showed identical insertion/full-window safe success and mixed
-tail-risk changes versus the core controller. P4 artifacts remain available
+tail-risk changes versus the core controller. Walk-and-Push artifacts remain available
 for audit but are not formal dependencies or paper rows.
 
 The formal learned-component lock therefore contains only the frozen raw PPO

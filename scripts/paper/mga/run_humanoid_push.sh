@@ -19,12 +19,12 @@ else
 fi
 
 # The default invocation remains the complete formal matrix.  The isolated
-# P1--P3 gate uses the same canonical YAMLs and runner; only the requested
+# The fixed-task gate uses the same canonical YAMLs and runner; only the requested
 # suite/seed/output selectors differ, so no development algorithm fork is
 # hidden in this paper entry point.
 scope="${MGA_HUMANOID_SCOPE:-all}"
-if [[ "$scope" != "all" && "$scope" != "p123" ]]; then
-  echo "MGA_HUMANOID_SCOPE must be 'all' or 'p123'" >&2
+if [[ "$scope" != "all" && "$scope" != "fixed_tasks" ]]; then
+  echo "MGA_HUMANOID_SCOPE must be 'all' or 'fixed_tasks'" >&2
   exit 2
 fi
 common_args=(--resume)
@@ -40,10 +40,10 @@ if [[ "${MGA_DRY_RUN:-0}" == "1" ]]; then
 fi
 
 primary_suite_args=()
-if [[ "$scope" == "p123" ]]; then
+if [[ "$scope" == "fixed_tasks" ]]; then
   primary_suite_args=(--suites
-    p1_force_15n p1_force_30n
-    p2_push_nominal p2_push_ood p3_unjam)
+    force_regulation_15n force_regulation_30n
+    fixed_stance_push_nominal fixed_stance_push_ood unjamming)
 fi
 configs=(
   configs/humanoid/push_to_line/main/mga.yaml
@@ -70,8 +70,8 @@ for config in "${aligned_ablation_configs[@]}"; do
   "$python_bin" -m genedynamics.experiments.runner "$config" \
     "${common_args[@]}" "${primary_suite_args[@]}"
 done
-# P1 keeps the task-specific impedance ablation in addition to the four
+# Force Regulation keeps the task-specific impedance ablation in addition to the four
 # cross-task ablations above.
 "$python_bin" -m genedynamics.experiments.runner \
   configs/humanoid/push_to_line/ablation/no_stiffness.yaml "${common_args[@]}" \
-  --suites p1_force_15n p1_force_30n
+  --suites force_regulation_15n force_regulation_30n

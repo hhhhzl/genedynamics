@@ -302,7 +302,7 @@ def _h1_physics_signals(physics, padding=0):
 def test_humanoid_physics_actual_samples_peak_tail_rate_and_impulse():
     from genedynamics.evaluation.metrics import compute_metrics
 
-    # Saved same-state P3 diagnostic, outer transitions 48--51.  This is a
+    # Saved same-state Unjamming diagnostic, outer transitions 48--51.  This is a
     # regression fixture, not a claim that four windows are independent runs.
     physics = np.array([
         [30.550533294677734, 24.78330421447754, 55.53253173828125, 9.015192031860352, 156.3263397216797],
@@ -365,7 +365,7 @@ def test_humanoid_initial_safety_is_not_a_duration_weighted_sample():
         assert unsafe[key] == safe[key]
 
 
-def test_humanoid_p1_force_step_has_dedicated_physics_pass_and_no_box_ssr():
+def test_humanoid_force_regulation_force_step_has_dedicated_physics_pass_and_no_box_ssr():
     from genedynamics.evaluation.metrics import compute_metrics
 
     physics = np.r_[np.zeros((10, 5)), np.full((10, 5), 15.0)]
@@ -390,7 +390,7 @@ def test_humanoid_p1_force_step_has_dedicated_physics_pass_and_no_box_ssr():
     assert result["physics_force_settling_time"] == pytest.approx(0.204)
     assert result["physics_steady_force_tracking_mae"] == pytest.approx(7.5)
 
-    # A last-window tracking miss fails the P1 pass even though the fixed box
+    # A last-window tracking miss fails the Force Regulation pass even though the fixed box
     # happens to satisfy the unrelated geometric goal fixture.
     signals["physics_hand_force"][-1, -1] = 20.0
     signals["physics_safety_margins"][-1, -1, 0] = 0.0

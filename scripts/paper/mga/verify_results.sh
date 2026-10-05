@@ -33,4 +33,4 @@ fi
   --require-visuals
 "$python_bin" -m genedynamics.experiments.utils.metrics verify \
   configs/humanoid/push_to_line/ablation/no_stiffness.yaml \
-  --suites p1_force_15n p1_force_30n --require-visuals
+  --suites force_regulation_15n force_regulation_30n --require-visuals

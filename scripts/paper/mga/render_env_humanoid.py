@@ -47,9 +47,9 @@ PALETTES["manuscript-v1-box"] = {
 
 VIEWS = {
     "humanoid_hero": ("humanoid_fixed_stance_push", -1, 1200, 800, False),
-    "humanoid_p1": ("humanoid_force_regulation", -1, 600, 400, False),
-    "humanoid_p2": ("humanoid_fixed_stance_push", -1, 600, 400, False),
-    "humanoid_p3": ("humanoid_unjamming", 0, 600, 400, True),
+    "humanoid_force_regulation": ("humanoid_force_regulation", -1, 600, 400, False),
+    "humanoid_fixed_stance_push": ("humanoid_fixed_stance_push", -1, 600, 400, False),
+    "humanoid_unjamming": ("humanoid_unjamming", 0, 600, 400, True),
 }
 
 HTML = r'''<!doctype html><html><head><meta charset="utf-8">
@@ -116,8 +116,8 @@ try {
  const halfHeight=settings.high?1.22:1.08;
  const camera=new THREE.OrthographicCamera(-halfHeight*aspect,halfHeight*aspect,halfHeight,-halfHeight,.01,100);
  camera.up.set(0,0,1);
- camera.position.fromArray(settings.high?[-.35,-3.8,5.6]:[-.55,-4.5,2.4]);
- camera.lookAt(...(settings.high?[.70,0,.64]:[.60,0,.88]));
+ camera.position.fromArray(settings.camera?.position??(settings.high?[-.35,-3.8,5.6]:[-.55,-4.5,2.4]));
+ camera.lookAt(...(settings.camera?.lookat??(settings.high?[.70,0,.64]:[.60,0,.88])));
  const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
  renderer.setPixelRatio(1);renderer.setSize(settings.width,settings.height);
  renderer.outputEncoding=THREE.sRGBEncoding;
@@ -146,13 +146,16 @@ def _sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _export_gif_payloads(output_dir):
+def _export_gif_payloads(output_dir, scene_metadata=APPENDIX_SOURCE / "metadata.json"):
     """Export saved-state FK, with the same source verification as Visualizations."""
     from render_mechanism_scenes import (
         _appendix_indices, _execution_env, _export_brax_web, _native_model,
     )
 
-    source = json.loads((APPENDIX_SOURCE / "metadata.json").read_text())
+    from genedynamics.experiments.plugins.metrics.extractors import _humanoid_evaluation_view
+
+    source = json.loads(scene_metadata.read_text())
+    visualization = json.loads((APPENDIX_SOURCE / "metadata.json").read_text())
     payload_dir = output_dir / "humanoid_saved_states"
     payload_dir.mkdir(parents=True, exist_ok=True)
     records = {}
@@ -165,6 +168,19 @@ def _export_gif_payloads(output_dir):
             raise ValueError(f"Source changed since Visualizations: {name}")
         result = json.loads(result_path.read_text())
         trajectory = json.loads(trajectory_path.read_text())
+        if int(result["seed"]) != int(item["seed"]):
+            raise ValueError(f"Result seed does not match selected scene: {name}")
+        if (item["camera"] != visualization[name]["camera"] or
+                item["palette"] != visualization[name]["palette"]):
+            raise ValueError(f"GIF selection must preserve the Visualizations camera/palette: {name}")
+        signals = _humanoid_evaluation_view(trajectory["task_signals"])
+        verified_success = (bool(signals["force_step_pass"][0])
+                            if signals.get("force_step_applicable", False)
+                            else bool(any(signals["task_success"])
+                                      and signals["safe_success_goal_error"] <= signals["goal_tolerance"]
+                                      and signals["safe_success_violation"] <= 0.0))
+        if item.get("selection", {}).get("success") and not verified_success:
+            raise ValueError(f"Selected successful run fails the task-owned evaluation contract: {name}")
         _, last = _appendix_indices(trajectory)
         if last != item["last_unpadded_state"]:
             raise ValueError(f"Executed endpoint changed: {name}")
@@ -173,26 +189,40 @@ def _export_gif_payloads(output_dir):
         if indices[-1] != last:
             indices.append(last)
         env = _execution_env(result)
+        recorded_dt = float(trajectory["task_signals"]["dt"])
+        if abs(float(env.dt) - recorded_dt) > 1e-8 or abs(recorded_dt - float(item["dt"])) > 1e-8:
+            raise ValueError(f"Saved, configured, and selected control clocks disagree: {name}")
         model = _native_model(env)
         exported = _export_brax_web(env, model, trajectory, indices, last, name, payload_dir)
         payload = payload_dir / exported["web_payload"]
         saved_payload = json.loads(payload.read_text())
-        original = json.loads((APPENDIX_SOURCE / item["web_payload"]).read_text())
-        if saved_payload["geoms"] != original["geoms"]:
-            raise ValueError(f"Render geometry changed since Visualizations: {name}")
+        # Exact old-payload comparison applies only to replaying the same seed.
+        # A selected successful seed may have different task-owned geometry;
+        # reconstruct it from its own verified result and validate saved-state FK.
+        if (item["trajectory_sha256"] == visualization[name]["trajectory_sha256"] and
+                item["result_sha256"] == visualization[name]["result_sha256"]):
+            original = json.loads((APPENDIX_SOURCE / visualization[name]["web_payload"]).read_text())
+            if saved_payload["geoms"] != original["geoms"]:
+                raise ValueError(f"Render geometry changed since Visualizations: {name}")
         records[name] = {
             "method": "MGA", "suite": item["suite"], "seed": item["seed"],
             "source_result": item["result"], "result_sha256": item["result_sha256"],
             "source_trajectory": item["trajectory"], "trajectory_sha256": item["trajectory_sha256"],
             "state_indices": indices, "last_unpadded_state": last,
             "excluded_padding_states": len(trajectory["states"]) - last - 1,
-            "dt": item["dt"], "time_seconds": [index * item["dt"] for index in indices],
+            "dt": recorded_dt, "time_seconds": [index * recorded_dt for index in indices],
             "payload": str(payload.relative_to(output_dir)), "payload_sha256": _sha256(payload),
             "camera": item["camera"], "palette": item["palette"],
             "dimensions": [810, 540], "simulation_steps_executed": 0,
             "controller_rollouts_executed": 0, "interpolated_states": 0,
             "brax_fk_max_position_error_m": exported["brax_fk_max_position_error_m"],
             "rendering": "Saved q/qd -> Brax forward kinematics -> native Brax Web scene -> Three.js",
+            "source_selection_metadata": str(scene_metadata.relative_to(ROOT)),
+            "source_selection_metadata_sha256": _sha256(scene_metadata),
+            "selection": item.get("selection"), "task_success_independently_verified": verified_success,
+            "first_done_state": next((i for i, state in enumerate(trajectory["states"])
+                                      if state.get("done", False)), None),
+            "geometry_source": "Selected saved result config_snapshot and seed; no state interpolation or geometry substitution",
         }
         print(f"Exported {name}: {len(indices)} real saved states, t=0..{last * item['dt']:.2f} s", flush=True)
     (output_dir / "humanoid_gifs.json").write_text(json.dumps(records, indent=2) + "\n")
@@ -201,6 +231,9 @@ def _export_gif_payloads(output_dir):
 def _capture_gifs(output_dir):
     """Capture every exported pose from one fixed camera, without interpolating."""
     from PIL import Image
+    from render_mechanism_scenes import (
+        ANNOTATION_STYLE, _annotate_force_frame, _saved_force_annotations,
+    )
 
     metadata_path = output_dir / "humanoid_gifs.json"
     records = json.loads(metadata_path.read_text())
@@ -261,9 +294,19 @@ def _capture_gifs(output_dir):
             payload = output_dir / item["payload"]
             if _sha256(payload) != item["payload_sha256"]:
                 raise ValueError(f"Saved-state payload changed: {name}")
+            trajectory_path = ROOT / item["source_trajectory"]
+            if _sha256(trajectory_path) != item["trajectory_sha256"]:
+                raise ValueError(f"Saved trajectory changed before force annotation: {name}")
+            trajectory = json.loads(trajectory_path.read_text())
+            force_annotations = _saved_force_annotations(
+                trajectory, "humanoid", item["state_indices"], item["dt"])
+            annotation_records = force_annotations["records"]
+            if [record["state_index"] for record in annotation_records] != item["state_indices"]:
+                raise ValueError(f"Force annotation state alignment changed: {name}")
             settings = {"payload": "/" + str(payload.relative_to(ROOT)), "name": name,
                         "state": 0, "width": 810, "height": 540,
-                        "high": name == "humanoid_unjamming", "palette": item["palette"]}
+                        "high": name == "humanoid_unjamming", "palette": item["palette"],
+                        "camera": item["camera"]}
             html = frame_dir / f"{name}.gif.html"
             html.write_text(HTML.replace("__SETTINGS__", json.dumps(settings)).replace(
                 " await fetch('/__capture_ready__/'+settings.name);", capture))
@@ -294,12 +337,19 @@ def _capture_gifs(output_dir):
             if received[name] != set(range(len(item["state_indices"]))):
                 raise ValueError(f"Incomplete frame sequence: {name}")
             paths = [frame_dir / f"{name}_{i:04d}.png" for i in range(len(item["state_indices"]))]
-            frames = [Image.open(path).convert("RGB") for path in paths]
+            frames = []
+            for path, annotation in zip(paths, annotation_records, strict=True):
+                with Image.open(path) as raw_frame:
+                    if raw_frame.size != (810, 540):
+                        raise ValueError(f"Unexpected native frame dimensions: {path}")
+                    frames.append(_annotate_force_frame(raw_frame, annotation))
+            if any(frame.size != (810, 588) for frame in frames):
+                raise ValueError(f"Force footer must add exactly 48 pixels: {name}")
             # A shared palette avoids frame-to-frame color flicker. Preserve real
             # timing, including a possible final 20-ms step, then hold 800 ms.
-            swatches = Image.new("RGB", (270 * len(frames), 180))
+            swatches = Image.new("RGB", (270 * len(frames), 196))
             for i, frame in enumerate(frames):
-                swatches.paste(frame.resize((270, 180)), (i * 270, 0))
+                swatches.paste(frame.resize((270, 196)), (i * 270, 0))
             palette = swatches.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
             frames = [frame.quantize(palette=palette, dither=Image.Dither.NONE) for frame in frames]
             durations = [round((b - a) * item["dt"] * 1000)
@@ -309,7 +359,7 @@ def _capture_gifs(output_dir):
                            loop=0, disposal=2, optimize=False)
             with Image.open(gif) as check:
                 count = check.n_frames
-                if count != len(paths) or check.size != (810, 540):
+                if count != len(paths) or check.size != (810, 588):
                     raise ValueError(f"GIF frame validation failed: {name}")
                 saved_durations = []
                 for i in range(count):
@@ -318,6 +368,9 @@ def _capture_gifs(output_dir):
                 if saved_durations != durations:
                     raise ValueError(f"GIF timing changed: {name}")
             item.update(gif=gif.name, gif_sha256=_sha256(gif), frame_count=count,
+                        native_image_size=[810, 540], image_size=[810, 588],
+                        dimensions=[810, 588], force_annotations=force_annotations,
+                        annotation_style=ANNOTATION_STYLE,
                         frame_duration_ms=durations, final_pause_ms=800, playback_speed=1.0,
                         image_source_sha256=[_sha256(path) for path in paths],
                         total_gif_duration_seconds=sum(durations) / 1000,
@@ -338,6 +391,8 @@ def main():
                         help="Manuscript colors, or the original warm Brax reference palette")
     parser.add_argument("--export-gif-payloads", action="store_true",
                         help="Export genuine 25-fps saved-state Brax FK; requires the experiment dependencies")
+    parser.add_argument("--scene-metadata", type=Path, default=APPENDIX_SOURCE / "metadata.json",
+                        help="Optional verified source-selection metadata; default replays the current Visualizations seeds")
     parser.add_argument("--gifs", action="store_true",
                         help="Capture exported saved-state GIFs using the Visualizations camera and appearance")
     args = parser.parse_args()
@@ -346,7 +401,7 @@ def main():
             args.output_dir = GIF_OUTPUT
         args.output_dir.mkdir(parents=True, exist_ok=True)
         if args.export_gif_payloads:
-            _export_gif_payloads(args.output_dir)
+            _export_gif_payloads(args.output_dir.resolve(), args.scene_metadata.resolve())
         if args.gifs:
             _capture_gifs(args.output_dir)
         return

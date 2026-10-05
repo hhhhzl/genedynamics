@@ -209,28 +209,28 @@ def test_h1_training_domains_and_durations_follow_canonical_suites():
 
     config = ExperimentConfig.from_yaml(CANONICAL_CONFIG)
     available = {suite["name"]: suite for suite in config.suites}
-    p2 = config.for_suite(available["p2_push_ood"])
-    assert tuple(p2.env_params["h2_size_range"]) == (
-        p2.env_params.get("box_half", 0.55),
-        p2.env_params.get("box_half", 0.55),
+    fixed_push_cfg = config.for_suite(available["fixed_stance_push_ood"])
+    assert tuple(fixed_push_cfg.env_params["h2_size_range"]) == (
+        fixed_push_cfg.env_params.get("box_half", 0.55),
+        fixed_push_cfg.env_params.get("box_half", 0.55),
     )
-    assert tuple(p2.env_params["h2_boxfric_range"]) == (20.0, 25.0)
-    assert p2.env_params["h2_boxfric_range"][0] > p2.env_params.get(
+    assert tuple(fixed_push_cfg.env_params["h2_boxfric_range"]) == (20.0, 25.0)
+    assert fixed_push_cfg.env_params["h2_boxfric_range"][0] > fixed_push_cfg.env_params.get(
         "box_frictionloss", 15.0
     )
-    assert p2.env_params["f_target"] - p2.env_params[
+    assert fixed_push_cfg.env_params["f_target"] - fixed_push_cfg.env_params[
         "h2_boxfric_range"
     ][1] >= 10.0
     for schema, names in SCHEMA_SUITES.items():
         specs = _domain_specs(schema, config)
         for name, spec in zip(names, specs):
             expected = dict(config.for_suite(available[name]).env_params)
-            if name == "p2_push_ood":
+            if name == "fixed_stance_push_ood":
                 expected["dr_seed"] = 101
             assert spec == expected
 
     updated = copy.deepcopy(config)
-    walk = next(suite for suite in updated.suites if suite["name"] == "p4_walk_push")
+    walk = next(suite for suite in updated.suites if suite["name"] == "walk_and_push")
     walk["n_steps"] = 300
     walk["env_params"]["push_dist"] = 0.5
     resolved = _training_suites("walk", updated)
@@ -304,7 +304,7 @@ def test_h1_ppo_kwargs_keep_behavior_normalization_consistent_and_kl_observable(
         _ppo_training_kwargs, wrap_h1_training,
     )
 
-    for schema, atacom in (("fixed", False), ("atacom_p12", True), ("walk", False)):
+    for schema, atacom in (("fixed", False), ("atacom_force_push", True), ("walk", False)):
         for low_memory in (False, True):
             for num_envs in (4, 8):
                 kwargs = _ppo_training_kwargs(
@@ -416,18 +416,18 @@ def _physical_contact_geometry():
     gap = rear_face - hand_front
     forces = env._box_contact_forces(ps)
     no_reset_contact = float(forces["hand"]) < 1e-6 and float(forces["nonhand"]) < 1e-6
-    p1 = make_env(
+    force_env = make_env(
         HUMANOID_TASK, level="push_to_line", fixed_contact_target=True,
         fixed_force_target=True,
     )
-    p1s = p1.reset(jax.random.PRNGKey(7))
-    c_lo = p1._hand_contact(
-        p1s.pipeline_state, jnp.zeros(p1.action_size).at[3:5].set(-1.0),
+    force_state = force_env.reset(jax.random.PRNGKey(7))
+    c_lo = force_env._hand_contact(
+        force_state.pipeline_state, jnp.zeros(force_env.action_size).at[3:5].set(-1.0),
     )
-    c_hi = p1._hand_contact(
-        p1s.pipeline_state, jnp.zeros(p1.action_size).at[3:5].set(1.0),
+    c_hi = force_env._hand_contact(
+        force_state.pipeline_state, jnp.zeros(force_env.action_size).at[3:5].set(1.0),
     )
-    p1_contact_locked = bool(jnp.allclose(c_lo["p_c"], c_hi["p_c"], atol=1e-6))
+    force_contact_locked = bool(jnp.allclose(c_lo["p_c"], c_hi["p_c"], atol=1e-6))
     mj = env.sys.mj_model
     lateral_locked = True
     for name in ("box_y", "box_yaw"):
@@ -439,7 +439,7 @@ def _physical_contact_geometry():
         and np.all(env.sys.mj_model.geom_rgba[np.asarray(env._wall_geoms), 3] == 0.0)
         and np.all(np.abs(env.sys.mj_model.geom_pos[np.asarray(env._wall_geoms), 1]) >= 49.0)
     )
-    walls_p3_only = bool(
+    walls_unjamming_only = bool(
         jnp.all(unjam.sys.geom_rgba[unjam._wall_geoms, 3] > 0.0)
         and jnp.all(jnp.abs(unjam.sys.geom_pos[unjam._wall_geoms, 1]) < 1.0)
         and np.all(unjam.sys.mj_model.geom_rgba[np.asarray(unjam._wall_geoms), 3] > 0.0)
@@ -460,24 +460,24 @@ def _physical_contact_geometry():
         and np.isclose(float(mj.site_pos[goal_site, 0]), goal_x)
         and float(mj.site_rgba[goal_site, 3]) > 0.0
     )
-    p1_goal_site = mujoco.mj_name2id(
-        p1.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, "goal_line"
+    force_goal_site = mujoco.mj_name2id(
+        force_env.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, "goal_line"
     )
-    p3_goal_site = mujoco.mj_name2id(
+    unjamming_goal_site = mujoco.mj_name2id(
         unjam.sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, "goal_line"
     )
     irrelevant_goal_lines_hidden = bool(
-        float(p1.sys.mj_model.site_rgba[p1_goal_site, 3]) == 0.0
-        and float(unjam.sys.mj_model.site_rgba[p3_goal_site, 3]) == 0.0
+        float(force_env.sys.mj_model.site_rgba[force_goal_site, 3]) == 0.0
+        and float(unjam.sys.mj_model.site_rgba[unjamming_goal_site, 3]) == 0.0
     )
     ok = controller_matches_geom and abs(gap - env._bcfg.approach_gap) < 1e-5 \
-        and no_reset_contact and lateral_locked and p1_contact_locked \
-        and walls_hidden and walls_p3_only and goal_line_synced \
+        and no_reset_contact and lateral_locked and force_contact_locked \
+        and walls_hidden and walls_unjamming_only and goal_line_synced \
         and irrelevant_goal_lines_hidden
     print(f"  contact geometry: point=geom {controller_matches_geom}, gap={gap:.4f} m, "
           f"reset_force=({float(forces['hand']):.3g},{float(forces['nonhand']):.3g}), "
-          f"L1-y/yaw-locked={lateral_locked}, P1-contact-locked={p1_contact_locked} "
-          f"walls-hidden={walls_hidden}, walls-P3-only={walls_p3_only}, "
+          f"L1-y/yaw-locked={lateral_locked}, Force Regulation-contact-locked={force_contact_locked} "
+          f"walls-hidden={walls_hidden}, walls-Unjamming-only={walls_unjamming_only}, "
           f"goal-line-synced={goal_line_synced}, "
           f"irrelevant-goal-lines-hidden={irrelevant_goal_lines_hidden} "
           f"-> {'OK' if ok else 'FAIL'}")
@@ -629,7 +629,7 @@ def _h1_contact_target_array_fixture():
     return env, ps
 
 
-def test_h1_p3_rear_two_hand_chart_respects_shared_face_span():
+def test_h1_unjamming_rear_two_hand_chart_respects_shared_face_span():
     from brax import math as brax_math
     from genedynamics.solvers.single.atacom.backends.atacom_jax import atacom_null_dim
 
@@ -716,7 +716,7 @@ def test_h1_other_task_contact_targets_retain_legacy_arithmetic():
                             np.testing.assert_array_equal(new, old)
 
 
-def test_h1_p3_rear_two_hand_span_rejects_invalid_geometry():
+def test_h1_unjamming_rear_two_hand_span_rejects_invalid_geometry():
     import pytest
     from genedynamics.envs.domains.humanoid.box_push_brax import (
         HumanoidBoxPushConfig, HumanoidBoxPushEnv,
@@ -733,7 +733,7 @@ def test_h1_p3_rear_two_hand_span_rejects_invalid_geometry():
             HumanoidBoxPushEnv(HumanoidBoxPushConfig(level="unjam", **overrides))
 
 
-def test_h1_p3_clean_chart_retains_both_contact_coordinates_across_release():
+def test_h1_unjamming_clean_chart_retains_both_contact_coordinates_across_release():
     from types import SimpleNamespace
     from genedynamics.solvers.single.mga.core.retraction import make_mga_cfs_filter
 
@@ -788,7 +788,7 @@ def test_h1_other_clean_charts_preserve_existing_rows_and_dimensions():
         np.testing.assert_array_equal(env.manifold_residual(None, action[None]), expected)
 
 
-def test_h1_p3_two_dimensional_atacom_transform_is_finite_without_physics():
+def test_h1_unjamming_two_dimensional_atacom_transform_is_finite_without_physics():
     from genedynamics.solvers.single.atacom.backends.atacom_jax import (
         atacom_null_dim, init_slack, make_atacom_transform,
     )
@@ -1202,7 +1202,7 @@ def test_h1_box_support_requires_current_right_hand_compression(monkeypatch):
     np.testing.assert_array_equal(forces["nonhand"], [0., 0., 0., 0., 0., 0., 0., 0., 0., 5.])
 
 
-def test_h1_p3_soft_friction_uses_right_support_not_latched_acquisition():
+def test_h1_unjamming_soft_friction_uses_right_support_not_latched_acquisition():
     from dataclasses import replace
 
     env, state = _h1_terminal_array_fixture()
@@ -1229,7 +1229,7 @@ def test_h1_p3_soft_friction_uses_right_support_not_latched_acquisition():
         assert g_raw.shape == g_soft.shape == (3,)
 
 
-def test_h1_p3_soft_scores_share_modes_but_keep_raw_padding_risk():
+def test_h1_unjamming_soft_scores_share_modes_but_keep_raw_padding_risk():
     from dataclasses import replace
     from genedynamics.solvers.common.env_rollout import build_brax_rollout_augmented
 
@@ -1265,7 +1265,7 @@ def test_h1_soft_friction_change_preserves_other_task_residuals():
     env._manifold = lambda ps, u, info: (jnp.array([.1, .2]), jnp.array([-.1, 2., .3]))
 
     def unused_forces(ps):
-        raise AssertionError("non-P3 legacy AL must not request the new mode bit")
+        raise AssertionError("non-Unjamming legacy AL must not request the new mode bit")
 
     env._box_contact_forces = unused_forces
     for robot, level in (("h1", "push_to_line"), ("h1", "heavy_dr"),
@@ -1587,7 +1587,7 @@ def test_h1_dial_walk_reward_uses_config_clock_body_xy_and_vendor_frames():
         np.testing.assert_array_equal(actual, expected)
 
     # DIAL's H1 push-crate objective uses a bounded unwanted-contact count.
-    # P4 keeps a force-aware reward, but one extreme candidate must not set
+    # Walk-and-Push keeps a force-aware reward, but one extreme candidate must not set
     # the scale of the whole sampling batch.  The legacy tasks retain their
     # original unbounded arithmetic; physical safety margins are independent.
     for name in vars(cfg):
@@ -2043,7 +2043,7 @@ def test_h1_measured_support_is_scoped_to_strict_locomotion():
     finally:
         env._box_contact_force = original_measurement
 
-    # The old box-only P4 protocol is not silently changed by this repair.
+    # The old box-only Walk-and-Push protocol is not silently changed by this repair.
     legacy_walk = make_env(HUMANOID_TASK, level="push_walk")
     walk_state = legacy_walk.reset(jax.random.PRNGKey(101))
     assert not legacy_walk._walk_requires_locomotion
@@ -2433,8 +2433,8 @@ def test_h1_joint_target_initializer_emergency_and_policy_interface():
     np.testing.assert_array_equal(legacy[:, 12:], 0.)
 
 
-def test_p4_receding_risk_certifies_executed_interval_and_shifted_backup():
-    """P4 preserves one safe successor; fixed tasks retain full-horizon risk."""
+def test_walk_and_push_receding_risk_certifies_executed_interval_and_shifted_backup():
+    """Walk-and-Push preserves one safe successor; fixed tasks retain full-horizon risk."""
     from types import SimpleNamespace as NS
     from genedynamics.envs.domains.humanoid.box_push_brax import HumanoidBoxPushEnv
 
@@ -3577,7 +3577,7 @@ def _native_walk_probe(mode="support_phase_foot_level", *, n_steps=300, with_box
         raise FileExistsError(f"Preserve the previous probe; choose a new output_tag: {output}")
     started = time.monotonic()
     config = ExperimentConfig.from_yaml(Path("configs/humanoid/push_to_line/main/mga.yaml"))
-    config = config.for_suite(next(s for s in config.suites if s["name"] == "p4_walk_push"))
+    config = config.for_suite(next(s for s in config.suites if s["name"] == "walk_and_push"))
     params = {**config.env_params, "push_dist": 0.50, "walk_success_mode": "locomotion",
               "walk_gait_reference": "cpg", "walk_leg_control": mode,
               "gait_hip_forward_sign": -1.0, "gait_stance_sweep": True,

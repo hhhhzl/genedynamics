@@ -600,7 +600,7 @@ def test_h1_suite_checkpoint_resolution_and_truthful_components(monkeypatch):
         _experiment_execution_env = None
 
     planner = MGAMethodPlugin().create_planner(Env(), None, {
-        **cfg.method_params, "task": cfg.env_name, "suite": "p4_walk_push",
+        **cfg.method_params, "task": cfg.env_name, "suite": "walk_and_push",
     })
     assert planner.component_contract["policy_ckpt"].endswith(
         "walk_ppo_seed0.pkl"
@@ -609,7 +609,7 @@ def test_h1_suite_checkpoint_resolution_and_truthful_components(monkeypatch):
     assert planner.component_contract["learned_reliability"] is True
 
     mbo = ModelBasedOnlyMethodPlugin().create_planner(Env(), None, {
-        "task": cfg.env_name, "suite": "p4_walk_push",
+        "task": cfg.env_name, "suite": "walk_and_push",
         "controller_method": "mga_controllable",
     })
     assert mbo.component_contract["rl_prior"] is False
@@ -626,7 +626,7 @@ def test_h1_suite_checkpoint_resolution_and_truthful_components(monkeypatch):
          "arm_surface_scan_metrics", "trajectory_path_coverage"),
         ("configs/arm/peg_insert/baseline/dial.yaml", "id_wide",
          "peg_insert_metrics", "safe_insertion_success"),
-        ("configs/humanoid/push_to_line/baseline/dial.yaml", "p3_unjam",
+        ("configs/humanoid/push_to_line/baseline/dial.yaml", "unjamming",
          "humanoid_box_push_metrics", "goal_error"),
     ],
 )
@@ -698,7 +698,7 @@ def test_mga_result_persists_receding_diagnostics(tmp_path):
 @pytest.mark.requires_brax
 @pytest.mark.slow
 @pytest.mark.parametrize("suite_name", [
-    "p1_force_15n", "p2_push_ood", "p3_unjam", "p4_walk_push",
+    "force_regulation_15n", "fixed_stance_push_ood", "unjamming", "walk_and_push",
 ])
 @pytest.mark.parametrize("config_path", [
     "configs/humanoid/push_to_line/main/mga.yaml",
@@ -744,11 +744,11 @@ def test_h1_paper_algorithm_checkpoints_execute_one_development_step(
 @pytest.mark.requires_brax
 @pytest.mark.slow
 @pytest.mark.parametrize("config_path,suite_name", [
-    ("configs/humanoid/push_to_line/ablation/no_rl_prior.yaml", "p3_unjam"),
-    ("configs/humanoid/push_to_line/ablation/no_learned_reliability.yaml", "p2_push_ood"),
-    ("configs/humanoid/push_to_line/ablation/no_controllability_geometry.yaml", "p3_unjam"),
-    ("configs/humanoid/push_to_line/ablation/no_retraction.yaml", "p3_unjam"),
-    ("configs/humanoid/push_to_line/ablation/no_stiffness.yaml", "p1_force_15n"),
+    ("configs/humanoid/push_to_line/ablation/no_rl_prior.yaml", "unjamming"),
+    ("configs/humanoid/push_to_line/ablation/no_learned_reliability.yaml", "fixed_stance_push_ood"),
+    ("configs/humanoid/push_to_line/ablation/no_controllability_geometry.yaml", "unjamming"),
+    ("configs/humanoid/push_to_line/ablation/no_retraction.yaml", "unjamming"),
+    ("configs/humanoid/push_to_line/ablation/no_stiffness.yaml", "force_regulation_15n"),
 ])
 def test_h1_causal_ablation_executes_one_development_step(
     tmp_path, config_path, suite_name,
