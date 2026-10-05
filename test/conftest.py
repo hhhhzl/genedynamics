@@ -6,6 +6,7 @@ This module provides common fixtures used across all tests.
 
 import pytest
 import numpy as np
+import os
 from typing import Generator, Optional, Any
 
 try:
@@ -66,6 +67,11 @@ try:
     PINOCCHIO_AVAILABLE = True
 except ImportError:
     PINOCCHIO_AVAILABLE = False
+
+try:
+    JAX_GPU_AVAILABLE = JAX_AVAILABLE and bool(jax.devices("gpu"))
+except Exception:
+    JAX_GPU_AVAILABLE = False
 
 
 # ============================================================================
@@ -140,3 +146,38 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "requires_isaac: Test requires Isaac Sim")
     config.addinivalue_line("markers", "requires_trimesh: Test requires trimesh")
     config.addinivalue_line("markers", "requires_scipy: Test requires SciPy")
+    config.addinivalue_line("markers", "requires_pybullet: Test requires PyBullet")
+    config.addinivalue_line("markers", "requires_pinocchio: Test requires Pinocchio")
+    config.addinivalue_line("markers", "performance: Timing/scalability test")
+    config.addinivalue_line("markers", "docker: Test requires a project Docker image")
+    config.addinivalue_line("markers", "gpu: Test requires a supported accelerator")
+    config.addinivalue_line("markers", "brax: Test requires Brax (deploy suite)")
+    config.addinivalue_line("markers", "isaac_lab: Test requires Isaac Lab (deploy suite)")
+    config.addinivalue_line("markers", "optional: Test covers an optional integration")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip optional capability tests when that capability is unavailable."""
+    del config
+    capabilities = {
+        "requires_jax": (JAX_AVAILABLE, "JAX is not installed"),
+        "requires_mujoco": (MUJOCO_AVAILABLE, "MuJoCo is not installed"),
+        "requires_isaac": (ISAAC_AVAILABLE, "Isaac Sim is not installed"),
+        "requires_gymnasium": (GYMNASIUM_AVAILABLE, "Gymnasium is not installed"),
+        "requires_brax": (BRAX_AVAILABLE, "Brax is not installed"),
+        "requires_trimesh": (TRIMESH_AVAILABLE, "trimesh is not installed"),
+        "requires_scipy": (SCIPY_AVAILABLE, "SciPy is not installed"),
+        "requires_pybullet": (PYBULLET_AVAILABLE, "PyBullet is not installed"),
+        "requires_pinocchio": (PINOCCHIO_AVAILABLE, "Pinocchio is not installed"),
+        "brax": (BRAX_AVAILABLE, "Brax is not installed"),
+        "isaac_lab": (ISAAC_AVAILABLE, "Isaac Lab is not installed"),
+        "gpu": (JAX_GPU_AVAILABLE, "a JAX GPU device is not available"),
+        "docker": (
+            os.environ.get("GENEDYNAMICS_TEST_DOCKER") == "1",
+            "set GENEDYNAMICS_TEST_DOCKER=1 inside a project image",
+        ),
+    }
+    for item in items:
+        for marker, (available, reason) in capabilities.items():
+            if item.get_closest_marker(marker) is not None and not available:
+                item.add_marker(pytest.mark.skip(reason=reason))

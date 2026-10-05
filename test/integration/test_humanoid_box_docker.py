@@ -24,7 +24,9 @@ import numpy as np
 import pytest
 import jax
 import jax.numpy as jnp
-import mujoco
+
+pytestmark = pytest.mark.docker
+mujoco = pytest.importorskip("mujoco")
 
 from genedynamics.envs.factories import make_env
 from genedynamics.experiments.plugins.environments._contact_task import HUMANOID_TASK

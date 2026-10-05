@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "release": "0.1.0",
+  "status": "release_candidate",
+  "python": ["3.10", "3.11", "3.12"],
+  "platforms": {
+    "linux": "supported",
+    "macos": "supported_core_development",
+    "windows": "untested"
+  },
+  "solver_backends": {
+    "jax": "supported",
+    "torch": "specialized_dpcc_safediffuser_only",
+    "numpy": "supporting_utilities_only",
+    "rust": "planned",
+    "cpp": "planned"
+  },
+  "devices": {
+    "jax_cpu": "supported",
+    "jax_cuda": "installable_task_qualification_varies",
+    "mga_gpu": "deferred",
+    "torch_cpu_cuda": "optional_integration"
+  },
+  "methods": [
+    "2go",
+    "atacom",
+    "cfsmbd_full",
+    "d3il_unified",
+    "dial",
+    "dpcc",
+    "ebmbd",
+    "issa",
+    "mbd",
+    "mdoc",
+    "mga",
+    "model_based_only",
+    "mppi",
+    "pegasusflow",
+    "safediffuser",
+    "standalone_rl"
+  ],
+  "environments": [
+    "d3il_avoiding",
+    "d3il_avoiding_9d",
+    "humanoid_corridor_2d",
+    "manipulator_peg_insert",
+    "manipulator_surface_scan",
+    "quadruped_stepping_stones_2d",
+    "single_integrator_box_2d"
+  ],
+  "deferred": [
+    "humanoid_walk_push_readiness",
+    "mga_gpu_qualification"
+  ],
+  "excluded": [
+    "soft_robot",
+    "co_design",
+    "3d_gaussian_splatting"
+  ]
+}

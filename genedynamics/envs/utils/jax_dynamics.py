@@ -266,13 +266,22 @@ if JAX_AVAILABLE:
     """Batched version of jax_quadrotor_step for processing multiple states/actions in parallel."""
     
     # Create batched version of state projection (already JIT-compiled via decorator)
-    jax_project_state_batch = jax.vmap(
-        jax_project_state,
-        in_axes=(0, None, None, None, None),
-        out_axes=0
-    )
-    # JIT-compile the batched version
-    jax_project_state_batch = jax.jit(jax_project_state_batch)
+    # Wrap the optional projection bounds so callers can use the same
+    # three-argument API as ``jax_project_state``. Passing a five-entry
+    # ``in_axes`` tuple to a three-argument call is rejected by recent JAX.
+    @jax.jit
+    def jax_project_state_batch(
+        states: jnp.ndarray,
+        p_max: float,
+        v_max: float,
+        euler_max: float = 0.5,
+        ang_vel_max: float = 2.0,
+    ) -> jnp.ndarray:
+        return jax.vmap(
+            lambda state: jax_project_state(
+                state, p_max, v_max, euler_max, ang_vel_max
+            )
+        )(states)
     """Batched version of jax_project_state for processing multiple states in parallel."""
 else:
     # Placeholder functions when JAX is not available
@@ -280,4 +289,3 @@ else:
     jax_project_state = None
     jax_quadrotor_step_batch = None
     jax_project_state_batch = None
-

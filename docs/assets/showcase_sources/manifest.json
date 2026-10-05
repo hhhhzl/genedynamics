@@ -1,0 +1,96 @@
+{
+  "output_duration_seconds": 12,
+  "output_fps": 12,
+  "notes": [
+    "Simulation and planning visualizations, not hardware-validation or real-time performance evidence.",
+    "Each render is sampled across its full frame range and replayed on the same 12-second wall timeline.",
+    "Original MGA clips play twice per wall cycle with a brief final hold.",
+    "The D3IL inset and 3D render share method, level, and seed; source clocks are not synchronized.",
+    "Plot background/geometry/path/goal colors are restyled only for display; positions are unchanged."
+  ],
+  "sources": [
+    {
+      "asset": "docs/assets/showcase_sources/d3il_3d.webp",
+      "origin": "results/d3il_avoiding/ebmbd/level_0/seed_0/trajectory/trajectory_best_exec_3d.gif",
+      "origin_sha256": "d0bb2837be765386a07aa27462b3ee2514138cdb97585a1922d5779c401a7dc9",
+      "origin_frames": 105,
+      "origin_duration_ms": 8400,
+      "crop": null,
+      "stored_size": [
+        512,
+        384
+      ],
+      "sampled_frames": 144,
+      "asset_sha256": "b852abf0044062b32279ed6c24a803502c329551bd99f8ca2ee4c4f12e396856",
+      "storage": "Animated WebP, quality 92"
+    },
+    {
+      "asset": "docs/assets/showcase_sources/quadruped.webp",
+      "origin": "results/quadruped/stepping_stones_2d/deploy/governed/twogo/level_5/seed_0/governed/trajectory_mujoco.gif",
+      "origin_sha256": "3aff9d99e2e0cb7b08bb436b790898fa8676762857a0e73f166eda1f641ff0ae",
+      "origin_frames": 160,
+      "origin_duration_ms": 17600,
+      "crop": null,
+      "stored_size": [
+        512,
+        288
+      ],
+      "sampled_frames": 144,
+      "asset_sha256": "802f7a4eab461ec869673ff4e037a5a221b24697056507257247adad20ead015",
+      "storage": "Animated WebP, quality 92"
+    },
+    {
+      "asset": "docs/assets/showcase_sources/humanoid_corridor.webp",
+      "origin": "results/humanoid/corridor_2d/deploy/governed/twogo_zone_c/level_1/seed_0/trajectory_mujoco.gif",
+      "origin_sha256": "b7cdd7577160309a239e85a3ba2e7b9f9e59a7b1e4165831cbbc1dc1a3ae30c1",
+      "origin_frames": 576,
+      "origin_duration_ms": 34560,
+      "crop": null,
+      "stored_size": [
+        512,
+        384
+      ],
+      "sampled_frames": 144,
+      "asset_sha256": "20efddf92d3c2a32ac32dff08daf4a6fb9ec6fc8d76fcf82167f1a902b4362e9",
+      "storage": "Animated WebP, quality 92"
+    },
+    {
+      "asset": "docs/assets/showcase_sources/planar_diffusion.webp",
+      "origin": "results/single2d/mbd/level_5/seed_0/diffusion_steps/diffusion_steps.gif",
+      "origin_sha256": "bc05f72e0665a3b212dfc50325a3801d9f4499dd618688ee2a9c8c9d19e63bdd",
+      "origin_frames": 99,
+      "origin_duration_ms": 14850,
+      "crop": [
+        28,
+        74,
+        697,
+        734
+      ],
+      "stored_size": [
+        480,
+        474
+      ],
+      "sampled_frames": 144,
+      "asset_sha256": "2e3b0c708f63207f3cbe738895c2fd8f53b6b42d4f123e4ef75355432cc27219",
+      "storage": "Animated WebP, quality 92"
+    },
+    {
+      "asset": "docs/assets/mga_surface_scan.gif",
+      "origin": "reports/mga/paper_figures/gifs/successful/mga_surface_hybrid_stripes.gif",
+      "origin_sha256": "218a614e1cd417365ff031d0a0aa2cca179534a547d16e299881e9df6f7b147d",
+      "asset_sha256": "218a614e1cd417365ff031d0a0aa2cca179534a547d16e299881e9df6f7b147d"
+    },
+    {
+      "asset": "docs/assets/mga_peg_insert.gif",
+      "origin": "reports/mga/paper_figures/gifs/successful/mga_peg_id_wide.gif",
+      "origin_sha256": "dd5c48babb3b9dcef1abbfe95d5bc460b21344baf39022ca77972603f5158561",
+      "asset_sha256": "dd5c48babb3b9dcef1abbfe95d5bc460b21344baf39022ca77972603f5158561"
+    },
+    {
+      "asset": "docs/assets/d3il_avoiding.gif",
+      "origin": "results/d3il_avoiding/ebmbd/level_0/seed_0/trajectory/trajectory_best_exec.gif",
+      "origin_sha256": "a1b56437429c9275a060c932be9c71ad6dc49ee5e6e802a2dd4eb60b1281ecbd",
+      "asset_sha256": "a1b56437429c9275a060c932be9c71ad6dc49ee5e6e802a2dd4eb60b1281ecbd"
+    }
+  ]
+}

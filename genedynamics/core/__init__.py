@@ -6,7 +6,7 @@ This package defines the fundamental interfaces that all components build upon:
 - DynamicsModel: System dynamics (physics or learned)
 - EnergyFunctional: Task objectives and constraints
 - Solver: Trajectory optimization algorithms
-- Backend: Computational backends (JAX, PyTorch, Rust, etc.)
+- Backend: Computational backends (JAX plus supporting NumPy/Torch adapters)
 
 All algorithms and environments depend only on these abstractions, allowing
 easy swapping of implementations and backends.
@@ -155,4 +155,3 @@ __all__ = [
     "legacy_extract_position",
     "get_default_task_spec",
 ]
-

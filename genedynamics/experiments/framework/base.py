@@ -2,7 +2,7 @@
 Base plugin interfaces for the experimental framework.
 
 This module defines abstract base classes for all plugin types:
-- MethodPlugin: Solver methods (EDOC, MPPI, CEM, etc.)
+- MethodPlugin: Solver methods (MBD, MDOC, MPPI, etc.)
 - EnvironmentPlugin: Environments (single/double integrator, drone, etc.)
 - MetricsPlugin: Metrics computation (SSR, obstacle density, etc.)
 - VisualizationPlugin: Visualization generation
@@ -20,7 +20,7 @@ class MethodPlugin(ABC):
     """
     Base class for solver method plugins.
     
-    Each solver method (EDOC, MPPI, CEM, etc.) should implement this interface
+    Each solver method should implement this interface
     to be compatible with the experiment framework.
     """
     
@@ -68,7 +68,7 @@ class MethodPlugin(ABC):
         Method name identifier.
         
         Returns:
-            Method name (e.g., "edoc", "mppi", "cem")
+            Method name (e.g., "mbd", "mdoc", "mppi")
         """
         pass
 

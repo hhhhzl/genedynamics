@@ -8,8 +8,10 @@ git submodule), without polluting the core genedynamics package.
 
 from .bootstrap import ensure_d3il_on_path
 
-# Ensure path and pinocchio compat as soon as d3il is used, before any third_party code loads
-ensure_d3il_on_path()
+# Keep package import side-effect free. The concrete D3IL task spec calls
+# ``ensure_d3il_on_path`` when an environment is actually started, so a core
+# wheel can register the optional plugins and run unrelated tasks without a
+# vendored D3IL checkout.
 from .avoiding_env import D3ILAvoidingEnv, D3ILAvoidingConfig
 from .avoiding_plan_env_9d import AvoidingPlanEnv9D, AvoidingPlanSpec9D
 from .avoiding_env_7d_vel import D3ILAvoiding7dVelEnv, D3ILAvoiding7dVelConfig
@@ -30,5 +32,4 @@ __all__ = [
     "D3ILAvoiding7dVelEnv",
     "D3ILAvoiding7dVelConfig",
 ]
-
 

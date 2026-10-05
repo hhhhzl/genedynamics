@@ -4,9 +4,7 @@ Low-rank correlated Gaussian covariance primitives.
 Implements efficient O(pr² + r³) operations for Σ = AA' + σ²I where A ∈ ℝ^{p×r}
 and r ≪ p, using the Woodbury matrix identity and matrix determinant lemma.
 
-Used by:
-- 3DGS robust mapping: correlated observation noise (pose/exposure drift)
-- Any likelihood with structured low-rank nuisance
+Used by likelihoods with structured low-rank nuisance variables.
 """
 
 from __future__ import annotations

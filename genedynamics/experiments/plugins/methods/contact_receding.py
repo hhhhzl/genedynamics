@@ -32,6 +32,11 @@ def _validate_policy_interface(
         actual = getattr(execution_env, "policy_interface", None)
         if expected != actual and (expected is not None or actual is not None):
             raise ValueError(f"{label} model/execution policy interface mismatch")
+    if expected is not None and policy_config.get("policy_interface") != expected:
+        raise ValueError(
+            f"{label} policy interface mismatch: a checkpoint trained for the "
+            "active task/action semantics is required (matching dimensions are insufficient)"
+        )
     require_atacom_contract = atacom is not None and (
         expected is not None
         or callable(getattr(env, "atacom_constraint_residual", None))
@@ -55,11 +60,6 @@ def _validate_policy_interface(
             raise ValueError(f"{label} ATACOM training/deployment transform mismatch")
     if expected is None:
         return  # Preserve legacy H1 and other tasks' checkpoint behavior.
-    if policy_config.get("policy_interface") != expected:
-        raise ValueError(
-            f"{label} policy interface mismatch: a checkpoint trained for the "
-            "active task/action semantics is required (matching dimensions are insufficient)"
-        )
     expected_action_transform = getattr(env, "policy_action_transform", None)
     if expected_action_transform is not None and atacom is None:
         if policy_config.get("policy_action_transform") != expected_action_transform:

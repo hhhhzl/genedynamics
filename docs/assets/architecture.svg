@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="534" viewBox="0 0 1440 534" role="img" aria-labelledby="title desc">
+  <title id="title">GenerativeDynamics architecture</title>
+  <desc id="desc">Task definitions, planner plugins, and constraint components connect through planning and control workflows to simulation or execution. Metrics, traces, and reports support both paths.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L8 5L0 9" fill="none" stroke="#648B88" stroke-width="1.5"/></marker>
+    <style>
+      .sans {font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+      .mono {font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace}
+      .eyebrow {font-size:13px;letter-spacing:1.4px;fill:#39786C}
+      .heading {font-size:34px;font-weight:650;fill:#12232D}
+      .label {font-size:23px;font-weight:650;fill:#12232D}
+      .body {font-size:17px;fill:#536A76}
+      .small {font-size:14px;fill:#536A76}
+      .box {fill:#FFF;stroke:#D5DFE3;stroke-width:1.4}
+      .flow {fill:none;stroke:#648B88;stroke-width:1.8;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1440" height="534" rx="16" fill="#F3F6F7"/>
+  <text x="40" y="38" class="mono eyebrow">THE PLATFORM</text>
+  <text x="39" y="87" class="sans heading">A shared runtime. Components you can replace.</text>
+  <rect x="40" y="140" width="250" height="219" rx="12" class="box"/>
+  <text x="62" y="172" class="mono eyebrow">01 / DEFINE</text>
+  <text x="62" y="213" class="sans label">Robot + task</text>
+  <text x="62" y="248" class="sans body">Dynamics and objectives</text>
+  <text x="62" y="276" class="sans body">Geometry and obstacles</text>
+  <text x="62" y="319" class="mono small">YAML configuration</text>
+  <rect x="346" y="140" width="282" height="105" rx="12" class="box"/>
+  <text x="368" y="174" class="sans label">Planner plugins</text>
+  <text x="368" y="207" class="sans body">Diffusion · MPC · optimization</text>
+  <rect x="346" y="261" width="282" height="98" rx="12" class="box"/>
+  <text x="368" y="296" class="sans label">Constraints + safety</text>
+  <text x="368" y="327" class="sans body">Geometry · filters · recovery</text>
+  <rect x="686" y="140" width="338" height="219" rx="12" fill="#112B32"/>
+  <text x="710" y="173" class="mono" font-size="13" letter-spacing="1.4" fill="#8CE4CF">02 / COMPOSE</text>
+  <text x="710" y="216" class="sans" font-size="25" font-weight="650" fill="#F1F5F7">Planning + control</text>
+  <text x="710" y="246" class="sans" font-size="25" font-weight="650" fill="#F1F5F7">runtime</text>
+  <text x="710" y="284" class="sans" font-size="17" fill="#B2C7CB">Experiment + deployment workflows</text>
+  <text x="710" y="314" class="sans" font-size="17" fill="#B2C7CB">Rollouts · receding horizon · JAX</text>
+  <rect x="1082" y="140" width="318" height="105" rx="12" class="box"/>
+  <text x="1104" y="174" class="sans label">Simulation</text>
+  <text x="1104" y="207" class="sans body">Environment + physics adapters</text>
+  <rect x="1082" y="261" width="318" height="98" rx="12" class="box"/>
+  <text x="1104" y="296" class="sans label">Execution</text>
+  <text x="1104" y="327" class="sans body">Controllers · governors · robot I/O</text>
+  <path d="M290 249H317V191H337" class="flow"/>
+  <path d="M317 249V310H337" class="flow"/>
+  <path d="M628 191H653V249H677" class="flow"/>
+  <path d="M628 310H653V249" fill="none" stroke="#648B88" stroke-width="1.8"/>
+  <path d="M1024 249H1052V191H1073" class="flow"/>
+  <path d="M1052 249V310H1073" class="flow"/>
+  <path d="M855 359V391" class="flow"/>
+  <rect x="40" y="400" width="1360" height="94" rx="12" fill="#E8EFEE" stroke="#D1DFDC"/>
+  <text x="62" y="431" class="mono eyebrow">03 / OBSERVE + ITERATE</text>
+  <text x="62" y="465" class="sans" font-size="19" fill="#254B46">Resolved configs</text>
+  <text x="310" y="465" class="sans" font-size="19" fill="#254B46">Trajectories + execution traces</text>
+  <text x="689" y="465" class="sans" font-size="19" fill="#254B46">Metrics + visualization</text>
+  <text x="1022" y="465" class="sans" font-size="19" fill="#254B46">Resumable runs + reports</text>
+</svg>

@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use GenerativeDynamics, cite the software and the relevant algorithm paper."
+title: "GenerativeDynamics: A Unified Planning and Control Stack for Robotics"
+type: software
+authors:
+  - family-names: He
+    given-names: Zhilin
+version: 0.1.0
+repository-code: "https://github.com/hhhhzl/enerdynamics"

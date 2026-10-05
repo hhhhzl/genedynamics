@@ -1,0 +1,3 @@
+# Install this file only on Linux hosts with a compatible NVIDIA driver.
+-r simulation.txt
+jax[cuda12]>=0.6.2,<0.7

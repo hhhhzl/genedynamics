@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 
-COPY setup.py README.md requirements.txt /workspace/
+COPY pyproject.toml setup.py README.md requirements.txt /workspace/
 COPY genedynamics /workspace/genedynamics
 COPY configs /workspace/configs
 COPY scripts /workspace/scripts
@@ -61,22 +61,6 @@ FROM base-cpu AS sim-cpu
 
 ENV JAX_PLATFORMS=cpu \
     MUJOCO_GL=osmesa
-
-
-# SoftZoo simulation target: includes taichi + SoftZoo deps for co-design experiments
-# Build with: docker build --target softzoo-cpu --platform linux/amd64 -t genedynamics/softzoo-cpu:local .
-FROM base-cpu AS softzoo-cpu
-
-ENV JAX_PLATFORMS=cpu \
-    MUJOCO_GL=osmesa
-
-RUN --mount=type=cache,target=/tmp/pip-cache \
-    pip install --no-cache-dir \
-      torch --extra-index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir \
-      taichi yacs noise plyfile attrdict3 \
-      gym gymnasium scikit-image scikit-learn \
-      "scikit-video>=1.1.11" tensorboard
 
 
 FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu${UBUNTU_VERSION} AS base-gpu
@@ -119,7 +103,7 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 10 && 
 
 WORKDIR /workspace
 
-COPY setup.py README.md requirements.txt /workspace/
+COPY pyproject.toml setup.py README.md requirements.txt /workspace/
 COPY genedynamics /workspace/genedynamics
 COPY configs /workspace/configs
 COPY scripts /workspace/scripts

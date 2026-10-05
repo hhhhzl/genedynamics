@@ -1,54 +1,20 @@
-# API Documentation
+# API surface
 
-This directory contains API documentation for the genedynamics framework.
+The V1 public surface is intentionally small:
 
-## Structure
+- `genedynamics.experiments.framework.ExperimentConfig`
+- `genedynamics.experiments.framework.ExperimentRunner`
+- `genedynamics.experiments.framework.PluginRegistry`
+- `MethodPlugin`, `EnvironmentPlugin`, `MetricsPlugin`,
+  `VisualizationPlugin`, and `ObstacleGeneratorPlugin`
+- core types and backend interfaces under `genedynamics.core`
+- registered environment/robot factories under `genedynamics.envs` and
+  `genedynamics.robots`
+- deployment registries and configuration under `genedynamics.deploy`
 
-- `core.md`: Core API (backends, types, protocols)
-- `envs.md`: Environment API (BaseEnv, adapters, obstacles)
-- `robots.md`: Robot model API
-- `solvers.md`: Solver API (if applicable)
+Internal solver modules remain importable for research, but V1 compatibility is
+defined at the plugin, configuration, and runner boundaries. Direct imports of
+private helpers or simulator implementation classes may change before 1.0.
 
-## Generating API Documentation
-
-To generate API documentation from docstrings:
-
-```bash
-# Install sphinx
-pip install sphinx sphinx-rtd-theme
-
-# Generate documentation
-cd docs/api
-sphinx-build -b html . _build/html
-```
-
-## Manual Documentation
-
-For now, API documentation is maintained manually. Key interfaces:
-
-### Core Backends
-
-- `Backend`: Computational backend protocol (JAX, PyTorch, NumPy)
-- `PhysicsBackend`: Physics simulation backend protocol (MuJoCo, Isaac Sim)
-- `RenderBackend`: Rendering backend protocol (Matplotlib, Gymnasium, MuJoCo, Isaac Sim)
-
-### Environments
-
-- `BaseEnv`: Environment protocol
-- `BaseEnvMixin`: Default environment implementation
-- `GymnasiumEnvAdapter`: Gymnasium environment adapter
-- `BraxEnvAdapter`: Brax environment adapter
-- `UnifiedEnvAdapter`: Unified environment adapter
-
-### Obstacles
-
-- `Obstacle`: Obstacle protocol
-- `ObstacleManager`: Obstacle manager
-- Convex obstacles: `BoxObstacle`, `SphereObstacle`, `CylinderObstacle`, `CapsuleObstacle`
-- Non-convex obstacles: `MeshObstacle`, `UnionObstacle`, `DifferenceObstacle`, `IntersectionObstacle`
-
-### Robots
-
-- `RobotModel`: Robot model protocol
-- `ManipulatorModel`: Robotic arm model
-- `DroneModel`: Quadrotor drone model
+Use the [plugin guide](../guides/adding-a-plugin.md) for extension patterns and
+the [compatibility matrix](../reference/compatibility.md) for backend coverage.

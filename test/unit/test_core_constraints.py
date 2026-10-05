@@ -328,14 +328,14 @@ class TestStats:
         assert max_violation == 1.0
         
         mean_violation = compute_violation(violations, reduction="mean")
-        assert mean_violation == 0.425
+        assert mean_violation == pytest.approx(0.425)
     
     def test_compute_min_sdf(self):
         """Test minimum SDF computation."""
         sdfs = [0.5, 0.1, 0.3, 0.2]
         
         min_sdf = compute_min_sdf(sdfs)
-        assert min_sdf == 0.1
+        assert min_sdf == pytest.approx(0.1)
     
     def test_compute_feasible_rate(self):
         """Test feasible rate computation."""
@@ -365,7 +365,7 @@ class TestStats:
         )
         
         assert stats.violation == 1.0
-        assert stats.min_sdf == 0.1
+        assert stats.min_sdf == pytest.approx(0.1)
         assert stats.feasible_rate == pytest.approx(2/3)
     
     def test_topK_selection(self):
@@ -396,5 +396,4 @@ class TestPipeline:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
 

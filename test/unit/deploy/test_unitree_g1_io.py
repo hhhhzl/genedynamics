@@ -173,6 +173,8 @@ def _install_stub_sdk(monkeypatch: pytest.MonkeyPatch) -> dict:
     idl_dds = types.ModuleType("unitree_sdk2py.idl.unitree_hg.msg.dds_")
     idl_dds.LowCmd_ = _StubLowCmd
     idl_dds.LowState_ = _StubLowState
+    idl_default = types.ModuleType("unitree_sdk2py.idl.default")
+    idl_default.unitree_hg_msg_dds__LowCmd_ = _StubLowCmd
 
     utils = types.ModuleType("unitree_sdk2py.utils")
     utils_crc = types.ModuleType("unitree_sdk2py.utils.crc")
@@ -197,6 +199,7 @@ def _install_stub_sdk(monkeypatch: pytest.MonkeyPatch) -> dict:
         "unitree_sdk2py.idl.unitree_hg": idl_unitree_hg,
         "unitree_sdk2py.idl.unitree_hg.msg": idl_msg,
         "unitree_sdk2py.idl.unitree_hg.msg.dds_": idl_dds,
+        "unitree_sdk2py.idl.default": idl_default,
         "unitree_sdk2py.utils": utils,
         "unitree_sdk2py.utils.crc": utils_crc,
         "unitree_sdk2py.g1": g1,
@@ -360,8 +363,10 @@ def test_mixed_command_dispatches_loco_and_lowcmd_for_upper_body(monkeypatch):
     io._apply_command(io._latched_command)
     # Loco channel got the move
     assert io._loco_client.moves == [(0.2, 0.0, 0.0)]  # type: ignore[attr-defined]
-    # Lowcmd channel got an upper-body-only message
-    msg = io._lowcmd_pub.published[0]  # type: ignore[attr-defined]
+    # arm_sdk got an upper-body-only message. This channel can coexist with
+    # sport-mode leg control; publishing rt/lowcmd here would fight it.
+    assert io._lowcmd_pub.published == []  # type: ignore[attr-defined]
+    msg = io._arm_sdk_pub.published[0]  # type: ignore[attr-defined]
     upper_set = (
         set(io.spec.waist_joints)
         | set(io.spec.left_arm_joints)
@@ -427,10 +432,11 @@ def test_localization_overrides_floating_base(monkeypatch):
     assert state.extras["localization_health"] == "ok"
 
 
-def test_motion_switcher_mode_selection(monkeypatch):
+def test_sport_mode_does_not_use_motion_switcher(monkeypatch):
     io, _ = _make_io(monkeypatch, msc_mode="sport")
-    # The constructor should have asked for "normal" (sport mode tag).
-    assert "normal" in io._motion_switcher.modes  # type: ignore[attr-defined]
+    # Sport is brought up through LocoClient's FSM during reset. Calling
+    # SelectMode("normal") is rejected by current G1 firmware.
+    assert io._motion_switcher.modes == []  # type: ignore[attr-defined]
 
 
 def test_close_drops_to_damp(monkeypatch):

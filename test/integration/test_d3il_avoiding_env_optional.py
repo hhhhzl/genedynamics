@@ -20,6 +20,8 @@ def test_d3il_avoiding_import_and_reset_step_optional():
     except Exception:
         pytest.skip("mujoco not installed")
 
+    pytest.importorskip("pinocchio")
+
     from genedynamics.envs.external.d3il import D3ILAvoidingEnv, D3ILAvoidingConfig
 
     env = D3ILAvoidingEnv(D3ILAvoidingConfig(render=False))
@@ -33,5 +35,4 @@ def test_d3il_avoiding_import_and_reset_step_optional():
     assert isinstance(info, dict)
 
     env.close()
-
 

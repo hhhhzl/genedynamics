@@ -189,6 +189,7 @@ class TestModelGenerators:
     
     def test_isaac_usd_generator(self):
         """Test Isaac Sim USD generation."""
+        pytest.importorskip("pxr")
         try:
             from genedynamics.envs.utils.isaac_usd_generator import (
                 create_quadrotor_usd_with_obstacles,
@@ -306,7 +307,6 @@ class TestJAXDynamics:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
 
 
 

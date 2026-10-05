@@ -1,0 +1,150 @@
+{
+  "release": "0.1.0",
+  "schema_version": 1,
+  "source": {
+    "bytes": 141378818,
+    "file_count": 1614,
+    "files_by_root": {
+      ".dockerignore": 1,
+      ".github": 2,
+      ".gitignore": 1,
+      ".gitmodules": 1,
+      "CHANGELOG.md": 1,
+      "CITATION.cff": 1,
+      "CODE_OF_CONDUCT.md": 1,
+      "CONTRIBUTING.md": 1,
+      "README.md": 1,
+      "SECURITY.md": 1,
+      "assets": 1,
+      "configs": 114,
+      "docker": 8,
+      "docs": 34,
+      "genedynamics": 821,
+      "mkdocs.yml": 1,
+      "pyproject.toml": 1,
+      "pytest.ini": 1,
+      "release": 2,
+      "requirements": 6,
+      "requirements.txt": 1,
+      "scripts": 64,
+      "setup.py": 1,
+      "test": 78,
+      "third_party": 470
+    },
+    "files_by_suffix": {
+      ".cff": 1,
+      ".cfg": 1,
+      ".cs": 17,
+      ".dockerfile": 1,
+      ".example": 1,
+      ".fbs": 1,
+      ".gif": 4,
+      ".gin": 4,
+      ".html": 2,
+      ".ini": 1,
+      ".json": 8,
+      ".md": 61,
+      ".mp4": 1,
+      ".mtl": 3,
+      ".npy": 2,
+      ".npz": 1,
+      ".obj": 147,
+      ".png": 9,
+      ".pt": 1,
+      ".py": 1017,
+      ".sh": 18,
+      ".stl": 65,
+      ".svg": 1,
+      ".swift": 6,
+      ".toml": 2,
+      ".ts": 9,
+      ".txt": 10,
+      ".urdf": 3,
+      ".webp": 4,
+      ".xml": 80,
+      ".yaml": 119,
+      ".yml": 7,
+      "<none>": 7
+    },
+    "forbidden_v1_paths": [],
+    "large_files_10mib": [
+      {
+        "bytes": 11559384,
+        "path": "third_party/environments/d3il/models/mj/robot/assets/d435v.stl"
+      },
+      {
+        "bytes": 11559384,
+        "path": "third_party/environments/d3il/models/mujoco/robots/meshes/panda/d435v.stl"
+      }
+    ],
+    "media": [
+      {
+        "bytes": 280961,
+        "path": "docs/assets/2go_corridor.png",
+        "sha256": "1fee2220634ed9eb18defa368c88dfeb8c366875a77c8df0fb445e056b1c1f28"
+      },
+      {
+        "bytes": 89857,
+        "path": "docs/assets/2go_stepping_stones.png",
+        "sha256": "8af186119358c31d0d965f8c3fc4a22cff378481bc82e729cd0629ed9cb1b381"
+      },
+      {
+        "bytes": 269512,
+        "path": "docs/assets/d3il_avoiding.gif",
+        "sha256": "a1b56437429c9275a060c932be9c71ad6dc49ee5e6e802a2dd4eb60b1281ecbd"
+      },
+      {
+        "bytes": 2049839,
+        "path": "docs/assets/mga_peg_insert.gif",
+        "sha256": "dd5c48babb3b9dcef1abbfe95d5bc460b21344baf39022ca77972603f5158561"
+      },
+      {
+        "bytes": 2315341,
+        "path": "docs/assets/mga_surface_scan.gif",
+        "sha256": "218a614e1cd417365ff031d0a0aa2cca179534a547d16e299881e9df6f7b147d"
+      },
+      {
+        "bytes": 472297,
+        "path": "docs/assets/showcase-poster.png",
+        "sha256": "3f2511c5fd1cbbca840c9709617592510dd9b3a3269fc8a82fddda06332fcb60"
+      },
+      {
+        "bytes": 9420060,
+        "path": "docs/assets/showcase.gif",
+        "sha256": "2726702436fd22b09fa154599718b96d6e041ebc7c2e4d6f266b5d656677324a"
+      },
+      {
+        "bytes": 1914004,
+        "path": "docs/assets/showcase.mp4",
+        "sha256": "6886ddb75281ee8b9b22ea00f9f13392d591b7349d60fde5bc3b313bd4163d48"
+      },
+      {
+        "bytes": 1169624,
+        "path": "docs/assets/showcase_sources/d3il_3d.webp",
+        "sha256": "b852abf0044062b32279ed6c24a803502c329551bd99f8ca2ee4c4f12e396856"
+      },
+      {
+        "bytes": 2423250,
+        "path": "docs/assets/showcase_sources/humanoid_corridor.webp",
+        "sha256": "20efddf92d3c2a32ac32dff08daf4a6fb9ec6fc8d76fcf82167f1a902b4362e9"
+      },
+      {
+        "bytes": 1268342,
+        "path": "docs/assets/showcase_sources/planar_diffusion.webp",
+        "sha256": "2e3b0c708f63207f3cbe738895c2fd8f53b6b42d4f123e4ef75355432cc27219"
+      },
+      {
+        "bytes": 3031270,
+        "path": "docs/assets/showcase_sources/quadruped.webp",
+        "sha256": "802f7a4eab461ec869673ff4e037a5a221b24697056507257247adad20ead015"
+      }
+    ]
+  },
+  "wheel": {
+    "bytes": 12157082,
+    "file_count": 789,
+    "forbidden_v1_paths": [],
+    "path": "genedynamics-0.1.0-py3-none-any.whl",
+    "sha256": "5d3baeac60ee940f7ea294aee83d9b62dfb30c5f30de265f108eec0e60be5a65"
+  }
+}

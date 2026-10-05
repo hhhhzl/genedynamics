@@ -4,9 +4,8 @@ Annealed posterior bridge for model-based diffusion.
 Defines π_k(θ) ∝ p0(θ) * p(y|θ)^β_k with 0 = β_0 < β_1 < ... < β_K = 1,
 providing a smooth path from prior to posterior for stable inference.
 
-Used by:
-- 3DGS robust mapping: gradual introduction of observation likelihood
-- Soft-robot MR-MF-MBD: joint annealing + fidelity bridge
+Useful when a planner needs to introduce a likelihood or energy term gradually
+instead of applying its full weight in one step.
 """
 
 from __future__ import annotations

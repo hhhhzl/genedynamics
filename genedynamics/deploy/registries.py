@@ -95,6 +95,12 @@ def resolve_class(key: str) -> type:
     """Like :func:`_resolve` but raises ``KeyError`` when the key is unknown."""
     cls = _resolve(key)
     if cls is None:
+        # A default can be skipped during the package's first import when an
+        # optional component participates in a circular import. At actual
+        # resolution time the module graph is complete, so retry once.
+        register_defaults(force=True)
+        cls = _resolve(key)
+    if cls is None:
         kind = key.split(".", 1)[0]
         reg = _KIND_TO_REGISTRY.get(kind)
         avail = reg.list_available() if reg else []
@@ -109,7 +115,7 @@ def resolve_class(key: str) -> type:
 _DEFAULTS_REGISTERED = False
 
 
-def register_defaults() -> None:
+def register_defaults(*, force: bool = False) -> None:
     """Populate every registry with the canonical built-in implementations.
 
     Idempotent — safe to call multiple times. Each implementation is loaded
@@ -117,7 +123,7 @@ def register_defaults() -> None:
     osqp) do not break import on dev laptops.
     """
     global _DEFAULTS_REGISTERED
-    if _DEFAULTS_REGISTERED:
+    if _DEFAULTS_REGISTERED and not force:
         return
 
     # ----- io -------------------------------------------------------------

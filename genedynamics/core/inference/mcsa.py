@@ -7,9 +7,8 @@ Provides:
 - MCSAScoreEstimator: score = (1/σ) E[w * δ] from weighted perturbations
 - MCSADiagnostics: ESS, weight stats, degeneracy flags
 
-Used by:
-- 3DGS robust mapping: observation-likelihood MCSA
-- Soft-robot MR-MF-MBD: reward-based MCSA (ES gradient)
+The primitives are task-agnostic and support likelihood- or reward-weighted
+score estimation.
 """
 
 from __future__ import annotations

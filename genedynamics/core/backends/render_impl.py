@@ -109,8 +109,14 @@ class MatplotlibRenderer(RenderBackend):
             
             # Convert to RGB array
             self.fig.canvas.draw()
-            buf = np.frombuffer(self.fig.canvas.tostring_rgb(), dtype=np.uint8)
             width, height = self.fig.canvas.get_width_height()
+            if hasattr(self.fig.canvas, "buffer_rgba"):
+                # ``tostring_rgb`` was removed in Matplotlib 3.10.  Reading the
+                # RGBA buffer works across supported Matplotlib releases; copy
+                # the RGB channels because the canvas owns the source buffer.
+                buf = np.asarray(self.fig.canvas.buffer_rgba())[..., :3].copy()
+            else:  # pragma: no cover - compatibility with older backends
+                buf = np.frombuffer(self.fig.canvas.tostring_rgb(), dtype=np.uint8)
             # Reshape with proper dimensions
             try:
                 buf = buf.reshape((height, width, 3))

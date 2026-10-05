@@ -129,7 +129,7 @@ edgecloud 的边缘有两套形态,各有取舍:
 ## 7. 还能直接拿来用的 edgecloud 功能(你没列但值得)
 
 - **WASM(WasmEdge)+ WASI-NN**:轻量、签名、沙箱化的边缘推理(安全过滤/感知)。
-- **云爆发(SkyPilot)**:重训练(3dgs、RL)按需溢出到云 GPU。
+- **云爆发(SkyPilot)**:大规模 RL 重训练按需溢出到云 GPU。
 - **Knative serverless + `internal/chain` DAG**:`replan`/感知/安全合成 当 serverless(空闲 scale-to-zero 省算力);多阶段感知/规划串 DAG(SLO 感知、含 `collab_planner` 协同,3328 行)。⚠️ 后端 feature-gated、scale-to-zero 还 TODO;`chain` 是最成熟部分。控制环不走它。
 - **templates 灰度/蓝绿/回滚**:安全地把新策略/控制器滚动推给机器人。
 - **MinIO 产物 + lineage**:给模型权重/`trajectory.json`/checkpoint 做版本管理 + 预签名分发。

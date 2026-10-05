@@ -19,24 +19,5 @@ services:
       - ..:/workspace
       - genedynamics-pip-cache:/tmp/pip-cache
 
-  genedynamics-softzoo-cpu:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      target: softzoo-cpu
-    image: genedynamics/softzoo-cpu:local
-    platform: linux/amd64
-    working_dir: /workspace
-    stdin_open: true
-    tty: true
-    command: /bin/bash
-    env_file:
-      - env/dev-cpu.env
-    environment:
-      PYTHONPATH: /workspace/third_party/environments/d3il:${PYTHONPATH:-}
-    volumes:
-      - ..:/workspace
-      - genedynamics-pip-cache:/tmp/pip-cache
-
 volumes:
   genedynamics-pip-cache:

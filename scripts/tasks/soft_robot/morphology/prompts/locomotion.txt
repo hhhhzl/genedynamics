@@ -1,4 +1,0 @@
-# Writeup §12 locomotion prompts. Lines starting with # are comments.
-a low-profile multi-legged crawling soft robot
-a flexible worm-like robot with side appendages
-a soft starfish-like crawling creature

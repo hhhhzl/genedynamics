@@ -68,7 +68,7 @@ class ExperimentConfig:
     suites: List[Dict[str, Any]] = field(default_factory=list)
     
     # Obstacle configuration. Defaults to a single dummy level so configs
-    # that don't sweep obstacles (e.g. 3DGS reconstruction) can omit them.
+    # that do not sweep obstacles can omit them.
     obstacle_levels: List[int] = field(default_factory=lambda: [0])
     obstacle_config: Dict[str, Any] = field(default_factory=dict)
     

@@ -1,12 +1,3 @@
-[submodule "third_party/morphology_priors/trellis_repo"]
-	path = third_party/morphology_priors/trellis_repo
-	url = https://github.com/microsoft/TRELLIS.git
-[submodule "third_party/morphology_priors/splatflow_repo"]
-	path = third_party/morphology_priors/splatflow_repo
-	url = https://github.com/gohyojun15/SplatFlow.git
-[submodule "third_party/morphology_priors/triposg/repo"]
-	path = third_party/morphology_priors/triposg/repo
-	url = https://github.com/VAST-AI-Research/TripoSG.git
 [submodule "third_party/mujoco_menagerie"]
 	path = third_party/mujoco_menagerie
 	url = https://github.com/google-deepmind/mujoco_menagerie.git

@@ -176,6 +176,7 @@ def initialize_class(
     node: Any,
     *,
     extra_kwargs: Optional[Mapping[str, Any]] = None,
+    nested_extra_kwargs: Optional[Mapping[str, Any]] = None,
     nested_config_kw: str = "config",
 ) -> Any:
     """Instantiate a registered component from a nested-class config node.
@@ -229,6 +230,10 @@ def initialize_class(
     for k, v in cfg_dict.items():
         if isinstance(v, Lazy):
             v = v.resolve()
+        elif isinstance(v, dict) and "registry_key" in v:
+            # Nested component nodes (for example a sport controller's
+            # locomotion client) are components, not opaque config dicts.
+            v = _initialize_dict(dict(v), nested_extra_kwargs)
         if k in accepted or accepts_kwargs:
             direct_kwargs[k] = v
         else:
@@ -319,7 +324,16 @@ def build_components(
         ctl_extras = dict(extras)
         if built.io is not None:
             ctl_extras["io"] = built.io
-        built.controller = initialize_class(controller_node, extra_kwargs=_only_accepted(controller_node, ctl_extras))
+        nested_extras = dict(ctl_extras)
+        if built.io is not None:
+            # Locomotion policies need an object exposing the active robot
+            # spec; every concrete IO provides that contract.
+            nested_extras["robot"] = built.io
+        built.controller = initialize_class(
+            controller_node,
+            extra_kwargs=_only_accepted(controller_node, ctl_extras),
+            nested_extra_kwargs=nested_extras,
+        )
 
     safety_node = _maybe_node(cfg, "safety")
     if safety_node is not None:

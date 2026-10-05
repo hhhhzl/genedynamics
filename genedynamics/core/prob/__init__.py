@@ -10,10 +10,8 @@ model-based diffusion, MCSA, and posterior inference:
 - mixtures: Responsibility weights, mixture log-probability, weighted score
   combination for mode-marginalization and importance sampling.
 
-These primitives are task-agnostic and suitable for:
-- 3DGS robust mapping (correlated observation noise)
-- Soft-robot mode-marginalization (contact/friction regimes)
-- Any inference requiring low-rank covariance or mixture models.
+These primitives are task-agnostic and suitable for inference requiring
+low-rank covariance or mixture models.
 """
 
 from .gaussian_lowrank import (

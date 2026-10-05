@@ -1,0 +1,5 @@
+-r base.txt
+diffusers>=0.36
+einops>=0.8.2
+qpth
+torch>=2.3

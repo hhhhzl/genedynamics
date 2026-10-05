@@ -8,10 +8,13 @@ metrics, and the canonical algorithm configs are validated in one place.
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import jax
 import jax.numpy as jnp
-import mujoco
+mujoco = pytest.importorskip("mujoco")
 import numpy as np
+
+pytestmark = pytest.mark.docker
 
 from genedynamics.envs.factories import make_env
 from genedynamics.experiments.plugins.metrics.extractors import peg_insert_metrics_plugin

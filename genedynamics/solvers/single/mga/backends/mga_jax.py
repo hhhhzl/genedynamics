@@ -244,6 +244,11 @@ class MgaBackendJax:
         # Calling methods on execution_env here would disclose the true hole
         # frame, clearance and friction to the controller.
         self._task_contract_env = self._env
+        # Execution-context hooks are different from decision hooks: they seal
+        # observable entry state and perform the real committed transition.
+        # Keep that capability on the execution environment while all scoring
+        # and emergency-plan decisions above remain on the nominal model.
+        self._execution_env = getattr(solver, "execution_env", self._env)
         self.emergency_plan_fn = getattr(
             self._task_contract_env, "emergency_plan", None
         )
@@ -868,7 +873,7 @@ class MgaBackendJax:
         generic backend neither owns anchor fields nor serializes callables.
         """
         model = getattr(self._env, "mga_execution_context", None)
-        execution = getattr(self._task_contract_env, "mga_execution_context", None)
+        execution = getattr(self._execution_env, "mga_execution_context", None)
         can_select_emergency = self.prior_acceptance and (
             self.prior_mode == "additive"
             or self.prior_fallback_mode == "receding_incumbent"
@@ -897,7 +902,7 @@ class MgaBackendJax:
         # When model and execution are the same task instance, this hook shares
         # the already-compiled real-step executable.  A distinct nominal model
         # keeps its own hook, preserving model/execution separation.
-        score_context = execution if self._env is self._task_contract_env else model
+        score_context = execution if self._env is self._execution_env else model
         host_emergency = score_context.get("score_emergency_host")
         if host_emergency is not None and not callable(host_emergency):
             raise TypeError("MGA score_emergency_host hook must be callable")

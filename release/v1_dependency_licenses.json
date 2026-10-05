@@ -1,0 +1,107 @@
+{
+  "packages": [
+    {
+      "license": "BSD-3-Clause",
+      "name": "contourpy",
+      "version": "1.4.0"
+    },
+    {
+      "license": "BSD License",
+      "name": "cycler",
+      "version": "0.12.1"
+    },
+    {
+      "license": "MIT",
+      "name": "fonttools",
+      "version": "4.66.1"
+    },
+    {
+      "license": "UNKNOWN",
+      "name": "genedynamics",
+      "version": "0.1.0"
+    },
+    {
+      "license": "BSD-2-Clause",
+      "name": "ImageIO",
+      "version": "2.38.0"
+    },
+    {
+      "license": "Apache-2.0",
+      "name": "jax",
+      "version": "0.6.2"
+    },
+    {
+      "license": "Apache-2.0",
+      "name": "jaxlib",
+      "version": "0.6.2"
+    },
+    {
+      "license": "BSD License",
+      "name": "kiwisolver",
+      "version": "1.5.1"
+    },
+    {
+      "license": "Python Software Foundation License",
+      "name": "matplotlib",
+      "version": "3.11.2"
+    },
+    {
+      "license": "Apache-2.0",
+      "name": "ml_dtypes",
+      "version": "0.6.0"
+    },
+    {
+      "license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "name": "numpy",
+      "version": "2.5.3"
+    },
+    {
+      "license": "MIT",
+      "name": "opt_einsum",
+      "version": "3.4.0"
+    },
+    {
+      "license": "Apache-2.0 OR BSD-2-Clause",
+      "name": "packaging",
+      "version": "26.3"
+    },
+    {
+      "license": "MIT-CMU",
+      "name": "pillow",
+      "version": "12.3.0"
+    },
+    {
+      "license": "MIT",
+      "name": "pyparsing",
+      "version": "3.3.3"
+    },
+    {
+      "license": "Apache Software License; BSD License",
+      "name": "python-dateutil",
+      "version": "2.9.0.post0"
+    },
+    {
+      "license": "MIT License",
+      "name": "PyYAML",
+      "version": "6.0.3"
+    },
+    {
+      "license": "BSD License",
+      "name": "scipy",
+      "version": "1.18.1"
+    },
+    {
+      "license": "MIT License",
+      "name": "six",
+      "version": "1.17.0"
+    },
+    {
+      "license": "MPL-2.0 AND MIT",
+      "name": "tqdm",
+      "version": "4.70.1"
+    }
+  ],
+  "release": "0.1.0",
+  "schema_version": 1,
+  "scope": "core wheel dependency closure"
+}

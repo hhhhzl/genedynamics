@@ -1,44 +1,127 @@
-name: Tests
+name: V1 quality gates
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop, "release/**"]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ['3.8', '3.9', '3.10', '3.11']
-    
+  package:
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov pytest-xdist
-    
-    - name: Run unit tests
-      run: |
-        pytest test/unit -v --cov=genedynamics --cov-report=xml --cov-report=term-missing
-    
-    - name: Run integration tests
-      run: |
-        pytest test/integration -v -m "not slow"
-    
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Build and inspect wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          wheel = next(Path("dist").glob("genedynamics-*.whl"))
+          with zipfile.ZipFile(wheel) as archive:
+              names = archive.namelist()
+          forbidden = ("3dgs", "mbd3d", "mrmfmbd", "soft_robot", "codesign", "morphology")
+          hits = [name for name in names if any(part in name.lower() for part in forbidden)]
+          if hits:
+              raise SystemExit(f"deferred V1 files found in wheel: {hits[:20]}")
+          required = {
+              "genedynamics/__init__.py",
+              "genedynamics/envs/assets/franka_panda/panda_arm.xml",
+              "genedynamics/reports/templates/report.html",
+              "genedynamics/solvers/single/dial/spline_cache.npz",
+          }
+          missing = required.difference(names)
+          if missing:
+              raise SystemExit(f"wheel is missing package data: {sorted(missing)}")
+          PY
+      - name: Install built wheel
+        run: |
+          python -m venv /tmp/genedynamics-wheel-test
+          /tmp/genedynamics-wheel-test/bin/python -m pip install dist/*.whl
+          /tmp/genedynamics-wheel-test/bin/python -c "import genedynamics; assert genedynamics.__version__ == '0.1.0'"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Build documentation
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[docs]"
+          mkdocs build --strict
+
+  core-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install core test environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+      - name: Validate V1 configurations
+        run: python scripts/release/validate_release.py
+      - name: Run core tests
+        run: |
+          pytest \
+            test/unit/test_backends.py \
+            test/unit/test_core_constraints.py \
+            test/unit/test_experiment_config.py \
+            test/unit/test_mppi_objective.py \
+            test/unit/test_noise_sampler.py \
+            test/unit/test_solver_planner_adapter.py \
+            test/integration/test_end_to_end.py \
+            --cov=genedynamics \
+            --cov-report=term-missing
+
+  simulation-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install simulation test environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libosmesa6
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[simulation,optimization,test]"
+      - name: Run simulation smoke tests
+        env:
+          MUJOCO_GL: osmesa
+          JAX_PLATFORMS: cpu
+        run: |
+          pytest \
+            test/unit/test_d3il_avoiding_env.py \
+            test/unit/test_jax_kinematics.py \
+            test/integration/test_runner_matrix.py \
+            -m "not slow and not gpu and not docker and not brax and not isaac_lab"

@@ -68,7 +68,7 @@ class Projector:
         self.add_numpy_constraints()     
 
     def project(self, trajectory, constraints=None):
-        """
+        r"""
             trajectory: np.ndarray of shape (batch_size, horizon, transition_dim)
             Solve an optimization problem of the form 
                 \hat z =   argmin_z 1/2 z^T Q z + r^T z
@@ -319,7 +319,7 @@ class SafetyConstraints(Constraints):
                 else:
                     a = bound[0]
                     b = bound[1]
-                
+
                 mat_append[i, i * self.transition_dim: (i + 1) * self.transition_dim] = torch.tensor(a, device=self.device)
                 vec_append[i] = torch.tensor(b, device=self.device)
 
@@ -493,4 +493,3 @@ class ProjectionNormalizer():
     def unnormalize(self, x_normalized):
         x = (x_normalized + 1) * (self.maxs - self.mins) / 2 + self.mins
         return x
-                

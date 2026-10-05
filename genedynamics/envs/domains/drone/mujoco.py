@@ -148,7 +148,26 @@ class DroneFull3DMujocoEnv(DroneFull3DPhysicsEnv):
         Returns:
             MuJoCo state dict with 'qpos' and 'qvel'
         """
-        return state_12d_to_mujoco(state)
+        converted = state_12d_to_mujoco(state)
+        backend = self._physics_backend_instance
+        if backend is None or backend.model.nq == 7:
+            return converted
+
+        # The generated model also has four rotor hinge joints. MuJoCo lays
+        # those coordinates out alongside the free joint, so a bare 7/6
+        # state cannot be assigned to the complete qpos/qvel arrays.
+        joint_id = mujoco.mj_name2id(
+            backend.model, mujoco.mjtObj.mjOBJ_JOINT, "quadrotor_free"
+        )
+        if joint_id < 0:
+            raise RuntimeError("quadrotor model is missing the 'quadrotor_free' joint")
+        qpos_adr = int(backend.model.jnt_qposadr[joint_id])
+        dof_adr = int(backend.model.jnt_dofadr[joint_id])
+        qpos = np.zeros(backend.model.nq, dtype=np.float64)
+        qvel = np.zeros(backend.model.nv, dtype=np.float64)
+        qpos[qpos_adr : qpos_adr + 7] = converted["qpos"]
+        qvel[dof_adr : dof_adr + 6] = converted["qvel"]
+        return {"qpos": qpos, "qvel": qvel}
     
     def _mujoco_to_state(self, mujoco_state: Dict[str, np.ndarray]) -> Array:
         """
@@ -160,7 +179,22 @@ class DroneFull3DMujocoEnv(DroneFull3DPhysicsEnv):
         Returns:
             12D state array
         """
-        return mujoco_to_state_12d(mujoco_state)
+        backend = self._physics_backend_instance
+        if backend is None or np.asarray(mujoco_state["qpos"]).shape[0] == 7:
+            return mujoco_to_state_12d(mujoco_state)
+
+        joint_id = mujoco.mj_name2id(
+            backend.model, mujoco.mjtObj.mjOBJ_JOINT, "quadrotor_free"
+        )
+        if joint_id < 0:
+            raise RuntimeError("quadrotor model is missing the 'quadrotor_free' joint")
+        qpos_adr = int(backend.model.jnt_qposadr[joint_id])
+        dof_adr = int(backend.model.jnt_dofadr[joint_id])
+        base_state = {
+            "qpos": np.asarray(mujoco_state["qpos"])[qpos_adr : qpos_adr + 7],
+            "qvel": np.asarray(mujoco_state["qvel"])[dof_adr : dof_adr + 6],
+        }
+        return mujoco_to_state_12d(base_state)
     
     def transition(self, state: Array, action: Array) -> Array:
         """
@@ -279,4 +313,3 @@ class DroneFull3DMujocoEnv(DroneFull3DPhysicsEnv):
             self._temp_model_path = None
         
         super().close()
-

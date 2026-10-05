@@ -8,9 +8,7 @@ This module provides task-agnostic abstractions for:
 - fidelity: Multi-fidelity ladder and upgrade rules
 - diagnostics: ESS, weight entropy, degeneracy flags
 
-Used by:
-- mbd3d: 3DGS robust mapping (observation-likelihood bridge)
-- mrmfmbd: Soft-robot mode-marginal + multi-fidelity
+These building blocks are independent of a particular task or simulator.
 """
 
 from .annealed_bridge import (

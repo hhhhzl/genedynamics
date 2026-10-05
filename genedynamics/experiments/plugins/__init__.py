@@ -2,32 +2,17 @@
 Plugin implementations for the experimental framework.
 
 This package contains implementations of various plugins:
-- methods: Solver method plugins (EDOC, MPPI, CEM, etc.)
+- methods: Solver method plugins (MBD, MDOC, CFS-MBD, MPPI, etc.)
 - environments: Environment plugins (single/double integrator, etc.)
 - metrics: Metrics computation plugins (SSR, obstacle density, etc.)
 - visualizations: Visualization plugins
 - obstacles: Obstacle generation plugins
-- baselines: Baseline algorithms for comparison (mrmfmbd, etc.)
-- task_domains: Task domain providers (jax_mpm, etc.)
 """
-
-# Import to trigger task domain and baseline registration
-try:
-    from . import task_domains  
-except ImportError:
-    pass
-try:
-    from . import baselines  
-except ImportError:
-    pass
 
 # Import and export all plugins for convenient access
 from .methods import (
     EBMBDMethodPlugin,
     MBDMethodPlugin,
-    MBD3DMethodPlugin,
-    MBD3DActiveMethodPlugin,
-    MRMFMBDMethodPlugin,
     D3ILUnifiedMethodPlugin,
     MDOCMethodPlugin,
     CFSMBDMethodPlugin,
@@ -63,11 +48,6 @@ from .environments import (
     D3ILAvoidingPlugin,
     D3ILAvoiding9DPlugin,
     AvoidingPlanEnvironmentPlugin,
-    MujocoSceneMappingPlugin,
-    NerfSynthetic3DGSPlugin,
-    Replica3DGSPlugin,
-    TUM_RGBD_3DGSPlugin,
-    MuJoCoActivePerceptionPlugin,
     HumanoidCorridor2DPlugin,
     ManipulatorSurfaceScanPlugin,
     ManipulatorPegInsertPlugin,
@@ -108,13 +88,8 @@ from .obstacles import (
 
 __all__ = [
     # Methods
-    'EDOCMethodPlugin',
     'EBMBDMethodPlugin',
     'MBDMethodPlugin',
-    'MBD3DMethodPlugin',
-    'MBD3DActiveMethodPlugin',
-    'MRMFMBDMethodPlugin',
-    'EDOCMPCMethodPlugin',
     'D3ILUnifiedMethodPlugin',
     'MDOCMethodPlugin',
     'CFSMBDMethodPlugin',
@@ -148,11 +123,6 @@ __all__ = [
     'D3ILAvoidingPlugin',
     'D3ILAvoiding9DPlugin',
     'AvoidingPlanEnvironmentPlugin',
-    'MujocoSceneMappingPlugin',
-    'NerfSynthetic3DGSPlugin',
-    'Replica3DGSPlugin',
-    'TUM_RGBD_3DGSPlugin',
-    'MuJoCoActivePerceptionPlugin',
     'HumanoidCorridor2DPlugin',
     'ManipulatorSurfaceScanPlugin',
     'ManipulatorPegInsertPlugin',

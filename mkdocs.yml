@@ -1,0 +1,51 @@
+site_name: GenerativeDynamics
+site_description: Unified planning and control stack for robotics
+repo_url: https://github.com/hhhhzl/enerdynamics
+repo_name: hhhhzl/enerdynamics
+docs_dir: docs
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+nav:
+  - Overview: index.md
+  - Getting started:
+      - Installation: getting-started/installation.md
+      - First experiment: getting-started/quickstart.md
+  - Concepts:
+      - Architecture: concepts/architecture.md
+  - Guides:
+      - Configuration: guides/configuration.md
+      - Add a plugin: guides/adding-a-plugin.md
+  - Recipes:
+      - Catalogue: recipes/index.md
+      - Planar CPU smoke: recipes/planar-cpu.md
+      - Humanoid corridor planning: recipes/humanoid-corridor.md
+  - Integrations:
+      - D3IL: integrations/d3il.md
+  - Reference:
+      - API surface: api/README.md
+      - Compatibility: reference/compatibility.md
+      - Metrics and benchmarks: reference/metrics.md
+  - Development:
+      - Testing: development/testing.md
+      - Releasing: development/releasing.md
+  - V1 release:
+      - Scope: releases/v1_scope.md
+      - Checklist: releases/v1_checklist.md
+      - Validation evidence: releases/v1_evidence.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format

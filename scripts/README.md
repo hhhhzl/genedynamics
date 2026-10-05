@@ -4,10 +4,11 @@
 
 | Directory | Purpose |
 |-----------|---------|
-| **setup/** | Environment setup. Optional third-party: d3il, 3dgs |
-| **tasks/** | Task-specific execution scripts by domain (3dgs, robot, soft_robot, mdcoas) |
+| **setup/** | Environment setup, including optional D3IL integration |
+| **tasks/** | Task-specific execution scripts for robot tasks and MDCOAS |
 | **debug/** | Debug/verification scripts. Safe to delete after use |
 | **visualizations/** | Plotting, rendering, deploy analysis |
+| **validation/** | Explicit Docker and hardware acceptance probes |
 | **docker/** | Future Docker scripts (placeholder) |
 | **baseline/** | Baseline regression (unchanged) |
 
@@ -19,10 +20,8 @@
 # Full setup (d3il + PyTorch + genedynamics)
 ./scripts/setup/setup.sh
 
-# Optional: setup specific third-party env
+# Set up the D3IL third-party environment
 ./scripts/setup/setup.sh d3il
-./scripts/setup/setup.sh 3dgs
-./scripts/setup/setup.sh all
 ```
 
 ---
@@ -30,9 +29,7 @@
 ## Tasks
 
 See `scripts/tasks/README.md` for task-specific scripts:
-- **3dgs/** - 3D Gaussian Splatting experiments
 - **robot/** - Quadruped, UAV, acceptance tests
-- **soft_robot/** - MRMFMBD soft-robot co-design (jax_mpm)
 - **mdcoas/** - MD-COAS experiments
 
 ---

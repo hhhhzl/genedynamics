@@ -28,9 +28,6 @@ from genedynamics.experiments.plugins import (
     MDOCMethodPlugin,
     EBMBDMethodPlugin,
     MBDMethodPlugin,
-    MBD3DMethodPlugin,
-    MBD3DActiveMethodPlugin,
-    MRMFMBDMethodPlugin,
     D3ILUnifiedMethodPlugin,
     CFSMBDMethodPlugin,
     CFSMBDFullMethodPlugin,
@@ -55,11 +52,6 @@ from genedynamics.experiments.plugins import (
     D3ILAvoidingPlugin,
     D3ILAvoiding9DPlugin,
     AvoidingPlanEnvironmentPlugin,
-    MujocoSceneMappingPlugin,
-    NerfSynthetic3DGSPlugin,
-    Replica3DGSPlugin,
-    TUM_RGBD_3DGSPlugin,
-    MuJoCoActivePerceptionPlugin,
     HumanoidCorridor2DPlugin,
     SSRMetricsPlugin,
     ObstacleDensityMetricsPlugin,
@@ -174,6 +166,12 @@ def main():
         ),
     )
     parser.add_argument(
+        '--device',
+        choices=('cpu', 'gpu', 'cuda'),
+        default=None,
+        help='Override the configured JAX device for this run',
+    )
+    parser.add_argument(
         '--resume',
         action='store_true',
         help=(
@@ -223,6 +221,8 @@ def main():
             config.use_development_output_root(Path(args.development_root))
         except ValueError as exc:
             parser.error(str(exc))
+    if args.device is not None:
+        config.device = args.device
 
     # Override level, seeds, and suites if specified.
     if args.level is not None:
@@ -338,9 +338,6 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(MDOCMethodPlugin(), 'method')
     runner.register_plugin(EBMBDMethodPlugin(), 'method')
     runner.register_plugin(MBDMethodPlugin(), 'method')
-    runner.register_plugin(MBD3DMethodPlugin(), 'method')
-    runner.register_plugin(MBD3DActiveMethodPlugin(), 'method')
-    runner.register_plugin(MRMFMBDMethodPlugin(), 'method')
     runner.register_plugin(D3ILUnifiedMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDMethodPlugin(), 'method')
     runner.register_plugin(CFSMBDFullMethodPlugin(), 'method')
@@ -376,11 +373,6 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(D3ILAvoidingPlugin(), 'environment')
     runner.register_plugin(D3ILAvoiding9DPlugin(), 'environment')
     runner.register_plugin(AvoidingPlanEnvironmentPlugin(), 'environment')
-    runner.register_plugin(MujocoSceneMappingPlugin(), 'environment')
-    runner.register_plugin(NerfSynthetic3DGSPlugin(), 'environment')
-    runner.register_plugin(Replica3DGSPlugin(), 'environment')
-    runner.register_plugin(TUM_RGBD_3DGSPlugin(), 'environment')
-    runner.register_plugin(MuJoCoActivePerceptionPlugin(), 'environment')
     runner.register_plugin(HumanoidCorridor2DPlugin(), 'environment')
     runner.register_plugin(ManipulatorSurfaceScanPlugin(), 'environment')
     runner.register_plugin(ManipulatorPegInsertPlugin(), 'environment')

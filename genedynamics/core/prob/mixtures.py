@@ -6,9 +6,8 @@ Provides numerically stable operations for:
 - Mixture log-probability
 - Weighted score combination (for gradient of mixture w.r.t. parameters)
 
-Used by:
-- Soft-robot mode-marginalization (contact/friction regimes)
-- Any inference with discrete latent modes
+Used by inference with discrete latent modes, including contact and friction
+regimes.
 """
 
 from __future__ import annotations

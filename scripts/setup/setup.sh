@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Setup genedynamics environment. Optional third-party: d3il, 3dgs, all
-# Usage: ./scripts/setup/setup.sh [d3il|3dgs|all]
+# Setup the GenerativeDynamics development environment with D3IL.
+# Usage: ./scripts/setup/setup.sh [d3il]
 # Default (no args): d3il + pip install -e . + PyTorch
 
 set -euo pipefail
@@ -24,19 +24,9 @@ case "$_target" in
     python -c "import torch; assert torch.cuda.is_available(), 'PyTorch CUDA unavailable (driver/GPU not visible?)'"
     python -c "import jax; b=jax.default_backend(); assert b == 'gpu', f'JAX expected GPU backend, got {b!r}; devices={jax.devices()}'"
     ;;
-  3dgs)
-    echo "=== Setup 3DGS ==="
-    echo "Set GAUSSIAN_SPLATTING_PATH to official 3DGS repo. See scripts/tasks/3dgs/README.md"
-    ;;
-  all)
-    "$SCRIPT_DIR/setup.sh" d3il
-    "$SCRIPT_DIR/setup.sh" 3dgs
-    ;;
   *)
-    echo "Usage: $0 [d3il|3dgs|all]"
+    echo "Usage: $0 [d3il]"
     echo "  d3il    - D3IL + genedynamics + PyTorch (default)"
-    echo "  3dgs    - 3DGS (set GAUSSIAN_SPLATTING_PATH)"
-    echo "  all     - d3il + 3dgs"
     exit 1
     ;;
 esac

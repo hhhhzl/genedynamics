@@ -1,0 +1,7 @@
+jax>=0.6.2,<0.7
+numpy>=1.26,<3
+scipy>=1.13
+PyYAML>=6.0.1
+tqdm>=4.65
+matplotlib>=3.8
+imageio>=2.37

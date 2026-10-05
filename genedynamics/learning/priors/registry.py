@@ -2,7 +2,6 @@
 
 Mirrors the solver registry pattern. Built-in names: ``"rl"`` (multi-backend RL
 policy prior, jax=brax integration), ``"diffusion"`` (learned `s_theta`).
-``"codesign"`` is reserved for the lifted mrmfmbd ThetaPrior (deferred).
 """
 
 from __future__ import annotations

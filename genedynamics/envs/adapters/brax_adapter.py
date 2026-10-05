@@ -101,11 +101,18 @@ class BraxEnvAdapter:
         if rng is None:
             rng = jax.random.PRNGKey(0)
         
-        # Brax reset returns state (PyTree), not observation
+        # Modern Brax returns an env State whose ``obs`` field is the
+        # observation.  Keep the state as the adapter state so it can be
+        # passed directly to ``step``.
         state = self.brax_env.reset(rng)
-        obs = self.brax_env.get_obs(state)
-        
-        return obs, {"state": state}
+        obs = getattr(state, "obs", None)
+        if obs is None:  # compatibility with older custom Brax envs
+            get_obs = getattr(self.brax_env, "get_obs", None)
+            if get_obs is None:
+                get_obs = getattr(self.brax_env, "_get_obs")
+            obs = get_obs(state)
+
+        return state, {"state": state, "observation": obs}
     
     def step(
         self,
@@ -133,9 +140,18 @@ class BraxEnvAdapter:
             raise RuntimeError("JAX is required for BraxEnvAdapter")
         # Brax step
         next_state = self.brax_env.step(state, action)
-        obs = self.brax_env.get_obs(next_state)
-        reward = self.brax_env.reward(next_state, action)
-        done = self.brax_env.done(next_state)
+        obs = getattr(next_state, "obs", None)
+        if obs is None:  # compatibility with older custom Brax envs
+            get_obs = getattr(self.brax_env, "get_obs", None)
+            if get_obs is None:
+                get_obs = getattr(self.brax_env, "_get_obs")
+            obs = get_obs(next_state)
+        reward = getattr(next_state, "reward", None)
+        if reward is None:
+            reward = self.brax_env.reward(next_state, action)
+        done = getattr(next_state, "done", None)
+        if done is None:
+            done = self.brax_env.done(next_state)
         
         cost = -float(reward)  # Convert reward to cost
         collision = False
@@ -168,7 +184,13 @@ class BraxEnvAdapter:
         if jax is None or jnp is None:
             raise RuntimeError("JAX is required for BraxEnvAdapter")
         next_state = self.brax_env.step(state, action)
-        return self.brax_env.get_obs(next_state)
+        obs = getattr(next_state, "obs", None)
+        if obs is not None:
+            return obs
+        get_obs = getattr(self.brax_env, "get_obs", None)
+        if get_obs is None:
+            get_obs = getattr(self.brax_env, "_get_obs")
+        return get_obs(next_state)
     
     def jax_transition(self, state: Any, action: Any) -> Any:
         """

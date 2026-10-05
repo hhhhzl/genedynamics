@@ -65,6 +65,8 @@ def _audit_checkpoint_lock(
     task_records: Sequence[Tuple[Path, Any]],
     errors: List[str],
     warnings: List[str],
+    *,
+    verify_artifacts: bool = True,
 ) -> None:
     """Validate the P8 frozen learned-component contract for one task."""
     if task not in _CONTACT_TASKS:
@@ -108,16 +110,17 @@ def _audit_checkpoint_lock(
                 f"{reference_path}: lock {name!r} misses {missing}"
             )
             continue
-        checkpoint = Path(str(entry["path"]))
-        if not checkpoint.is_file():
-            errors.append(f"{reference_path}: missing locked checkpoint {checkpoint}")
-        else:
-            actual = _file_sha256(checkpoint)
-            if actual != str(entry["sha256"]):
-                errors.append(
-                    f"{reference_path}: checkpoint hash mismatch for {name}: "
-                    f"{actual} != {entry['sha256']}"
-                )
+        if verify_artifacts:
+            checkpoint = Path(str(entry["path"]))
+            if not checkpoint.is_file():
+                errors.append(f"{reference_path}: missing locked checkpoint {checkpoint}")
+            else:
+                actual = _file_sha256(checkpoint)
+                if actual != str(entry["sha256"]):
+                    errors.append(
+                        f"{reference_path}: checkpoint hash mismatch for {name}: "
+                        f"{actual} != {entry['sha256']}"
+                    )
         used_seeds = {
             int(seed) for seed in (
                 list(entry.get("training_seeds") or ())
@@ -349,8 +352,15 @@ def _config_paths(roots: Sequence[str]) -> List[Path]:
     return sorted(set(p.resolve() for p in paths))
 
 
-def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
-    """Check paired protocol fields without opening any result files."""
+def audit_configs(
+    roots: Sequence[str], *, verify_artifacts: bool = True
+) -> Dict[str, Any]:
+    """Check paired protocol fields and, optionally, locked artifacts.
+
+    ``verify_artifacts=False`` is intended for source distributions that
+    publish reproducibility configs while keeping large trained checkpoints
+    outside the package.
+    """
     from genedynamics.experiments.framework.config import ExperimentConfig
 
     records = []
@@ -452,7 +462,13 @@ def audit_configs(roots: Sequence[str]) -> Dict[str, Any]:
                 run_count_by_task[task] = run_count_by_task.get(task, 0) + (
                     len(cfg.seeds) * len(formal_suites)
                 )
-        _audit_checkpoint_lock(task, task_records, errors, warnings)
+        _audit_checkpoint_lock(
+            task,
+            task_records,
+            errors,
+            warnings,
+            verify_artifacts=verify_artifacts,
+        )
         expected = (reference.metadata or {}).get("expected_formal_task_runs")
         if expected is not None and run_count_by_task[task] != int(expected):
             errors.append(

@@ -1,11 +1,8 @@
 """
 CMA-ES (Covariance Matrix Adaptation Evolution Strategy) solver.
 
-A GENERAL black-box optimizer over the action sequence, packaged exactly like
-the CEM solver (same unified Solver interface, same backend split). It is NOT
-co-design specific: co-design is solved by running this general solver on the
-horizon-1 (state, action) co-design env via `_general_solver_run` in
-`codesign_runner` (the design theta is recovered from the best action).
+A general black-box optimizer over the action sequence, packaged like the CEM
+solver with the same unified Solver interface and backend split.
 
 Mirrors `solvers/single/cem/cem.py` structure: a Solver wrapper + a JAX backend
 planner that owns the CMA-ES update (separable / diagonal covariance with

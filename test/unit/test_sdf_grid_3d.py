@@ -165,6 +165,7 @@ def test_project_to_zero_level_set(backend: str) -> None:
 
 def test_from_mesh_sphere_against_analytic() -> None:
     trimesh = pytest.importorskip("trimesh")
+    pytest.importorskip("rtree")
     sphere = trimesh.creation.icosphere(subdivisions=3, radius=0.5)
     grid = SDFGrid3D.from_mesh(sphere, spacing=0.05, padding=0.2)
     # Sample points on a sphere of radius 0.7 (outside) — true SDF = 0.2.
