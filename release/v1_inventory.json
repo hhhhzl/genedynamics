@@ -2,25 +2,27 @@
   "release": "0.1.0",
   "schema_version": 1,
   "source": {
-    "bytes": 155608466,
-    "file_count": 1662,
+    "bytes": 155642959,
+    "file_count": 1676,
     "files_by_root": {
       ".dockerignore": 1,
-      ".github": 2,
+      ".github": 3,
       ".gitignore": 1,
       ".gitmodules": 1,
       "CHANGELOG.md": 1,
       "CITATION.cff": 1,
       "CODE_OF_CONDUCT.md": 1,
       "CONTRIBUTING.md": 1,
+      "LICENSE": 1,
       "README.md": 1,
       "SECURITY.md": 1,
+      "THIRD_PARTY_NOTICES.md": 1,
       "assets": 1,
       "configs": 114,
       "docker": 8,
-      "docs": 77,
-      "examples": 1,
-      "genedynamics": 821,
+      "docs": 80,
+      "examples": 2,
+      "genedynamics": 826,
       "mkdocs.yml": 1,
       "pyproject.toml": 1,
       "pytest.ini": 1,
@@ -29,22 +31,24 @@
       "requirements.txt": 1,
       "scripts": 66,
       "setup.py": 1,
-      "test": 78,
-      "third_party": 472
+      "test": 76,
+      "third_party": 476
     },
     "files_by_suffix": {
       ".cff": 1,
       ".cfg": 1,
       ".cs": 17,
+      ".diffuser": 1,
       ".dockerfile": 1,
       ".example": 1,
       ".fbs": 1,
       ".gif": 1,
       ".gin": 4,
+      ".gym": 1,
       ".html": 2,
       ".ini": 1,
       ".json": 8,
-      ".md": 69,
+      ".md": 73,
       ".mp4": 45,
       ".mtl": 3,
       ".npy": 2,
@@ -53,7 +57,7 @@
       ".patch": 1,
       ".png": 8,
       ".pt": 1,
-      ".py": 1019,
+      ".py": 1018,
       ".sh": 19,
       ".stl": 65,
       ".svg": 1,
@@ -64,8 +68,8 @@
       ".urdf": 3,
       ".xml": 80,
       ".yaml": 119,
-      ".yml": 7,
-      "<none>": 7
+      ".yml": 8,
+      "<none>": 15
     },
     "forbidden_v1_paths": [],
     "large_files_10mib": [
@@ -326,10 +330,10 @@
     ]
   },
   "wheel": {
-    "bytes": 12160715,
-    "file_count": 789,
+    "bytes": 12195764,
+    "file_count": 809,
     "forbidden_v1_paths": [],
     "path": "genedynamics-0.1.0-py3-none-any.whl",
-    "sha256": "bf970959dac27924aff198c2d3814ec9c359041c079b7e87e05b4d1925759927"
+    "sha256": "7f83ddc9cfd53aa8741272072d278b89e42d029415cb6ad2dcd14057d46219ca"
   }
 }

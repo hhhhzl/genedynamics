@@ -139,6 +139,15 @@ jobs:
             python examples/batched_constraints.py --device cpu --samples 4096
           '
 
+      - name: Run CPU regression in the image
+        run: |
+          docker run --rm --network none \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            genedynamics/dev-cpu:ci \
+            python -m pytest test/unit test/algos \
+            -m "not performance and not gpu and not docker and not brax and not isaac_lab" \
+            -p no:cacheprovider
+
   core-tests:
     runs-on: ubuntu-latest
     strategy:

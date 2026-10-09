@@ -62,4 +62,5 @@ The checklist is ordered so each phase produces evidence required by the next.
 - [x] Run secret, large-file, dependency, and license scans. The core dependency
   closure has no detected strong-copyleft package; the project license is MIT.
 - [ ] Build the release candidate from a clean checkout and run the release gate.
-- [ ] Review the final diff, then tag and publish only after explicit approval.
+- [ ] Promote the reviewed candidate to `main`, then verify the tag, automated
+  prerelease and repository visibility. The owner has authorized steps 4–5.

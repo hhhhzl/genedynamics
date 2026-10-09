@@ -15,7 +15,7 @@ documentation/package refresh on 2026-10-09, on branch
 
 ## Test evidence
 
-The CPU Docker regression produced:
+The earlier development-checkout CPU Docker regression produced:
 
 ```text
 725 passed, 19 skipped, 152 deselected, 0 failed
@@ -34,14 +34,14 @@ and 3.12.
 
 ## Package evidence
 
-The final release-candidate wheel has:
+The latest local validation wheel, built from a clean export of `ea04c66`, has:
 
 | Property | Value |
 | --- | --- |
 | Filename | `genedynamics-0.1.0-py3-none-any.whl` |
-| Size | 12,160,715 bytes |
-| Files | 789 |
-| SHA-256 | `bf970959dac27924aff198c2d3814ec9c359041c079b7e87e05b4d1925759927` |
+| Size | 12,195,764 bytes |
+| Files | 809 |
+| SHA-256 | `7f83ddc9cfd53aa8741272072d278b89e42d029415cb6ad2dcd14057d46219ca` |
 | Required package assets missing | 0 |
 | Forbidden V1 paths | 0 |
 | Twine metadata check | Passed |
@@ -51,9 +51,11 @@ virtual environment on macOS arm64. `pip check`, package/version import, JAX CPU
 backend discovery, optional D3IL plugin import, and the documented planar
 dry-run all passed from outside the repository checkout.
 
-After the README visual refresh, the wheel was rebuilt and its metadata passed
-Twine again. Comparing the archives showed changes only in `METADATA` and
-`RECORD`; all runtime/package files are byte-identical to the CPU-tested wheel.
+The wheel and source archive include all 13 declared license files, verified
+against the checked-in full texts. All 683 packaged Python files match the
+preceding CPU-tested wheel. Robot XML changes contain attribution comments
+only; parsed XML content is unchanged. Published CI artifacts receive their
+own `SHA256SUMS`; the local checksum above is not a claim about a future rebuild.
 
 The source and wheel inventory is stored in
 `release/v1_inventory.json`. The core dependency license closure is stored in
@@ -62,7 +64,7 @@ The source and wheel inventory is stored in
 ## Static and documentation evidence
 
 - MkDocs built in strict mode.
-- 1,017 release Python files parsed with zero syntax errors.
+- 1,018 release Python files parsed with zero syntax errors.
 - `git diff --check` reported no whitespace errors.
 - Credential pattern scanning reported zero AWS, GitHub, OpenAI, Slack, or
   private-key signatures.
@@ -164,3 +166,45 @@ The source and wheel inventory is stored in
   raw artifacts defined in the metrics contract.
 - Verify the exact published commit and GitHub prerelease after the automated
   quality gates. Repository visibility changes require owner administration access.
+
+## Fresh Linux validation, examples and Docker — 2026-10-09
+
+- A container with no source mounts received a clean V1 source export. The old
+  editable package was removed. An isolated core-only environment ran the
+  Actions core selection: **89 passed, 4 optional skips**. The simulation
+  selection ran **20 passed, 1 optional skip**, including real G1 MuJoCo /
+  Spark RL execution. These checks used Linux aarch64, Python 3.10.20 and
+  JAX/JAXlib 0.6.2; they do not claim a completed GitHub amd64 run.
+- The full CPU regression exposed two obsolete, assertion-free CFS diagnostic
+  scripts collected as tests and one PegasusFlow test depending on an
+  unpublished local checkout. The scripts were removed. The basis test now
+  uses an independent exact Catmull–Rom reference and checks interpolation
+  and partition of unity. It ran in the core-only environment: **2 passed,
+  3 existing Torch-dependent skips**; the Torch equation tests passed in the
+  earlier full environment.
+- The corrected broad regression reached 99% with no failures reported in
+  completed tests. Host disk exhaustion then disrupted Docker storage and
+  prevented retrieval of a final result. This run is **incomplete evidence**.
+  The GitHub Docker gate now runs the same broad selection in a fresh image.
+- The final installed wheel passed `pip check`, Twine, import/version and
+  configuration checks: **80 experiment and 16 deployment configurations**.
+  Both checked-in examples ran outside the source checkout. The 2GO loop
+  reached the goal in **48 steps, error 0.099**. The **4096 × 20** projection
+  batch passed device, finite-value, bounds and residual assertions; maximum
+  residual was **2.24e-8**. These are CPU functional checks, not GPU benchmarks.
+- Examples now accept `--device cpu|gpu`. Requested GPU absence fails before
+  planner initialization; backend array placement is checked. Five documented
+  GPU task configurations passed dry-run validation. No NVIDIA GPU execution
+  was performed, and MGA GPU remains deferred.
+- CPU/GPU Compose configurations validated in a directory without ignored
+  `.env` files; both installer scripts passed shell syntax checks. The CPU
+  image build reached its native arm64 system-package stage before Docker
+  reported a storage I/O error. Task-generated temporary environments were
+  removed to restore host space; Docker remained unresponsive. Fresh-image
+  execution is therefore **pending**, not represented by an old cached image.
+- Docker now resolves package extras with JAX 0.6.2, includes licenses and
+  examples, uses native CPU architecture and an explicit build-input allowlist,
+  and requires CUDA initialization in its NVIDIA service. The release workflow
+  reuses package, docs, core, simulation and Docker gates. Only after all pass
+  can a version-matching tag at the current `main` create the prerelease with
+  distributions and checksums.

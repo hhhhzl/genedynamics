@@ -90,7 +90,9 @@ Both installers pin JAX 0.6.2, Brax 0.14.1 and MuJoCo/MJX 3.6.0 and run
 `pip check`. Other dependencies follow the package extras; these are
 rebuildable development images, not a fully locked production environment.
 The GPU image also pins Torch 2.10.0 / torchvision 0.25.0 with CUDA 12.6 wheels.
-Images are built locally; no GitHub Packages image is required.
+The build context allows only image inputs, excluding local research folders,
+media, results and credentials. Images are built locally; no GitHub Packages
+image is required.
 
 A successful device check proves visibility. Task success, numerical parity,
 warm latency and GPU memory still require measurements on the target host.
