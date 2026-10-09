@@ -1,0 +1,70 @@
+name: "🐛 Bug report"
+description: Report an error, unexpected behavior, or a performance regression.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [existing issues](https://github.com/hhhhzl/genedynamics/issues) and the [documentation](https://github.com/hhhhzl/genedynamics/blob/main/docs/index.md) before reporting.
+        For vulnerabilities, use the [security policy](https://github.com/hhhhzl/genedynamics/security/policy) instead of a public issue.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Select the areas involved, if known.
+      multiple: true
+      options:
+        - Installation / dependencies / Docker
+        - Generative models / planners
+        - Constraints / geometry / batched sampling
+        - Environments / simulation
+        - Learning / checkpoints
+        - Deployment / controllers
+        - Experiments / metrics / replay
+        - Documentation
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Describe what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: |
+        Provide a small script, or the command and config path with any overrides. Include the environment, planner, and random seed when relevant.
+        For performance issues, include the candidate batch, horizon, and whether timing includes compilation or warmup.
+      placeholder: |
+        1. Install with ...
+        2. Run this command or script ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Version and runtime environment
+      description: Include the release version or commit and the details relevant to your reproduction. GPU, simulator, and Torch details are only needed when those paths are involved.
+      placeholder: |
+        GenerativeDynamics version / commit:
+        OS and Python version:
+        Install command or Docker image:
+        JAX / jaxlib versions:
+        Device (CPU, or GPU model and jax.devices()):
+        CUDA / driver, Torch, or simulator versions (if relevant):
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste the traceback or a short log excerpt. No Markdown fences are needed.
+      render: text
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Optional screenshots, videos, result artifacts, or related issues.

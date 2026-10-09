@@ -1,0 +1,43 @@
+name: "✨ Feature request"
+description: Suggest a capability, integration, or documentation improvement.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [existing issues](https://github.com/hhhhzl/genedynamics/issues) and the [roadmap](https://github.com/hhhhzl/genedynamics#roadmap) for related work.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Select the areas involved, if known.
+      multiple: true
+      options:
+        - Installation / dependencies / Docker
+        - Generative models / planners
+        - Constraints / geometry / batched sampling
+        - Environments / simulation
+        - Learning / checkpoints
+        - Deployment / controllers
+        - Experiments / metrics / replay
+        - Documentation
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Problem or use case
+      description: What are you trying to do, and what is missing today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the capability and how you would use it. A small API or configuration example can help.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Alternatives and references
+      description: Optional workarounds, related issues, papers, integrations, or robot platforms that help explain the request.
