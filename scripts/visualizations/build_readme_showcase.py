@@ -19,8 +19,8 @@ from PIL import Image, ImageDraw, ImageOps
 ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "docs/assets"
 SOURCE = ASSETS / "showcase_sources/v2"
-SIZE = (1680, 1080)
-VIDEO_SIZE = (1344, 864)
+SIZE = (1680, 1240)
+VIDEO_SIZE = (1344, 992)
 FPS = 12
 SECONDS = 24
 BG = "#0B1018"
@@ -31,16 +31,16 @@ PANEL = "#141D27"
 CAMERA = [
     (0.0, 336, 162, 640),
     (1.8, 336, 162, 640),
-    (3.5, 1172, 162, 1000),
-    (5.8, 1172, 162, 1000),
-    (7.1, 336, 490, 700),
-    (9.2, 336, 490, 700),
-    (10.5, 1172, 490, 1000),
-    (12.8, 1172, 490, 1000),
-    (14.1, 450, 872, 880),
-    (16.4, 1230, 872, 880),
-    (18.4, 840, 540, 1680),
-    (22.2, 840, 540, 1680),
+    (3.5, 1172, 242, 1000),
+    (5.8, 1172, 242, 1000),
+    (7.1, 336, 574, 700),
+    (9.2, 336, 574, 700),
+    (10.5, 1172, 654, 1000),
+    (12.8, 1172, 654, 1000),
+    (14.1, 450, 1032, 880),
+    (16.4, 1230, 1032, 880),
+    (18.4, 840, 620, 1680),
+    (22.2, 840, 620, 1680),
     (24.0, 336, 162, 640),
 ]
 
@@ -98,28 +98,34 @@ def layout(manifest: dict) -> tuple[Image.Image, list]:
     metadata = {clip["id"]: clip for clip in manifest["clips"]}
     base = Image.new("RGB", SIZE, BG)
     draw = ImageDraw.Draw(base)
-    boxes = [(16, 16, 640, 292), (680, 16, 984, 292),
-             (16, 332, 640, 324), (680, 332, 984, 324),
-             (16, 680, 1648, 384)]
+    boxes = [(16, 16, 640, 292), (680, 16, 984, 452),
+             (16, 332, 640, 484), (680, 492, 984, 324),
+             (16, 840, 1648, 384)]
     for x, y, width, height in boxes:
         draw.rounded_rectangle((x, y, x + width - 1, y + height - 1),
                                radius=7, fill=PANEL)
     tiles = grid(groups["mdoc"], (22, 22, 628, 280), 4)
-    # The wide 3D scene gets more space than each square diffusion view.
+    # Each scene pairs the diffusion process with its 20 native trajectory
+    # candidates. Keep the execution view beside these pairs, spanning both rows.
     x = 686
-    for name, width in zip(groups["mdcoas"], [220, 220, 224, 284]):
-        tiles.append((name, (x, 22, width, 280)))
+    for process, candidates, width in (
+        ("mdcoas_2d_l6", "mdcoas_2d_l6_candidates", 220),
+        ("mdcoas_2d_l10", "mdcoas_2d_l10_candidates", 220),
+        ("mdcoas_7dof_diffusion", "mdcoas_7dof_candidates", 224),
+    ):
+        tiles.append((process, (x, 22, width, 216)))
+        tiles.append((candidates, (x, 246, width, 216)))
         x += width + 8
-    tiles += grid(groups["twogo"][:2], (22, 338, 628, 178), 2)
-    tiles += grid(groups["twogo"][2:], (22, 524, 628, 126), 4)
-    tiles += grid(groups["mga"], (686, 338, 972, 312), 6)
+    tiles.append(("mdcoas_7dof_execution", (x, 22, 284, 440)))
+    tiles += grid(groups["twogo"], (22, 338, 628, 472), 2)
+    tiles += grid(groups["mga"], (686, 498, 972, 312), 6)
     # Use the complete clean crops, preserving the portrait camera geometry.
     aspect = [metadata[name]["width"] / metadata[name]["height"]
               for name in groups["hardware"]]
     height = min(372, (1636 - 8 * (len(aspect) - 1)) / sum(aspect))
     widths = [round(height * value) for value in aspect]
     x = 22 + (1636 - sum(widths) - 8 * (len(widths) - 1)) // 2
-    y = 686 + round((372 - height) / 2)
+    y = 846 + round((372 - height) / 2)
     for name, width in zip(groups["hardware"], widths):
         tiles.append((name, (x, y, width, round(height))))
         x += width + 8
@@ -165,18 +171,20 @@ def build(output: Path, gif_width: int, gif_fps: int, preview_only: bool) -> Non
     clips = {item["id"]: Clip(item, binary) for item in manifest["clips"]}
     base, tiles = layout(manifest)
     output.mkdir(parents=True, exist_ok=True)
-    poster = gallery(clips, tiles, base, 20)
+    # Show complete candidate horizons in the static gallery preview.
+    poster = gallery(clips, tiles, base, SECONDS - 1 / FPS)
     poster.resize(VIDEO_SIZE, Image.Resampling.LANCZOS).save(
         output / "showcase-poster.png", optimize=True
     )
     if preview_only:
         # A contact sheet for checking the camera journey, never embedded in
         # the shipped animation. It contains no added text either.
-        sheet = Image.new("RGB", (1344, 1296), BG)
+        thumb_size = (VIDEO_SIZE[0] // 2, VIDEO_SIZE[1] // 2)
+        sheet = Image.new("RGB", (thumb_size[0] * 2, thumb_size[1] * 3), BG)
         for index, seconds in enumerate([1, 4.5, 8, 11.5, 14.5, 20]):
             frame = camera(gallery(clips, tiles, base, seconds), seconds)
-            sheet.paste(frame.resize((672, 432), Image.Resampling.LANCZOS),
-                        (index % 2 * 672, index // 2 * 432))
+            sheet.paste(frame.resize(thumb_size, Image.Resampling.LANCZOS),
+                        (index % 2 * thumb_size[0], index // 2 * thumb_size[1]))
         sheet.save(output / "camera-preview.jpg", quality=92)
         print(f"Preview: {output}", flush=True)
         return

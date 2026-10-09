@@ -1,6 +1,6 @@
 # Demonstration gallery
 
-The homepage animation is one continuous, silent gallery of **41 native paper
+The homepage animation is one continuous, silent gallery of **44 native paper
 and hardware clips**. A camera visits five groups, then pulls back to the whole
 wall before returning to the first group. Wider gutters separate the groups.
 There are no added titles, captions, logos or labels inside the animation.
@@ -8,7 +8,7 @@ There are no added titles, captions, logos or labels inside the animation.
 | Order | Group | Native footage |
 | --- | --- | --- |
 | 1 | **MDOC** | Four single-robot scenes and four multi-robot CBS scenes from the original MDOC project. |
-| 2 | **MD-COAS** | Two planar diffusion scenes (including the paper’s L10, seed 8 example), 7-DoF avoidance diffusion and the corresponding D3IL execution environment. |
+| 2 | **MD-COAS** | Two planar scenes (including the paper’s L10, seed 8 example) and 7-DoF avoidance, each pairing diffusion with 20 candidate trajectories, beside the D3IL execution environment. |
 | 3 | **2GO** | Two quadruped stepping-stone scenes and four humanoid corridor variants. |
 | 4 | **MGA** | Twelve surface geometry/material variants, three peg-insertion variants and three humanoid contact tasks. |
 | 5 | **Hardware** | 2GO humanoid execution, plus MGA rigid/curved/compliant scanning and peg insertion. |
@@ -16,12 +16,12 @@ There are no added titles, captions, logos or labels inside the animation.
 ## Files and regeneration
 
 - `showcase.gif` is the GitHub-compatible looping animation.
-- `showcase.mp4` is the 1344 × 864 video with the same 24-second camera journey.
+- `showcase.mp4` is the 1344 × 992 video with the same 24-second camera journey.
 - `showcase-poster.png` shows the complete gallery in one frame.
 - `architecture.svg` is the separately editable framework diagram.
 
 The compact source clips are checked in under `showcase_sources/v2/`.
-[manifest.json](showcase_sources/v2/manifest.json) records all 41 checksums,
+[manifest.json](showcase_sources/v2/manifest.json) records all 44 checksums,
 original source identities, crop bounds, selected time ranges and playback
 normalization. It uses symbolic source roots rather than personal machine paths.
 The gallery can be rebuilt without a simulator or the original paper folders:
@@ -30,6 +30,13 @@ The gallery can be rebuilt without a simulator or the original paper folders:
 python -m pip install Pillow numpy imageio-ffmpeg
 python scripts/visualizations/build_readme_showcase.py
 ```
+
+Within MD-COAS, each column pairs the diffusion process above with the generated
+candidate trajectories below. The planar views use L6/seed 0 and L10/seed 8.
+The arm view uses L1/seed 0 and shows the TCP projection of all 20 planned
+7-DoF trajectories, sourced from `trajectory_modes_plan.gif` rather than the
+execution trace. Candidate animations reveal the paths over their horizon;
+they are separate runs from the adjacent D3IL execution footage.
 
 To inspect the composition before encoding:
 

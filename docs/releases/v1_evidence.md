@@ -73,16 +73,20 @@ The source and wheel inventory is stored in
 
 ## Documentation refresh — 2026-10-09
 
-- The homepage now uses 41 original clips in five groups: MDOC, MD-COAS, 2GO,
+- The homepage now uses 44 original clips in five groups: MDOC, MD-COAS, 2GO,
   MGA and hardware. Titles, subtitles and rulers were cropped from the inputs;
   the camera composition adds no text. All five groups and camera views were
   visually reviewed.
-- The 24-second GIF is 896 × 576 at 6 fps (19.52 MiB). The same composition is
-  available as a 1344 × 864, 12 fps MP4 (6.11 MiB). This is presentation playback,
+- The 24-second GIF is 896 × 661 at 6 fps (21.57 MiB). The same composition is
+  available as a 1344 × 992, 12 fps MP4 (6.59 MiB). This is presentation playback,
   not a runtime or latency measurement.
-- All 41 input sizes and SHA-256 checksums matched
+- All 44 input sizes and SHA-256 checksums matched
   `docs/assets/showcase_sources/v2/manifest.json`. The exports regenerate from
   these checked-in inputs without the original research folders or simulators.
+- MD-COAS pairs three diffusion views with native animations of 20 candidate
+  trajectories: planar L6/seed 0, planar L10/seed 8 and arm avoidance L1/seed 0.
+  The arm candidates are TCP projections of planned 7-DoF trajectories. Source
+  GIF hashes were verified; every clip occupies exactly one gallery tile.
 - The new Python example was run on CPU from the rebuilt wheel, outside the
   repository checkout: **48 steps, goal error 0.099**, with finite-value and
   goal-arrival assertions passing. `pip check` and Twine metadata checks passed.
@@ -95,7 +99,8 @@ The source and wheel inventory is stored in
   The learning guide documents training, checkpoint reuse and offline reliability
   calibration without claiming automatic online retraining.
 - The roadmap is a concise checklist, and the architecture uses a coordinated
-  learning/task/execution palette. The main demonstration media is unchanged.
+  learning/task/execution palette. The gallery preserves native footage and a
+  text-free composition.
 - The documentation built in strict mode. README links, anchors and Python
   syntax passed static checks. Training-guide commands were checked against
   their parsers; no new training runs were performed. Runtime source, task

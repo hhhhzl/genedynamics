@@ -2,8 +2,8 @@
   "release": "0.1.0",
   "schema_version": 1,
   "source": {
-    "bytes": 152744860,
-    "file_count": 1659,
+    "bytes": 155608466,
+    "file_count": 1662,
     "files_by_root": {
       ".dockerignore": 1,
       ".github": 2,
@@ -18,7 +18,7 @@
       "assets": 1,
       "configs": 114,
       "docker": 8,
-      "docs": 74,
+      "docs": 77,
       "examples": 1,
       "genedynamics": 821,
       "mkdocs.yml": 1,
@@ -45,7 +45,7 @@
       ".ini": 1,
       ".json": 8,
       ".md": 69,
-      ".mp4": 42,
+      ".mp4": 45,
       ".mtl": 3,
       ".npy": 2,
       ".npz": 1,
@@ -70,7 +70,7 @@
     "forbidden_v1_paths": [],
     "large_files_10mib": [
       {
-        "bytes": 20464912,
+        "bytes": 22614255,
         "path": "docs/assets/showcase.gif"
       },
       {
@@ -89,19 +89,19 @@
         "sha256": "17f61535b75f0fae0c210c53d11080804a7c6ed328c7e4253e07c52a9087b70f"
       },
       {
-        "bytes": 973265,
+        "bytes": 1038427,
         "path": "docs/assets/showcase-poster.png",
-        "sha256": "82a2a112b8f75cd8c6dcb55c1b4d1a4617885c4094b29eec1e5c3006e3eba3fb"
+        "sha256": "f664fbe8daf4c22901644af5f5f38c6df99d75ba183aef3c0f3354a9bfce2ec8"
       },
       {
-        "bytes": 20464912,
+        "bytes": 22614255,
         "path": "docs/assets/showcase.gif",
-        "sha256": "22276999860eb06ab8bc122907d7819b583643000465681c24cd21a730701e85"
+        "sha256": "871df068bf582bea6b716c36c3e428dc321af9a6a9539699ffef8ae2e0e7e54c"
       },
       {
-        "bytes": 6410647,
+        "bytes": 6907516,
         "path": "docs/assets/showcase.mp4",
-        "sha256": "142b3f6be45b7baec1900f26a0220851e3dafdcaa0d5898467b35190a1d7453d"
+        "sha256": "3f4837d2b149f79186daa9a6612a772962163ba0fc092dec4ac9ec7e7dc572d4"
       },
       {
         "bytes": 284131,
@@ -134,9 +134,24 @@
         "sha256": "b363ca1141d90f45085aa660603d0a45737853857957cdb4eb17c42f4d64a7ea"
       },
       {
+        "bytes": 36841,
+        "path": "docs/assets/showcase_sources/v2/mdcoas_2d_l10_candidates.mp4",
+        "sha256": "a077ed107f1173a66ded4d8234f942583290a5115876993124f0535f8ccc3ea0"
+      },
+      {
         "bytes": 463303,
         "path": "docs/assets/showcase_sources/v2/mdcoas_2d_l6.mp4",
         "sha256": "c44d09bae8a916ffea847b57fc3ef39cff486d39ac99782321752fcfc398b0a6"
+      },
+      {
+        "bytes": 41874,
+        "path": "docs/assets/showcase_sources/v2/mdcoas_2d_l6_candidates.mp4",
+        "sha256": "5fc75b9dce80465a207a85698ff0f99c0eb554296109d997eeed51e21068af75"
+      },
+      {
+        "bytes": 68869,
+        "path": "docs/assets/showcase_sources/v2/mdcoas_7dof_candidates.mp4",
+        "sha256": "ab79ea842ff72f78332a2f813c482764fb28e702d24d4acadf0c9de6f7c9c170"
       },
       {
         "bytes": 765236,

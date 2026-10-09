@@ -103,10 +103,20 @@ def clip_specs(roots: dict[str, Path]) -> list[ClipSpec]:
             f"results/single2d/mdcoas/level_{level}/seed_{seed}/diffusion_steps/diffusion_steps.gif",
             (14, 44, 710, 744),
         ))
+        clips.append(ClipSpec(
+            f"mdcoas_2d_l{level}_candidates", "mdcoas", "project",
+            f"results/single2d/mdcoas/level_{level}/seed_{seed}/trajectory/trajectory_modes.gif",
+            (10, 10, 627, 627),
+        ))
     clips.append(ClipSpec(
         "mdcoas_7dof_diffusion", "mdcoas", "project",
         "results/d3il_avoiding/mdcoas/level_1/seed_0/diffusion_steps/diffusion_steps.gif",
         (14, 44, 610, 744),
+    ))
+    clips.append(ClipSpec(
+        "mdcoas_7dof_candidates", "mdcoas", "project",
+        "results/d3il_avoiding/mdcoas/level_1/seed_0/trajectory/trajectory_modes_plan.gif",
+        (10, 10, 539, 627),
     ))
     clips.append(ClipSpec(
         "mdcoas_7dof_execution", "mdcoas", "mdcoas_demo", "d3il_env.gif",
@@ -173,7 +183,7 @@ def clip_specs(roots: dict[str, Path]) -> list[ClipSpec]:
             f"hardware_{name}", "hardware", "mga_supplement", "videos/deployment.mp4",
             crop, start=12, end=24, duration=8, max_edge=640,
         ))
-    assert len(clips) == 41
+    assert len(clips) == 44
     return clips
 
 

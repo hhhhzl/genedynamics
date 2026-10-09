@@ -22,8 +22,11 @@
       "label": "MD-COAS",
       "clips": [
         "mdcoas_2d_l6",
+        "mdcoas_2d_l6_candidates",
         "mdcoas_2d_l10",
+        "mdcoas_2d_l10_candidates",
         "mdcoas_7dof_diffusion",
+        "mdcoas_7dof_candidates",
         "mdcoas_7dof_execution"
       ]
     },
@@ -374,6 +377,39 @@
       }
     },
     {
+      "id": "mdcoas_2d_l6_candidates",
+      "group": "mdcoas",
+      "filename": "mdcoas_2d_l6_candidates.mp4",
+      "width": 512,
+      "height": 512,
+      "shape": [
+        512,
+        512
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 41874,
+      "sha256": "5fc75b9dce80465a207a85698ff0f99c0eb554296109d997eeed51e21068af75",
+      "origin": {
+        "root": "project",
+        "path": "results/single2d/mdcoas/level_6/seed_0/trajectory/trajectory_modes.gif",
+        "sha256": "63346383d17bc8575e2388c07e0bf8d90a3e5d620c3afaef179a1a5d84cb55cd",
+        "source_width": 636,
+        "source_height": 636,
+        "source_duration": 5.2,
+        "crop": [
+          10,
+          10,
+          627,
+          627
+        ],
+        "start": 0.0,
+        "end": 5.2
+      }
+    },
+    {
       "id": "mdcoas_2d_l10",
       "group": "mdcoas",
       "filename": "mdcoas_2d_l10.mp4",
@@ -407,6 +443,39 @@
       }
     },
     {
+      "id": "mdcoas_2d_l10_candidates",
+      "group": "mdcoas",
+      "filename": "mdcoas_2d_l10_candidates.mp4",
+      "width": 512,
+      "height": 512,
+      "shape": [
+        512,
+        512
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 36841,
+      "sha256": "a077ed107f1173a66ded4d8234f942583290a5115876993124f0535f8ccc3ea0",
+      "origin": {
+        "root": "project",
+        "path": "results/single2d/mdcoas/level_10/seed_8/trajectory/trajectory_modes.gif",
+        "sha256": "a301b5ec838a4be36c75a0489b9901b6fd8b4bb4e87c0c23f6cb5414b0d26007",
+        "source_width": 636,
+        "source_height": 636,
+        "source_duration": 5.2,
+        "crop": [
+          10,
+          10,
+          627,
+          627
+        ],
+        "start": 0.0,
+        "end": 5.2
+      }
+    },
+    {
       "id": "mdcoas_7dof_diffusion",
       "group": "mdcoas",
       "filename": "mdcoas_7dof_diffusion.mp4",
@@ -437,6 +506,39 @@
         ],
         "start": 0.0,
         "end": 15.0
+      }
+    },
+    {
+      "id": "mdcoas_7dof_candidates",
+      "group": "mdcoas",
+      "filename": "mdcoas_7dof_candidates.mp4",
+      "width": 438,
+      "height": 512,
+      "shape": [
+        438,
+        512
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 68869,
+      "sha256": "ab79ea842ff72f78332a2f813c482764fb28e702d24d4acadf0c9de6f7c9c170",
+      "origin": {
+        "root": "project",
+        "path": "results/d3il_avoiding/mdcoas/level_1/seed_0/trajectory/trajectory_modes_plan.gif",
+        "sha256": "4c6758699e446169f3502db37cd533a70edf0584efb72728937e123e2d11c885",
+        "source_width": 548,
+        "source_height": 636,
+        "source_duration": 5.2,
+        "crop": [
+          10,
+          10,
+          539,
+          627
+        ],
+        "start": 0.0,
+        "end": 5.2
       }
     },
     {

@@ -4,6 +4,8 @@ This project follows semantic versioning after the first public tag.
 
 ## Unreleased
 
+- Adds native MD-COAS multi-candidate trajectory animations for planar navigation and 7-DoF arm avoidance, paired with their diffusion views in the homepage gallery.
+
 - Restores the complete task-to-execution architecture workflow, with learning, constraints, simulation, deployment and evaluation connected explicitly.
 - Removes the obsolete 2GO corridor and stepping-stone poster images.
 
