@@ -6,6 +6,7 @@
 </p>
 
 <p align="center">
+  <a href="https://hhhhzl.github.io/generative-dynamics/">Website (coming soon)</a> ·
   <a href="docs/index.md">Documentation</a> ·
   <a href="#get-started">Get started</a> ·
   <a href="#explore-the-examples">Examples</a> ·
