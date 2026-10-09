@@ -1,45 +1,47 @@
 # Releasing V1
 
-Work from `release/v1-open-source` and follow
-[`docs/releases/v1_checklist.md`](../releases/v1_checklist.md).
+Use the existing `hhhhzl/genedynamics` repository. Prepare changes on
+`release/v1-open-source`, then publish from `main`. Follow the
+[V1 checklist](../releases/v1_checklist.md).
 
-## Candidate procedure
+## Validate the candidate
 
 ```bash
 python scripts/release/validate_release.py
 python -m build
 python -m twine check dist/*
 pytest test/unit test/algos -m "not performance and not gpu and not docker and not brax and not isaac_lab"
+mkdocs build --strict
 ```
 
-Then install the wheel into a clean virtual environment, run the documented CPU
-recipe, and run the simulator acceptance environment. Review the source archive
-and wheel inventory for credentials, generated results, large files, and
-deferred research systems.
+Install the wheel in a fresh virtual environment. Run the Python planning
+example, batch projection example and documented CLI dry run from outside the
+source checkout. Run the simulator acceptance environment separately. Inspect
+wheel and source inventories for credentials, generated results, large files,
+excluded research systems and all bundled license texts.
 
-## Required owner decisions
+## Promote and publish
 
-- the project owner selected MIT; preserve all bundled third-party notices;
-- confirm the public repository name and URLs;
-- approve paper media and citation metadata;
-- approve the final release notes and tag.
+1. Push the validated preparation branch and verify its Actions checks.
+2. Merge it into `main` through a pull request or a verified fast-forward.
+3. Verify the checks on the exact `main` commit and the repository visibility.
+4. Tag that commit `v0.1.0` and create a GitHub prerelease using the checked-in
+   [release notes](../releases/v0.1.0.md).
+5. Attach the wheel, source archive and SHA-256 checksums from that commit.
 
-Tagging and publishing are final external actions and happen only after the
-candidate diff and these decisions are reviewed.
+The owner selected MIT for original framework code. Preserve all bundled
+third-party licenses. GitHub Packages and PyPI are optional distribution
+channels; neither is required for a GitHub release. Do not imply that a package
+or container is published until its registry URL has been verified.
 
-## Publishable history
+## Source scope and history
 
-The research repository contains earlier work excluded from V1. Deleting files
-in the current tree does not remove their historical versions. Prepare the
-public repository from an archive of the final V1 commit, initialize an
-independent Git repository, and create a new root commit on `main`. Do not copy
-the research `.git` directory, clone its history or push its branches and tags.
+The owner requested removal of soft-robot, co-design and 3DGS research from
+the V1 branch and release packages, while preserving existing Git history.
+Older commits, branches and PRs therefore remain historical records; they are
+not part of the V1 supported source surface. Do not rewrite history or create
+a separate public repository for this release.
 
-Preserve the public Menagerie submodule pin recorded by `.gitmodules` and the
-V1 Git tree. Initialize it from its upstream remote, then run the checked-in
-asset setup script. The research checkout's local submodule revision must not
-replace the publishable pin.
-
-Validate a fresh clone of this independent repository. Retain the package
-checksums and validation logs, then publish the new public repository and its
-`v0.1.0` prerelease with release notes and distribution files.
+Keep the official Menagerie revision recorded by the V1 Git tree. Initialize
+it from the upstream remote and apply the checked-in setup patch. A local
+research submodule commit must not replace this fetchable pin.

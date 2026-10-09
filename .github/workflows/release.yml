@@ -1,0 +1,110 @@
+name: Publish prerelease
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prerelease-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality-gates:
+    uses: ./.github/workflows/tests.yml
+    permissions:
+      contents: read
+
+  publish:
+    needs: quality-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify version and main commit
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import tomllib
+
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          if tag != f"v{version}":
+              raise SystemExit(f"Tag {tag!r} does not match package version {version!r}")
+          notes = Path("docs/releases") / f"{tag}.md"
+          if not notes.is_file():
+              raise SystemExit(f"Missing checked-in release notes: {notes}")
+          PY
+          tag_commit="$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")"
+          checkout_commit="$(git rev-parse HEAD)"
+          main_commit="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$checkout_commit" != "$tag_commit" ] || [ "$tag_commit" != "$main_commit" ]; then
+            echo "Release tag must point to the tested commit currently at remote main."
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/
+      - name: Verify artifacts and create checksums
+        run: |
+          python - <<'PY'
+          from email.parser import BytesParser
+          import hashlib
+          from pathlib import Path
+          import tarfile
+          import tomllib
+          import zipfile
+
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          dist = Path("dist")
+          expected = {
+              f"genedynamics-{version}-py3-none-any.whl",
+              f"genedynamics-{version}.tar.gz",
+          }
+          actual = {path.name for path in dist.iterdir()}
+          if actual != expected:
+              raise SystemExit(f"Unexpected distribution contents: {sorted(actual)}")
+          wheel = dist / f"genedynamics-{version}-py3-none-any.whl"
+          with zipfile.ZipFile(wheel) as archive:
+              metadata_path = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
+              metadata = BytesParser().parsebytes(archive.read(metadata_path))
+              assert metadata["Name"] == "genedynamics" and metadata["Version"] == version
+          sdist = dist / f"genedynamics-{version}.tar.gz"
+          with tarfile.open(sdist) as archive:
+              member = archive.extractfile(f"genedynamics-{version}/PKG-INFO")
+              assert member is not None
+              metadata = BytesParser().parsebytes(member.read())
+              assert metadata["Name"] == "genedynamics" and metadata["Version"] == version
+          checksums = [
+              f"{hashlib.sha256((dist / name).read_bytes()).hexdigest()}  {name}\n"
+              for name in sorted(expected)
+          ]
+          (dist / "SHA256SUMS").write_text("".join(checksums))
+          PY
+      - name: Publish GitHub prerelease
+        run: |
+          main_commit="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$(git rev-parse HEAD)" != "$main_commit" ]; then
+            echo "Remote main changed after artifact validation; refusing to publish."
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            dist/*.whl dist/*.tar.gz dist/SHA256SUMS \
+            --prerelease --verify-tag \
+            --title "GenerativeDynamics $GITHUB_REF_NAME" \
+            --notes-file "docs/releases/$GITHUB_REF_NAME.md"

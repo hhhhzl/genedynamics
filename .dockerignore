@@ -11,5 +11,16 @@ reports/
 dist/
 build/
 third_party/
+!third_party/
+third_party/*
+!third_party/diffuser/
+third_party/diffuser/*
+!third_party/diffuser/LICENSE*
+!third_party/environments/
+third_party/environments/*
+!third_party/environments/d3il/
+third_party/environments/d3il/*
+!third_party/environments/d3il/LICENSE*
 *.md
 !README.md
+!THIRD_PARTY_NOTICES.md

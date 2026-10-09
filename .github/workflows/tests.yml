@@ -5,6 +5,7 @@ on:
     branches: [main, develop, "release/**"]
   pull_request:
     branches: [main, develop]
+  workflow_call:
 
 permissions:
   contents: read
@@ -24,12 +25,43 @@ jobs:
           python -m build
           python -m twine check dist/*
           python - <<'PY'
+          from email.parser import BytesParser
           from pathlib import Path
+          import tarfile
           import zipfile
 
           wheel = next(Path("dist").glob("genedynamics-*.whl"))
           with zipfile.ZipFile(wheel) as archive:
               names = archive.namelist()
+              metadata_path = next(name for name in names if name.endswith(".dist-info/METADATA"))
+              metadata = BytesParser().parsebytes(archive.read(metadata_path))
+              license_files = metadata.get_all("License-File", [])
+              expected_licenses = {
+                  "LICENSE",
+                  "THIRD_PARTY_NOTICES.md",
+                  "third_party/diffuser/LICENSE",
+                  "third_party/diffuser/LICENSE.diffuser",
+                  "third_party/environments/d3il/LICENSE",
+                  "third_party/environments/d3il/LICENSE.gym",
+                  "genedynamics/solvers/single/safediffuser/LICENSE",
+                  "genedynamics/envs/assets/franka_panda/LICENSE",
+                  "genedynamics/envs/assets/humanoid_run/LICENSE",
+                  "genedynamics/envs/assets/unitree_g1/LICENSE",
+                  "genedynamics/envs/assets/unitree_go2/LICENSE",
+                  "genedynamics/envs/assets/unitree_h1/LICENSE",
+                  "genedynamics/deploy/controllers/sport_mode/assets/LICENSE",
+              }
+              assert len(license_files) == 13 and set(license_files) == expected_licenses
+              assert metadata["License-Expression"] == "MIT AND Apache-2.0 AND BSD-3-Clause"
+              dist_info = metadata_path.rsplit("/", 1)[0]
+              for path in license_files:
+                  assert archive.read(f"{dist_info}/licenses/{path}") == Path(path).read_bytes(), path
+          sdist = next(Path("dist").glob("genedynamics-*.tar.gz"))
+          with tarfile.open(sdist) as archive:
+              source_root = sdist.name.removesuffix(".tar.gz")
+              for path in license_files:
+                  member = archive.extractfile(f"{source_root}/{path}")
+                  assert member is not None and member.read() == Path(path).read_bytes(), path
           forbidden = ("3dgs", "mbd3d", "mrmfmbd", "soft_robot", "codesign", "morphology")
           hits = [name for name in names if any(part in name.lower() for part in forbidden)]
           if hits:
@@ -45,14 +77,36 @@ jobs:
               raise SystemExit(f"wheel is missing package data: {sorted(missing)}")
           PY
       - name: Install built wheel
+        env:
+          JAX_PLATFORMS: cpu
+          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
         run: |
-          python -m venv /tmp/genedynamics-wheel-test
-          /tmp/genedynamics-wheel-test/bin/python -m pip install dist/*.whl
-          /tmp/genedynamics-wheel-test/bin/python -c "import genedynamics; assert genedynamics.__version__ == '0.1.0'"
+          wheel_env="$RUNNER_TEMP/genedynamics-wheel-test"
+          example_dir="$RUNNER_TEMP/genedynamics-wheel-examples"
+          python -m venv "$wheel_env"
+          "$wheel_env/bin/python" -m pip install dist/*.whl
+          "$wheel_env/bin/python" -m pip check
+          mkdir -p "$example_dir"
+          cp examples/plan_to_goal.py examples/batched_constraints.py "$example_dir/"
+          cp configs/single_2d/mbd.yaml "$example_dir/mbd.yaml"
+          cd "$example_dir"
+          env -u PYTHONPATH "$wheel_env/bin/python" - <<'PY'
+          from pathlib import Path
+          import sys
+          import genedynamics
+
+          assert genedynamics.__version__ == "0.1.0"
+          assert Path(genedynamics.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())
+          PY
+          env -u PYTHONPATH "$wheel_env/bin/python" plan_to_goal.py --device cpu
+          env -u PYTHONPATH "$wheel_env/bin/python" batched_constraints.py --device cpu --samples 4096
+          env -u PYTHONPATH "$wheel_env/bin/genedynamics-run" mbd.yaml \
+            --device cpu --seed 0 --level 0 --dry-run
       - uses: actions/upload-artifact@v4
         with:
           name: python-distributions
           path: dist/
+          if-no-files-found: error
 
   docs:
     runs-on: ubuntu-latest
@@ -67,6 +121,23 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[docs]"
           mkdocs build --strict
+
+  docker-cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DOCKER_BUILDKIT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build CPU development image
+        run: docker build --target dev-cpu -f docker/Dockerfile -t genedynamics/dev-cpu:ci .
+      - name: Verify installed dependencies and CPU examples without mounts
+        run: |
+          docker run --rm --network none genedynamics/dev-cpu:ci bash -euc '
+            python -m pip check
+            python examples/plan_to_goal.py --device cpu
+            python examples/batched_constraints.py --device cpu --samples 4096
+          '
 
   core-tests:
     runs-on: ubuntu-latest
@@ -94,6 +165,7 @@ jobs:
             test/unit/test_experiment_config.py \
             test/unit/test_mppi_objective.py \
             test/unit/test_noise_sampler.py \
+            test/unit/test_pegasusflow_backend.py \
             test/unit/test_solver_planner_adapter.py \
             test/integration/test_end_to_end.py \
             --cov=genedynamics \

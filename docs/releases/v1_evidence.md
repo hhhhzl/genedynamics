@@ -154,13 +154,13 @@ The source and wheel inventory is stored in
   wheel license expression reflects its MIT, Apache-2.0 and BSD-3-Clause
   components; separately installed optional dependencies retain their own terms.
 - Excluded research source is absent from V1. An additional 294 untracked
-  research caches and residual files were removed. A publishable Git history
-  is prepared independently from the research repository.
+  research caches and residual files were removed. The owner requested preserving existing Git history; publication uses the
+  same repository and excludes these systems from the V1 branch and packages.
 
 ## Open gates
 
 - Publication-grade latency, throughput, memory, task-success, safety, and
   reliability benchmarks still require the versioned hardware protocols and
   raw artifacts defined in the metrics contract.
-- Tagging and publication require a clean-checkout CI run and explicit owner
-  approval.
+- Verify the exact published commit and GitHub prerelease after the automated
+  quality gates. Repository visibility changes require owner administration access.

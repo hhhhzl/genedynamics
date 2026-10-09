@@ -43,11 +43,21 @@ wheel dependency. On a compatible Linux/NVIDIA host:
 
 ```bash
 python -m pip install -r requirements/gpu-jax.txt
-python -c "import jax; print(jax.default_backend(), jax.devices())"
+JAX_PLATFORMS=cuda python -c "import jax; print(jax.devices('gpu'))"
 ```
 
 The first V1 release does not qualify MGA GPU behavior. A visible GPU device
 only proves installation; it does not prove numerical parity or performance.
+
+Follow [GPU planning and batches](../recipes/gpu-planning.md) for a complete
+2GO loop, MDOC / MD-COAS commands, device checks and batched constraints. Use
+`--device gpu` for the JAX recipes.
+
+## Docker
+
+The [Docker quickstart](docker.md) runs the same examples in CPU or NVIDIA GPU
+containers, with host-mounted results and headless rendering. Images are built
+locally from the checkout.
 
 ## MuJoCo Menagerie assets
 

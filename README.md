@@ -44,6 +44,8 @@ components directly in Python or run complete experiments from a configuration.
 
 ## 📣 Updates
 
+- **2026-10-09** — Added GPU and Docker quickstarts, a batched constraint example,
+  and explicit device checks.
 - **2026-10-09** — Added a direct Python planning example, a unified paper and
   hardware gallery, learning workflows, and planner, environment and constraint
   catalogues.
@@ -123,6 +125,38 @@ print(f"Goal error: {np.linalg.norm(state):.3f}")
 The CPU validation reaches the goal in 48 steps, with `Goal error: 0.099`.
 Run the complete example with `python examples/plan_to_goal.py`, or follow the
 [Python API walkthrough](docs/getting-started/python-api.md) to adapt it.
+
+### ⚡ GPU and Docker
+
+On Linux with an NVIDIA GPU, install the CUDA stack and increase the candidate
+batch without changing the application loop:
+
+```bash
+python -m pip install -e ".[optimization]" \
+  -r requirements/gpu-jax.txt "jax[cuda12]==0.6.2"
+JAX_PLATFORMS=cuda python examples/plan_to_goal.py --device gpu --samples 1024
+JAX_PLATFORMS=cuda python examples/batched_constraints.py --device gpu --samples 4096
+```
+
+The examples check array placement and fail when the requested GPU is
+unavailable. The [GPU recipes](docs/recipes/gpu-planning.md) cover MDOC,
+MD-COAS, 2GO and batched constraints. MGA CUDA qualification is deferred.
+
+Or run the same examples in Docker:
+
+```bash
+docker compose -f docker/compose.cpu.yml build
+docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
+  python examples/plan_to_goal.py --device cpu
+
+docker compose -f docker/compose.gpu.yml build
+docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu \
+  python examples/plan_to_goal.py --device gpu --samples 1024
+```
+
+CPU containers use the host's native architecture; GPU containers require Linux
+and the NVIDIA Container Toolkit. Compose keeps results in the mounted checkout.
+See the [Docker guide](docker/README.md) for setup and headless simulation.
 
 For configured experiments, the [first-run guide](docs/getting-started/quickstart.md)
 covers result artifacts and resuming runs. The [installation guide](docs/getting-started/installation.md)

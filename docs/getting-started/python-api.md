@@ -12,6 +12,17 @@ from the repository root:
 python examples/plan_to_goal.py
 ```
 
+On a configured NVIDIA host, run the same loop with a larger candidate batch:
+
+```bash
+JAX_PLATFORMS=cuda python examples/plan_to_goal.py --device gpu --samples 1024
+```
+
+The script checks the requested device before constructing the planner and
+verifies backend array placement. See [GPU setup and recipes](../recipes/gpu-planning.md)
+or [Docker](docker.md) for installation. Use `device="gpu"` in the runtime
+selection below when embedding this loop in a CUDA application.
+
 ## Create the task and planner
 
 The environment defines the dynamics and the energy defines the objective.

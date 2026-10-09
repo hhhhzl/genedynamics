@@ -1,7 +1,7 @@
 """
 Test script for CFSQPFullFilter and CFSQPPerStepFilter (action-space CFS QP).
 
-This mirrors the setup of test_cfs_jaxopt_vs_cvxopt.py but adapts for u-space:
+This exercises a two-box obstacle layout with constraints in action space:
 - Reference: same straight-line trajectory in X (state) as the CFS projection test.
 - Nominal u: obtained via inverse dynamics (single integrator): u_t = (x_{t+1} - x_t) / dt.
 - CFSQPFullFilter (u_traj + outer loop + box) or CFSQPPerStepFilter project u onto
@@ -71,7 +71,7 @@ class _EnvForCFSFull:
 
 
 def make_obstacles() -> ObstacleManager:
-    """Same obstacle layout as test_cfs_jaxopt_vs_cvxopt.py."""
+    """Two boxes between the initial state and target."""
     obstacles = ObstacleManager()
     obs1_center = np.array([0.5, 0.5], dtype=np.float32)
     obs1_half = np.array([0.2, 0.2], dtype=np.float32)
@@ -166,7 +166,7 @@ def run_cfs_qp_full_test(
     env = _EnvForCFSFull(base_env, robot_radius=robot_radius)
     obstacles = make_obstacles()
 
-    # 1) X-reference (straight line, same as test_cfs_jaxopt_vs_cvxopt)
+    # 1) X-reference: a straight line between the initial state and target.
     positions_x = x_reference_straight_line(start_pos, goal_pos, num_points)
     x0 = positions_x[0]
 

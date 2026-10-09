@@ -4,7 +4,13 @@ This project follows semantic versioning after the first public tag.
 
 ## Unreleased
 
-- Adopts the MIT License, preserves bundled third-party notices, and prepares an independent V1 publication history.
+- Adds CPU/GPU device selection to the direct 2GO example, a batched constraint
+  projection example, and GPU and Docker quickstarts.
+- Aligns Docker with the V1 JAX stack, native CPU architecture and bundled licenses.
+- Removes two obsolete CFS diagnostics and makes the PegasusFlow basis regression
+  independent of a local, unpublished baseline checkout.
+
+- Adopts the MIT License and preserves bundled third-party notices in source and distributions.
 
 - Adds native MD-COAS multi-candidate trajectory animations for planar navigation and 7-DoF arm avoidance, paired with their diffusion views in the homepage gallery.
 

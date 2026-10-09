@@ -69,3 +69,9 @@ Use `--dry-run` to inspect a configuration, then a development root and one
 seed for an initial execution. Inspect status, metrics and trajectory artifacts
 before scaling to the formal matrix. The [first-run guide](../getting-started/quickstart.md)
 shows how to resume multi-seed runs.
+
+## GPU and containers
+
+Use the [GPU recipes](gpu-planning.md) for device selection, MDOC / MD-COAS /
+2GO commands and batched constraints, or the [Docker quickstart](../getting-started/docker.md)
+for CPU and NVIDIA containers with host-mounted results. MGA GPU remains deferred.

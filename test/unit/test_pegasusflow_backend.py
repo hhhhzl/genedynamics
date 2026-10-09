@@ -1,8 +1,5 @@
 """Numerical contract tests for the vendored PegasusFlow JAX reproduction."""
 
-from pathlib import Path
-import importlib.util
-
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -15,25 +12,41 @@ from genedynamics.solvers.single.pegasusflow.backends.pegasusflow_jax import (
 )
 
 
-def _upstream_package_root() -> Path:
-    return Path(__file__).resolve().parents[2] / "baselines" / "PegasusFlow" / "traj_sampling"
-
-
-def test_catmull_rom_basis_matches_vendored_upstream():
-    torch = pytest.importorskip("torch")
-    source = _upstream_package_root() / "traj_sampling" / "spline.py"
-    spec = importlib.util.spec_from_file_location("vendored_pegasusflow_spline", source)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    upstream = module.CatmullRomSpline(
-        horizon_nodes=5, horizon_samples=17, dt=0.02,
-        device=torch.device("cpu"),
-    ).compute_basis_mask_matrix(5, 17)
+def test_catmull_rom_basis_matches_uniform_reference():
+    # Numerical provenance: expand the cubic Hermite interpolant with centered
+    # tangents (P[i+1] - P[i-1]) / 2 and duplicated boundary control points.
+    # For five uniform knots and four samples per segment, the exact basis
+    # coefficients are integer multiples of 1/128. This independent golden
+    # reference needs neither the implementation nor an external checkout.
+    expected = np.array([
+        [128, 0, 0, 0, 0],
+        [102, 29, -3, 0, 0],
+        [64, 72, -8, 0, 0],
+        [26, 111, -9, 0, 0],
+        [0, 128, 0, 0, 0],
+        [-9, 111, 29, -3, 0],
+        [-8, 72, 72, -8, 0],
+        [-3, 29, 111, -9, 0],
+        [0, 0, 128, 0, 0],
+        [0, -9, 111, 29, -3],
+        [0, -8, 72, 72, -8],
+        [0, -3, 29, 111, -9],
+        [0, 0, 0, 128, 0],
+        [0, 0, -9, 111, 26],
+        [0, 0, -8, 72, 64],
+        [0, 0, -3, 29, 102],
+        [0, 0, 0, 0, 128],
+    ], dtype=np.float32) / 128.0
+    actual = _catmull_rom_basis(17, 5)
+    assert actual.shape == (17, 5)
     np.testing.assert_allclose(
-        _catmull_rom_basis(17, 5), upstream.detach().cpu().numpy(),
+        actual, expected,
         rtol=0.0, atol=1e-7,
     )
+    # Every knot, including both endpoints, is interpolated exactly; constant
+    # control sequences remain constant between knots (partition of unity).
+    np.testing.assert_allclose(actual[::4], np.eye(5), rtol=0.0, atol=1e-7)
+    np.testing.assert_allclose(actual.sum(axis=1), 1.0, rtol=0.0, atol=1e-7)
 
 
 @pytest.mark.parametrize("method,gamma", [("wbfo", 0.0), ("avwbfo", 1.0), ("avwbfo", 0.9)])

@@ -16,6 +16,7 @@ nav:
   - Overview: index.md
   - Getting started:
       - Installation: getting-started/installation.md
+      - Docker: getting-started/docker.md
       - Direct Python example: getting-started/python-api.md
       - First experiment: getting-started/quickstart.md
   - Concepts:
@@ -28,6 +29,7 @@ nav:
   - Recipes:
       - Catalogue: recipes/index.md
       - Planar CPU smoke: recipes/planar-cpu.md
+      - GPU planning and batches: recipes/gpu-planning.md
       - Humanoid corridor planning: recipes/humanoid-corridor.md
   - Integrations:
       - D3IL: integrations/d3il.md
@@ -46,6 +48,7 @@ nav:
       - Scope: releases/v1_scope.md
       - Checklist: releases/v1_checklist.md
       - Validation evidence: releases/v1_evidence.md
+      - v0.1.0 notes: releases/v0.1.0.md
 
 markdown_extensions:
   - admonition

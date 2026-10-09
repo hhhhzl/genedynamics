@@ -1,149 +1,99 @@
-# Docker Workflows
+# Run with Docker
 
-This directory provides a split Docker strategy for the current repo:
+Build locally from the repository root. Images include the V1 package,
+examples, configurations and simulation dependencies. Compose mounts the
+checkout at `/workspace`, so saved results remain on the host and code edits
+are visible immediately.
 
-- `dev-cpu`
-  For local development on Apple Silicon / CPU-only machines.
-- `sim-cpu`
-  For headless MuJoCo CPU simulation and rendering.
-- `train-gpu`
-  For Linux + NVIDIA training or MJX-heavy runs.
+| Target | Host | Rendering | Use |
+| --- | --- | --- | --- |
+| `dev-cpu` / `sim-cpu` | Linux or Docker Desktop, native amd64/arm64 | OSMesa | Planning, development and headless simulation |
+| `train-gpu` | Linux amd64 + NVIDIA | EGL | JAX CUDA planning and optional Torch training |
 
-## Why the split exists
-
-The repository currently mixes CPU, GPU, optional, and research dependencies in
-[`requirements.txt`](/Users/zhilinhe/Desktop/hhhhzl/EduGetRicher/CMU/projects/enerdynamics/requirements.txt)
-and the existing
-[`scripts/setup/setup.sh`](/Users/zhilinhe/Desktop/hhhhzl/EduGetRicher/CMU/projects/enerdynamics/scripts/setup/setup.sh)
-assumes a visible CUDA GPU.
-
-That is not suitable for:
-
-- Apple Silicon local development
-- CPU-only MuJoCo rendering
-- reproducible GPU training images
-
-The Docker assets here avoid that by:
-
-- baking only the dependency subset needed by each target
-- installing the package with `pip install --no-deps -e /workspace`
-- bind-mounting the repo at runtime so local edits appear immediately
-
-## Files
-
-- `Dockerfile`
-  Multi-target image definition.
-- `.env`
-  Compose-level defaults for UID/GID interpolation.
-- `compose.cpu.yml`
-  Local Apple Silicon / CPU development flow.
-- `compose.gpu.yml`
-  Linux + NVIDIA training flow.
-- `env/*.env.example`
-  Example environment files.
-- `install/*.sh`
-  Target-specific dependency installers.
-
-## CPU workflow for this Mac
-
-Your machine is `arm64`, so the preferred local path is `linux/arm64` with the
-`dev-cpu` target.
-
-1. The default env files are already checked in:
-
-```bash
-cat docker/env/dev-cpu.env
-cat docker/.env
-```
-
-2. If you want custom values, copy from the examples or edit the checked-in defaults:
-
-```bash
-cp docker/env/dev-cpu.env.example docker/env/dev-cpu.env
-cp docker/.env.example docker/.env
-```
-
-3. If you want host-matching file ownership, edit [`docker/.env`](/Users/zhilinhe/Desktop/hhhhzl/EduGetRicher/CMU/projects/enerdynamics/docker/.env).
-On Docker Desktop for macOS the defaults are usually fine.
-
-4. Build and start a shell:
+## CPU: build and run
 
 ```bash
 docker compose -f docker/compose.cpu.yml build
+docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
+  python examples/plan_to_goal.py --device cpu
+docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
+  python examples/batched_constraints.py --device cpu
+```
+
+CPU Compose uses the host's architecture, including Apple Silicon. No local
+Python installation or custom environment file is needed. On Linux, match
+output ownership before running Compose:
+
+```bash
+export LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)"
+```
+
+Run a configured MD-COAS experiment and retain its artifacts:
+
+```bash
+docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
+  genedynamics-run configs/single_2d/mdcoas.yaml \
+  --device cpu --seed 0 --level 6 \
+  --development-root results/_development/docker-mdcoas
+```
+
+The output appears in `results/_development/docker-mdcoas` on the host.
+Append `--dry-run` to validate configuration before allocating a run. Start
+an interactive shell by omitting the final command:
+
+```bash
 docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu
 ```
 
-5. Inside the container, test MuJoCo import:
+## GPU: Linux + NVIDIA
 
-```bash
-python -c "import mujoco; print(mujoco.__version__)"
-python -c "import jax; print(jax.default_backend())"
-```
-
-6. Run the corridor follower (SparkRL sport-mode + reference governor):
-
-```bash
-python3 scripts/tasks/robot/humanoid/run_sport_mode_zones.py --zones twogo_zone_a
-```
-
-## GPU workflow for Linux + NVIDIA
-
-This target is for `linux/amd64` and requires:
-
-- Docker Engine on Linux
-- NVIDIA driver on the host
-- NVIDIA Container Toolkit configured
-
-1. The default env files are already checked in:
-
-```bash
-cat docker/env/train-gpu.env
-cat docker/.env
-```
-
-2. If you want custom values, copy from the examples or edit the checked-in defaults:
-
-```bash
-cp docker/env/train-gpu.env.example docker/env/train-gpu.env
-cp docker/.env.example docker/.env
-```
-
-3. If needed, edit [`docker/.env`](/Users/zhilinhe/Desktop/hhhhzl/EduGetRicher/CMU/projects/enerdynamics/docker/.env)
-to match the host UID/GID.
-
-4. Build and start:
+Install the host NVIDIA driver, Docker Engine with Compose 2.30 or newer,
+and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+Compose requests GPUs using its [GPU service support](https://docs.docker.com/compose/how-tos/gpu-support/).
+Docker Desktop on macOS does not provide this NVIDIA CUDA path.
 
 ```bash
 docker compose -f docker/compose.gpu.yml build
-docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu
+docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu nvidia-smi
+docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu \
+  python -c "import jax; print(jax.devices('gpu'))"
+docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu \
+  python examples/plan_to_goal.py --device gpu --samples 1024
+docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu \
+  python examples/batched_constraints.py --device gpu --samples 4096
 ```
 
-5. Validate GPU visibility:
+The GPU service sets `JAX_PLATFORMS=cuda`; initialization fails if CUDA is
+unavailable. Use `--device gpu` for the framework's JAX paths. Select one GPU
+with `run --rm -e CUDA_VISIBLE_DEVICES=0 ...`. See the
+[GPU recipes](../docs/recipes/gpu-planning.md) for MDOC, MD-COAS and robot tasks.
+MGA GPU qualification remains deferred.
+
+## Headless robot simulation
+
+The image contains packaged robot assets. Recipes that use Menagerie must
+initialize the pinned assets in the mounted checkout:
 
 ```bash
-nvidia-smi
-python -c "import torch; print(torch.cuda.is_available())"
-python -c "import jax; print(jax.default_backend(), jax.devices())"
+docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
+  bash scripts/setup/setup_mujoco_menagerie.sh
 ```
 
-## Notes
+CPU uses `MUJOCO_GL=osmesa`; GPU uses `MUJOCO_GL=egl`. These services save
+rendered artifacts rather than opening a desktop viewer. D3IL additionally
+needs its [integration setup](../docs/integrations/d3il.md), including
+Pinocchio and task data; a CUDA image alone does not install those assets.
 
-- The root `.dockerignore` excludes `third_party/` from image builds, so the
-  image expects the repository to be bind-mounted at `/workspace`.
-- MuJoCo render on CPU uses `MUJOCO_GL=osmesa`.
-- GPU runs use `MUJOCO_GL=egl`.
-- The images intentionally do not call `scripts/setup/setup.sh` because that
-  script hard-codes a GPU-only installation path.
+## Versions and verification
 
-## Recommended next improvement
+Both installers pin JAX 0.6.2, Brax 0.14.1 and MuJoCo/MJX 3.6.0 and run
+`pip check`. Other dependencies follow the package extras; these are
+rebuildable development images, not a fully locked production environment.
+The GPU image also pins Torch 2.10.0 / torchvision 0.25.0 with CUDA 12.6 wheels.
+Images are built locally; no GitHub Packages image is required.
 
-For a fully reproducible production build, split the repository dependencies
-into:
-
-- `requirements/base.txt`
-- `requirements/sim.txt`
-- `requirements/gpu.txt`
-- `requirements/dev.txt`
-
-Then update `setup.py` so package installation does not depend on the full
-research stack.
+A successful device check proves visibility. Task success, numerical parity,
+warm latency and GPU memory still require measurements on the target host.
+The [release evidence](../docs/releases/v1_evidence.md) records what was
+actually validated. The separate `isaac-lab.Dockerfile` is experimental and
+outside the V1 container qualification.
