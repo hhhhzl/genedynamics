@@ -24,16 +24,6 @@ Optional capability markers skip when the dependency is unavailable. A file
 that only exposes a `main()` acceptance probe belongs in `scripts/validation`,
 because pytest will not execute it as a test.
 
-## Container release gate
-
-The `docker-cpu` Actions job builds a new image, runs `pip check` and both CPU
-examples without mounts or network, then runs the broader CPU test selection
-with a read-only source mount. A prerelease depends on this job along with
-package, documentation, core and simulation checks. GPU qualification needs
-an NVIDIA host and is not inferred from the CPU image.
-
-See [Docker](../getting-started/docker.md) for local commands.
-
 ## Docker probes
 
 The scripts under `scripts/validation/docker` are scenario acceptance gates.

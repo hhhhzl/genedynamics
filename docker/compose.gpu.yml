@@ -12,10 +12,10 @@ services:
     command: /bin/bash
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     gpus: all
+    env_file:
+      - env/train-gpu.env
     environment:
-      JAX_PLATFORMS: cuda
-      MUJOCO_GL: egl
-      PYTHONPATH: /workspace/third_party:${PYTHONPATH:-}
+      PYTHONPATH: /workspace/third_party/environments/d3il:${PYTHONPATH:-}
     volumes:
       - ..:/workspace
       - genedynamics-pip-cache:/tmp/pip-cache

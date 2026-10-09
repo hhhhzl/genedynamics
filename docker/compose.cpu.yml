@@ -5,15 +5,16 @@ services:
       dockerfile: docker/Dockerfile
       target: dev-cpu
     image: genedynamics/dev-cpu:local
+    platform: linux/arm64
     working_dir: /workspace
     stdin_open: true
     tty: true
     command: /bin/bash
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    env_file:
+      - env/dev-cpu.env
     environment:
-      JAX_PLATFORMS: cpu
-      MUJOCO_GL: osmesa
-      PYTHONPATH: /workspace/third_party:${PYTHONPATH:-}
+      PYTHONPATH: /workspace/third_party/environments/d3il:${PYTHONPATH:-}
     volumes:
       - ..:/workspace
       - genedynamics-pip-cache:/tmp/pip-cache

@@ -185,7 +185,7 @@ The source and wheel inventory is stored in
 - The corrected broad regression reached 99% with no failures reported in
   completed tests. Host disk exhaustion then disrupted Docker storage and
   prevented retrieval of a final result. This run is **incomplete evidence**.
-  The GitHub Docker gate now runs the same broad selection in a fresh image.
+  A final broad regression result is still required before qualification.
 - The final installed wheel passed `pip check`, Twine, import/version and
   configuration checks: **80 experiment and 16 deployment configurations**.
   Both checked-in examples ran outside the source checkout. The 2GO loop
@@ -196,15 +196,8 @@ The source and wheel inventory is stored in
   planner initialization; backend array placement is checked. Five documented
   GPU task configurations passed dry-run validation. No NVIDIA GPU execution
   was performed, and MGA GPU remains deferred.
-- CPU/GPU Compose configurations validated in a directory without ignored
-  `.env` files; both installer scripts passed shell syntax checks. The CPU
-  image build reached its native arm64 system-package stage before Docker
-  reported a storage I/O error. Task-generated temporary environments were
-  removed to restore host space; Docker remained unresponsive. Fresh-image
-  execution is therefore **pending**, not represented by an old cached image.
-- Docker now resolves package extras with JAX 0.6.2, includes licenses and
-  examples, uses native CPU architecture and an explicit build-input allowlist,
-  and requires CUDA initialization in its NVIDIA service. The release workflow
-  reuses package, docs, core, simulation and Docker gates. Only after all pass
-  can a version-matching tag at the current `main` create the prerelease with
-  distributions and checksums.
+- The Docker documentation update reuses existing local images. Dockerfiles,
+  installers and Compose definitions are preserved. It adds no image rebuild
+  requirement or Docker build CI gate. No fresh-image or GPU execution is
+  claimed. The prerelease workflow retains package, docs, core and simulation
+  checks before publishing distributions and checksums.

@@ -40,14 +40,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 
-COPY pyproject.toml setup.py README.md LICENSE THIRD_PARTY_NOTICES.md /workspace/
+COPY pyproject.toml setup.py README.md requirements.txt /workspace/
 COPY genedynamics /workspace/genedynamics
 COPY configs /workspace/configs
 COPY scripts /workspace/scripts
-COPY examples /workspace/examples
-COPY requirements /workspace/requirements
-COPY third_party/diffuser/LICENSE* /workspace/third_party/diffuser/
-COPY third_party/environments/d3il/LICENSE* /workspace/third_party/environments/d3il/
 COPY docker/install /opt/genedynamics-docker/install
 
 RUN --mount=type=cache,target=/tmp/pip-cache \
@@ -107,14 +103,10 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 10 && 
 
 WORKDIR /workspace
 
-COPY pyproject.toml setup.py README.md LICENSE THIRD_PARTY_NOTICES.md /workspace/
+COPY pyproject.toml setup.py README.md requirements.txt /workspace/
 COPY genedynamics /workspace/genedynamics
 COPY configs /workspace/configs
 COPY scripts /workspace/scripts
-COPY examples /workspace/examples
-COPY requirements /workspace/requirements
-COPY third_party/diffuser/LICENSE* /workspace/third_party/diffuser/
-COPY third_party/environments/d3il/LICENSE* /workspace/third_party/environments/d3il/
 COPY docker/install /opt/genedynamics-docker/install
 
 RUN --mount=type=cache,target=/tmp/pip-cache \
@@ -125,6 +117,6 @@ CMD ["/bin/bash"]
 
 FROM base-gpu AS train-gpu
 
-ENV JAX_PLATFORMS=cuda \
+ENV JAX_PLATFORMS=cuda,cpu \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics

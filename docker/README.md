@@ -1,101 +1,102 @@
-# Run with Docker
+# Use the development containers
 
-Build locally from the repository root. Images include the V1 package,
-examples, configurations and simulation dependencies. Compose mounts the
-checkout at `/workspace`, so saved results remain on the host and code edits
-are visible immediately.
+Run GPU and CPU examples with the existing local development images. Mount
+the repository at `/workspace` so the examples and current code are available,
+and experiment results remain on the host.
 
-| Target | Host | Rendering | Use |
-| --- | --- | --- | --- |
-| `dev-cpu` / `sim-cpu` | Linux or Docker Desktop, native amd64/arm64 | OSMesa | Planning, development and headless simulation |
-| `train-gpu` | Linux amd64 + NVIDIA | EGL | JAX CUDA planning and optional Torch training |
+| Image | Host | Rendering |
+| --- | --- | --- |
+| `genedynamics/dev-cpu:local` | CPU host matching the built image architecture | OSMesa |
+| `genedynamics/train-gpu:local` | Linux amd64 + NVIDIA | EGL |
 
-## CPU: build and run
+## Check the existing images
+
+From the repository root:
 
 ```bash
-docker compose -f docker/compose.cpu.yml build
-docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
+docker image inspect genedynamics/dev-cpu:local
+```
+
+GPU users check `genedynamics/train-gpu:local` instead. These commands need
+an already built local image; no registry image is published by this guide.
+The image must contain the V1 dependency stack, including JAX 0.6.2.
+
+## CPU examples
+
+```bash
+docker run --rm -v "$PWD:/workspace" -w /workspace \
+  -e JAX_PLATFORMS=cpu genedynamics/dev-cpu:local \
   python examples/plan_to_goal.py --device cpu
-docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
-  python examples/batched_constraints.py --device cpu
+
+docker run --rm -v "$PWD:/workspace" -w /workspace \
+  -e JAX_PLATFORMS=cpu genedynamics/dev-cpu:local \
+  python examples/batched_constraints.py --device cpu --samples 4096
 ```
 
-CPU Compose uses the host's architecture, including Apple Silicon. No local
-Python installation or custom environment file is needed. On Linux, match
-output ownership before running Compose:
+Inspect the numerical stack without changing the image:
 
 ```bash
-export LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)"
+docker run --rm genedynamics/dev-cpu:local \
+  python -c "import jax, numpy; print(jax.__version__, numpy.__version__, jax.devices())"
 ```
 
-Run a configured MD-COAS experiment and retain its artifacts:
+## NVIDIA GPU examples
+
+Use Linux with the host NVIDIA driver and the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+Docker Desktop on macOS does not provide this NVIDIA CUDA path.
 
 ```bash
-docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
+docker run --rm --gpus all genedynamics/train-gpu:local nvidia-smi
+
+docker run --rm --gpus all -e JAX_PLATFORMS=cuda \
+  genedynamics/train-gpu:local \
+  python -c "import jax; print(jax.devices('gpu'))"
+
+docker run --rm --gpus all -v "$PWD:/workspace" -w /workspace \
+  -e JAX_PLATFORMS=cuda genedynamics/train-gpu:local \
+  python examples/plan_to_goal.py --device gpu --samples 1024
+
+docker run --rm --gpus all -v "$PWD:/workspace" -w /workspace \
+  -e JAX_PLATFORMS=cuda genedynamics/train-gpu:local \
+  python examples/batched_constraints.py --device gpu --samples 4096
+```
+
+`JAX_PLATFORMS=cuda` makes missing CUDA initialization an error. The examples
+also check actual array placement. Select one GPU by adding
+`-e CUDA_VISIBLE_DEVICES=0`. See [GPU recipes](../docs/recipes/gpu-planning.md)
+for MDOC, MD-COAS and 2GO configurations. MGA GPU remains deferred.
+
+## Save a configured experiment
+
+```bash
+docker run --rm -v "$PWD:/workspace" -w /workspace \
+  -e JAX_PLATFORMS=cpu -e MUJOCO_GL=osmesa genedynamics/dev-cpu:local \
   genedynamics-run configs/single_2d/mdcoas.yaml \
   --device cpu --seed 0 --level 6 \
   --development-root results/_development/docker-mdcoas
 ```
 
-The output appears in `results/_development/docker-mdcoas` on the host.
-Append `--dry-run` to validate configuration before allocating a run. Start
-an interactive shell by omitting the final command:
+Artifacts appear in `results/_development/docker-mdcoas` on the host. Append
+`--dry-run` to inspect configuration first. On Linux, add
+`--user "$(id -u):$(id -g)"` when host-owned output files are needed.
+For GPU experiments, use `--gpus all`, the GPU image, `JAX_PLATFORMS=cuda`,
+`MUJOCO_GL=egl` and the runner's `--device gpu` flag.
+
+## Robot assets and integrations
+
+CPU rendering uses OSMesa; GPU rendering uses EGL. These settings support
+headless artifact rendering rather than a desktop viewer. Menagerie-based
+recipes need the pinned assets in the mounted checkout:
 
 ```bash
-docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu
+bash scripts/setup/setup_mujoco_menagerie.sh
 ```
 
-## GPU: Linux + NVIDIA
+D3IL requires its [integration setup](../docs/integrations/d3il.md), including
+Pinocchio and task data. DPCC/SafeDiffuser additionally need the Torch extra
+and trained checkpoints; image GPU visibility does not establish task readiness.
 
-Install the host NVIDIA driver, Docker Engine with Compose 2.30 or newer,
-and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
-Compose requests GPUs using its [GPU service support](https://docs.docker.com/compose/how-tos/gpu-support/).
-Docker Desktop on macOS does not provide this NVIDIA CUDA path.
-
-```bash
-docker compose -f docker/compose.gpu.yml build
-docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu nvidia-smi
-docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu \
-  python -c "import jax; print(jax.devices('gpu'))"
-docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu \
-  python examples/plan_to_goal.py --device gpu --samples 1024
-docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu \
-  python examples/batched_constraints.py --device gpu --samples 4096
-```
-
-The GPU service sets `JAX_PLATFORMS=cuda`; initialization fails if CUDA is
-unavailable. Use `--device gpu` for the framework's JAX paths. Select one GPU
-with `run --rm -e CUDA_VISIBLE_DEVICES=0 ...`. See the
-[GPU recipes](../docs/recipes/gpu-planning.md) for MDOC, MD-COAS and robot tasks.
-MGA GPU qualification remains deferred.
-
-## Headless robot simulation
-
-The image contains packaged robot assets. Recipes that use Menagerie must
-initialize the pinned assets in the mounted checkout:
-
-```bash
-docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
-  bash scripts/setup/setup_mujoco_menagerie.sh
-```
-
-CPU uses `MUJOCO_GL=osmesa`; GPU uses `MUJOCO_GL=egl`. These services save
-rendered artifacts rather than opening a desktop viewer. D3IL additionally
-needs its [integration setup](../docs/integrations/d3il.md), including
-Pinocchio and task data; a CUDA image alone does not install those assets.
-
-## Versions and verification
-
-Both installers pin JAX 0.6.2, Brax 0.14.1 and MuJoCo/MJX 3.6.0 and run
-`pip check`. Other dependencies follow the package extras; these are
-rebuildable development images, not a fully locked production environment.
-The GPU image also pins Torch 2.10.0 / torchvision 0.25.0 with CUDA 12.6 wheels.
-The build context allows only image inputs, excluding local research folders,
-media, results and credentials. Images are built locally; no GitHub Packages
-image is required.
-
-A successful device check proves visibility. Task success, numerical parity,
-warm latency and GPU memory still require measurements on the target host.
-The [release evidence](../docs/releases/v1_evidence.md) records what was
-actually validated. The separate `isaac-lab.Dockerfile` is experimental and
-outside the V1 container qualification.
+This guide reuses the existing images and Docker definitions. It does not
+qualify a new image build, GPU numerical parity or deployment performance.
+See [release evidence](../docs/releases/v1_evidence.md) for executed checks.

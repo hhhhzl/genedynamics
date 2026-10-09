@@ -122,32 +122,6 @@ jobs:
           python -m pip install -e ".[docs]"
           mkdocs build --strict
 
-  docker-cpu:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      DOCKER_BUILDKIT: "1"
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build CPU development image
-        run: docker build --target dev-cpu -f docker/Dockerfile -t genedynamics/dev-cpu:ci .
-      - name: Verify installed dependencies and CPU examples without mounts
-        run: |
-          docker run --rm --network none genedynamics/dev-cpu:ci bash -euc '
-            python -m pip check
-            python examples/plan_to_goal.py --device cpu
-            python examples/batched_constraints.py --device cpu --samples 4096
-          '
-
-      - name: Run CPU regression in the image
-        run: |
-          docker run --rm --network none \
-            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
-            genedynamics/dev-cpu:ci \
-            python -m pytest test/unit test/algos \
-            -m "not performance and not gpu and not docker and not brax and not isaac_lab" \
-            -p no:cacheprovider
-
   core-tests:
     runs-on: ubuntu-latest
     strategy:

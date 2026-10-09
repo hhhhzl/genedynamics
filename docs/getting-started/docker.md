@@ -1,30 +1,28 @@
 # Docker
 
-Run the examples without installing Python dependencies on your host. From
-the repository root, build the CPU image and run a complete planning loop:
+Use an existing development image to run the checked-in examples. From the
+repository root, mount the checkout at `/workspace`:
 
 ```bash
-docker compose -f docker/compose.cpu.yml build
-docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
+docker run --rm -v "$PWD:/workspace" -w /workspace \
+  -e JAX_PLATFORMS=cpu genedynamics/dev-cpu:local \
   python examples/plan_to_goal.py --device cpu
 ```
 
-On Linux with NVIDIA drivers and the NVIDIA Container Toolkit:
+On Linux with NVIDIA drivers, the NVIDIA Container Toolkit and the existing
+GPU image:
 
 ```bash
-docker compose -f docker/compose.gpu.yml build
-docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu \
-  python -c "import jax; print(jax.devices('gpu'))"
-docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu \
+docker run --rm --gpus all -v "$PWD:/workspace" -w /workspace \
+  -e JAX_PLATFORMS=cuda genedynamics/train-gpu:local \
   python examples/plan_to_goal.py --device gpu --samples 1024
 ```
 
-Compose mounts the checkout at `/workspace`. Configured runs save results
-back into the host's `results/` directory. CPU rendering uses OSMesa and GPU
-rendering uses EGL. The CPU image uses the host's native architecture;
-the NVIDIA image targets Linux amd64.
+Configured runs save results back to the host's `results/` directory. CPU
+rendering uses OSMesa and GPU rendering uses EGL. The image architecture and
+installed dependencies must match the host and V1 numerical stack.
 
-Follow the [complete Docker guide](https://github.com/hhhhzl/genedynamics/blob/main/docker/README.md)
-for prerequisites, file ownership, GPU selection, saved experiments and robot
-assets. See [GPU planning](../recipes/gpu-planning.md) for constrained tasks
-and a batched constraint example.
+See the [complete Docker guide](https://github.com/hhhhzl/genedynamics/blob/main/docker/README.md)
+for image checks, batched constraints, file ownership, headless experiments
+and robot assets. This usage update reuses existing images and does not require
+rebuilding them. See [GPU planning](../recipes/gpu-planning.md) for the task recipes.

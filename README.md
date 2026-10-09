@@ -142,21 +142,20 @@ The examples check array placement and fail when the requested GPU is
 unavailable. The [GPU recipes](docs/recipes/gpu-planning.md) cover MDOC,
 MD-COAS, 2GO and batched constraints. MGA CUDA qualification is deferred.
 
-Or run the same examples in Docker:
+With the existing development images, mount the checkout and run the same loop:
 
 ```bash
-docker compose -f docker/compose.cpu.yml build
-docker compose -f docker/compose.cpu.yml run --rm genedynamics-dev-cpu \
-  python examples/plan_to_goal.py --device cpu
+docker run --rm -v "$PWD:/workspace" -w /workspace \
+  genedynamics/dev-cpu:local python examples/plan_to_goal.py --device cpu
 
-docker compose -f docker/compose.gpu.yml build
-docker compose -f docker/compose.gpu.yml run --rm genedynamics-train-gpu \
+docker run --rm --gpus all -v "$PWD:/workspace" -w /workspace \
+  -e JAX_PLATFORMS=cuda genedynamics/train-gpu:local \
   python examples/plan_to_goal.py --device gpu --samples 1024
 ```
 
-CPU containers use the host's native architecture; GPU containers require Linux
-and the NVIDIA Container Toolkit. Compose keeps results in the mounted checkout.
-See the [Docker guide](docker/README.md) for setup and headless simulation.
+The NVIDIA container requires Linux and the NVIDIA Container Toolkit. Results
+remain in the mounted checkout. See the [Docker guide](docker/README.md) for
+prerequisites, batch examples and headless simulation.
 
 For configured experiments, the [first-run guide](docs/getting-started/quickstart.md)
 covers result artifacts and resuming runs. The [installation guide](docs/getting-started/installation.md)

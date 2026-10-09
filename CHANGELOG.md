@@ -6,7 +6,6 @@ This project follows semantic versioning after the first public tag.
 
 - Adds CPU/GPU device selection to the direct 2GO example, a batched constraint
   projection example, and GPU and Docker quickstarts.
-- Aligns Docker with the V1 JAX stack, native CPU architecture and bundled licenses.
 - Removes two obsolete CFS diagnostics and makes the PegasusFlow basis regression
   independent of a local, unpublished baseline checkout.
 

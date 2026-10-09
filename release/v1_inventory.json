@@ -2,7 +2,7 @@
   "release": "0.1.0",
   "schema_version": 1,
   "source": {
-    "bytes": 155642959,
+    "bytes": 155640173,
     "file_count": 1676,
     "files_by_root": {
       ".dockerignore": 1,
@@ -334,6 +334,7 @@
     "file_count": 809,
     "forbidden_v1_paths": [],
     "path": "genedynamics-0.1.0-py3-none-any.whl",
-    "sha256": "7f83ddc9cfd53aa8741272072d278b89e42d029415cb6ad2dcd14057d46219ca"
+    "sha256": "7f83ddc9cfd53aa8741272072d278b89e42d029415cb6ad2dcd14057d46219ca",
+    "validated_source_commit": "ea04c6660a989ec35e90a29fc8fa2a581f15e9d5"
   }
 }
