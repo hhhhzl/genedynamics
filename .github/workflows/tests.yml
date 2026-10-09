@@ -109,12 +109,16 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      - name: Prepare pinned simulation assets
+        run: bash scripts/setup/setup_mujoco_menagerie.sh
       - name: Install simulation test environment
         run: |
           sudo apt-get update
           sudo apt-get install -y libegl1 libgl1 libosmesa6
           python -m pip install --upgrade pip
           python -m pip install -e ".[simulation,optimization,test]"
+          python -m pip install "torch>=2.3" --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install "urchin>=0.0.27"
       - name: Run simulation smoke tests
         env:
           MUJOCO_GL: osmesa
