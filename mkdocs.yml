@@ -1,5 +1,5 @@
 site_name: GenerativeDynamics
-site_description: Unified planning and control stack for robotics
+site_description: Generative models for robot learning, planning, and control
 repo_url: https://github.com/hhhhzl/genedynamics
 repo_name: hhhhzl/genedynamics
 docs_dir: docs
@@ -21,6 +21,7 @@ nav:
   - Concepts:
       - Architecture: concepts/architecture.md
   - Guides:
+      - Learning and model priors: guides/learning-and-priors.md
       - Configuration: guides/configuration.md
       - Add a plugin: guides/adding-a-plugin.md
   - Recipes:
@@ -31,6 +32,8 @@ nav:
       - D3IL: integrations/d3il.md
   - Reference:
       - Planners and sources: reference/planners.md
+      - Environments: reference/environments.md
+      - Constraint solvers: reference/constraints.md
       - API surface: api/README.md
       - Compatibility: reference/compatibility.md
       - Metrics and benchmarks: reference/metrics.md
@@ -45,6 +48,8 @@ nav:
 
 markdown_extensions:
   - admonition
+  - pymdownx.tasklist:
+      custom_checkbox: true
   - attr_list
   - pymdownx.details
   - pymdownx.superfences:

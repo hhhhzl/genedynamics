@@ -2,8 +2,8 @@
   "release": "0.1.0",
   "schema_version": 1,
   "source": {
-    "bytes": 152727794,
-    "file_count": 1653,
+    "bytes": 152751476,
+    "file_count": 1656,
     "files_by_root": {
       ".dockerignore": 1,
       ".github": 2,
@@ -18,7 +18,7 @@
       "assets": 1,
       "configs": 114,
       "docker": 8,
-      "docs": 71,
+      "docs": 74,
       "examples": 1,
       "genedynamics": 821,
       "mkdocs.yml": 1,
@@ -44,7 +44,7 @@
       ".html": 2,
       ".ini": 1,
       ".json": 8,
-      ".md": 64,
+      ".md": 67,
       ".mp4": 42,
       ".mtl": 3,
       ".npy": 2,
@@ -315,10 +315,10 @@
     ]
   },
   "wheel": {
-    "bytes": 12158926,
+    "bytes": 12160185,
     "file_count": 789,
     "forbidden_v1_paths": [],
     "path": "genedynamics-0.1.0-py3-none-any.whl",
-    "sha256": "013d09f4cbee22e29364a2b8578807484a9eaaf6e5a205935afeefbecc4034a1"
+    "sha256": "75673cea6b1fa3bd8c4d0352fc1d2c2a1fc95b2222d8e4362b3becd91bc13f48"
   }
 }

@@ -1,26 +1,56 @@
 # Architecture
 
-GenerativeDynamics separates the research algorithm from the machinery needed
-to run it repeatedly and compare it fairly.
+GenerativeDynamics connects robot learning, generative inference and control
+through replaceable components. Learned policies and trajectory models supply
+proposals; model-based objectives and constraints shape online generation;
+controllers execute the selected result and return the next measured state.
 
 ```mermaid
 flowchart TB
-    U[User or CI] --> C[ExperimentConfig]
-    C --> R[ExperimentRunner]
-    R --> REG[PluginRegistry]
-    REG --> MP[MethodPlugin]
-    REG --> EP[EnvironmentPlugin]
-    REG --> OP[ObstacleGeneratorPlugin]
-    REG --> MET[MetricsPlugin]
-    REG --> VIZ[VisualizationPlugin]
-    MP --> SOL[Solver contract]
-    SOL --> BACK[JAX runtime backend]
-    EP --> ENV[Environment and robot factories]
-    ENV --> SIM[MuJoCo / MJX / Brax / D3IL]
-    SOL --> CON[Constraints, filters, schedules, recovery]
-    R --> ART[Manifest, results, trajectories, reports]
-    ART --> DEP[Deployment runtime]
+    C[Configuration and plugins] --> R[Experiment runtime]
+    R --> ENV[Task and environment adapters]
+    R --> GEN[Generative solver]
+
+    subgraph LEARN[Learning and reusable models]
+        DATA[Simulation episodes / offline demonstrations] --> TRAIN[Policy or diffusion training]
+        TRAIN --> CKPT[Checkpoints and model configuration]
+        CKPT --> PRIOR[PPO horizon priors / learned trajectory diffusion]
+    end
+
+    ENV --> TRAIN
+    PRIOR --> GEN
+    ENV --> MODEL[Dynamics and task objectives]
+    MODEL --> GEN
+    GEO[Geometry / constraint solvers / schedules] --> GEN
+    GEN --> ACCEPT[Task acceptance and safety checks]
+    ACCEPT --> CTRL[Controllers and robot I/O]
+    CTRL --> WORLD[Simulator or physical robot]
+    WORLD --> STATE[Measured state]
+    STATE --> GEN
+    ENV --> WORLD
+
+    GEN --> EVIDENCE[Metrics / traces / replay / provenance]
+    WORLD --> EVIDENCE
+    EVIDENCE -. offline evaluation and retraining .-> DATA
+    EVIDENCE -. task-specific fit and calibration .-> REL[Reliability model]
+    REL --> ACCEPT
+
+    classDef learning fill:#ede9fe,stroke:#8b5cf6,color:#312e81
+    classDef inference fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    classDef execution fill:#dcfce7,stroke:#22c55e,color:#14532d
+    classDef evidence fill:#fff7ed,stroke:#f97316,color:#7c2d12
+    class DATA,TRAIN,CKPT,PRIOR,REL learning
+    class GEN,MODEL,GEO,ACCEPT inference
+    class CTRL,WORLD,STATE execution
+    class C,R,ENV,EVIDENCE evidence
 ```
+
+Each task selects the paths it needs. MGA combines PPO proposals with online
+model-based generative optimization; DPCC and SafeDiffuser sample learned
+trajectory diffusion models. Model-based diffusion also runs without learned
+weights. The dotted feedback paths describe explicit offline workflows, rather
+than automatic learning during robot execution. See
+[learning and priors](../guides/learning-and-priors.md) for runnable entries.
 
 ## Ownership boundaries
 
@@ -38,9 +68,23 @@ registrations explicit names that YAML can reference.
 
 ### Solvers own planning mathematics
 
-Solvers operate on dynamics, objectives, constraints, random keys, and schedule
-parameters. They do not choose result paths, render figures, or aggregate
-multi-seed experiments.
+Solvers own generative inference and online optimization over dynamics,
+objectives, constraints, random keys and schedule parameters. They can consume
+learned priors without taking ownership of training. They do not choose result
+paths, render figures, or aggregate multi-seed experiments.
+
+### Learning owns models and their training contracts
+
+Training entries own policy/diffusion fitting, datasets or training domains,
+normalization and checkpoint configuration. Shared prior interfaces expose
+actions, control-horizon proposals and optional scores to consumers. PPO
+checkpoints can serve standalone inference and MGA horizon proposals; SAC
+currently serves standalone policies. DPCC has a dedicated Torch diffusion
+training/loading path. Task-specific reliability fitting and calibration stay
+separate from online candidate evaluation.
+
+The small JAX learned-diffusion prior is an extension component; the published
+MGA recipes do not automatically train it or inject its score into transport.
 
 ### Environments own state and execution semantics
 
@@ -61,14 +105,18 @@ a successful partial run.
 Deployment composes robot I/O, controllers, tasks, safety filters, observers,
 and localization through registries. Planning outputs cross into deployment
 through explicit adapters and saved artifacts instead of simulator internals.
+Measured state closes the execution/replanning loop. Saved traces can support
+later learning and calibration, with the selected checkpoint and task contract
+recorded for the next run.
 
 ## Why this is an industrial architecture
 
-The framework makes replaceability and evidence first-class. A planner can be
-changed without creating a new result format; a simulator can be changed
-without rewriting method selection; a benchmark can identify its exact config
-and device; and an incomplete run records its failure. These boundaries are
-what turn paper algorithms into maintainable application components.
+The framework makes replaceability and evidence first-class. A policy prior
+can be reused without folding training into a solver; a planner can be changed
+without creating a new result format; a simulator can be changed without
+rewriting method selection. A benchmark identifies its config, device and
+checkpoint provenance, and an incomplete run records its failure. These
+boundaries turn paper algorithms into maintainable application components.
 
 ## Backend boundary
 

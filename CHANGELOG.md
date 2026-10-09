@@ -4,6 +4,12 @@ This project follows semantic versioning after the first public tag.
 
 ## Unreleased
 
+- Positions the framework around generative models for robot learning, planning and control.
+- Documents policy training, learned trajectory diffusion and MGA checkpoint reuse.
+
+- Adds environment and constraint-solver catalogues with implementation links.
+- Simplifies the roadmap into a checklist and adds a coordinated visual palette.
+
 - Adds a direct environment + 2GO Python example and a paper-linked planner catalogue.
 - Rebuilds the homepage around a text-free, five-group native demonstration gallery.
 - Adds controller, compute, learned-policy and perception roadmap priorities.

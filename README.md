@@ -1,22 +1,25 @@
 <h1 align="center">GenerativeDynamics</h1>
 
 <p align="center">
-  <strong>A modular engine for robot planning and control.</strong><br>
-  Generate trajectories. Compose constraints. Connect to control.
+  <strong>Generative models for robot learning, planning, and control.</strong><br>
+  Train policy priors. Generate constrained trajectories. Execute in closed loop.
 </p>
 
 <p align="center">
   <a href="docs/index.md">Documentation</a> ·
   <a href="#get-started">Get started</a> ·
   <a href="#explore-the-examples">Examples</a> ·
+  <a href="#learning-and-generative-models">Learning</a> ·
+  <a href="#environments">Environments</a> ·
+  <a href="#constraint-solvers">Constraints</a> ·
   <a href="#how-the-stack-fits-together">Architecture</a> ·
   <a href="#roadmap">Roadmap</a>
 </p>
 
 <p align="center">
-  <a href="docs/getting-started/installation.md"><img src="https://img.shields.io/badge/Python-3.10–3.12-334155?logo=python&logoColor=white" alt="Python 3.10 to 3.12"></a>
-  <a href="docs/reference/compatibility.md"><img src="https://img.shields.io/badge/Compute-JAX-334155" alt="JAX compute"></a>
-  <a href="docs/releases/v1_scope.md"><img src="https://img.shields.io/badge/Release-0.1.0_alpha-334155" alt="0.1.0 alpha release candidate"></a>
+  <a href="docs/getting-started/installation.md"><img src="https://img.shields.io/badge/Python-3.10–3.12-3776AB?logo=python&logoColor=white" alt="Python 3.10 to 3.12"></a>
+  <a href="docs/reference/compatibility.md"><img src="https://img.shields.io/badge/Compute-JAX-7C3AED" alt="JAX compute"></a>
+  <a href="docs/releases/v1_scope.md"><img src="https://img.shields.io/badge/Release-0.1.0_alpha-B45309" alt="0.1.0 alpha release candidate"></a>
 </p>
 
 <p align="center">
@@ -29,45 +32,55 @@
   <a href="#explore-the-examples">Run the examples</a>
 </p>
 
-GenerativeDynamics connects **trajectory generation, geometric constraints, and
-closed-loop execution** in one robotics stack. Build a task once, compare
-planners on the same problem, and compose the controllers, safety filters and
-robot adapters around it. Use individual components directly in Python or run
-complete experiments from a configuration.
+GenerativeDynamics brings **learned trajectory diffusion, reinforcement-learning
+priors, and model-based generative inference** into one modular robotics stack.
+Train and reuse models, refine trajectories against dynamics and constraints,
+and connect plans to closed-loop execution. Shared task, solver and execution
+interfaces let you swap algorithms, compose controllers and add robots. Use
+components directly in Python or run complete experiments from a configuration.
 
-## Updates
+<a id="updates"></a>
+
+## 📣 Updates
 
 - **2026-10-09** — Added a direct Python planning example, a unified paper and
-  hardware gallery, and a paper-linked planner catalogue.
+  hardware gallery, learning workflows, and planner, environment and constraint
+  catalogues.
 - **2026-10-05** — Prepared the V1 release candidate with six task families,
   optional integrations, user documentation and CPU validation evidence.
 
 Follow [CHANGELOG.md](CHANGELOG.md) for new environments, planners and integrations.
 
-## Built to compose
+<a id="built-to-compose"></a>
+
+## 🧩 Built to compose
 
 | Feature | What you get |
 | --- | --- |
-| **Planning** | Diffusion trajectory generation, constrained optimization, sampling MPC and contact-aware motion–impedance control. |
-| **Tasks and robots** | Planar navigation, 7-DoF avoidance, quadruped footholds, humanoid corridors, peg insertion and surface scanning. |
-| **Geometry and constraints** | Convex primitives, meshes, signed-distance geometry and CSG; composable collision, state, action and contact constraints. |
-| **Simulation adapters** | MuJoCo, MJX, Brax and D3IL integrations, with physics and task adapters separate from solver logic. |
-| **Compute** | JAX planning and batched rollouts; CPU and CUDA installation paths. Dedicated Torch integrations for DPCC and SafeDiffuser. |
-| **Execution components** | Robot I/O, controllers, trajectory followers, governors, safety filters, recovery policies and observers. |
-| **Experiment tooling** | YAML task matrices, seeds, resumable runs, resolved configurations, metrics, traces, replay and reports. |
-| **Extension points** | Registered planners, environments, geometry, metrics and visualizations; optional integrations with explicit dependencies. |
+| **🧠 Robot learning** | PPO/SAC policy training, reusable checkpoints and PPO horizon priors for MGA. |
+| **✨ Generative models** | Learned trajectory diffusion and model-based generative inference; DDPM/DDIM and flow-style reverse transports. |
+| **🧭 Planning** | Interchangeable planners for constrained trajectories, sampling MPC and contact-rich motion–impedance optimization. |
+| **🤖 Tasks and robots** | Planar navigation, 7-DoF avoidance, quadruped footholds, humanoid corridors, peg insertion and surface scanning. |
+| **🛡️ Geometry and constraints** | Convex primitives, meshes, signed-distance geometry and CSG; composable collision, state, action and contact constraints. |
+| **🌐 Simulation adapters** | MuJoCo, MJX, Brax and D3IL integrations, with physics and task adapters separate from solver logic. |
+| **⚡ Compute** | JAX planning and batched rollouts; CPU and CUDA installation paths. Dedicated Torch integrations for DPCC and SafeDiffuser. |
+| **🎛️ Execution components** | Robot I/O, controllers, trajectory followers, governors, safety filters, recovery policies and observers. |
+| **📊 Experiment tooling** | YAML task matrices, seeds, resumable runs, resolved configurations, metrics, traces, replay and reports. |
+| **🔌 Extension points** | Registered planners, environments, geometry, metrics and visualizations; optional integrations with explicit dependencies. |
 
 See [device and integration support](docs/reference/compatibility.md) for the
 qualified paths, and [architecture](docs/concepts/architecture.md) for the
 interfaces behind these features.
 
-## Get started
+<a id="get-started"></a>
+
+## 🚀 Get started
 
 Create a planar environment, give it a **2GO** planner, and move from `(0.8, 0.8)`
 to the origin. This example runs on CPU without a simulator or model checkpoint.
 
 ```bash
-git clone https://github.com/hhhhzl/genedynamics.git
+git clone --branch release/v1-open-source https://github.com/hhhhzl/genedynamics.git
 cd genedynamics
 python -m venv .venv
 source .venv/bin/activate
@@ -113,7 +126,9 @@ For configured experiments, the [first-run guide](docs/getting-started/quickstar
 covers result artifacts and resuming runs. The [installation guide](docs/getting-started/installation.md)
 covers CUDA, simulator assets, learned planners and deployment extras.
 
-## Explore the examples
+<a id="explore-the-examples"></a>
+
+## 🧪 Explore the examples
 
 Start with one of our four methods. Each recipe connects an algorithm to a task,
 its dependencies and an inspectable configuration.
@@ -123,7 +138,7 @@ its dependencies and an inspectable configuration.
 | **[MDOC](https://arxiv.org/abs/2607.12423)** | Diffusion planning with safety projections in constrained scenes. | [Planar navigation](configs/single_2d/mdoc.yaml) |
 | **[MD-COAS](https://arxiv.org/abs/2607.14455)** | Constraint-guided diffusion, from planar obstacles to 7-DoF avoidance. | [Planar navigation](configs/single_2d/mdcoas.yaml) · [Arm avoidance](configs/d3il_avoiding/mdcoas.yaml) |
 | **[2GO](https://arxiv.org/abs/2610.07772)** | Geometry-guided trajectory optimization for constrained locomotion. | [Quadruped stepping stones](configs/quadruped/stepping_stones_2d/main/twogo.yaml) · [Humanoid corridor](configs/humanoid/corridor_2d/main/twogo_zone_c.yaml) |
-| **MGA** | Generative motion–impedance control for contact-rich tasks. | [Peg insertion](configs/arm/peg_insert/main/mga.yaml) · [Surface scanning](configs/arm/surface_scan/main/mga.yaml) |
+| **MGA** | Learned policy priors and generative motion–impedance control for contact-rich tasks. | [Peg insertion](configs/arm/peg_insert/main/mga.yaml) · [Surface scanning](configs/arm/surface_scan/main/mga.yaml) |
 
 The [recipe catalogue](docs/recipes/index.md) explains setup and assets. The
 homepage also includes original paper demonstrations: MDOC multi-robot
@@ -131,18 +146,57 @@ coordination is available in its [original project](https://github.com/hhhhzl/md
 and MGA humanoid contact footage previews research beyond the qualified V1
 recipes. See the [demo map](docs/assets/README.md) for the distinction.
 
-## Included planners and baselines
+<a id="learning-and-generative-models"></a>
 
-**Ours** marks our algorithms. Each entry links its original paper or current
+## ✨ Learning and generative models
+
+Generative models are part of the architecture: learn a trajectory distribution,
+reuse a policy as a control-sequence prior, or perform model-based generative
+inference directly from dynamics and objectives.
+
+| Workflow | How it connects | Start here |
+| --- | --- | --- |
+| **Learn a policy, refine its proposals** | Train PPO/SAC policies; reuse PPO checkpoints as MGA horizon priors for constrained, model-based refinement. | [MGA learning workflow](docs/guides/learning-and-priors.md#mga-train-a-policy-and-reuse-it-as-a-prior) |
+| **Learn a trajectory diffusion model** | Train on offline sequences, then guide denoising with DPCC projections or SafeDiffuser constraints. | [Learned diffusion workflow](docs/guides/learning-and-priors.md#learned-trajectory-diffusion) |
+| **Plan without a pretrained model** | Use physics rollouts, objectives and constraints to construct model-based generative updates. | [MDOC, MD-COAS and 2GO recipes](docs/recipes/index.md) |
+
+Learning dependencies and checkpoint setup are documented in the
+[learning guide](docs/guides/learning-and-priors.md).
+
+<a id="environments"></a>
+
+## 🌍 Environments
+
+Six task families share the planning and evaluation stack. Each links to a
+ready-to-inspect configuration.
+
+| Environment | What you can explore | Example |
+| --- | --- | --- |
+| **Planar navigation** | Point-robot planning in non-convex scenes, with state and action bounds. | [MD-COAS](configs/single_2d/mdcoas.yaml) |
+| **7-DoF arm avoidance** | D3IL obstacle avoidance through Cartesian or joint-velocity interfaces. | [MD-COAS](configs/d3il_avoiding/mdcoas.yaml) |
+| **Quadruped stepping stones** | Body motion, foot placement and gait phase across discrete footholds. | [2GO](configs/quadruped/stepping_stones_2d/main/twogo.yaml) |
+| **Humanoid corridor** | Body position, posture and arm clearance through narrow passages. | [2GO](configs/humanoid/corridor_2d/main/twogo_zone_a.yaml) |
+| **Surface scanning** | Contact tracking, stiffness and force regulation across surfaces. | [MGA](configs/arm/surface_scan/main/mga.yaml) |
+| **Peg insertion** | Contact-rich insertion under pose, clearance, friction and sensing variations. | [MGA](configs/arm/peg_insert/main/mga.yaml) |
+
+The [environment catalogue](docs/reference/environments.md) lists configuration
+keys, interfaces, assets and implementation links. MuJoCo, MJX and Brax are
+simulation adapters; support depends on the selected recipe.
+
+<a id="included-planners-and-baselines"></a>
+
+## 🧠 Included planners and baselines
+
+🟢 **Ours** marks our algorithms. Each entry links its original paper or current
 implementation; configuration variants are documented in the
 [planner reference](docs/reference/planners.md).
 
 | Algorithm | What it does | Source |
 | --- | --- | --- |
-| **MDOC · Ours** | Model-based diffusion with control-barrier-function projections inside dynamics rollouts. | [Paper](https://arxiv.org/abs/2607.12423) · [Original multi-robot project](https://github.com/hhhhzl/mdoc) |
-| **MD-COAS · Ours** | Combines an augmented-Lagrangian feasibility prior, CFS projection, and adaptive constraint scheduling. | [Paper](https://arxiv.org/abs/2607.14455) |
-| **2GO · Ours** | Shapes generative trajectory updates and exploration with active constraint geometry for constrained locomotion. | [Paper](https://arxiv.org/abs/2610.07772) |
-| **MGA · Ours** | Combines RL sequence proposals, model-based evaluation, and realization-aware geometry for motion–impedance control. | [Implementation](https://github.com/hhhhzl/genedynamics/tree/release/v1-open-source/genedynamics/solvers/single/mga) |
+| **MDOC** 🟢 Ours | Model-based diffusion with control-barrier-function projections inside dynamics rollouts. | [Paper](https://arxiv.org/abs/2607.12423) · [Original multi-robot project](https://github.com/hhhhzl/mdoc) |
+| **MD-COAS** 🟢 Ours | Combines an augmented-Lagrangian feasibility prior, CFS projection, and adaptive constraint scheduling. | [Paper](https://arxiv.org/abs/2607.14455) |
+| **2GO** 🟢 Ours | Shapes generative trajectory updates and exploration with active constraint geometry for constrained locomotion. | [Paper](https://arxiv.org/abs/2610.07772) |
+| **MGA** 🟢 Ours | Combines RL sequence proposals, model-based evaluation, and realization-aware geometry for motion–impedance control. | [Implementation](https://github.com/hhhhzl/genedynamics/tree/release/v1-open-source/genedynamics/solvers/single/mga) |
 | **MBD** | Uses known dynamics and Monte Carlo score estimates to optimize trajectories without demonstrations. | [Paper](https://arxiv.org/abs/2407.01573) · [Project](https://lecar-lab.github.io/mbd/) |
 | **EB-MBD** | Introduces emerging barriers during model-based diffusion to retain useful samples under constraints. | [Paper](https://arxiv.org/abs/2510.07700) |
 | **MPPI** | Updates sampled control sequences using exponential rollout-cost weights. | [Paper](https://arxiv.org/abs/1707.02342) |
@@ -157,64 +211,98 @@ implementation; configuration variants are documented in the
 Learned integrations require their optional dependencies and
 checkpoints. See [planner setup and implementation notes](docs/reference/planners.md).
 
-## How the stack fits together
+<a id="constraint-solvers"></a>
 
-<img src="docs/assets/architecture.svg" width="100%" alt="Tasks, planners, and constraints compose through a shared planning and control runtime. Environment adapters connect to simulation, and control components connect to execution. Metrics, traces, and visualization span both paths.">
+## 🛡️ Constraint solvers
 
-**Tasks** define dynamics, objectives and geometry. **Planners** produce
-trajectories. **Execution** connects plans to followers, controllers, safety
-filters and robot I/O. **Observers and metrics** record the result across the
-stack. These interfaces let an application replace a solver or add a robot
-while reusing its task and surrounding tools.
+Compose [CBF action filters](genedynamics/core/constraints/action_filters/cbf_qp.py),
+[CFS trajectory projections](genedynamics/core/constraints/action_filters/cfs_qp_full.py)
+and [adaptive augmented-Lagrangian scheduling](genedynamics/core/constraints/schedulers/ConstraintScheduler/almadaptive/alm_adaptive.py)
+with a numerical solver below.
+
+| Solver | What it does | Source |
+| --- | --- | --- |
+| **Closed form** | Euclidean halfspace projection, box clipping and unconstrained solves for special cases. | [Implementation](genedynamics/core/constraints/solvers/closed_form.py) |
+| **JAXopt OSQP** | General convex-QP interface built on `jaxopt.OSQP`. | [Implementation](genedynamics/core/constraints/solvers/jaxopt_osqp_solver.py) · [Docs](https://jaxopt.github.io/stable/quadratic_programming.html) |
+| **OSQP** | Sparse CPU convex-QP solves through the OSQP Python interface. | [Implementation](genedynamics/core/constraints/solvers/osqp_solver.py) · [Docs](https://osqp.org/docs/) |
+| **CVXOPT** | CPU convex-QP solves, including trajectory smoothness and slack formulations. | [Implementation](genedynamics/core/constraints/solvers/cvxopt_solver.py) · [Docs](https://cvxopt.org/userguide/coneprog.html#quadratic-programming) |
+
+Install `.[optimization]` for the optional QP dependencies. See the
+[constraint reference](docs/reference/constraints.md) for CBF/CFS variants,
+scheduling and solver-specific limits.
+
+<a id="how-the-stack-fits-together"></a>
+
+## 🏗️ How the stack fits together
+
+<img src="docs/assets/architecture.svg" width="100%" alt="Learning produces policy priors and trajectory models. Generative inference combines them with task dynamics, geometry and constraints. Controllers execute trajectories with state feedback; traces support offline training and calibration.">
+
+**Learning** produces reusable policies, trajectory models and task-specific
+reliability estimates. **Generative inference** combines the selected model or
+prior with task dynamics, objectives, geometry and constraints. **Execution**
+connects trajectories to controllers, safety filters and robot I/O, feeding
+measured state into the next replan. Traces support evaluation, offline training
+and calibration. Each workflow selects the components it needs; model-based
+planners can also run without learned checkpoints.
 
 Read the [architecture guide](docs/concepts/architecture.md),
 [configure a task](docs/guides/configuration.md), or
 [add a plugin](docs/guides/adding-a-plugin.md).
 
-## Roadmap
+<a id="roadmap"></a>
 
-| Direction | Planned capability |
-| --- | --- |
-| **Portable compute** | Qualify MGA on CUDA; expand Torch planner parity and device-resident transfers; evaluate MuJoCo Warp rollouts. Scope Rust/C++ first to control and I/O components. |
-| **Robot deployment** | Add reviewed Panda and xArm7 hardware recipes, joint-trajectory and Cartesian impedance controllers, and `ros2_control` execution alongside existing G1 components. |
-| **Predictable execution** | Decouple planning and control rates; standardize command expiry, cancellation and fallback; measure jitter, deadline misses and long-run reliability. |
-| **Learned-policy integration** | Connect action-chunk and VLA policies through proposal/warm-start adapters; explore OpenPI inference and LeRobot recording/replay. |
-| **Live scenes** | Extend frame-aware geometry with timestamped perception and moving obstacles for calibrated manipulation. |
-| **Reproducible evaluation** | Publish hardware-specific latency, throughput, memory, task-quality and safety results, plus replayable benchmark artifacts and optional plugins. |
+## 🗺️ Roadmap
 
-These are development directions. The [detailed roadmap](docs/reference/roadmap.md)
-connects each one to existing interfaces and measurable release gates.
+- [x] Policy learning, learned diffusion and reusable priors
+- [x] JAX planning and composable constraints
+- [x] Six task families and planner baselines
+- [x] Configured experiments, metrics and replay
+- [ ] MGA CUDA qualification and humanoid walking/push
+- [ ] Torch planner parity; Rust/C++ control and I/O
+- [ ] Panda/xArm7 controllers and `ros2_control`
+- [ ] Async planning/control and fault recovery
+- [ ] VLA proposals and OpenPI/LeRobot adapters
+- [ ] Live perception and dynamic scenes
+- [ ] Reproducible hardware benchmarks
 
-V1 (`0.1.0`) is a release candidate with an evolving public API. MGA GPU
-qualification and humanoid walking/push remain follow-up work. Current
-[compatibility](docs/reference/compatibility.md), [validation evidence](docs/releases/v1_evidence.md)
-and [benchmark methodology](docs/reference/metrics.md) define what is supported
-and measured today.
+[Roadmap details](docs/reference/roadmap.md) ·
+[Current compatibility](docs/reference/compatibility.md) ·
+[Validation evidence](docs/releases/v1_evidence.md)
 
-## Documentation
+<a id="documentation"></a>
+
+## 📚 Documentation
 
 | Start building | Go deeper |
 | --- | --- |
 | [Installation](docs/getting-started/installation.md) | [Architecture](docs/concepts/architecture.md) |
 | [Python API example](docs/getting-started/python-api.md) | [Planners and sources](docs/reference/planners.md) |
-| [Configured experiments](docs/getting-started/quickstart.md) | [Configuration](docs/guides/configuration.md) |
-| [Task recipes](docs/recipes/index.md) | [Plugin development](docs/guides/adding-a-plugin.md) |
+| [Learning and model priors](docs/guides/learning-and-priors.md) | [Configuration](docs/guides/configuration.md) |
+| [Configured experiments](docs/getting-started/quickstart.md) | [Plugin development](docs/guides/adding-a-plugin.md) |
+| [Environments](docs/reference/environments.md) | [Constraint solvers](docs/reference/constraints.md) |
+| [Task recipes](docs/recipes/index.md) | [Metrics and benchmarks](docs/reference/metrics.md) |
 | [D3IL integration](docs/integrations/d3il.md) | [API reference](docs/api/README.md) |
 
-## Contributing
+<a id="contributing"></a>
+
+## 🤝 Contributing
 
 Bring a planner, a robot task, an integration or a documentation improvement.
 Start with [CONTRIBUTING.md](CONTRIBUTING.md). Community guidelines are in
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md); vulnerability reporting is in
 [SECURITY.md](SECURITY.md).
 
-## Research and citation
+<a id="research-and-citation"></a>
+
+## 📖 Research and citation
 
 The solvers build on research algorithms; the framework provides the interfaces
 and runtime around them. Use [CITATION.cff](CITATION.cff) when citing the project,
 and the papers linked above when using individual methods.
 
-## License
+<a id="license"></a>
+
+## 📄 License
 
 License selection is pending for the public V1 release. The
 [release checklist](docs/releases/v1_checklist.md) tracks this requirement.

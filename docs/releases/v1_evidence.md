@@ -7,8 +7,8 @@ documentation/package refresh on 2026-10-09, on branch
 ## Release surface
 
 - 80 experiment configurations and 16 deployment configurations validated.
-- 16 method registrations and 7 published environment families matched the
-  machine-readable V1 catalogue.
+- 16 method registrations and 7 environment configuration keys across six
+  task families matched the machine-readable V1 catalogue.
 - Soft-robot, co-design, 3DGS, MBD3D, MRMFMBD, and morphology paths were absent
   from the source and wheel inventories.
 - Humanoid push-to-line and MGA GPU remain outside the readiness claim.
@@ -39,9 +39,9 @@ The final release-candidate wheel has:
 | Property | Value |
 | --- | --- |
 | Filename | `genedynamics-0.1.0-py3-none-any.whl` |
-| Size | 12,158,926 bytes |
+| Size | 12,160,185 bytes |
 | Files | 789 |
-| SHA-256 | `013d09f4cbee22e29364a2b8578807484a9eaaf6e5a205935afeefbecc4034a1` |
+| SHA-256 | `75673cea6b1fa3bd8c4d0352fc1d2c2a1fc95b2222d8e4362b3becd91bc13f48` |
 | Required package assets missing | 0 |
 | Forbidden V1 paths | 0 |
 | Twine metadata check | Passed |
@@ -88,9 +88,19 @@ The source and wheel inventory is stored in
   goal-arrival assertions passing. `pip check` and Twine metadata checks passed.
 - Planner descriptions were checked against original papers. CFS-MBD is
   documented as MD-COAS's historical implementation name.
-- The documentation built in strict mode. Runtime source, task configurations
-  and tests are unchanged by this refresh; the earlier regression remains the
-  runtime evidence.
+- Environment and constraint catalogues document six task families, seven
+  configuration keys and four numerical constraint-solver interfaces.
+- The framework positioning and architecture now connect policy learning,
+  learned trajectory diffusion, model-based generative inference and control.
+  The learning guide documents training, checkpoint reuse and offline reliability
+  calibration without claiming automatic online retraining.
+- The roadmap is a concise checklist, and the architecture uses a coordinated
+  learning/task/execution palette. The main demonstration media is unchanged.
+- The documentation built in strict mode. README links, anchors and Python
+  syntax passed static checks. Training-guide commands were checked against
+  their parsers; no new training runs were performed. Runtime source, task
+  configurations and tests are unchanged by this refresh; the earlier
+  regression remains the runtime evidence.
 
 
 ## Open gates
