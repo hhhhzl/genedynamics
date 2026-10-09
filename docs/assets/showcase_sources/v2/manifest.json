@@ -1,0 +1,1433 @@
+{
+  "schema_version": 2,
+  "fps": 12,
+  "description": "Original paper demonstrations, cropped to remove annotations; no added text.",
+  "groups": [
+    {
+      "id": "mdoc",
+      "label": "MDOC",
+      "clips": [
+        "mdoc_single_conveyor",
+        "mdoc_single_narrow",
+        "mdoc_single_random",
+        "mdoc_single_tennis",
+        "mdoc_cbs_conveyor_boundary",
+        "mdoc_cbs_dropregion_boundary",
+        "mdoc_cbs_empty_large",
+        "mdoc_cbs_random"
+      ]
+    },
+    {
+      "id": "mdcoas",
+      "label": "MD-COAS",
+      "clips": [
+        "mdcoas_2d_l6",
+        "mdcoas_2d_l10",
+        "mdcoas_7dof_diffusion",
+        "mdcoas_7dof_execution"
+      ]
+    },
+    {
+      "id": "twogo",
+      "label": "2GO",
+      "clips": [
+        "twogo_go2_s1",
+        "twogo_go2_s2",
+        "twogo_g1_zone_a",
+        "twogo_g1_zone_b",
+        "twogo_g1_zone_c",
+        "twogo_g1_zone_d"
+      ]
+    },
+    {
+      "id": "mga",
+      "label": "MGA",
+      "clips": [
+        "mga_surface_rigid_plane",
+        "mga_surface_rigid_convex",
+        "mga_surface_rigid_cylinder",
+        "mga_surface_rigid_bumpy",
+        "mga_surface_soft_plane",
+        "mga_surface_soft_convex",
+        "mga_surface_soft_cylinder",
+        "mga_surface_soft_bumpy",
+        "mga_surface_soft_unseen",
+        "mga_surface_hybrid_center_hard",
+        "mga_surface_hybrid_center_soft",
+        "mga_surface_hybrid_stripes",
+        "mga_peg_id_wide",
+        "mga_peg_ood_pose",
+        "mga_peg_ood_sensing",
+        "mga_humanoid_force_regulation",
+        "mga_humanoid_fixed_stance_push",
+        "mga_humanoid_unjamming"
+      ]
+    },
+    {
+      "id": "hardware",
+      "label": "Hardware",
+      "clips": [
+        "hardware_twogo_g1",
+        "hardware_mga_surface_foam",
+        "hardware_mga_peg_insert",
+        "hardware_mga_surface_curved",
+        "hardware_mga_surface_rigid"
+      ]
+    }
+  ],
+  "clips": [
+    {
+      "id": "mdoc_single_conveyor",
+      "group": "mdoc",
+      "filename": "mdoc_single_conveyor.mp4",
+      "width": 480,
+      "height": 456,
+      "shape": [
+        480,
+        456
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 133382,
+      "sha256": "784eb67e06aed680476863d9ea522c58752a6681a735e928465a215b073cefa2",
+      "origin": {
+        "root": "mdoc",
+        "path": "assets/vis/gifs/MDOC/conveyor_MDOC.gif",
+        "sha256": "db023fb64c957ad9dd0453794a538f4fd97445f84d3af47bf444602a2a6f6435",
+        "source_width": 480,
+        "source_height": 480,
+        "source_duration": 5.0,
+        "crop": [
+          0,
+          24,
+          480,
+          480
+        ],
+        "start": 0.0,
+        "end": 5.0
+      }
+    },
+    {
+      "id": "mdoc_single_narrow",
+      "group": "mdoc",
+      "filename": "mdoc_single_narrow.mp4",
+      "width": 480,
+      "height": 456,
+      "shape": [
+        480,
+        456
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 214415,
+      "sha256": "797b5c1df739b00fa45e2d82be0ca3596059c0ca642cf655684f8b322981b037",
+      "origin": {
+        "root": "mdoc",
+        "path": "assets/vis/gifs/MDOC/narrow_MDOC.gif",
+        "sha256": "a34243dd78f0f56843d183a0daa3d7de49a50608babbe0ab9cdac643c3833976",
+        "source_width": 480,
+        "source_height": 480,
+        "source_duration": 5.0,
+        "crop": [
+          0,
+          24,
+          480,
+          480
+        ],
+        "start": 0.0,
+        "end": 5.0
+      }
+    },
+    {
+      "id": "mdoc_single_random",
+      "group": "mdoc",
+      "filename": "mdoc_single_random.mp4",
+      "width": 480,
+      "height": 456,
+      "shape": [
+        480,
+        456
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 195690,
+      "sha256": "26a2fb457171921ba40036cfa2808ca7f72d9fe62679f05499a48dc75f1c3122",
+      "origin": {
+        "root": "mdoc",
+        "path": "assets/vis/gifs/MDOC/random_MDOC.gif",
+        "sha256": "8c28364e04283e9a833eddd87a1b496b63c8bbc8b1b58044905e30ee04753439",
+        "source_width": 480,
+        "source_height": 480,
+        "source_duration": 5.0,
+        "crop": [
+          0,
+          24,
+          480,
+          480
+        ],
+        "start": 0.0,
+        "end": 5.0
+      }
+    },
+    {
+      "id": "mdoc_single_tennis",
+      "group": "mdoc",
+      "filename": "mdoc_single_tennis.mp4",
+      "width": 480,
+      "height": 456,
+      "shape": [
+        480,
+        456
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 196827,
+      "sha256": "32a8cb2ec2e36e4acd983dc79412a2f11ee66cb94c9db26259e27c925eae1558",
+      "origin": {
+        "root": "mdoc",
+        "path": "assets/vis/gifs/MDOC/tennis_MDOC.gif",
+        "sha256": "0096ee0b5ba9a21402b8d5ebbf204a16c60bfccb0dce320393dd56c2f3f1fc57",
+        "source_width": 480,
+        "source_height": 480,
+        "source_duration": 5.0,
+        "crop": [
+          0,
+          24,
+          480,
+          480
+        ],
+        "start": 0.0,
+        "end": 5.0
+      }
+    },
+    {
+      "id": "mdoc_cbs_conveyor_boundary",
+      "group": "mdoc",
+      "filename": "mdoc_cbs_conveyor_boundary.mp4",
+      "width": 480,
+      "height": 480,
+      "shape": [
+        480,
+        480
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 158118,
+      "sha256": "5ce0b87e14c5e06e7b15c9fe322b409abe78c7c7b9cc74c294e9f577af0afd84",
+      "origin": {
+        "root": "mdoc",
+        "path": "assets/vis/gifs/MDOC-CBS/conveyor_boundary_MDOC-CBS_10.gif",
+        "sha256": "81c3927ee17fc5beb714a09899d6bb398b41f7155956b805a113c6d5dbd69a77",
+        "source_width": 640,
+        "source_height": 480,
+        "source_duration": 10.24,
+        "crop": [
+          80,
+          0,
+          560,
+          480
+        ],
+        "start": 0.0,
+        "end": 10.24
+      }
+    },
+    {
+      "id": "mdoc_cbs_dropregion_boundary",
+      "group": "mdoc",
+      "filename": "mdoc_cbs_dropregion_boundary.mp4",
+      "width": 480,
+      "height": 480,
+      "shape": [
+        480,
+        480
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 178850,
+      "sha256": "a8f8c2ccb6c83f6473947aa42ae3253686f45481d20ff9e37f84f2ef2bff4031",
+      "origin": {
+        "root": "mdoc",
+        "path": "assets/vis/gifs/MDOC-CBS/dropregion_boundary_MDOC-CBS_10.gif",
+        "sha256": "2a87bf2190744ab603bd044bdb756084616d5a87335267872467a775007271ca",
+        "source_width": 640,
+        "source_height": 480,
+        "source_duration": 10.24,
+        "crop": [
+          80,
+          0,
+          560,
+          480
+        ],
+        "start": 0.0,
+        "end": 10.24
+      }
+    },
+    {
+      "id": "mdoc_cbs_empty_large",
+      "group": "mdoc",
+      "filename": "mdoc_cbs_empty_large.mp4",
+      "width": 480,
+      "height": 480,
+      "shape": [
+        480,
+        480
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 127632,
+      "sha256": "83ae6d7aeac48294364a741b51c856f3ee069ca7c0fba475176c04ac76f3e7e1",
+      "origin": {
+        "root": "mdoc",
+        "path": "assets/vis/gifs/MDOC-CBS/empty_large_MDOC-CBS_15.gif",
+        "sha256": "81b1771b1bac09c612a0cb5c4abcbe388f2a9494a0e795bdfc5c80b67d90008d",
+        "source_width": 640,
+        "source_height": 480,
+        "source_duration": 10.24,
+        "crop": [
+          80,
+          0,
+          560,
+          480
+        ],
+        "start": 0.0,
+        "end": 10.24
+      }
+    },
+    {
+      "id": "mdoc_cbs_random",
+      "group": "mdoc",
+      "filename": "mdoc_cbs_random.mp4",
+      "width": 480,
+      "height": 480,
+      "shape": [
+        480,
+        480
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 128273,
+      "sha256": "63c2501f2033e0d5ce3b439e7845a741db1d237f77dcdb2594cd7381a20e3517",
+      "origin": {
+        "root": "mdoc",
+        "path": "assets/vis/gifs/MDOC-CBS/random_MDOC-CBS_10.gif",
+        "sha256": "f38b0189d0f1b87cc35ae30ccfe338da84ac39a9c276c89f338d2cb2aecfc688",
+        "source_width": 640,
+        "source_height": 480,
+        "source_duration": 10.24,
+        "crop": [
+          80,
+          0,
+          560,
+          480
+        ],
+        "start": 0.0,
+        "end": 10.24
+      }
+    },
+    {
+      "id": "mdcoas_2d_l6",
+      "group": "mdcoas",
+      "filename": "mdcoas_2d_l6.mp4",
+      "width": 510,
+      "height": 512,
+      "shape": [
+        510,
+        512
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 463303,
+      "sha256": "c44d09bae8a916ffea847b57fc3ef39cff486d39ac99782321752fcfc398b0a6",
+      "origin": {
+        "root": "project",
+        "path": "results/single2d/mdcoas/level_6/seed_0/diffusion_steps/diffusion_steps.gif",
+        "sha256": "84b47e5a21ad64d16ca274dd765a09f8dd41bc18587b8f70ad85c6ce10674b7a",
+        "source_width": 723,
+        "source_height": 754,
+        "source_duration": 15.0,
+        "crop": [
+          14,
+          44,
+          710,
+          744
+        ],
+        "start": 0.0,
+        "end": 15.0
+      }
+    },
+    {
+      "id": "mdcoas_2d_l10",
+      "group": "mdcoas",
+      "filename": "mdcoas_2d_l10.mp4",
+      "width": 510,
+      "height": 512,
+      "shape": [
+        510,
+        512
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 476327,
+      "sha256": "b363ca1141d90f45085aa660603d0a45737853857957cdb4eb17c42f4d64a7ea",
+      "origin": {
+        "root": "project",
+        "path": "results/single2d/mdcoas/level_10/seed_8/diffusion_steps/diffusion_steps.gif",
+        "sha256": "8ef2170fe0c22f2d8532ca3cb2dd010156cf91c9aa5c6aecac6b14fd0556c8f8",
+        "source_width": 723,
+        "source_height": 754,
+        "source_duration": 15.0,
+        "crop": [
+          14,
+          44,
+          710,
+          744
+        ],
+        "start": 0.0,
+        "end": 15.0
+      }
+    },
+    {
+      "id": "mdcoas_7dof_diffusion",
+      "group": "mdcoas",
+      "filename": "mdcoas_7dof_diffusion.mp4",
+      "width": 436,
+      "height": 512,
+      "shape": [
+        436,
+        512
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 765236,
+      "sha256": "e0d2c591cd5a9b36896fe2ebe8d07b755efc06d1fa6cedaea40e33bd1c086995",
+      "origin": {
+        "root": "project",
+        "path": "results/d3il_avoiding/mdcoas/level_1/seed_0/diffusion_steps/diffusion_steps.gif",
+        "sha256": "8890bda882c9df0fda3e19b8c68a8b874710900e74a8d48ccc5cd4bf49b15920",
+        "source_width": 624,
+        "source_height": 754,
+        "source_duration": 15.0,
+        "crop": [
+          14,
+          44,
+          610,
+          744
+        ],
+        "start": 0.0,
+        "end": 15.0
+      }
+    },
+    {
+      "id": "mdcoas_7dof_execution",
+      "group": "mdcoas",
+      "filename": "mdcoas_7dof_execution.mp4",
+      "width": 512,
+      "height": 384,
+      "shape": [
+        512,
+        384
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 143100,
+      "sha256": "0dc1407d3a395f0974a3ca6a895e1aaef7a2cddcb9eb5abb40b84b933f05cc12",
+      "origin": {
+        "root": "mdcoas_demo",
+        "path": "d3il_env.gif",
+        "sha256": "b91f1013711ee97e754284c537c31a992ec388ad3bb967d67afd77355fc027f8",
+        "source_width": 640,
+        "source_height": 480,
+        "source_duration": 10.699999999999978,
+        "crop": [
+          0,
+          0,
+          640,
+          480
+        ],
+        "start": 0.0,
+        "end": 10.699999999999978
+      }
+    },
+    {
+      "id": "twogo_go2_s1",
+      "group": "twogo",
+      "filename": "twogo_go2_s1.mp4",
+      "width": 512,
+      "height": 288,
+      "shape": [
+        512,
+        288
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 260872,
+      "sha256": "a079903e1f6d21260860b09f16e766c2ca7a2c0d812f4a04927e6dcaaf01bafe",
+      "origin": {
+        "root": "project",
+        "path": "results/quadruped/stepping_stones_2d/deploy/governed/twogo/level_1/seed_2/governed/trajectory_mujoco.gif",
+        "sha256": "689f53000e3e5a57981f06e8ef02d9973f274c54ca38f5e3fd3bde3fb23c0073",
+        "source_width": 640,
+        "source_height": 360,
+        "source_duration": 16.28,
+        "crop": [
+          0,
+          0,
+          640,
+          360
+        ],
+        "start": 0.0,
+        "end": 16.28
+      }
+    },
+    {
+      "id": "twogo_go2_s2",
+      "group": "twogo",
+      "filename": "twogo_go2_s2.mp4",
+      "width": 512,
+      "height": 288,
+      "shape": [
+        512,
+        288
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 262624,
+      "sha256": "0e10c6d281cc9045353d06b6665b7086f0d28c164cc8617181e5ecffd89c451a",
+      "origin": {
+        "root": "project",
+        "path": "results/quadruped/stepping_stones_2d/deploy/governed/twogo/level_5/seed_2/governed/trajectory_mujoco.gif",
+        "sha256": "09edd8677b1364f847e67dab822bc5288558f20959ef8dbaf9a532176f4e8ee2",
+        "source_width": 640,
+        "source_height": 360,
+        "source_duration": 16.28,
+        "crop": [
+          0,
+          0,
+          640,
+          360
+        ],
+        "start": 0.0,
+        "end": 16.28
+      }
+    },
+    {
+      "id": "twogo_g1_zone_a",
+      "group": "twogo",
+      "filename": "twogo_g1_zone_a.mp4",
+      "width": 512,
+      "height": 384,
+      "shape": [
+        512,
+        384
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 268944,
+      "sha256": "30061904c9bc359cbfa11d1dc78b867fab1cfffd265318f423b3313e36954384",
+      "origin": {
+        "root": "project",
+        "path": "results/humanoid/corridor_2d/deploy/governed/twogo_zone_a/level_1/seed_2/trajectory_mujoco.gif",
+        "sha256": "e64ac0cc8483310954bde5a5b55020f02984173c1a93267f659684f4cd2c933e",
+        "source_width": 720,
+        "source_height": 540,
+        "source_duration": 45.06,
+        "crop": [
+          0,
+          0,
+          720,
+          540
+        ],
+        "start": 0.0,
+        "end": 45.06
+      }
+    },
+    {
+      "id": "twogo_g1_zone_b",
+      "group": "twogo",
+      "filename": "twogo_g1_zone_b.mp4",
+      "width": 512,
+      "height": 384,
+      "shape": [
+        512,
+        384
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 290337,
+      "sha256": "66818e92bd1df5f13868e3933d3feb2d9981abf0e0a035c72996cec6f0e13b89",
+      "origin": {
+        "root": "project",
+        "path": "results/humanoid/corridor_2d/deploy/governed/twogo_zone_b/level_1/seed_2/trajectory_mujoco.gif",
+        "sha256": "a056ceed21684211c7f5b10aafc8c32d7f2fc350e2e47f6f14c9f88dd6f4153a",
+        "source_width": 720,
+        "source_height": 540,
+        "source_duration": 45.06,
+        "crop": [
+          0,
+          0,
+          720,
+          540
+        ],
+        "start": 0.0,
+        "end": 45.06
+      }
+    },
+    {
+      "id": "twogo_g1_zone_c",
+      "group": "twogo",
+      "filename": "twogo_g1_zone_c.mp4",
+      "width": 512,
+      "height": 384,
+      "shape": [
+        512,
+        384
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 254448,
+      "sha256": "78796883b6fe7974ca5efaa4e5cf5f3c872dd9285ee7a247c2db53f5b691c124",
+      "origin": {
+        "root": "project",
+        "path": "results/humanoid/corridor_2d/deploy/governed/twogo_zone_c/level_1/seed_2/trajectory_mujoco.gif",
+        "sha256": "da198097e194c711b1a79db0f0291be513d8346c6785d8dd4171771f16a2f5a2",
+        "source_width": 720,
+        "source_height": 540,
+        "source_duration": 34.56,
+        "crop": [
+          0,
+          0,
+          720,
+          540
+        ],
+        "start": 0.0,
+        "end": 34.56
+      }
+    },
+    {
+      "id": "twogo_g1_zone_d",
+      "group": "twogo",
+      "filename": "twogo_g1_zone_d.mp4",
+      "width": 512,
+      "height": 384,
+      "shape": [
+        512,
+        384
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 283583,
+      "sha256": "97f11b8d26cc4ab5adc9f94144bb43a4c5ceb4dc37cb90bfd77788b503d2af98",
+      "origin": {
+        "root": "project",
+        "path": "results/humanoid/corridor_2d/deploy/governed/twogo_zone_d/level_1/seed_2/trajectory_mujoco.gif",
+        "sha256": "344c1c9f5b54a2759d9d4d243bd1d64aa30fc73a95f9d16aebd63d2bad08128c",
+        "source_width": 720,
+        "source_height": 540,
+        "source_duration": 39.06,
+        "crop": [
+          0,
+          0,
+          720,
+          540
+        ],
+        "start": 0.0,
+        "end": 39.06
+      }
+    },
+    {
+      "id": "mga_surface_rigid_plane",
+      "group": "mga",
+      "filename": "mga_surface_rigid_plane.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 70212,
+      "sha256": "c1bc7ed660dcec7a0a1e1cde809e38f43a6a039706345b9d4775310a9cde5306",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_rigid_plane.gif",
+        "sha256": "f75752955086a489738da6fffe6d582de317a2d37d0fbe122a1b040e5c483a83",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_surface_rigid_convex",
+      "group": "mga",
+      "filename": "mga_surface_rigid_convex.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 75185,
+      "sha256": "dc7eefaa7b5a62167c0b5128702edf4f94aabf7348150b3315c8a2a685949161",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_rigid_convex.gif",
+        "sha256": "64ecfba6dc5bf9d35683028bd5d41e709dd95717b17c68c8411ddccf5b0d65f6",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_surface_rigid_cylinder",
+      "group": "mga",
+      "filename": "mga_surface_rigid_cylinder.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 70653,
+      "sha256": "1d8843a91e7cee7b850179d7a0534a3fa293c67b45aa4097a2183b4ebd296be3",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_rigid_cylinder.gif",
+        "sha256": "54fff41717232bce85268c80e5da45a67f0f59ef18849bda222a6775c913b4db",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_surface_rigid_bumpy",
+      "group": "mga",
+      "filename": "mga_surface_rigid_bumpy.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 75202,
+      "sha256": "43205f3eeecba5c35024076f2a4fb10ad7e3ede56c427b84f7a5bf12f26e81e7",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_rigid_bumpy.gif",
+        "sha256": "3af76c6ee5068c624ae671ff7998325823b02154a8bb58c91aaa7d26b990e270",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_surface_soft_plane",
+      "group": "mga",
+      "filename": "mga_surface_soft_plane.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 70406,
+      "sha256": "2bcdbf73ae38769a512ec34f5b4820a720c72d44db5845dbf5748fd301b8423f",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_soft_plane.gif",
+        "sha256": "d66e014ca77fe122d0d16f0ba3fc35b3835b6b959208e2ce8d6dc849c567a816",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_surface_soft_convex",
+      "group": "mga",
+      "filename": "mga_surface_soft_convex.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 74447,
+      "sha256": "d9a82cbf55aeae5527f4ff3496422b908e7d20aa7bbb5e4fb5c2426627f8cf80",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_soft_convex.gif",
+        "sha256": "cd7c549348d76aef0dbf82f92b5f331ee5b56f3d62689b6690c338e2b4a1e6de",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_surface_soft_cylinder",
+      "group": "mga",
+      "filename": "mga_surface_soft_cylinder.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 70293,
+      "sha256": "34dc967dc1825df063395d2f3c1f7bc06dd4bd665eae49b80c3d0e0766e80939",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_soft_cylinder.gif",
+        "sha256": "90b46c16d73de6827edfa71eb48fc0fcd64119a4197dddf1964ac776c870c84f",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_surface_soft_bumpy",
+      "group": "mga",
+      "filename": "mga_surface_soft_bumpy.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 75855,
+      "sha256": "c408e59df187e4c1da393634959a4f589ffb95e0a7ff0c2a56d12e30a1615ba6",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_soft_bumpy.gif",
+        "sha256": "e8ac2c6f56addd049c91aebf6ae8c330ab8edf18c0e052486619c1a0eaa4949c",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_surface_soft_unseen",
+      "group": "mga",
+      "filename": "mga_surface_soft_unseen.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 65446,
+      "sha256": "8a1953c0ed829da3fca45dcc1e05f176d01221254967fc340ee3227ac2840d94",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_soft_unseen.gif",
+        "sha256": "53c8487d8be42eee8d69c333dbe501130f3a015dbe9197c40595e59e4a69c185",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_surface_hybrid_center_hard",
+      "group": "mga",
+      "filename": "mga_surface_hybrid_center_hard.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 73987,
+      "sha256": "caefe00abe5425fda0a00408bd65bba386c4498c620142c5365dcd466cde8f20",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_hybrid_center_hard.gif",
+        "sha256": "ee13f04f251342455f4193808d0656f1319ecf95933a23212db2be2808a6f466",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_surface_hybrid_center_soft",
+      "group": "mga",
+      "filename": "mga_surface_hybrid_center_soft.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 73214,
+      "sha256": "f7bf4d25708bf572821f10dff4c41648f236f06c0a3cde531106255c4fa8da9f",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_hybrid_center_soft.gif",
+        "sha256": "c9d5dcf8beaadaa20bb86fead79cfdec14dd9ea82af34b0b245d48229c33d0dd",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_surface_hybrid_stripes",
+      "group": "mga",
+      "filename": "mga_surface_hybrid_stripes.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 72058,
+      "sha256": "97f81b08501d566c2e6b62235901b8ffe1d834ab7b14f6f991ceb84c366e120a",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_surface_hybrid_stripes.gif",
+        "sha256": "218a614e1cd417365ff031d0a0aa2cca179534a547d16e299881e9df6f7b147d",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_peg_id_wide",
+      "group": "mga",
+      "filename": "mga_peg_id_wide.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 63330,
+      "sha256": "4110918bd1f50196141c0e58f6318db4db622137233023491171ca4cb8d317de",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_peg_id_wide.gif",
+        "sha256": "dd5c48babb3b9dcef1abbfe95d5bc460b21344baf39022ca77972603f5158561",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.08,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.08
+      }
+    },
+    {
+      "id": "mga_peg_ood_pose",
+      "group": "mga",
+      "filename": "mga_peg_ood_pose.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 66365,
+      "sha256": "78810a217a601f20aa80fa854c72cfb35d97c9e1240552cedd1e1fb4a4ae4664",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_peg_ood_pose.gif",
+        "sha256": "8f1e7f0eacc0285fe3acfdd174ff274e1830b7612ae1d49e93b033305b542e91",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.08,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.08
+      }
+    },
+    {
+      "id": "mga_peg_ood_sensing",
+      "group": "mga",
+      "filename": "mga_peg_ood_sensing.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 63730,
+      "sha256": "dba53cf77cacbe6ffc82d6b81d7fd4aa0731ce6dc1e14f471402a8a177fac628",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_peg_ood_sensing.gif",
+        "sha256": "c8beac6e50636bb70f148b911098c96576313177676945677af4fbb6ab0da14f",
+        "source_width": 870,
+        "source_height": 628,
+        "source_duration": 2.08,
+        "crop": [
+          0,
+          0,
+          870,
+          580
+        ],
+        "start": 0.0,
+        "end": 2.08
+      }
+    },
+    {
+      "id": "mga_humanoid_force_regulation",
+      "group": "mga",
+      "filename": "mga_humanoid_force_regulation.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 58845,
+      "sha256": "ec324dcf2bfa7bd4e8f9859d023fe19d33c28c4a61fdac453da624c6daff3443",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_humanoid_force_regulation.gif",
+        "sha256": "edb1eef3a8e915e56b79ad4a5effee057539388c29ea2a91cd9ec5a9705b683e",
+        "source_width": 810,
+        "source_height": 588,
+        "source_duration": 2.8,
+        "crop": [
+          0,
+          0,
+          810,
+          540
+        ],
+        "start": 0.0,
+        "end": 2.8
+      }
+    },
+    {
+      "id": "mga_humanoid_fixed_stance_push",
+      "group": "mga",
+      "filename": "mga_humanoid_fixed_stance_push.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 52572,
+      "sha256": "d6aef1149ff987316f24f5b9079098ad828e057c934a2850f84311ea609e64d5",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_humanoid_fixed_stance_push.gif",
+        "sha256": "5e0128d0296e39db0643d17f7d759cabf53ea0997fbb15bcc87a0c05ef889744",
+        "source_width": 810,
+        "source_height": 588,
+        "source_duration": 1.54,
+        "crop": [
+          0,
+          0,
+          810,
+          540
+        ],
+        "start": 0.0,
+        "end": 1.54
+      }
+    },
+    {
+      "id": "mga_humanoid_unjamming",
+      "group": "mga",
+      "filename": "mga_humanoid_unjamming.mp4",
+      "width": 512,
+      "height": 342,
+      "shape": [
+        512,
+        342
+      ],
+      "duration": 6.0,
+      "normalized_duration": 6.0,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 54354,
+      "sha256": "94affa4fcc1ac2970a29a1cd9b7795a00839da3954f8559431cc5eb63efc6b09",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "gifs/mga_humanoid_unjamming.gif",
+        "sha256": "365b0a7e758d029071da70e50ad73af9a1f93fc01f93e9b67d19feef592ced87",
+        "source_width": 810,
+        "source_height": 588,
+        "source_duration": 2.12,
+        "crop": [
+          0,
+          0,
+          810,
+          540
+        ],
+        "start": 0.0,
+        "end": 2.12
+      }
+    },
+    {
+      "id": "hardware_twogo_g1",
+      "group": "hardware",
+      "filename": "hardware_twogo_g1.mp4",
+      "width": 640,
+      "height": 598,
+      "shape": [
+        640,
+        598
+      ],
+      "duration": 8.0,
+      "normalized_duration": 8,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 607170,
+      "sha256": "080075de2699f7aab46aebaef26e48db1ad9176d9fdd64e247a93588bbcb25d6",
+      "origin": {
+        "root": "ral_submission",
+        "path": "video/2go.mp4",
+        "sha256": "8aeafcd34f94493203f861d4ee1b578dea2ca0074052623ff1a5dfffd4d8a72e",
+        "source_width": 1920,
+        "source_height": 1080,
+        "source_duration": 136.27,
+        "crop": [
+          400,
+          80,
+          1310,
+          930
+        ],
+        "start": 92,
+        "end": 102
+      }
+    },
+    {
+      "id": "hardware_mga_surface_foam",
+      "group": "hardware",
+      "filename": "hardware_mga_surface_foam.mp4",
+      "width": 510,
+      "height": 640,
+      "shape": [
+        510,
+        640
+      ],
+      "duration": 8.0,
+      "normalized_duration": 8,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 225466,
+      "sha256": "a3a5bcdd88f3862fa89458c12fe175ad7b1eb265529d5ba3d71b2a09534c800e",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "videos/deployment.mp4",
+        "sha256": "b2a820ec5c1ecb32f30bdd138b4fd5485480a4eb0822bc743b76f3ae0439c8a6",
+        "source_width": 2160,
+        "source_height": 2160,
+        "source_duration": 44.6,
+        "crop": [
+          80,
+          160,
+          710,
+          950
+        ],
+        "start": 12,
+        "end": 24
+      }
+    },
+    {
+      "id": "hardware_mga_peg_insert",
+      "group": "hardware",
+      "filename": "hardware_mga_peg_insert.mp4",
+      "width": 492,
+      "height": 640,
+      "shape": [
+        492,
+        640
+      ],
+      "duration": 8.0,
+      "normalized_duration": 8,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 284131,
+      "sha256": "9a30daec445342abb3187f55ddad170ca10012d50ea8b2452fabb608c44a7d1e",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "videos/deployment.mp4",
+        "sha256": "b2a820ec5c1ecb32f30bdd138b4fd5485480a4eb0822bc743b76f3ae0439c8a6",
+        "source_width": 2160,
+        "source_height": 2160,
+        "source_duration": 44.6,
+        "crop": [
+          1560,
+          160,
+          2160,
+          940
+        ],
+        "start": 12,
+        "end": 24
+      }
+    },
+    {
+      "id": "hardware_mga_surface_curved",
+      "group": "hardware",
+      "filename": "hardware_mga_surface_curved.mp4",
+      "width": 606,
+      "height": 640,
+      "shape": [
+        606,
+        640
+      ],
+      "duration": 8.0,
+      "normalized_duration": 8,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 312232,
+      "sha256": "7c0cb1f82574f7993ea67acf0d4b719582332d6c9f4714241c1ea5db9babda11",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "videos/deployment.mp4",
+        "sha256": "b2a820ec5c1ecb32f30bdd138b4fd5485480a4eb0822bc743b76f3ae0439c8a6",
+        "source_width": 2160,
+        "source_height": 2160,
+        "source_duration": 44.6,
+        "crop": [
+          350,
+          1240,
+          1080,
+          2010
+        ],
+        "start": 12,
+        "end": 24
+      }
+    },
+    {
+      "id": "hardware_mga_surface_rigid",
+      "group": "hardware",
+      "filename": "hardware_mga_surface_rigid.mp4",
+      "width": 550,
+      "height": 640,
+      "shape": [
+        550,
+        640
+      ],
+      "duration": 8.0,
+      "normalized_duration": 8,
+      "fps": 12,
+      "codec": "h264",
+      "bytes": 303578,
+      "sha256": "71f1a03493db9a82a23d81d4cf92f77d5e5ba5b3070cc51b8e72f3326f1ecf73",
+      "origin": {
+        "root": "mga_supplement",
+        "path": "videos/deployment.mp4",
+        "sha256": "b2a820ec5c1ecb32f30bdd138b4fd5485480a4eb0822bc743b76f3ae0439c8a6",
+        "source_width": 2160,
+        "source_height": 2160,
+        "source_duration": 44.6,
+        "crop": [
+          1100,
+          1240,
+          1770,
+          2020
+        ],
+        "start": 12,
+        "end": 24
+      }
+    }
+  ]
+}

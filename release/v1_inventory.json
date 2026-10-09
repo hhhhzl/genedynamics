@@ -2,8 +2,8 @@
   "release": "0.1.0",
   "schema_version": 1,
   "source": {
-    "bytes": 141378818,
-    "file_count": 1614,
+    "bytes": 152727794,
+    "file_count": 1653,
     "files_by_root": {
       ".dockerignore": 1,
       ".github": 2,
@@ -18,7 +18,8 @@
       "assets": 1,
       "configs": 114,
       "docker": 8,
-      "docs": 34,
+      "docs": 71,
+      "examples": 1,
       "genedynamics": 821,
       "mkdocs.yml": 1,
       "pyproject.toml": 1,
@@ -26,7 +27,7 @@
       "release": 2,
       "requirements": 6,
       "requirements.txt": 1,
-      "scripts": 64,
+      "scripts": 65,
       "setup.py": 1,
       "test": 78,
       "third_party": 470
@@ -38,20 +39,20 @@
       ".dockerfile": 1,
       ".example": 1,
       ".fbs": 1,
-      ".gif": 4,
+      ".gif": 1,
       ".gin": 4,
       ".html": 2,
       ".ini": 1,
       ".json": 8,
-      ".md": 61,
-      ".mp4": 1,
+      ".md": 64,
+      ".mp4": 42,
       ".mtl": 3,
       ".npy": 2,
       ".npz": 1,
       ".obj": 147,
       ".png": 9,
       ".pt": 1,
-      ".py": 1017,
+      ".py": 1019,
       ".sh": 18,
       ".stl": 65,
       ".svg": 1,
@@ -60,7 +61,6 @@
       ".ts": 9,
       ".txt": 10,
       ".urdf": 3,
-      ".webp": 4,
       ".xml": 80,
       ".yaml": 119,
       ".yml": 7,
@@ -68,6 +68,10 @@
     },
     "forbidden_v1_paths": [],
     "large_files_10mib": [
+      {
+        "bytes": 20464912,
+        "path": "docs/assets/showcase.gif"
+      },
       {
         "bytes": 11559384,
         "path": "third_party/environments/d3il/models/mj/robot/assets/d435v.stl"
@@ -89,62 +93,232 @@
         "sha256": "8af186119358c31d0d965f8c3fc4a22cff378481bc82e729cd0629ed9cb1b381"
       },
       {
-        "bytes": 269512,
-        "path": "docs/assets/d3il_avoiding.gif",
-        "sha256": "a1b56437429c9275a060c932be9c71ad6dc49ee5e6e802a2dd4eb60b1281ecbd"
-      },
-      {
-        "bytes": 2049839,
-        "path": "docs/assets/mga_peg_insert.gif",
-        "sha256": "dd5c48babb3b9dcef1abbfe95d5bc460b21344baf39022ca77972603f5158561"
-      },
-      {
-        "bytes": 2315341,
-        "path": "docs/assets/mga_surface_scan.gif",
-        "sha256": "218a614e1cd417365ff031d0a0aa2cca179534a547d16e299881e9df6f7b147d"
-      },
-      {
-        "bytes": 472297,
+        "bytes": 973265,
         "path": "docs/assets/showcase-poster.png",
-        "sha256": "3f2511c5fd1cbbca840c9709617592510dd9b3a3269fc8a82fddda06332fcb60"
+        "sha256": "82a2a112b8f75cd8c6dcb55c1b4d1a4617885c4094b29eec1e5c3006e3eba3fb"
       },
       {
-        "bytes": 9420060,
+        "bytes": 20464912,
         "path": "docs/assets/showcase.gif",
-        "sha256": "2726702436fd22b09fa154599718b96d6e041ebc7c2e4d6f266b5d656677324a"
+        "sha256": "22276999860eb06ab8bc122907d7819b583643000465681c24cd21a730701e85"
       },
       {
-        "bytes": 1914004,
+        "bytes": 6410647,
         "path": "docs/assets/showcase.mp4",
-        "sha256": "6886ddb75281ee8b9b22ea00f9f13392d591b7349d60fde5bc3b313bd4163d48"
+        "sha256": "142b3f6be45b7baec1900f26a0220851e3dafdcaa0d5898467b35190a1d7453d"
       },
       {
-        "bytes": 1169624,
-        "path": "docs/assets/showcase_sources/d3il_3d.webp",
-        "sha256": "b852abf0044062b32279ed6c24a803502c329551bd99f8ca2ee4c4f12e396856"
+        "bytes": 284131,
+        "path": "docs/assets/showcase_sources/v2/hardware_mga_peg_insert.mp4",
+        "sha256": "9a30daec445342abb3187f55ddad170ca10012d50ea8b2452fabb608c44a7d1e"
       },
       {
-        "bytes": 2423250,
-        "path": "docs/assets/showcase_sources/humanoid_corridor.webp",
-        "sha256": "20efddf92d3c2a32ac32dff08daf4a6fb9ec6fc8d76fcf82167f1a902b4362e9"
+        "bytes": 312232,
+        "path": "docs/assets/showcase_sources/v2/hardware_mga_surface_curved.mp4",
+        "sha256": "7c0cb1f82574f7993ea67acf0d4b719582332d6c9f4714241c1ea5db9babda11"
       },
       {
-        "bytes": 1268342,
-        "path": "docs/assets/showcase_sources/planar_diffusion.webp",
-        "sha256": "2e3b0c708f63207f3cbe738895c2fd8f53b6b42d4f123e4ef75355432cc27219"
+        "bytes": 225466,
+        "path": "docs/assets/showcase_sources/v2/hardware_mga_surface_foam.mp4",
+        "sha256": "a3a5bcdd88f3862fa89458c12fe175ad7b1eb265529d5ba3d71b2a09534c800e"
       },
       {
-        "bytes": 3031270,
-        "path": "docs/assets/showcase_sources/quadruped.webp",
-        "sha256": "802f7a4eab461ec869673ff4e037a5a221b24697056507257247adad20ead015"
+        "bytes": 303578,
+        "path": "docs/assets/showcase_sources/v2/hardware_mga_surface_rigid.mp4",
+        "sha256": "71f1a03493db9a82a23d81d4cf92f77d5e5ba5b3070cc51b8e72f3326f1ecf73"
+      },
+      {
+        "bytes": 607170,
+        "path": "docs/assets/showcase_sources/v2/hardware_twogo_g1.mp4",
+        "sha256": "080075de2699f7aab46aebaef26e48db1ad9176d9fdd64e247a93588bbcb25d6"
+      },
+      {
+        "bytes": 476327,
+        "path": "docs/assets/showcase_sources/v2/mdcoas_2d_l10.mp4",
+        "sha256": "b363ca1141d90f45085aa660603d0a45737853857957cdb4eb17c42f4d64a7ea"
+      },
+      {
+        "bytes": 463303,
+        "path": "docs/assets/showcase_sources/v2/mdcoas_2d_l6.mp4",
+        "sha256": "c44d09bae8a916ffea847b57fc3ef39cff486d39ac99782321752fcfc398b0a6"
+      },
+      {
+        "bytes": 765236,
+        "path": "docs/assets/showcase_sources/v2/mdcoas_7dof_diffusion.mp4",
+        "sha256": "e0d2c591cd5a9b36896fe2ebe8d07b755efc06d1fa6cedaea40e33bd1c086995"
+      },
+      {
+        "bytes": 143100,
+        "path": "docs/assets/showcase_sources/v2/mdcoas_7dof_execution.mp4",
+        "sha256": "0dc1407d3a395f0974a3ca6a895e1aaef7a2cddcb9eb5abb40b84b933f05cc12"
+      },
+      {
+        "bytes": 158118,
+        "path": "docs/assets/showcase_sources/v2/mdoc_cbs_conveyor_boundary.mp4",
+        "sha256": "5ce0b87e14c5e06e7b15c9fe322b409abe78c7c7b9cc74c294e9f577af0afd84"
+      },
+      {
+        "bytes": 178850,
+        "path": "docs/assets/showcase_sources/v2/mdoc_cbs_dropregion_boundary.mp4",
+        "sha256": "a8f8c2ccb6c83f6473947aa42ae3253686f45481d20ff9e37f84f2ef2bff4031"
+      },
+      {
+        "bytes": 127632,
+        "path": "docs/assets/showcase_sources/v2/mdoc_cbs_empty_large.mp4",
+        "sha256": "83ae6d7aeac48294364a741b51c856f3ee069ca7c0fba475176c04ac76f3e7e1"
+      },
+      {
+        "bytes": 128273,
+        "path": "docs/assets/showcase_sources/v2/mdoc_cbs_random.mp4",
+        "sha256": "63c2501f2033e0d5ce3b439e7845a741db1d237f77dcdb2594cd7381a20e3517"
+      },
+      {
+        "bytes": 133382,
+        "path": "docs/assets/showcase_sources/v2/mdoc_single_conveyor.mp4",
+        "sha256": "784eb67e06aed680476863d9ea522c58752a6681a735e928465a215b073cefa2"
+      },
+      {
+        "bytes": 214415,
+        "path": "docs/assets/showcase_sources/v2/mdoc_single_narrow.mp4",
+        "sha256": "797b5c1df739b00fa45e2d82be0ca3596059c0ca642cf655684f8b322981b037"
+      },
+      {
+        "bytes": 195690,
+        "path": "docs/assets/showcase_sources/v2/mdoc_single_random.mp4",
+        "sha256": "26a2fb457171921ba40036cfa2808ca7f72d9fe62679f05499a48dc75f1c3122"
+      },
+      {
+        "bytes": 196827,
+        "path": "docs/assets/showcase_sources/v2/mdoc_single_tennis.mp4",
+        "sha256": "32a8cb2ec2e36e4acd983dc79412a2f11ee66cb94c9db26259e27c925eae1558"
+      },
+      {
+        "bytes": 52572,
+        "path": "docs/assets/showcase_sources/v2/mga_humanoid_fixed_stance_push.mp4",
+        "sha256": "d6aef1149ff987316f24f5b9079098ad828e057c934a2850f84311ea609e64d5"
+      },
+      {
+        "bytes": 58845,
+        "path": "docs/assets/showcase_sources/v2/mga_humanoid_force_regulation.mp4",
+        "sha256": "ec324dcf2bfa7bd4e8f9859d023fe19d33c28c4a61fdac453da624c6daff3443"
+      },
+      {
+        "bytes": 54354,
+        "path": "docs/assets/showcase_sources/v2/mga_humanoid_unjamming.mp4",
+        "sha256": "94affa4fcc1ac2970a29a1cd9b7795a00839da3954f8559431cc5eb63efc6b09"
+      },
+      {
+        "bytes": 63330,
+        "path": "docs/assets/showcase_sources/v2/mga_peg_id_wide.mp4",
+        "sha256": "4110918bd1f50196141c0e58f6318db4db622137233023491171ca4cb8d317de"
+      },
+      {
+        "bytes": 66365,
+        "path": "docs/assets/showcase_sources/v2/mga_peg_ood_pose.mp4",
+        "sha256": "78810a217a601f20aa80fa854c72cfb35d97c9e1240552cedd1e1fb4a4ae4664"
+      },
+      {
+        "bytes": 63730,
+        "path": "docs/assets/showcase_sources/v2/mga_peg_ood_sensing.mp4",
+        "sha256": "dba53cf77cacbe6ffc82d6b81d7fd4aa0731ce6dc1e14f471402a8a177fac628"
+      },
+      {
+        "bytes": 73987,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_hybrid_center_hard.mp4",
+        "sha256": "caefe00abe5425fda0a00408bd65bba386c4498c620142c5365dcd466cde8f20"
+      },
+      {
+        "bytes": 73214,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_hybrid_center_soft.mp4",
+        "sha256": "f7bf4d25708bf572821f10dff4c41648f236f06c0a3cde531106255c4fa8da9f"
+      },
+      {
+        "bytes": 72058,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_hybrid_stripes.mp4",
+        "sha256": "97f81b08501d566c2e6b62235901b8ffe1d834ab7b14f6f991ceb84c366e120a"
+      },
+      {
+        "bytes": 75202,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_rigid_bumpy.mp4",
+        "sha256": "43205f3eeecba5c35024076f2a4fb10ad7e3ede56c427b84f7a5bf12f26e81e7"
+      },
+      {
+        "bytes": 75185,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_rigid_convex.mp4",
+        "sha256": "dc7eefaa7b5a62167c0b5128702edf4f94aabf7348150b3315c8a2a685949161"
+      },
+      {
+        "bytes": 70653,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_rigid_cylinder.mp4",
+        "sha256": "1d8843a91e7cee7b850179d7a0534a3fa293c67b45aa4097a2183b4ebd296be3"
+      },
+      {
+        "bytes": 70212,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_rigid_plane.mp4",
+        "sha256": "c1bc7ed660dcec7a0a1e1cde809e38f43a6a039706345b9d4775310a9cde5306"
+      },
+      {
+        "bytes": 75855,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_soft_bumpy.mp4",
+        "sha256": "c408e59df187e4c1da393634959a4f589ffb95e0a7ff0c2a56d12e30a1615ba6"
+      },
+      {
+        "bytes": 74447,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_soft_convex.mp4",
+        "sha256": "d9a82cbf55aeae5527f4ff3496422b908e7d20aa7bbb5e4fb5c2426627f8cf80"
+      },
+      {
+        "bytes": 70293,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_soft_cylinder.mp4",
+        "sha256": "34dc967dc1825df063395d2f3c1f7bc06dd4bd665eae49b80c3d0e0766e80939"
+      },
+      {
+        "bytes": 70406,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_soft_plane.mp4",
+        "sha256": "2bcdbf73ae38769a512ec34f5b4820a720c72d44db5845dbf5748fd301b8423f"
+      },
+      {
+        "bytes": 65446,
+        "path": "docs/assets/showcase_sources/v2/mga_surface_soft_unseen.mp4",
+        "sha256": "8a1953c0ed829da3fca45dcc1e05f176d01221254967fc340ee3227ac2840d94"
+      },
+      {
+        "bytes": 268944,
+        "path": "docs/assets/showcase_sources/v2/twogo_g1_zone_a.mp4",
+        "sha256": "30061904c9bc359cbfa11d1dc78b867fab1cfffd265318f423b3313e36954384"
+      },
+      {
+        "bytes": 290337,
+        "path": "docs/assets/showcase_sources/v2/twogo_g1_zone_b.mp4",
+        "sha256": "66818e92bd1df5f13868e3933d3feb2d9981abf0e0a035c72996cec6f0e13b89"
+      },
+      {
+        "bytes": 254448,
+        "path": "docs/assets/showcase_sources/v2/twogo_g1_zone_c.mp4",
+        "sha256": "78796883b6fe7974ca5efaa4e5cf5f3c872dd9285ee7a247c2db53f5b691c124"
+      },
+      {
+        "bytes": 283583,
+        "path": "docs/assets/showcase_sources/v2/twogo_g1_zone_d.mp4",
+        "sha256": "97f11b8d26cc4ab5adc9f94144bb43a4c5ceb4dc37cb90bfd77788b503d2af98"
+      },
+      {
+        "bytes": 260872,
+        "path": "docs/assets/showcase_sources/v2/twogo_go2_s1.mp4",
+        "sha256": "a079903e1f6d21260860b09f16e766c2ca7a2c0d812f4a04927e6dcaaf01bafe"
+      },
+      {
+        "bytes": 262624,
+        "path": "docs/assets/showcase_sources/v2/twogo_go2_s2.mp4",
+        "sha256": "0e10c6d281cc9045353d06b6665b7086f0d28c164cc8617181e5ecffd89c451a"
       }
     ]
   },
   "wheel": {
-    "bytes": 12157082,
+    "bytes": 12158926,
     "file_count": 789,
     "forbidden_v1_paths": [],
     "path": "genedynamics-0.1.0-py3-none-any.whl",
-    "sha256": "5d3baeac60ee940f7ea294aee83d9b62dfb30c5f30de265f108eec0e60be5a65"
+    "sha256": "013d09f4cbee22e29364a2b8578807484a9eaaf6e5a205935afeefbecc4034a1"
   }
 }

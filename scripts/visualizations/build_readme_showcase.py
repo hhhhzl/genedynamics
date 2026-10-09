@@ -1,53 +1,48 @@
 #!/usr/bin/env python3
-"""Compose the README motion wall from real project renders.
+"""Build a silent, text-free paper and hardware gallery from native footage.
 
-Requires Pillow and FFmpeg (or imageio-ffmpeg). No simulator, JAX, or model
-checkpoint is needed. Input provenance is in docs/assets/showcase_sources/.
+Install Pillow, numpy and imageio-ffmpeg. The checked-in v2 inputs are sufficient
+to regenerate the animation; external paper directories are never required.
 """
-
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import shutil
 import subprocess
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-
+import numpy as np
+from PIL import Image, ImageDraw, ImageOps
 
 ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "docs/assets"
-WIDTH, HEIGHT = 1440, 914
-FPS, SECONDS = 12, 12
-BG = "#0B131D"
-PANEL = "#111F2C"
-LINE = "#2A3B49"
-INK = "#F1F5F7"
-MUTED = "#9AABB9"
-ACCENT = "#8CE4CF"
-CARD_W, CARD_H, VIEW_H = 448, 348, 278
-MARGIN, GAP, TOP = 30, 18, 120
+SOURCE = ASSETS / "showcase_sources/v2"
+SIZE = (1680, 1080)
+VIDEO_SIZE = (1344, 864)
+FPS = 12
+SECONDS = 24
+BG = "#0B1018"
+PANEL = "#141D27"
 
-
-def font(size: int, bold: bool = False, mono: bool = False) -> ImageFont.FreeTypeFont:
-    """Use a local font, with portable macOS/Linux fallbacks."""
-    candidates = (
-        [
-            "/System/Library/Fonts/Menlo.ttc",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-            "/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf",
-        ]
-        if mono else
-        [
-            f"/System/Library/Fonts/Supplemental/Arial{' Bold' if bold else ''}.ttf",
-            f"/usr/share/fonts/truetype/dejavu/DejaVuSans{'-Bold' if bold else ''}.ttf",
-            f"/usr/share/fonts/truetype/liberation2/LiberationSans-{'Bold' if bold else 'Regular'}.ttf",
-        ]
-    )
-    for path in candidates:
-        if Path(path).exists():
-            return ImageFont.truetype(path, size)
-    raise RuntimeError("Install Arial, DejaVu Sans, or Liberation Sans to render the showcase.")
+# A camera travels across one continuous gallery. Wider gutters distinguish
+# paper groups without putting labels, legends or graphics over the footage.
+CAMERA = [
+    (0.0, 336, 162, 640),
+    (1.8, 336, 162, 640),
+    (3.5, 1172, 162, 1000),
+    (5.8, 1172, 162, 1000),
+    (7.1, 336, 490, 700),
+    (9.2, 336, 490, 700),
+    (10.5, 1172, 490, 1000),
+    (12.8, 1172, 490, 1000),
+    (14.1, 450, 872, 880),
+    (16.4, 1230, 872, 880),
+    (18.4, 840, 540, 1680),
+    (22.2, 840, 540, 1680),
+    (24.0, 336, 162, 640),
+]
 
 
 def ffmpeg_executable() -> str:
@@ -58,172 +53,168 @@ def ffmpeg_executable() -> str:
         import imageio_ffmpeg
         return imageio_ffmpeg.get_ffmpeg_exe()
     except ImportError as exc:
-        raise RuntimeError("Install FFmpeg or `pip install imageio-ffmpeg`.") from exc
+        raise RuntimeError("Install FFmpeg or imageio-ffmpeg.") from exc
 
 
 class Clip:
-    def __init__(self, path: Path, crop: tuple[int, int, int, int] | None = None):
-        self.frames = []
-        with Image.open(path) as source:
-            for index in range(source.n_frames):
-                source.seek(index)
-                frame = source.convert("RGB")
-                if crop:
-                    frame = frame.crop(crop)
-                self.frames.append(frame)
+    def __init__(self, metadata: dict, binary: str):
+        self.metadata = metadata
+        path = SOURCE / metadata["filename"]
+        if hashlib.sha256(path.read_bytes()).hexdigest() != metadata["sha256"]:
+            raise ValueError(f"Source checksum mismatch: {path.name}")
+        self.fps = 8
+        limit = 480 if metadata["group"] == "hardware" else 384
+        ratio = min(1.0, limit / max(metadata["width"], metadata["height"]))
+        self.width = round(metadata["width"] * ratio)
+        self.height = round(metadata["height"] * ratio)
+        data = subprocess.run([
+            binary, "-v", "error", "-i", str(path), "-an", "-vf",
+            f"fps={self.fps},scale={self.width}:{self.height}:flags=lanczos",
+            "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+        ], check=True, capture_output=True).stdout
+        self.frames = np.frombuffer(data, dtype=np.uint8).reshape(
+            -1, self.height, self.width, 3
+        )
 
-    def at(self, phase: float, size: tuple[int, int], *, contain: bool = False) -> Image.Image:
-        index = min(int(phase * len(self.frames)), len(self.frames) - 1)
-        frame = self.frames[index]
-        if contain:
-            return ImageOps.contain(frame, size, Image.Resampling.LANCZOS)
-        return ImageOps.fit(frame, size, Image.Resampling.LANCZOS)
-
-
-def plot_style(frame: Image.Image) -> Image.Image:
-    """Map the source plot's white/gray/blue/red palette into the motion wall.
-
-    Positions, trajectories, obstacles, and goals remain those of the source
-    image. This only changes the display palette; it never re-renders motion.
-    """
-    rgb = frame.convert("RGB")
-    # The source plots use a white background, gray geometry, blue trajectories,
-    # and red goal/obstacle markers. A lookup table preserves their distinctions.
-    pixels = rgb.load()
-    for y in range(rgb.height):
-        for x in range(rgb.width):
-            r, g, b = pixels[x, y]
-            if r > 240 and g > 240 and 185 < b < 240:
-                pixels[x, y] = (17, 31, 44)
-            elif max(r, g, b) - min(r, g, b) < 14:
-                weight = (255 - r) / 255
-                pixels[x, y] = tuple(round(a + weight * (z - a)) for a, z in zip((17, 31, 44), (125, 149, 165)))
-            elif b > r and b > g:
-                weight = min(1, (255 - r) / 170)
-                pixels[x, y] = tuple(round(a + weight * (z - a)) for a, z in zip((17, 31, 44), (140, 228, 207)))
-            elif r > g * 1.25:
-                pixels[x, y] = (244, 171, 120)
-    return rgb
+    def at(self, seconds: float) -> Image.Image:
+        index = int(seconds * self.fps) % len(self.frames)
+        return Image.fromarray(self.frames[index])
 
 
-def layout() -> Image.Image:
-    canvas = Image.new("RGB", (WIDTH, HEIGHT), BG)
-    d = ImageDraw.Draw(canvas)
-    d.text((MARGIN, 25), "GENERATIVEDYNAMICS", font=font(14, mono=True), fill=ACCENT)
-    d.text((MARGIN - 1, 49), "From planning to control.", font=font(39, bold=True), fill=INK)
-    d.text((1040, 31), "SIX TASKS", font=font(13, mono=True), fill=MUTED)
-    d.text((1040, 54), "ONE MODULAR STACK", font=font(17, bold=True), fill=INK)
-    # A small trajectory glyph creates a recognizable mark without a decorative
-    # logo asset or a synthetic robot image.
-    for offset in (0, 10, 20):
-        pts = [(1358 + offset // 3, 76), (1364 + offset // 2, 62), (1382, 58 - offset // 2), (1395 + offset // 2, 33)]
-        d.line(pts, fill=ACCENT if offset == 10 else LINE, width=2)
-    d.ellipse((1395, 27, 1401, 33), fill=ACCENT)
-
-    labels = [
-        ("Compliant surface scanning", "MGA  /  GEOMETRY + FORCE"),
-        ("Contact-rich peg insertion", "MGA  /  CONTACT CONTROL"),
-        ("Obstacle avoidance", "EB-MBD  /  D3IL"),
-        ("Multi-modal foothold planning", "2GO  /  QUADRUPED"),
-        ("Constrained corridor motion", "2GO  /  HUMANOID"),
-        ("Generative trajectory planning", "MBD  /  NON-CONVEX SCENES"),
-    ]
-    for index, (title, detail) in enumerate(labels):
-        col, row = index % 3, index // 3
-        x, y = MARGIN + col * (CARD_W + GAP), TOP + row * (CARD_H + GAP)
-        d.rounded_rectangle((x, y, x + CARD_W - 1, y + CARD_H - 1), radius=12, fill=PANEL, outline=LINE, width=1)
-        d.text((x + 17, y + VIEW_H + 13), title, font=font(22, bold=True), fill=INK)
-        d.text((x + 18, y + VIEW_H + 43), detail, font=font(12, mono=True), fill=MUTED)
-    d.line((MARGIN, 860, WIDTH - MARGIN, 860), fill=LINE, width=1)
-    d.text((MARGIN, 878), "PLAN  /  CONSTRAIN  /  EXECUTE", font=font(12, mono=True), fill=ACCENT)
-    d.text((934, 878), "PROJECT RENDERS  ·  PLAYBACK RESCALED", font=font(11, mono=True), fill=MUTED)
-    return canvas
+def grid(ids: list[str], box: tuple[int, int, int, int], columns: int,
+         gap: int = 8) -> list[tuple[str, tuple[int, int, int, int]]]:
+    x, y, width, height = box
+    rows = (len(ids) + columns - 1) // columns
+    tile_w = (width - gap * (columns - 1)) / columns
+    tile_h = (height - gap * (rows - 1)) / rows
+    return [(name, (round(x + i % columns * (tile_w + gap)),
+                    round(y + i // columns * (tile_h + gap)),
+                    round(tile_w), round(tile_h)))
+            for i, name in enumerate(ids)]
 
 
-def compose(clips: list[Clip], inset: Clip, phase: float, base: Image.Image) -> Image.Image:
+def layout(manifest: dict) -> tuple[Image.Image, list]:
+    groups = {group["id"]: group["clips"] for group in manifest["groups"]}
+    metadata = {clip["id"]: clip for clip in manifest["clips"]}
+    base = Image.new("RGB", SIZE, BG)
+    draw = ImageDraw.Draw(base)
+    boxes = [(16, 16, 640, 292), (680, 16, 984, 292),
+             (16, 332, 640, 324), (680, 332, 984, 324),
+             (16, 680, 1648, 384)]
+    for x, y, width, height in boxes:
+        draw.rounded_rectangle((x, y, x + width - 1, y + height - 1),
+                               radius=7, fill=PANEL)
+    tiles = grid(groups["mdoc"], (22, 22, 628, 280), 4)
+    # The wide 3D scene gets more space than each square diffusion view.
+    x = 686
+    for name, width in zip(groups["mdcoas"], [220, 220, 224, 284]):
+        tiles.append((name, (x, 22, width, 280)))
+        x += width + 8
+    tiles += grid(groups["twogo"][:2], (22, 338, 628, 178), 2)
+    tiles += grid(groups["twogo"][2:], (22, 524, 628, 126), 4)
+    tiles += grid(groups["mga"], (686, 338, 972, 312), 6)
+    # Use the complete clean crops, preserving the portrait camera geometry.
+    aspect = [metadata[name]["width"] / metadata[name]["height"]
+              for name in groups["hardware"]]
+    height = min(372, (1636 - 8 * (len(aspect) - 1)) / sum(aspect))
+    widths = [round(height * value) for value in aspect]
+    x = 22 + (1636 - sum(widths) - 8 * (len(widths) - 1)) // 2
+    y = 686 + round((372 - height) / 2)
+    for name, width in zip(groups["hardware"], widths):
+        tiles.append((name, (x, y, width, round(height))))
+        x += width + 8
+    return base, tiles
+
+
+def gallery(clips: dict, tiles: list, base: Image.Image, seconds: float) -> Image.Image:
     canvas = base.copy()
-    for index, clip in enumerate(clips):
-        col, row = index % 3, index // 3
-        x, y = MARGIN + col * (CARD_W + GAP), TOP + row * (CARD_H + GAP)
-        # The contact clips play twice per wall cycle, with a short final hold.
-        local_phase = min((phase * 2) % 1 / .86, 1) if index < 2 else phase
-        view = clip.at(local_phase, (CARD_W - 2, VIEW_H - 1), contain=index == 5)
-        if index == 5:
-            view = plot_style(view)
-            scene = Image.new("RGB", (CARD_W - 2, VIEW_H - 1), PANEL)
-            scene.paste(view, ((scene.width - view.width) // 2, 0))
-            view = scene
-            # Quiet dashed guide lines fill the wide plot panel without changing
-            # the original data extent or implying a different trajectory.
-            guide = ImageDraw.Draw(view)
-            guide.text((17, 19), "NOISE", font=font(10, mono=True), fill=MUTED)
-            guide.text((336, 235), "MOTION", font=font(10, mono=True), fill=ACCENT)
-        if index == 2:
-            # Both views come from EB-MBD / level_0 / seed_0. The independently
-            # sampled source renders show the same run, not synchronized clocks.
-            mini = inset.at(phase, (101, 117), contain=True)
-            mini = plot_style(mini)
-            box = Image.new("RGB", (111, 142), PANEL)
-            box.paste(mini, ((111 - mini.width) // 2, 6))
-            md = ImageDraw.Draw(box)
-            md.text((8, 125), "2D VIEW", font=font(9, mono=True), fill=ACCENT)
-            md.rounded_rectangle((0, 0, 110, 141), radius=6, outline=LINE)
-            view.paste(box, (view.width - box.width - 12, 12))
+    for name, (x, y, width, height) in tiles:
+        view = ImageOps.contain(clips[name].at(seconds), (width, height),
+                                Image.Resampling.LANCZOS)
         mask = Image.new("L", view.size, 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, view.width, view.height + 12), radius=11, fill=255)
-        canvas.paste(view, (x + 1, y + 1), mask)
+        ImageDraw.Draw(mask).rounded_rectangle(
+            (0, 0, view.width - 1, view.height - 1), radius=3, fill=255
+        )
+        canvas.paste(view, (x + (width - view.width) // 2,
+                            y + (height - view.height) // 2), mask)
     return canvas
 
 
-def build(output: Path, gif_width: int, gif_fps: int) -> None:
+def viewport(seconds: float) -> tuple[float, float, float, float]:
+    for start, end in zip(CAMERA, CAMERA[1:]):
+        if start[0] <= seconds <= end[0]:
+            phase = (seconds - start[0]) / (end[0] - start[0])
+            weight = phase**3 * (phase * (phase * 6 - 15) + 10)
+            cx, cy, width = [a + (b - a) * weight
+                             for a, b in zip(start[1:], end[1:])]
+            height = width * SIZE[1] / SIZE[0]
+            left = min(max(cx - width / 2, 0), SIZE[0] - width)
+            top = min(max(cy - height / 2, 0), SIZE[1] - height)
+            return left, top, left + width, top + height
+    raise ValueError(f"No camera keyframe for {seconds}")
+
+
+def camera(canvas: Image.Image, seconds: float) -> Image.Image:
+    return canvas.transform(VIDEO_SIZE, Image.Transform.EXTENT, viewport(seconds),
+                            Image.Resampling.BICUBIC)
+
+
+def build(output: Path, gif_width: int, gif_fps: int, preview_only: bool) -> None:
     binary = ffmpeg_executable()
-    source_dir = ASSETS / "showcase_sources"
-    clips = [
-        Clip(ASSETS / "mga_surface_scan.gif", (0, 0, 870, 580)),
-        Clip(ASSETS / "mga_peg_insert.gif", (0, 0, 870, 580)),
-        Clip(source_dir / "d3il_3d.webp"),
-        Clip(source_dir / "quadruped.webp"),
-        Clip(source_dir / "humanoid_corridor.webp"),
-        Clip(source_dir / "planar_diffusion.webp"),
-    ]
-    inset = Clip(ASSETS / "d3il_avoiding.gif", (17, 18, 531, 609))
-    base = layout()
+    manifest = json.loads((SOURCE / "manifest.json").read_text())
+    clips = {item["id"]: Clip(item, binary) for item in manifest["clips"]}
+    base, tiles = layout(manifest)
     output.mkdir(parents=True, exist_ok=True)
+    poster = gallery(clips, tiles, base, 20)
+    poster.resize(VIDEO_SIZE, Image.Resampling.LANCZOS).save(
+        output / "showcase-poster.png", optimize=True
+    )
+    if preview_only:
+        # A contact sheet for checking the camera journey, never embedded in
+        # the shipped animation. It contains no added text either.
+        sheet = Image.new("RGB", (1344, 1296), BG)
+        for index, seconds in enumerate([1, 4.5, 8, 11.5, 14.5, 20]):
+            frame = camera(gallery(clips, tiles, base, seconds), seconds)
+            sheet.paste(frame.resize((672, 432), Image.Resampling.LANCZOS),
+                        (index % 2 * 672, index // 2 * 432))
+        sheet.save(output / "camera-preview.jpg", quality=92)
+        print(f"Preview: {output}", flush=True)
+        return
     video = output / "showcase.mp4"
     process = subprocess.Popen([
         binary, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
-        "-s", f"{WIDTH}x{HEIGHT}", "-r", str(FPS), "-i", "-", "-an",
-        "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p",
+        "-s", f"{VIDEO_SIZE[0]}x{VIDEO_SIZE[1]}", "-r", str(FPS), "-i", "-", "-an",
+        "-c:v", "libx264", "-preset", "slow", "-crf", "19", "-pix_fmt", "yuv420p",
         "-movflags", "+faststart", str(video),
     ], stdin=subprocess.PIPE)
     try:
         for index in range(FPS * SECONDS):
-            canvas = compose(clips, inset, index / (FPS * SECONDS), base)
-            if index == FPS * 5:
-                canvas.save(output / "showcase-poster.png", optimize=True)
-            process.stdin.write(canvas.tobytes())
-            if index % FPS == 0:
-                print(f"Composed {index // FPS + 1}/{SECONDS} seconds", flush=True)
+            seconds = index / FPS
+            frame = camera(gallery(clips, tiles, base, seconds), seconds)
+            process.stdin.write(frame.tobytes())
+            if index % (FPS * 4) == 0:
+                print(f"Composed {index // FPS}/{SECONDS} seconds", flush=True)
     finally:
         process.stdin.close()
     if process.wait() != 0:
         raise RuntimeError("FFmpeg video export failed.")
     subprocess.run([
-        binary, "-y", "-loglevel", "error", "-i", str(video),
-        "-filter_complex",
+        binary, "-y", "-loglevel", "error", "-i", str(video), "-filter_complex",
         f"fps={gif_fps},scale={gif_width}:-1:flags=lanczos,split[a][b];"
-        "[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3",
+        "[a]palettegen=stats_mode=full[p];"
+        "[b][p]paletteuse=dither=bayer:bayer_scale=3",
         "-loop", "0", str(output / "showcase.gif"),
     ], check=True)
     for name in ("showcase.gif", "showcase.mp4", "showcase-poster.png"):
         path = output / name
-        print(f"{path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}: {path.stat().st_size / 1024**2:.2f} MiB")
+        print(f"{path.name}: {path.stat().st_size / 1024**2:.2f} MiB", flush=True)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ASSETS)
-    parser.add_argument("--gif-width", type=int, default=1080)
-    parser.add_argument("--gif-fps", type=int, default=10)
+    parser.add_argument("--gif-width", type=int, default=896)
+    parser.add_argument("--gif-fps", type=int, default=6)
+    parser.add_argument("--preview-only", action="store_true")
     args = parser.parse_args()
-    build(args.output, args.gif_width, args.gif_fps)
+    build(args.output, args.gif_width, args.gif_fps, args.preview_only)

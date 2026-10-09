@@ -1,7 +1,7 @@
 site_name: GenerativeDynamics
 site_description: Unified planning and control stack for robotics
-repo_url: https://github.com/hhhhzl/enerdynamics
-repo_name: hhhhzl/enerdynamics
+repo_url: https://github.com/hhhhzl/genedynamics
+repo_name: hhhhzl/genedynamics
 docs_dir: docs
 strict: true
 
@@ -16,6 +16,7 @@ nav:
   - Overview: index.md
   - Getting started:
       - Installation: getting-started/installation.md
+      - Direct Python example: getting-started/python-api.md
       - First experiment: getting-started/quickstart.md
   - Concepts:
       - Architecture: concepts/architecture.md
@@ -29,9 +30,11 @@ nav:
   - Integrations:
       - D3IL: integrations/d3il.md
   - Reference:
+      - Planners and sources: reference/planners.md
       - API surface: api/README.md
       - Compatibility: reference/compatibility.md
       - Metrics and benchmarks: reference/metrics.md
+      - Roadmap: reference/roadmap.md
   - Development:
       - Testing: development/testing.md
       - Releasing: development/releasing.md

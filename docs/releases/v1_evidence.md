@@ -1,6 +1,7 @@
 # V1 validation evidence
 
-This page records the release-candidate checks run on 2026-10-05 from branch
+This page records the release-candidate checks from 2026-10-05 and the
+documentation/package refresh on 2026-10-09, on branch
 `release/v1-open-source`. It is validation evidence, not a performance claim.
 
 ## Release surface
@@ -14,7 +15,7 @@ This page records the release-candidate checks run on 2026-10-05 from branch
 
 ## Test evidence
 
-The CPU Docker regression selected 742 portable unit/integration cases:
+The CPU Docker regression produced:
 
 ```text
 725 passed, 19 skipped, 152 deselected, 0 failed
@@ -38,9 +39,9 @@ The final release-candidate wheel has:
 | Property | Value |
 | --- | --- |
 | Filename | `genedynamics-0.1.0-py3-none-any.whl` |
-| Size | 12,157,082 bytes |
+| Size | 12,158,926 bytes |
 | Files | 789 |
-| SHA-256 | `5d3baeac60ee940f7ea294aee83d9b62dfb30c5f30de265f108eec0e60be5a65` |
+| SHA-256 | `013d09f4cbee22e29364a2b8578807484a9eaaf6e5a205935afeefbecc4034a1` |
 | Required package assets missing | 0 |
 | Forbidden V1 paths | 0 |
 | Twine metadata check | Passed |
@@ -65,15 +66,32 @@ The source and wheel inventory is stored in
 - `git diff --check` reported no whitespace errors.
 - Credential pattern scanning reported zero AWS, GitHub, OpenAI, Slack, or
   private-key signatures.
-- The source inventory reports two files above 10 MiB, both D3IL camera mesh
-  assets; neither is included in the wheel.
+- The current source inventory reports three files above 10 MiB: two D3IL
+  camera meshes and the homepage GIF. None is included in the wheel.
 - The 20-package core dependency closure reported no detected strong-copyleft
   license.
-- The README's six-task motion wall includes all three original GIFs. Its
-  12-second GIF is below 10 MiB; the full-resolution MP4 is below 2 MiB.
-  Seven input checksums and their render origins are recorded in
-  `docs/assets/showcase_sources/manifest.json`. The compositor regenerates the
-  exports without the private result tree or a simulator.
+
+## Documentation refresh — 2026-10-09
+
+- The homepage now uses 41 original clips in five groups: MDOC, MD-COAS, 2GO,
+  MGA and hardware. Titles, subtitles and rulers were cropped from the inputs;
+  the camera composition adds no text. All five groups and camera views were
+  visually reviewed.
+- The 24-second GIF is 896 × 576 at 6 fps (19.52 MiB). The same composition is
+  available as a 1344 × 864, 12 fps MP4 (6.11 MiB). This is presentation playback,
+  not a runtime or latency measurement.
+- All 41 input sizes and SHA-256 checksums matched
+  `docs/assets/showcase_sources/v2/manifest.json`. The exports regenerate from
+  these checked-in inputs without the original research folders or simulators.
+- The new Python example was run on CPU from the rebuilt wheel, outside the
+  repository checkout: **48 steps, goal error 0.099**, with finite-value and
+  goal-arrival assertions passing. `pip check` and Twine metadata checks passed.
+- Planner descriptions were checked against original papers. CFS-MBD is
+  documented as MD-COAS's historical implementation name.
+- The documentation built in strict mode. Runtime source, task configurations
+  and tests are unchanged by this refresh; the earlier regression remains the
+  runtime evidence.
+
 
 ## Open gates
 

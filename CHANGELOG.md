@@ -4,6 +4,10 @@ This project follows semantic versioning after the first public tag.
 
 ## Unreleased
 
+- Adds a direct environment + 2GO Python example and a paper-linked planner catalogue.
+- Rebuilds the homepage around a text-free, five-group native demonstration gallery.
+- Adds controller, compute, learned-policy and perception roadmap priorities.
+
 - Select and add the public open-source license.
 - Complete release-candidate validation and publish measured benchmark artifacts.
 
@@ -12,7 +16,7 @@ This project follows semantic versioning after the first public tag.
 - Defines a JAX-first plugin architecture for robotics planning and control.
 - Publishes planar navigation, D3IL avoiding, quadruped stepping stones,
   humanoid corridor, peg insertion, and surface scanning configurations.
-- Packages MBD, EB-MBD, MDOC, CFS-MBD/MDCOAS, 2GO, MPPI, MGA, contact-control
+- Packages MBD, EB-MBD, MDOC, MD-COAS, 2GO, MPPI, MGA, contact-control
   baselines, and optional learned planner integrations.
 - Adds standard wheel packaging, dependency extras, CI quality gates, user
   documentation, selected paper media, configuration validation, and release
