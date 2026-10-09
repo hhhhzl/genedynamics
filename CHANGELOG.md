@@ -4,6 +4,11 @@ This project follows semantic versioning after the first public tag.
 
 ## Unreleased
 
+- Aligns the homepage with generative dynamics on manifold and gives Planning, Control and Learning equal prominence.
+- Explains batched constraints inside generative sampling, including learned diffusion integrations.
+- Repairs the unfetchable Menagerie submodule pin and preserves the local Go2 MJX adaptation as an idempotent patch.
+- Installs the simulation CI dependencies needed for TorchScript execution and JAX kinematics.
+
 - Positions the framework around generative models for robot learning, planning and control.
 - Documents policy training, learned trajectory diffusion and MGA checkpoint reuse.
 

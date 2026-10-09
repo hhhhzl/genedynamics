@@ -1,8 +1,8 @@
 <h1 align="center">GenerativeDynamics</h1>
 
 <p align="center">
-  <strong>Generative models for robot learning, planning, and control.</strong><br>
-  Train policy priors. Generate constrained trajectories. Execute in closed loop.
+  <strong>Generative dynamics on manifold.</strong><br>
+  For robotics: <b>Planning.</b> <b>Control.</b> <b>Learning.</b>
 </p>
 
 <p align="center">
@@ -32,10 +32,10 @@
   <a href="#explore-the-examples">Run the examples</a>
 </p>
 
-GenerativeDynamics brings **learned trajectory diffusion, reinforcement-learning
-priors, and model-based generative inference** into one modular robotics stack.
-Train and reuse models, refine trajectories against dynamics and constraints,
-and connect plans to closed-loop execution. Shared task, solver and execution
+GenerativeDynamics connects **generative models, manifold geometry, and robot
+learning** in one modular robotics stack. Learn reusable priors, shape
+generative trajectory updates with dynamics and constraints, and connect plans
+to closed-loop control. Shared task, solver and execution
 interfaces let you swap algorithms, compose controllers and add robots. Use
 components directly in Python or run complete experiments from a configuration.
 
@@ -61,8 +61,9 @@ Follow [CHANGELOG.md](CHANGELOG.md) for new environments, planners and integrati
 | **✨ Generative models** | Learned trajectory diffusion and model-based generative inference; DDPM/DDIM and flow-style reverse transports. |
 | **🧭 Planning** | Interchangeable planners for constrained trajectories, sampling MPC and contact-rich motion–impedance optimization. |
 | **🤖 Tasks and robots** | Planar navigation, 7-DoF avoidance, quadruped footholds, humanoid corridors, peg insertion and surface scanning. |
-| **🛡️ Geometry and constraints** | Convex primitives, meshes, signed-distance geometry and CSG; composable collision, state, action and contact constraints. |
+| **🛡️ Geometry and constraints** | Constraint manifolds, convex primitives, meshes, signed-distance geometry and CSG; collision, state, action and contact constraints. |
 | **🌐 Simulation adapters** | MuJoCo, MJX, Brax and D3IL integrations, with physics and task adapters separate from solver logic. |
+| **🧮 Batched constraints** | Evaluate and correct candidate trajectories inside generative inference with batched JAX kernels. |
 | **⚡ Compute** | JAX planning and batched rollouts; CPU and CUDA installation paths. Dedicated Torch integrations for DPCC and SafeDiffuser. |
 | **🎛️ Execution components** | Robot I/O, controllers, trajectory followers, governors, safety filters, recovery policies and observers. |
 | **📊 Experiment tooling** | YAML task matrices, seeds, resumable runs, resolved configurations, metrics, traces, replay and reports. |
@@ -231,18 +232,41 @@ Install `.[optimization]` for the optional QP dependencies. See the
 [constraint reference](docs/reference/constraints.md) for CBF/CFS variants,
 scheduling and solver-specific limits.
 
+### Constraints inside generative inference
+
+A planning call maintains a **batch of candidate trajectories**. Constraints
+participate in the sampling loop: they correct candidates, change feasibility
+weights, or shape the geometry of the next generative update.
+
+| Axis | How the work composes |
+| --- | --- |
+| **Candidates `N`** | JAX `vmap` applies supported rollout, filter and projection kernels across trajectories. |
+| **Horizon `H`** | Stateful filters use `scan`: correct an action, propagate dynamics, then evaluate the next state. Full-horizon CFS couples the sequence. |
+| **Refinement `K`** | Constraint feedback shapes successive denoising or optimization steps. |
+
+MDOC/MD-COAS compose CBF/CFS corrections; 2GO budgets projection probes; MGA
+evaluates learned horizon proposals alongside model-based candidates.
+SafeDiffuser uses batched Torch QPs during denoising; DPCC combines Torch
+sampling with CPU trajectory projections. Numerical paths are documented
+per integration.
+
+See [batched constraints and generative samples](docs/guides/batched-constraints.md)
+for tensor shapes, each planner's data flow and a runnable JAX batch example.
+
 <a id="how-the-stack-fits-together"></a>
 
 ## 🏗️ How the stack fits together
 
-<img src="docs/assets/architecture.svg" width="100%" alt="Learning produces policy priors and trajectory models. Generative inference combines them with task dynamics, geometry and constraints. Controllers execute trajectories with state feedback; traces support offline training and calibration.">
+<img src="docs/assets/architecture-overview.png" width="100%" alt="Three equal pillars: Planning, Control, and Learning. Learned models and priors feed generative planning; control closes the state-feedback loop; execution data supports offline learning and calibration. Task dynamics, constraint manifolds, geometry and simulation form the shared foundation.">
 
-**Learning** produces reusable policies, trajectory models and task-specific
-reliability estimates. **Generative inference** combines the selected model or
-prior with task dynamics, objectives, geometry and constraints. **Execution**
-connects trajectories to controllers, safety filters and robot I/O, feeding
-measured state into the next replan. Traces support evaluation, offline training
-and calibration. Each workflow selects the components it needs; model-based
+| Planning | Control | Learning |
+| --- | --- | --- |
+| Generative inference and trajectory optimization with dynamics, manifold geometry and constraints. | Motion–impedance control, followers, safety filters and robot I/O with measured-state feedback. | Policy and diffusion-model training, reusable priors and task-specific reliability calibration. |
+
+**Learning → Planning:** learned models and PPO horizon priors guide generation.
+**Planning → Control:** selected trajectories become executable commands.
+**Control → Learning:** saved outcomes support explicit offline training and
+calibration. Each workflow selects the components it needs; model-based
 planners can also run without learned checkpoints.
 
 Read the [architecture guide](docs/concepts/architecture.md),
@@ -277,7 +301,7 @@ Read the [architecture guide](docs/concepts/architecture.md),
 | --- | --- |
 | [Installation](docs/getting-started/installation.md) | [Architecture](docs/concepts/architecture.md) |
 | [Python API example](docs/getting-started/python-api.md) | [Planners and sources](docs/reference/planners.md) |
-| [Learning and model priors](docs/guides/learning-and-priors.md) | [Configuration](docs/guides/configuration.md) |
+| [Learning and model priors](docs/guides/learning-and-priors.md) | [Batched constraints](docs/guides/batched-constraints.md) |
 | [Configured experiments](docs/getting-started/quickstart.md) | [Plugin development](docs/guides/adding-a-plugin.md) |
 | [Environments](docs/reference/environments.md) | [Constraint solvers](docs/reference/constraints.md) |
 | [Task recipes](docs/recipes/index.md) | [Metrics and benchmarks](docs/reference/metrics.md) |

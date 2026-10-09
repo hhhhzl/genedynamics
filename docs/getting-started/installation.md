@@ -49,13 +49,26 @@ python -c "import jax; print(jax.default_backend(), jax.devices())"
 The first V1 release does not qualify MGA GPU behavior. A visible GPU device
 only proves installation; it does not prove numerical parity or performance.
 
+## MuJoCo Menagerie assets
+
+G1 and Go2 integrations can use the pinned Menagerie submodule. Initialize the
+assets and preserve the project's Go2 MJX adaptation with:
+
+```bash
+bash scripts/setup/setup_mujoco_menagerie.sh
+```
+
+The setup is safe to repeat and refuses conflicting edits. See the
+[asset revision and patch notes](https://github.com/hhhhzl/genedynamics/blob/release/v1-open-source/third_party/patches/README.md)
+for the upstream pin and local-checkout behavior.
+
 ## D3IL
 
 D3IL is kept under `third_party/environments/d3il`. Clone with submodules and
 run the integration setup:
 
 ```bash
-git submodule update --init --recursive
+bash scripts/setup/setup_mujoco_menagerie.sh
 ./scripts/setup/setup_d3il.sh
 python -m pip install -e ".[d3il,torch]"
 ```

@@ -1,5 +1,5 @@
 site_name: GenerativeDynamics
-site_description: Generative models for robot learning, planning, and control
+site_description: Generative dynamics on manifold. For robotics planning, control, and learning.
 repo_url: https://github.com/hhhhzl/genedynamics
 repo_name: hhhhzl/genedynamics
 docs_dir: docs
@@ -22,6 +22,7 @@ nav:
       - Architecture: concepts/architecture.md
   - Guides:
       - Learning and model priors: guides/learning-and-priors.md
+      - Batched constraints and samples: guides/batched-constraints.md
       - Configuration: guides/configuration.md
       - Add a plugin: guides/adding-a-plugin.md
   - Recipes:

@@ -1,7 +1,7 @@
 # Architecture
 
-GenerativeDynamics connects robot learning, generative inference and control
-through replaceable components. Learned policies and trajectory models supply
+GenerativeDynamics implements **generative dynamics on manifold** for robotics
+planning, control and learning through replaceable components. Learned policies and trajectory models supply
 proposals; model-based objectives and constraints shape online generation;
 controllers execute the selected result and return the next measured state.
 
@@ -21,7 +21,7 @@ flowchart TB
     PRIOR --> GEN
     ENV --> MODEL[Dynamics and task objectives]
     MODEL --> GEN
-    GEO[Geometry / constraint solvers / schedules] --> GEN
+    GEO[Constraint manifolds / geometry / solvers / schedules] --> GEN
     GEN --> ACCEPT[Task acceptance and safety checks]
     ACCEPT --> CTRL[Controllers and robot I/O]
     CTRL --> WORLD[Simulator or physical robot]
@@ -51,6 +51,18 @@ trajectory diffusion models. Model-based diffusion also runs without learned
 weights. The dotted feedback paths describe explicit offline workflows, rather
 than automatic learning during robot execution. See
 [learning and priors](../guides/learning-and-priors.md) for runnable entries.
+
+## Constraints follow the sample batch
+
+A generative planner maintains candidate trajectories, not just one final
+plan. Supported JAX paths map rollout and correction kernels across candidates
+with `vmap`, while state-dependent time propagation uses `scan`. Feasibility
+weights, CBF/CFS corrections and manifold geometry feed subsequent updates.
+2GO limits projection work through probes; MGA can evaluate learned horizon
+proposals alongside the model-based search. Learned trajectory diffusion has
+its own denoising and constraint integration path. See
+[batched constraints and generative samples](../guides/batched-constraints.md)
+for the exact per-method order, shapes and numerical-backend boundaries.
 
 ## Ownership boundaries
 

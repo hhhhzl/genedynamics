@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="756" viewBox="0 0 1440 756" role="img" aria-labelledby="title desc">
-  <title id="title">Generative models for robot learning, planning and control</title>
-  <desc id="desc">Learning produces policy priors, trajectory diffusion models and reliability estimates. Generative inference uses the selected models alongside task dynamics, objectives, geometry and constraints. Controllers execute trajectories in simulation or on robots, with measured-state feedback for replanning. Execution traces support offline training and calibration. Learned checkpoints are optional for model-based planners.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="808" viewBox="0 0 1440 808" role="img" aria-labelledby="title desc">
+  <title id="title">Generative dynamics on manifold: Planning, Control, Learning</title>
+  <desc id="desc">Planning, Control and Learning are three equal pillars. Learned models and priors feed generative planning. Control executes plans and returns measured state. Traces and outcomes support explicit offline learning and calibration. Robot tasks, dynamics, constraint manifolds, geometry and simulation adapters form the shared platform.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L8 5L0 9" fill="none" stroke="#648B88" stroke-width="1.5"/></marker>
     <style>
@@ -8,67 +8,65 @@
       .mono {font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace}
       .eyebrow {font-size:13px;letter-spacing:1.4px;fill:#39786C}
       .heading {font-size:40px;font-weight:650;fill:#12232D}
-      .label {font-size:26px;font-weight:650;fill:#12232D}
+      .pillar {font-size:36px;font-weight:650;fill:#12232D}
+      .label {font-size:23px;font-weight:600;fill:#25414D}
       .body {font-size:19px;fill:#536A76}
-      .small {font-size:16px;fill:#536A76}
-      .box {stroke-width:1.4}
-      .learning {fill:#F3EFFF;stroke:#C5B5F4}
-      .task {fill:#EAF3FF;stroke:#A8C6ED}
-      .execution {fill:#FFF0EF;stroke:#E9B4AF}
+      .small {font-size:17px;fill:#536A76}
       .flow {fill:none;stroke:#648B88;stroke-width:1.8;marker-end:url(#arrow)}
     </style>
   </defs>
-  <rect width="1440" height="756" rx="16" fill="#F3F6F7"/>
-  <text x="64" y="48" class="mono eyebrow">GENERATIVE ROBOTICS</text>
-  <text x="63" y="105" class="sans heading">Learn. Generate. Act.</text>
-  <text x="64" y="143" class="sans body">Shared interfaces connect learned models, physics and closed-loop execution.</text>
+  <rect width="1440" height="808" rx="18" fill="#F3F6F7"/>
+  <text x="64" y="46" class="mono eyebrow">GENERATIVEDYNAMICS</text>
+  <text x="63" y="100" class="sans heading">Generative dynamics on manifold.</text>
+  <text x="64" y="138" class="sans body">For robotics. Planning. Control. Learning.</text>
 
-  <rect x="64" y="196" width="328" height="180" rx="14" class="box learning"/>
-  <text x="88" y="228" class="mono eyebrow">TRAIN + REUSE</text>
-  <text x="88" y="267" class="sans label">Learning</text>
-  <text x="88" y="301" class="sans body">PPO / SAC policies</text>
-  <text x="88" y="328" class="sans body">Trajectory diffusion models</text>
-  <text x="88" y="355" class="sans body">Task-specific reliability</text>
-  <text x="408" y="223" class="sans small">Models / priors</text>
-  <path d="M392 286H471" class="flow"/>
+  <path d="M1176 222V184H264V213" class="flow"/>
+  <text x="594" y="173" class="sans small">Learned models + priors</text>
 
-  <rect x="64" y="414" width="328" height="154" rx="14" class="box task"/>
-  <text x="88" y="446" class="mono eyebrow">DEFINE + SIMULATE</text>
-  <text x="88" y="485" class="sans label">Robot + task</text>
-  <text x="88" y="519" class="sans body">Dynamics · objectives · geometry</text>
-  <text x="88" y="546" class="sans body">Environment + physics adapters</text>
-  <path d="M392 490H432V425H471" class="flow"/>
+  <rect x="64" y="222" width="400" height="266" rx="16" fill="#EAF3FF" stroke="#A8C6ED" stroke-width="1.4"/>
+  <text x="88" y="257" class="mono eyebrow">01 / GENERATE + REFINE</text>
+  <text x="88" y="308" class="sans pillar">Planning</text>
+  <text x="88" y="354" class="sans label">Generative inference</text>
+  <text x="88" y="395" class="sans body">Diffusion + model-based refinement</text>
+  <text x="88" y="425" class="sans body">Constraint-aware trajectories</text>
+  <path d="M88 446H440" stroke="#C5D8EE"/>
+  <text x="88" y="473" class="sans small">MDOC · MD-COAS · 2GO · MGA</text>
 
-  <rect x="480" y="240" width="448" height="264" rx="14" fill="#112B32"/>
-  <text x="506" y="275" class="mono" font-size="13" letter-spacing="1.4" fill="#8CE4CF">GENERATIVE INFERENCE</text>
-  <text x="506" y="320" class="sans" font-size="28" font-weight="650" fill="#F1F5F7">Planning + refinement</text>
-  <text x="506" y="360" class="sans" font-size="18" fill="#B2C7CB">Learned diffusion · model-based inference</text>
-  <text x="506" y="390" class="sans" font-size="18" fill="#B2C7CB">Policy proposals + dynamics rollouts</text>
-  <text x="506" y="420" class="sans" font-size="18" fill="#B2C7CB">Geometry · constraints · reverse transports</text>
-  <path d="M506 444H902" stroke="#375158"/>
-  <text x="506" y="476" class="sans" font-size="17" fill="#8CE4CF">MDOC · MD-COAS · 2GO · MGA + baselines</text>
+  <path d="M464 354H511" class="flow"/>
+  <rect x="520" y="222" width="400" height="266" rx="16" fill="#FFF0EF" stroke="#E9B4AF" stroke-width="1.4"/>
+  <text x="544" y="257" class="mono eyebrow">02 / EXECUTE + OBSERVE</text>
+  <text x="544" y="308" class="sans pillar">Control</text>
+  <text x="544" y="354" class="sans label">Closed-loop execution</text>
+  <text x="544" y="395" class="sans body">Motion–impedance + safety filters</text>
+  <text x="544" y="425" class="sans body">Controllers · followers · robot I/O</text>
+  <path d="M544 446H896" stroke="#E9C4C1"/>
+  <text x="544" y="473" class="sans small">Receding-horizon execution</text>
 
-  <path d="M928 368H1015" class="flow"/>
-  <text x="946" y="348" class="sans small">Plans</text>
-  <rect x="1024" y="240" width="352" height="264" rx="14" class="box execution"/>
-  <text x="1048" y="275" class="mono eyebrow">CLOSED-LOOP EXECUTION</text>
-  <text x="1048" y="320" class="sans label">Controllers + robot I/O</text>
-  <text x="1048" y="360" class="sans body">Followers + safety filters</text>
-  <text x="1048" y="390" class="sans body">Simulation or robot execution</text>
-  <path d="M1048 416H1352" stroke="#E9C4C1"/>
-  <text x="1048" y="451" class="sans body">Receding-horizon control</text>
-  <text x="1048" y="478" class="sans small">Recipe-specific execution adapters</text>
-  <path d="M1200 504V568H704V513" class="flow"/>
-  <text x="886" y="554" class="sans small">Measured state feeds the next replan</text>
+  <rect x="976" y="222" width="400" height="266" rx="16" fill="#F3EFFF" stroke="#C5B5F4" stroke-width="1.4"/>
+  <text x="1000" y="257" class="mono eyebrow">03 / TRAIN + REUSE</text>
+  <text x="1000" y="308" class="sans pillar">Learning</text>
+  <text x="1000" y="354" class="sans label">Models + reusable priors</text>
+  <text x="1000" y="395" class="sans body">PPO / SAC + diffusion training</text>
+  <text x="1000" y="425" class="sans body">Checkpoints + horizon proposals</text>
+  <path d="M1000 446H1352" stroke="#D7CCF0"/>
+  <text x="1000" y="473" class="sans small">Offline reliability calibration</text>
 
-  <path d="M1308 504V615" class="flow"/>
-  <rect x="64" y="624" width="1312" height="100" rx="14" fill="#EDF8F3" stroke="#A6D8C4" stroke-width="1.4"/>
-  <text x="88" y="656" class="mono eyebrow">DATA + EVALUATION</text>
-  <text x="88" y="694" class="sans" font-size="19" fill="#254B46">Resolved configs</text>
-  <text x="310" y="694" class="sans" font-size="19" fill="#254B46">Trajectories + traces</text>
-  <text x="590" y="694" class="sans" font-size="19" fill="#254B46">Metrics + replay</text>
-  <text x="840" y="694" class="sans" font-size="19" fill="#254B46">Offline training + calibration</text>
-  <path d="M64 674H32V286H55" class="flow" stroke-dasharray="5 6"/>
-  <text x="22" y="550" transform="rotate(-90 22 550)" class="mono eyebrow">OFFLINE FEEDBACK</text>
-  <text x="64" y="603" class="sans small">Choose components per workflow. Model-based planners can run without learned checkpoints.</text>
+  <path d="M720 488V530H264V497" class="flow"/>
+  <text x="421" y="517" class="sans small">Measured-state feedback</text>
+  <path d="M720 530V550H1392V732H1385" class="flow"/>
+
+  <rect x="64" y="574" width="1312" height="92" rx="14" fill="#112B32"/>
+  <text x="88" y="607" class="mono" font-size="13" letter-spacing="1.4" fill="#8CE4CF">SHARED PLATFORM</text>
+  <text x="88" y="643" class="sans" font-size="19" fill="#E4EEEE">Robot + task</text>
+  <text x="290" y="643" class="sans" font-size="19" fill="#E4EEEE">Dynamics + objectives</text>
+  <text x="600" y="643" class="sans" font-size="19" fill="#E4EEEE">Constraint manifolds + geometry</text>
+  <text x="1034" y="643" class="sans" font-size="19" fill="#E4EEEE">Simulation adapters</text>
+
+  <rect x="64" y="688" width="1312" height="90" rx="14" fill="#EDF8F3" stroke="#A6D8C4" stroke-width="1.4"/>
+  <text x="88" y="720" class="mono eyebrow">EVIDENCE + OFFLINE FEEDBACK</text>
+  <text x="88" y="755" class="sans" font-size="19" fill="#254B46">Configs + checkpoints</text>
+  <text x="370" y="755" class="sans" font-size="19" fill="#254B46">Trajectories + outcomes</text>
+  <text x="684" y="755" class="sans" font-size="19" fill="#254B46">Metrics + replay</text>
+  <text x="966" y="755" class="sans" font-size="19" fill="#254B46">Offline training + calibration</text>
+  <path d="M1176 688V676H1408V354H1385" class="flow" stroke-dasharray="5 6"/>
 </svg>

@@ -2,8 +2,8 @@
   "release": "0.1.0",
   "schema_version": 1,
   "source": {
-    "bytes": 152751476,
-    "file_count": 1656,
+    "bytes": 153034287,
+    "file_count": 1661,
     "files_by_root": {
       ".dockerignore": 1,
       ".github": 2,
@@ -18,7 +18,7 @@
       "assets": 1,
       "configs": 114,
       "docker": 8,
-      "docs": 74,
+      "docs": 76,
       "examples": 1,
       "genedynamics": 821,
       "mkdocs.yml": 1,
@@ -27,10 +27,10 @@
       "release": 2,
       "requirements": 6,
       "requirements.txt": 1,
-      "scripts": 65,
+      "scripts": 66,
       "setup.py": 1,
       "test": 78,
-      "third_party": 470
+      "third_party": 472
     },
     "files_by_suffix": {
       ".cff": 1,
@@ -44,16 +44,17 @@
       ".html": 2,
       ".ini": 1,
       ".json": 8,
-      ".md": 67,
+      ".md": 69,
       ".mp4": 42,
       ".mtl": 3,
       ".npy": 2,
       ".npz": 1,
       ".obj": 147,
-      ".png": 9,
+      ".patch": 1,
+      ".png": 10,
       ".pt": 1,
       ".py": 1019,
-      ".sh": 18,
+      ".sh": 19,
       ".stl": 65,
       ".svg": 1,
       ".swift": 6,
@@ -91,6 +92,11 @@
         "bytes": 89857,
         "path": "docs/assets/2go_stepping_stones.png",
         "sha256": "8af186119358c31d0d965f8c3fc4a22cff378481bc82e729cd0629ed9cb1b381"
+      },
+      {
+        "bytes": 253970,
+        "path": "docs/assets/architecture-overview.png",
+        "sha256": "40771bad94e623d27b7fc8fb9860107be4175a628c189fa19da5d02b722cff9d"
       },
       {
         "bytes": 973265,
@@ -315,10 +321,10 @@
     ]
   },
   "wheel": {
-    "bytes": 12160185,
+    "bytes": 12160747,
     "file_count": 789,
     "forbidden_v1_paths": [],
     "path": "genedynamics-0.1.0-py3-none-any.whl",
-    "sha256": "75673cea6b1fa3bd8c4d0352fc1d2c2a1fc95b2222d8e4362b3becd91bc13f48"
+    "sha256": "ffb01d083c0bffb749bc4bea12e14423734ed5110c882a2c8168040b1d41dd70"
   }
 }

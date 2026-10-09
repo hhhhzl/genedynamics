@@ -5,6 +5,14 @@ Compose [CBF action filters](https://github.com/hhhhzl/genedynamics/tree/release
 and [adaptive augmented-Lagrangian scheduling](https://github.com/hhhhzl/genedynamics/blob/release/v1-open-source/genedynamics/core/constraints/schedulers/ConstraintScheduler/almadaptive/alm_adaptive.py)
 with the numerical interfaces below.
 
+Constraints participate **inside the sampling loop**. A candidate batch has
+shape `(N, H, action_dim)`: filters correct candidate actions, rollout residuals
+change their weights, and manifold geometry shapes the next generative update.
+MDOC, MD-COAS, 2GO and MGA compose these operations differently. See
+[Batched constraints and generative samples](../guides/batched-constraints.md)
+for the data flow, tensor shapes, trained-diffusion DPCC/SafeDiffuser paths and
+an executable JAX example.
+
 | Solver | What it provides | Implementation | Upstream reference |
 | --- | --- | --- | --- |
 | **Closed form** | Euclidean halfspace projection, box clipping and unconstrained solves for special cases. | [ClosedFormSolver](https://github.com/hhhhzl/genedynamics/blob/release/v1-open-source/genedynamics/core/constraints/solvers/closed_form.py) | Local implementation |
@@ -33,11 +41,20 @@ then inspect [MDOC and MD-COAS recipes](../recipes/index.md) for their integrati
 
 ## Choose the right solve path
 
+- **Batching follows the integration.** JAX filters map over candidate
+  trajectories with `vmap`; a state-dependent rollout uses `scan` over time.
+  Full-horizon CFS couples the actions within each trajectory. These are
+  different from solving one independent QP for every `(sample, time)` pair.
 - **Closed form is specialized.** Its halfspace and box paths perform Euclidean
   projection and clipping. They are not general QP solves for arbitrary Hessians.
 - **Fast JAX helpers are approximate projections.** Functions such as
   `solve_slack_qp_jax()` use finite, projection-style updates. They are distinct
   from the `JAXOPTOsqpSolver.solve_qp()` interface that invokes `jaxopt.OSQP`.
+- **Host-facing QP wrappers are separate.** `OSQPSolver` and `CVXOPTSolver` use
+  CPU Python/NumPy interfaces. The current `JAXOPTOsqpSolver.solve_qp()` wrapper
+  also returns NumPy arrays. Do not put these wrappers directly inside a
+  `jax.jit`/`vmap` sampling loop; use the existing pure-JAX filter path or an
+  explicit host-side integration.
 - **QPAX is an optional operator fallback.** The
   [per-step operator](https://github.com/hhhhzl/genedynamics/blob/release/v1-open-source/genedynamics/core/constraints/operators/qp/per_step_filter.py)
   can call QPAX; this repository does not provide a separate QPAX solver class.

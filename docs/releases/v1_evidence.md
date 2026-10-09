@@ -39,9 +39,9 @@ The final release-candidate wheel has:
 | Property | Value |
 | --- | --- |
 | Filename | `genedynamics-0.1.0-py3-none-any.whl` |
-| Size | 12,160,185 bytes |
+| Size | 12,160,747 bytes |
 | Files | 789 |
-| SHA-256 | `75673cea6b1fa3bd8c4d0352fc1d2c2a1fc95b2222d8e4362b3becd91bc13f48` |
+| SHA-256 | `ffb01d083c0bffb749bc4bea12e14423734ed5110c882a2c8168040b1d41dd70` |
 | Required package assets missing | 0 |
 | Forbidden V1 paths | 0 |
 | Twine metadata check | Passed |
@@ -101,6 +101,40 @@ The source and wheel inventory is stored in
   their parsers; no new training runs were performed. Runtime source, task
   configurations and tests are unchanged by this refresh; the earlier
   regression remains the runtime evidence.
+
+
+## Manifold positioning and batched constraints — 2026-10-09
+
+- The homepage follows “Generative dynamics on manifold” and presents Planning,
+  Control and Learning as equal architecture pillars. A rendered PNG accompanies
+  the editable SVG source, so the displayed diagram has an explicit Learning
+  module across GitHub and the documentation site.
+- The batch guide documents candidate, horizon and refinement axes, CBF/CFS and
+  manifold feedback, MGA learned proposals, and DPCC/SafeDiffuser integration
+  boundaries. Its JAX example ran with shape `(64, 20, 2)` and maximum residual
+  `2.2351741790771484e-08`.
+- README checks passed for 70 local links, 14 stable section anchors and Python
+  syntax. MkDocs built in strict mode. The rebuilt wheel passed Twine and differs
+  only in metadata from the preceding wheel; runtime files are unchanged.
+
+## CI checkout repair — 2026-10-09
+
+- The reported GitHub failure occurred before testing: recursive checkout could
+  not fetch Menagerie commit `e5146679f3cfcb327cf759fc9706f5bb0236bd5e` from
+  its official remote. This was a local asset adaptation commit.
+- The gitlink now pins its official parent
+  `a03e87bf13502b0b48ebbf2808928fd96ebf9cf3`, verified through a shallow fetch
+  from the official repository. The Go2 MJX changes are preserved as an explicit
+  patch. Setup was checked for first application, repeat application and
+  conflict refusal; the patched XML matches the original local version exactly.
+  The existing local submodule checkout was left untouched.
+- A new Python 3.12 core environment ran the workflow's selected tests with
+  coverage: **89 passed, 4 skipped**. The selected simulation tests ran in a
+  temporary macOS environment: **20 passed, 1 skipped**, including the G1
+  TorchScript control path. The D3IL startup test skipped for optional dependencies.
+- The Ubuntu simulation workflow now installs CPU Torch and `urchin` explicitly
+  and applies the asset patch after checkout. Test selections remain enabled.
+  These local checks do not claim that the new remote Actions run has completed.
 
 
 ## Open gates

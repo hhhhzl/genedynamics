@@ -1,12 +1,14 @@
 # GenerativeDynamics
 
-**Generative models for robot learning, planning, and control.**
+**Generative dynamics on manifold.**
+
+For robotics: **Planning. Control. Learning.**
 
 ![MDOC, MD-COAS, 2GO, MGA, and real robot demonstrations](assets/showcase.gif)
 
 Train reusable policy priors, learn trajectory diffusion models, and perform
-model-based generative inference with dynamics and constraints. Connect the
-resulting plans to closed-loop control through shared task, solver and execution
+model-based generative inference with dynamics, manifold geometry and
+constraints. Connect the resulting plans to closed-loop control through shared task, solver and execution
 interfaces.
 
 [Watch the full-quality video](assets/showcase.mp4) ·
@@ -19,6 +21,7 @@ interfaces.
 | **🧠 Robot learning** | PPO/SAC training and checkpoint reuse; PPO horizon priors for MGA. |
 | **✨ Generative models** | Learned trajectory diffusion, model-based generative inference and composable reverse transports. |
 | **Planner plugins** | MDOC, MD-COAS, 2GO, MGA and comparison algorithms through shared task and solver interfaces. |
+| **Batched constraints** | Candidate evaluation, CBF/CFS correction and manifold feedback inside generative inference; see the [batch workflow](guides/batched-constraints.md). |
 | **Geometry and constraints** | Convex primitives, meshes, signed-distance geometry, collision constraints, state/action limits and constraint schedules. |
 | **Robot task composition** | Semantic robot profiles, task objectives, dynamics and scene geometry kept separate from planner implementations. |
 | **Simulation adapters** | MuJoCo, MJX, Brax and D3IL integrations with recipe-specific dependencies. |
@@ -56,7 +59,7 @@ scheduling, and closed-form, JAXopt OSQP, OSQP and CVXOPT numerical solvers.
 | Understand or extend the interfaces | [Architecture](concepts/architecture.md) · [Plugin development](guides/adding-a-plugin.md) |
 | Check support or upcoming integrations | [Compatibility](reference/compatibility.md) · [Roadmap](reference/roadmap.md) |
 
-![Platform architecture](assets/architecture.svg)
+![Planning, Control and Learning on a shared platform](assets/architecture-overview.png)
 
 ## 📍 Release status
 

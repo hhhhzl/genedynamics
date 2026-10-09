@@ -108,7 +108,7 @@ addition to the Python extras, this source-tree workflow needs the vendored
 `third_party/diffuser` package, D3IL environment assets and the avoiding dataset.
 
 ```bash
-git submodule update --init --recursive
+bash scripts/setup/setup_mujoco_menagerie.sh
 python -m pip install -e ".[simulation,d3il,torch]"
 export PYTHONPATH="$PWD/third_party:${PYTHONPATH:-}"
 export DPCC_AVOIDING_DATA_DIR="/absolute/path/to/avoiding/data"
