@@ -59,7 +59,7 @@ scheduling, and closed-form, JAXopt OSQP, OSQP and CVXOPT numerical solvers.
 | Understand or extend the interfaces | [Architecture](concepts/architecture.md) · [Plugin development](guides/adding-a-plugin.md) |
 | Check support or upcoming integrations | [Compatibility](reference/compatibility.md) · [Roadmap](reference/roadmap.md) |
 
-![Planning, Control and Learning on a shared platform](assets/architecture-overview.png)
+![Complete task, learning, planning, simulation, deployment and evaluation workflow](assets/architecture-overview.png)
 
 ## 📍 Release status
 

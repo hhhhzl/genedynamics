@@ -4,6 +4,9 @@ This project follows semantic versioning after the first public tag.
 
 ## Unreleased
 
+- Restores the complete task-to-execution architecture workflow, with learning, constraints, simulation, deployment and evaluation connected explicitly.
+- Removes the obsolete 2GO corridor and stepping-stone poster images.
+
 - Aligns the homepage with generative dynamics on manifold and gives Planning, Control and Learning equal prominence.
 - Explains batched constraints inside generative sampling, including learned diffusion integrations.
 - Repairs the unfetchable Menagerie submodule pin and preserves the local Go2 MJX adaptation as an idempotent patch.

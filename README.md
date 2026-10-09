@@ -257,17 +257,17 @@ for tensor shapes, each planner's data flow and a runnable JAX batch example.
 
 ## 🏗️ How the stack fits together
 
-<img src="docs/assets/architecture-overview.png" width="100%" alt="Three equal pillars: Planning, Control, and Learning. Learned models and priors feed generative planning; control closes the state-feedback loop; execution data supports offline learning and calibration. Task dynamics, constraint manifolds, geometry and simulation form the shared foundation.">
+<img src="docs/assets/architecture-overview.png" width="100%" alt="Complete workflow: define a robot task; compose planner plugins, Learning and models, constraints and geometry; run through the direct Python API or ExperimentRunner; connect simulation and the separate deployment runtime; observe results and feed recorded outcomes back to offline learning.">
 
-| Planning | Control | Learning |
-| --- | --- | --- |
-| Generative inference and trajectory optimization with dynamics, manifold geometry and constraints. | Motion–impedance control, followers, safety filters and robot I/O with measured-state feedback. | Policy and diffusion-model training, reusable priors and task-specific reliability calibration. |
+Define a **robot task**, then compose **planner plugins**, **constraints and
+geometry**, and **learned models or priors**. Run through the experiment framework
+or direct Python API. Environment adapters connect to simulation; explicit
+trajectory adapters connect selected plans to the separate deployment stack.
 
-**Learning → Planning:** learned models and PPO horizon priors guide generation.
-**Planning → Control:** selected trajectories become executable commands.
-**Control → Learning:** saved outcomes support explicit offline training and
-calibration. Each workflow selects the components it needs; model-based
-planners can also run without learned checkpoints.
+**Observers, metrics and replay** span the workflow. Saved trajectories and
+outcomes support offline policy training, diffusion-model training and
+reliability calibration. Each workflow selects the components it needs;
+model-based planners can also run without learned checkpoints.
 
 Read the [architecture guide](docs/concepts/architecture.md),
 [configure a task](docs/guides/configuration.md), or

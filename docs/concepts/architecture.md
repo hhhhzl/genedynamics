@@ -1,7 +1,10 @@
 # Architecture
 
 GenerativeDynamics implements **generative dynamics on manifold** for robotics
-planning, control and learning through replaceable components. Learned policies and trajectory models supply
+planning, control and learning through replaceable components. Define a task,
+compose planners, constraints and learned models, then run through the direct
+Python API or experiment framework. Explicit adapters connect selected plans
+to the separate deployment runtime. Learned policies and trajectory models supply
 proposals; model-based objectives and constraints shape online generation;
 controllers execute the selected result and return the next measured state.
 

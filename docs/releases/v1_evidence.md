@@ -39,9 +39,9 @@ The final release-candidate wheel has:
 | Property | Value |
 | --- | --- |
 | Filename | `genedynamics-0.1.0-py3-none-any.whl` |
-| Size | 12,160,747 bytes |
+| Size | 12,160,715 bytes |
 | Files | 789 |
-| SHA-256 | `ffb01d083c0bffb749bc4bea12e14423734ed5110c882a2c8168040b1d41dd70` |
+| SHA-256 | `bf970959dac27924aff198c2d3814ec9c359041c079b7e87e05b4d1925759927` |
 | Required package assets missing | 0 |
 | Forbidden V1 paths | 0 |
 | Twine metadata check | Passed |
@@ -105,10 +105,13 @@ The source and wheel inventory is stored in
 
 ## Manifold positioning and batched constraints — 2026-10-09
 
-- The homepage follows “Generative dynamics on manifold” and presents Planning,
-  Control and Learning as equal architecture pillars. A rendered PNG accompanies
-  the editable SVG source, so the displayed diagram has an explicit Learning
-  module across GitHub and the documentation site.
+- The homepage follows “Generative dynamics on manifold” and shows the complete
+  task-to-execution workflow: task definitions, planners, learning, constraints,
+  the planning workflow, simulation, deployment and evaluation. A rendered PNG
+  accompanies the editable SVG, with Learning explicitly connected to planner
+  priors and offline evaluation feedback.
+- The obsolete 2GO corridor and stepping-stone poster images were removed; the
+  unified demonstration gallery is unchanged.
 - The batch guide documents candidate, horizon and refinement axes, CBF/CFS and
   manifold feedback, MGA learned proposals, and DPCC/SafeDiffuser integration
   boundaries. Its JAX example ran with shape `(64, 20, 2)` and maximum residual
