@@ -59,7 +59,7 @@ bash scripts/setup/setup_mujoco_menagerie.sh
 ```
 
 The setup is safe to repeat and refuses conflicting edits. See the
-[asset revision and patch notes](https://github.com/hhhhzl/genedynamics/blob/release/v1-open-source/third_party/patches/README.md)
+[asset revision and patch notes](https://github.com/hhhhzl/genedynamics/blob/main/third_party/patches/README.md)
 for the upstream pin and local-checkout behavior.
 
 ## D3IL
@@ -88,3 +88,10 @@ python -c "import genedynamics; print(genedynamics.__version__)"
 
 The release CI also inspects wheel contents to ensure required robot assets are
 present and deferred V1 systems are absent.
+
+## Licenses
+
+The framework is MIT-licensed. Bundled code, robot descriptions and meshes keep
+their upstream licenses, recorded in [third-party notices](https://github.com/hhhhzl/genedynamics/blob/main/THIRD_PARTY_NOTICES.md).
+Optional dependencies have independent terms; for example, the `optimization`
+and `all` extras include GPL-licensed CVXOPT.

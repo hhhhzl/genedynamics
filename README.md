@@ -20,6 +20,7 @@
   <a href="docs/getting-started/installation.md"><img src="https://img.shields.io/badge/Python-3.10–3.12-3776AB?logo=python&logoColor=white" alt="Python 3.10 to 3.12"></a>
   <a href="docs/reference/compatibility.md"><img src="https://img.shields.io/badge/Compute-JAX-7C3AED" alt="JAX compute"></a>
   <a href="docs/releases/v1_scope.md"><img src="https://img.shields.io/badge/Release-0.1.0_alpha-B45309" alt="0.1.0 alpha release candidate"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-059669" alt="MIT License"></a>
 </p>
 
 <p align="center">
@@ -81,7 +82,7 @@ Create a planar environment, give it a **2GO** planner, and move from `(0.8, 0.8
 to the origin. This example runs on CPU without a simulator or model checkpoint.
 
 ```bash
-git clone --branch release/v1-open-source https://github.com/hhhhzl/genedynamics.git
+git clone https://github.com/hhhhzl/genedynamics.git
 cd genedynamics
 python -m venv .venv
 source .venv/bin/activate
@@ -197,7 +198,7 @@ implementation; configuration variants are documented in the
 | **MDOC** 🟢 Ours | Model-based diffusion with control-barrier-function projections inside dynamics rollouts. | [Paper](https://arxiv.org/abs/2607.12423) · [Original multi-robot project](https://github.com/hhhhzl/mdoc) |
 | **MD-COAS** 🟢 Ours | Combines an augmented-Lagrangian feasibility prior, CFS projection, and adaptive constraint scheduling. | [Paper](https://arxiv.org/abs/2607.14455) |
 | **2GO** 🟢 Ours | Shapes generative trajectory updates and exploration with active constraint geometry for constrained locomotion. | [Paper](https://arxiv.org/abs/2610.07772) |
-| **MGA** 🟢 Ours | Combines RL sequence proposals, model-based evaluation, and realization-aware geometry for motion–impedance control. | [Implementation](https://github.com/hhhhzl/genedynamics/tree/release/v1-open-source/genedynamics/solvers/single/mga) |
+| **MGA** 🟢 Ours | Combines RL sequence proposals, model-based evaluation, and realization-aware geometry for motion–impedance control. | [Implementation](https://github.com/hhhhzl/genedynamics/tree/main/genedynamics/solvers/single/mga) |
 | **MBD** | Uses known dynamics and Monte Carlo score estimates to optimize trajectories without demonstrations. | [Paper](https://arxiv.org/abs/2407.01573) · [Project](https://lecar-lab.github.io/mbd/) |
 | **EB-MBD** | Introduces emerging barriers during model-based diffusion to retain useful samples under constraints. | [Paper](https://arxiv.org/abs/2510.07700) |
 | **MPPI** | Updates sampled control sequences using exponential rollout-cost weights. | [Paper](https://arxiv.org/abs/1707.02342) |
@@ -328,5 +329,6 @@ and the papers linked above when using individual methods.
 
 ## 📄 License
 
-License selection is pending for the public V1 release. The
-[release checklist](docs/releases/v1_checklist.md) tracks this requirement.
+GenerativeDynamics is released under the [MIT License](LICENSE).
+Bundled third-party components retain their own licenses; see
+[third-party notices](THIRD_PARTY_NOTICES.md).

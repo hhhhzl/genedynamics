@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,16 @@ name = "genedynamics"
 version = "0.1.0"
 description = "Generative dynamics on manifold for robotics planning, control, and learning"
 readme = "README.md"
+license = "MIT AND Apache-2.0 AND BSD-3-Clause"
+license-files = [
+  "LICENSE",
+  "THIRD_PARTY_NOTICES.md",
+  "third_party/diffuser/LICENSE*",
+  "third_party/environments/d3il/LICENSE*",
+  "genedynamics/solvers/single/safediffuser/LICENSE",
+  "genedynamics/envs/assets/*/LICENSE",
+  "genedynamics/deploy/controllers/sport_mode/assets/LICENSE",
+]
 requires-python = ">=3.10,<3.13"
 authors = [
   {name = "Zhilin He", email = "zhilinhe@usc.edu"},
@@ -137,6 +147,7 @@ namespaces = true
 
 [tool.setuptools.package-data]
 genedynamics = [
+  "**/LICENSE",
   "**/*.fbs",
   "**/*.html",
   "**/*.j2",

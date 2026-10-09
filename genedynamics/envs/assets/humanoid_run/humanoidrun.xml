@@ -1,3 +1,7 @@
+<!-- Adapted for GenerativeDynamics from Brax brax/envs/assets/humanoid.xml
+     (Apache-2.0; see LICENSE and the root THIRD_PARTY_NOTICES.md).
+     GenerativeDynamics modifications: adjusted timestep and actuator gear parameters,
+     and model formatting for the bundled humanoid-running environment. -->
 <mujoco model="humanoid">
     <compiler angle="degree" inertiafromgeom="true" />
     <default>

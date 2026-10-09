@@ -145,10 +145,20 @@ The source and wheel inventory is stored in
   These local checks do not claim that the new remote Actions run has completed.
 
 
+## Licensing and publication preparation — 2026-10-09
+
+- The project owner selected MIT for original framework code.
+- Bundled D3IL, Diffuser/DPCC and SafeDiffuser notices were restored. Robot
+  models and the third-party G1 policy retain Apache-2.0 or BSD-3-Clause terms.
+- License texts are included in distribution metadata and package assets. The
+  wheel license expression reflects its MIT, Apache-2.0 and BSD-3-Clause
+  components; separately installed optional dependencies retain their own terms.
+- Excluded research source is absent from V1. An additional 294 untracked
+  research caches and residual files were removed. A publishable Git history
+  is prepared independently from the research repository.
+
 ## Open gates
 
-- The project owner must select the project license; the project entry remains
-  `UNKNOWN` in the license inventory until then.
 - Publication-grade latency, throughput, memory, task-success, safety, and
   reliability benchmarks still require the versioned hardware protocols and
   raw artifacts defined in the metrics contract.

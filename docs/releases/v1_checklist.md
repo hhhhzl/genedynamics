@@ -55,12 +55,11 @@ The checklist is ordered so each phase produces evidence required by the next.
 
 ## 7. Prepare and publish the release candidate
 
-- [ ] Complete license, citation, contribution, security, and conduct policies.
-  Citation, contribution, security, and conduct files are complete; the owner
-  license selection remains open.
+- [x] Complete license, citation, contribution, security, and conduct policies.
+  The project owner selected MIT; bundled components retain their upstream
+  licenses and notices.
 - [x] Generate an inventory for source, wheel, and documentation artifacts.
 - [x] Run secret, large-file, dependency, and license scans. The core dependency
-  closure has no detected strong-copyleft package; the project itself remains
-  `UNKNOWN` until `LICENSE` is selected.
+  closure has no detected strong-copyleft package; the project license is MIT.
 - [ ] Build the release candidate from a clean checkout and run the release gate.
 - [ ] Review the final diff, then tag and publish only after explicit approval.

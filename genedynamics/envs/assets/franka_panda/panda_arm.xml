@@ -1,3 +1,7 @@
+<!-- Adapted for GenerativeDynamics from the MuJoCo Menagerie Franka Emika Panda
+     model (Apache-2.0; see LICENSE and the root THIRD_PARTY_NOTICES.md).
+     GenerativeDynamics modifications: reduced to the seven-joint arm, removed
+     meshes and gripper, adjusted dynamics/actuators, and added an EE site. -->
 <mujoco model="panda_arm">
   <compiler angle="radian" autolimits="true" />
   <option timestep="0.005" iterations="4" ls_iterations="8" />

@@ -4,6 +4,8 @@ This project follows semantic versioning after the first public tag.
 
 ## Unreleased
 
+- Adopts the MIT License, preserves bundled third-party notices, and prepares an independent V1 publication history.
+
 - Adds native MD-COAS multi-candidate trajectory animations for planar navigation and 7-DoF arm avoidance, paired with their diffusion views in the homepage gallery.
 
 - Restores the complete task-to-execution architecture workflow, with learning, constraints, simulation, deployment and evaluation connected explicitly.
