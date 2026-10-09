@@ -3,6 +3,3 @@ contact_links:
   - name: "📚 Documentation"
     url: https://github.com/hhhhzl/genedynamics/blob/main/docs/index.md
     about: Installation, examples, supported integrations, and architecture.
-  - name: "🔒 Security policy"
-    url: https://github.com/hhhhzl/genedynamics/security/policy
-    about: Read how to report a vulnerability privately.
