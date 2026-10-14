@@ -1,0 +1,152 @@
+{
+  "repository": "https://github.com/yifan-hou/adaptive_compliance_policy.git",
+  "commit": "74d68eca3bfb5cb59da131c6351d9e1c9b129ff6",
+  "license": "MIT",
+  "source_files": [
+    {
+      "destination": "models/conv1d_components.py",
+      "source": "PyriteML/diffusion_policy/model/diffusion/conv1d_components.py",
+      "sha256": "ea2aa10e297cf253bc1a1919ba47fe6ae32049b5eaaab292ed9cc145d8d2adc0"
+    },
+    {
+      "destination": "models/positional_embedding.py",
+      "source": "PyriteML/diffusion_policy/model/diffusion/positional_embedding.py",
+      "sha256": "7d6421c15d8367ab817f0b64469a5bf900eb9a852eefe7446d2e1d9dc0b18e7d"
+    },
+    {
+      "destination": "models/conditional_unet1d.py",
+      "source": "PyriteML/diffusion_policy/model/diffusion/conditional_unet1d.py",
+      "sha256": "475ab40ce41756834b959c38a4e7e860d49f421eb5cc5ba0c446c5b1344de19a"
+    },
+    {
+      "destination": "models/dict_of_tensor_mixin.py",
+      "source": "PyriteML/diffusion_policy/model/common/dict_of_tensor_mixin.py",
+      "sha256": "158b63a244bcfb9aa377206730f5f59778c6aeb9138ff55c76d2c28ec46952d1"
+    },
+    {
+      "destination": "models/module_attr_mixin.py",
+      "source": "PyriteML/diffusion_policy/model/common/module_attr_mixin.py",
+      "sha256": "d1a5fe50036b7d8b4bdb11e79bb93cb3c69689f7397f35a7d5d029921e5f2317"
+    },
+    {
+      "destination": "models/normalizer.py",
+      "source": "PyriteML/diffusion_policy/model/common/normalizer.py",
+      "sha256": "88eecbeab7613c02c8a88f16f18c9eae0a72031b5c4978036129f8be19f831fe"
+    },
+    {
+      "destination": "spatial.py",
+      "source": "PyriteUtility/spatial_math/spatial_utilities.py",
+      "sha256": "856e52bb3e9c7f337b7cdae8a17d2d1d06bf239576dd241e06ed1b31982164c9"
+    },
+    {
+      "destination": "compliance.py",
+      "source": "PyriteUtility/planning_control/compliance_helpers.py",
+      "sha256": "1a35a9303cae3112418196757e4fff0cd07438027c466348f36b0796580449c8"
+    },
+    {
+      "destination": "policy.py",
+      "source": "PyriteML/diffusion_policy/policy/diffusion_unet_timm_mod1_policy.py",
+      "sha256": "e80b4e72c050c2d78af20df463428bb2463c65e35b21c0c6dc075e5d808fed00"
+    },
+    {
+      "destination": "models/pytorch_util.py",
+      "source": "PyriteML/diffusion_policy/common/pytorch_util.py",
+      "sha256": "96ce50e191b4c837532529040af65d2b9a1f433f33a5187f8cf256b62d84b6b4"
+    },
+    {
+      "destination": "policy.py",
+      "source": "PyriteML/diffusion_policy/policy/base_image_policy.py",
+      "sha256": "9bca26437fa136a5bf6b0d98168b476a5ddc44226187345e66e4cb37a7ef8943"
+    },
+    {
+      "destination": "compliance.py",
+      "source": "PyriteEnvSuites/env_runners/virtual_target_real_env_runner.py",
+      "sha256": "ba1db5c13d7c51215ee34085bb963af74d0405a34302b14aed8c31a6ec67c4b4"
+    },
+    {
+      "destination": "compliance.py",
+      "source": "PyriteConfig/tasks/common/common_type_conversions.py",
+      "sha256": "c7ee2f25d39736fec442b6ea0e19f33b337c75f1c3c14e8669626b9a388f6ca0"
+    },
+    {
+      "destination": "models/force_spec_encoder.py",
+      "source": "PyriteML/diffusion_policy/model/vision/force_spec_encoder.py",
+      "sha256": "9506623880935f18f72c5039a1e66e3511a55211559630364db98066ddc15b17"
+    },
+    {
+      "destination": "models/vision_force_spec.py",
+      "source": "PyriteML/diffusion_policy/model/vision/timm_obs_encoder_with_force_spec.py",
+      "sha256": "eff28ed35fa06a26f718e68ab9f88cc7128c6ed209554850521e94229cbab106"
+    },
+    {
+      "destination": "models/vision_force.py",
+      "source": "PyriteML/diffusion_policy/model/vision/timm_obs_encoder_with_force.py",
+      "sha256": "f6c6a91446e662f9bd923c97bf1e159e29c0c84144d693560d17a1fa886ba8e4"
+    },
+    {
+      "destination": "models/ema_model.py",
+      "source": "PyriteML/diffusion_policy/model/diffusion/ema_model.py",
+      "sha256": "f683be124722abe0703e2cf003566ab2d446783383cdcd5202063e20148ae467"
+    }
+  ],
+  "local_adaptations": [
+    "Replace parameter-free einops rearranges by equivalent Torch transpose/Unflatten; retain all U-Net parameter keys.",
+    "Select production Mod1 policy class; remove unused optional vision/plotting imports. Native observation encoder is supplied unchanged as a module.",
+    "Retain native sparse normalizer fit/load behavior; make data-only zarr dependency optional.",
+    "Select original VirtualTargetEstimator, remove diagnostic print statements and copy input velocity before native regularization.",
+    "Vectorize original action19 postprocessing for B,H,R without changing row-based rotation6d.",
+    "Reconstruct native anisotropic stiffness with its algebraically equivalent orthogonal projector; avoid singular basis for compliance parallel to z.",
+    "Keep plant execution in task-owned controller; preserve world poses and observation-time tool-frame stiffness as structured outputs.",
+    "Fix native SE3_inv squeeze to squeeze(-1), retaining singleton batch, arm and horizon axes in vectorized deployment.",
+    "Native CLIP/force-ViT and causal-force observation encoder class bodies are preserved; imports point to local licensed primitives.",
+    "Native checkpoint config compatibility removes only inactive false legacy dense flags; active unavailable flags are rejected and removals are recorded.",
+    "Native upstream optimizer grouping is preserved and its omitted force/fusion parameters reported; optional all_trainable mode is explicitly adapted.",
+    "Full training continuation adds optimizer, scheduler, EMA optimization_step/decay, CPU/CUDA/Python/NumPy RNG and data cursor state; no native loss/math change.",
+    "Restore moves native recreated normalizer ParameterDict statistics to the requested device."
+  ],
+  "qualification": {
+    "implemented": [
+      "native sparse diffusion core",
+      "native CLIP and FFT force-ViT encoders",
+      "native causal-force encoder from pinned submodule",
+      "author dill/Hydra checkpoint loader",
+      "actual JPEG-XL VirtualTargetDataset and sampler integration",
+      "full AdamW/EMA/LR/RNG/normalizer/data-cursor training continuation",
+      "virtual target estimator",
+      "native action19 decoding",
+      "anisotropic compliance decoding",
+      "strict tensor checkpoint loader"
+    ],
+    "evidence_config": "configs/arm/flip_up/qualification/acp_native.yaml",
+    "pending": [
+      "complete original300-epoch training from full230-episode dataset",
+      "original physical robot success table reproduction",
+      "four-task public observation and plant qualification",
+      "scored Cross-EBDM comparisons"
+    ]
+  },
+  "external_sources": [
+    {
+      "repository": "https://github.com/yifan-hou/multimodal_representation.git",
+      "commit": "e4bd73e3e6ff0d4334d12aabbe0e9575669b63e7",
+      "license": "MIT",
+      "source_files": [
+        {
+          "destination": "models/causal_force.py",
+          "source": "multimodal/models/base_models/layers.py",
+          "sha256": "381d047f5d359e08ba935c754097baff1488cc0420e2dccec46b7b9d9c1c100d"
+        },
+        {
+          "destination": "models/causal_force.py",
+          "source": "multimodal/models/models_utils.py",
+          "sha256": "1d682778b4c826cfff9d035c14d5d79a3134fa9e7d5b870f4b162c54357a44c8"
+        },
+        {
+          "destination": "models/causal_force.py",
+          "source": "multimodal/models/base_models/encoders.py",
+          "sha256": "9bf0deb8622864ce3b57b0c52bb60a774f406d0b1622c36a3e433cbd0cdc158d"
+        }
+      ]
+    }
+  ]
+}

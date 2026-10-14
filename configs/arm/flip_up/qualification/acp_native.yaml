@@ -1,0 +1,32 @@
+domain: arm
+task: flip_up
+category: qualification
+method: acp_native
+level: fft
+seed: 42
+source:
+  repository: https://github.com/yifan-hou/adaptive_compliance_policy.git
+  commit: 74d68eca3bfb5cb59da131c6351d9e1c9b129ff6
+  checkout: baselines/ACP
+  encoder_submodule: baselines/ACP_multimodal_representation
+  encoder_commit: e4bd73e3e6ff0d4334d12aabbe0e9575669b63e7
+native:
+  profile: requirements/baselines/acp-native.txt
+  checkpoint: .runtime/acp_native/assets/flip_up_spec/checkpoints/latest.ckpt
+  dataset: .runtime/acp_native/assets/flip_up_new_v5
+  inventory: .runtime/acp_native/assets/flip_up.inventory.json
+  subset: .runtime/acp_native/qualification_dataset
+  encoder: native_clip_and_force_vit
+  use_ema: true
+  optimizer_mode: upstream
+qualification:
+  device: cuda:0
+  batch_size: 1
+  total_schedule_steps: 1000
+  continuation_prefix_steps: 2
+  original_training_batch_size: 128
+  original_training_epochs: 300
+  scope: native_assets_encoder_policy_loss_and_exact_training_continuation
+  full_original_training: false
+  original_hardware_success_reproduction: false
+output: results/_development/p3_20261014/results/arm/flip_up/qualification/acp_native/level_fft/seed_42

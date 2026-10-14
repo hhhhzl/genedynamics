@@ -52,13 +52,21 @@ def policy_step(runner,state,memory,prior=None,seed=0,observation_noise=None):
     return command,memory,reference
 
 
-def rollout(config,mechanism,*,seed,mode,prior=None,force_scale=1.,angular_scale=1.,transport=None,output=None,command_selector=None,record_carry=False,observation_noise=None,body_selector=None):
+def rollout(config,mechanism,*,seed,mode,prior=None,force_scale=1.,angular_scale=1.,transport=None,output=None,command_selector=None,record_carry=False,observation_noise=None,body_selector=None,record_events=False,artifact_context=None,record_snapshots=False):
     runner=ContactRunner(config=config,mechanism=mechanism)
+    if record_events:
+        if type(runner._impl).__name__!="MujocoContact":raise NotImplementedError("event diagnostics require fixed-body numpy provider")
+        runner._impl.record_events=True
     state=runner.reset_batch(RandomRequest(seed,(seed*2+mode,)),initial="jammed" if config.insertion else "clear")
     memory=behavior_reset(1,[mode]); traces=[]; phases=[]; references=[]
-    carries=[]; deltas=[]; raw_commands=[]
+    carries=[]; deltas=[]; raw_commands=[]; events=[]
+    snapshots=[]
     start=time.monotonic()
     for _ in range(config.timeout_steps//10):
+        if record_snapshots:
+            if type(runner._impl).__name__!="MujocoContact":raise NotImplementedError("snapshots require fixed-body numpy reference")
+            snapshots.append({**{n:np.array(getattr(state,n),copy=True) for n in state._fields if n!="physics"},
+                **{"physics."+n:np.array(getattr(state.physics[0],n),copy=True) for n in ("qpos","qvel","qacc_warmstart","ctrl","time")}})
         selected=transport if command_selector is None else command_selector(runner,state,memory,prior,seed)
         command,memory,reference=policy_step(runner,state,memory,prior,seed,observation_noise)
         if selected is not None: command=np.array(selected.apply(command,phase=memory.phase),copy=True)
@@ -68,6 +76,7 @@ def rollout(config,mechanism,*,seed,mode,prior=None,force_scale=1.,angular_scale
             before=contact_carry(state,runner)
         executed=command if body_selector is None else ContactCommands(command,body_selector(runner,state,memory,command))
         result=runner.collect_chunk(state,executed)
+        if record_events:events.append(runner._impl.last_event_trace)
         if record_carry:
             carries.append(before[0]); deltas.append((contact_carry(result.state,runner)-before)[0]);raw_commands.append(command[0])
         state=result.state
@@ -94,8 +103,11 @@ def rollout(config,mechanism,*,seed,mode,prior=None,force_scale=1.,angular_scale
     if output is not None:
         from genedynamics.learning.cross_embodiment.data import code_fingerprint
         extra={} if not record_carry else dict(carry=np.asarray(carries),delta=np.asarray(deltas),raw_command=np.asarray(raw_commands))
+        if record_events:extra.update({"event."+name:np.concatenate([e[name] for e in events],axis=1) for name in events[0]})
+        if record_snapshots:extra.update({"snapshot."+name:np.stack([s[name] for s in snapshots]) for name in snapshots[0]})
         save_bundle(output,{**trace,"phase":np.asarray(phases),"reference":np.asarray(references),**extra},
                     {**report,"config":config.__dict__,"diagnostic_mechanism":mechanism.__dict__,"code_fingerprint":code_fingerprint(),"role":"development diagnostic",
+                     "artifact_context":artifact_context,
                      "observation_noise_std":observation_noise,"observation_noise_scope":"task feedback at 0.2 s; high-rate impedance/wrench feedback unchanged" if observation_noise is not None else None})
     return report
 
@@ -112,11 +124,13 @@ def main():
     p.add_argument("--seeds",type=int,nargs="+",default=[10,11])
     p.add_argument("--force-scale",type=float,default=1.)
     p.add_argument("--prior",type=Path)
+    p.add_argument("--backend",choices=("jax","native"),default="native")
+    p.add_argument("--device",choices=("cpu",),default="cpu")
     args=p.parse_args(); args.output.mkdir(parents=True,exist_ok=True)
     prior=None
     if args.prior:
         from genedynamics.learning.cross_embodiment.learned import FrozenRegressor
-        prior=PhaseGaussianPrior(FrozenRegressor.load(args.prior))
+        prior=PhaseGaussianPrior(FrozenRegressor.load(args.prior,backend=args.backend,device=args.device))
     config=ContactConfig(environment=args.task,robot=args.robot,mobile=args.task.startswith("mobile"),reset_task_noise=args.noise,timeout_seconds=30.)
     if args.research: config=research_contact_config(args.robot)
     mechanism=MechanismSpec(args.gain,args.delay,.5)

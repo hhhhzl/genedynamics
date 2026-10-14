@@ -1,0 +1,174 @@
+\section{Experiments}
+\label{sec:experiments}
+实验围绕三个问题组织：少量目标交互是否改善受约束任务表现；校准后的
+分布迁移是否提供超出动作适应与模型控制的收益；这种收益能否推广到未见
+机制和身体。本节给出拟采用的比较协议，正式结果表和结论留待独立评估。
+
+\subsection{Tasks, Bodies, and Shared Control Interface}
+源机器人为 Panda，固定臂目标为 xArm7，并以 UR5e 检验跨自由度迁移。
+目标几何、关节边界、工具与控制能力对全部方法公开；未知控制响应和接触
+参数通过声明的目标交互获得。身体变化与机制变化独立交叉，分别比较同身体
+不同响应、不同身体相近响应，以及身体与响应同时变化。
+
+四项任务使用任务空间技能 $U\in\R^{H\times13}$：
+\begin{equation}
+ U_j=\big[v_j^\top,\ \omega_j^\top,
+ (\log k^{\rm trans}_j)^\top,
+ (\log k^{\rm rot}_j)^\top,\ F^d_{n,j}\big]^\top.
+ \label{eq:experimentalprimitive}
+\end{equation}
+其中 $v,\omega$ 为线速度与角速度，$k$ 为相对参考值的对角刚度，
+$F_n^d$ 为法向力设定值。各身体通过自己的低层控制接口实现这些指令；
+自由空间阶段屏蔽力指令。任务阈值、坐标系、控制周期、碰撞白名单、
+终止规则和初态分布在开发阶段确定，并在正式评估前冻结。
+
+\begin{enumerate}[label=\textbf{Task \arabic*.},leftmargin=2.1em]
+\item \textbf{ObstacleTransfer.} 持带方向性的刚性工件绕过横梁与侧板，
+穿过姿态受限的三维开口，到达指定 $SE(3)$ 位姿。源行为包含上绕与侧绕
+路径；评估几何差异、执行延迟与负载变化对无碰撞完成、制动和跟踪的影响。
+\item \textbf{GuidedContactAlignment.} 沿三维导面建立接触，通过滑移和旋转
+到达定位区域。比较控制响应、摩擦与柔顺性变化，重点检验自由空间跟踪
+相近时，是否仍需调整压靠、速度、刚度和接触序列。
+\item \textbf{KeyedInsertionRecovery.} 从横向与角度偏移启动，将非轴对称
+connector 插入匹配 socket；包含受限搜索、回撤、重对齐和再次推进。
+重点评价整体完成、卡滞后的恢复及瞬时侧向力，而非仅评价平均接触力。
+\item \textbf{MobileKeyedInsertionRecovery.} 保持 Task 3 的工件、夹具、
+力限和恢复语义，改变身体支撑与接触耦合。检验固定臂技能在移动机械臂
+和带臂腿式平台上的受约束实现。
+\end{enumerate}
+
+\begin{table}[ht]
+\centering\small
+\begin{tabularx}{\linewidth}{L{2.1cm}YY}
+\toprule
+任务 & 主要任务指标 & 机制与鲁棒性指标\\\midrule
+Task 1 & 无碰撞完成、位姿误差、时间 & 全臂/持件间隙、跟踪误差、饱和\\
+Task 2 & 限力定位、定位误差、时间 & 接触丢失、滑移/停滞、力峰值\\
+Task 3 & 受约束插入、深度、时间 & 卡滞、条件恢复、重试、侧向力峰值\\
+Task 4 & 插入且身体约束满足、总时间 & 支撑失败、滑移、身体偏移、WBC 饱和\\
+\bottomrule
+\end{tabularx}
+\caption{四任务的比较重点。各任务均保留全部请求的失败与拒绝分母。}
+\end{table}
+
+\subsubsection{Task 4: Same Operation with Mobile Support}
+\label{sec:task4}
+Task 4 复用冻结的 Panda Task 3 prior。先比较固定与移动的同一机械臂，
+再检验带臂腿式身体；真实轮地或足地动力学与平台约束分别定义。
+平面运动代理只能用于接口诊断。跨移动支撑类型的结论需要多个有效支撑
+类型的独立证据；人形平台取决于实际控制接口，不作为预设完成项。
+
+同一身体上的全部高层方法共享 WBC、站位规则和可行性投影。
+任务条件包含可用的基座姿态/速度、支撑接触、关节余量与控制器历史，
+身体专属状态不直接塞入冻结的 Panda prior。末端响应对应允许为完成任务
+所需的合法身体运动，身体稳定进入目标约束。
+UMI-on-Legs 提供操作策略与全身控制分层的参照\cite{umilegs}；
+改变 WBC 的系统比较与固定 WBC 的高层方法比较分别报告。
+
+\subsection{Strong Baselines and Data Permissions}
+\textbf{受控校准协议 A。} 全部方法获得相同源数据、公开任务目标、
+已知身体模型、可用传感与低层控制接口。目标仅提供预算内短探针；不提供
+完整任务成功演示或目标在线 RL。校准后的模拟训练只能使用由公开模型和
+预算内记录构建的模型。隐藏目标环境仅提供计费探针及封存评估，
+实际机制参数不向训练开放。
+
+\textbf{近期论文选择。} 主候选优先 2025/2026 年 CoRL、RSS 和 ICRA 等
+主会工作，并覆盖 Karen Liu 与 Guanya Shi 参与的相关方法。
+已录用的 2026 条目与已出版论文分别标注。以下是待资格审计的候选池，
+最终收敛到 3--5 个完整方法；候选所需信息不同，结果按协议分别比较。
+
+\begin{longtable}{L{3.6cm}L{2.4cm}L{6.4cm}}
+\toprule
+近期论文 & 任务与数据 & 主要比较问题与适配边界\\\midrule\endfirsthead
+\toprule 近期论文 & 任务与数据 & 主要比较问题与适配边界\\\midrule\endhead
+Human2Sim2Robot\newline CoRL 2025 & Task 1/2；演示语义 &
+源物体轨迹构造 reward 后在目标模型 RL 是否已经足够？原生人视频与共同源
+机器人轨迹的改编分开，保留探索初始化和模型构建流程\cite{human2sim}。\\
+Play2Perfect\newline CoRL 2026，已录用 & Task 3 优先；额外模拟预训练 &
+多对象 play prior 加常规装配 RL 微调是否已能实现精密接触与恢复？原生
+in-hand 控制是核心，固定夹持改编不能被当作完整原法\cite{play2perfect}。\\
+FADA\newline CoRL 2026，已录用 & Task 4 近原作；B-log 记录 &
+冻结 planner、微调 inverse dynamics 是否已经足够？固定臂任务需要新 oracle
+与 Planner-IDM；人形 checkpoint 不直接代表跨机械臂迁移\cite{fada}。\\
+ASAP\newline RSS 2025 & Task 4 近原作；B-log 轨迹 &
+学习 delta-action model 并在对齐模拟器中微调策略是否已经足够？固定臂为
+显式改编，目标采集与模拟再训练均计费\cite{asap}。\\
+ACP\newline ICRA 2025 & Task 2/3；带力示范 &
+参考位姿、virtual target 与可变刚度的完整接触策略是否已经足够？
+原生监督属于 C-supervised，不能并入短探针 A 主表\cite{acp}。\\
+\bottomrule
+\end{longtable}
+
+按任务补充 SPI-Active（CoRL 2025）的主动辨识、DIAL-MPC（ICRA 2025）的
+在线规划和 XMoP（ICRA 2025）的跨身体运动规划\cite{spi,dialmpc,xmop}。
+SPI-Active 的原生对象是腿式动力学；DIAL-MPC 原生 torque-level 控制与
+固定 WBC 的参考优化改编分列；XMoP 的外部规划预训练数据及持件几何适配
+单列。原生复现、完整系统比较与共同接口改编不能互相替代。
+
+DR/recurrent PPO、经典 Residual RL、通用校准 MPC、Mirage 和 ASID
+保留为基础参照\cite{dr,ppo,rppo,residualrl,mjpc,mirage,asid}。
+FORGE 是 RA-L 2025 接触参照，不列作已核验的近期顶会主会方法\cite{forge}。
+同容量 task-only、deterministic transport、reweighting-only 和去响应/模式/
+风险项属于内部消融。强对照可使用连续动作、技能 chunk、历史条件与合理
+网络容量，不限制在有限映射候选库。
+
+\textbf{共同权限的完整适应比较。} B-log 向本文方法和 FADA/ASAP 等对照
+开放相同总时长、可测信息、reset 与执行约束下的完整自采 action/observation
+轨迹，不含目标 reward 或专家示范，各方法自行选择采集策略。
+另做共享同一记录缓冲的控制实验，区分采集与适应收益。
+ASAP 所需状态对齐与额外测量权限单列；同组方法获得相同可用信息。
+不使用 reward 不会使完整目标轨迹自动变成 A 短探针。
+B-online 允许计费的目标任务交互与 reward；
+C-supervised 比较向本文扩展版本提供相同可用示范并标明监督；信息不同的
+原生系统另报性能--成本前沿，不作同预算排名。外部预训练单列。
+D-oracle 仅作
+具有目标真参数的封存诊断。需要大量随机目标数据的 latent alignment、
+目标演示训练的 diffusion/latent-action policy，以及目标在线 residual RL
+分别报告数据曲线\cite{lsa,lad}。充分目标训练的策略与真值规划器不并入
+少量校准主表，也不被解释为已证明的性能上界。
+
+\textbf{接口与训练公平性。} 受控比较共享传感、可用历史、公开任务 reward、
+控制周期、命令边界和安全判据。需要特权 critic 的方法只能读取其训练模型的
+状态，隐藏目标参数不得进入训练。原生实现的复现检查与统一任务接口的改编
+结果分别记录，不能把本项目同名策略直接视为原论文复现。
+
+\subsection{Budget, Generalization, and Statistical Evaluation}
+目标访问按秒数、transitions、reset 和数据类型报告。
+短探针子协议可采用 $B\in\{0,5,10,30\}$，每次时长与 fit/validation
+分配在正式测试前冻结。需要约两分钟动作/观测记录的 FADA 等方法，
+另包含原生时长的数据点\cite{fada}，不能用不合适的极短缓冲代表完整性能。
+目标轨迹即使不含 reward，也须声明是否为完整任务执行；原生示范另列。
+接口调整、验证与失败尝试全部计费，主动方法受相同总访问预算限制。
+
+训练模拟 transitions、离线更新、调参次数、GPU 时间和部署在线模型调用
+另列。比较同模拟量的学习曲线与固定时延下的表现；不同优化器的更新次数
+不直接视为相同计算量。MPC 超时须按预先固定的执行规则记入结果。
+
+测试分别留出初态、机制组合与身体。UR5e 的两项协议分开：
+冻结 transport 仅拟合 context；以及允许在校准模型内继续更新策略的
+few-shot adaptation。已知目标形态上的训练不等于未见身体的冻结泛化。
+仿真任务结果与实机结果单列；平台与传感接口未确定时不预设实机结论。
+
+正式评估采用独立训练/校准重复与配对任务初态。样本量根据开发集方差和
+预声明最小有意义效应确定，再冻结比较集合与停止规则。置信区间按校准实例
+和任务 reset 分层，不能把同一校准下的每个控制步或大量 episodes 当作独立
+校准重复。全部支持失败、验证拒绝、超力、超时和身体失败进入整体分母。
+
+\subsection{Performance Evidence and Contribution Tests}
+主要评价无碰撞且满足力/身体约束的任务成功、失败风险、完成时间，以及
+获得这些表现所需的目标数据与计算成本。dense reward 用于训练；统一的任务
+成功判据用于评估，累计 reward 不能跨任务代替成功与安全表现。
+
+\begin{enumerate}
+\item \textbf{交互效率。} 在同等目标访问权限下，比较成功率--预算曲线，
+以及达到预声明成功水平所需的目标交互量。
+\item \textbf{接触与恢复。} 在相同约束下比较接触定位、卡滞后的整体恢复、
+力峰值与失效概率，并检验未见机制组合。
+\item \textbf{任务--行为权衡。} 首先控制任务成本，再比较有任务意义的模式
+覆盖、响应和条件对应。无模式请求时允许 baseline 选择更可靠的模式；
+有明确模式请求时，向全部方法提供相同条件，并分别评价按请求完成和自主完成。
+\item \textbf{摊销执行。} 在与校准模型 MPC 相当的任务表现下，检验 transport
+是否降低端到端在线时延；WBC、状态处理与模型计算均计入。
+\end{enumerate}
+源--目标响应距离下降、额外噪声或更大模型本身不构成性能贡献。
+方法是否成立取决于上述比较，不能预设所有任务或指标均优于现有方法。

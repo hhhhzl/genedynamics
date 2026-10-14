@@ -1,8 +1,31 @@
 # Cross embodiment 多后端实施计划
 
+**2026-10-14 P3 起重排：** 复现近期完整 baseline → 四任务开发比较 ↔ 方法增强
+→ 独立正式验证 → 论文定稿。P3–P7 的具体任务、门槛与执行队列以
+[新阶段计划](cross-embodiment-p3-onward-plan.md) 为准；此前 P3 小步骤安排已替代。
+
+**2026-10-14 研究路线调整：** 先建立成熟强 baseline 在四任务的表现，再确定
+方法与理论的独立贡献。当前实施顺序以
+[四环境比较计划](cross-embodiment-baseline-comparison-plan.md) 为准；
+主文献池优先 2025/2026 顶会与 Karen Liu、Guanya Shi 的相关工作，旧方法保留
+为基础参照；已录用、已出版和仅预印本明确区分。
+[文献筛选](cross-embodiment-baseline-survey.md) 与
+[任务协议审计](cross-embodiment-four-task-protocol.md) 分别记录方法与环境细节。
+LaTeX 已恢复为论文草稿，开发成绩与工程报告见
+[报告归档](cross-ebdm-experiment-reports/README.md)。
+
+**2026-10-14 P2：** 当前匹配接触的 GPU 模型执行、CPU 确认与资格边界见
+[P2 记录](cross-embodiment-p2.md)。GPU 模型搜索与替代 CPU 目标物理分别验收。
+
+**2026-10-14 当前基线：** GPU 机器上的 P0/P1 已从新工件完成，
+P1.5–P1.7 两版开发协议、独立审计与理论修订见
+[可行支持与分布实验](cross-embodiment-p1-refinement.md)。
+当前结果未建立 transport 相对同模型 task-only 的独立优势。
+旧 CPU 工件不再保留，下文数值为历史开发记录，不充当当前可复核结果。
+
 修订日期：2026-10-12。当前研究开发分支：`codex/cross-embodiment-transport`，未提交改动保留；后续GPU交接继续使用此项目分支。
 
-## 当前 CPU 实施状态（2026-10-12）
+## 历史 CPU 实施状态（2026-10-12）
 
 **本机执行已停止，转为 GPU 机器交接。** 磁盘耗尽后按用户要求停止实验、测试和依赖安装；不在本机继续补齐矩阵。下一阶段按 [GPU 交接清单](cross-embodiment-gpu-handoff.md) 执行，先完成代码/工件迁移和存储限额，再做当前版本回归与 GPU provider 验收。
 

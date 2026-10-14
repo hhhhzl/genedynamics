@@ -14,16 +14,13 @@ from scripts.cross_embodiment.collect_conditional_response import collect_one,ca
 from scripts.cross_embodiment.run_theory_feasibility import costs,publish
 
 
-PRIOR="tmp/cross_embodiment/mechanism_revision/strict_phase_prior"
-
-
 def cell(job):
-    name,robot,gain,delay,index,out,reuse,refined=job;out=Path(out);config=mating_contact_config(robot);truth=ContactMechanismSpec(gain,delay)
+    name,robot,gain,delay,index,out,reuse,refined,prior=job;out=Path(out);config=mating_contact_config(robot);truth=ContactMechanismSpec(gain,delay)
     seed=(64000 if refined else 58000)+index*1000
     bank=candidate_bank()+[dict(style="impedance",scale=s,stiffness=k,bias=[0.,0.]) for s in ((1.,1.5,2.,2.5) if refined else (1.,1.5,2.)) for k in ((.5,.75,1.) if refined else (0.,1.))]
     train_seeds=list(range(seed,seed+(8 if refined else 2)))
     budget=len(bank)*len(train_seeds)*2
-    contract=dict(config=asdict(config),diagnostic_truth=asdict(truth),candidates=bank,source_prior_sha256=load_bundle(PRIOR)[1]["tensor_sha256"],
+    contract=dict(config=asdict(config),diagnostic_truth=asdict(truth),candidates=bank,source_prior_sha256=load_bundle(prior)[1]["tensor_sha256"],
         train_seeds=train_seeds,test_seeds=list(range(seed+100,seed+105)),target_task_training_interactions=0,
         calibrated_model_episode_budget=budget,nominal_model_episode_budget=budget,common_command_regularization=.1,
         probe_budget=5,calibration_provenance=None if reuse is None else dict(path=reuse,sha256=hashlib.sha256(Path(reuse).read_bytes()).hexdigest()),
@@ -40,7 +37,7 @@ def cell(job):
             publish(out/"calibration.json",dict(estimated=asdict(estimate),fit=fit,validation=validation,budget=ledger))
     calibration=json.loads((out/"calibration.json").read_text())
     if not calibration["validation"]["supported"]:raise RuntimeError(f"{name}: independent calibration rejected")
-    def run(path,cfg,mech,i,s,m):return collect_one((str(path),asdict(cfg),mech,PRIOR,i,bank[i],s,m,None))
+    def run(path,cfg,mech,i,s,m):return collect_one((str(path),asdict(cfg),mech,prior,i,bank[i],s,m,None))
     source={}
     for s in contract["train_seeds"]:
         for m in (0,1):
@@ -75,12 +72,12 @@ def cell(job):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument("--output",type=Path,required=True);p.add_argument("--workers",type=int,default=2)
-    p.add_argument("--refined",action="store_true");p.add_argument("--calibration-root",type=Path);a=p.parse_args()
-    root=Path("tmp/cross_embodiment/theory_feasibility")
+    p.add_argument("--prior",type=Path,required=True)
+    p.add_argument("--refined",action="store_true");p.add_argument("--calibration-root",type=Path,help="explicit reuse only; default collects fresh counted probes");a=p.parse_args()
     definitions=[("panda_matched","panda",1.,0,None),("panda_derated","panda",.65,3,None),
-        ("xarm7_matched","xarm7",1.,0,None),("xarm7_derated","xarm7",.65,3,str(root/"derated_contact/calibration.json")),
-        ("ur5e_derated","ur5e",.65,3,str(root/"ur5e_calibrated/calibration.json"))]
-    jobs=[(n,r,g,d,i,str(a.output/n),str(a.calibration_root/n/"calibration.json") if a.calibration_root else reuse,a.refined) for i,(n,r,g,d,reuse) in enumerate(definitions)]
+        ("xarm7_matched","xarm7",1.,0,None),("xarm7_derated","xarm7",.65,3,None),
+        ("ur5e_derated","ur5e",.65,3,None)]
+    jobs=[(n,r,g,d,i,str(a.output/n),str(a.calibration_root/n/"calibration.json") if a.calibration_root else None,a.refined,str(a.prior)) for i,(n,r,g,d,_) in enumerate(definitions)]
     with ProcessPoolExecutor(max_workers=a.workers) as pool:reports=list(pool.map(cell,jobs))
     publish(a.output/"report.json",dict(complete=True,passed=all(r["passed"] for r in reports),cells={d[0]:r for d,r in zip(definitions,reports)},
         scope="finite body/mechanism factorial plus known-morphology heldout UR5e context-only calibration; no body-agnostic universal transfer"))

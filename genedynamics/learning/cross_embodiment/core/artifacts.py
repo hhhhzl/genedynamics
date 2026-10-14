@@ -12,16 +12,26 @@ from ..contracts import SCHEMA_VERSION
 
 
 def save_bundle(path, tensors, metadata):
+    from genedynamics.experiments.artifacts import artifact_write
     import numpy as np
     path = Path(path)
-    path.mkdir(parents=True, exist_ok=True)
     arrays = {name: np.asarray(value) for name, value in tensors.items()}
     if any(not name or array.dtype.kind not in "fiub" or not np.isfinite(array).all()
            for name, array in arrays.items()):
         raise ValueError("bundle requires named finite numeric tensors")
     document = dict(metadata, schema_version=SCHEMA_VERSION, linear_weight_layout="in_out",
                     tensor_specs={name: {"shape": list(a.shape), "dtype": str(a.dtype)} for name, a in arrays.items()})
-    json.dumps(document, allow_nan=False)  # fail before writing invalid metadata
+    encoded = json.dumps(document, allow_nan=False)  # fail before writing invalid metadata
+    # Deflate can expand incompressible data slightly. Reserve an uncompressed
+    # upper bound, ZIP headers and metadata while retaining old generations.
+    reserve = sum(a.nbytes + a.nbytes // 1000 + 4096 for a in arrays.values()) + len(encoded.encode()) * 2 + 65536
+    with artifact_write(path, reserve):
+        _publish(path, arrays, document)
+
+
+def _publish(path, arrays, document):
+    import numpy as np
+    path.mkdir(parents=True, exist_ok=True)
     # Content-addressed tensor generations + atomic metadata publication keep
     # the previous checkpoint loadable if the process dies during replacement.
     fd,temp=tempfile.mkstemp(dir=path,prefix=".tensors-",suffix=".npz")

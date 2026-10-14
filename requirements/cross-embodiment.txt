@@ -1,0 +1,26 @@
+# Minimal Linux research stack. CUDA libraries stay inside the project venv.
+# Full transitive versions and wheel hashes are recorded by the environment tool.
+-c cross-embodiment.lock.txt
+jax[cuda12]==0.6.2
+jaxlib==0.6.2
+# Keep the compiler/runtime on CUDA 12.6 for the current 570 driver.
+nvidia-cublas-cu12==12.6.4.1
+nvidia-cuda-cupti-cu12==12.6.80
+nvidia-cuda-nvcc-cu12==12.6.85
+nvidia-cuda-nvrtc-cu12==12.6.77
+nvidia-cuda-runtime-cu12==12.6.77
+nvidia-cudnn-cu12==9.8.0.87
+nvidia-cufft-cu12==11.3.0.4
+nvidia-cusolver-cu12==11.7.1.2
+nvidia-cusparse-cu12==12.5.4.2
+nvidia-nccl-cu12==2.26.2
+nvidia-nvjitlink-cu12==12.6.85
+nvidia-nvshmem-cu12==3.2.5
+numpy==2.2.6
+scipy==1.17.0
+mujoco==3.6.0
+mujoco-mjx==3.6.0
+osqp==1.0.4
+trimesh==4.10.1
+pytest==9.0.2
+pytest-cov>=5

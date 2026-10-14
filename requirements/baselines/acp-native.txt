@@ -1,0 +1,17 @@
+# Native ACP vision/force encoder, released checkpoints and demonstration loader.
+# Torch2.5.1 + torchvision0.20.1 cu124 are installed together first.
+-r core-pytorch.txt
+timm==1.0.15
+vit-pytorch==1.7.12
+hydra-core==1.3.2
+omegaconf==2.3.0
+dill==0.3.8
+accelerate==1.10.1
+threadpoolctl==3.6.0
+opencv-python-headless==4.11.0.86
+imagecodecs==2025.3.30
+spatialmath-python==1.1.14
+plotly==6.0.1
+pandas==2.2.3
+wandb==0.19.8
+scikit-video==1.1.11

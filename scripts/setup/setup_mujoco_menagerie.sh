@@ -18,7 +18,11 @@ if [[ ! -e "$MODULE_DIR/.git" ]]; then
         echo "Not an initialized MuJoCo Menagerie checkout: $MODULE_DIR" >&2
         exit 1
     fi
-    git -C "$ROOT_DIR" submodule update --init --recursive -- "$MODULE_PATH"
+    # The historical gitlink can reference a local patch commit unavailable
+    # upstream. Reconstruct from the published base plus our checked-in patch.
+    git clone --filter=blob:none --no-checkout \
+        https://github.com/google-deepmind/mujoco_menagerie.git "$MODULE_DIR"
+    git -C "$MODULE_DIR" checkout "$BASE_SHA"
 fi
 
 MODULE_HEAD="$(git -C "$MODULE_DIR" rev-parse HEAD)"

@@ -15,6 +15,7 @@ from genedynamics.learning.cross_embodiment.learning_data import Normalization
 def main():
     p=argparse.ArgumentParser(description=__doc__); p.add_argument("--source",type=Path,required=True); p.add_argument("--output",type=Path,required=True)
     p.add_argument("--phase-support",type=int,nargs="+",default=[0,1,2,3]);p.add_argument("--backend",choices=("jax","native"),default="jax")
+    p.add_argument("--device",default="cpu")
     a=p.parse_args(); episodes=[]; targets=[[] for _ in range(8)]; fingerprints=[]
     for path in sorted(a.source.glob("s*_m*")):
         data,meta=load_bundle(path)
@@ -30,7 +31,7 @@ def main():
         raise ValueError("two independent seeds and all declared phase/mode bins required")
     if any(targets[phase*2+mode] for phase in set(range(4))-set(a.phase_support) for mode in (0,1)):raise ValueError("undeclared phase present in source data")
     table=np.stack([np.mean(values,axis=0) if values else np.zeros(5) for values in targets]).astype(np.float32)
-    model=LearnedModel(ModelSpec(8,5,hidden=(),ensemble=1),backend=a.backend)
+    model=LearnedModel(ModelSpec(8,5,hidden=(),ensemble=1),backend=a.backend,device=a.device)
     norm=lambda n:Normalization(np.zeros(n,np.float32),np.ones(n,np.float32))
     parameters=model.import_parameters({"layer.0.weight":table[None],"layer.0.bias":np.zeros((1,5),np.float32)})
     prior=FrozenRegressor(model,parameters,norm(8),norm(5),{
@@ -38,6 +39,7 @@ def main():
         "reference_std":[.00005,.00005,.00005,.0002,.005],"mode_probabilities":[.5,.5],
         "source_tensor_sha256":fingerprints,"phase_counts":[len(v) for v in targets],
         "phase_support":a.phase_support,
+        "fit_backend":a.backend,"fit_device":a.device,
         "scope":"Gaussian reference prior; phase feedback/geometry decoder shared across all baselines; no flow claim"})
     prior.save(a.output,fit_report={"source_episodes":len(episodes),"all_physical_success":True,
         "distinct_initial_paths":len(set(fingerprints)),"reference_fit":"conditional sample mean; closed form maximum likelihood"})

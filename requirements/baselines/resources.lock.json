@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "resources": [
+    {
+      "id": "play2perfect_play",
+      "method": "play2perfect",
+      "repository": "Kushal20/play2perfect-checkpoints",
+      "revision": "29f86a6cec2b7bd1aa7ffa8d5031e628a22386e4",
+      "filename": "play_model.pth",
+      "url": "https://huggingface.co/Kushal20/play2perfect-checkpoints/resolve/29f86a6cec2b7bd1aa7ffa8d5031e628a22386e4/play/model.pth",
+      "bytes": 413895044,
+      "sha256": "4cb0d09833326de6878ee5681c2b14521823fa616e01b135214a51ffe41c63b9"
+    },
+    {
+      "id": "play2perfect_tight_insertion",
+      "method": "play2perfect",
+      "repository": "Kushal20/play2perfect-checkpoints",
+      "revision": "29f86a6cec2b7bd1aa7ffa8d5031e628a22386e4",
+      "filename": "tight_insertion_model.pth",
+      "url": "https://huggingface.co/Kushal20/play2perfect-checkpoints/resolve/29f86a6cec2b7bd1aa7ffa8d5031e628a22386e4/tight_insertion/model.pth",
+      "bytes": 217700467,
+      "sha256": "7e61015dad660430ab07bab4f715c90c6f76b84cc358da6be81319a6aee09990"
+    }
+  ]
+}

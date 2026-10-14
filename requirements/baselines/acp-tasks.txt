@@ -1,0 +1,3 @@
+# State-history task adaptation; native vision/7000-Hz FFT is a separate profile.
+-r tasks-pytorch.txt
+omegaconf==2.3.0

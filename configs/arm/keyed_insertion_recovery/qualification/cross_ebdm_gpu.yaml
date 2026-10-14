@@ -1,0 +1,16 @@
+base: ../_base.yaml
+name: cross_ebdm_gpu_qualification
+output_dir: results/arm/keyed_insertion_recovery/qualification/cross_ebdm_gpu
+method_params:
+  prior: results/_development/p0p1_20261013_v2/results/arm/keyed_insertion_recovery/validation/cross_ebdm/_source/prior
+  p1_parent: results/_development/p1_refinement_20261014/results/arm/keyed_insertion_recovery/validation
+  qualification_batch: 8
+  gpu_device: gpu:0
+  stage_timeout_seconds: 7200
+metadata:
+  workflow: cross_embodiment_gpu_qualification
+  protocol: matched_keyway_phase_gpu_v1
+  protocol_status: development
+  formal_experiment: false
+  formal_seeds: false
+  run_class: development

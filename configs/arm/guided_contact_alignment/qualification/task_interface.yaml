@@ -1,0 +1,18 @@
+name: guided_contact_alignment_cpu_interface_qualification
+output_dir: results/arm/guided_contact_alignment/qualification/task_interface
+env_name: guided_contact_alignment
+method: task_interface
+env_params: {robot: panda, initial: clear}
+backend: numpy
+device: cpu
+seeds: [18400, 18401]
+n_steps: 1000
+auto_report: false
+metrics: []
+visualizations: []
+metadata:
+  protocol_status: development
+  formal_experiment: false
+  formal_seeds: false
+  entrypoint: scripts.baselines.task_interfaces
+  role: public_teacher_physical_interface_qualification

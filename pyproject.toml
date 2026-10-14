@@ -14,6 +14,11 @@ license-files = [
   "third_party/diffuser/LICENSE*",
   "third_party/environments/d3il/LICENSE*",
   "genedynamics/solvers/single/safediffuser/LICENSE",
+  "genedynamics/solvers/single/fada/LICENSE",
+  "genedynamics/solvers/single/fada/NOTICE",
+  "genedynamics/solvers/single/acp/LICENSE",
+  "genedynamics/solvers/single/acp/LICENSE.multimodal",
+  "genedynamics/solvers/single/human2sim2robot/LICENSE.upstream",
   "genedynamics/envs/assets/*/LICENSE",
   "genedynamics/deploy/controllers/sport_mode/assets/LICENSE",
 ]

@@ -1,0 +1,96 @@
+{
+  "repository": "https://github.com/tylerlum/human2sim2robot",
+  "commit": "894eae2ec3ae39a573b81bd1860d14cc6bdfa6df",
+  "license": "MIT",
+  "scope": "Native PPO actor network, normalization and recurrent layers. Does not reproduce the full video/digital-twin/training/controller chain.",
+  "files": [
+    {
+      "upstream_path": "human2sim2robot/ppo/utils/network.py",
+      "upstream_sha256": "07374df073097e11b116e3d37592a7e9a6bdd8287819e99b38951fdae0d293de",
+      "local_path": "backends/native/network.py",
+      "local_sha256": "3a5dcea149ca5fe55a65cbebdd29a959ebc5511fc97763c54d18c977ec1f3f70",
+      "changes": [
+        "MIT attribution header",
+        "package-relative imports"
+      ]
+    },
+    {
+      "upstream_path": "human2sim2robot/ppo/utils/models.py",
+      "upstream_sha256": "89563b43019cb09dad019ab3d00c7cae5c7fe7d7a0a7a88f95e5b1aa17489ba1",
+      "local_path": "backends/native/models.py",
+      "local_sha256": "40c6d2364ac9b68add89550b5867c65c8c5257f101159779877137e8c9619a2f",
+      "changes": [
+        "MIT attribution header",
+        "package-relative imports"
+      ]
+    },
+    {
+      "upstream_path": "human2sim2robot/ppo/utils/running_mean_std.py",
+      "upstream_sha256": "1b95007c3116e784ba060692832f4dcc7f862813ed7d0da73d14baf37ae63ebd",
+      "local_path": "backends/native/running_mean_std.py",
+      "local_sha256": "b403d70285781b7aad24fcede90bdad3d9d90b8125485a13b05ee71179e859e7",
+      "changes": [
+        "MIT attribution header",
+        "package-relative imports"
+      ]
+    },
+    {
+      "upstream_path": "human2sim2robot/ppo/utils/layers/recurrent.py",
+      "upstream_sha256": "da0d97f8f7b0e586f4d0b1f465162ea9d0c307689115dba1f2953b8305ab9992",
+      "local_path": "backends/native/recurrent.py",
+      "local_sha256": "9e480b06ab0b6cf9daabbd185faf7a45410ab253a4340875fb4d372b0cf02917",
+      "changes": [
+        "MIT attribution header",
+        "package-relative imports"
+      ]
+    },
+    {
+      "upstream_path": "human2sim2robot/ppo/utils/torch_ext.py",
+      "upstream_sha256": "6ec7666475d8956394fcbb741e6ba260b524551be4453ad7835df94492ca74a5",
+      "local_path": "backends/native/torch_ext.py",
+      "local_sha256": "6b55944536d0fd6be824b2081edda1b9d300fde47585028552d56d651c90ce08",
+      "changes": [
+        "MIT attribution header",
+        "package-relative imports"
+      ]
+    },
+    {
+      "upstream_path": "human2sim2robot/ppo/ppo_player.py",
+      "upstream_sha256": "913a5bbd76e8f9ba7b080827bc82d25e6f8647a18751c734c4b30af97a4f7991",
+      "local_path": "backends/human2sim2robot_torch.py",
+      "changes": [
+        "Host inference frontend extracted from native get_action/preprocessing/init_rnn/restore",
+        "Explicit device mapping",
+        "Explicit public flat observation and batch validation",
+        "Episode reset API",
+        "Keep action axis for single-action unbatched input"
+      ],
+      "local_sha256": "794012a4fa0b58ec569267d79357625540df2e153ad6eebb877d7818541c03aa"
+    },
+    {
+      "upstream_path": "human2sim2robot/ppo/ppo_agent.py",
+      "upstream_sha256": "b4c2343627713cfedb40bdaee5091ccc3d69bddacba81b5fd0b4b92e137ef03c",
+      "local_path": null,
+      "changes": [
+        "Checkpoint schema reference only; native learner remains upstream"
+      ]
+    },
+    {
+      "upstream_path": "human2sim2robot/sim_training/cfg/train/CrossEmbodimentPPOLSTM.yaml",
+      "upstream_sha256": "4f14cfc054012f14803e712d6371fa1688c007e1921dc4941a01b4daf4e667be",
+      "local_path": null,
+      "changes": [
+        "Native default actor architecture reference"
+      ]
+    },
+    {
+      "upstream_path": "human2sim2robot/ppo/utils/helpers.py",
+      "upstream_sha256": "1300b922a6addfb944822d697bdbefa398ed13b7edd16825e84d5350d27e0606",
+      "local_path": null,
+      "changes": [
+        "Native unsqueeze_obs reference for source parity"
+      ]
+    }
+  ],
+  "license_sha256": "c6a3e25ba67566ef66e7dd0c3c28fd43bbdb8e9859f36b6c32ebe35288ff6603"
+}

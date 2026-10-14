@@ -16,7 +16,22 @@ log
 /save
 /reports
 /latex/*
-/latex
+!/latex/cross_ebdm/
+/latex/cross_ebdm/*
+!/latex/cross_ebdm/*.tex
+!/latex/cross_ebdm/*.bib
+!/latex/cross_ebdm/sections/
+!/latex/cross_ebdm/figures/
+!/latex/cross_ebdm/tables/
+!/latex/cross_ebdm/archive/
+/latex/cross_ebdm/**/*.aux
+/latex/cross_ebdm/**/*.log
+/latex/cross_ebdm/**/*.out
+/latex/cross_ebdm/**/*.toc
+/latex/cross_ebdm/**/*.synctex.gz
+
+# Disposable project environments, caches and native build outputs.
+/.runtime/
 
 .vscode/
 build

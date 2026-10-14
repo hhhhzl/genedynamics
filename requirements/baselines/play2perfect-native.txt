@@ -1,0 +1,29 @@
+# Official native in-hand route; Python3.11 only. Torch installed from cu126.
+# typing_extensions==4.15.0 is applied AFTER Isaac packages, per author instructions.
+torch==2.7.0
+torchvision==0.22.0
+torchaudio==2.7.0
+numpy==1.26.0
+isaaclab[isaacsim,all]==2.3.2.post1
+gym==0.23.1
+omegaconf==2.3.0
+hydra-core==1.3.2
+scipy==1.15.3
+yourdfpy==0.0.60
+trimesh==4.5.1
+# The headless profile keeps Isaac's websockets12 rather than upgrading it for newer GUI tooling.
+viser==0.2.0
+requests==2.32.3
+tqdm==4.70.1
+tyro==1.0.16
+huggingface_hub==0.35.3
+imageio[ffmpeg]==2.37.0
+wandb==0.22.0
+termcolor==3.3.0
+transforms3d==0.4.2
+tensorboard==2.21.0
+opencv-python==4.11.0.86
+pillow==11.3.0
+wheel==0.45.1
+setproctitle==1.3.7
+tensorboardX==2.6.4

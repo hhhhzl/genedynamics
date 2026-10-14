@@ -1,0 +1,23 @@
+{
+  "compiler": {
+    "version": "0.15.0",
+    "url": "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-x86_64-unknown-linux-musl.tar.gz",
+    "archive_sha256": "dfb82876f2986862996e564fa507a9e576e0c1e3bee63c2c1bd677c2543e6407",
+    "binary_sha256": "4df19452c202c5bef9f7c7e4a01a3f2b9d5199f0a1f73b70b4fe1bffbc9837f6",
+    "location": "/home/hectorh/workspace/genedynamics/.runtime/cross_ebdm/tex/tectonic"
+  },
+  "bundle": "https://relay.fullyjustified.net/default_bundle_v33.tar",
+  "inputs": {
+    "latex/cross_ebdm/intervention_calibrated_sim2real_blueprint.tex": "175abe95d04f86df62099f08e711325d01b94472ec21f74a87c34cc6f18a4a4d",
+    "latex/cross_ebdm/sections/experimental_design.tex": "ce8196a72098e1ce5aedd919ec8b5210f2cb8aa1e6c889a2f79be1dfcf7553ea",
+    "latex/cross_ebdm/sections/finite_feasibility_theory.tex": "b702afdeffd44c3e8b15c2daf9e616f96d195d70d4042dcf3f1b9b878593f41d"
+  },
+  "system_cjk_font": {
+    "path": "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "sha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a"
+  },
+  "pdf_sha256": "3fc212a9609dde1a14f667fe5e2f39b4b408db70e7c1f813ba1def917e923f14",
+  "pdf": "/home/hectorh/workspace/genedynamics/docs/development/cross-ebdm-experiment-reports/draft_build_20261014/intervention_calibrated_sim2real_blueprint.pdf",
+  "warnings": "TeX layout warnings remain in the retained engine log; no errors",
+  "scope": "compiled paper draft; build provenance is separate from experimental evidence"
+}

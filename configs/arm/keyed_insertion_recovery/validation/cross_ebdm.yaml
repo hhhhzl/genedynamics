@@ -1,0 +1,8 @@
+base: ../_base.yaml
+name: cross_ebdm_mechanism_pilot
+output_dir: results/arm/keyed_insertion_recovery/validation/cross_ebdm
+suites:
+  - name: xarm7_derated
+    env_params: {robot: xarm7, gain: 0.65, delay: 3}
+  - name: xarm7_matched
+    env_params: {robot: xarm7, gain: 1.0, delay: 0}

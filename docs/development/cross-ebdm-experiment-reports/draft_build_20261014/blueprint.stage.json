@@ -1,0 +1,17 @@
+{
+  "name": "blueprint",
+  "command": [
+    "/home/hectorh/workspace/genedynamics/.runtime/cross_ebdm/tex/tectonic",
+    "--untrusted",
+    "--keep-logs",
+    "--web-bundle",
+    "https://relay.fullyjustified.net/default_bundle_v33.tar",
+    "--outdir",
+    "/home/hectorh/workspace/genedynamics/docs/development/cross-ebdm-experiment-reports/draft_build_20261014",
+    "/home/hectorh/workspace/genedynamics/latex/cross_ebdm/intervention_calibrated_sim2real_blueprint.tex"
+  ],
+  "status": "passed",
+  "log": "/home/hectorh/workspace/genedynamics/docs/development/cross-ebdm-experiment-reports/draft_build_20261014/blueprint.log",
+  "exit_code": 0,
+  "seconds": 4.002234228421003
+}

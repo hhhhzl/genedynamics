@@ -1,0 +1,8 @@
+base: cross_ebdm_feasibility.yaml
+name: cross_ebdm_finite_distribution
+output_dir: results/arm/keyed_insertion_recovery/validation/cross_ebdm_distribution
+method_params:
+  stage: '1.7'
+  feasibility_root: results/arm/keyed_insertion_recovery/validation/cross_ebdm_feasibility
+metadata:
+  protocol: finite_refinement_law_v1

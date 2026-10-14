@@ -1,0 +1,53 @@
+# Native task qualification; this does not route the Cross-EBDM arm benchmarks.
+schema: genedynamics.fada.native_qualification.v1
+domain: locomotion
+task: g1_velocity_tracking
+category: qualification
+method: fada_native
+level: mjwarp
+seed: 42
+source:
+  repository: https://github.com/LeCAR-Lab/FADA
+  commit: 290b3a9c5c0ebe2e9851b61350617544be05e9bc
+oracle:
+  repository: AngchenXie/fada-checkpoints
+  revision: 8f08f077c32b6f9448587d8e34657dbb8088d76b
+  checkpoint: g1/model_24999.pt
+  sha256: 97faea45885c71825f37fff8669604af1aed25500050fbc9c2866d0e03ef4261
+engine:
+  backend: mjwarp
+  original_source_backend: isaacsim
+  mujoco_warp_commit: 09ec1da65ac44bd68703f9507c9c9e8f22ae7c71
+  ignore_unsupported_randomization: false
+execution:
+  device: cuda:0
+  num_envs: 4
+  oracle_evaluation_steps: 128
+  oracle_qualification_updates: 1
+  dagger_profile: qualification
+  target_data_seconds: 120.0
+  source_followup:
+    num_envs: 16
+    optimal_requested_transitions: 16384
+    weak_requested_transitions: 16384
+    warmup_updates: 3000
+    dagger_iterations: 2
+    updates_per_iteration: 500
+    rollout_steps_per_iteration: 256
+    batch_size: 128
+    time_limit_seconds: 1200
+    owned_gpu_limit_mib: 12288
+  independent_evaluation:
+    control_steps: 500
+    reset_seed: 1042
+  fixed_target:
+    num_envs: 1
+    startup_seed: 42
+    calibration_reset_seed: 42
+    evaluation_reset_seed: 1042
+    retain_startup_mass_com_friction_pd_delay_draw: true
+    random_reset_posture_pushes_torque_disturbance: true
+qualification:
+  route: official_source_with_simulator_adaptation
+  paper_quantitative_reproduction: false
+  cross_ebdm_four_task_qualification: false

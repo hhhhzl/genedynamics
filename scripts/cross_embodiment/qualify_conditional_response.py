@@ -41,6 +41,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dataset",type=Path,required=True);p.add_argument("--output",type=Path,required=True)
     p.add_argument("--study",type=Path,required=True);p.add_argument("--updates",type=int,default=5000)
+    p.add_argument("--device",default="cpu")
     a=p.parse_args(); dc=json.loads((a.dataset/"contract.json").read_text())
     if not (a.dataset/"report.json").exists():raise ValueError("collection must finish before qualification")
     contract=dict(dataset_contract=dc,updates=a.updates,seed=901,episode_hidden=[64,64],short_hidden=[128,128],ensemble=3,
@@ -71,11 +72,11 @@ def main():
     for name,x,y,split,hidden in (("episode",ex,ey,splits,(64,64)),("short",sx,sy,short_splits,(128,128))):
         path=a.output/name
         if (path/"metadata.json").exists():
-            models[name]=FrozenRegressor.load(path);fits[name]=models[name].metadata["fit_report"]
+            models[name]=FrozenRegressor.load(path,device=a.device);fits[name]=models[name].metadata["fit_report"]
         else:
             model,_,fit=fit_regressor(x,y,split=="train",split=="validation",
                 spec=ModelSpec(x.shape[-1],y.shape[-1],hidden=hidden,ensemble=3),seed=901,
-                updates=a.updates,batch_size=64,checkpoint_path=a.output/(name+"_resume"),
+                updates=a.updates,batch_size=64,checkpoint_path=a.output/(name+"_resume"),device=a.device,
                 metadata=dict(learned_role="conditional_"+name+"_response",dataset=str(a.dataset),
                     layout=dict(carry_dim=197,command_dim=130,context_dim=0),
                     scope="fixed probe-calibrated body/context; response-decision validation only"))

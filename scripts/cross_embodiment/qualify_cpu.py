@@ -15,7 +15,9 @@ import time
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--output',type=Path,default=Path('tmp/cross_embodiment/qualification'))
+    p.add_argument('--output',type=Path,required=True)
+    p.add_argument('--modules',nargs='+',help='explicit module names; default is the current complete suite')
+    p.add_argument('--timeout',type=int,default=3600,help='per-module timeout in seconds')
     p.add_argument('--device-chunks',action='store_true',help='serial warmup and strict transfer guards')
     p.add_argument('--learned-loops',action='store_true',help='new charged probes, training and four baselines per task')
     p.add_argument('--artifacts',type=Path,default=Path('tmp/cross_embodiment'))
@@ -26,17 +28,24 @@ def main():
     report={'code_fingerprint':code_fingerprint(),'python':sys.version,'flags':{k:os.environ.get(k) for k in ('JAX_PLATFORMS','XLA_FLAGS','MUJOCO_GL')},
         'versions':{n:importlib.metadata.version(n) for n in ('jax','mujoco','torch','numpy','scipy','osqp')},'gpu':'not_run','stages':[]}
     def stage(name,args):
-        start=time.perf_counter(); logfile=a.output/(name+'.log')
-        with logfile.open('w') as stream:
-            result=subprocess.run([sys.executable,*map(str,args)],stdout=stream,stderr=subprocess.STDOUT)
-        row={'name':name,'command':[sys.executable,*map(str,args)],'exit_code':result.returncode,'seconds':time.perf_counter()-start,'log':str(logfile)}
-        report['stages'].append(row); (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
-        print(f'{name}: {"PASS" if result.returncode==0 else "FAIL"} ({row["seconds"]:.1f}s)',flush=True)
+        from genedynamics.experiments.process import run_stage
+        from genedynamics.experiments.artifacts import atomic_json
+        row=run_stage(name,[sys.executable,*map(str,args)],a.output,timeout=a.timeout)
+        report['stages'].append(row)
+        atomic_json(a.output/'report.json',report)
     # A process per module releases compiled MJX executables before the next
     # topology. This also avoids interpreting concurrent-compiler OOM as a bug.
     if not a.skip_tests:
-        for module in sorted(Path('test/cross_embodiment').glob('test_*.py')):
-            stage(module.stem,['-m','pytest','-q',module,'--junitxml='+str(a.output/(module.stem+'.xml'))])
+        (a.output/'temporary').mkdir(parents=True,exist_ok=True)
+        modules=sorted(Path('test/cross_embodiment').glob('test_*.py'))
+        if a.modules:
+            unknown=set(a.modules)-{m.stem for m in modules}
+            if unknown:raise SystemExit(f'unknown modules: {sorted(unknown)}')
+            modules=[m for m in modules if m.stem in a.modules]
+        report['modules']=[m.stem for m in modules]
+        for module in modules:
+            stage(module.stem,['-m','pytest','-q',module,'--junitxml='+str(a.output/(module.stem+'.xml')),
+                  '--basetemp='+str(a.output/'temporary'/module.stem)])
     if a.device_chunks:
         stage('obstacle_device',['-m','scripts.cross_embodiment.cpu_device_pipeline_smoke','--models',a.artifacts/'learned_cpu_v2',
             '--transport',a.artifacts/'learned_closed_loop_v4/transport','--output',a.output/'obstacle_device'])
@@ -50,6 +59,13 @@ def main():
                 '--response-data',a.artifacts/data,'--output',a.output/task])
     report['functional_pass']=all(s['exit_code']==0 for s in report['stages']) and bool(report['stages'])
     report['scope']='software CPU qualification; learned task success and failure counts remain in each task report; not research superiority'
+    import xml.etree.ElementTree as ET
+    totals=dict(tests=0,failures=0,errors=0,skipped=0)
+    for path in a.output.glob('test_*.xml'):
+        if a.modules and path.stem not in a.modules:continue
+        for suite in ET.parse(path).getroot().iter('testsuite'):
+            for key in totals:totals[key]+=int(suite.get(key,0))
+    report['test_counts']=totals
     (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     return 0 if report['functional_pass'] else 1
 

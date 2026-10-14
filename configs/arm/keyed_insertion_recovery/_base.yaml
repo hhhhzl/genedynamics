@@ -1,0 +1,26 @@
+name: keyed_insertion_recovery
+output_dir: results/arm/keyed_insertion_recovery/_invalid_base
+env_name: keyed_insertion_recovery
+method: cross_ebdm
+backend: numpy
+device: cpu
+seeds: [4100, 5100, 6100]
+n_steps: 750
+auto_report: false
+metrics: []
+visualizations: []
+obstacle_config: {generator: none}
+method_params:
+  source_seeds: [40, 41, 42]
+  evaluation_reset_groups: 5
+  max_artifact_bytes: 10737418240
+  min_free_bytes: 21474836480
+  qualification: true
+  stage_timeout_seconds: 7200
+metadata:
+  workflow: cross_embodiment_pilot
+  protocol: matched_keyway_p0p1_v1
+  protocol_status: development
+  formal_experiment: false
+  formal_seeds: false
+  run_class: development

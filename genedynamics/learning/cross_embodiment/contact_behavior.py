@@ -131,7 +131,9 @@ class PhaseGaussianPrior:
         if backend=="jax":
             import jax.numpy as xp
         else: xp=np
-        inputs=xp.eye(8)[memory.phase*2+memory.mode]
+        # Frozen source regressors use FP32 on every provider, even when the
+        # contact physics/controller carry explicitly uses FP64.
+        inputs=xp.eye(8,dtype=xp.float32)[memory.phase*2+memory.mode]
         value=self.regressor.predict(inputs)[0]
         sampled=value+noise*xp.asarray(self.regressor.metadata["reference_std"])
         force=xp.where(value[:,4:5]>1.,xp.clip(sampled[:,4:5],0.,10.),0.)

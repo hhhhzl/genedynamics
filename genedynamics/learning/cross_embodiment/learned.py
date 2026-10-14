@@ -137,9 +137,10 @@ class GaussianSkillPrior:
 
 
 def fit_regressor(inputs,targets,train_mask,validation_mask,*,spec,seed=0,updates=1000,batch_size=64,
-                  update_chunk=100,metadata=None,checkpoint_path=None,resume=False):
+                  update_chunk=100,metadata=None,checkpoint_path=None,resume=False,backend="jax",device="cpu"):
     from .learning_data import make_batches
-    model=LearnedModel(spec)
+    if backend!="jax":raise NotImplementedError("fit_regressor currently requires the JAX training provider")
+    model=LearnedModel(spec,backend=backend,device=device)
     ni,no=Normalization.fit(inputs,train_mask),Normalization.fit(targets,train_mask)
     x,y=ni.encode(inputs).astype(np.float32),no.encode(targets).astype(np.float32)
     state=model.initialize(seed)
@@ -187,5 +188,6 @@ def fit_regressor(inputs,targets,train_mask,validation_mask,*,spec,seed=0,update
             "normalized_train_loss":history,"validation_mse":float(np.mean((prediction-targets[validation])**2)),
             "validation_normalized_mse":float(np.mean(((prediction-targets[validation])/no.scale)**2)),
             "validation_ensemble_disagreement":float(np.mean(np.std(prediction,axis=0))),
-            "scope":"CPU functional fit; no convergence or calibrated uncertainty claim"}
+            "backend":backend,"device":str(model._impl.device),
+            "scope":"functional fit; no convergence or calibrated uncertainty claim"}
     return regressor,state,report

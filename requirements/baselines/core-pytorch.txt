@@ -1,0 +1,15 @@
+# Direct pins for source/core parity, not an IsaacGym/IsaacSim training profile.
+# Torch 2.5.1 CPU or CUDA 12.4 is installed separately by the environment tool.
+jax==0.6.2
+jaxlib==0.6.2
+numpy==2.2.6
+scipy==1.17.0
+PyYAML==6.0.3
+tqdm==4.70.1
+matplotlib==3.11.2
+imageio==2.38.1
+pytest==9.0.2
+diffusers==0.30.3
+einops==0.8.1
+zarr==2.18.3
+numcodecs==0.15.1

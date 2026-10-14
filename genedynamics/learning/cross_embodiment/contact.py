@@ -188,7 +188,10 @@ class ContactRunner:
         mechanism=MechanismSpec() if mechanism is None else mechanism
         mechanism_specs(mechanism)
         if backend!="numpy" and (self.config.socket_profile!="legacy" or self.config.guide_profile!="legacy" or self.config.wrench_semantics!="legacy_aggregate"):
-            raise NotImplementedError("matched keyway/TCP wrench currently require qualified numpy/cpu provider")
+            if not (backend=="jax" and self.config.socket_profile=="matched_keyway" and
+                    self.config.guide_profile=="legacy" and self.config.wrench_semantics=="tool_at_tcp_world" and
+                    self.config.robot in {"panda","xarm7"} and not self.config.mobile):
+                raise NotImplementedError("new JAX contact semantics are limited to fixed Panda/xArm7 matched keyway/TCP wrench")
         if microbatch_size is not None and (isinstance(microbatch_size,bool) or not isinstance(microbatch_size,int) or microbatch_size<1): raise ValueError("invalid contact microbatch size")
         if self.config.robot=="go2_z1":
             if not isinstance(mechanism,MechanismSpec): raise NotImplementedError("floating OSQP runner takes one mechanism per topology instance")

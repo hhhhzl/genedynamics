@@ -1,0 +1,6 @@
+base: cross_ebdm_gpu.yaml
+name: cross_ebdm_gpu_qualification_replay
+method_params:
+  cpu_fixture_root: results/_development/p2_20261014/results/arm/keyed_insertion_recovery/qualification/cross_ebdm_gpu
+metadata:
+  protocol: matched_keyway_phase_gpu_v2_retained_cpu

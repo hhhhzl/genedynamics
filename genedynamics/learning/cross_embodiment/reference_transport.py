@@ -59,24 +59,31 @@ class ReferenceTransport:
             "phase_conditioned":True,"support":"phase3 only: scale .5..2.5; tangential velocity bias +/- .02 m/s; common command bounds"}))
 
     @classmethod
-    def from_stage_parameters(cls,scale,insertion_bias=(0.,0.),alignment_bias=(0.,0.),*,alignment_stiffness=(0.,)*6,insertion_stiffness=(0.,)*6,metadata=None,backend="jax",device="cpu"):
+    def from_stage_parameters(cls,scale,insertion_bias=(0.,0.),alignment_bias=(0.,0.),*,alignment_stiffness=(0.,)*6,insertion_stiffness=(0.,)*6,recovery_stiffness=(0.,)*6,metadata=None,backend="jax",device="cpu"):
         """Public phase gates; correction can act before tight-hole insertion."""
         if np.shape(insertion_bias)!=(2,) or np.shape(alignment_bias)!=(2,) or not np.isfinite([*insertion_bias,*alignment_bias]).all() or not .5<=scale<=2.5 or np.max(np.abs([*insertion_bias,*alignment_bias]))>.02:
             raise ValueError("outside declared stage transport support")
         if np.shape(alignment_stiffness)!=(6,) or np.shape(insertion_stiffness)!=(6,) or not np.isfinite([*alignment_stiffness,*insertion_stiffness]).all() or np.max(np.abs([*alignment_stiffness,*insertion_stiffness]))>1.:
             raise ValueError("stage stiffness outside shared log-stiffness support")
+        if np.shape(recovery_stiffness)!=(6,) or not np.isfinite(recovery_stiffness).all() or np.max(np.abs(recovery_stiffness))>1.:
+            raise ValueError("recovery stiffness outside shared log-stiffness support")
         model=LearnedModel(ModelSpec(16,13,hidden=()),backend=backend,device=device)
         weights=np.zeros((16,13),np.float32);weights[:13]=np.eye(13);weights[13,12]=scale-1.
         weights[14,:2]=alignment_bias;weights[15,:2]=insertion_bias
-        weights[14,6:12]=alignment_stiffness;weights[15,6:12]=insertion_stiffness
-        parameters=model.import_parameters({"layer.0.weight":weights[None],"layer.0.bias":np.zeros((1,13),np.float32)})
+        # The constant offset acts in phases 0/1. Phase 2/3 replace it with
+        # their independently declared offsets, rather than adding stiffness.
+        weights[14,6:12]=np.asarray(alignment_stiffness)-recovery_stiffness
+        weights[15,6:12]=np.asarray(insertion_stiffness)-recovery_stiffness
+        bias=np.zeros((1,13),np.float32);bias[0,6:12]=recovery_stiffness
+        parameters=model.import_parameters({"layer.0.weight":weights[None],"layer.0.bias":bias})
         norm=lambda n:Normalization(np.zeros(n,np.float32),np.ones(n,np.float32))
         return cls(FrozenRegressor(model,parameters,norm(16),norm(13),{
             **(metadata or {}),"learned_role":"reference_transport","force_scale":float(scale),
             "insertion_bias":list(map(float,insertion_bias)),"alignment_bias":list(map(float,alignment_bias)),
             "alignment_stiffness":list(map(float,alignment_stiffness)),"insertion_stiffness":list(map(float,insertion_stiffness)),
+            "recovery_stiffness":list(map(float,recovery_stiffness)),
             "phase_conditioned":True,"alignment_stage":True,
-            "support":"phase2/3 tangential velocity bias +/- .02 m/s; phase3 scale .5..2.5; shared decoder bounds"}))
+            "support":"phase0/1, phase2 and phase3 independent log-stiffness +/-1; phase2/3 tangential bias +/- .02 m/s; phase3 scale .5..2.5; shared decoder bounds"}))
 
     @classmethod
     def from_scale(cls,scale,*,backend="jax",metadata=None):

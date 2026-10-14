@@ -1,0 +1,86 @@
+% Historical CPU notes. Original experiment artifacts were intentionally not retained.
+% Excluded from the current paper: these numbers are not independently reproducible evidence.
+\paragraph{历史记录：原始 CPU 工件未保留，不纳入当前证据。}
+\paragraph{匹配键槽的新 CPU 可行性结果。}
+新配置采用上面的专用键槽、TCP world wrench 和完整工具包络判据，任务空间扰动为 $\pm0.5\,\mathrm{mm}$，其余深度、姿态、保持、力限和 $15\,\mathrm s$ 时限与研究验收一致。Panda prior 冻结，xArm7 的隐藏 gain/delay 为 $0.65/60\,\mathrm{ms}$；已知工具质量为 $0.5\,\mathrm{kg}$。5 次计费探针分为 3 fit/2 validation，gain/delay 后再拟合 9 点摩擦/顺应性族。12 个阶段参数候选、2 个训练 reset 和 2 种模式给出 48 次 calibrated-model rollout；task-only 控制搜索与 joint-response transport 共享完全相同缓冲，nominal-response 对照另有相同额度。下表为冻结后的 5 个新 reset clusters，各执行两种模式。
+\begin{center}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+方法 & 成功 & 实际模式对应 & 末段力 RMSE (N) & 平均耗时 (s)\\
+\midrule
+Direct & 0/10 & 10/10 & 6.003 & 12.818\\
+Calibrated map & 10/10 & 10/10 & 1.707 & 9.710\\
+Same-model task-only search & 10/10 & 10/10 & 1.707 & 9.710\\
+Nominal-response map & 5/10 & 10/10 & 3.437 & 13.574\\
+\bottomrule
+\end{tabular}
+\end{center}
+两种校准优化目标选择\emph{完全相同}的 force scale、阶段刚度和插入切向偏置，因此不能把这组收益归因于额外 response anchoring。actual 与 estimated-model 各 40 条轨迹独立重算验收，0 mismatch。Panda/xArm7 两模式在 $2/1\,\mathrm{ms}$ 时间步下共 8/8 成功，仅支持这一开发区域的定性稳定性。有限 model-cost 界在 $n=5$ 时全部未认证。
+
+随后预先固定 25 个全新独立 reset clusters、两方法和有界 task cost
+\[
+ c=0.5\,\ind[\mathrm{failure}]+0.25\min\{\|p_{\rm final}-p_g\|/(2\,\mathrm{mm}),1\}
+   +0.25\min\{\mathrm{RMSE}_{F,\mathrm{last15}}/(5\,\mathrm N),1\}.
+\]
+每 reset 内平均两种模式；Direct0/50、calibrated50/50，实际模式50/50保留。平均实际成本下降 $0.80203$，直接配对单侧95\%下界为 $0.31248>0$。这认证的是\emph{条件于一次校准及声明 reset 分布的实际成本改进}，不能替代 model fidelity、跨校准重复或同模型控制器优势。
+
+\paragraph{探针、模型偏差与身体条件。}
+摩擦 $0.15/0.7$ 两模型对 free probe 的位置/力响应差精确为零，而对两条 contact probe 的法向差 RMSE 为 $0.414/0.474\,\mathrm N$，支持仅自由空间探针无法辨识接触相关机制的反例。在真实 friction/time-constant 为 $0.7/0.04$、probe readout 噪声 $20\,\mu\mathrm m$ 和 $0.03\,\mathrm N$ 时，独立 probe 验证通过；4 条新实际任务均成功。fitted-contact 模型的 episode signature RMSE/task-cost MAE 为 $0.00108/0.000265$，nominal-contact 为 $0.01768/0.01508$。闭环力反馈仍无噪声，不称作 noisy closed-loop 成功。真实 $0.55/0.03$ 不在离散模型族中时，近似模型也通过有限 probe/occupancy 检查；这不证明真实参数属于模型族，参数恢复定理不适用。
+
+载荷偏差负对照将真实工具设为 $0.8\,\mathrm{kg}$、模型仍假设 $0.5\,\mathrm{kg}$；拟合gain达到上边界1.3，独立position/force/peak RMSE为 $1.104\,\mathrm{mm}/1.233\,\mathrm N/1.347\,\mathrm N$，超过原阈值，返回 unsupported。请求的4次任务试验计拒绝失败、实际任务执行0次，5次探针仍计费；不把未建模质量误差当作正确的actuator辨识。
+
+同一个 xArm7 冻结 map 在未参与其搜索的 UR5e 上 0/2 超时，而 UR5e direct 为2/2。以公开 UR5e morphology 构造响应、独立5探针校准并在相同候选预算内适配后，3个新reset、两模式共6/6；direct、task-only与nominal也均6/6。此结果支持身体条件化的必要边界，不支持普遍成功率收益。另4次独立 probe 初态加首轮共5次无噪声辨识均通过，不能充当5次独立transport训练。
+
+\paragraph{learned response 与优化器边界。}
+另训练3-member有限episode-response ensemble，独立reset的signature/task-cost RMSE为 $0.06413/0.17812$，超过预声明 $0.05/0.15$ 阈值，判为 unsupported、未部署。它不是共享autoregressive dynamics，结构twin成功不能代替这一验收。有限候选短时MPC在额外在线模型调用下仍保留失败；该诊断不构成普遍优于充分优化MPC的证据。现阶段最强同类控制搜索与方法持平，论文新颖性尚需独立机制优势建立。
+
+\paragraph{状态条件 learned response 与有限联合 law。}
+后续开发将初态、原始命令窗与完整控制 carry 显式条件化，采集480条校准模型轨迹：12个训练、4个误差验证、4个区间校准 reset groups，各包含12候选和两模式。327维输入到197维carry delta的3-member、$128\times128$网络，在独立验证上位置RMSE为$0.1671\,\mathrm{mm}$、rotation-matrix RMSE为$0.000189$、法向力RMSE为$0.5941\,\mathrm N$，通过预定$2\,\mathrm{mm}/0.03/1\,\mathrm N$短窗标准。实际闭环另用5个新reset groups、两模式，在高层$0.2\,\mathrm s$反馈加入$20\,\mu\mathrm m/0.2\,\mathrm{mrad}/0.03\,\mathrm N$噪声；Direct0/10、校准map10/10且模式10/10。实际访问状态上的$0.2/0.6\,\mathrm s$递推位置RMSE最大为$0.1254/0.2867\,\mathrm{mm}$，力RMSE最大为$0.4777/0.6469\,\mathrm N$，通过原短/多步阈值。递推使用外给的实际命令窗，高率低层反馈精确；不能称自主整段策略预测或把同episode的窗口当作独立试验。
+
+条件episode均值网络的task-cost RMSE仍为$0.20945>0.15$，保留失败。另一个对象是有限联合响应law：对声明的24个candidate--mode cases，从每case的12个训练reset响应向量作完整联合经验采样，使用显式uniform noise及portable affine artifact，并将reset分布积分掉。冻结后192条新模型轨迹的平均signature marginal W1、cost W1、failure-probability MAE为$0.00530/0.02641/0.01910$，通过$0.05/0.15/0.1$标准；28D完整向量的经验L1-mean运输距离为$0.008505$。这些是有限访问分布结果，不是连续状态空间uniform kernel证书。该law选出的固定map在另8个新物理reset groups、两模式中16/16成功、模式16/16；Direct0/16、nominal8/16、同预算task-only16/16。它不追认均值网络成功，也不等同共享autoregressive neural dynamics。
+
+\paragraph{独立校准及独立优化重复。}
+5份已计费独立校准各重新优化并使用独立测试。首轮两训练reset协议49/50，因逐重复95\%门槛未过而保留失败。修订协议各使用8个新训练reset、calibrated和nominal各192条模型轨迹，以及共同$0.1\|b/(0.01\,\mathrm{m/s})\|^2$命令偏置正则；每次在5个新reset、两模式上测试。五次均10/10，合计50/50且模式50/50；Direct0/50、nominal11/50、task-only50/50且选择相同map。配对有界task-cost平均改善$0.83640$，五个上层校准cluster的描述性hierarchical bootstrap95\%区间为$[0.79560,0.87619]$；它不是总体或uniform fidelity认证。
+
+\paragraph{Task 1与Task 2的增量闭环。}
+ObstacleTransfer使用原冻结Panda Gaussian prior，5次自由空间探针和calibrated/nominal各20条模型轨迹；新8个reset、两模式中四种方法均16/16、模式16/16。Direct/calibrated/nominal的log-stiffness为0/0.5/1，task-only与calibrated相同；别名合并后共48次实际执行。该CPU协议沿用原共同30s期限、5mm/3度/0.3s及碰撞/速度标准；新增20s协议曾未通过源资格，独立保留。它不同于下文10s工业工件的拟议协议，没有成功率收益证据。
+
+GuidedContactAlignment的新3D导向使用真实ridge、12mm tip、16/18mm通道和双轴0.1斜率。冻结Panda导向prior在新源资格上4/4；共同decoder的切向命令上限25N、接近速度15mm/s，实际侧向接触力仍限10N，总力限25N，2mm/2度/0.3s/20s不变。5次探针3fit/2validation，两个搜索各48条模型轨迹，新5个reset、两模式中校准map10/10、模式10/10，task-only相同；Direct及nominal均4/10。旧几何、控制和v1--v3失败均保留，不能与本协议混合。
+
+\paragraph{Task 4的同任务移动身体验证。}
+Go2+Z1复用Task 3冻结Panda prior。stance QP内的机械臂物理力矩阻抗使用同一六维log-stiffness接口，足端加速度、摩擦锥、力矩及QP残差受约束，积分与QP warm start均显式存于carry。准备阶段为计费reset内1s实际站稳，再从共同jam状态开始任务计时；初次lip擦触不锁存为已建立座底支撑，失去支撑事件从实际入座hold witness起算。部署中前4s给出5mm/s身体意图，保留真实浮动身体与足接触；不是行走或导航实验。
+
+未知arm gain/delay与support gain在12点有限族中由5个计费探针3fit/2validation拟合，已知名义工具质量和足地摩擦。耦合模型在200个独立验证控制步通过原位置/力/身体阈值；arm-only模型的force/peak RMSE为$1.1806/1.2299\,\mathrm N$，超过$0.25/1\,\mathrm N$而判unsupported。各搜索使用24条模型轨迹；冻结后5个新reset、两模式中耦合map操作及支撑联合10/10、模式10/10，Direct5/10且模式5/10，task-only、arm-only和nominal也均10/10并选同一map。耦合预测的必要信息已由探针分离，但尚无耦合模型独有的任务成功率收益。轮式物理移动、人形及移动身体neural response尚未资格验证。
+
+\paragraph{实现与可复核边界。}
+绕障、3D导向及Go2+Z1另以冻结map、新配对reset和两模式检查$2/1\,\mathrm{ms}$物理步长，共12/12实际任务与模式通过。Go2保持$4\,\mathrm{ms}$ WBC周期，避免改变物理步长时同时改变控制器；该结果只支持这些开发点的定性稳定。
+
+新响应、校准及规划数值实现继续置于solver式NumPy provider，portable权重通过既有JAX/Torch/native接口交换；不支持的物理backend显式拒绝。上述新任务结果由NumPy/MuJoCo物理及C++推理执行，不能称GPU资格。当前可运行的53项NumPy/native回归通过；Docker虚拟磁盘I/O错误和低磁盘空间阻塞本版本完整JAX/Torch回归，旧86项通过不追认为当前版本通过。完整证据、保留失败与协议版本见\url{docs/development/cross-embodiment-validation-closure.md}。
+
+\paragraph{受限结构族的冻结评估结果。}
+源 prior 固定后，对三组预选模拟机制各使用 5 次校准探针，并在 20 个新 reset seeds 上分别执行两种模式。每组每方法 40 条物理任务，全部 600 条最终轨迹独立重算验收条件，0 个判定 mismatch。下表只填写该 CPU 协议结果，不作为后续工业工件主表。
+\begin{center}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Gain / delay & Direct & Inverse gain & Force only & Nominal response & Calibrated\\
+\midrule
+$0.80/20\,\mathrm{ms}$ & 0/40 & 0/40 & 40/40 & 40/40 & 40/40\\
+$0.65/60\,\mathrm{ms}$ & 0/40 & 0/40 & 0/40 & 40/40 & 40/40\\
+$0.60/80\,\mathrm{ms}$ & 0/40 & 0/40 & 0/40 & 36/40 & 40/40\\
+\bottomrule
+\end{tabular}
+\end{center}
+Calibrated 在三组新初态上共 120/120 完成插入且实际模式匹配；每组 ``两次任务均成功'' 的 20/20 reset-cluster exact 95\% interval 为 $[0.832,1]$，不能因样本全成功而报告零宽区间。第一轮 stress pilot 的一次模式偏移和较弱探针版本的独立验证拒绝均保留，不并入此冻结测试分母。
+
+末段 $0.3\,\mathrm{s}$ 有效物理步的轴向载荷 RMSE（Calibrated / Nominal）依次为 $0.389/2.292$、$0.636/2.438$、$1.527/2.437\,\mathrm N$。Force-only 在后两组的载荷误差甚至更小（$0.424$、$0.546\,\mathrm N$），但位置未达标而超时，说明任务完成与响应匹配需要共同优化。不同机制下最优切向/法向补偿不同，单纯 inverse-gain 不足以处理已知 native friction 与接触历史的耦合。
+
+这些结果\emph{没有}建立优于 nominal-response 的普遍任务成功率结论：前两组持平，第三组按 reset 配对的双侧 sign test 为 $p=0.125$。此外 Calibrated 平均耗时为 $14.16/11.73/11.96\,\mathrm s$，Nominal 为 $8.91/11.14/13.82\,\mathrm s$；更好的载荷跟踪并非总是更快。所报区间以 reset 为单位，且条件于每机制一次校准，不估计跨校准重复的波动。
+
+当前结构族、公开身体和工具质量正确，测量未加传感噪声；上述结果支持一个受限的 ``校准响应--任务与响应联合优化--实际闭环'' 机制链。它不能单独证明 neural response、随机 transport 必要性、优于完整 system-ID+MPC、未见身体或移动操作。图表、完整统计、预算和源码版本见 \url{tmp/cross_embodiment/mechanism_revision/frozen_summary.json} 与 development 记录；源码与正式协议分开保存。
+
+
+\paragraph{已完成的小样本联合law诊断。}
+在匹配键槽xArm7上实际采样12个source-mode样本，使用共同uniforms与源prior随机流。确定性map、加小幅独立transport noise、刻意打乱coupling三种对照均12/12成功，实际target模式均6:6；前两者保留source-mode对应12/12，打乱组为0/12。因此成功率与target marginal一致仍不能认证联合对应，额外噪声在此样本暂无收益。按模型成本重加权时12/12成功、实际5:7。另在预声明的零刚度纠偏候选类中，原source law为6/12成功，失败集中于mode1；用训练twin支持过滤并重加权后12/12，但实际12:0。开放阶段刚度的map保持两支。受限候选类的失败不等于机器人全局不可行，12次抽样也不认证精确概率或完整连续law。
+

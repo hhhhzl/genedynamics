@@ -1,0 +1,17 @@
+base: cross_ebdm_recovery_feasibility.yaml
+name: cross_ebdm_gpu_coverage
+output_dir: results/arm/keyed_insertion_recovery/validation/cross_ebdm_gpu_coverage
+method_params:
+  calibration_root: results/_development/p1_refinement_20261014/results/arm/keyed_insertion_recovery/validation/cross_ebdm_feasibility
+  gpu_qualification: results/_development/p2_20261014_v2/results/arm/keyed_insertion_recovery/qualification/cross_ebdm_gpu/model_search_admission.json
+  model_collection_backend: jax
+  gpu_device: gpu:0
+  gpu_batch_size: 64
+  training_reset_groups: 8
+  model_validation_reset_groups: 16
+  evaluation_reset_groups: 12
+  law_reset_groups: 12
+  reset_seed_offset: 100000000
+metadata:
+  protocol: finite_gpu_search_cpu_confirmation_v1
+  protocol_status: development

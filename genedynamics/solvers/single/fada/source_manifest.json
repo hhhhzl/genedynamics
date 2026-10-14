@@ -1,0 +1,136 @@
+{
+  "repository": "https://github.com/LeCAR-Lab/FADA",
+  "commit": "290b3a9c5c0ebe2e9851b61350617544be05e9bc",
+  "license": "Apache-2.0",
+  "scope": "Planner-IDM transformer, LoRA, target-record windowing and IDM action adaptation; excludes simulator, oracle PPO and DAgger collection.",
+  "files": [
+    {
+      "source": "src/holosoma/holosoma/fada/common/backbone.py",
+      "source_sha256": "8e9ffcd62e5d33a515696dda2954202f909507d2cb35c25e0bc01099803e674a",
+      "destination": "genedynamics/solvers/single/fada/backends/positional.py",
+      "symbols": [
+        "SinusoidalPositionalEncoding"
+      ]
+    },
+    {
+      "source": "src/holosoma/holosoma/fada/planner_idm/model.py",
+      "source_sha256": "b181702d621443ff9dadf2440a8ca571a1128e0129f9830e9881934e35983737",
+      "destination": "genedynamics/solvers/single/fada/backends/model.py",
+      "symbols": [
+        "_PositionalEncodingMixin",
+        "Planner",
+        "IDM",
+        "PlannerIDMPolicy",
+        "build_student_policy"
+      ]
+    },
+    {
+      "source": "src/holosoma/holosoma/fada/common/norm_stats.py",
+      "source_sha256": "76e18c2c1693aa85fad34479580b11b1009dfafcd85c696cf56ff35137ce0fff",
+      "destination": "genedynamics/solvers/single/fada/backends/norm_stats.py",
+      "symbols": [
+        "validate_norm_stats"
+      ]
+    },
+    {
+      "source": "src/holosoma/holosoma/fada/common/lora_utils.py",
+      "source_sha256": "82bb1f11cdbd67a44a679a6c4b48b050f396c190c0021f373d65d043a4f66b26",
+      "destination": "genedynamics/solvers/single/fada/backends/lora.py",
+      "symbols": [
+        "LoRALinear",
+        "LoRAMultiheadAttention",
+        "_resolve_linear_weight_bias",
+        "_inject_lora_modules",
+        "_inject_lora_multihead_attention_modules",
+        "extract_lora_adapter_state_dict",
+        "extract_trainable_parameter_state_dict",
+        "build_merged_state_dict",
+        "_clone_state_dict_to_cpu",
+        "_extract_norm_stats"
+      ]
+    },
+    {
+      "source": "src/holosoma/holosoma/fada/common/lora_utils.py",
+      "source_sha256": "82bb1f11cdbd67a44a679a6c4b48b050f396c190c0021f373d65d043a4f66b26",
+      "destination": "genedynamics/learning/baselines/fada/data.py",
+      "symbols": [
+        "Trajectory"
+      ]
+    },
+    {
+      "source": "src/holosoma/holosoma/fada/planner_idm/finetune_idm_lora.py",
+      "source_sha256": "99422ba15bb3597b8321dfac711a0939a977b8949f03cfe6efaef447ecde2755",
+      "destination": "genedynamics/learning/baselines/fada/data.py",
+      "symbols": [
+        "TrajectoryWindowDataset"
+      ]
+    },
+    {
+      "source": "src/holosoma/holosoma/fada/planner_idm/loss_utils.py",
+      "source_sha256": "157fa58703d750e059ce56142fe3078805859121101876dbad1cab60b1ddfb0f",
+      "destination": "genedynamics/learning/baselines/fada/loss.py",
+      "symbols": [
+        "weighted_horizon_mse"
+      ]
+    },
+    {
+      "source": "src/holosoma/holosoma/fada/planner_idm/finetune_idm_lora.py",
+      "source_sha256": "99422ba15bb3597b8321dfac711a0939a977b8949f03cfe6efaef447ecde2755",
+      "destination": "genedynamics/learning/baselines/fada/adaptation.py",
+      "symbols": [
+        "_normalize_idm_if_enabled",
+        "_normalize_lora_target_scope",
+        "_normalize_finetune_method",
+        "_freeze_all_parameters",
+        "_mark_lora_trainables",
+        "_is_idm_backbone_linear",
+        "_is_idm_backbone_attention",
+        "inject_lora_into_idm_backbone",
+        "enable_full_idm_finetune",
+        "configure_idm_finetune_method",
+        "_loss_metric_key",
+        "_run_epoch"
+      ]
+    },
+    {
+      "source": "src/holosoma/holosoma/fada/planner_idm/eval_checkpoint.py",
+      "source_sha256": "d7e4c8fca12817fc1e6d15606833a5f23963935db76d58b8eef6cd793a4da3b2",
+      "destination": "genedynamics/solvers/single/fada/backends/fada_torch.py",
+      "symbols": [
+        "_build_model_from_checkpoint",
+        "_PlannerIDMOnnxWrapper",
+        "normalization.io_enabled evaluation path"
+      ],
+      "changes": "Native semantics wrapped in task-independent public policy/adaptation APIs; simulator and logging orchestration omitted."
+    },
+    {
+      "source": "src/holosoma/holosoma/fada/planner_idm/finetune_idm_lora.py",
+      "source_sha256": "99422ba15bb3597b8321dfac711a0939a977b8949f03cfe6efaef447ecde2755",
+      "destination": "genedynamics/learning/baselines/fada/trainer.py",
+      "symbols": [
+        "_FinetuneDefaults",
+        "IDM-only AdamW stage",
+        "merged checkpoint export"
+      ],
+      "changes": "Native semantics wrapped in task-independent public policy/adaptation APIs; simulator and logging orchestration omitted."
+    },
+    {
+      "source": "src/holosoma/holosoma/simulator/mujoco/mjw_views.py",
+      "source_sha256": "04fc5aa27d7c688a797907e5662c6fa1d6375355b0b9cfec1076c0679c933476",
+      "destination": "genedynamics/learning/baselines/fada/native_compat.py",
+      "symbols": [
+        "MjwDofStateView.__getitem__",
+        "MjwDofStateView.clone",
+        "MjwDofStateView.copy_"
+      ],
+      "changes": "Adds missing detach interface through existing [:] tensor read for native DAgger snapshots; original source unchanged."
+    }
+  ],
+  "modifications": [
+    "Holosoma safe Torch imports replaced with direct optional native Torch backend imports.",
+    "Only Planner-IDM positional encoder and LoRA/normalization definitions retained from common modules.",
+    "Policy execution consumes explicit public history mapping and does not inspect simulator truth.",
+    "Checkpoint architecture/normalization and LoRA evaluation fastpath guard preserved.",
+    "Training wrapper supplies bounded single-step updates and deployable merged native weights; caller controls record sampling and budgets."
+  ]
+}

@@ -25,8 +25,8 @@ from scripts.cross_embodiment.validate_mechanism_chain import summarize
 
 
 def publish(path,value):
-    path.parent.mkdir(parents=True,exist_ok=True)
-    tmp=path.with_suffix(".new");tmp.write_text(json.dumps(value,indent=2,allow_nan=False)+"\n");tmp.replace(path)
+    from genedynamics.experiments.artifacts import atomic_json
+    atomic_json(path,value)
 
 
 def costs(row,source):
@@ -41,10 +41,10 @@ def costs(row,source):
                 joint=float(.6*task+.25*response+.1*mode+.05*row["seconds"]/15.))
 
 
-def transport(parameters):
+def transport(parameters,backend="jax"):
     k=(parameters["stiffness"],)*2+(0.,)+(parameters["stiffness"],)*3
     return ReferenceTransport.from_stage_parameters(parameters["scale"],parameters["bias"],
-        alignment_stiffness=k,insertion_stiffness=k)
+        alignment_stiffness=k,insertion_stiffness=k,backend=backend)
 
 
 def noise_records(records,seed,position_std,force_std):
@@ -61,22 +61,26 @@ def noise_records(records,seed,position_std,force_std):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output",type=Path,required=True)
-    p.add_argument("--prior",type=Path,default=Path("tmp/cross_embodiment/mechanism_revision/strict_phase_prior"))
+    p.add_argument("--prior",type=Path,required=True)
+    p.add_argument("--backend",choices=("jax","native"),default="native")
+    p.add_argument("--device",choices=("cpu",),default="cpu",help="structured physical study is CPU only")
     p.add_argument("--robot",choices=("panda","xarm7","ur5e"),default="xarm7")
     p.add_argument("--gain",type=float,default=.65);p.add_argument("--delay",type=int,default=3)
     p.add_argument("--friction",type=float,default=.4);p.add_argument("--time-constant",type=float,default=.02)
     p.add_argument("--payload",type=float,default=.5,help="diagnostic truth; identification still assumes known .5 kg")
     p.add_argument("--calibration-seed",type=int,default=4100)
     p.add_argument("--test-seed-start",type=int,default=24000);p.add_argument("--reset-seeds",type=int,default=5)
+    p.add_argument("--train-seed-start",type=int,default=310)
     p.add_argument("--position-noise",type=float,default=0.);p.add_argument("--force-noise",type=float,default=0.)
     p.add_argument("--calibrate-only",action="store_true")
     a=p.parse_args();out=a.output;out.mkdir(parents=True,exist_ok=True)
     config=mating_contact_config(a.robot);truth=ContactMechanismSpec(a.gain,a.delay,a.payload,a.friction,a.time_constant)
-    prior=PhaseGaussianPrior(FrozenRegressor.load(a.prior))
+    prior=PhaseGaussianPrior(FrozenRegressor.load(a.prior,backend=a.backend,device=a.device))
     contract={"config":asdict(config),"diagnostic_truth":asdict(truth),"source_sha256":prior.regressor.metadata["tensor_sha256"],
         "calibration_seed":a.calibration_seed,"test_seeds":list(range(a.test_seed_start,a.test_seed_start+a.reset_seeds)),
-        "train_seeds":[310,311],"source_seeds":[310,311],"probe_readout_noise_std":[a.position_noise,a.force_noise],
+        "train_seeds":[a.train_seed_start,a.train_seed_start+1],"source_seeds":[a.train_seed_start,a.train_seed_start+1],"probe_readout_noise_std":[a.position_noise,a.force_noise],
         "source_law":"frozen legacy Panda phase prior; new geometry/decoder qualified separately",
+        "backend":a.backend,"device":a.device,"physics_backend":"mujoco",
         "role":"development study; independent resets after fixed candidate search, not final paper evidence",
         "protocol":"matched_keyway_signed_wrench_axial_support_v1","code_fingerprint":code_fingerprint()}
     if (out/"contract.json").exists():
@@ -110,11 +114,14 @@ def main():
         if (path/"search.json").exists():return json.loads((path/"search.json").read_text())
         history=[]
         for index,param in enumerate(candidates):
+            from genedynamics.experiments.artifacts import active_policy
+            policy=active_policy()
+            if policy:policy.check(16*1024**2)
             rows=[]
             for seed in contract["train_seeds"]:
                 for mode in (0,1):
                     artifact=path/f"c{index}"/f"s{seed}_m{mode}"
-                    row=load_bundle(artifact)[1] if (artifact/"metadata.json").exists() else rollout(config,context,seed=seed,mode=mode,prior=prior,transport=transport(param),output=artifact)
+                    row=load_bundle(artifact)[1] if (artifact/"metadata.json").exists() else rollout(config,context,seed=seed,mode=mode,prior=prior,transport=transport(param,backend=a.backend),output=artifact)
                     rows.append(dict(**row,costs=costs(row,source[seed,mode])))
             history.append(dict(parameters=param,episodes=rows,means={k:float(np.mean([r["costs"][k] for r in rows])) for k in rows[0]["costs"]}))
             print(dict(stage=name,candidate=index,successes=sum(r["success"] for r in rows),costs=history[-1]["means"]),flush=True)
@@ -127,9 +134,11 @@ def main():
              "same_model_controller_search":candidates[fitted["winners"]["task"]],
              "nominal_response_transport":candidates[nominal["winners"]["joint"]]}
     for name,param in methods.items():
-        if param is not None:transport(param).save(out/"frozen"/name)
+        if param is not None:transport(param,backend=a.backend).save(out/"frozen"/name)
     freeze={"contract_sha256":hashlib.sha256((out/"contract.json").read_bytes()).hexdigest(),"methods":methods,
         "estimated":asdict(estimate),"test_seeds":contract["test_seeds"],"adaptation":"no new target task probes or target task fitting"}
+    from genedynamics.experiments.artifacts import canonical_json
+    freeze=canonical_json(freeze)
     if (out/"frozen_evaluation.json").exists() and json.loads((out/"frozen_evaluation.json").read_text())!=freeze:raise ValueError("frozen evaluation mismatch")
     publish(out/"frozen_evaluation.json",freeze)
     evaluations={};model_costs={}
@@ -138,7 +147,7 @@ def main():
         rows=[];predicted=[]
         for seed in contract["test_seeds"]:
             for mode in (0,1):
-                deployed=None if param is None else ReferenceTransport.load(out/"frozen"/name)
+                deployed=None if param is None else ReferenceTransport.load(out/"frozen"/name,backend=a.backend,device=a.device)
                 for mechanism,role,buffer in ((truth,"evaluation",rows),(estimate,"occupancy_audit",predicted)):
                     path=out/role/name/f"s{seed}_m{mode}"
                     row=load_bundle(path)[1] if (path/"metadata.json").exists() else rollout(config,mechanism,seed=seed,mode=mode,prior=prior,transport=deployed,output=path)

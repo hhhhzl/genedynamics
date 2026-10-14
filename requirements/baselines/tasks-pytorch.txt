@@ -1,0 +1,8 @@
+# CPU MuJoCo target + native Torch policies/upstream H2S2R learner.
+# This is a project-task adaptation environment, not IsaacGym Preview4.
+-r core-pytorch.txt
+mujoco==3.6.0
+osqp==1.0.4
+trimesh==4.10.1
+gym==0.23.1
+tensorboardX==2.6.4

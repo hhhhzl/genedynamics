@@ -1,0 +1,35 @@
+name: fada_complete_episode_source_DAgger_decoder_comparison
+output_dir: results/arm/keyed_insertion_recovery/qualification/fada_source_train
+env_name: keyed_insertion_recovery
+method: fada_source_train
+backend: numpy
+device: cpu
+seeds: [18600]
+n_steps: 750
+auto_report: false
+metrics: []
+visualizations: []
+method_params:
+  initial_checkpoint: results/_development/p3_20261014/results/arm/keyed_insertion_recovery/qualification/fada_adapted/level_adapted/seed_18503/source_policy.pt
+  source_demonstrations:
+    - results/_development/p3_20261014/results/arm/keyed_insertion_recovery/qualification/source_interface/level_nominal/seed_18210/episode.npz
+    - results/_development/p3_20261014/results/arm/keyed_insertion_recovery/qualification/source_interface/level_nominal/seed_18211/episode.npz
+  maximum_wall_seconds: 900
+  maximum_gpu_GiB: 4
+  batch_size: 64
+  teacher_train_episodes_per_mode: 2
+  teacher_validation_episodes_per_mode: 1
+  warmup_updates: 1500
+  stage_updates: 1500
+  teacher_probabilities: [0.85, 0.5, 0.0]
+  shared_online_offline_ratio: 0.2
+  online_real_shadow_ratio: 0.5
+  decoder_variants: [continuous13D, source_gap_off_deadzone]
+metadata:
+  formal_experiment: false
+  source_only: true
+  native_method_qualified: false
+  target_queries_allowed: false
+  entrypoint: scripts.fada_source_train
+  policy_physics: released_Planner_IDM_with_shared_cpu_Panda_source
+  decoder_comparison: identical_weights_and_data_public_source_gap_off_threshold_positive_forces_remain_continuous

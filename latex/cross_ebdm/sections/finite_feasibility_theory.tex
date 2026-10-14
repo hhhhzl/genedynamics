@@ -1,0 +1,209 @@
+\subsection{Feasibility Before Response Alignment}
+\label{sec:finite-feasibility}
+\textbf{校准、表达与选择。} 校准误差、控制/映射表达误差和目标选择偏置
+必须分开。小的响应预测误差可以准确预测一个坏策略；
+它既不保证候选类存在可行策略，也不保证 source anchoring 优于 task-only。
+以下结论条件于固定接口、已声明模型与候选类。
+
+\textbf{可行支持与拒绝。} 设 $\Phi_F$ 是冻结的有限映射族，
+$S_m\subseteq\Phi_F$ 是模式 $m$ 下满足所声明任务、约束及模式对应的映射集合。
+必须区分真实的 $S_m$ 与仅在有限模型训练/验证 reset 上观察到的
+$\widehat S_m$；后者不是真实安全集合的证书。
+\begin{proposition}[共同映射、模式条件映射与重加权的支持边界]
+对于具有正源概率的模式集合 $\mathcal M_s$，一个共同映射能保留全部模式
+当且仅当 $\bigcap_{m\in\mathcal M_s}S_m\ne\varnothing$。
+允许逐模式选择同一候选族中的映射时，全部模式可执行当且仅当每个
+$S_m\ne\varnothing$。仅对固定映射的源模式重加权不能使其不可执行模式
+变为可执行；若全部模式均无支持，则输出停止/拒绝质量，而不是归一化零权重。
+\end{proposition}
+\begin{proof}
+共同映射必须同时属于每个集合。模式条件映射从每个非空集合选择一个元素，
+反向必要性直接成立。重加权只改变固定响应支持上的概率，不产生新的命令或
+闭环响应支持，故不能补回缺失的可执行模式。
+\end{proof}
+这是\emph{候选类内}的结论；搜索失败不证明机器人全局不可行。
+强 task-only 对照应允许相同逐模式选择，因此增加条件化容量本身不能
+作为 response anchoring 的独立优势。有限初态上的全成功过滤仅是经验
+拒绝规则；所有拒绝与未执行任务保留在总体分母中。
+
+\begin{proposition}[不变执行前缀的失败上界]
+设一族 transport 在到达可观测阶段边界 $\sigma$ 前，采用相同指令、
+相同控制器及反馈规则。将初态、源样本和物理随机流共同耦合，则它们在
+$\sigma$ 前具有相同的增广闭环轨迹。若共同前缀在到达 $\sigma$ 前
+以概率 $p_{\rm pre}$ 触发不可撤销终止失败，则该族任一策略的整体成功率
+至多为 $1-p_{\rm pre}$。
+\end{proposition}
+\begin{proof}
+相同初态和随机流下，按闭环递推归纳，相同反馈指令给出相同状态、
+controller carry 与事件。故前缀失败事件对全族相同；整体成功事件必须
+包含于其补集。对该包含关系取概率即得。
+\end{proof}
+这里的 $p_{\rm pre}$ 是声明初态分布下的概率，有限模型样本只给出其经验
+描述。若不可恢复失败发生在映射开始作用之前，仅优化后续阶段无法消除
+该失败。对恢复前缀扩大控制支持时，应向同类控制对照开放相同参数化，
+并保持任务约束不变。
+
+\textbf{保留模式质量与停止的代价。} 设 $S$ 是给定可行性规则允许保留
+的源模式集合，$p_s(S)>0$。若目标 law $q$ 只在 $S$ 上分配质量，则
+\[
+ \operatorname{TV}(q,p_s)\ge p_s(S^c),\qquad
+ \min_{q:q(S)=1}\operatorname{KL}(q\Vert p_s)=-\log p_s(S).
+\]
+第二个最小值由 $q=p_s(\cdot\mid S)$ 达到：对任意支持于 $S$ 的 $q$，
+$\operatorname{KL}(q\Vert p_s)=
+\operatorname{KL}(q\Vert p_s(\cdot\mid S))-\log p_s(S)$。
+第一个式子直接在集合 $S^c$ 上使用 TV 定义。若保留原源采样而明确对
+$S^c$ 的质量停止，则该停止策略的成功率至多为 $p_s(S)$。
+这些是支持限制的基本恒等式，不作为新的 OT 理论；实验中仅有模型估计
+$\widehat S$，不能把它当成真实全局可行集合。特别是未通过有限训练规则
+不等于该模式成功概率为零；上述停止上界描述算法选择，而不是机器人能力上界。
+
+因此，部分能力条件下不能同时要求源 law 不变、全部模式对应和高任务成功。
+重加权应按任务完成、模式请求和分布变化共同评价，不能仅因原始源样本的
+对应下降就判为错误。若共同优化模式 law 与映射，应把 $(q,\phi)$ 作为联合候选；
+下述固定 law/同集合的任务预算保证不能自动转移到不同重加权策略。
+
+\textbf{用任务非劣预算组织响应目标。} 固定一个非空的共同候选集合
+$\mathcal A$，令真实任务与响应成本分别为 $C,R$，模型成本为
+$\widehat C,\widehat R$。先求 $\widehat C_*=\min_{\phi\in\mathcal A}
+\widehat C(\phi)$，再选择
+\begin{equation}
+ \widehat\phi_\delta\in\arg\min_{\phi\in\mathcal A}\widehat R(\phi)
+ \quad\text{s.t.}\quad
+ \widehat C(\phi)\le\widehat C_*+\delta.
+ \label{eq:task-band-transport}
+\end{equation}
+任务约束、mode 条件、候选容量和模拟缓冲对完整方法与 task-only 相同。
+$\delta$ 在封存目标评估前固定；它公开允许的任务成本代价，而不是通过
+反复调节响应权重寻找最终测试优势。
+
+\begin{proposition}[同一有限集合内的任务预算与响应比较]
+若在 $\mathcal A$ 上 $|C-\widehat C|\le\epsilon_C$、
+$|R-\widehat R|\le\epsilon_R$ 统一成立，且 Eq.~\eqref{eq:task-band-transport}
+求解误差至多为 $\epsilon_{\rm opt}$（约束仍被满足），记
+$C_*=\min_{\phi\in\mathcal A}C(\phi)$，则
+\begin{equation}
+ C(\widehat\phi_\delta)\le C_*+\delta+2\epsilon_C.
+\end{equation}
+若 $\delta\ge2\epsilon_C$，还有
+\begin{equation}
+ R(\widehat\phi_\delta)\le
+ \min_{\substack{\phi\in\mathcal A\\C(\phi)\le C_*+\delta-2\epsilon_C}}
+ R(\phi)+2\epsilon_R+\epsilon_{\rm opt}.
+\end{equation}
+\end{proposition}
+\begin{proof}
+以真实 task minimizer 代入模型最小值，得到
+$C(\widehat\phi_\delta)\le\widehat C_*+\delta+\epsilon_C
+\le C_*+\delta+2\epsilon_C$。任何满足第二式真实成本约束的候选均满足
+$\widehat C(\phi)\le C_*+\delta-\epsilon_C
+\le\widehat C_*+\delta$，因而属于模型预算带；再对响应成本两端应用统一
+误差界和优化误差即得。
+\end{proof}
+该命题只比较同一候选集合。容差 $\delta$ 须在独立评估前确定；若未认证
+统一 $\epsilon_C,\epsilon_R$，经验预算带不能被解释为总体非劣或真实安全保证。
+
+\textbf{模型偏差与 reset 采样误差分开。} 上式的 $\epsilon_C$ 若将有限
+训练均值当作 $\widehat C$，必须同时覆盖模型偏差与 Monte Carlo 误差。
+对事先固定的 $M$ 个候选和校准后独立的 $n$ 个 reset clusters，
+若每 cluster 的模式平均成本属于 $[0,1]$，则以概率至少 $1-\alpha$，可以取
+\[
+ \epsilon_C=\epsilon_{\rm model}
+       +\sqrt{\frac{\log(2M/\alpha)}{2n}}.
+\]
+此处 $\epsilon_{\rm model}$ 仍需外部论证；有限 occupancy 的实测误差
+不是它的统一证书。即使 twin 精确预测实际轨迹，有限训练初态上的最优候选
+也可能在新的独立初态上失败。当采样误差大于所选任务容差时，经验筛选
+不能支持总体非劣结论。
+对有限样本的精确枚举最优，也不等于对期望目标的 $\epsilon_{\rm opt}=0$。
+
+\textbf{数值模型误差单独计入。} 设 $C_{\rm ref}$ 为目标参考机制的
+期望成本，$C_{\rm twin,ref}$ 为校准模型在参考数值实现下的成本，
+$C_{\rm twin,train}$ 为同一模型在训练数值实现下的成本。若分别存在同一有限
+候选集合上的统一界，则由三角不等式，模型训练均值所需的统一误差可取
+\[
+ \epsilon_C = \epsilon_{\rm calibration}
+                  +\epsilon_{\rm engine}
+                  +\epsilon_{\rm sampling},\qquad
+ \epsilon_{\rm engine}\ge
+ \sup_{\phi\in\mathcal A}
+ |C_{\rm twin,ref}(\phi)-C_{\rm twin,train}(\phi)|.
+\]
+这里各项是需要论证的上界，而非由少数配对轨迹自动取得的证书。
+接触求解的数值差异可能通过阶段切换、保持终止或不可恢复失败放大。
+因此校准精度与训练模型的任务预测精度是不同条件；有限配对验证也不能
+被解释为对所有候选与未来初态的统一界。
+
+\textbf{表达误差不能被模型精度消除。} 对更宽的参考策略类
+$\Psi\supseteq\mathcal A$，定义
+$\Delta_{\mathcal A}=\inf_{\phi\in\mathcal A}C(\phi)-
+\inf_{\psi\in\Psi}C(\psi)\ge0$。若原标量化目标
+$\widehat C+\lambda\widehat R$（$\lambda\ge0$）的优化误差为 $\epsilon_{\rm opt}$，
+$R\ge0$，则以同集合真实 task minimizer $\phi_C$ 为比较点有
+\begin{equation}
+ C(\widehat\phi)-\inf_{\psi\in\Psi}C(\psi)
+ \le\Delta_{\mathcal A}+2\epsilon_C+2\lambda\epsilon_R
+   +\lambda R(\phi_C)+\epsilon_{\rm opt}.
+\end{equation}
+证明由模型标量化最优性、成本两端误差以及
+$-\lambda R(\widehat\phi)\le0$ 直接得到。即使校准和优化完全准确，
+候选表达误差与 anchoring 偏置仍可能存在；上一节的
+$2\varepsilon_F+\varepsilon_{\rm opt}$ 并未消除这些项。
+
+\textbf{接触事件裕度与策略质量分开。} 上节事件界控制真实与预测的
+事件差异，不保证事件本身成功。应同时报告任务失败概率、逐约束轨迹裕度、
+以及预测事件误差。均值误差、最终力或模式标签不足以表示执行鲁棒性。
+事件距离必须包含接触状态、计数器与控制器记忆；
+末端位置或平均力的 RMSE 不能替代它。
+同时，控制器在首次满足保持条件时终止，会使最后保持窗口的起点接近阈值。
+因此上述窗口裕度只是轨迹描述，不能直接当作闭环扰动鲁棒半径；验证后者
+还需要控制扰动、完整停止时刻与必要的终止后承载诊断。
+
+\textbf{验证拒绝属于算法成本。} 令 $a_{j,m}\in\{0,1\}$ 为目标评估前冻结
+的模式接受标记，$C_{j,m}\in[0,1]$ 为该映射执行时的真实任务成本。
+以拒绝成本 $1$ 计入全部请求时，实际算法成本是
+\[
+ C_j^{\rm alg}=\sum_m p_m\{a_{j,m}C_{j,m}+1-a_{j,m}\}.
+\]
+因此同一源 law 下，完整方法 $F$ 与 task-only $T$ 满足
+\[
+ C_F^{\rm alg}-C_T^{\rm alg}
+ \le \sum_{m:a_{F,m}=a_{T,m}=1}p_m(C_{F,m}-C_{T,m})
+       +\sum_{m:a_{F,m}=0,\,a_{T,m}=1}p_m.
+\]
+共同拒绝模式贡献为零；仅 task-only 被拒绝的项非正；仅完整方法被拒绝
+的项为 $p_m(1-C_{T,m})\le p_m$，即得该式。训练预算带即使控制了
+映射本身的成本，也不能忽略两方法的验证拒绝差异。若同时采用不同的
+模式权重 $p_F,p_T$，按 $p_F$ 应用上述比较后还需加上
+$\operatorname{TV}(p_F,p_T)$，因为停止后的成本仍属于 $[0,1]$。
+这区分了被执行映射的质量、接受集合和模式质量分配，防止只在成功部署
+子集上宣称总体非劣。若两方法具有相同冻结映射、接受标记与源 law，则
+其算法成本由结构直接相等；这不提供独立任务收益。
+
+\textbf{边缘一致不等于源条件对应。} 令 $M\sim\mathrm{Bernoulli}(1/2)$。
+响应 $Y=M$ 与 $\widetilde Y=1-M$ 的边缘 law 完全相同，但
+$\Pr(Y\ne M)=0$、$\Pr(\widetilde Y\ne M)=1$。
+两种策略可以具有相同成功率与目标模式频率，却具有相反的联合对应。
+这一构造说明评估应区分条件对应与边缘分布；它不能单独证明
+本文方法优于使用同一 source prior 的 task-only 控制器。
+
+\textbf{有限类选择持平的解释。} 对冻结成本 $(C_i,R_i)$，候选 $i$
+最小化 $C+\lambda R$ 当且仅当
+$(C_i-C_j)+\lambda(R_i-R_j)\le0$ 对全部 $j$ 成立。
+这些半直线的交集给出可直接计算的 $\lambda$ 区间，包含空区间和无界区间。
+同一个映射在共同随机流下产生相同实际 law；给它不同方法名称不会产生
+独立收益。该代数诊断说明何时 anchoring 不改变选择，既不是统计证书，也
+不支持通过试遍 $\lambda$ 后挑选测试集胜者。
+
+\textbf{相同控制类与额外随机性的边界。} 本文 full 与强 task-only 使用
+相同参数化与信息，因此可表达相同闭环 law；source anchoring 改变的是
+选择准则，不扩大相对该强对照的可执行集合。相对 reweight-only 的支持
+改变不能转称相对同类控制器的表达优势。
+
+固定一个源样本、可观测条件和有限合法动作集合，令 $c(a)$ 为已对物理
+随机性取期望的标量成本。任意条件随机 kernel $T$ 满足
+$\sum_a T(a)c(a)\ge\min_a c(a)$，确定性最小动作即可达到等号。
+因此在可逐条件分解的期望目标中，额外 transport noise 没有自动收益；
+随机源 prior 经确定性映射仍可多模态。分布耦合约束、条件覆盖需求或
+不同的鲁棒博弈可能改变这一结论，必须单独分析。随机与确定性映射应在
+相同容量、目标及训练预算下比较；固定附加扰动不能替代经过训练的随机 kernel。

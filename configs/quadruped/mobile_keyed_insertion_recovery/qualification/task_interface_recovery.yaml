@@ -1,0 +1,6 @@
+base: task_interface.yaml
+name: mobile_keyed_insertion_go2_z1_recovery_qualification
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/qualification/task_interface_recovery
+method: task_interface_recovery
+env_params: {robot: go2_z1, initial: jammed}
+seeds: [18411, 18412]

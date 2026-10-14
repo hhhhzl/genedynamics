@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--updates",type=int,default=2000)
     parser.add_argument("--excitations",type=Path)
     parser.add_argument("--resume",action="store_true")
+    parser.add_argument("--device",default="cpu")
     args=parser.parse_args()
     data,meta=load_dataset(args.source)
     if meta["role"]!="source_demonstrations":
@@ -42,7 +43,7 @@ def main():
         raise ValueError("both independently observed source route modes required")
     regressor,state,report=fit_regressor(inputs,targets,train,validation,
         spec=ModelSpec(inputs.shape[-1],targets.shape[-1],hidden=(96,96),learning_rate=.002),
-        updates=args.updates,checkpoint_path=args.output/"source_resume",resume=args.resume,
+        updates=args.updates,checkpoint_path=args.output/"source_resume",resume=args.resume,device=args.device,
         metadata={"learned_role":"source_prior","horizon":meta["clocks"]["L"],
         "command_bounds":bounds.tolist(),"mode_probabilities":(counts/counts.sum()).tolist(),
         "source_dataset_sha256":meta["tensor_sha256"],"reference_feedback_gain":3.,
@@ -60,7 +61,7 @@ def main():
         x,y,train,validation=(np.concatenate((v,w),axis=0) for v,w in zip((x,y,train,validation),(a,b,c,d)))
     response,state,report=fit_regressor(x,y,train,validation,
         spec=ModelSpec(x.shape[-1],y.shape[-1],hidden=(96,96),ensemble=3,learning_rate=.001),
-        updates=args.updates,checkpoint_path=args.output/"response_resume",resume=args.resume,
+        updates=args.updates,checkpoint_path=args.output/"response_resume",resume=args.resume,device=args.device,
         metadata={"learned_role":"response_ensemble","layout":layout,
         "response_dataset_sha256":meta["tensor_sha256"],"uncertainty":"ensemble disagreement; uncalibrated",
         "held_out":"episode groups; mechanism values shared across splits"})

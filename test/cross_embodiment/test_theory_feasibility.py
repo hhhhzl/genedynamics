@@ -111,7 +111,8 @@ def test_stage_transport_jax_torch_and_unsupported_physics(tmp_path):
     constructed=ReferenceTransport.from_stage_parameters(2.,(-.004,.002),alignment_stiffness=k,insertion_stiffness=k,backend="torch")
     np.testing.assert_allclose(constructed.apply(u,phase),expected,atol=1e-6)
     with pytest.raises(ValueError):ReferenceTransport.from_stage_parameters(2.,(float("nan"),0.))
-    with pytest.raises(NotImplementedError,match="numpy/cpu"):ContactRunner(config=mating_contact_config(),backend="jax")
+    with pytest.raises(NotImplementedError,match="fixed Panda/xArm7"):
+        ContactRunner(config=mating_contact_config("ur5e"),backend="jax")
 
 
 def test_candidate_mpc_restarts_observed_state_without_hidden_model_or_mutation():

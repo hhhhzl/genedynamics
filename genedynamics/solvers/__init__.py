@@ -47,7 +47,34 @@ __all__ = [
     "run_cem",
     # DIAL-MPC
     "DIALMPCSolver",
+    # Native Torch policy solvers (loaded only when explicitly requested).
+    "FADASolver",
+    "Human2Sim2RobotSolver",
+    "ACPSolver",
 ]
+
+
+_NATIVE_POLICY_EXPORTS = {
+    "FADASolver": ("fada", "genedynamics.solvers.single.fada.fada"),
+    "Human2Sim2RobotSolver": (
+        "human2sim2robot", "genedynamics.solvers.single.human2sim2robot.human2sim2robot"
+    ),
+    "ACPSolver": ("acp", "genedynamics.solvers.single.acp.acp"),
+}
+
+
+def __getattr__(name):
+    """Keep optional Torch cores out of ordinary JAX planner imports."""
+    if name not in _NATIVE_POLICY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    from importlib import import_module
+    from genedynamics.core.registry.solvers import register_solver
+
+    method, module = _NATIVE_POLICY_EXPORTS[name]
+    solver = getattr(import_module(module), name)
+    register_solver(f"{method}_torch", solver)
+    globals()[name] = solver
+    return solver
 
 # Note: Configuration Args classes have been moved to configs/<env_name>/<solver>.py
 # Import them like:

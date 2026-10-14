@@ -151,6 +151,15 @@ class MujocoContact:
         stage=3 if config.insertion and data.site_xpos[self.sid,2]<config.goal[2]+.01 else (1 if normal>config.contact_threshold else (2 if state.contact_seen else 0))
         trace=ContactTrace(data.site_xpos[self.sid].copy(),data.site_xmat[self.sid].reshape(3,3).copy(),command,wrench,normal,peak,
             allowed,forbidden,lost,saturation,new.force_integral,stage,new.status,active,active and new.status!=0,lateral_peak)
+        if getattr(self,"record_events",False):
+            # Diagnostic side channel only: it neither changes ContactTrace's
+            # ABI nor supplies mechanism truth to a policy/model.
+            event_jp=np.zeros((3,self.model.nv));event_jr=np.zeros_like(event_jp)
+            mujoco.mj_jacSite(self.model,data,event_jp,event_jr,self.sid)
+            self.last_step_events=dict(axial_support=self._axial_support(data),
+                contact_seen=bool(new.contact_seen),loss_count=int(new.loss_count),
+                hold_count=int(new.hold_count),approach_integral=float(new.approach_integral),
+                established_at_start=bool(established),normal_velocity=float((event_jp@data.qvel)[2]))
         return new,trace
 
     def collect_chunk(self,state,commands):
@@ -161,10 +170,15 @@ class MujocoContact:
             raise ValueError("commands must be [B,L,13]")
         if body is None: body=np.zeros((*commands.shape[:2],3),np.float32)
         if np.shape(body)!=(*commands.shape[:2],3): raise ValueError("body commands must be [B,L,3]")
-        states=[]; traces=[]
+        states=[]; traces=[]; event_batches=[]
         for i in range(len(state.sample_id)):
-            current=self._slice(state,i); history=[]
+            current=self._slice(state,i); history=[]; event_history=[]
             for j,raw in enumerate(commands[i]):
                 current,trace=self._step(current,raw,body[i,j]); history.append(trace)
+                if getattr(self,"record_events",False):event_history.append(self.last_step_events)
             states.append(current); traces.append(ContactTrace(*(np.stack([t[j] for t in history]) for j in range(len(ContactTrace._fields)))))
+            if event_history:event_batches.append(event_history)
+        if event_batches:
+            self.last_event_trace={name:np.asarray([[row[name] for row in batch] for batch in event_batches])
+                                   for name in event_batches[0][0]}
         return ContactChunk(self._stack(states),ContactTrace(*(np.stack([t[j] for t in traces]) for j in range(len(ContactTrace._fields)))))

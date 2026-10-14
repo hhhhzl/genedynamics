@@ -293,6 +293,21 @@ def main():
             )
             raise SystemExit(2)
     
+    # Research studies share configuration inheritance and task/level/seed
+    # outputs, but own their source/calibration/search stage lifecycle.
+    if config.metadata.get("workflow") == "cross_embodiment_pilot":
+        from scripts.cross_embodiment.run_pilot import pilot
+        pilot(config, resume=args.resume)
+        return
+    if config.metadata.get("workflow") == "cross_embodiment_refinement":
+        from scripts.cross_embodiment.run_refinement import refinement
+        refinement(config, resume=args.resume)
+        return
+    if config.metadata.get("workflow") == "cross_embodiment_gpu_qualification":
+        from scripts.cross_embodiment.run_p2 import p2
+        p2(config, resume=args.resume)
+        return
+
     # Create experiment runner
     runner = ExperimentRunner(config)
     

@@ -1,0 +1,101 @@
+{
+  "reason": "Separate paper draft from development experiment reports at user request. Historical numerical artifacts under results are unchanged.",
+  "files": [
+    {
+      "original": "latex/cross_ebdm/intervention_calibrated_sim2real_blueprint.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/draft_snapshot/intervention_calibrated_sim2real_blueprint.tex",
+      "action": "copy_before_cleanup",
+      "sha256": "0aa073652e6ba2808dd96340a2efef033cd2996ab880a8091e91395c1b97545c"
+    },
+    {
+      "original": "latex/cross_ebdm/sections/finite_feasibility_theory.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/draft_snapshot/sections/finite_feasibility_theory.tex",
+      "action": "copy_before_cleanup",
+      "sha256": "45e3df2925a1be31fb1822af8199d88c9cc030dc3d303c2bef1eac99d8ed4a42"
+    },
+    {
+      "original": "latex/cross_ebdm/tables/distribution_results.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/tables/distribution_results.tex",
+      "action": "move_report",
+      "sha256": "c0ce2ff518be0eb22a12ac1ee80a6e4fe34396c31990c1a7f00cbc3d67faff43"
+    },
+    {
+      "original": "latex/cross_ebdm/tables/distribution_v1_results.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/tables/distribution_v1_results.tex",
+      "action": "move_report",
+      "sha256": "a0326e2df6b2c01750ae21252a3fe88d47dc843fecd691ac70d7082650b21ade"
+    },
+    {
+      "original": "latex/cross_ebdm/tables/p2_coverage_results.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/tables/p2_coverage_results.tex",
+      "action": "move_report",
+      "sha256": "dc310a3c7b38f5c269aca02931688713d603cd40e3ef24ca67dcfceb0932e8ae"
+    },
+    {
+      "original": "latex/cross_ebdm/tables/p2_gpu_qualification.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/tables/p2_gpu_qualification.tex",
+      "action": "move_report",
+      "sha256": "52873b708b19f991425c1e38a9838e98365f654bdf2cf4ec411be1a512086cdb"
+    },
+    {
+      "original": "latex/cross_ebdm/tables/p2_law_results.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/tables/p2_law_results.tex",
+      "action": "move_report",
+      "sha256": "69ce536389b9425a6639ce0406f78c58a16a3ba3da71df679c455314cd73e40d"
+    },
+    {
+      "original": "latex/cross_ebdm/tables/refinement_results.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/tables/refinement_results.tex",
+      "action": "move_report",
+      "sha256": "d90445da3a225e6df11f5d0cff8af8b0c61386522927de4d1301de4ccdcbef0b"
+    },
+    {
+      "original": "latex/cross_ebdm/tables/refinement_v1_results.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/tables/refinement_v1_results.tex",
+      "action": "move_report",
+      "sha256": "171cbce2810626e0d764c5bcf61e07ac99e5aff02a9dee47444451e782026c0f"
+    },
+    {
+      "original": "latex/cross_ebdm/figures/cpu_gpu_contact_discrepancy.png",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/figures/cpu_gpu_contact_discrepancy.png",
+      "action": "move_report",
+      "sha256": "c1d47afa7fb38288d59aec7407e51c1a71616940a43f5d15765d743022b83cdf"
+    },
+    {
+      "original": "latex/cross_ebdm/figures/prefix_diagnosis.png",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/figures/prefix_diagnosis.png",
+      "action": "move_report",
+      "sha256": "ec892ba34462c74f3681e31b36a3170d9379c5508db316d57b434eae32eef0b2"
+    },
+    {
+      "original": "latex/cross_ebdm/archive/cpu_results_unretained.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/archive/cpu_results_unretained.tex",
+      "action": "move_report",
+      "sha256": "e0c5d3cb623a4f20621e2e9c3019769f0dee55191898dcfb90ef9038790556dc"
+    },
+    {
+      "original": "latex/cross_ebdm/sections/current_evidence.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/sections/current_evidence.tex",
+      "action": "move_report",
+      "sha256": "91aa5d6455d1700fc1754475f257074aef6b57e87059c9e1049146d416af55b8"
+    },
+    {
+      "original": "latex/cross_ebdm/sections/current_law_evidence.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/sections/current_law_evidence.tex",
+      "action": "move_report",
+      "sha256": "a2ba43c72df8e3cc43a1e77ba006b3f200264656b676afcd1b184f80ddde37ce"
+    },
+    {
+      "original": "latex/cross_ebdm/sections/current_gpu_evidence.tex",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/sections/current_gpu_evidence.tex",
+      "action": "move_report",
+      "sha256": "042cbc57d4708406938507cdf88fd9384da9740b041aac472ed57a8a00bb1092"
+    },
+    {
+      "original": "latex/cross_ebdm/intervention_calibrated_sim2real_blueprint.pdf",
+      "archived": "docs/development/cross-ebdm-experiment-reports/20261014_pre_cleanup/intervention_calibrated_sim2real_blueprint.pdf",
+      "action": "move_report",
+      "sha256": "1a08a14f4acc30db1e0a928e55d2ee81b476d1d251eaea4774d7343a52bc7690"
+    }
+  ]
+}

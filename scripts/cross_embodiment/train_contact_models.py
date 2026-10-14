@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--updates",type=int,default=5000)
     parser.add_argument("--resume",action="store_true")
+    parser.add_argument("--device",default="cpu")
     args=parser.parse_args()
     data,meta=load_contact_dataset(args.source)
     if meta["role"]!="source_demonstrations": raise ValueError("source role required")
@@ -37,7 +38,7 @@ def main():
     if set(data["mode"][eligible])!={0,1}: raise ValueError("two actual source modes required")
     prior,state,report=fit_regressor(condition,targets,train,validation,
         spec=ModelSpec(condition.shape[-1],targets.shape[-1],hidden=(96,96),learning_rate=.001),updates=args.updates,
-        checkpoint_path=args.output/"source_resume",resume=args.resume,
+        checkpoint_path=args.output/"source_resume",resume=args.resume,device=args.device,
         metadata={"learned_role":"source_prior","environment":meta["environment"],"horizon":h,"command_dim":13,
         "command_bounds":bounds.tolist(),"mode_probabilities":[.5,.5],"reference_feedback_gain":1.,"control_dt":config.control_dt,
         "source_dataset_sha256":meta["tensor_sha256"],"eligible_episodes":int(eligible.sum()),"attempted_episodes":b})
@@ -60,7 +61,7 @@ def main():
     x,y,train,validation=(np.concatenate([table[i] for table in tables],axis=0).astype(np.float32 if i<2 else bool) for i in range(4))
     response,state,report=fit_regressor(x,y,train,validation,
         spec=ModelSpec(x.shape[-1],y.shape[-1],hidden=(96,96),ensemble=3,learning_rate=.001),updates=args.updates,
-        checkpoint_path=args.output/"response_resume",resume=args.resume,
+        checkpoint_path=args.output/"response_resume",resume=args.resume,device=args.device,
         metadata={"learned_role":"response_ensemble","environment":config.environment,"risk_kind":"contact",
             "context_bounds":np.stack((x[train,-3:].min(axis=0),x[train,-3:].max(axis=0)),axis=-1).tolist(),
             "active_command_dim":13,"command_bounds":bounds.tolist(),

@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/tylerlum/human2sim2robot",
+  "commit": "894eae2ec3ae39a573b81bd1860d14cc6bdfa6df",
+  "license": "MIT",
+  "files": [
+    {
+      "source": "human2sim2robot/sim_training/tasks/cross_embodiment/env.py",
+      "source_sha256": "47b84968ea7367a237e006a551b9b7136e7ecc4c9136b0a806c4402a64b5d33a",
+      "symbols": [
+        "compute_reward_jit",
+        "compute_reset_jit"
+      ]
+    },
+    {
+      "source": "human2sim2robot/sim_training/utils/cross_embodiment/utils.py",
+      "source_sha256": "bfaba561a9686319f7a8fb3a33531bbc853eacc21c272fd3d1f9b50c9386df4d",
+      "symbols": [
+        "clip_T_list"
+      ]
+    }
+  ],
+  "scope": "Native reward/reset/trajectory math and original learner entry, task dynamics/observations/init/control explicitly adapted"
+}

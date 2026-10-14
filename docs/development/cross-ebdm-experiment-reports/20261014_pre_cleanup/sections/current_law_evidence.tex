@@ -1,0 +1,27 @@
+\paragraph{P1.7：同预算条件 law 与强控制对照。}
+复用 P1.6 已计费校准和同一模型训练池；逐模式选择允许的有限映射，
+完整方法与 task-only 使用完全相同的容量。额外模型验证单列计数，目标
+任务轨迹不参与选择。对六个新 reset groups 使用成对的 antithetic
+uniforms，每组源模式恰为两支，源 law 的频率在该条件 fixture 内平衡。
+这是 clustered 条件 law 检查，不是独立同分布模式频率估计。
+\input{tables/distribution_v1_results.tex}
+
+v1 full/task-only 六次选择相同条件映射，均 $51/72$，其中 $18$ 个请求
+因不支持而拒绝。task-only 加重加权为 $70/72$，说明限制模式质量会影响
+任务分母。shuffle 保留同样 $51/72$ 和成功模式数，却没有原始源对应；
+额外噪声 $52/72$ 不能作为其必要性的证据。
+
+恢复支持 v2 继续使用同一候选/校准缓冲，并对 full 与 task-only 同时开放
+重加权。完整结果如下；不能把 v1/v2 中最好的格拼成正式主表。
+\input{tables/distribution_results.tex}
+v2 full/task-only 分别为 $64/72$ 与 $65/72$，两者各含六个拒绝；
+加重加权后为 $70/72$ 与 $71/72$。matched 的一个新 reset 中，full
+在 mode0 丢失支撑而 task-only 成功；共享 mode1 均超力。
+该校准重复的实际样本均值 task 差为 $+0.06788$，响应差为 $-0.00309$。
+这说明训练预算带并未认证新 reset 的非劣，响应均值下降也不等于任务收益。
+当前数据没有建立 full 相对同类控制优化的独立优势。
+
+去掉 source mode 与打乱 coupling 检验源条件对应；它们不能单独证明
+response objective 相对同 prior 的 task-only 有独立价值。仅重加权保持
+固定命令支持，另加入 task-only 加重加权的强对照。额外 transport noise
+固定幅度、保留全部约束，确定性映射仍从随机源 prior 获得多模态。
