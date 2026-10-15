@@ -58,7 +58,7 @@ class JaxBackend:
         
         self.jax = jax
         self.jnp = jnp
-        self.device = device
+        self.device = "gpu" if device == "cuda" else device
         
         # Set up device
         if device == "gpu" or device == "cuda":
@@ -162,7 +162,7 @@ class JaxBackend:
         Returns:
             JAX PRNG key
         """
-        return self.jax.random.PRNGKey(seed)
+        return self.to_device(self.jax.random.PRNGKey(seed))
     
     def split_rng(self, rng: Any, num: int = 2) -> Any:
         """
@@ -227,7 +227,7 @@ class JaxBackend:
             device = self.device
         
         # Get target device object
-        if device == "gpu":
+        if device in {"gpu", "cuda"}:
             try:
                 target_devices = self.jax.devices("gpu")
                 if len(target_devices) > 0:

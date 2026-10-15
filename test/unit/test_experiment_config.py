@@ -534,3 +534,33 @@ def test_peg_insert_core_only_freeze_retires_learned_reliability_ablation():
         "policy_ckpt": full.method_params["policy_ckpt"],
     })
     assert restored_prior == full.method_params
+
+
+@pytest.mark.requires_jax
+def test_timer_synchronizes_arrays_and_preserves_result(monkeypatch):
+    import jax
+    import jax.numpy as jnp
+    from genedynamics.experiments.framework import experiment as experiment_module
+    values = jnp.arange(4)
+    result = {"states": [values], "metadata": object()}
+    events = []
+    block = jax.block_until_ready
+    monkeypatch.setattr(jax, "block_until_ready", lambda arrays: (events.append("sync"), block(arrays))[1])
+    ticks = iter([2.0, 5.0])
+    monkeypatch.setattr(experiment_module, "perf_counter", lambda: next(ticks))
+    measured, elapsed = experiment_module._measure_plan(lambda: result)
+    assert measured is result
+    assert elapsed == 3.0
+    assert events == ["sync"]
+
+
+@pytest.mark.requires_jax
+def test_timer_does_not_swallow_device_failures(monkeypatch):
+    import jax
+    import jax.numpy as jnp
+    from genedynamics.experiments.framework import experiment as experiment_module
+    def fail(result):
+        raise RuntimeError("device execution failed")
+    monkeypatch.setattr(experiment_module, "_synchronize_result", fail)
+    with pytest.raises(RuntimeError, match="device execution failed"):
+        experiment_module._measure_plan(lambda: jnp.ones(2))

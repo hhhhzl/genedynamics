@@ -146,6 +146,9 @@ class RecedingHorizonController:
             ``(state, action, final_plan_info) -> next_state``. The info is None
             for planners without replan diagnostics. Errors propagate without
             executing the ordinary transition as an implicit fallback.
+        device: optional explicit JAX device for controller state, RNG and
+            operations. With None, the existing planner-agnostic placement
+            behavior is retained.
     """
 
     def __init__(
@@ -164,6 +167,7 @@ class RecedingHorizonController:
         synchronize_steps: bool = False,
         initialize_plan: Optional[Callable[[Any, Any], Any]] = None,
         execution_step: Optional[Callable[[Any, Any, Any], Any]] = None,
+        device: Any = None,
     ) -> None:
         self.planner = planner
         self.step_fn = step_fn
@@ -176,6 +180,7 @@ class RecedingHorizonController:
         self.collect_states = bool(collect_states)
         self.collect_infos = bool(collect_infos)
         self.synchronize_steps = bool(synchronize_steps)
+        self.device = device
         if initialize_plan is not None and not callable(initialize_plan):
             raise TypeError("initialize_plan must be callable or None")
         self._initialize_plan = initialize_plan
@@ -189,6 +194,14 @@ class RecedingHorizonController:
 
     def run(self, x0: Any, rng: Any) -> RecedingHorizonResult:
         """Execute the closed-loop receding-horizon rollout."""
+        if self.device is not None:
+            import jax
+
+            with jax.default_device(self.device):
+                return self._run(x0, rng)
+        return self._run(x0, rng)
+
+    def _run(self, x0: Any, rng: Any) -> RecedingHorizonResult:
         state = x0
         plan_var = self.planner.init_plan_var()
         if self._initialize_plan is not None:
@@ -205,7 +218,7 @@ class RecedingHorizonController:
 
             leaves = jax.tree_util.tree_leaves(state)
             if any(isinstance(leaf, jax.Array) for leaf in leaves):
-                device = jax.devices()[0]
+                device = self.device if self.device is not None else jax.devices()[0]
                 state, plan_var, rng = jax.device_put(
                     (state, plan_var, rng), device=device
                 )

@@ -71,6 +71,7 @@ class MgaBackendJax:
         Hsample: int = 16,
         Nsample: int = 2048,
         candidate_rollout_batch_size: Optional[int] = None,
+        request_batch_size: int = 1,
         temp_sample: float = 0.06,
         horizon_diffuse_factor: float = 0.9,
         traj_diffuse_factor: float = 0.5,
@@ -102,6 +103,7 @@ class MgaBackendJax:
             Hnode = int(cfg.get("Hnode", Hnode))
             Hsample = int(cfg.get("Hsample", Hsample))
             Nsample = int(cfg.get("Nsample", Nsample))
+            request_batch_size = int(cfg.get("request_batch_size", request_batch_size))
             candidate_rollout_batch_size = cfg.get(
                 "candidate_rollout_batch_size",
                 candidate_rollout_batch_size,
@@ -148,6 +150,9 @@ class MgaBackendJax:
         self.nu = int(nu)
         self.Hnode, self.Hsample = int(Hnode), int(Hsample)
         self.Nsample = int(Nsample)
+        self.request_batch_size = int(request_batch_size)
+        if self.request_batch_size < 1:
+            raise ValueError("request_batch_size must be positive")
         self.candidate_rollout_batch_size = (
             None
             if candidate_rollout_batch_size is None
@@ -254,6 +259,13 @@ class MgaBackendJax:
         )
         self.emergency_plans_fn = getattr(
             self._task_contract_env, "emergency_plans", None
+        )
+        emergency_factory = self.emergency_plans_fn or self.emergency_plan_fn
+        # Task proposal hooks are pure rollout capabilities. Keep conditional
+        # geometry preparation inside a stable kernel instead of rebuilding
+        # its executable around each measured state on the host.
+        self._emergency_factory_jit = (
+            jax.jit(emergency_factory) if emergency_factory is not None else None
         )
         self.normal_recovery_plan_fn = getattr(
             self._task_contract_env, "normal_recovery_plan", None
@@ -527,6 +539,20 @@ class MgaBackendJax:
         # preserves the exact update/RNG order while avoiding an outer scan
         # that inlines a large MJX candidate rollout multiple times.
         self._reverse_step_jit = jax.jit(self._reverse_step)
+        # Public single-shot calls must reuse the same transformed function.
+        # Rebuilding jit(bound_method) in plan retraces the full search every
+        # time; the state and RNG belong in the dynamic signature instead.
+        self._plan_replan_jit = jax.jit(self.replan_with_info)
+        self._rollout_states_jit = jax.jit(self._rollout_states_device)
+        self._first_action_jit = jax.jit(self._first_action)
+        self._plan_batch_jit = jax.jit(self._plan_batch_device)
+        # Only immutable cold/steady schedules are cached, and they are built
+        # outside tracing so no tracer can escape through a Python cache.
+        self._schedules = {
+            count: self._build_schedule(count)
+            for count in {self.Ndiffuse, self.Ndiffuse_init}
+            if 0 < count <= self.Ndiffuse_init
+        }
 
     @property
     def _prior_active(self):
@@ -605,7 +631,7 @@ class MgaBackendJax:
         if is_brax_env(env):
             return build_brax_step(env)
         adapter = getattr(solver, "_env_adapter", None)
-        return adapter.jax_transition if adapter is not None else None
+        return jax.jit(adapter.jax_transition) if adapter is not None else None
 
     def _draw_noise(self, key, shape, state=None):
         """Unit-variance candidate noise; routes to the `noise_sampler` seam.
@@ -1033,6 +1059,12 @@ class MgaBackendJax:
                 commit()
 
     def make_schedule(self, n_diffuse: int) -> jnp.ndarray:
+        count = int(n_diffuse)
+        if count in self._schedules:
+            return self._schedules[count]
+        return self._build_schedule(count)
+
+    def _build_schedule(self, n_diffuse: int) -> jnp.ndarray:
         n_diffuse = int(n_diffuse)
         if not 0 < n_diffuse <= self.Ndiffuse_init:
             raise ValueError(
@@ -2488,7 +2520,7 @@ class MgaBackendJax:
             else:
                 incumbent = self._candidate_projection_jit(state, incumbent)
             gaussian = self._candidate_projection_jit(state, gaussian)
-        emergency_factory = self.emergency_plans_fn or self.emergency_plan_fn
+        emergency_factory = self._emergency_factory_jit
         emergency = (
             emergency_factory(state, incumbent, t0)
             if emergency_factory is not None else None
@@ -2764,7 +2796,7 @@ class MgaBackendJax:
                 else:
                     fallback = self._candidate_projection_jit(state, fallback)
                 refined = self._candidate_projection_jit(state, refined)
-            emergency_factory = self.emergency_plans_fn or self.emergency_plan_fn
+            emergency_factory = self._emergency_factory_jit
             emergency = (
                 emergency_factory(state, fallback, t0)
                 if (
@@ -2802,6 +2834,9 @@ class MgaBackendJax:
         )[0]
 
     def first_action(self, plan_var) -> jnp.ndarray:
+        return self._first_action_jit(plan_var)
+
+    def _first_action(self, plan_var) -> jnp.ndarray:
         return self._node2u(plan_var)[0]
 
     def shift(self, plan_var) -> jnp.ndarray:
@@ -2862,8 +2897,7 @@ class MgaBackendJax:
             )
         if rng_key is None:
             rng_key = jax.random.PRNGKey(self.seed)
-        replan_jit = jax.jit(self.replan_with_info)
-        Y, prior_info = replan_jit(
+        Y, prior_info = self._plan_replan_jit(
             x0,
             self.init_plan_var(),
             self.make_schedule(self.Ndiffuse_init),
@@ -2889,7 +2923,48 @@ class MgaBackendJax:
         return out
 
     def plan_batch(self, x0: Any, keys: Any) -> List[Dict[str, Any]]:
-        return [self.plan(x0, rng_key=k) for k in keys]
+        if len(keys) == 0:
+            return []
+        if self._execution_context is not None:
+            raise ValueError("mode-aware MGA requires run_receding; batch plans cannot discard execution context")
+        if self.atacom_prior is not None:
+            # The existing expert owns pending slack/commit state. Independent
+            # request batching needs an explicit expert carry before it can
+            # preserve that protocol; retain its established public behavior.
+            return [self.plan(x0, rng_key=key) for key in keys]
+        key_array = jnp.stack(keys) if isinstance(keys, (list, tuple)) else keys
+        batch = jax.device_get(self._plan_batch_jit(x0, key_array))
+        results = []
+        for index in range(len(keys)):
+            result = {
+                name: np.asarray(
+                    value[index],
+                    dtype=np.float32 if name in {"actions", "states", "rewards"} else None,
+                )
+                for name, value in batch.items()
+            }
+            # Preserve the public NumPy reduction and scalar output contract.
+            result["total_reward"] = float(np.sum(result["rewards"]))
+            result["mean_reward"] = float(np.mean(result["rewards"])) if result["rewards"].size else 0.0
+            results.append(result)
+        return results
+
+    def _plan_batch_device(self, x0, keys):
+        def one(key):
+            nodes, info = self.replan_with_info(
+                x0, self.init_plan_var(), self.make_schedule(self.Ndiffuse_init), key
+            )
+            actions = self._node2u(nodes)
+            _, rewards = self._rollout_node_candidates(x0, nodes[None], jnp.float32(0))
+            return {
+                "actions": actions,
+                "states": self._rollout_states_device(x0, actions),
+                "rewards": rewards[0],
+                **info,
+            }
+        if self.request_batch_size == 1:
+            return jax.lax.map(one, keys)
+        return jax.lax.map(one, keys, batch_size=self.request_batch_size)
 
     def sample_trajectories(self, x0: Any, n_samples: int, rng_key: Optional[Any] = None):
         if rng_key is None:
@@ -2898,8 +2973,11 @@ class MgaBackendJax:
         return self.plan_batch(x0, keys)
 
     def _rollout_states(self, x0: Any, us: jnp.ndarray) -> np.ndarray:
+        return np.asarray(self._rollout_states_jit(x0, us), dtype=np.float32)
+
+    def _rollout_states_device(self, x0: Any, us: jnp.ndarray):
         if self._step_fn is None:
-            return np.asarray(x0, dtype=np.float32)[None]
+            return jnp.asarray(x0, dtype=jnp.float32)[None]
 
         def f(s, u):
             s2 = self._step_fn(s, u)
@@ -2907,7 +2985,7 @@ class MgaBackendJax:
 
         _, states = jax.lax.scan(f, x0, us)
         x0a = jnp.asarray(x0)
-        return np.asarray(jnp.concatenate([x0a[None], states], axis=0), dtype=np.float32)
+        return jnp.concatenate([x0a[None], states], axis=0)
 
 
 __all__ = ["MgaBackendJax"]

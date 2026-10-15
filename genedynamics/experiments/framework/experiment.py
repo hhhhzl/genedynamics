@@ -8,6 +8,7 @@ experiment execution using the plugin system.
 import inspect
 import time
 import json
+from time import perf_counter
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import numpy as np
@@ -28,6 +29,28 @@ from genedynamics.core.task_spec import get_default_task_spec
 from .config import ExperimentConfig
 from .registry import PluginRegistry
 from ..common.constraints import create_constraint_pipeline
+
+
+def _synchronize_result(result):
+    """Wait for returned device arrays without moving planner metadata."""
+    try:
+        import jax
+    except ImportError:
+        return
+    arrays = tuple(
+        leaf for leaf in jax.tree_util.tree_leaves(result)
+        if isinstance(leaf, jax.Array)
+    )
+    if arrays:
+        jax.block_until_ready(arrays)
+
+
+def _measure_plan(call):
+    """Return the result and synchronized wall seconds, including compilation."""
+    started = perf_counter()
+    result = call()
+    _synchronize_result(result)
+    return result, perf_counter() - started
 
 
 def convert_to_json_serializable(obj: Any) -> Any:
@@ -398,21 +421,35 @@ class ExperimentRunner:
 
             # Constraint pipeline warmup is handled by planner/backends if needed.
         
+        warmup_completed = False
+        warmup_error = None
         if needs_warmup:
             try:
                 warmup_result = method_plugin.plan(planner, start_pos, rng)
                 # For JAX, ensure computation is complete before timing
                 import jax
                 jax.block_until_ready(warmup_result)
-            except Exception:
-                pass  # If warmup fails, continue anyway
+                warmup_completed = True
+            except Exception as exc:
+                warmup_error = type(exc).__name__
             
             # Recreate rng to ensure same random seed for actual planning
             rng = backend.create_rng(seed)
         
-        planning_start = time.time()
-        result = method_plugin.plan(planner, start_pos, rng)
-        planning_time = time.time() - planning_start
+        result, planning_time = _measure_plan(
+            lambda: method_plugin.plan(planner, start_pos, rng)
+        )
+        planning_timing = {
+            "clock": "perf_counter",
+            "synchronization": "returned_jax_array_leaves",
+            "scope": getattr(method_plugin, "planning_scope", "method_plugin_plan"),
+            "warmup_attempted": bool(needs_warmup),
+            "warmup_completed": warmup_completed,
+            "warmup_error": warmup_error,
+            "cold_compilation_may_be_included": not warmup_completed,
+        }
+        if isinstance(result, dict):
+            result["timing_planning"] = planning_timing
         
         # Check if planning returned a valid result
         if result is None:

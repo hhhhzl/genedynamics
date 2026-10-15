@@ -29,6 +29,7 @@ fairness (same `(M,H,K)`) is enforced there.
 from __future__ import annotations
 
 from typing import Any, Optional
+from contextlib import nullcontext
 
 import numpy as np
 
@@ -80,6 +81,7 @@ class MGASolver(BaseModelBasedDiffusionSolver):
         Hnode: int = 4,
         Nsample: int = 2048,
         candidate_rollout_batch_size: Optional[int] = None,
+        request_batch_size: int = 1,
         stepwise_diffusion: bool = False,
         stepwise_acceptance: bool = False,
         lazy_emergency_scoring: bool = False,
@@ -260,6 +262,7 @@ class MGASolver(BaseModelBasedDiffusionSolver):
             dict(
                 Hsample=int(Hsample), Hnode=int(Hnode), Nsample=int(Nsample),
                 candidate_rollout_batch_size=self.candidate_rollout_batch_size,
+                request_batch_size=int(request_batch_size),
                 stepwise_diffusion=self.stepwise_diffusion,
                 stepwise_acceptance=self.stepwise_acceptance,
                 lazy_emergency_scoring=self.lazy_emergency_scoring,
@@ -300,16 +303,27 @@ class MGASolver(BaseModelBasedDiffusionSolver):
 
     def _get_backend_impl(self):
         if self._backend_impl is None:
-            backend = RuntimeBackendManager.get_backend()
+            backend = getattr(self, "backend", None) or RuntimeBackendManager.get_backend()
             backend_cls = _get_mga_backend(backend.name)
             if backend_cls is None:
                 raise ValueError(f"MGA backend '{backend.name}' not found")
-            self._backend_impl = to_unified_backend(backend_cls(solver=self))
+            devices = getattr(backend, "devices", ())
+            if devices:
+                import jax
+
+                context = jax.default_device(devices[0])
+            else:
+                context = nullcontext()
+            with context:
+                self._backend_impl = to_unified_backend(backend_cls(solver=self))
         return self._backend_impl
 
     # --- receding-horizon execution (reuses the DIAL bridge) ---
     def make_controller(self, n_steps: int, **kw: Any) -> RecedingHorizonController:
         backend = self._get_backend_impl()
+        devices = getattr(getattr(self, "backend", None), "devices", ())
+        if devices:
+            kw.setdefault("device", devices[0])
         step_fn = self._step_fn or getattr(backend, "_step_fn", None)
         if step_fn is None:
             raise ValueError("MGA needs a step_fn (inject one or provide dynamics).")

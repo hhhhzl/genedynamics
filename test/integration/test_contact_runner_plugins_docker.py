@@ -776,3 +776,38 @@ def test_h1_causal_ablation_executes_one_development_step(
     with open(result_file) as handle:
         persisted = __import__("json").load(handle)
     assert persisted["component_contract"]["controller_method"]
+
+
+def test_paired_execution_keeps_its_dynamics_and_reuses_compiled_step(monkeypatch):
+    pytest.importorskip("jax")
+    import jax.numpy as jnp
+    import numpy as np
+    from types import SimpleNamespace
+    from genedynamics.experiments.plugins.methods import contact_receding
+
+    class Env:
+        def __init__(self, gain):
+            self.gain = gain
+
+        def step(self, state, action):
+            return state + self.gain * action
+
+    captured = {}
+
+    def solver_stub(*args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(contact_receding, "MGASolver", solver_stub)
+    model, execution = Env(0.9), Env(0.5)
+    _, solver = contact_receding.make_mga(
+        contact_receding.ARM_TASK, "dial", backend=object(),
+        model_env=model, execution_env=execution,
+    )
+    step = captured["step_fn"]
+    state, action = jnp.zeros(2), jnp.ones(2)
+    np.testing.assert_array_equal(step(state, action), execution.step(state, action))
+    np.testing.assert_array_equal(step(state + 0.3, action * 2),
+                                  execution.step(state + 0.3, action * 2))
+    assert step._cache_size() == 1
+    assert solver.execution_env is execution

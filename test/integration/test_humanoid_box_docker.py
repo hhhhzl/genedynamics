@@ -3876,6 +3876,27 @@ def _h1_unload_context_array_fixture(*, decoder_scale=1.0):
     return env, state
 
 
+def test_h1_cached_preparation_preserves_dynamic_modes_and_sealed_entry():
+    env, state = _h1_unload_context_array_fixture()
+    prepare = env.mga_execution_context["prepare_state"]
+    for mode in (0, 1):
+        actual = prepare(state, jnp.int32(mode))
+        expected = env._prepare_mga_execution_state(state, jnp.int32(mode))
+        assert jax.tree.structure(actual) == jax.tree.structure(expected)
+        for got, wanted in zip(jax.tree.leaves(actual), jax.tree.leaves(expected)):
+            if np.asarray(wanted).dtype.kind in "biu":
+                np.testing.assert_array_equal(got, wanted)
+            else:
+                np.testing.assert_allclose(got, wanted, rtol=1e-5, atol=1e-7)
+    entry = prepare(state, jnp.int32(1))
+    moved = entry.replace(pipeline_state=entry.pipeline_state._replace(
+        geom_xpos=entry.pipeline_state.geom_xpos.at[2, 0].add(.1)))
+    repeated = prepare(moved, jnp.int32(1))
+    for key in env._mga_unload_entry_keys():
+        np.testing.assert_array_equal(repeated.info[key], entry.info[key])
+    assert prepare._cache_size() == 1
+
+
 def test_h1_unload_context_seals_actual_geometry_and_stiffness_across_models():
     execution, state = _h1_unload_context_array_fixture()
     nominal, _ = _h1_unload_context_array_fixture(decoder_scale=4.)

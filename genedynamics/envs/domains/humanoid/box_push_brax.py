@@ -1540,6 +1540,10 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
         """Host execution plus pure preparation; other robots retain legacy API."""
         if not self._supports_mga_execution_context:
             return None
+        # Preparation contains a conditional entry seal. Calling it eagerly
+        # creates a new cond executable around each measured state; keep one
+        # stable pure kernel shared by execution and host certificate loops.
+        prepare_state_jit = jax.jit(self._prepare_mga_execution_state)
         step_jit = jax.jit(self.step)
         score_emergency_transition_jit = jax.jit(
             self._score_emergency_transition
@@ -1552,7 +1556,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
             selected = int(mode)
             if selected not in (0, 1):
                 raise ValueError("MGA execution mode must be NORMAL(0) or UNLOAD(1)")
-            prepared = self._prepare_mga_execution_state(state, selected)
+            prepared = prepare_state_jit(state, jnp.int32(selected))
             # A valid but uncertified mitigation is allowed: it is not a
             # certified-safe action and its real samples must remain visible.
             # An invalid retract entry executes zero Cartesian arm force; it
@@ -1598,7 +1602,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
                     int(self._bcfg.emergency_min_dwell_steps) - committed_age,
                 )
             for index in range(min(backup_steps, int(dense.shape[0]))):
-                prepared = self._prepare_mga_execution_state(
+                prepared = prepare_state_jit(
                     current, jnp.int32(1)
                 )
                 action = dense[index]
@@ -1620,7 +1624,7 @@ class HumanoidBoxPushEnv(HumanoidTaskEnv):
 
         context = {
             "schema_version": 1, "normal_mode": 0, "emergency_mode": 1,
-            "prepare_state": self._prepare_mga_execution_state,
+            "prepare_state": prepare_state_jit,
             "mode_from_state": lambda state: jnp.asarray(
                 state.info.get("mga_execution_mode", 0), jnp.int32),
             "normal_recovery_ready": self.normal_recovery_ready,

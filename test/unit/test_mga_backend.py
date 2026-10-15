@@ -761,6 +761,29 @@ def _context_backend(
     return MgaBackendJax(solver=solver, **COMMON, **backend_kwargs)
 
 
+def test_emergency_proposal_cache_keeps_state_reference_and_time_dynamic():
+    class ConditionalTask(_ContextToyTask):
+        @staticmethod
+        def emergency_plan(state, nodes, t0=0):
+            return jax.lax.cond(
+                state["mode"] == 1,
+                lambda _: nodes + t0,
+                lambda _: nodes - t0,
+                operand=None,
+            )
+
+    task = ConditionalTask()
+    backend = _context_backend(model=task, execution=task)
+    factory = backend._emergency_factory_jit
+    for mode, value in ((0, .2), (1, .4)):
+        state = task.reset(mode=mode)
+        nodes = jnp.full((5, 2), value)
+        t0 = jnp.float32(value)
+        np.testing.assert_array_equal(factory(state, nodes, t0),
+                                      task.emergency_plan(state, nodes, t0))
+    assert factory._cache_size() == 1
+
+
 def test_context_fallback_scores_its_mode_and_preserves_measured_entry_anchor():
     backend = _context_backend(model=_ContextToyTask(2), execution=_ContextToyTask(7))
     state, nodes = _ContextToyTask.reset(), jnp.zeros((5, 2))
@@ -1775,3 +1798,80 @@ def test_context_invalid_entry_stiffness_is_sealed_unknown_not_silently_clipped(
     _assert_same_sealed_entry(entry, repeated)
     _, risk = env.emergency_sequence_score_risk(entry, jnp.zeros((17, 2)))
     assert bool(jnp.all(jnp.isinf(risk)))
+
+
+_EXECUTION_CFG = dict(nu=2, Hsample=8, Hnode=4, Nsample=32, Ndiffuse=2, Ndiffuse_init=3)
+
+
+def _execution_test_rollout(state, actions, t0):
+    return -jnp.sum((actions - state[:2] - 0.2) ** 2, axis=-1)
+
+
+def test_public_plan_reuses_compile_with_dynamic_state_and_rng():
+    backend = MgaBackendJax(
+        rollout_fn=_execution_test_rollout, step_fn=lambda state, action: state + 0.02 * action,
+        **_EXECUTION_CFG,
+    )
+    state = jnp.zeros(2)
+    key = jax.random.PRNGKey(3)
+    first = backend.plan(state, key)
+    cache_size = backend._plan_replan_jit._cache_size()
+    rollout_cache = backend._rollout_states_jit._cache_size()
+    second = backend.plan(state + 0.1, jax.random.PRNGKey(4))
+    assert cache_size == backend._plan_replan_jit._cache_size() == 1
+    assert rollout_cache == backend._rollout_states_jit._cache_size() == 1
+    assert not np.allclose(first["actions"], second["actions"])
+    expected_nodes, _ = backend.replan_with_info(
+        state + 0.1, backend.init_plan_var(), backend.make_schedule(3),
+        jax.random.PRNGKey(4),
+    )
+    np.testing.assert_allclose(second["actions"], backend._node2u(expected_nodes), atol=1e-6)
+
+
+@pytest.mark.parametrize("chunk", [1, 4])
+def test_request_batch_preserves_independent_keys_and_public_outputs(chunk):
+    backend = MgaBackendJax(
+        rollout_fn=_execution_test_rollout, step_fn=lambda state, action: state + 0.02 * action,
+        request_batch_size=chunk, **_EXECUTION_CFG,
+    )
+    state = jnp.zeros(2)
+    keys = jax.random.split(jax.random.PRNGKey(13), 5)
+    expected = [backend.plan(state, key) for key in keys]
+    actual = backend.plan_batch(state, keys)
+    assert len(actual) == len(expected) == 5
+    for wanted, got in zip(expected, actual):
+        assert wanted.keys() == got.keys()
+        for name in wanted:
+            np.testing.assert_allclose(got[name], wanted[name], atol=1e-6, rtol=1e-5)
+    assert not np.allclose(actual[0]["actions"], actual[1]["actions"])
+    count = backend._plan_batch_jit._cache_size()
+    backend.plan_batch(state + 0.1, keys)
+    assert count == backend._plan_batch_jit._cache_size() == 1
+    assert backend.plan_batch(state, []) == []
+
+
+def test_solver_honors_instance_backend_and_controller_device(monkeypatch):
+    from genedynamics.core.backends.runtime import RuntimeBackendManager
+    from genedynamics.core.backends.runtime.jax_backend import JaxBackend
+    from genedynamics.core.backends.runtime.numpy_backend import NumpyBackend
+    from genedynamics.core.energy import LegacyEnergyFunctional
+    from genedynamics.core.energy.legacy import EnergyTerm
+    from genedynamics.solvers.single.mga.mga import MGASolver
+
+    class Dynamics:
+        action_size = 2
+
+        def jax_transition(self, state, action):
+            return 0.97 * state + 0.02 * action
+
+    # A different global backend must not redirect this solver instance.
+    monkeypatch.setattr(RuntimeBackendManager, "_backend", NumpyBackend())
+    runtime = JaxBackend("gpu" if jax.default_backend() == "gpu" else "cpu")
+    energy = LegacyEnergyFunctional({"target": EnergyTerm(lambda state, action, info: jnp.sum((state - 0.2) ** 2))})
+    solver = MGASolver(Dynamics(), energy, runtime, **{k: v for k, v in _EXECUTION_CFG.items() if k != "nu"})
+    controller = solver.make_controller(3, synchronize_steps=True)
+    assert controller.device == runtime.devices[0]
+    result = controller.run(jnp.zeros(2), runtime.create_rng(7))
+    for value in result.states + result.actions:
+        assert value.device == runtime.devices[0]
+    assert RuntimeBackendManager.get_backend().name == "numpy"

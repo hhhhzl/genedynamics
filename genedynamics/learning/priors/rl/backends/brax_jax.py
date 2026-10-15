@@ -134,6 +134,13 @@ class BraxRLPrior:
             self._policy_action_jit = jax.jit(
                 lambda obs: self.act(obs, deterministic=True)
             )
+        # Keep parameters dynamic so replacing a frozen checkpoint with the
+        # same architecture cannot silently reuse stale policy constants.
+        # CPU retains its established small-executable/host-loop path.
+        self._warm_start_horizon_jit = jax.jit(self._warm_start_impl)
+        self._sample_horizons_jit = jax.jit(
+            self._sample_horizons_impl, static_argnames=("n_samples",)
+        )
 
     # --- helpers ---
     def _norm_pol(self):
@@ -152,8 +159,13 @@ class BraxRLPrior:
 
     # --- Prior surface ---
     def act(self, obs, *, key: Optional[Any] = None, deterministic: Optional[bool] = None) -> Any:
+        return self._act_with_params(
+            self.params, obs, key=key, deterministic=deterministic
+        )
+
+    def _act_with_params(self, params, obs, *, key=None, deterministic=None):
         det = self.deterministic if deterministic is None else deterministic
-        policy = self._make_policy(self.params, deterministic=det)
+        policy = self._make_policy(params, deterministic=det)
         if key is None:
             key = jax.random.PRNGKey(0)
         action, _ = policy(jnp.asarray(obs), key)
@@ -165,8 +177,11 @@ class BraxRLPrior:
 
     def logp_of_sequence(self, obs_seq, act_seq) -> Any:
         """sum_t log pi(a_t | o_t). `obs_seq`:(H,obs), `act_seq`:(H,A) postprocessed."""
+        return self._logp_with_params(self.params, obs_seq, act_seq)
+
+    def _logp_with_params(self, params, obs_seq, act_seq):
         def step_logp(o, a):
-            logits = self._logits(o)
+            logits = self._policy_apply(params[0], params[1], o)
             if self._action_bias is not None:
                 a = a - self._action_bias
             if self._action_scale is not None:
@@ -178,6 +193,11 @@ class BraxRLPrior:
 
     def warm_start(self, state) -> Any:
         """Return the policy proposal in the solver's node parameterization."""
+        if self._rollout_step is not None and not self._cpu_stepwise_rollout:
+            return self._warm_start_horizon_jit(state, self.params)
+        return self._warm_start_impl(state, self.params)
+
+    def _warm_start_impl(self, state, params):
         if self._rollout_step is not None:
             if self._cpu_stepwise_rollout:
                 current = state
@@ -191,7 +211,7 @@ class BraxRLPrior:
 
             def body(s, _):
                 obs = self._obs_of(s, self._obs_key)
-                action = self.act(obs, deterministic=True)
+                action = self._act_with_params(params, obs, deterministic=True)
                 return self._rollout_step(s, action), action
 
             _, dense_actions = jax.lax.scan(
@@ -208,8 +228,6 @@ class BraxRLPrior:
 
     def sample_horizons(self, state, *, key, n_samples: int):
         """Sample stochastic closed-loop policy horizons in solver node space."""
-        from genedynamics.learning.priors.base import ProposalBatch
-
         n_samples = int(n_samples)
         if n_samples <= 0:
             raise ValueError("n_samples must be positive")
@@ -217,6 +235,16 @@ class BraxRLPrior:
             raise ValueError(
                 "structured horizon sampling requires rollout_step"
             )
+        if not self._cpu_stepwise_rollout:
+            return self._sample_horizons_jit(
+                state, self.params, key=key, n_samples=n_samples
+            )
+        return self._sample_horizons_impl(
+            state, self.params, key=key, n_samples=n_samples
+        )
+
+    def _sample_horizons_impl(self, state, params, *, key, n_samples):
+        from genedynamics.learning.priors.base import ProposalBatch
 
         # CPU deliberately reuses the same small batched policy/one-step MJX
         # executables at every horizon position.  This avoids fusing an extra
@@ -246,7 +274,9 @@ class BraxRLPrior:
             def body(current, key_h):
                 obs = self._obs_of(current, self._obs_key)
                 action = jax.vmap(
-                    lambda o, k: self.act(o, key=k, deterministic=False)
+                    lambda o, k: self._act_with_params(
+                        params, o, key=k, deterministic=False
+                    )
                 )(obs, key_h)
                 next_state = jax.vmap(self._rollout_step)(current, action)
                 return next_state, (obs, action)
@@ -258,7 +288,9 @@ class BraxRLPrior:
         nodes = jnp.einsum(
             "nh,bhu->bnu", self._spline.U2N, dense_actions
         )
-        log_prob = jax.vmap(self.logp_of_sequence)(obs_seq, dense_actions)
+        log_prob = jax.vmap(
+            lambda obs, actions: self._logp_with_params(params, obs, actions)
+        )(obs_seq, dense_actions)
         return ProposalBatch(
             trajectories=nodes,
             log_prob=log_prob,

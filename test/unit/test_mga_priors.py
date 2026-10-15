@@ -2160,3 +2160,52 @@ def test_h1_reliability_rejects_aborted_collection_before_reading_prefix(tmp_pat
     # length checks, even if an aborted run would have had 17+ normal actions.
     with pytest.raises(ValueError, match="aborted H1 collection.*results.json.*invalid_unload_entry"):
         _rows([path], {101}, {"mga"})
+
+
+class _HorizonCacheState(NamedTuple):
+    obs: object
+
+
+@pytest.fixture
+def horizon_cache_prior():
+    pytest.importorskip("brax")
+    from brax.training.agents.ppo import networks
+    from genedynamics.learning.priors.rl.backends.brax_jax import BraxRLPrior
+
+    nets = networks.make_ppo_networks(
+        4, 2, policy_hidden_layer_sizes=(8, 8),
+        preprocess_observations_fn=lambda obs, params: obs,
+    )
+    prior = BraxRLPrior(
+        observation_size=4, action_size=2,
+        params=(None, nets.policy_network.init(jax.random.PRNGKey(11))),
+        normalize_observations=False, policy_hidden_layer_sizes=(8, 8),
+        rollout_step=lambda state, action: _HorizonCacheState(state.obs + 0.01 * jnp.pad(action, (0, 2))),
+        Hsample=8, Hnode=4,
+    )
+    # Exercise the fused path on CPU-only CI as well as real GPU test runs.
+    prior._cpu_stepwise_rollout = False
+    return prior
+
+
+def test_prior_horizons_reuse_compile_and_keep_parameters_dynamic(horizon_cache_prior):
+    prior = horizon_cache_prior
+    state = _HorizonCacheState(jnp.zeros(4))
+    first = prior.warm_start(state)
+    key = jax.random.PRNGKey(3)
+    sampled = prior.sample_horizons(state, key=key, n_samples=3)
+    jax.block_until_ready((first, sampled))
+    assert prior._warm_start_horizon_jit._cache_size() == 1
+    assert prior._sample_horizons_jit._cache_size() == 1
+    shifted = _HorizonCacheState(jnp.ones(4) * 0.1)
+    prior.params = jax.tree.map(lambda value: value + 0.1, prior.params)
+    updated = prior.warm_start(shifted)
+    updated_samples = prior.sample_horizons(shifted, key=key, n_samples=3)
+    jax.block_until_ready((updated, updated_samples))
+    assert prior._warm_start_horizon_jit._cache_size() == 1
+    assert prior._sample_horizons_jit._cache_size() == 1
+    assert not np.allclose(first, updated)
+    np.testing.assert_allclose(updated, prior._warm_start_impl(shifted, prior.params), atol=1e-6)
+    expected = prior._sample_horizons_impl(shifted, prior.params, key=key, n_samples=3)
+    np.testing.assert_allclose(updated_samples.trajectories, expected.trajectories, atol=1e-6)
+    np.testing.assert_allclose(updated_samples.log_prob, expected.log_prob, atol=1e-5)

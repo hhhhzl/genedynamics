@@ -379,12 +379,17 @@ def make_mga(
         from genedynamics.solvers.single.mga.core.retraction import make_mga_retraction
 
         retraction = make_mga_retraction(env, residual_fn=residual_fn)
+    execution_step_fn = None
+    if execution_env is not None:
+        from genedynamics.solvers.common.env_rollout import build_brax_step
+
+        execution_step_fn = build_brax_step(execution_env)
     solver = MGASolver(
         env,
         None,
         backend,
         method=method,
-        step_fn=(execution_env.step if execution_env is not None else None),
+        step_fn=execution_step_fn,
         geometry_fn=geometry_fn,
         retraction=retraction,
         geometry_gate_fn=geometry_gate_fn,
@@ -610,6 +615,8 @@ class _ContactPlanner:
 
 class RecedingContactMethodPlugin(MethodPlugin):
     """Adapter that delegates algorithm semantics to the existing factory."""
+
+    planning_scope = "closed_loop_episode_including_environment_steps"
 
     def __init__(self, plugin_name: str, default_controller_method: str) -> None:
         self._name = str(plugin_name)

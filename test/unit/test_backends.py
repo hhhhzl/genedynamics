@@ -54,6 +54,20 @@ class TestComputationalBackends:
             pytest.skip(f"JAX backend test failed: {e}")
 
 
+    @pytest.mark.requires_jax
+    @pytest.mark.gpu
+    def test_cuda_alias_places_tensors_and_rng_on_requested_device(self):
+        import jax
+        from genedynamics.core.backends.runtime.jax_backend import JaxBackend
+
+        devices = jax.devices("gpu")
+        backend = JaxBackend("cuda")
+        assert backend.device == "gpu"
+        assert backend.tensor([1.0]).device == devices[0]
+        assert backend.to_device(np.asarray([2.0]), device="cuda").device == devices[0]
+        assert backend.create_rng(1).device == devices[0]
+
+
 @pytest.mark.unit
 class TestPhysicsBackends:
     """Test physics backends."""
