@@ -541,17 +541,19 @@ def main() -> int:
         template = (
             rl_cfg.get(
                 "atacom_checkpoint",
-                "results/arm/impedence/_policies/shared_atacom_ppo_seed{seed}.pkl",
+                "results/arm/surface_scan/_policies/shared_atacom_ppo_seed{seed}.pkl",
             )
             if a.atacom else rl_cfg.get(
                 "checkpoint",
-                "results/arm/impedence/_policies/shared_ppo_seed{seed}.pkl",
+                "results/arm/surface_scan/_policies/shared_ppo_seed{seed}.pkl",
             )
         )
         out = str(Path(template.format(seed=seed)))
     else:
         name = f"atacom_{algo}" if a.atacom else algo
-        family = "peg_insert" if task == INSERT_TASK else f"impedence/{medium}"
+        family = "peg_insert" if task == INSERT_TASK else "surface_scan"
+        if task != INSERT_TASK:
+            name = f"{medium}_{name}"
         out = f"results/arm/{family}/_policies/{name}.pkl"
     protocol_name = (
         f"{task}_shared_atacom_v1" if domain_specs and a.atacom

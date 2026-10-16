@@ -5,6 +5,8 @@ This module provides the ExperimentRunner class that orchestrates
 experiment execution using the plugin system.
 """
 
+import copy
+import hashlib
 import inspect
 import time
 import json
@@ -142,6 +144,78 @@ def _compact_contact_state(state: Any) -> Dict[str, Any]:
         out["q"] = convert_to_json_serializable(pipeline_state.q)
         out["qd"] = convert_to_json_serializable(pipeline_state.qd)
     return out
+
+
+def _same_contract_after_frozen_relocation(saved: Any, expected: Dict[str, Any]) -> bool:
+    """Compare relocated frozen artifacts without changing archived snapshots."""
+    if not isinstance(saved, dict):
+        return False
+    normalized = copy.deepcopy(saved)
+    old_metadata = normalized.get("metadata") or {}
+    new_metadata = expected.get("metadata") or {}
+    if not isinstance(old_metadata, dict) or not isinstance(new_metadata, dict):
+        return False
+    old_lock = old_metadata.get("learned_component_lock") or {}
+    new_lock = new_metadata.get("learned_component_lock") or {}
+    if (not isinstance(old_lock, dict) or not isinstance(new_lock, dict)
+            or not old_lock or old_lock.keys() != new_lock.keys()):
+        return False
+
+    relocations = {}
+    training_seeds = set()
+    for name, old_entry in old_lock.items():
+        new_entry = new_lock[name]
+        if not isinstance(old_entry, dict) or not isinstance(new_entry, dict):
+            return False
+        old_path, new_path = old_entry.get("path"), new_entry.get("path")
+        digest = old_entry.get("sha256")
+        if (not isinstance(old_path, str) or not isinstance(new_path, str)
+                or not digest or digest != new_entry.get("sha256")):
+            return False
+        try:
+            actual = hashlib.sha256()
+            with Path(new_path).open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    actual.update(chunk)
+        except OSError:
+            return False
+        if actual.hexdigest() != digest:
+            return False
+        if old_path != new_path:
+            if old_path in relocations and relocations[old_path] != new_path:
+                return False
+            relocations[old_path] = new_path
+            old_entry["path"] = new_path
+            training_seeds.update(old_entry.get("training_seeds") or [])
+
+    if not relocations:
+        return False
+    for key, value in normalized.get("method_params", {}).items():
+        if not isinstance(key, str):
+            continue
+        if key.endswith("_ckpt") and isinstance(value, str):
+            normalized["method_params"][key] = relocations.get(value, value)
+        elif key.endswith("_ckpt_by_suite") and isinstance(value, dict):
+            normalized["method_params"][key] = {
+                suite: relocations.get(path, path) if isinstance(path, str) else path
+                for suite, path in value.items()
+            }
+
+    old_rl = (old_metadata.get("training") or {}).get("rl") or {}
+    new_rl = (new_metadata.get("training") or {}).get("rl") or {}
+    for key in ("checkpoint", "atacom_checkpoint"):
+        old_template, new_template = old_rl.get(key), new_rl.get(key)
+        if not isinstance(old_template, str) or not isinstance(new_template, str):
+            continue
+        if Path(old_template).name != Path(new_template).name:
+            continue
+        try:
+            if any(relocations.get(old_template.format(seed=seed))
+                   == new_template.format(seed=seed) for seed in training_seeds):
+                old_rl[key] = new_template
+        except (KeyError, IndexError, ValueError):
+            pass  # Only known seed templates tied to a verified artifact move.
+    return normalized == expected
 
 
 class ExperimentRunner:
@@ -874,7 +948,9 @@ class ExperimentRunner:
             key: value for key, value in saved_config.items()
             if key not in dispatch_keys
         } if isinstance(saved_config, dict) else None
-        if saved_contract != expected_contract:
+        if (saved_contract != expected_contract
+                and not _same_contract_after_frozen_relocation(
+                    saved_contract, expected_contract)):
             print(f"[resume] Config changed; rerunning level={level}, seed={seed}")
             return None
         print(f"[resume] Reusing level={level}, seed={seed}: {result_path}")
@@ -885,8 +961,9 @@ class ExperimentRunner:
         Run all experiments according to configuration.
 
         Args:
-            resume: Reuse complete results whose saved config snapshot exactly
-                matches the resolved per-suite configuration.
+            resume: Reuse complete results whose saved config snapshot matches
+                the resolved per-suite configuration, allowing hash-verified
+                frozen artifact relocation without rewriting saved snapshots.
         
         Returns:
             List of experiment result dictionaries

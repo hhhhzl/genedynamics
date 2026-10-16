@@ -196,8 +196,8 @@ def colorbar_stream(name):
 
 
 def latest_wrench_runs():
-    """Seed-0 Sensing-OOD executions from the 2026-09-26 archive."""
-    root = ROOT / "peg_insert_completed_20260926/results/arm/peg_insert"
+    """Seed-0 Sensing-OOD executions from the canonical paper results."""
+    root = ROOT / "results/arm/peg_insert"
     specs = (
         ("main/mga", "MGA", "#1F7A78", "-", 0.72),
         ("ablation/no_rl_prior", "w/o prior", "#4B2E83", "--", 0.62),

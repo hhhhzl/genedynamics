@@ -67,7 +67,7 @@ metadata:
   expected_formal_task_runs: 740
   learned_component_lock:
     policy_fixed:
-      path: results/humanoid/box_push/_policies/fixed_ppo_seed0.pkl
+      path: results/humanoid/push_to_line/_policies/fixed_ppo_seed0.pkl
       sha256: 1fe928bd143d7c03df8fcfe381aad4fc27a81ee50825187270f76643d394cf7d
       protocol: humanoid_box_push_fixed_ppo_v1
       training_seeds: [0]
@@ -76,7 +76,7 @@ metadata:
       architecture: ppo_mlp_16x16
       selection_rule: final_checkpoint_after_fixed_budget
     policy_walk:
-      path: results/humanoid/box_push/_policies/walk_ppo_seed0.pkl
+      path: results/humanoid/push_to_line/_policies/walk_ppo_seed0.pkl
       sha256: 9f5d25b9b078e7c3d87b5d2c72adf943e45682055a9ddc4c4a4983ef19a55d0e
       protocol: humanoid_box_push_walk_ppo_v1
       training_seeds: [0]
@@ -85,7 +85,7 @@ metadata:
       architecture: ppo_mlp_16x16
       selection_rule: final_checkpoint_after_fixed_budget
     atacom_force_push:
-      path: results/humanoid/box_push/_policies/atacom_force_push_ppo_seed0.pkl
+      path: results/humanoid/push_to_line/_policies/atacom_force_push_ppo_seed0.pkl
       sha256: 242212e7604799a178414ff2028386757b4825a12ce017ce2f3323bc2ded81d0
       protocol: humanoid_box_push_atacom_force_push_ppo_v1
       training_seeds: [0]
@@ -94,7 +94,7 @@ metadata:
       architecture: ppo_mlp_16x16_atacom_tangent_action
       selection_rule: final_checkpoint_after_fixed_budget
     atacom_unjamming:
-      path: results/humanoid/box_push/_policies/atacom_unjamming_ppo_seed101.pkl
+      path: results/humanoid/push_to_line/_policies/atacom_unjamming_ppo_seed101.pkl
       sha256: a6adb58f617cca4c1f560d9d4d54d8efc6b928fb222cfcf4a06efd6c63aa6388
       protocol: humanoid_box_push_atacom_unjamming_ppo_v1
       training_seeds: [101]
@@ -103,7 +103,7 @@ metadata:
       architecture: ppo_mlp_16x16_atacom_tangent_action
       selection_rule: final_checkpoint_after_fixed_budget
     atacom_walk_and_push:
-      path: results/humanoid/box_push/_policies/atacom_walk_and_push_ppo_seed0.pkl
+      path: results/humanoid/push_to_line/_policies/atacom_walk_and_push_ppo_seed0.pkl
       sha256: 66955be8bc550cbf249cb7b2cb1feeec4e3a10f0f73246f00ed822f4e05a1bd7
       protocol: humanoid_box_push_atacom_walk_and_push_ppo_v1
       training_seeds: [0]
@@ -112,7 +112,7 @@ metadata:
       architecture: ppo_mlp_16x16_atacom_tangent_action
       selection_rule: final_checkpoint_after_fixed_budget
     reliability:
-      path: results/humanoid/box_push/_policies/reliability_q95.json
+      path: results/humanoid/push_to_line/_policies/reliability_q95.json
       sha256: fd62fc3c251f57efa7578c8548f30a943511004c3e568869795d24dfc99dbbd9
       protocol: humanoid_box_push_reliability_sequence
       training_seeds: [101, 103]

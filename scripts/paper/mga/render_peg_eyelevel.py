@@ -42,7 +42,7 @@ import mujoco
 OUT = Path(__file__).resolve().parent / "output" / "e_eyelevel"
 TRAJ = (
     ROOT
-    / "peg_insert_completed_20260926/results/arm/peg_insert/main/mga"
+    / "results/arm/peg_insert/main/mga"
     / "level_ood_pose/seed_0/trajectory/trajectory.json"
 )
 

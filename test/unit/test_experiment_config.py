@@ -357,6 +357,113 @@ def test_resume_reruns_config_mismatch(tmp_path: Path):
     assert calls == [(0, 0)]
 
 
+def _relocated_resume_case(tmp_path: Path, by_suite: bool = False):
+    import copy
+    import hashlib
+    import json
+
+    old_path = tmp_path / "legacy" / "policy_seed0.pkl"
+    new_path = tmp_path / "canonical" / old_path.name
+    new_path.parent.mkdir()
+    new_path.write_bytes(b"frozen policy weights")
+    checkpoint_key = "policy_ckpt_by_suite" if by_suite else "policy_ckpt"
+    cfg = ExperimentConfig(
+        name="resumable", output_dir=tmp_path / "results", env_name="dummy",
+        method="dummy", seeds=[0], metrics=[], visualizations=[], auto_report=False,
+        method_params={checkpoint_key: {"id": str(new_path)} if by_suite else str(new_path),
+                       "temp_sample": 0.06},
+        metadata={
+            "learned_component_lock": {"policy": {
+                "path": str(new_path),
+                "sha256": hashlib.sha256(new_path.read_bytes()).hexdigest(),
+                "training_seeds": [0], "protocol": "frozen-v1",
+            }},
+            "training": {"rl": {
+                "checkpoint": str(new_path.parent / "policy_seed{seed}.pkl"),
+            }},
+        },
+    )
+    snapshot = copy.deepcopy(cfg.to_dict())
+    snapshot["method_params"][checkpoint_key] = (
+        {"id": str(old_path)} if by_suite else str(old_path)
+    )
+    snapshot["metadata"]["learned_component_lock"]["policy"]["path"] = str(old_path)
+    snapshot["metadata"]["training"]["rl"]["checkpoint"] = str(
+        old_path.parent / "policy_seed{seed}.pkl"
+    )
+    result_path = cfg.output_dir / "level_0" / "seed_0" / "results.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text(json.dumps({
+        "level": 0, "seed": 0, "planning_time": 1.0, "metrics": {},
+        "config_snapshot": snapshot,
+    }), encoding="utf-8")
+    return cfg, new_path, result_path, snapshot
+
+
+@pytest.mark.parametrize("by_suite", [False, True])
+def test_resume_reuses_verified_relocation_without_rewriting_snapshot(tmp_path, by_suite):
+    cfg, _, result_path, snapshot = _relocated_resume_case(tmp_path, by_suite)
+    original_bytes = result_path.read_bytes()
+    expected_config = cfg.to_dict()
+    runner = ExperimentRunner(cfg)
+    runner._save_protocol_manifest = lambda: None
+    runner._save_summary = lambda results: None
+    runner.run_single_experiment = lambda *args: pytest.fail("relocation reran a seed")
+    runner._save_result = lambda result: pytest.fail("relocation rewrote a seed")
+
+    results = runner.run_all(resume=True)
+
+    assert results[0]["config_snapshot"] == snapshot
+    assert result_path.read_bytes() == original_bytes
+    assert cfg.to_dict() == expected_config
+
+
+@pytest.mark.parametrize("change", [
+    "tampered", "changed_hash", "missing_artifact", "missing_lock",
+    "changed_method_param", "changed_lock_protocol", "unrelated_template",
+])
+def test_resume_rejects_unverified_or_non_path_changes(tmp_path, change):
+    import hashlib
+
+    cfg, checkpoint, result_path, _ = _relocated_resume_case(tmp_path)
+    original_bytes = result_path.read_bytes()
+    if change in {"tampered", "changed_hash"}:
+        checkpoint.write_bytes(b"different policy weights")
+        if change == "changed_hash":
+            cfg.metadata["learned_component_lock"]["policy"]["sha256"] = (
+                hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+            )
+    elif change == "missing_artifact":
+        checkpoint.unlink()
+    elif change == "missing_lock":
+        cfg.metadata.pop("learned_component_lock")
+    elif change == "changed_method_param":
+        cfg.method_params["temp_sample"] = 0.07
+    elif change == "changed_lock_protocol":
+        cfg.metadata["learned_component_lock"]["policy"]["protocol"] = "frozen-v2"
+    elif change == "unrelated_template":
+        cfg.metadata["training"]["rl"]["checkpoint"] = str(
+            checkpoint.parent / "different_seed{seed}.pkl"
+        )
+
+    assert ExperimentRunner(cfg)._load_completed_result(0, 0) is None
+    assert result_path.read_bytes() == original_bytes
+
+
+def test_resume_relocation_still_refuses_aborted_attempt(tmp_path):
+    import json
+
+    cfg, _, result_path, _ = _relocated_resume_case(tmp_path)
+    result = json.loads(result_path.read_text())
+    result["execution_status"] = {"state": "aborted_unrecoverable"}
+    result_path.write_text(json.dumps(result))
+    original_bytes = result_path.read_bytes()
+
+    with pytest.raises(ValueError, match="Refusing to resume/overwrite aborted"):
+        ExperimentRunner(cfg)._load_completed_result(0, 0)
+    assert result_path.read_bytes() == original_bytes
+
+
 def test_development_root_mirrors_canonical_output_and_marks_provenance(
     tmp_path: Path,
 ):

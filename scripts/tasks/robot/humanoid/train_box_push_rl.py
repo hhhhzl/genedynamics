@@ -815,7 +815,7 @@ def _stage_episode_lengths(schema: str, resolved_suites, override=None, *, stage
 
 
 def _default_output(schema: str, seed: int) -> Path:
-    return Path("results/humanoid/box_push/_policies") / f"{schema}_ppo_seed{seed}.pkl"
+    return Path("results/humanoid/push_to_line/_policies") / f"{schema}_ppo_seed{seed}.pkl"
 
 
 def _validate_training_seed(seed: int, config) -> None:

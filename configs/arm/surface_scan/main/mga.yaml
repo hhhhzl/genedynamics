@@ -4,9 +4,9 @@ method: mga
 output_dir: results/arm/surface_scan/main/mga
 method_params:
   controller_method: mga_controllable_gate
-  policy_ckpt: results/arm/impedence/_policies/shared_ppo_seed0.pkl
-  atacom_policy_ckpt: results/arm/impedence/_policies/shared_atacom_ppo_seed0.pkl
-  reliability_ckpt: results/arm/impedence/cpu_controllability_geometry/rl_prior/reliability/reliability_q95.json
+  policy_ckpt: results/arm/surface_scan/_policies/shared_ppo_seed0.pkl
+  atacom_policy_ckpt: results/arm/surface_scan/_policies/shared_atacom_ppo_seed0.pkl
+  reliability_ckpt: results/arm/surface_scan/_policies/reliability_q95.json
   prior_lambda_shift: 0.5
   prior_include_incumbent: true
   prior_trust_radius: 0.35
