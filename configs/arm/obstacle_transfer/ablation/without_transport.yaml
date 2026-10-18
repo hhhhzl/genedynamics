@@ -1,0 +1,5 @@
+base: ../_base.yaml
+name: obstacle_transfer_without_transport
+output_dir: results/arm/obstacle_transfer/ablation/without_transport
+method_params:
+  transport_enabled: false

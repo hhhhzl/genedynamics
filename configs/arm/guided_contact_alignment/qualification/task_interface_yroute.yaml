@@ -1,8 +1,0 @@
-base: task_interface.yaml
-name: guided_contact_alignment_yroute_interface
-method: task_interface_yroute
-output_dir: results/arm/guided_contact_alignment/qualification/task_interface_yroute
-method_params:
-  teacher_speed_scale: 0.75
-metadata:
-  scope: source-only y-first geometric teacher qualification; identical physical limits

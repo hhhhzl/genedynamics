@@ -1,0 +1,8 @@
+base: ../_base.yaml
+name: keyed_insertion_recovery_task_reference_validation
+method: task_reference
+output_dir: results/arm/keyed_insertion_recovery/validation/task_reference
+metadata:
+  formal_experiment: false
+  protocol_status: development
+  run_class: development

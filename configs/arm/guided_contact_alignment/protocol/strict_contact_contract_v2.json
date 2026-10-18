@@ -1,0 +1,37 @@
+{
+  "version": "cross-embodiment-t2-strict-contact-contract-v2",
+  "extends": {
+    "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v1.json",
+    "sha256": "58199b44afce6a09a08e442bd7099d73fac4a8e68ace945d8e68fb8dacc14cd6"
+  },
+  "primary_endpoint": {
+    "evaluator": "genedynamics.tasks.transfer.guide_evaluation.evaluate_strict_guide_episode",
+    "legacy_terminal_success_required": true,
+    "requested_mode_match_required": true,
+    "contact_definition": "trace.axial_support AND trace.normal_force > 0.3 N on a valid control step",
+    "traversal_interval": "inclusive interval from first qualifying contact to first mode-specific outlet crossing",
+    "contact_must_precede_outlet": true,
+    "minimum_continuous_guide_contact_ratio": 0.5,
+    "maximum_consecutive_contact_loss_seconds": 0.15,
+    "mode_0_outlet": "tcp_position.x > 0.455 m",
+    "mode_1_outlet": "tcp_position.y > -0.181 m",
+    "all_requested_episodes_in_denominator": true
+  },
+  "threshold_rationale": {
+    "maximum_loss": "Half of the inherited 0.3 s physical contact-loss window; at 20 ms control this permits at most seven consecutive missing-contact ticks.",
+    "coverage": "A chatter-tolerant majority-contact requirement. The independent maximum-gap condition prevents a free-space traverse from satisfying the ratio.",
+    "qualification": "Thresholds are fixed from task timing and successful Panda source trajectories before final target evaluation."
+  },
+  "secondary_metrics": [
+    "continuous_guide_contact_ratio",
+    "maximum_contact_loss_seconds",
+    "peak_total_force_N",
+    "peak_lateral_force_N",
+    "terminal_SE3_error",
+    "stall_rate"
+  ],
+  "historical_results": "Earlier lift-off-permitting results remain development evidence under task_contract_v1 and are not relabeled as strict-contact successes.",
+  "status": "strict_contact_protocol_frozen_requires_complete_rerun",
+  "final_test": false,
+  "real_robot_evidence": false
+}

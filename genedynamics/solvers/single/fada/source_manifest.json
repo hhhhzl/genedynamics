@@ -52,7 +52,7 @@
     {
       "source": "src/holosoma/holosoma/fada/common/lora_utils.py",
       "source_sha256": "82bb1f11cdbd67a44a679a6c4b48b050f396c190c0021f373d65d043a4f66b26",
-      "destination": "genedynamics/learning/baselines/fada/data.py",
+      "destination": "genedynamics/solvers/single/fada/learning/data.py",
       "symbols": [
         "Trajectory"
       ]
@@ -60,7 +60,7 @@
     {
       "source": "src/holosoma/holosoma/fada/planner_idm/finetune_idm_lora.py",
       "source_sha256": "99422ba15bb3597b8321dfac711a0939a977b8949f03cfe6efaef447ecde2755",
-      "destination": "genedynamics/learning/baselines/fada/data.py",
+      "destination": "genedynamics/solvers/single/fada/learning/data.py",
       "symbols": [
         "TrajectoryWindowDataset"
       ]
@@ -68,7 +68,7 @@
     {
       "source": "src/holosoma/holosoma/fada/planner_idm/loss_utils.py",
       "source_sha256": "157fa58703d750e059ce56142fe3078805859121101876dbad1cab60b1ddfb0f",
-      "destination": "genedynamics/learning/baselines/fada/loss.py",
+      "destination": "genedynamics/solvers/single/fada/learning/loss.py",
       "symbols": [
         "weighted_horizon_mse"
       ]
@@ -76,7 +76,7 @@
     {
       "source": "src/holosoma/holosoma/fada/planner_idm/finetune_idm_lora.py",
       "source_sha256": "99422ba15bb3597b8321dfac711a0939a977b8949f03cfe6efaef447ecde2755",
-      "destination": "genedynamics/learning/baselines/fada/adaptation.py",
+      "destination": "genedynamics/solvers/single/fada/learning/adaptation.py",
       "symbols": [
         "_normalize_idm_if_enabled",
         "_normalize_lora_target_scope",
@@ -106,7 +106,7 @@
     {
       "source": "src/holosoma/holosoma/fada/planner_idm/finetune_idm_lora.py",
       "source_sha256": "99422ba15bb3597b8321dfac711a0939a977b8949f03cfe6efaef447ecde2755",
-      "destination": "genedynamics/learning/baselines/fada/trainer.py",
+      "destination": "genedynamics/solvers/single/fada/learning/trainer.py",
       "symbols": [
         "_FinetuneDefaults",
         "IDM-only AdamW stage",
@@ -117,7 +117,7 @@
     {
       "source": "src/holosoma/holosoma/simulator/mujoco/mjw_views.py",
       "source_sha256": "04fc5aa27d7c688a797907e5662c6fa1d6375355b0b9cfec1076c0679c933476",
-      "destination": "genedynamics/learning/baselines/fada/native_compat.py",
+      "destination": "genedynamics/solvers/single/fada/learning/native_compat.py",
       "symbols": [
         "MjwDofStateView.__getitem__",
         "MjwDofStateView.clone",

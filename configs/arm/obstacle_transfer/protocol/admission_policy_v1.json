@@ -1,0 +1,30 @@
+{
+  "version": "baseline-admission-policy-v1",
+  "task_physics_and_success_thresholds": "unchanged public_v3 contract and scene binding",
+  "requested_change": "Distinguish implementation defects from method limitations; do not train baselines until success as an admission condition.",
+  "end_to_end_fixed_recipe": {
+    "requires": [
+      "same-device source-core numerical parity",
+      "explicit task-adaptation differences from upstream",
+      "correct causal public information/action bindings",
+      "SHA-bound train/validation split and complete continuation",
+      "all bounded training attempts and failed episodes retained",
+      "real batch1/4 public policy/controller workload",
+      "same declared target permission and complete target interaction accounting before comparative ranking"
+    ],
+    "source_success_threshold": "none; source failures stay in the denominator and are separately reported",
+    "claim_scope": "finite-budget performance of the named task-adapted implementation; not structural impossibility or native-author benchmark reproduction"
+  },
+  "cross_embodiment_attribution": {
+    "source_stability_gate": "retain public_v3 four fresh episodes/both modes twice/all independently successful with exact replay",
+    "scene_gate": "both modes reachable in the named body/mechanism cell",
+    "when_source_fails": "record end-to-end task failure; do not attribute it to embodiment transfer"
+  },
+  "repair_policy": {
+    "correctness_defects": "fix information leakage, time/index/frame errors, controller-label mismatch and broken optimization",
+    "reasonable_native_tuning": "predeclare finite source-validation budgets and preserve algorithm/observation assumptions",
+    "new_mechanism": "give shared features, decoder changes and new parameterizations explicit variant names; retain the original task-adapted baseline and full cost",
+    "new_training": "no further launches after the user requested mechanism diagnosis; already launched bounded attempts finish or preserve failure"
+  },
+  "paper_admission": "requires additional matched target-data/compute comparisons and independent frozen evaluation; P3 admission is development only"
+}

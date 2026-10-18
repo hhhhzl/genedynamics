@@ -1,0 +1,8 @@
+base: ../_base.yaml
+name: guided_contact_alignment_task_reference_validation
+method: task_reference
+output_dir: results/arm/guided_contact_alignment/validation/task_reference
+metadata:
+  formal_experiment: false
+  protocol_status: development
+  run_class: development

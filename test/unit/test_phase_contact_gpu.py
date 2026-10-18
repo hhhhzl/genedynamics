@@ -7,7 +7,7 @@ import pytest
 
 
 def test_replayed_prior_noise_is_independent_of_batch_order_and_partition():
-    from genedynamics.learning.cross_embodiment.backends.jax.phase_contact import replay_noise
+    from genedynamics.solvers.single.cross_ebdm.learning.backends.jax.phase_contact import replay_noise
     seeds=[116100000,117100000,118100000]
     draws=replay_noise(seeds,7)
     np.testing.assert_array_equal(draws[:,[2,0,1]],replay_noise([seeds[i] for i in (2,0,1)],7))
@@ -19,9 +19,9 @@ def test_replayed_prior_noise_is_independent_of_batch_order_and_partition():
 
 
 def test_canonical_affine_bank_preserves_every_declared_phase_and_candidate(tmp_path):
-    from genedynamics.learning.cross_embodiment.backends.jax.phase_contact import affine_bank
-    from genedynamics.learning.cross_embodiment.finite_transport import refinement_candidates,make_mapping
-    from genedynamics.learning.cross_embodiment.reference_transport import ReferenceTransport
+    from genedynamics.solvers.single.cross_ebdm.learning.backends.jax.phase_contact import affine_bank
+    from genedynamics.solvers.single.cross_ebdm.learning.finite_transport import refinement_candidates,make_mapping
+    from genedynamics.solvers.single.cross_ebdm.learning.reference_transport import ReferenceTransport
     maps=[None,ReferenceTransport.from_parameters(1.7,(-.001,.002),backend='native')]
     maps+=[make_mapping(p) for p in refinement_candidates('recovery_v2')]
     paths=[]
@@ -43,7 +43,8 @@ def test_canonical_affine_bank_preserves_every_declared_phase_and_candidate(tmp_
 
 def test_new_gpu_protocol_admission_keeps_unimplemented_bodies_explicit():
     from dataclasses import replace
-    from genedynamics.learning.cross_embodiment.contact import ContactRunner,mating_contact_config,spatial_guide_config
+    from genedynamics.envs.domains.manipulation.transfer_workcell.contact_runtime import ContactRunner
+    from genedynamics.tasks.transfer.contact import mating_contact_config, spatial_guide_config
     for config in (mating_contact_config('ur5e'),replace(mating_contact_config(),mobile=True),spatial_guide_config()):
         with pytest.raises(NotImplementedError,match='fixed Panda/xArm7'):
             ContactRunner(config=config,backend='jax')

@@ -1,0 +1,4 @@
+base: ../_base.yaml
+name: mobile_keyed_insertion_recovery_fada
+method: fada
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/baseline/fada

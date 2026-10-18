@@ -1,0 +1,5 @@
+base: ../_base.yaml
+name: mobile_keyed_insertion_recovery_without_response_matching
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/ablation/without_response_matching
+method_params:
+  response_matching_enabled: false

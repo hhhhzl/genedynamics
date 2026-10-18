@@ -1,0 +1,43 @@
+{
+  "version": "cross-embodiment-t4-reset-body-contract-v3",
+  "extends": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/reset_body_contract_v2.json",
+    "sha256": "6d4a82a87c7d5ecdc6eef9fde23b4d39e24d56d77ee867327e86955c69a7733d"
+  },
+  "qualification_evidence": {
+    "path": "results/_development/p6_protocol_freeze_20261016/results/quadruped/mobile_keyed_insertion_recovery/qualification/p6_body_support_cells_v1/level_two_mechanisms_two_supports/seed_210000/report.json",
+    "sha256": "5d042a38bef6de6981f5952a7412acdb5c1c62bf789311823f2ec5e1902a43df"
+  },
+  "admission_correction": {
+    "physical_cell_admission": "Ten unique post-preparation integration states, exactly 50 charged preparation controls, and all height/tilt/WBC/support predicates pass. Public-reference task success is recorded as method performance, not required for physical cell admission.",
+    "why": "The 0.90 body-servo failures occur after 114--170 policy-controlled task steps at an arm joint limit. All four feet remain supported and body/WBC predicates pass. This is distinct from the previously excluded uncontrollable cold-prefix cell.",
+    "no_replacement": "The predeclared 0.90 cell and all eight public-reference failures are retained. No body gain, seed, criterion or actor was selected from outcomes."
+  },
+  "qualified_cells": {
+    "latency_gain_shift/support_nominal": {
+      "physical_cell_admitted": true,
+      "public_reference_successes": 4,
+      "requested": 4
+    },
+    "latency_gain_shift/support_derated_0p90": {
+      "physical_cell_admitted": true,
+      "public_reference_successes": 0,
+      "requested": 4,
+      "failure": "arm_joint_limit_after_policy_control"
+    },
+    "payload_shift/support_nominal": {
+      "physical_cell_admitted": true,
+      "public_reference_successes": 4,
+      "requested": 4
+    },
+    "payload_shift/support_derated_0p90": {
+      "physical_cell_admitted": true,
+      "public_reference_successes": 0,
+      "requested": 4,
+      "failure": "arm_joint_limit_after_policy_control"
+    }
+  },
+  "interpretation": "Physical admission does not establish that any learned method will succeed. The derated-support public-reference failures remain paired baseline evidence and may support an ours advantage only if every method receives the same cell and ours succeeds under the frozen final protocol.",
+  "status": "physical_cells_admitted_task_methods_unscored",
+  "final_test": false
+}

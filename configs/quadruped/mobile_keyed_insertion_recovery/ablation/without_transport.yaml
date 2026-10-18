@@ -1,0 +1,5 @@
+base: ../_base.yaml
+name: mobile_keyed_insertion_recovery_without_transport
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/ablation/without_transport
+method_params:
+  transport_enabled: false

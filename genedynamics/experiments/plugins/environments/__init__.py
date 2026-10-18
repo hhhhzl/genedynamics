@@ -29,6 +29,7 @@ from .humanoid_corridor import HumanoidCorridor2DPlugin
 from .humanoid_box_push import HumanoidBoxPushPlugin
 from .manipulator_peg_insert import ManipulatorPegInsertPlugin
 from .manipulator_surface_scan import ManipulatorSurfaceScanPlugin
+from .transfer_tasks import TransferTaskEnvironmentPlugin, transfer_environment_plugins
 
 __all__ = [
     'SingleIntegrator2DPlugin',
@@ -52,4 +53,6 @@ __all__ = [
     'ManipulatorSurfaceScanPlugin',
     'ManipulatorPegInsertPlugin',
     'HumanoidBoxPushPlugin',
+    'TransferTaskEnvironmentPlugin',
+    'transfer_environment_plugins',
 ]

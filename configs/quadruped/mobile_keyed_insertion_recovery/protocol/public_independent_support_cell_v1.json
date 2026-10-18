@@ -1,0 +1,21 @@
+{
+  "version": "T4-explicit-independent-support-arm-derating-cell-v1",
+  "base_protocol": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/task_contract_v1.json",
+    "sha256": "d82d77ea62b6db69d6651d62bdc8f387edba82e5654d35016e59853d3f776eed"
+  },
+  "reset_binding": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/public_folded_reset_v1.json",
+    "sha256": "0b4fb07e30a174fa8e526a92434a4314bf30e8130477250dbd75d6367eb9db41"
+  },
+  "mechanism_constructor": "MobileContactMechanismSpec",
+  "support_servo_gain": 1.0,
+  "target_arm_servo_gain": 0.65,
+  "target_arm_delay_steps": 3,
+  "target_payload_mass": 0.8,
+  "contact_friction": 0.4,
+  "contact_time_constant": 0.02,
+  "old_global_derated_cell_retained": true,
+  "same_physical_cell_as_old_global_derating": false,
+  "scope": "Newexplicitarm-response cell withnominallegsupport, preexistingMobileContactMechanismSpec semantics. OldMechanismSpec(.65)scaledlegsandarm andfailedsetup; notoverwrittenorreported asrepairedsameplant. MatchedT3armdeviations withT4standingconstraint, no wholebodyderatingrobustness claim. Allmethods sharethisnewcellandfoldedreset, newnominal/targetscene/data qualification needed; nativeFADA/ACP quantitativeoriginalsystem claims remainseparate."
+}

@@ -10,6 +10,7 @@ from .cfsmbd import CFSMBDMethodPlugin
 from .cfsmbd_full import CFSMBDFullMethodPlugin
 from .mppi import MPPIMethodPlugin
 from .twogo import TwoGOMethodPlugin
+from .transfer import TransferMethodPlugin, transfer_method_plugins
 from .contact_receding import (
     ATACOMContactMethodPlugin,
     DIALContactMethodPlugin,
@@ -48,4 +49,6 @@ __all__ = [
     'ISSAContactMethodPlugin',
     'ATACOMContactMethodPlugin',
     'StandaloneRLMethodPlugin',
+    'TransferMethodPlugin',
+    'transfer_method_plugins',
 ]

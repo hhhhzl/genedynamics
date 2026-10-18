@@ -1,0 +1,22 @@
+{
+  "version": "T4-raised-tool-stance-preparation-v1",
+  "base_public_protocol": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/task_contract_v1.json",
+    "sha256": "d82d77ea62b6db69d6651d62bdc8f387edba82e5654d35016e59853d3f776eed"
+  },
+  "original_reset_binding_retained": true,
+  "preparation_staging_position": [
+    0.44,
+    -0.2,
+    0.64
+  ],
+  "preparation_steps": 50,
+  "after_preparation": "originaljammedIK/yaw.12, zeroqvel/qaccwarm; originalruntimeposture restored beforetask",
+  "plant_model_friction_fixture_action_WBC_and_evaluation_unchanged": true,
+  "initial_state_compatibility_with_old_results": false,
+  "require_new_nominal_and_target_scene_admission": true,
+  "all_methods_must_share_reset_binding": true,
+  "source_Panda_reset_unchanged": true,
+  "temporary_posture_only": true,
+  "scope": "Newexplicitsetupversion afterauditedpre-actorlateralforcefailure; currentfixturehighesttop.6m, fixedtoolstaging.64m forstanding. Old4resetfailures/400physics retained. No change to physicalforce/body/mode/deadlinecriteria ortargetactuatorstrength. Newpoststandingbody/encoderstates needfresh qualification/data, oldnominaldata notsilently consideredidentical."
+}

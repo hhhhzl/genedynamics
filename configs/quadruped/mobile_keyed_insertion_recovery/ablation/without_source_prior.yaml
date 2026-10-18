@@ -1,0 +1,5 @@
+base: ../_base.yaml
+name: mobile_keyed_insertion_recovery_without_source_prior
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/ablation/without_source_prior
+method_params:
+  source_prior_enabled: false

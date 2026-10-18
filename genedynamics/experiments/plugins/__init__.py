@@ -28,6 +28,7 @@ from .methods import (
     ISSAContactMethodPlugin,
     ATACOMContactMethodPlugin,
     StandaloneRLMethodPlugin,
+    transfer_method_plugins,
 )
 
 from .environments import (
@@ -52,6 +53,7 @@ from .environments import (
     ManipulatorSurfaceScanPlugin,
     ManipulatorPegInsertPlugin,
     HumanoidBoxPushPlugin,
+    transfer_environment_plugins,
 )
 
 from .metrics import (
@@ -61,6 +63,7 @@ from .metrics import (
     EpisodeOutcomeMetricsPlugin,
     SteppingStonesMetricsPlugin,
     CorridorMetricsPlugin,
+    TransferTaskMetricsPlugin,
 )
 
 from .visualizations import (
@@ -105,6 +108,7 @@ __all__ = [
     'ISSAContactMethodPlugin',
     'ATACOMContactMethodPlugin',
     'StandaloneRLMethodPlugin',
+    'transfer_method_plugins',
     # Environments
     'SingleIntegrator2DPlugin',
     'DoubleIntegrator2DPlugin',
@@ -127,6 +131,7 @@ __all__ = [
     'ManipulatorSurfaceScanPlugin',
     'ManipulatorPegInsertPlugin',
     'HumanoidBoxPushPlugin',
+    'transfer_environment_plugins',
     # Metrics
     'SSRMetricsPlugin',
     'ObstacleDensityMetricsPlugin',
@@ -134,6 +139,7 @@ __all__ = [
     'EpisodeOutcomeMetricsPlugin',
     'SteppingStonesMetricsPlugin',
     'CorridorMetricsPlugin',
+    'TransferTaskMetricsPlugin',
     # Visualizations
     'TrajectoryVisualizationPlugin',
     'Trajectory3DVisualizationPlugin',

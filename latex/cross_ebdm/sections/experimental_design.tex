@@ -72,38 +72,42 @@ UMI-on-Legs 提供操作策略与全身控制分层的参照\cite{umilegs}；
 预算内记录构建的模型。隐藏目标环境仅提供计费探针及封存评估，
 实际机制参数不向训练开放。
 
-\textbf{近期论文选择。} 主候选优先 2025/2026 年 CoRL、RSS 和 ICRA 等
-主会工作，并覆盖 Karen Liu 与 Guanya Shi 参与的相关方法。
-已录用的 2026 条目与已出版论文分别标注。以下是待资格审计的候选池，
-最终收敛到 3--5 个完整方法；候选所需信息不同，结果按协议分别比较。
+\textbf{冻结主表。} 主表固定为九行，并要求每行参加四个任务：本文方法、
+matched task-only、FADA task-adapted、ACP task-adapted、
+Human2Sim2Robot source-trajectory adaptation、DIAL-MPC task-adapted、
+ordinary response MPC、public geometry/feedback 与 public source prior。
+这一组合覆盖 2025/2026 年近期强方法、Karen Liu 与 Guanya Shi 参与的路线，
+并保留三个不依赖论文适配细节的强公共控制\cite{human2sim,fada,acp,dialmpc}。
 
-\begin{longtable}{L{3.6cm}L{2.4cm}L{6.4cm}}
+\begingroup\small
+\begin{longtable}{L{3.2cm}L{2.2cm}L{2.7cm}L{4.5cm}}
 \toprule
-近期论文 & 任务与数据 & 主要比较问题与适配边界\\\midrule\endfirsthead
-\toprule 近期论文 & 任务与数据 & 主要比较问题与适配边界\\\midrule\endhead
-Human2Sim2Robot\newline CoRL 2025 & Task 1/2；演示语义 &
-源物体轨迹构造 reward 后在目标模型 RL 是否已经足够？原生人视频与共同源
-机器人轨迹的改编分开，保留探索初始化和模型构建流程\cite{human2sim}。\\
-Play2Perfect\newline CoRL 2026，已录用 & Task 3 优先；额外模拟预训练 &
-多对象 play prior 加常规装配 RL 微调是否已能实现精密接触与恢复？原生
-in-hand 控制是核心，固定夹持改编不能被当作完整原法\cite{play2perfect}。\\
-FADA\newline CoRL 2026，已录用 & Task 4 近原作；B-log 记录 &
-冻结 planner、微调 inverse dynamics 是否已经足够？固定臂任务需要新 oracle
-与 Planner-IDM；人形 checkpoint 不直接代表跨机械臂迁移\cite{fada}。\\
-ASAP\newline RSS 2025 & Task 4 近原作；B-log 轨迹 &
-学习 delta-action model 并在对齐模拟器中微调策略是否已经足够？固定臂为
-显式改编，目标采集与模拟再训练均计费\cite{asap}。\\
-ACP\newline ICRA 2025 & Task 2/3；带力示范 &
-参考位姿、virtual target 与可变刚度的完整接触策略是否已经足够？
-原生监督属于 C-supervised，不能并入短探针 A 主表\cite{acp}。\\
+主表行 & 权限 & 身份 & 可解释的比较范围\\\midrule\endfirsthead
+\toprule 主表行 & 权限 & 身份 & 可解释的比较范围\\\midrule\endhead
+Ours gated transport & B-log & $C+H+GR$ & 与 task-only/FADA 做同权限任务比较；gate 机制另由六格消融识别。\\
+Task-only & B-log & $C$ & 同容量、同数据、同训练流与同 checkpoint fallback 的首要对照。\\
+FADA & B-log & Planner/IDM task adaptation & 保留公开 planner/IDM 核心；标为任务适配，不冒充原人形定量复现\cite{fada}。\\
+ACP & C-supervised & virtual target/stiffness adaptation & 目标示范与力监督单列；不能与 B-log 作相同信息因果比较\cite{acp}。\\
+Human2Sim2Robot & C-supervised-model & robot-source trajectory proxy & 原人类资产不可用时明确标为 source-trajectory 改编，不推广成原方法结论\cite{human2sim}。\\
+DIAL-\newline MPC & B-log\newline model & annealed diffusion\newline online MPC & 保留在线 candidate rollout 与 receding horizon；模型调用与 deadline miss 进入资源列\cite{dialmpc}。\\
+Ordinary response MPC & B-log\newline model & online Adam shooting & 与 DIAL-MPC 使用同一公共 response model 和 decoder/WBC。\\
+Public geometry & no-target-learning & 固定几何/反馈 & 检验任务是否已可由强公共反馈解决。\\
+Public source prior & no-target-learning & 冻结 source skill & 检验不做目标适配时的直接迁移与部署前拒绝。\\
 \bottomrule
 \end{longtable}
+\endgroup
 
-按任务补充 SPI-Active（CoRL 2025）的主动辨识、DIAL-MPC（ICRA 2025）的
-在线规划和 XMoP（ICRA 2025）的跨身体运动规划\cite{spi,dialmpc,xmop}。
-SPI-Active 的原生对象是腿式动力学；DIAL-MPC 原生 torque-level 控制与
-固定 WBC 的参考优化改编分列；XMoP 的外部规划预训练数据及持件几何适配
-单列。原生复现、完整系统比较与共同接口改编不能互相替代。
+Play2Perfect、ASAP、SPI-Active 与 XMoP 保留为相关或后续扩展路线，
+不在冻结九行中用不完整代理占据主表位置\cite{play2perfect,asap,spi,xmop}。
+原生复现、完整系统比较与共同接口改编不能互相替代；每个 task-adapted 行
+均报告 source、known-nominal 与目标三段漏斗。
+
+\textbf{部署前拒绝。} 一个实现若耗尽预声明机会并在 source/known-nominal
+资格门失败，仍覆盖该任务单元。其每个计划请求记
+constrained success $=0$、constraint violation $=1$、capped normalized
+time $=1$、pre-deployment rejection $=1$、target execution $=0$。
+这里的 violation 是算法部署合同失败，不表示未执行目标轨迹发生了物理超限。
+主表同时报告 rejection rate、target execution rate 与物理执行数。
 
 DR/recurrent PPO、经典 Residual RL、通用校准 MPC、Mirage 和 ASID
 保留为基础参照\cite{dr,ppo,rppo,residualrl,mjpc,mirage,asid}。
@@ -149,10 +153,42 @@ D-oracle 仅作
 few-shot adaptation。已知目标形态上的训练不等于未见身体的冻结泛化。
 仿真任务结果与实机结果单列；平台与传感接口未确定时不预设实机结论。
 
-正式评估采用独立训练/校准重复与配对任务初态。样本量根据开发集方差和
-预声明最小有意义效应确定，再冻结比较集合与停止规则。置信区间按校准实例
-和任务 reset 分层，不能把同一校准下的每个控制步或大量 episodes 当作独立
-校准重复。全部支持失败、验证拒绝、超力、超时和身体失败进入整体分母。
+正式评估冻结为八个独立训练/校准实例、两个目标机制组和配对请求。
+Task 1--3 每实例为 $10$ 个不同物理初态 $\times2$ 个请求模式
+$\times2$ 个机制组，共 $40$ 个请求；Task 4 再交叉两个 body/support cells，
+共 $80$ 个请求。确定性公共控制只保留一个方法身份，在同一 request package
+上执行，不伪造八个训练重复。所有方法共享相同 task/mechanism/body/initial/mode
+键，失败不替换。完整 post-reset 物理与控制器状态 hash 才定义物理初态；
+episode 标签或相同 deterministic reset 上的 policy seed 不构成新初态。
+
+八实例由开发数据上的预声明配对 discordance power simulation 冻结。
+中等 discordance 场景达到目标 power；高训练异质性仍可能不足，作为限制报告，
+不能在查看最终结果后追加实例。推断以训练/校准实例为最高随机层，再对
+mechanism/body/initial request block 做 $10{,}000$ 次层级配对 bootstrap。
+每个研究问题预声明一个主对比，RQ family 内使用 Holm 修正；报告效应量、
+区间和原始分子/分母，不给出无权跨任务总排名。全部支持失败、验证拒绝、
+超力、超时和身体失败进入整体分母。
+
+\subsection{Aligned Six-Cell Ablation}
+六格消融与主方法使用相同 warm checkpoint、数据流、优化器、更新数、
+held-out 模型代理和 task-only $+0.05$ fallback：
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+单元 & 目标 & 识别作用\\\midrule
+frozen-warm & 不继续训练 & continued training 控制\\
+task-only & $C$ & task-first 基准\\
+matching-no-band & $C+R$ & response matching 主效应\\
+band-only & $C+H$ & additive task band 主效应\\
+ungated-full & $C+H+R$ & 无 gate 的 $2\times2$ 完整角\\
+gated-full & $C+H+GR$ & selective gate\\
+\bottomrule
+\end{tabular}
+\end{center}
+$C,C+R,C+H,C+H+R$ 是严格的无 gate $2\times2$；只用
+gated-full$-$ungated-full 识别 gate。六格都参加四任务记账；若整个任务族在
+冻结资格门失败，则六格均按部署前拒绝进入分母，不训练或查看目标结果。
+历史上用 hinge $H$ 替换 $C$ 的五格工件与当前方法身份不一致，不进入推断。
 
 \subsection{Performance Evidence and Contribution Tests}
 主要评价无碰撞且满足力/身体约束的任务成功、失败风险、完成时间，以及

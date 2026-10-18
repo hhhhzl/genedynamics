@@ -15,18 +15,6 @@ All solvers share the same interface:
     trajectory = solver.solve(x0, horizon)
 """
 
-from genedynamics.core.solvers import Solver, SamplingSolver, OptimizationSolver
-
-# Solver implementations
-from genedynamics.solvers.single.mbd.mbd import MBDSolver, run_mbd
-from genedynamics.solvers.single.ebmbd.ebmbd import EBMBDSolver
-from genedynamics.solvers.single.mdoc.mdoc import MDOCSolver
-from genedynamics.solvers.single.cfsmbd.cfsmbd import CFSMBDSolver
-from genedynamics.solvers.single.twogo.twogo import TwoGOSolver
-from genedynamics.solvers.single.mppi.mppi import MPPISolver, run_mppi
-from genedynamics.solvers.single.cem.cem import CEMSolver, run_cem
-from genedynamics.solvers.single.dial.dial import DIALMPCSolver
-
 __all__ = [
     # Base classes
     "Solver",
@@ -50,6 +38,7 @@ __all__ = [
     # Native Torch policy solvers (loaded only when explicitly requested).
     "FADASolver",
     "Human2Sim2RobotSolver",
+    "Play2PerfectSolver",
     "ACPSolver",
 ]
 
@@ -59,15 +48,41 @@ _NATIVE_POLICY_EXPORTS = {
     "Human2Sim2RobotSolver": (
         "human2sim2robot", "genedynamics.solvers.single.human2sim2robot.human2sim2robot"
     ),
+    "Play2PerfectSolver": (
+        "play2perfect", "genedynamics.solvers.single.play2perfect.play2perfect"
+    ),
     "ACPSolver": ("acp", "genedynamics.solvers.single.acp.acp"),
+}
+
+_LAZY_EXPORTS = {
+    "Solver": ("genedynamics.core.solvers", "Solver"),
+    "SamplingSolver": ("genedynamics.core.solvers", "SamplingSolver"),
+    "OptimizationSolver": ("genedynamics.core.solvers", "OptimizationSolver"),
+    "MBDSolver": ("genedynamics.solvers.single.mbd.mbd", "MBDSolver"),
+    "run_mbd": ("genedynamics.solvers.single.mbd.mbd", "run_mbd"),
+    "EBMBDSolver": ("genedynamics.solvers.single.ebmbd.ebmbd", "EBMBDSolver"),
+    "MDOCSolver": ("genedynamics.solvers.single.mdoc.mdoc", "MDOCSolver"),
+    "CFSMBDSolver": ("genedynamics.solvers.single.cfsmbd.cfsmbd", "CFSMBDSolver"),
+    "TwoGOSolver": ("genedynamics.solvers.single.twogo.twogo", "TwoGOSolver"),
+    "MPPISolver": ("genedynamics.solvers.single.mppi.mppi", "MPPISolver"),
+    "run_mppi": ("genedynamics.solvers.single.mppi.mppi", "run_mppi"),
+    "CEMSolver": ("genedynamics.solvers.single.cem.cem", "CEMSolver"),
+    "run_cem": ("genedynamics.solvers.single.cem.cem", "run_cem"),
+    "DIALMPCSolver": ("genedynamics.solvers.single.dial.dial", "DIALMPCSolver"),
 }
 
 
 def __getattr__(name):
     """Keep optional Torch cores out of ordinary JAX planner imports."""
+    from importlib import import_module
+
+    if name in _LAZY_EXPORTS:
+        module, attribute = _LAZY_EXPORTS[name]
+        value = getattr(import_module(module), attribute)
+        globals()[name] = value
+        return value
     if name not in _NATIVE_POLICY_EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    from importlib import import_module
     from genedynamics.core.registry.solvers import register_solver
 
     method, module = _NATIVE_POLICY_EXPORTS[name]

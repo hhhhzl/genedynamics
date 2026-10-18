@@ -1,0 +1,136 @@
+{
+  "version": "fada-native-task-pass-v1",
+  "files": {
+    "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py": "0c7dc7a2cf2806bb760b818996101e728b48e40b006bfa6247487ff7ed3cfeb6",
+    "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer.py": "2aa97ce3df8cf1c9fb33fdfe0f81c8fda7df74f9c7a5877fc677a6bdd951c05a"
+  },
+  "methods": {
+    "_empty_source_counts": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "f0cd89f695b7de89ad0bcc450290da275ae8ba78bdda864d66a06ceb52b5fb05"
+    },
+    "_merge_source_counts": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "ce634d5b94b11368e66eed71979ec6c2cdb7c7d613890eada7c6a7dc45e50743"
+    },
+    "_prefix_source_counts": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "09e821015c90f1768683e8841b8f7ea91520b697599c5ea6dbb6919e9b3e9ce3"
+    },
+    "_build_sample_stats": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "16391b8fb68ba6c375b629ec81bc507a64c2ebad32a2af7c258089b5062bab46"
+    },
+    "_planner_batch_counts": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "80e9eb5498003fcda32889a4fac835e30db6b3531af9341200befe387c2975b2"
+    },
+    "_idm_batch_counts": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "4b7592ba0065fb3d476d4e0f86d00c39296e026472b0e11584d52252df370a6d"
+    },
+    "_apply_obs_noise": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "b13c1e79eff0410d0900b0c06c029a88a657d020d632a916f4f0829e9f05c864"
+    },
+    "_apply_history_mask": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "bcad7aaffabe046e35d74350d1d5840966b4740cfe0bc30545acf0bcd3aef220"
+    },
+    "_apply_future_mask": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "e584fa1de95352637d01db552b7b0dcd6ac3a11a022d97865067302fca3caa8c"
+    },
+    "_apply_action_noise": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "701f49c3996409142cabc8985c2102f2ace067b3d9f880790849dbeb63d2804f"
+    },
+    "_to_delta_obs": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "6fd6e5443d1e180c390d7f9f29591b4437ae6491f5348c42494f63ad75642dfe"
+    },
+    "_from_delta_obs": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "ff51b00189375abb033ec0ba0edb00db735426e4be41721d75b4bde6f186d172"
+    },
+    "_compute_per_term_mse": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "828698858ec128f8cc51629f1edcffac82506cae6ca62d1e198bdd5bd31aaabe"
+    },
+    "_normalize_batch_inputs": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "0d24b122f643b9c58fa024393c26079fc4687e924071d6c93bf6762eae934672"
+    },
+    "_compute_planner_batch_loss_from_tensors": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "f304b0772eaa173078a0d723606c7fe291d28e08d252e28f3b83f634b873d86f"
+    },
+    "_resolve_idm_future_obs": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "75593a6707a5bcd2c40226fd798ba0baf3b9bf54fed067199b77c55702173021"
+    },
+    "_compute_idm_batch_loss_from_tensors": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "bd7e04a679fdd5258573a39e98b8e5d733dc028ec4e3b387c772cdb6f360640d"
+    },
+    "_compute_planner_batch_loss_from_batch": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "00969efcf8afd0fe95add6777196cb0d3c0be659befd6e7e52ac31abe36135a5"
+    },
+    "_compute_idm_batch_loss_from_batch": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "dce7b3d9941d2937edbc20caf8aa5c960f8d4a8b8177eafd08e9177d640f12ed"
+    },
+    "_idm_source_uses_teacher_forcing": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "61fb2faf99ddc1ad8da5506a96f5047d3a0d134b8adc17229fe129f1c55fd9b4"
+    },
+    "_compute_idm_batch_loss_from_source_batches": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer_batching.py",
+      "class_name": "_BatchingMixin",
+      "sha256": "2b7e8ed9cb14b0b7260750e7ee9a8241d6a229f91787611c0226fa3b93bf10b5"
+    },
+    "_train_step_separate_pass": {
+      "source": "baselines/FADA/src/holosoma/holosoma/fada/planner_idm/trainer.py",
+      "class_name": "FADATrainer",
+      "sha256": "ae83fee1f58df65039d66e8fd2fd7087c983ca8d2fde7f46f14cdb3171d8cfc6"
+    }
+  },
+  "license": "Apache-2.0",
+  "scope": "Verbatim selected native methods; portable task fields/normalization/samplers and no-augmentation setting are explicit adapter choices, not native humanoid reproduction.",
+  "local": "genedynamics/solvers/single/fada/learning/native_training_passes.py",
+  "local_sha256": "ed2380665ce19d4ba054e2c8345a2ed078945083c832ae90a7c275f11e7e3255",
+  "pinned_core_source_metadata": {
+    "repository": "https://github.com/LeCAR-Lab/FADA",
+    "commit": "290b3a9c5c0ebe2e9851b61350617544be05e9bc",
+    "license": "Apache-2.0",
+    "scope": "Planner-IDM transformer, LoRA, target-record windowing and IDM action adaptation; excludes simulator, oracle PPO and DAgger collection.",
+    "modifications": [
+      "Holosoma safe Torch imports replaced with direct optional native Torch backend imports.",
+      "Only Planner-IDM positional encoder and LoRA/normalization definitions retained from common modules.",
+      "Policy execution consumes explicit public history mapping and does not inspect simulator truth.",
+      "Checkpoint architecture/normalization and LoRA evaluation fastpath guard preserved.",
+      "Training wrapper supplies bounded single-step updates and deployable merged native weights; caller controls record sampling and budgets."
+    ]
+  }
+}

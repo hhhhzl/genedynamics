@@ -1,8 +1,0 @@
-base: cross_ebdm_recovery_feasibility.yaml
-name: cross_ebdm_recovery_distribution
-output_dir: results/arm/keyed_insertion_recovery/validation/cross_ebdm_recovery_distribution
-method_params:
-  stage: '1.7'
-  feasibility_root: results/arm/keyed_insertion_recovery/validation/cross_ebdm_recovery_feasibility
-metadata:
-  protocol: finite_refinement_recovery_law_v2

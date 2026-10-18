@@ -1,1 +1,1 @@
-"""Learning infrastructure shared across solvers (priors, training entries)."""
+"""Shared learning infrastructure: priors, datasets, checkpoints, and trainers."""

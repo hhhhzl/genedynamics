@@ -103,6 +103,57 @@ $\widehat C(\phi)\le C_*+\delta-\epsilon_C
 该命题只比较同一候选集合。容差 $\delta$ 须在独立评估前确定；若未认证
 统一 $\epsilon_C,\epsilon_R$，经验预算带不能被解释为总体非劣或真实安全保证。
 
+\textbf{冻结实现的 selective gate 只改变 anchoring 项。}
+对固定参数 $\varphi$ 和固定 detached gate $G\in\{0,1\}$，记
+$H=[\widehat C-\widehat C_T-\delta]_+$。加法 band 的 gated 与 ungated
+模型目标分别为
+\[
+ \widehat J_G(\varphi)=\E[\widehat C+\beta H+\lambda G\widehat R],
+ \qquad
+ \widehat J_U(\varphi)=\E[\widehat C+\beta H+\lambda\widehat R].
+\]
+由于 $\widehat R\ge0$，有精确恒等式
+\begin{equation}
+ \widehat J_G(\varphi)=\widehat J_U(\varphi)
+ -\lambda\E[(1-G)\widehat R]\le \widehat J_U(\varphi).
+ \label{eq:gated-ungated-identity}
+\end{equation}
+它只说明同一个 $\varphi$ 下关闭 unsupported anchoring 会降低所定义的训练目标；
+两种目标各自优化后的策略不同，Eq.~\eqref{eq:gated-ungated-identity} 不给出
+真实任务成本、成功率或安全性的次序。特别地，gate coverage 低可能只是把
+方法退化为 task-first 行为；coverage 高也不说明被接受的 source response
+对目标任务有帮助。
+
+\begin{proposition}[二选一 checkpoint fallback 的条件任务界]
+设 $\widehat C_T,\widehat C_A$ 分别是 matched task-only 与 anchoring
+候选在冻结 held-out 模型代理上的成本，选择规则在
+$\widehat C_A\le\widehat C_T+\delta$ 时选 $A$，否则选 $T$。
+若只对这两个冻结 checkpoint 有
+$|C_T-\widehat C_T|\le\epsilon$ 与
+$|C_A-\widehat C_A|\le\epsilon$，则被选 checkpoint $S$ 满足
+\begin{equation}
+ C_S\le C_T+\delta+2\epsilon.
+ \label{eq:fallback-pair-bound}
+\end{equation}
+\end{proposition}
+\begin{proof}
+若回退到 $T$，结论由 $\delta,\epsilon\ge0$ 直接成立。若选择 $A$，则
+$C_A\le\widehat C_A+\epsilon\le\widehat C_T+\delta+\epsilon
+\le C_T+\delta+2\epsilon$。
+\end{proof}
+该结论只需二点误差界，不需要宣称覆盖整个神经网络参数类；但实验仍未认证
+真实任务代理误差 $\epsilon$。因此实现中的 $+0.05$ 只能称为模型选择容差，
+Eq.~\eqref{eq:fallback-pair-bound} 不能改写成真实 success 非退化或约束保证。
+soft hinge 训练期间的瞬时 band violation 也不会被该二选一结论消除。
+
+\textbf{gate 帮助事件对应所需的额外条件。} 对接触切换、卡滞与恢复等
+hybrid event，至少需要同时满足三项：被 gate 接受的 anchoring 在真实目标上
+具有正确方向；校准模型与数值实现误差小于事件判据的轨迹裕度；该裕度在
+增广状态中包含 phase、guard counter、integral、recovery mask 与其他
+controller carry。若任一条件不成立，减小平均 response discrepancy 仍可
+跨过错误事件边界并降低任务成功。故 selective gate 是一个可检验的
+条件机制，不预测跨任务一致的正收益。
+
 \textbf{模型偏差与 reset 采样误差分开。} 上式的 $\epsilon_C$ 若将有限
 训练均值当作 $\widehat C$，必须同时覆盖模型偏差与 Monte Carlo 误差。
 对事先固定的 $M$ 个候选和校准后独立的 $n$ 个 reset clusters，

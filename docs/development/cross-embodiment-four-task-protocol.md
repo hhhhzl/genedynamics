@@ -23,12 +23,12 @@ baseline 文献选择与实施决策见 [比较计划](cross-embodiment-baseline
 
 相关代码相对仓库根路径：
 
-- `genedynamics/learning/cross_embodiment/contracts.py`：13D skill、执行时钟、ObstacleTransfer 与机制构造合约。
-- `genedynamics/learning/cross_embodiment/source_query.py`、`contact_query.py`：源语义查询和支持标记。
-- `genedynamics/learning/cross_embodiment/contact.py`：contact profiles、终止判据与 backend admission。
-- `genedynamics/learning/cross_embodiment/contact_behavior.py`：显式行为 phase、reference table 与反馈 decoder。
-- `genedynamics/envs/domains/manipulation/cross_embodiment/workcell.py`、`contact_workcell.py`、`floating_workcell.py`：工位与身体组合。
-- `scripts/cross_embodiment/validate_obstacle_mechanism.py`、`cpu_mechanism_validation.py`、`validate_mobile_mechanism.py`：历史研究入口；它们不是已冻结的新四任务统一 runner。
+- `genedynamics/tasks/transfer/{runtime,specs,protocol}.py`：13D skill、执行时钟、任务与机制合约。
+- `genedynamics/envs/domains/manipulation/transfer_workcell/queries/`：源语义查询和支持标记。
+- `genedynamics/tasks/transfer/contact.py`：contact profiles、终止判据与 backend admission。
+- `genedynamics/tasks/transfer/{behavior,contact_reference}.py`：显式行为 phase、reference table 与反馈 decoder。
+- `genedynamics/envs/domains/manipulation/transfer_workcell/`：工位、数值后端与身体组合。
+- `scripts/paper/cross_ebdm/`：统一 paper 入口；任务、物理和算法实现不放在脚本层。
 - `configs/arm/{obstacle_transfer,guided_contact_alignment,keyed_insertion_recovery}/` 与 `configs/quadruped/mobile_keyed_insertion_recovery/`：P3 已建立四任务 qualification 配置；结果继续镜像 domain/task/category/method/level/seed。
 
 旧 legacy MJX 能运行，不等于新的 spatial guide、TCP wrench 或移动组合已合格。

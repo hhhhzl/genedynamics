@@ -1,0 +1,490 @@
+{
+  "contract_sha256": "35e168ac5ca149bcbe55ed4418a3c8e5cab703ad4ff40319efb00ea299bb92d2",
+  "mujoco_version": "3.6.0",
+  "cells": {
+    "source": {
+      "robot": "panda",
+      "mechanism": {
+        "servo_gain": 1.0,
+        "delay_steps": 0,
+        "payload_mass": 0.5
+      },
+      "scene": {
+        "task": "keyed_insertion_recovery",
+        "config": {
+          "environment": "keyed_insertion_recovery",
+          "robot": "panda",
+          "physics_dt": 0.002,
+          "control_dt": 0.02,
+          "timeout_seconds": 15.0,
+          "force_limit": 25.0,
+          "desired_force": 5.0,
+          "force_rate": 10.0,
+          "contact_loss_seconds": 0.3,
+          "force_integral_limit": 10.0,
+          "contact_threshold": 0.3,
+          "reset_joint_noise": 0.0,
+          "reset_task_noise": 0.0005,
+          "insertion_depth": 0.016,
+          "position_tolerance": 0.002,
+          "orientation_tolerance": 0.03490658503988659,
+          "orientation_wrench_limit": 4.0,
+          "lateral_force_limit": 10.0,
+          "approach_speed": 0.015,
+          "approach_integral_limit": 0.03,
+          "mobile": false,
+          "socket_profile": "matched_keyway",
+          "mating_clearance": 0.0008,
+          "wrench_semantics": "tool_at_tcp_world",
+          "guide_profile": "legacy",
+          "force_feedback_gain": 0.05,
+          "force_integral_gain": 0.05,
+          "tangential_wrench_limit": 12.0
+        },
+        "model_sha256": "78348cd5d5b23b4ae01c0a8b4a2313aa7d7869f44072a7bb9b6bb41b346c0b61",
+        "contact_whitelist": [
+          [
+            "contact_peg",
+            "socket_left"
+          ],
+          [
+            "contact_peg",
+            "socket_right"
+          ],
+          [
+            "contact_peg",
+            "socket_front"
+          ],
+          [
+            "contact_peg",
+            "socket_back"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_peg",
+            "socket_floor"
+          ],
+          [
+            "contact_key",
+            "socket_left"
+          ],
+          [
+            "contact_key",
+            "socket_right"
+          ],
+          [
+            "contact_key",
+            "socket_front"
+          ],
+          [
+            "contact_key",
+            "socket_back"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_key",
+            "socket_floor"
+          ]
+        ],
+        "force_channel": "positive compression along world -z, N; measured constraint wrench separate",
+        "controller_signature": "hybrid_normal_force_tangential_impedance_v5_intent_release_strict_metrics",
+        "gpu_qualification": "not_run",
+        "nominal_compensation": "known gravity and native joint viscous damping; actual payload excluded",
+        "socket_geometry": {
+          "profile": "matched_keyway",
+          "clearance_m": 0.0008,
+          "peg_cross_section_m": [
+            0.02,
+            0.012
+          ],
+          "key_x_extent_m": 0.015,
+          "dedicated_keyway": true
+        },
+        "wrench_semantics": "tool_at_tcp_world",
+        "guide_geometry": null,
+        "wrench_limits": {
+          "tangent_N": 12.0,
+          "orientation_Nm": 2.0
+        },
+        "controller_clocks": {
+          "skill_dt": 0.02,
+          "impedance_and_force_feedback_dt": 0.002
+        },
+        "backend": "numpy",
+        "compiled_chunk": false
+      }
+    },
+    "nominal": {
+      "robot": "xarm7",
+      "mechanism": {
+        "servo_gain": 1.0,
+        "delay_steps": 0,
+        "payload_mass": 0.5
+      },
+      "scene": {
+        "task": "keyed_insertion_recovery",
+        "config": {
+          "environment": "keyed_insertion_recovery",
+          "robot": "xarm7",
+          "physics_dt": 0.002,
+          "control_dt": 0.02,
+          "timeout_seconds": 15.0,
+          "force_limit": 25.0,
+          "desired_force": 5.0,
+          "force_rate": 10.0,
+          "contact_loss_seconds": 0.3,
+          "force_integral_limit": 10.0,
+          "contact_threshold": 0.3,
+          "reset_joint_noise": 0.0,
+          "reset_task_noise": 0.0005,
+          "insertion_depth": 0.016,
+          "position_tolerance": 0.002,
+          "orientation_tolerance": 0.03490658503988659,
+          "orientation_wrench_limit": 4.0,
+          "lateral_force_limit": 10.0,
+          "approach_speed": 0.015,
+          "approach_integral_limit": 0.03,
+          "mobile": false,
+          "socket_profile": "matched_keyway",
+          "mating_clearance": 0.0008,
+          "wrench_semantics": "tool_at_tcp_world",
+          "guide_profile": "legacy",
+          "force_feedback_gain": 0.05,
+          "force_integral_gain": 0.05,
+          "tangential_wrench_limit": 12.0
+        },
+        "model_sha256": "c1c35bd6878fdd961ed596b0f575356ba328c6abcc427eb8e2f17bd1e9764a4f",
+        "contact_whitelist": [
+          [
+            "contact_peg",
+            "socket_left"
+          ],
+          [
+            "contact_peg",
+            "socket_right"
+          ],
+          [
+            "contact_peg",
+            "socket_front"
+          ],
+          [
+            "contact_peg",
+            "socket_back"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_peg",
+            "socket_floor"
+          ],
+          [
+            "contact_key",
+            "socket_left"
+          ],
+          [
+            "contact_key",
+            "socket_right"
+          ],
+          [
+            "contact_key",
+            "socket_front"
+          ],
+          [
+            "contact_key",
+            "socket_back"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_key",
+            "socket_floor"
+          ]
+        ],
+        "force_channel": "positive compression along world -z, N; measured constraint wrench separate",
+        "controller_signature": "hybrid_normal_force_tangential_impedance_v5_intent_release_strict_metrics",
+        "gpu_qualification": "not_run",
+        "nominal_compensation": "known gravity and native joint viscous damping; actual payload excluded",
+        "socket_geometry": {
+          "profile": "matched_keyway",
+          "clearance_m": 0.0008,
+          "peg_cross_section_m": [
+            0.02,
+            0.012
+          ],
+          "key_x_extent_m": 0.015,
+          "dedicated_keyway": true
+        },
+        "wrench_semantics": "tool_at_tcp_world",
+        "guide_geometry": null,
+        "wrench_limits": {
+          "tangent_N": 12.0,
+          "orientation_Nm": 2.0
+        },
+        "controller_clocks": {
+          "skill_dt": 0.02,
+          "impedance_and_force_feedback_dt": 0.002
+        },
+        "backend": "numpy",
+        "compiled_chunk": false
+      }
+    },
+    "derated": {
+      "robot": "xarm7",
+      "mechanism": {
+        "servo_gain": 0.65,
+        "delay_steps": 3,
+        "payload_mass": 0.8
+      },
+      "scene": {
+        "task": "keyed_insertion_recovery",
+        "config": {
+          "environment": "keyed_insertion_recovery",
+          "robot": "xarm7",
+          "physics_dt": 0.002,
+          "control_dt": 0.02,
+          "timeout_seconds": 15.0,
+          "force_limit": 25.0,
+          "desired_force": 5.0,
+          "force_rate": 10.0,
+          "contact_loss_seconds": 0.3,
+          "force_integral_limit": 10.0,
+          "contact_threshold": 0.3,
+          "reset_joint_noise": 0.0,
+          "reset_task_noise": 0.0005,
+          "insertion_depth": 0.016,
+          "position_tolerance": 0.002,
+          "orientation_tolerance": 0.03490658503988659,
+          "orientation_wrench_limit": 4.0,
+          "lateral_force_limit": 10.0,
+          "approach_speed": 0.015,
+          "approach_integral_limit": 0.03,
+          "mobile": false,
+          "socket_profile": "matched_keyway",
+          "mating_clearance": 0.0008,
+          "wrench_semantics": "tool_at_tcp_world",
+          "guide_profile": "legacy",
+          "force_feedback_gain": 0.05,
+          "force_integral_gain": 0.05,
+          "tangential_wrench_limit": 12.0
+        },
+        "model_sha256": "4f18d31fc0f04608c2a953a52698609e9e898782558809a307681cab812d2d18",
+        "contact_whitelist": [
+          [
+            "contact_peg",
+            "socket_left"
+          ],
+          [
+            "contact_peg",
+            "socket_right"
+          ],
+          [
+            "contact_peg",
+            "socket_front"
+          ],
+          [
+            "contact_peg",
+            "socket_back"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_peg",
+            "socket_floor"
+          ],
+          [
+            "contact_key",
+            "socket_left"
+          ],
+          [
+            "contact_key",
+            "socket_right"
+          ],
+          [
+            "contact_key",
+            "socket_front"
+          ],
+          [
+            "contact_key",
+            "socket_back"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_key",
+            "socket_floor"
+          ]
+        ],
+        "force_channel": "positive compression along world -z, N; measured constraint wrench separate",
+        "controller_signature": "hybrid_normal_force_tangential_impedance_v5_intent_release_strict_metrics",
+        "gpu_qualification": "not_run",
+        "nominal_compensation": "known gravity and native joint viscous damping; actual payload excluded",
+        "socket_geometry": {
+          "profile": "matched_keyway",
+          "clearance_m": 0.0008,
+          "peg_cross_section_m": [
+            0.02,
+            0.012
+          ],
+          "key_x_extent_m": 0.015,
+          "dedicated_keyway": true
+        },
+        "wrench_semantics": "tool_at_tcp_world",
+        "guide_geometry": null,
+        "wrench_limits": {
+          "tangent_N": 12.0,
+          "orientation_Nm": 2.0
+        },
+        "controller_clocks": {
+          "skill_dt": 0.02,
+          "impedance_and_force_feedback_dt": 0.002
+        },
+        "backend": "numpy",
+        "compiled_chunk": false
+      }
+    }
+  },
+  "skill_box_and_rate_limits": {
+    "horizon": 10,
+    "linear_speed": 0.12,
+    "angular_speed": 0.6,
+    "log_stiffness_limit": 1.0,
+    "linear_acceleration": 0.6,
+    "angular_acceleration": 3.0,
+    "log_stiffness_rate": 4.0,
+    "reference_stiffness": [
+      800.0,
+      800.0,
+      800.0,
+      60.0,
+      60.0,
+      60.0
+    ]
+  },
+  "source_sha256": {
+    "genedynamics/core/control/transfer.py": "aaa3cf68b3d7f16d0ff23ac2b307eab2a8c4d7402f892cf84b5456257ceb41ab",
+    "genedynamics/envs/adapters/acp_transfer.py": "9d3fd09cb99ce2548525794d4ca865ea141ca4f91d8a6a0ac8a88d1df68d3de1",
+    "genedynamics/envs/adapters/transfer_task.py": "d4be2b15e9c881a80b5234561c81f047175adf8e473b8d615972959153d5a4e0",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/__init__.py": "19cd11e5a5dbef7b9cb3cf0e498238fb8704a30d0fdc1d32f65771ad43c66663",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/__init__.py": "adb5213f0e0fb7d989275edfc8842df135cbf6eeb77a62a5a0c80bd100530a46",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/contact.py": "5c1a5605441485aee1212875dd1f45d3fd25f0ba0517c4c49a3a948ad329f550",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/contact_batch.py": "7651fc064a05a14e37299efdcf05f81de93abfe581ab61eba908f887ac0f6fb7",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/contact_query.py": "9fedd6c79a0cfaf2e55319b54307b248e0bcf4b25e2b673adc40015ac74793a6",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/contact_query_jax.py": "e3e3d0e0061fcc95050d3f64d29d880f36fc91d6629d641a05ddfb473c13fe36",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/floating_contact.py": "ac43e494635f65987d51cd4b267be3fe6067ac7c2f7840654401f3f62135fffb",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/jax/__init__.py": "741e0258337979cfa9894c5e1e31e4a56b4c3b82ce711f5d20ae8e38f427465f",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/jax/contact.py": "d49a8a05d46503eb3303913128737a88d4abc319221b6949ed1e303ba47d4916",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/jax/execution.py": "7df83bddcb7be5a0da3cd286c06eb5bfb7dcac7eb5bd863a4e294e59b1b1473d",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/mujoco.py": "1d48a238fad790be39d120992acb63c9d7e10b82ddb0652ac239d0aea80c24b8",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/source_query.py": "edc53e3ce8158da8c9e7a263f0cfd8e44b79aa11a939284f747c6d8e8a443058",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/source_query_jax.py": "bff97ce268276ad40296906a0ce9e1390f8eec3ceda1ecc214aabb76cee72eb9",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/contact_runtime.py": "1517833cf1843ea6202670e58cef4e78d1118488c18ade8d167db50ecb71d290",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/contact_workcell.py": "78b8b33912f0e266459e9dc56a49a482fc2e1529a93b31787b70f148f9c64397",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/floating_workcell.py": "d493ad7418d96bf9ddb4cd30aa8cb28026eebfa9de9b566dcfab17e9ac7e343e",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/protocols.py": "f750fbbb12aad84c925a5b23e8e489fa21303167c0938330714b62696a3c84cc",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/queries/__init__.py": "75b02206689232bd1773e2b0e345720b3012077306c5587eda62e47bd29ad847",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/queries/contact.py": "19c904bc0448a919232c2320c9603678eceb35ee87db8d68583f9b6af22f1861",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/queries/source.py": "253e46fbba51737aa896f71157ec75b229f1e2d0a35e67671a85179f589cb745",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/queries/support.py": "1bf8a14abd973e3351454b1fb1723d3442fa6507f8c9021371dd722fa4cbd572",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/registry.py": "a8c99d01820323dae79922632f4f1efeb730dbc2cddfb7a349fea6b4ab622fb3",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/runtime.py": "06d270b91938b0db0dbf92f53c3e7b6772e05388a0efd7047610df9ec2db5f97",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/workcell.py": "4e00c83d159395f609217c8d0c0ac84465948b9281ca4790e17dd5bd4d3de20b",
+    "genedynamics/experiments/plugins/environments/transfer_tasks.py": "f07f10cdd9d4aa1a672754f5ae9a642dd0487f2bf565eca6f5a032b62aa7f0e9",
+    "genedynamics/experiments/plugins/metrics/transfer.py": "9184675be6eae2097c1a62514adb33db7c22b1e111a167f4aa967150a3e53c58",
+    "genedynamics/solvers/single/acp/backends/compliance.py": "b58922c2d2d4eb465b15f68540f7ecf340f6d65355c064d67c118a260369ceee",
+    "genedynamics/solvers/single/acp/backends/spatial.py": "13444741833026b9a759b14bef6b6e324ccdd209b8bda688d340ff589c54f21e",
+    "genedynamics/tasks/transfer/__init__.py": "23ef6c0b97e448646110bf36ffd84250a2bcdd5c5d354cadfd61fee84699df57",
+    "genedynamics/tasks/transfer/behavior.py": "12cf20338fc144ee002094a065134292f5173a5afd56dbb5f6ea56dd2799075c",
+    "genedynamics/tasks/transfer/contact.py": "18d76462504136371f27dc3b35cdae2c3cc6dfdcd6f89e49d463c1b3e29e5a48",
+    "genedynamics/tasks/transfer/contact_reference.py": "e3ae266f31b77955a0168f289406791b8f1615b5119d4431fc17db025ddd2dd8",
+    "genedynamics/tasks/transfer/controllers/__init__.py": "f672b29f10c4af392ce5bc2eb27a7141c2480a28638028e25676685fb2bf1356",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/__init__.py": "d09756d5cb2d810225bd6316d2b65eef5d35c9cbca64e8886aedc2e2ad26f57e",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/arm_dense.py": "169f5ae2a5655a3348423d20edc68c1b4bcff488dcbfadde9d3820e4c408e120",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/arm_noise.py": "038c8dc5acc6f2b26a4532a6fd22423d8c3f927048f3789f7a5962ae1d2259a6",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/dense.py": "030edbf28044ebf78e62f180773969cd74cd88445d386d490278e01627694d0e",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/guide_corridor.py": "730d416cc086a6146cd78a053d0a1a5663019ca9584272318adea7e0afde909b",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/guide_corridor_v2.py": "ec3f352f26c859581ed1609240e065d6b17494e6cb3ac659cf3412400690bcec",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/guide_lift.py": "42555d0ff608c51ee1fb489e3c62589653ca6acac79c0e6beed28bd8645e80c8",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/mobile_dense.py": "1de4f3551ed4ecf1798a38b6d30767d9727563b16fed63dc14954499ead6afe2",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/obstacle_planned.py": "bb70308053bcddb50cad1293d71fd955600d6170230abfe5aed217c7705d6a70",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/__init__.py": "4a2dbacfb7bead8f37be88949bf2ec375c61193a74133e663765f3a846301141",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/bias_feedback.py": "56ab66b6e8317ebbc56845631231ee16d9843d2686547d737bc75928e8e887ab",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/feedback.py": "c3c4aab43307539f27cef10f01cb14fe9b95756ce47740195bc84532d081efcc",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/governor_feedback.py": "4b5363ca90ece0e6080fa509ecc7ec098f7d35b5e15e99dea2cb16c4620a327a",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/liveness.py": "73146e88b0c9faf51c2ddb49047cc628edb8db9e8ee370262bc8797ac8dae65d",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/pose_feedback.py": "be06acde09518e3889def1671abcb011eb93eea36cf07dc539061f899550e499",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/source_transport.py": "cc956ce82215a38835aa5f5d854d8ceb00916c8bdd6c8830907210145a647445",
+    "genedynamics/tasks/transfer/controllers/guide_antiwindup_lift_route.py": "bc262769521a716df04b13fb637ccecd8c03b28933fd10c33ea3638b67279f96",
+    "genedynamics/tasks/transfer/controllers/guide_corridor_lift_route.py": "e24635b03cdfb9288c1c241a38657197de68f31f1bcce94e0df8203f03824313",
+    "genedynamics/tasks/transfer/controllers/guide_event_lift_route.py": "2a5318a08e84b08bc1aa422f48223df5d0fbf0a53e0ae8cc2bf046dec57bb445",
+    "genedynamics/tasks/transfer/controllers/guide_feedback.py": "b75f2fd1c36f7a86451c1b6e25e16bd7d6e01c76c655a468170c3f87f8ba7b3d",
+    "genedynamics/tasks/transfer/controllers/guide_friction_feedforward.py": "07c586e3bfd7e5c2425d9f7e21d41659581f4099e47ee5f0e1dfdbdaf51f2ee9",
+    "genedynamics/tasks/transfer/controllers/guide_lead_lift_route.py": "a31655f5493d92f43285ada5005a02ecf98581802c472c5e01461297cda8ce8c",
+    "genedynamics/tasks/transfer/controllers/guide_lift_route.py": "e0557e39fd607f1963645c2a034c5612dbd579c044b87c669b9546bc400ef577",
+    "genedynamics/tasks/transfer/controllers/guide_pose_feedback.py": "bbbbc7caf3c6aa6841b61e1a769e10763c738231d318056631d776d2f968d8b2",
+    "genedynamics/tasks/transfer/controllers/guide_wrench_projection.py": "68b6e7805181f26a198f735657be2f3744272de75ca7a8e553d234994062fe03",
+    "genedynamics/tasks/transfer/controllers/guide_wrench_schedule.py": "c60b1f70efc1c30a9356c230bdad1e51209298bf8dad7c971227b16ec7e3c028",
+    "genedynamics/tasks/transfer/controllers/mating_feedback.py": "f69b615f47e316e9b627916d5aff890f70a7f29500ae6917dba5cb9c31590a7f",
+    "genedynamics/tasks/transfer/controllers/mobile_recovery.py": "7a60998999a9c186707d86ff7d46f02875c3c9bc2033b8dd17afef49ae0628f7",
+    "genedynamics/tasks/transfer/controllers/obstacle_feedback.py": "c49621365d83962075bdcc965027f4f22eff8a133baeb49924b223eea79abfb0",
+    "genedynamics/tasks/transfer/controllers/obstacle_governor.py": "750081d333100a1a37338868b85034c4ec44c754d251338537bee4ca4583f994",
+    "genedynamics/tasks/transfer/controllers/obstacle_model.py": "d1ab063d6d38648fe684a75e563ed34b0c06ce6208e93feb05ff8949f36bc3b0",
+    "genedynamics/tasks/transfer/controllers/obstacle_path.py": "f3447e595a16e2e3e3acadf00169d3ed8c7a96a445abf124d9639d7eabccc1da",
+    "genedynamics/tasks/transfer/controllers/recovery_execution.py": "32be144a4836014e4c0e1f5f991d8679a65fb0582e65dfaf030ca42ee09b6625",
+    "genedynamics/tasks/transfer/demonstrators/__init__.py": "33546e4f00881528f3993ac4504c939f74c2dbda6ab81037fdac33db1ab747d1",
+    "genedynamics/tasks/transfer/demonstrators/acp.py": "662d7c260ef133de6afcde8efd94f7cb364424d0448edffabc243fea92668be7",
+    "genedynamics/tasks/transfer/demonstrators/acp_feedback.py": "0656f55b9391e9672773f4a6b97438f8e1421f99117656f9ab9f342bf74be669",
+    "genedynamics/tasks/transfer/demonstrators/acp_rate_geometry.py": "9d87c87fb49e7d9a4a1c8a1c52e7d6d7b1750fc34b6673db39f5f8b6f27ce84b",
+    "genedynamics/tasks/transfer/episode.py": "06570b0e18b444442b931c4e0eae2bc3110ed9241938c297da0b9178222414ac",
+    "genedynamics/tasks/transfer/evaluation.py": "12cadf8252623dcd340a065091c516f7f80c52e89cadb6dcaa67eef9e1abcf5d",
+    "genedynamics/tasks/transfer/folded_preparation.py": "36c337aa8ef9ca09f0cadaf235f8b8f3191b60f7d32337f03d3fe113c8d825ac",
+    "genedynamics/tasks/transfer/guide_evaluation.py": "220d696fb5eef01719645f96120a34c55239a1a185e3cc93f246ac211fc4ca37",
+    "genedynamics/tasks/transfer/guide_observation.py": "7c4ae6dae0490a30888a7fd2f9516cd57982c3684b143acdd9360f5eef59276b",
+    "genedynamics/tasks/transfer/observation.py": "9feb4c88a4b5b580ed50fa3a7ae3f9220fe0589d3d806103db8fd0540a04c402",
+    "genedynamics/tasks/transfer/protocol.py": "14940499156630ba0a62350db02d4a926f3b0c765411e41cbc7bcf6d43c359be",
+    "genedynamics/tasks/transfer/protocol_extensions.py": "f9fd588d5c684acb812f203b8f3145c8865092fb7e1489f3bcdc0f0a29ae5218",
+    "genedynamics/tasks/transfer/routes.py": "dd222bc961f40314462e7fb54b9f418626f7781c8df124cdd44dd4a9be5d60c4",
+    "genedynamics/tasks/transfer/runtime.py": "cab01ef52c5b3113ec5d2e807ace0951646845c5a8857429c25898625b69366f",
+    "genedynamics/tasks/transfer/scene_binding.py": "2725d93aae157934e52cec2bbbfa91c3d9400b95be869f1d13f3dfe6c31fad69",
+    "genedynamics/tasks/transfer/specs.py": "1f4feb33835475684004ebdc54ed49ce423e9d84827175eedddd45e833704f65",
+    "genedynamics/tasks/transfer/staged_preparation.py": "9e65c18201b368568f5f7b5f139145bc200430bff5eb125073f32aa838bd054c",
+    "genedynamics/tasks/transfer/teachers.py": "d98d60a87b249a4797ff170784e508f3ba226f2762ef28483340e955980dedf2"
+  }
+}

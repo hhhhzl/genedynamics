@@ -1,0 +1,24 @@
+{
+  "version": "T4-canonical-folded-arm-stance-preparation-v1",
+  "base_public_protocol": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/task_contract_v1.json",
+    "sha256": "d82d77ea62b6db69d6651d62bdc8f387edba82e5654d35016e59853d3f776eed"
+  },
+  "original_and_high_staging_failures_retained": true,
+  "preparation_arm_qpos": [
+    0.0,
+    0.785,
+    -0.261,
+    -0.523,
+    0.0,
+    0.0
+  ],
+  "qpos_source": "build_go2_z1 original canonical q beforeCartesianstartIK",
+  "preparation_steps": 50,
+  "after_preparation": "originaljammedIK/yaw.12, originalruntime scene/start posture restoredbeforetask",
+  "runtime_controller_WBC_plant_fixture_and_criteria_unchanged": true,
+  "old_initial_state_compatibility": false,
+  "source_Panda_reset_unchanged": true,
+  "all_methods_share_reset": true,
+  "scope": "Canonicalrobotjointrest, no Cartesianheightgrid or IKselection; newscene qualification/dataneeded. Old8failedhighIKresetsand4originalpreplateralforcefailures preserved, no targetplantstrength orforcecriterion changes."
+}

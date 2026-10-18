@@ -1,0 +1,3 @@
+base: ../_base.yaml
+name: guided_contact_alignment_cross_ebdm
+output_dir: results/arm/guided_contact_alignment/main/cross_ebdm

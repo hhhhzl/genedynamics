@@ -1,0 +1,1021 @@
+{
+  "contract_sha256": "e6dc4d5f2c59870157b40d72cb6ee66040ea05b97dd952d11b75e18e05e40b6b",
+  "mujoco_version": "3.6.0",
+  "cells": {
+    "source": {
+      "robot": "panda",
+      "mechanism": {
+        "servo_gain": 1.0,
+        "delay_steps": 0,
+        "payload_mass": 0.5
+      },
+      "scene": {
+        "task": "obstacle_transfer",
+        "config": {
+          "robot": "panda",
+          "physics_dt": 0.002,
+          "control_dt": 0.02,
+          "start_position": [
+            0.38,
+            -0.12,
+            0.55
+          ],
+          "goal_position": [
+            0.64,
+            0.08,
+            0.55
+          ],
+          "goal_yaw": 0.15,
+          "reset_joint_noise": 0.002,
+          "nominal_payload_mass": 0.5,
+          "max_delay_steps": 4,
+          "position_tolerance": 0.005,
+          "orientation_tolerance": 0.05235987755982989,
+          "hold_seconds": 0.3,
+          "timeout_seconds": 10.0,
+          "joint_speed_limit": 2.5,
+          "contact_margin": 0.005,
+          "collision_tolerance": 1e-05
+        },
+        "mechanism": {
+          "servo_gain": 1.0,
+          "delay_steps": 0,
+          "payload_mass": 0.5
+        },
+        "mujoco_version": "3.6.0",
+        "model_sha256": "5d966aa25107092f50af392dc9688d2ee6c279fc5d3b04e266717382e02e7c19",
+        "collision_geometry": "native-mesh enclosing capsules; Panda links 1/4 use AABBs (conservative)",
+        "self_collision_exclusion": "chain distance <=2; tool mounting links 5,6,7",
+        "proxy_bounds": {
+          "link0": {
+            "center": [
+              -0.04125584714862957,
+              2.8347769471220863e-05,
+              0.0699851700174321
+            ],
+            "half_size": [
+              0.11282284185680061,
+              0.09464209190518104,
+              0.07001766456361208
+            ],
+            "capsule_start": [
+              -0.021870280453734917,
+              -0.001340186788369612,
+              0.06979640528558971
+            ],
+            "capsule_end": [
+              -0.06676073122507935,
+              -0.001064204509676672,
+              0.04826385827848799
+            ],
+            "capsule_radius": 0.12064672000352156,
+            "proxy_type": "capsule"
+          },
+          "link1": {
+            "center": [
+              8.711853012210308e-05,
+              -0.037090438096623435,
+              -0.06851548717168163
+            ],
+            "half_size": [
+              0.05507410768539699,
+              0.09228269325285779,
+              0.12348858061361354
+            ],
+            "capsule_start": [
+              -2.7518754177108706e-05,
+              -0.06486126014059392,
+              -0.029254915456916046
+            ],
+            "capsule_end": [
+              -0.001304774508407032,
+              -0.001765145990093142,
+              -0.12583468402952808
+            ],
+            "capsule_radius": 0.10614043595352665,
+            "proxy_type": "box"
+          },
+          "link2": {
+            "center": [
+              -8.425383304423717e-05,
+              -0.06939476481800985,
+              0.037196366301737505
+            ],
+            "half_size": [
+              0.05506918704789901,
+              0.12461480379767934,
+              0.09229301377462026
+            ],
+            "capsule_start": [
+              -0.00048079310314053694,
+              -0.13438098083623198,
+              4.1198099964771806e-05
+            ],
+            "capsule_end": [
+              -0.00030229318785584175,
+              -0.023472342742767244,
+              0.06869862337279686
+            ],
+            "capsule_radius": 0.10416042649371322,
+            "proxy_type": "capsule"
+          },
+          "link3": {
+            "center": [
+              0.041457732444402595,
+              0.028142908735325937,
+              -0.03293054958446276
+            ],
+            "half_size": [
+              0.09610351288031205,
+              0.08306012047885789,
+              0.0880869832610987
+            ],
+            "capsule_start": [
+              0.0699395914151208,
+              0.05523971862652503,
+              -0.004860648475393959
+            ],
+            "capsule_end": [
+              -0.007126664597905015,
+              -0.004718513109959004,
+              -0.06327431572006234
+            ],
+            "capsule_radius": 0.08778738023938262,
+            "proxy_type": "capsule"
+          },
+          "link4": {
+            "center": [
+              -0.04123367029557322,
+              0.03442988073779098,
+              0.02792274288853796
+            ],
+            "half_size": [
+              0.09637320669955322,
+              0.08957959996424343,
+              0.08312935217794284
+            ],
+            "capsule_start": [
+              -0.008297906824264949,
+              0.0027398309325590425,
+              0.059382904892141625
+            ],
+            "capsule_end": [
+              -0.09473078033445184,
+              0.06958732189695294,
+              -0.00648608690728188
+            ],
+            "capsule_radius": 0.08691135273014745,
+            "proxy_type": "box"
+          },
+          "link5": {
+            "center": [
+              -0.000753478441767607,
+              0.036875631815444204,
+              -0.10475687090735367
+            ],
+            "half_size": [
+              0.051704478868800405,
+              0.08892627564125319,
+              0.15424313407929632
+            ],
+            "capsule_start": [
+              0.0047077245017405275,
+              0.016864468225089434,
+              -0.22107989345044518
+            ],
+            "capsule_end": [
+              0.003477842006953441,
+              0.09535860701317275,
+              -0.013596204679842822
+            ],
+            "capsule_radius": 0.10078149722110562,
+            "proxy_type": "capsule"
+          },
+          "link6": {
+            "center": [
+              0.04210131061992496,
+              0.015146210583860075,
+              0.006161786325847393
+            ],
+            "half_size": [
+              0.09010645326446733,
+              0.06653468247166512,
+              0.05014684329972725
+            ],
+            "capsule_start": [
+              0.025006646202035077,
+              0.009264624771845843,
+              0.015598042427782757
+            ],
+            "capsule_end": [
+              0.059640214268398994,
+              0.021814730035955965,
+              0.007910086188170396
+            ],
+            "capsule_radius": 0.10372203769684357,
+            "proxy_type": "capsule"
+          },
+          "link7": {
+            "center": [
+              0.018635771325201857,
+              0.01857884823822155,
+              0.07941388032506208
+            ],
+            "half_size": [
+              0.0626703596497874,
+              0.06260846014222722,
+              0.027423348459297146
+            ],
+            "capsule_start": [
+              -0.005223797274163279,
+              -0.005536830307424898,
+              0.08176054071337138
+            ],
+            "capsule_end": [
+              0.02947833744609519,
+              0.02993577145814242,
+              0.08349096521770133
+            ],
+            "capsule_radius": 0.05326944359614402,
+            "proxy_type": "capsule"
+          }
+        },
+        "command_dim": 13,
+        "force_channel_enabled": false,
+        "task_frame": "world",
+        "angular_velocity": "spatial radians/second",
+        "controller_signature": {
+          "version": "cartesian_impedance_pi_null_v1",
+          "joint_damping": 2.0,
+          "null_stiffness": 10.0,
+          "null_dls_regularization": 0.001,
+          "integral_gains": [
+            400.0,
+            400.0,
+            400.0,
+            20.0,
+            20.0,
+            20.0
+          ],
+          "integral_limits": [
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1
+          ]
+        },
+        "clearance": "contact-derived, censored at contact_margin; not exact distance",
+        "start_qpos": [
+          0.47289320906354554,
+          -0.6435814863989416,
+          -0.5936033054787186,
+          -2.2570946418362596,
+          -0.34497213722752157,
+          1.6931957735953471,
+          0.021771451831572454
+        ],
+        "goal_qpos": [
+          0.9182170653143016,
+          0.45901420333905324,
+          -1.0503841183328675,
+          -1.3783270050887646,
+          0.39498540539017873,
+          1.615568295433723,
+          -0.25243274469761934
+        ],
+        "backend": "numpy",
+        "device": "cpu",
+        "physics_dtype": "float64",
+        "command_dtype": "float32",
+        "mechanism_batch": [
+          {
+            "servo_gain": 1.0,
+            "delay_steps": 0,
+            "payload_mass": 0.5
+          }
+        ],
+        "mechanism_model_sha256s": [
+          "5d966aa25107092f50af392dc9688d2ee6c279fc5d3b04e266717382e02e7c19"
+        ],
+        "mechanism_batch_size": null,
+        "microbatch_size": null,
+        "compiled_chunk": false,
+        "gpu_qualification": "not_run"
+      }
+    },
+    "nominal": {
+      "robot": "xarm7",
+      "mechanism": {
+        "servo_gain": 1.0,
+        "delay_steps": 0,
+        "payload_mass": 0.5
+      },
+      "scene": {
+        "task": "obstacle_transfer",
+        "config": {
+          "robot": "xarm7",
+          "physics_dt": 0.002,
+          "control_dt": 0.02,
+          "start_position": [
+            0.38,
+            -0.12,
+            0.55
+          ],
+          "goal_position": [
+            0.64,
+            0.08,
+            0.55
+          ],
+          "goal_yaw": 0.15,
+          "reset_joint_noise": 0.002,
+          "nominal_payload_mass": 0.5,
+          "max_delay_steps": 4,
+          "position_tolerance": 0.005,
+          "orientation_tolerance": 0.05235987755982989,
+          "hold_seconds": 0.3,
+          "timeout_seconds": 10.0,
+          "joint_speed_limit": 2.5,
+          "contact_margin": 0.005,
+          "collision_tolerance": 1e-05
+        },
+        "mechanism": {
+          "servo_gain": 1.0,
+          "delay_steps": 0,
+          "payload_mass": 0.5
+        },
+        "mujoco_version": "3.6.0",
+        "model_sha256": "cd270094664ecbe508e1c7b937679ffa79df9bb963beb2eecb851170c36df804",
+        "collision_geometry": "native-mesh enclosing capsules; Panda links 1/4 use AABBs (conservative)",
+        "self_collision_exclusion": "chain distance <=2; tool mounting links 5,6,7",
+        "proxy_bounds": {
+          "link_base": {
+            "center": [
+              -0.014690574731674365,
+              2.199083908027699e-09,
+              0.07740000553369761
+            ],
+            "half_size": [
+              0.0776192331903213,
+              0.06300000693759861,
+              0.07740001082606199
+            ],
+            "capsule_start": [
+              0.0011550309689714981,
+              -0.0028562848259587625,
+              0.022490492780995474
+            ],
+            "capsule_end": [
+              -0.030175268178308384,
+              -0.0024948140961983238,
+              0.02415071388298796
+            ],
+            "capsule_radius": 0.14146931869185828,
+            "proxy_type": "capsule"
+          },
+          "link1": {
+            "center": [
+              -5.9453206843775724e-05,
+              0.009371671818821231,
+              -0.0319555832035118
+            ],
+            "half_size": [
+              0.04842893779528212,
+              0.06592360356566773,
+              0.08004458005448911
+            ],
+            "capsule_start": [
+              -0.0005162366668820967,
+              -0.0030365187169516285,
+              -0.0011889399103928652
+            ],
+            "capsule_end": [
+              -0.001459189058647177,
+              0.005311429783682792,
+              -0.06711585549549734
+            ],
+            "capsule_radius": 0.0922876918154554,
+            "proxy_type": "capsule"
+          },
+          "link2": {
+            "center": [
+              -7.917962340581175e-05,
+              -0.07220790888064826,
+              0.038381752153795995
+            ],
+            "half_size": [
+              0.047503791766320975,
+              0.11957160612036888,
+              0.08062525500354666
+            ],
+            "capsule_start": [
+              -0.00042110332343340954,
+              -0.031609505005056986,
+              0.08516307059181426
+            ],
+            "capsule_end": [
+              -0.0017715288650098397,
+              -0.14245419154274613,
+              0.02884586009124961
+            ],
+            "capsule_radius": 0.08851159059748726,
+            "proxy_type": "capsule"
+          },
+          "link3": {
+            "center": [
+              0.02621963320805868,
+              0.0009482227602334442,
+              -0.029166336277791007
+            ],
+            "half_size": [
+              0.06863396956497081,
+              0.06814299794443422,
+              0.07193475993187487
+            ],
+            "capsule_start": [
+              0.03947379210622821,
+              0.016097411938560596,
+              -0.010945496042487915
+            ],
+            "capsule_end": [
+              0.003779255770231464,
+              0.0025258835620894007,
+              -0.06213093460055527
+            ],
+            "capsule_radius": 0.10214416258978455,
+            "proxy_type": "capsule"
+          },
+          "link4": {
+            "center": [
+              0.03876486195177792,
+              -0.06323277187140433,
+              0.03220663692026951
+            ],
+            "half_size": [
+              0.08149513035737146,
+              0.105942618052323,
+              0.07470311610262168
+            ],
+            "capsule_start": [
+              0.09581091938928507,
+              -0.10991719849979957,
+              0.01144669427020345
+            ],
+            "capsule_end": [
+              0.02283113860705035,
+              -0.022735012700951837,
+              0.08156357564602254
+            ],
+            "capsule_radius": 0.08691451296455169,
+            "proxy_type": "capsule"
+          },
+          "link5": {
+            "center": [
+              2.0560938263667478e-05,
+              0.02193917541234471,
+              -0.06775260294858973
+            ],
+            "half_size": [
+              0.04242602959603413,
+              0.06449241679779143,
+              0.10524770659225705
+            ],
+            "capsule_start": [
+              -0.0003532989240399426,
+              0.06868669304224675,
+              -0.00919204448368452
+            ],
+            "capsule_end": [
+              0.002287459356854632,
+              0.010173324442204024,
+              -0.15021504542049402
+            ],
+            "capsule_radius": 0.07915190525681522,
+            "proxy_type": "capsule"
+          },
+          "link6": {
+            "center": [
+              0.03799881669140977,
+              0.015508647305709652,
+              0.01020401352369621
+            ],
+            "half_size": [
+              0.07549311779943838,
+              0.05301169914893426,
+              0.04768392428052825
+            ],
+            "capsule_start": [
+              0.07506308393516002,
+              0.0069451325293982905,
+              0.002085006626550135
+            ],
+            "capsule_end": [
+              0.013056526769516918,
+              0.0007771207715822751,
+              0.03961712320209963
+            ],
+            "capsule_radius": 0.07330402751265344,
+            "proxy_type": "capsule"
+          },
+          "link7": {
+            "center": [
+              6.796295585300913e-05,
+              -0.007151624315288034,
+              -0.013500000351552171
+            ],
+            "half_size": [
+              0.037662787362933256,
+              0.04484837828147647,
+              0.013500000784027077
+            ],
+            "capsule_start": [
+              5.224444319703224e-05,
+              -0.016127504454299647,
+              -0.013663688016869934
+            ],
+            "capsule_end": [
+              8.10728323035666e-06,
+              0.001839477374765558,
+              -0.013554814606938305
+            ],
+            "capsule_radius": 0.04008456387856272,
+            "proxy_type": "capsule"
+          }
+        },
+        "command_dim": 13,
+        "force_channel_enabled": false,
+        "task_frame": "world",
+        "angular_velocity": "spatial radians/second",
+        "controller_signature": {
+          "version": "cartesian_impedance_pi_null_v1",
+          "joint_damping": 2.0,
+          "null_stiffness": 10.0,
+          "null_dls_regularization": 0.001,
+          "integral_gains": [
+            400.0,
+            400.0,
+            400.0,
+            20.0,
+            20.0,
+            20.0
+          ],
+          "integral_limits": [
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1
+          ]
+        },
+        "clearance": "contact-derived, censored at contact_margin; not exact distance",
+        "start_qpos": [
+          -0.11303914818528463,
+          -0.2717276858872888,
+          -0.1719839090551814,
+          0.977162941850746,
+          -0.04849316032269889,
+          1.2453941740436225,
+          -0.26332195583027695
+        ],
+        "goal_qpos": [
+          0.10095588866773383,
+          0.6729625617062674,
+          0.043829882571925105,
+          2.20286908613156,
+          -0.02733637107405536,
+          1.5303898768915098,
+          -0.013657014496839636
+        ],
+        "backend": "numpy",
+        "device": "cpu",
+        "physics_dtype": "float64",
+        "command_dtype": "float32",
+        "mechanism_batch": [
+          {
+            "servo_gain": 1.0,
+            "delay_steps": 0,
+            "payload_mass": 0.5
+          }
+        ],
+        "mechanism_model_sha256s": [
+          "cd270094664ecbe508e1c7b937679ffa79df9bb963beb2eecb851170c36df804"
+        ],
+        "mechanism_batch_size": null,
+        "microbatch_size": null,
+        "compiled_chunk": false,
+        "gpu_qualification": "not_run"
+      }
+    },
+    "derated": {
+      "robot": "xarm7",
+      "mechanism": {
+        "servo_gain": 0.65,
+        "delay_steps": 3,
+        "payload_mass": 0.8
+      },
+      "scene": {
+        "task": "obstacle_transfer",
+        "config": {
+          "robot": "xarm7",
+          "physics_dt": 0.002,
+          "control_dt": 0.02,
+          "start_position": [
+            0.38,
+            -0.12,
+            0.55
+          ],
+          "goal_position": [
+            0.64,
+            0.08,
+            0.55
+          ],
+          "goal_yaw": 0.15,
+          "reset_joint_noise": 0.002,
+          "nominal_payload_mass": 0.5,
+          "max_delay_steps": 4,
+          "position_tolerance": 0.005,
+          "orientation_tolerance": 0.05235987755982989,
+          "hold_seconds": 0.3,
+          "timeout_seconds": 10.0,
+          "joint_speed_limit": 2.5,
+          "contact_margin": 0.005,
+          "collision_tolerance": 1e-05
+        },
+        "mechanism": {
+          "servo_gain": 0.65,
+          "delay_steps": 3,
+          "payload_mass": 0.8
+        },
+        "mujoco_version": "3.6.0",
+        "model_sha256": "e96224d7137944cba1c2a6756a442feca27437a657fe64681c50d06509641e85",
+        "collision_geometry": "native-mesh enclosing capsules; Panda links 1/4 use AABBs (conservative)",
+        "self_collision_exclusion": "chain distance <=2; tool mounting links 5,6,7",
+        "proxy_bounds": {
+          "link_base": {
+            "center": [
+              -0.014690574731674365,
+              2.199083908027699e-09,
+              0.07740000553369761
+            ],
+            "half_size": [
+              0.0776192331903213,
+              0.06300000693759861,
+              0.07740001082606199
+            ],
+            "capsule_start": [
+              0.0011550309689714981,
+              -0.0028562848259587625,
+              0.022490492780995474
+            ],
+            "capsule_end": [
+              -0.030175268178308384,
+              -0.0024948140961983238,
+              0.02415071388298796
+            ],
+            "capsule_radius": 0.14146931869185828,
+            "proxy_type": "capsule"
+          },
+          "link1": {
+            "center": [
+              -5.9453206843775724e-05,
+              0.009371671818821231,
+              -0.0319555832035118
+            ],
+            "half_size": [
+              0.04842893779528212,
+              0.06592360356566773,
+              0.08004458005448911
+            ],
+            "capsule_start": [
+              -0.0005162366668820967,
+              -0.0030365187169516285,
+              -0.0011889399103928652
+            ],
+            "capsule_end": [
+              -0.001459189058647177,
+              0.005311429783682792,
+              -0.06711585549549734
+            ],
+            "capsule_radius": 0.0922876918154554,
+            "proxy_type": "capsule"
+          },
+          "link2": {
+            "center": [
+              -7.917962340581175e-05,
+              -0.07220790888064826,
+              0.038381752153795995
+            ],
+            "half_size": [
+              0.047503791766320975,
+              0.11957160612036888,
+              0.08062525500354666
+            ],
+            "capsule_start": [
+              -0.00042110332343340954,
+              -0.031609505005056986,
+              0.08516307059181426
+            ],
+            "capsule_end": [
+              -0.0017715288650098397,
+              -0.14245419154274613,
+              0.02884586009124961
+            ],
+            "capsule_radius": 0.08851159059748726,
+            "proxy_type": "capsule"
+          },
+          "link3": {
+            "center": [
+              0.02621963320805868,
+              0.0009482227602334442,
+              -0.029166336277791007
+            ],
+            "half_size": [
+              0.06863396956497081,
+              0.06814299794443422,
+              0.07193475993187487
+            ],
+            "capsule_start": [
+              0.03947379210622821,
+              0.016097411938560596,
+              -0.010945496042487915
+            ],
+            "capsule_end": [
+              0.003779255770231464,
+              0.0025258835620894007,
+              -0.06213093460055527
+            ],
+            "capsule_radius": 0.10214416258978455,
+            "proxy_type": "capsule"
+          },
+          "link4": {
+            "center": [
+              0.03876486195177792,
+              -0.06323277187140433,
+              0.03220663692026951
+            ],
+            "half_size": [
+              0.08149513035737146,
+              0.105942618052323,
+              0.07470311610262168
+            ],
+            "capsule_start": [
+              0.09581091938928507,
+              -0.10991719849979957,
+              0.01144669427020345
+            ],
+            "capsule_end": [
+              0.02283113860705035,
+              -0.022735012700951837,
+              0.08156357564602254
+            ],
+            "capsule_radius": 0.08691451296455169,
+            "proxy_type": "capsule"
+          },
+          "link5": {
+            "center": [
+              2.0560938263667478e-05,
+              0.02193917541234471,
+              -0.06775260294858973
+            ],
+            "half_size": [
+              0.04242602959603413,
+              0.06449241679779143,
+              0.10524770659225705
+            ],
+            "capsule_start": [
+              -0.0003532989240399426,
+              0.06868669304224675,
+              -0.00919204448368452
+            ],
+            "capsule_end": [
+              0.002287459356854632,
+              0.010173324442204024,
+              -0.15021504542049402
+            ],
+            "capsule_radius": 0.07915190525681522,
+            "proxy_type": "capsule"
+          },
+          "link6": {
+            "center": [
+              0.03799881669140977,
+              0.015508647305709652,
+              0.01020401352369621
+            ],
+            "half_size": [
+              0.07549311779943838,
+              0.05301169914893426,
+              0.04768392428052825
+            ],
+            "capsule_start": [
+              0.07506308393516002,
+              0.0069451325293982905,
+              0.002085006626550135
+            ],
+            "capsule_end": [
+              0.013056526769516918,
+              0.0007771207715822751,
+              0.03961712320209963
+            ],
+            "capsule_radius": 0.07330402751265344,
+            "proxy_type": "capsule"
+          },
+          "link7": {
+            "center": [
+              6.796295585300913e-05,
+              -0.007151624315288034,
+              -0.013500000351552171
+            ],
+            "half_size": [
+              0.037662787362933256,
+              0.04484837828147647,
+              0.013500000784027077
+            ],
+            "capsule_start": [
+              5.224444319703224e-05,
+              -0.016127504454299647,
+              -0.013663688016869934
+            ],
+            "capsule_end": [
+              8.10728323035666e-06,
+              0.001839477374765558,
+              -0.013554814606938305
+            ],
+            "capsule_radius": 0.04008456387856272,
+            "proxy_type": "capsule"
+          }
+        },
+        "command_dim": 13,
+        "force_channel_enabled": false,
+        "task_frame": "world",
+        "angular_velocity": "spatial radians/second",
+        "controller_signature": {
+          "version": "cartesian_impedance_pi_null_v1",
+          "joint_damping": 2.0,
+          "null_stiffness": 10.0,
+          "null_dls_regularization": 0.001,
+          "integral_gains": [
+            400.0,
+            400.0,
+            400.0,
+            20.0,
+            20.0,
+            20.0
+          ],
+          "integral_limits": [
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1
+          ]
+        },
+        "clearance": "contact-derived, censored at contact_margin; not exact distance",
+        "start_qpos": [
+          -0.11303914818528465,
+          -0.27172768588728896,
+          -0.17198390905518132,
+          0.9771629418507461,
+          -0.04849316032269892,
+          1.2453941740436227,
+          -0.263321955830277
+        ],
+        "goal_qpos": [
+          0.10095588866773371,
+          0.672962561706268,
+          0.04382988257192515,
+          2.202869086131561,
+          -0.027336371074055458,
+          1.5303898768915107,
+          -0.013657014496839637
+        ],
+        "backend": "numpy",
+        "device": "cpu",
+        "physics_dtype": "float64",
+        "command_dtype": "float32",
+        "mechanism_batch": [
+          {
+            "servo_gain": 0.65,
+            "delay_steps": 3,
+            "payload_mass": 0.8
+          }
+        ],
+        "mechanism_model_sha256s": [
+          "e96224d7137944cba1c2a6756a442feca27437a657fe64681c50d06509641e85"
+        ],
+        "mechanism_batch_size": null,
+        "microbatch_size": null,
+        "compiled_chunk": false,
+        "gpu_qualification": "not_run"
+      }
+    }
+  },
+  "skill_box_and_rate_limits": {
+    "horizon": 10,
+    "linear_speed": 0.12,
+    "angular_speed": 0.6,
+    "log_stiffness_limit": 1.0,
+    "linear_acceleration": 0.6,
+    "angular_acceleration": 3.0,
+    "log_stiffness_rate": 4.0,
+    "reference_stiffness": [
+      800.0,
+      800.0,
+      800.0,
+      60.0,
+      60.0,
+      60.0
+    ]
+  },
+  "source_sha256": {
+    "genedynamics/core/control/transfer.py": "aaa3cf68b3d7f16d0ff23ac2b307eab2a8c4d7402f892cf84b5456257ceb41ab",
+    "genedynamics/envs/adapters/acp_transfer.py": "9d3fd09cb99ce2548525794d4ca865ea141ca4f91d8a6a0ac8a88d1df68d3de1",
+    "genedynamics/envs/adapters/transfer_task.py": "d4be2b15e9c881a80b5234561c81f047175adf8e473b8d615972959153d5a4e0",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/__init__.py": "19cd11e5a5dbef7b9cb3cf0e498238fb8704a30d0fdc1d32f65771ad43c66663",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/__init__.py": "adb5213f0e0fb7d989275edfc8842df135cbf6eeb77a62a5a0c80bd100530a46",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/contact.py": "5c1a5605441485aee1212875dd1f45d3fd25f0ba0517c4c49a3a948ad329f550",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/contact_batch.py": "7651fc064a05a14e37299efdcf05f81de93abfe581ab61eba908f887ac0f6fb7",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/contact_query.py": "9fedd6c79a0cfaf2e55319b54307b248e0bcf4b25e2b673adc40015ac74793a6",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/contact_query_jax.py": "e3e3d0e0061fcc95050d3f64d29d880f36fc91d6629d641a05ddfb473c13fe36",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/floating_contact.py": "ac43e494635f65987d51cd4b267be3fe6067ac7c2f7840654401f3f62135fffb",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/jax/__init__.py": "741e0258337979cfa9894c5e1e31e4a56b4c3b82ce711f5d20ae8e38f427465f",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/jax/contact.py": "d49a8a05d46503eb3303913128737a88d4abc319221b6949ed1e303ba47d4916",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/jax/execution.py": "7df83bddcb7be5a0da3cd286c06eb5bfb7dcac7eb5bd863a4e294e59b1b1473d",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/mujoco.py": "1d48a238fad790be39d120992acb63c9d7e10b82ddb0652ac239d0aea80c24b8",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/source_query.py": "edc53e3ce8158da8c9e7a263f0cfd8e44b79aa11a939284f747c6d8e8a443058",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/backends/source_query_jax.py": "bff97ce268276ad40296906a0ce9e1390f8eec3ceda1ecc214aabb76cee72eb9",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/contact_runtime.py": "1517833cf1843ea6202670e58cef4e78d1118488c18ade8d167db50ecb71d290",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/contact_workcell.py": "78b8b33912f0e266459e9dc56a49a482fc2e1529a93b31787b70f148f9c64397",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/floating_workcell.py": "d493ad7418d96bf9ddb4cd30aa8cb28026eebfa9de9b566dcfab17e9ac7e343e",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/protocols.py": "f750fbbb12aad84c925a5b23e8e489fa21303167c0938330714b62696a3c84cc",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/queries/__init__.py": "75b02206689232bd1773e2b0e345720b3012077306c5587eda62e47bd29ad847",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/queries/contact.py": "19c904bc0448a919232c2320c9603678eceb35ee87db8d68583f9b6af22f1861",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/queries/source.py": "253e46fbba51737aa896f71157ec75b229f1e2d0a35e67671a85179f589cb745",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/queries/support.py": "1bf8a14abd973e3351454b1fb1723d3442fa6507f8c9021371dd722fa4cbd572",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/registry.py": "a8c99d01820323dae79922632f4f1efeb730dbc2cddfb7a349fea6b4ab622fb3",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/runtime.py": "06d270b91938b0db0dbf92f53c3e7b6772e05388a0efd7047610df9ec2db5f97",
+    "genedynamics/envs/domains/manipulation/transfer_workcell/workcell.py": "4e00c83d159395f609217c8d0c0ac84465948b9281ca4790e17dd5bd4d3de20b",
+    "genedynamics/experiments/plugins/environments/transfer_tasks.py": "f07f10cdd9d4aa1a672754f5ae9a642dd0487f2bf565eca6f5a032b62aa7f0e9",
+    "genedynamics/experiments/plugins/metrics/transfer.py": "9184675be6eae2097c1a62514adb33db7c22b1e111a167f4aa967150a3e53c58",
+    "genedynamics/solvers/single/acp/backends/compliance.py": "b58922c2d2d4eb465b15f68540f7ecf340f6d65355c064d67c118a260369ceee",
+    "genedynamics/solvers/single/acp/backends/spatial.py": "13444741833026b9a759b14bef6b6e324ccdd209b8bda688d340ff589c54f21e",
+    "genedynamics/tasks/transfer/__init__.py": "23ef6c0b97e448646110bf36ffd84250a2bcdd5c5d354cadfd61fee84699df57",
+    "genedynamics/tasks/transfer/behavior.py": "12cf20338fc144ee002094a065134292f5173a5afd56dbb5f6ea56dd2799075c",
+    "genedynamics/tasks/transfer/contact.py": "18d76462504136371f27dc3b35cdae2c3cc6dfdcd6f89e49d463c1b3e29e5a48",
+    "genedynamics/tasks/transfer/contact_reference.py": "e3ae266f31b77955a0168f289406791b8f1615b5119d4431fc17db025ddd2dd8",
+    "genedynamics/tasks/transfer/controllers/__init__.py": "f672b29f10c4af392ce5bc2eb27a7141c2480a28638028e25676685fb2bf1356",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/__init__.py": "d09756d5cb2d810225bd6316d2b65eef5d35c9cbca64e8886aedc2e2ad26f57e",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/arm_dense.py": "169f5ae2a5655a3348423d20edc68c1b4bcff488dcbfadde9d3820e4c408e120",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/arm_noise.py": "038c8dc5acc6f2b26a4532a6fd22423d8c3f927048f3789f7a5962ae1d2259a6",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/dense.py": "030edbf28044ebf78e62f180773969cd74cd88445d386d490278e01627694d0e",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/guide_corridor.py": "730d416cc086a6146cd78a053d0a1a5663019ca9584272318adea7e0afde909b",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/guide_corridor_v2.py": "ec3f352f26c859581ed1609240e065d6b17494e6cb3ac659cf3412400690bcec",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/guide_lift.py": "42555d0ff608c51ee1fb489e3c62589653ca6acac79c0e6beed28bd8645e80c8",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/mobile_dense.py": "1de4f3551ed4ecf1798a38b6d30767d9727563b16fed63dc14954499ead6afe2",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/obstacle_planned.py": "bb70308053bcddb50cad1293d71fd955600d6170230abfe5aed217c7705d6a70",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/__init__.py": "4a2dbacfb7bead8f37be88949bf2ec375c61193a74133e663765f3a846301141",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/bias_feedback.py": "56ab66b6e8317ebbc56845631231ee16d9843d2686547d737bc75928e8e887ab",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/feedback.py": "c3c4aab43307539f27cef10f01cb14fe9b95756ce47740195bc84532d081efcc",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/governor_feedback.py": "4b5363ca90ece0e6080fa509ecc7ec098f7d35b5e15e99dea2cb16c4620a327a",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/liveness.py": "73146e88b0c9faf51c2ddb49047cc628edb8db9e8ee370262bc8797ac8dae65d",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/pose_feedback.py": "be06acde09518e3889def1671abcb011eb93eea36cf07dc539061f899550e499",
+    "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/source_transport.py": "cc956ce82215a38835aa5f5d854d8ceb00916c8bdd6c8830907210145a647445",
+    "genedynamics/tasks/transfer/controllers/guide_antiwindup_lift_route.py": "bc262769521a716df04b13fb637ccecd8c03b28933fd10c33ea3638b67279f96",
+    "genedynamics/tasks/transfer/controllers/guide_corridor_lift_route.py": "e24635b03cdfb9288c1c241a38657197de68f31f1bcce94e0df8203f03824313",
+    "genedynamics/tasks/transfer/controllers/guide_event_lift_route.py": "2a5318a08e84b08bc1aa422f48223df5d0fbf0a53e0ae8cc2bf046dec57bb445",
+    "genedynamics/tasks/transfer/controllers/guide_feedback.py": "b75f2fd1c36f7a86451c1b6e25e16bd7d6e01c76c655a468170c3f87f8ba7b3d",
+    "genedynamics/tasks/transfer/controllers/guide_friction_feedforward.py": "07c586e3bfd7e5c2425d9f7e21d41659581f4099e47ee5f0e1dfdbdaf51f2ee9",
+    "genedynamics/tasks/transfer/controllers/guide_lead_lift_route.py": "a31655f5493d92f43285ada5005a02ecf98581802c472c5e01461297cda8ce8c",
+    "genedynamics/tasks/transfer/controllers/guide_lift_route.py": "e0557e39fd607f1963645c2a034c5612dbd579c044b87c669b9546bc400ef577",
+    "genedynamics/tasks/transfer/controllers/guide_pose_feedback.py": "bbbbc7caf3c6aa6841b61e1a769e10763c738231d318056631d776d2f968d8b2",
+    "genedynamics/tasks/transfer/controllers/guide_wrench_projection.py": "68b6e7805181f26a198f735657be2f3744272de75ca7a8e553d234994062fe03",
+    "genedynamics/tasks/transfer/controllers/guide_wrench_schedule.py": "c60b1f70efc1c30a9356c230bdad1e51209298bf8dad7c971227b16ec7e3c028",
+    "genedynamics/tasks/transfer/controllers/mating_feedback.py": "f69b615f47e316e9b627916d5aff890f70a7f29500ae6917dba5cb9c31590a7f",
+    "genedynamics/tasks/transfer/controllers/mobile_recovery.py": "7a60998999a9c186707d86ff7d46f02875c3c9bc2033b8dd17afef49ae0628f7",
+    "genedynamics/tasks/transfer/controllers/obstacle_feedback.py": "c49621365d83962075bdcc965027f4f22eff8a133baeb49924b223eea79abfb0",
+    "genedynamics/tasks/transfer/controllers/obstacle_governor.py": "750081d333100a1a37338868b85034c4ec44c754d251338537bee4ca4583f994",
+    "genedynamics/tasks/transfer/controllers/obstacle_model.py": "d1ab063d6d38648fe684a75e563ed34b0c06ce6208e93feb05ff8949f36bc3b0",
+    "genedynamics/tasks/transfer/controllers/obstacle_path.py": "f3447e595a16e2e3e3acadf00169d3ed8c7a96a445abf124d9639d7eabccc1da",
+    "genedynamics/tasks/transfer/controllers/recovery_execution.py": "32be144a4836014e4c0e1f5f991d8679a65fb0582e65dfaf030ca42ee09b6625",
+    "genedynamics/tasks/transfer/demonstrators/__init__.py": "33546e4f00881528f3993ac4504c939f74c2dbda6ab81037fdac33db1ab747d1",
+    "genedynamics/tasks/transfer/demonstrators/acp.py": "662d7c260ef133de6afcde8efd94f7cb364424d0448edffabc243fea92668be7",
+    "genedynamics/tasks/transfer/demonstrators/acp_feedback.py": "0656f55b9391e9672773f4a6b97438f8e1421f99117656f9ab9f342bf74be669",
+    "genedynamics/tasks/transfer/demonstrators/acp_rate_geometry.py": "9d87c87fb49e7d9a4a1c8a1c52e7d6d7b1750fc34b6673db39f5f8b6f27ce84b",
+    "genedynamics/tasks/transfer/episode.py": "06570b0e18b444442b931c4e0eae2bc3110ed9241938c297da0b9178222414ac",
+    "genedynamics/tasks/transfer/evaluation.py": "12cadf8252623dcd340a065091c516f7f80c52e89cadb6dcaa67eef9e1abcf5d",
+    "genedynamics/tasks/transfer/folded_preparation.py": "36c337aa8ef9ca09f0cadaf235f8b8f3191b60f7d32337f03d3fe113c8d825ac",
+    "genedynamics/tasks/transfer/guide_evaluation.py": "220d696fb5eef01719645f96120a34c55239a1a185e3cc93f246ac211fc4ca37",
+    "genedynamics/tasks/transfer/guide_observation.py": "7c4ae6dae0490a30888a7fd2f9516cd57982c3684b143acdd9360f5eef59276b",
+    "genedynamics/tasks/transfer/observation.py": "9feb4c88a4b5b580ed50fa3a7ae3f9220fe0589d3d806103db8fd0540a04c402",
+    "genedynamics/tasks/transfer/protocol.py": "14940499156630ba0a62350db02d4a926f3b0c765411e41cbc7bcf6d43c359be",
+    "genedynamics/tasks/transfer/protocol_extensions.py": "f9fd588d5c684acb812f203b8f3145c8865092fb7e1489f3bcdc0f0a29ae5218",
+    "genedynamics/tasks/transfer/routes.py": "dd222bc961f40314462e7fb54b9f418626f7781c8df124cdd44dd4a9be5d60c4",
+    "genedynamics/tasks/transfer/runtime.py": "cab01ef52c5b3113ec5d2e807ace0951646845c5a8857429c25898625b69366f",
+    "genedynamics/tasks/transfer/scene_binding.py": "2725d93aae157934e52cec2bbbfa91c3d9400b95be869f1d13f3dfe6c31fad69",
+    "genedynamics/tasks/transfer/specs.py": "1f4feb33835475684004ebdc54ed49ce423e9d84827175eedddd45e833704f65",
+    "genedynamics/tasks/transfer/staged_preparation.py": "9e65c18201b368568f5f7b5f139145bc200430bff5eb125073f32aa838bd054c",
+    "genedynamics/tasks/transfer/teachers.py": "d98d60a87b249a4797ff170784e508f3ba226f2762ef28483340e955980dedf2"
+  }
+}

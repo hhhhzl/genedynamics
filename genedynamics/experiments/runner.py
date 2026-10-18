@@ -86,6 +86,9 @@ from genedynamics.experiments.plugins import (
     ISSAContactMethodPlugin,
     ATACOMContactMethodPlugin,
     StandaloneRLMethodPlugin,
+    transfer_method_plugins,
+    transfer_environment_plugins,
+    TransferTaskMetricsPlugin,
 )
 
 
@@ -293,21 +296,6 @@ def main():
             )
             raise SystemExit(2)
     
-    # Research studies share configuration inheritance and task/level/seed
-    # outputs, but own their source/calibration/search stage lifecycle.
-    if config.metadata.get("workflow") == "cross_embodiment_pilot":
-        from scripts.cross_embodiment.run_pilot import pilot
-        pilot(config, resume=args.resume)
-        return
-    if config.metadata.get("workflow") == "cross_embodiment_refinement":
-        from scripts.cross_embodiment.run_refinement import refinement
-        refinement(config, resume=args.resume)
-        return
-    if config.metadata.get("workflow") == "cross_embodiment_gpu_qualification":
-        from scripts.cross_embodiment.run_p2 import p2
-        p2(config, resume=args.resume)
-        return
-
     # Create experiment runner
     runner = ExperimentRunner(config)
     
@@ -364,6 +352,8 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(ISSAContactMethodPlugin(), 'method')
     runner.register_plugin(ATACOMContactMethodPlugin(), 'method')
     runner.register_plugin(StandaloneRLMethodPlugin(), 'method')
+    for plugin in transfer_method_plugins():
+        runner.register_plugin(plugin, 'method')
     runner.register_plugin(TwoGOMethodPlugin(), 'method')
     if DPCCMethodPlugin is not None:
         runner.register_plugin(DPCCMethodPlugin(), 'method')
@@ -392,6 +382,8 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(ManipulatorSurfaceScanPlugin(), 'environment')
     runner.register_plugin(ManipulatorPegInsertPlugin(), 'environment')
     runner.register_plugin(HumanoidBoxPushPlugin(), 'environment')
+    for plugin in transfer_environment_plugins():
+        runner.register_plugin(plugin, 'environment')
 
     # Metrics plugins
     runner.register_plugin(SSRMetricsPlugin(), 'metric')
@@ -400,6 +392,7 @@ def register_all_plugins(runner: ExperimentRunner):
     runner.register_plugin(EpisodeOutcomeMetricsPlugin(), 'metric')
     runner.register_plugin(SteppingStonesMetricsPlugin(), 'metric')
     runner.register_plugin(CorridorMetricsPlugin(), 'metric')
+    runner.register_plugin(TransferTaskMetricsPlugin(), 'metric')
     # General-metrics plugins (shared evaluation library + a tiny per-task
     # extractor). brax tasks; the factories construct without importing brax.
     from genedynamics.experiments.plugins.metrics.extractors import (

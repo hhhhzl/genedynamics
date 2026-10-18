@@ -1,0 +1,423 @@
+{
+  "contract_sha256": "0455dc84e162a54c7b35da3db82c45be1386930de706849cddeb1adeafdfebd0",
+  "cells": {
+    "source": {
+      "robot": "panda",
+      "mechanism": {
+        "servo_gain": 1.0,
+        "delay_steps": 0,
+        "payload_mass": 0.5
+      },
+      "scene": {
+        "task": "keyed_insertion_recovery",
+        "config": {
+          "environment": "keyed_insertion_recovery",
+          "robot": "panda",
+          "physics_dt": 0.002,
+          "control_dt": 0.02,
+          "timeout_seconds": 15.0,
+          "force_limit": 25.0,
+          "desired_force": 5.0,
+          "force_rate": 10.0,
+          "contact_loss_seconds": 0.3,
+          "force_integral_limit": 10.0,
+          "contact_threshold": 0.3,
+          "reset_joint_noise": 0.0,
+          "reset_task_noise": 0.0005,
+          "insertion_depth": 0.016,
+          "position_tolerance": 0.002,
+          "orientation_tolerance": 0.03490658503988659,
+          "orientation_wrench_limit": 4.0,
+          "lateral_force_limit": 10.0,
+          "approach_speed": 0.015,
+          "approach_integral_limit": 0.03,
+          "mobile": false,
+          "socket_profile": "matched_keyway",
+          "mating_clearance": 0.0008,
+          "wrench_semantics": "tool_at_tcp_world",
+          "guide_profile": "legacy",
+          "force_feedback_gain": 0.05,
+          "force_integral_gain": 0.05,
+          "tangential_wrench_limit": 12.0
+        },
+        "model_sha256": "78348cd5d5b23b4ae01c0a8b4a2313aa7d7869f44072a7bb9b6bb41b346c0b61",
+        "contact_whitelist": [
+          [
+            "contact_peg",
+            "socket_left"
+          ],
+          [
+            "contact_peg",
+            "socket_right"
+          ],
+          [
+            "contact_peg",
+            "socket_front"
+          ],
+          [
+            "contact_peg",
+            "socket_back"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_peg",
+            "socket_floor"
+          ],
+          [
+            "contact_key",
+            "socket_left"
+          ],
+          [
+            "contact_key",
+            "socket_right"
+          ],
+          [
+            "contact_key",
+            "socket_front"
+          ],
+          [
+            "contact_key",
+            "socket_back"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_key",
+            "socket_floor"
+          ]
+        ],
+        "force_channel": "positive compression along world -z, N; measured constraint wrench separate",
+        "controller_signature": "hybrid_normal_force_tangential_impedance_v5_intent_release_strict_metrics",
+        "gpu_qualification": "not_run",
+        "nominal_compensation": "known gravity and native joint viscous damping; actual payload excluded",
+        "socket_geometry": {
+          "profile": "matched_keyway",
+          "clearance_m": 0.0008,
+          "peg_cross_section_m": [
+            0.02,
+            0.012
+          ],
+          "key_x_extent_m": 0.015,
+          "dedicated_keyway": true
+        },
+        "wrench_semantics": "tool_at_tcp_world",
+        "guide_geometry": null,
+        "wrench_limits": {
+          "tangent_N": 12.0,
+          "orientation_Nm": 2.0
+        },
+        "controller_clocks": {
+          "skill_dt": 0.02,
+          "impedance_and_force_feedback_dt": 0.002
+        },
+        "backend": "numpy",
+        "compiled_chunk": false
+      }
+    },
+    "nominal": {
+      "robot": "xarm7",
+      "mechanism": {
+        "servo_gain": 1.0,
+        "delay_steps": 0,
+        "payload_mass": 0.5
+      },
+      "scene": {
+        "task": "keyed_insertion_recovery",
+        "config": {
+          "environment": "keyed_insertion_recovery",
+          "robot": "xarm7",
+          "physics_dt": 0.002,
+          "control_dt": 0.02,
+          "timeout_seconds": 15.0,
+          "force_limit": 25.0,
+          "desired_force": 5.0,
+          "force_rate": 10.0,
+          "contact_loss_seconds": 0.3,
+          "force_integral_limit": 10.0,
+          "contact_threshold": 0.3,
+          "reset_joint_noise": 0.0,
+          "reset_task_noise": 0.0005,
+          "insertion_depth": 0.016,
+          "position_tolerance": 0.002,
+          "orientation_tolerance": 0.03490658503988659,
+          "orientation_wrench_limit": 4.0,
+          "lateral_force_limit": 10.0,
+          "approach_speed": 0.015,
+          "approach_integral_limit": 0.03,
+          "mobile": false,
+          "socket_profile": "matched_keyway",
+          "mating_clearance": 0.0008,
+          "wrench_semantics": "tool_at_tcp_world",
+          "guide_profile": "legacy",
+          "force_feedback_gain": 0.05,
+          "force_integral_gain": 0.05,
+          "tangential_wrench_limit": 12.0
+        },
+        "model_sha256": "c1c35bd6878fdd961ed596b0f575356ba328c6abcc427eb8e2f17bd1e9764a4f",
+        "contact_whitelist": [
+          [
+            "contact_peg",
+            "socket_left"
+          ],
+          [
+            "contact_peg",
+            "socket_right"
+          ],
+          [
+            "contact_peg",
+            "socket_front"
+          ],
+          [
+            "contact_peg",
+            "socket_back"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_peg",
+            "socket_floor"
+          ],
+          [
+            "contact_key",
+            "socket_left"
+          ],
+          [
+            "contact_key",
+            "socket_right"
+          ],
+          [
+            "contact_key",
+            "socket_front"
+          ],
+          [
+            "contact_key",
+            "socket_back"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_key",
+            "socket_floor"
+          ]
+        ],
+        "force_channel": "positive compression along world -z, N; measured constraint wrench separate",
+        "controller_signature": "hybrid_normal_force_tangential_impedance_v5_intent_release_strict_metrics",
+        "gpu_qualification": "not_run",
+        "nominal_compensation": "known gravity and native joint viscous damping; actual payload excluded",
+        "socket_geometry": {
+          "profile": "matched_keyway",
+          "clearance_m": 0.0008,
+          "peg_cross_section_m": [
+            0.02,
+            0.012
+          ],
+          "key_x_extent_m": 0.015,
+          "dedicated_keyway": true
+        },
+        "wrench_semantics": "tool_at_tcp_world",
+        "guide_geometry": null,
+        "wrench_limits": {
+          "tangent_N": 12.0,
+          "orientation_Nm": 2.0
+        },
+        "controller_clocks": {
+          "skill_dt": 0.02,
+          "impedance_and_force_feedback_dt": 0.002
+        },
+        "backend": "numpy",
+        "compiled_chunk": false
+      }
+    },
+    "derated": {
+      "robot": "xarm7",
+      "mechanism": {
+        "servo_gain": 0.65,
+        "delay_steps": 3,
+        "payload_mass": 0.8
+      },
+      "scene": {
+        "task": "keyed_insertion_recovery",
+        "config": {
+          "environment": "keyed_insertion_recovery",
+          "robot": "xarm7",
+          "physics_dt": 0.002,
+          "control_dt": 0.02,
+          "timeout_seconds": 15.0,
+          "force_limit": 25.0,
+          "desired_force": 5.0,
+          "force_rate": 10.0,
+          "contact_loss_seconds": 0.3,
+          "force_integral_limit": 10.0,
+          "contact_threshold": 0.3,
+          "reset_joint_noise": 0.0,
+          "reset_task_noise": 0.0005,
+          "insertion_depth": 0.016,
+          "position_tolerance": 0.002,
+          "orientation_tolerance": 0.03490658503988659,
+          "orientation_wrench_limit": 4.0,
+          "lateral_force_limit": 10.0,
+          "approach_speed": 0.015,
+          "approach_integral_limit": 0.03,
+          "mobile": false,
+          "socket_profile": "matched_keyway",
+          "mating_clearance": 0.0008,
+          "wrench_semantics": "tool_at_tcp_world",
+          "guide_profile": "legacy",
+          "force_feedback_gain": 0.05,
+          "force_integral_gain": 0.05,
+          "tangential_wrench_limit": 12.0
+        },
+        "model_sha256": "4f18d31fc0f04608c2a953a52698609e9e898782558809a307681cab812d2d18",
+        "contact_whitelist": [
+          [
+            "contact_peg",
+            "socket_left"
+          ],
+          [
+            "contact_peg",
+            "socket_right"
+          ],
+          [
+            "contact_peg",
+            "socket_front"
+          ],
+          [
+            "contact_peg",
+            "socket_back"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_peg",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_peg",
+            "socket_floor"
+          ],
+          [
+            "contact_key",
+            "socket_left"
+          ],
+          [
+            "contact_key",
+            "socket_right"
+          ],
+          [
+            "contact_key",
+            "socket_front"
+          ],
+          [
+            "contact_key",
+            "socket_back"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_front"
+          ],
+          [
+            "contact_key",
+            "keyway_shoulder_back"
+          ],
+          [
+            "contact_key",
+            "socket_floor"
+          ]
+        ],
+        "force_channel": "positive compression along world -z, N; measured constraint wrench separate",
+        "controller_signature": "hybrid_normal_force_tangential_impedance_v5_intent_release_strict_metrics",
+        "gpu_qualification": "not_run",
+        "nominal_compensation": "known gravity and native joint viscous damping; actual payload excluded",
+        "socket_geometry": {
+          "profile": "matched_keyway",
+          "clearance_m": 0.0008,
+          "peg_cross_section_m": [
+            0.02,
+            0.012
+          ],
+          "key_x_extent_m": 0.015,
+          "dedicated_keyway": true
+        },
+        "wrench_semantics": "tool_at_tcp_world",
+        "guide_geometry": null,
+        "wrench_limits": {
+          "tangent_N": 12.0,
+          "orientation_Nm": 2.0
+        },
+        "controller_clocks": {
+          "skill_dt": 0.02,
+          "impedance_and_force_feedback_dt": 0.002
+        },
+        "backend": "numpy",
+        "compiled_chunk": false
+      }
+    }
+  },
+  "skill_box_and_rate_limits": {
+    "horizon": 10,
+    "linear_speed": 0.12,
+    "angular_speed": 0.6,
+    "log_stiffness_limit": 1.0,
+    "linear_acceleration": 0.6,
+    "angular_acceleration": 3.0,
+    "log_stiffness_rate": 4.0,
+    "reference_stiffness": [
+      800.0,
+      800.0,
+      800.0,
+      60.0,
+      60.0,
+      60.0
+    ]
+  },
+  "source_sha256": {
+    "genedynamics/envs/domains/manipulation/cross_embodiment/__init__.py": "19cd11e5a5dbef7b9cb3cf0e498238fb8704a30d0fdc1d32f65771ad43c66663",
+    "genedynamics/envs/domains/manipulation/cross_embodiment/backends/__init__.py": "adb5213f0e0fb7d989275edfc8842df135cbf6eeb77a62a5a0c80bd100530a46",
+    "genedynamics/envs/domains/manipulation/cross_embodiment/backends/contact.py": "d591ebc33410aa1020c51e3d60fd031f0a23c56b0aa9e0853e2fbba003f6d73a",
+    "genedynamics/envs/domains/manipulation/cross_embodiment/backends/contact_batch.py": "ec2523d005bf137ab6b771a840f5700dd54964d5a2c7f300c44513cd70e67234",
+    "genedynamics/envs/domains/manipulation/cross_embodiment/backends/contact_query.py": "1c58c825244e52d59236ae9b72854c5a2b074eacd62788b59d32b989ed5e35a7",
+    "genedynamics/envs/domains/manipulation/cross_embodiment/backends/floating_contact.py": "2dec61afded7a498d33f0e3e5be31435c1192177bac41bfb1649803796258a13",
+    "genedynamics/envs/domains/manipulation/cross_embodiment/backends/mujoco.py": "f6ccc8aece0cf10a102c0603e6d26cb8ab046a50f40906e6471c52af9e419a14",
+    "genedynamics/envs/domains/manipulation/cross_embodiment/backends/source_query.py": "c69b3c7e3ff82c5f8ee8210bf65ce83c99d510f233a6a74cc26f67e00d2adefc",
+    "genedynamics/envs/domains/manipulation/cross_embodiment/contact_workcell.py": "9d6680be8bd10126bf26bc560e868d5490315f967ba37660d448690903a0dc4d",
+    "genedynamics/envs/domains/manipulation/cross_embodiment/floating_workcell.py": "d493ad7418d96bf9ddb4cd30aa8cb28026eebfa9de9b566dcfab17e9ac7e343e",
+    "genedynamics/envs/domains/manipulation/cross_embodiment/workcell.py": "c817f762fbb3a1bfd5ccdb96feaf709d46edaa964683c2910f21957cbc1ba561",
+    "genedynamics/experiments/baselines/acp_execution.py": "dd370267020504eadcb3423eb93d55673f4f7fd9f1097032bd0533bf09e1e52e",
+    "genedynamics/experiments/baselines/contact_task.py": "8f55b1384e9a15353f7113e279dbc1cd32e132d84b38962b2a317061a59ecbc6",
+    "genedynamics/experiments/baselines/contracts.py": "06570b0e18b444442b931c4e0eae2bc3110ed9241938c297da0b9178222414ac",
+    "genedynamics/experiments/baselines/evaluation.py": "12cadf8252623dcd340a065091c516f7f80c52e89cadb6dcaa67eef9e1abcf5d",
+    "genedynamics/experiments/baselines/public_features.py": "0b9b48261ec8271a64396da2494f2219abf7757badaffa0294059671d6630dc6",
+    "genedynamics/experiments/baselines/task_specs.py": "a3278383c074b418d98f89f23ee357a5264f27fc23d30a833b38ed84749be387",
+    "genedynamics/learning/cross_embodiment/contact.py": "46c09def4438f117496dad1a3606defacfe5b390ddc31af7707efbf237b34ac2",
+    "genedynamics/learning/cross_embodiment/contracts.py": "cab01ef52c5b3113ec5d2e807ace0951646845c5a8857429c25898625b69366f",
+    "genedynamics/learning/cross_embodiment/core/control_math.py": "aaa3cf68b3d7f16d0ff23ac2b307eab2a8c4d7402f892cf84b5456257ceb41ab",
+    "genedynamics/solvers/single/acp/compliance.py": "b58922c2d2d4eb465b15f68540f7ecf340f6d65355c064d67c118a260369ceee"
+  }
+}

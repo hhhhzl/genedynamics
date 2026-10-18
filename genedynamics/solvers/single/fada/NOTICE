@@ -2,3 +2,9 @@ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 This distribution contains files from the upstream Holosoma project that have
 been modified for this work.
+
+Selected unmodified Planner-IDM trainer/batching methods are also distributed
+in genedynamics/solvers/single/fada/learning/native_training_passes.py. Their pinned
+upstream sources and method hashes are recorded in native_training_manifest.json.
+The portable task adapter, source pools and external normalization are local
+adaptations; native humanoid assets and original paper scores are not reproduced.

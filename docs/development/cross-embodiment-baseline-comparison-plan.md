@@ -1,6 +1,8 @@
 # 四环境强 baseline 比较与论文贡献规划
 
-更新：2026-10-14。本文是下一阶段的实施设计，不包含新增实验结果。
+更新：2026-10-16。跨任务主表的机器合同已冻结在
+`configs/cross_embodiment/four_task_benchmark/protocol/main_table_v1.json`；本文较早的
+按任务候选叙述若与该合同冲突，以机器合同为准。
 用户已明确“dense”指**成熟、完整的强 baseline**，并新增要求：优先最近两年
 顶会论文，最好有 Karen Liu 和 Guanya Shi 的工作。
 先建立竞争方法在四环境中的真实表现，再决定本文方法与理论应解释的增量。
@@ -93,9 +95,13 @@ reweighting-only、arm-only/coupled calibration 是内部消融。它们和成�
 | **T3 KeyedInsertionRecovery** | Play2Perfect 优先资格候选，ACP、FADA/ASAP；SPARR 代码/复现资格通过后加入 B-online | 全分母插入、卡滞恢复、重试、超力、拒绝与 timeout；预训练后常规 RL 或 compliant policy 是否已经解决恢复？ |
 | **T4 MobileKeyedInsertionRecovery** | FADA/ASAP 身体适应；SPI-Active Go2 主动辨识；DIAL-MPC 原生系统/同 WBC 改编分列 | 插入且支撑满足的联合成功、滑移、WBC/身体失效、端到端时延；同控制能力下耦合校准是否有价值？ |
 
-同一方法不强行铺满四任务。分别给任务适配比较、原生完整系统复现与所需
-额外资源；改编只保留一个小模块时不能代表原论文。T4 改变 WBC 的完整系统
-与固定 WBC 的高层方法分别报告；轮式/腿式身体与现有代码资格边界不变。
+最终选入主表的方法必须铺满四任务；未运行不能记为失败、零分或 N/A。
+v1 选定 FADA-task-adapted、ACP-task-adapted、Human2Sim2Robot-source-trajectory、
+DIAL-MPC-task-adapted，并保留 ordinary response MPC、public geometry 与 public
+source prior 三个强公共控制。每行显式报告数据权限，跨权限只解释资源–性能
+前沿，同权限才作算法优劣结论。原生完整系统证据另列身份，改编只保留小模块
+时不能代表原论文。Play2Perfect、XMoP、SPI-Active 与 ASAP 暂不称为本版
+baseline；只有完成保留核心机制的四任务适配后才能进入针对性论文分析。
 
 T1/T3 先建立比较入口；T2/T4 并行完成环境与接口资格。当前草稿/代码中的
 时限、力限与恢复标签冲突先在开发集统一，再冻结正式协议。平面 caster

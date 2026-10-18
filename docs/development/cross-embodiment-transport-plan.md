@@ -48,7 +48,7 @@ P1.5–P1.7 两版开发协议、独立审计与理论修订见
 
 已有主要工件位于 `tmp/cross_embodiment/`（git ignored）：`learned_cpu_v2`、`learned_closed_loop_v4`、`guided_models_cpu_final`、`keyed_models_cpu_final`、`keyed_models_cpu_mobile`、`keyed_models_cpu_floating`，以及对应 dataset / learned-loop / device guard / qualification 目录。具体当前结果和历史失败见 [CPU 验证记录](cross-embodiment-cpu-obstacle-transfer-validation.md)。版本不同的工件保持原样；后续测试不覆盖历史失败。
 
-运行说明、后端能力和全部 CPU 入口见 [README](../../genedynamics/learning/cross_embodiment/README.md)。`qualify_cpu.py` 按模块启动独立进程、顺序释放 MJX 编译缓存内存，保存每阶段日志、JUnit、版本、flags 与实际代码 fingerprint。CPU 验收期间并行编译多个完整 MJX 图曾触发 OOM；重跑采用串行大图编译，不把 OOM 隐藏成通过。
+当前运行入口和职责边界见 [架构重构说明](cross-ebdm-architecture-refactor.md)。paper 命令位于 `scripts/paper/cross_ebdm/`，通过统一 experiment runner 执行；CPU 验收仍串行编译完整 MJX 图，保存日志、JUnit、版本、flags 与实际代码 fingerprint。
 
 JAX 设备路径已经把 source query、prior、transport、控制和 MJX 放在同一个外层 `scan` 中。ObstacleTransfer 和接触短窗均有严格 `jax.transfer_guard("disallow")` 验证；这证明 CPU 设备边界语义，GPU/CUDA/DDP 的设备正确性、容量、吞吐和时延仍独立为 `not_run`。
 
@@ -661,30 +661,19 @@ MobileKeyedInsertionRecovery 以 LaTeX `sec:task4` 为协议源，复用 KeyedIn
 当前已实现布局如下；后续完整 Torch collector/native GPU/runtime bridge 继续沿相同 frontend 增量接入，保持 MGA recipe 独立。
 
 ```text
-genedynamics/learning/cross_embodiment/
-  contracts.py / backend_impl.py / registry.py / cross_embodiment.py
-  source_query.py / contact_query.py / solver.py
-  models.py / learned.py / learning_data.py / transport.py / calibration.py
-  contact.py / contact_data.py / contact_reference.py
-  checkpoint.py / random_streams.py / data.py
-  core/artifacts.py / budget.py / capabilities.py / control_math.py
-  backends/jax/
-    execution.py / contact.py / source_query.py / contact_query.py
-    models.py / response.py / risk.py / transport.py / solver.py / contact_solver.py
-  backends/torch/models.py / transport.py
-  backends/native/ensemble.cpp / models.py
-genedynamics/envs/domains/manipulation/cross_embodiment/
+genedynamics/solvers/single/cross_ebdm/
+  cross_ebdm.py / contact_planner.py
+  backends/jax/ / backends/numpy/
+  learning/                 # Cross-EBDM models, fitting and checkpoints
+genedynamics/envs/domains/manipulation/transfer_workcell/
   workcell.py / contact_workcell.py / floating_workcell.py
-  backends/contact.py / contact_batch.py / contact_query.py / floating_contact.py
-genedynamics/robots/ur5e/profile.py
-scripts/cross_embodiment/
-  collect_obstacle_transfer_data.py / collect_response_excitations.py
-  collect_contact_data.py / train_cpu_models.py / train_contact_models.py
-  train_contact_response.py / cpu_learned_closed_loop.py / cpu_contact_learned_loop.py
-  cpu_obstacle_transfer_smoke.py / cpu_contact_smoke.py
-  cpu_device_pipeline_smoke.py / cpu_contact_device_smoke.py
-  build_native.py / evaluate_response.py / qualify_cpu.py
-test/cross_embodiment/    # actual physics, semantic, budget, gradient/portable replay
+  queries/ / backends/
+genedynamics/tasks/transfer/
+  runtime.py / specs.py / protocol.py / contact.py / behavior.py
+  controllers/cross_ebdm/
+scripts/paper/cross_ebdm/   # thin paper entrypoints
+test/transfer/              # task/environment contracts and physics
+test/transfer_methods/      # method and baseline contracts
 ```
 
 | 里程碑 | 交付 | 出口条件 | 初步投入估计 |

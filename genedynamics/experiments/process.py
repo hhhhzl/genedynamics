@@ -4,7 +4,7 @@ from pathlib import Path
 import signal
 import subprocess
 import time
-from .artifacts import active_policy, atomic_json, ResourceExhausted
+from genedynamics.core.artifacts import active_policy, atomic_json, ResourceExhausted
 
 
 def run_stage(name, command, output, *, env=None, timeout=3600, max_log_bytes=16 * 1024**2):

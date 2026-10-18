@@ -1,0 +1,27 @@
+name: guided_contact_alignment_protocol
+output_dir: results/arm/guided_contact_alignment/_invalid_base
+env_name: guided_contact_alignment
+method: cross_ebdm
+backend: numpy
+device: cpu
+seeds: [4100, 5100, 6100]
+n_steps: 1000
+auto_report: false
+metrics: [transfer_task]
+visualizations: []
+obstacle_config:
+  generator: none
+env_params:
+  robot: xarm7
+  history_len: 4
+  mode: 0
+method_params:
+  mode: 0
+metadata:
+  paper: cross_ebdm
+  benchmark: four_task_transfer
+  protocol: transfer_main_table_v1
+  protocol_status: architecture_refactor_pending
+  formal_experiment: true
+  formal_seeds: false
+  run_class: development

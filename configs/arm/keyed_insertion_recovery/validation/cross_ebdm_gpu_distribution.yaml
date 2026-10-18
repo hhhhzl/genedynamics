@@ -1,8 +1,0 @@
-base: cross_ebdm_gpu_coverage.yaml
-name: cross_ebdm_gpu_distribution
-output_dir: results/arm/keyed_insertion_recovery/validation/cross_ebdm_gpu_distribution
-method_params:
-  stage: '1.7'
-  feasibility_root: results/arm/keyed_insertion_recovery/validation/cross_ebdm_gpu_coverage
-metadata:
-  protocol: finite_gpu_search_cpu_law_confirmation_v1

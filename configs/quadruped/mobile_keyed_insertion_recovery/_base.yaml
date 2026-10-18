@@ -1,0 +1,27 @@
+name: mobile_keyed_insertion_recovery_protocol
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/_invalid_base
+env_name: mobile_keyed_insertion_recovery
+method: cross_ebdm
+backend: numpy
+device: cpu
+seeds: [4100, 5100, 6100]
+n_steps: 750
+auto_report: false
+metrics: [transfer_task]
+visualizations: []
+obstacle_config:
+  generator: none
+env_params:
+  robot: go2_z1
+  history_len: 4
+  mode: 0
+method_params:
+  mode: 0
+metadata:
+  paper: cross_ebdm
+  benchmark: four_task_transfer
+  protocol: transfer_main_table_v1
+  protocol_status: architecture_refactor_pending
+  formal_experiment: true
+  formal_seeds: false
+  run_class: development

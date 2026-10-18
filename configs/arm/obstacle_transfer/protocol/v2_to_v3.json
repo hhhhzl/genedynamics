@@ -1,0 +1,19 @@
+{
+  "old_contract_sha256": "7c0efc2bbef7fd0943ae7f1917b4d51ffcf2d42eaf10a4e88ce4f16a670158f5",
+  "new_contract_sha256": "e6dc4d5f2c59870157b40d72cb6ee66040ea05b97dd952d11b75e18e05e40b6b",
+  "scene_binding_sha256": "0913ba095f7bc21fdeedd84bd1c5fbfbf67f7c3a822469a47beb9f64fa18b9c3",
+  "unchanged_fields": [
+    "task",
+    "alias",
+    "physical_configs",
+    "public_schema",
+    "excluded_policy_fields",
+    "shared_memory",
+    "actions",
+    "evaluation",
+    "cells",
+    "admission"
+  ],
+  "superseded_reason": "v2 incorrectly called zero target access A-fixed. v3 preserves the established short-probe A-fixed permission and fixes numerical development budgets. No task thresholds, physics or public-memory math changed.",
+  "prior_evidence_scope": "v2 source/physical reachability evidence remains development evidence, not retroactively a v3 permission-matched comparison."
+}

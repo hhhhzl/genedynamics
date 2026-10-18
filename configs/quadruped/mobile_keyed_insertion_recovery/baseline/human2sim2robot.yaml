@@ -1,0 +1,4 @@
+base: ../_base.yaml
+name: mobile_keyed_insertion_recovery_human2sim2robot
+method: human2sim2robot
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/baseline/human2sim2robot

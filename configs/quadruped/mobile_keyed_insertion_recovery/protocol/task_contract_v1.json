@@ -1,0 +1,235 @@
+{
+  "version": "cross-embodiment-public-task-contract-v1",
+  "task": "mobile_keyed_insertion_recovery",
+  "alias": "T4",
+  "source": {
+    "task": "keyed_insertion_recovery",
+    "robot": "panda",
+    "config": {
+      "environment": "keyed_insertion_recovery",
+      "robot": "panda",
+      "physics_dt": 0.002,
+      "control_dt": 0.02,
+      "timeout_seconds": 15.0,
+      "force_limit": 25.0,
+      "desired_force": 5.0,
+      "force_rate": 10.0,
+      "contact_loss_seconds": 0.3,
+      "force_integral_limit": 10.0,
+      "contact_threshold": 0.3,
+      "reset_joint_noise": 0.0,
+      "reset_task_noise": 0.0005,
+      "insertion_depth": 0.016,
+      "position_tolerance": 0.002,
+      "orientation_tolerance": 0.03490658503988659,
+      "orientation_wrench_limit": 4.0,
+      "lateral_force_limit": 10.0,
+      "approach_speed": 0.015,
+      "approach_integral_limit": 0.03,
+      "mobile": false,
+      "socket_profile": "matched_keyway",
+      "mating_clearance": 0.0008,
+      "wrench_semantics": "tool_at_tcp_world",
+      "guide_profile": "legacy",
+      "force_feedback_gain": 0.05,
+      "force_integral_gain": 0.05,
+      "tangential_wrench_limit": 12.0
+    }
+  },
+  "target": {
+    "task": "mobile_keyed_insertion_recovery",
+    "robot": "go2_z1",
+    "config": {
+      "environment": "mobile_keyed_insertion_recovery",
+      "robot": "go2_z1",
+      "physics_dt": 0.002,
+      "control_dt": 0.02,
+      "timeout_seconds": 15.0,
+      "force_limit": 25.0,
+      "desired_force": 5.0,
+      "force_rate": 10.0,
+      "contact_loss_seconds": 0.3,
+      "force_integral_limit": 10.0,
+      "contact_threshold": 0.3,
+      "reset_joint_noise": 0.0,
+      "reset_task_noise": 0.0,
+      "insertion_depth": 0.016,
+      "position_tolerance": 0.002,
+      "orientation_tolerance": 0.03490658503988659,
+      "orientation_wrench_limit": 4.0,
+      "lateral_force_limit": 10.0,
+      "approach_speed": 0.015,
+      "approach_integral_limit": 0.03,
+      "mobile": true,
+      "socket_profile": "matched_keyway",
+      "mating_clearance": 0.0008,
+      "wrench_semantics": "tool_at_tcp_world",
+      "guide_profile": "legacy",
+      "force_feedback_gain": 0.05,
+      "force_integral_gain": 0.05,
+      "tangential_wrench_limit": 12.0
+    }
+  },
+  "initial": "jammed",
+  "public_schema": {
+    "joint_position": "encoder q, rad (mobile base translation m if present)",
+    "joint_velocity": "encoder qdot, rad/s (mobile base m/s if present)",
+    "tcp_position": "world xyz, m",
+    "tcp_rotation": "world-from-TCP 3x3 proper rotation",
+    "tcp_twist": "world spatial velocity, m/s then rad/s",
+    "measured_wrench": "on tool at TCP, world N then Nm",
+    "goal_position": "known task goal, world m",
+    "goal_rotation": "known task goal, world-from-TCP",
+    "previous_action": "previous issued shared skill after public rate limit, BEFORE hidden actuator delay",
+    "previous_request": "previous policy-issued shared skill",
+    "reference_position": "public controller-issued position reference, m",
+    "reference_rotation": "public controller-issued rotation reference",
+    "elapsed_seconds": "time since task reset; preparation charged separately",
+    "body_position": "measured world xyz, zero for a fixed base",
+    "body_twist": "measured world linear/angular body velocity",
+    "controller_feedback": "WBC residual and base tilt; zero for fixed base"
+  },
+  "excluded_policy_fields": [
+    "physics",
+    "mechanism",
+    "gain",
+    "delay_steps",
+    "payload_mass",
+    "friction",
+    "command_buffer",
+    "plant_applied_command",
+    "plant_delayed_reference",
+    "qacc_warmstart",
+    "internal_contact_whitelist",
+    "axial_support_truth"
+  ],
+  "shared_memory": {
+    "version": "public-controller-memory-four-task-v1",
+    "dim": 53,
+    "clock": "every20ms observation; phase and source draw every10ticks",
+    "event": "T3 withdrawal/alignment/insertion template; measured TCP pose/wrench and known keyway"
+  },
+  "mode_semantics": [
+    "straight withdrawal recovery",
+    "lateral withdrawal recovery"
+  ],
+  "actions": {
+    "shared": "bounded13D velocity/angular/log_stiffness/normal_force",
+    "acp": "native19D REF9/VT9/positive scalar stiffness; original anisotropic SPD controller",
+    "force_off": "source gap half-minimum-positive threshold is available to every method; continuous positive forces retained",
+    "chunks": "native method horizon; causal memory observes every executed control tick"
+  },
+  "permissions": {
+    "A_fixed": "same charged short probe buffer; no complete target task training, target reward or successful target demonstrations; updates query only calibrated twin",
+    "A_active": "method chooses short probes under the same count/duration/validation budget; report separately from shared-buffer ablations",
+    "B_log": "same predeclared target logs and total executed transitions for every method; no target reward/model selection",
+    "B_online": "same charged target task duration with reward; no extra expert demonstrations",
+    "C_supervised": "same predeclared charged target calibration and validation episodes per method; no final-test selection"
+  },
+  "development_budgets": {
+    "A_fixed": {
+      "probe_counts": [
+        0,
+        5,
+        10,
+        30
+      ],
+      "max_probe_seconds": 2.0,
+      "max_control_steps_per_probe": 100,
+      "fit_validation_split": {
+        "0": [
+          0,
+          0
+        ],
+        "5": [
+          3,
+          2
+        ],
+        "10": [
+          6,
+          4
+        ],
+        "30": [
+          18,
+          12
+        ]
+      },
+      "held_out_physical_validation": "included in the stated probe count; no free replacements or target full-task tuning"
+    },
+    "B_log": {
+      "action_seconds": [
+        30,
+        60,
+        120
+      ],
+      "reward": false,
+      "shared_buffer_control": true
+    },
+    "B_online": {
+      "action_seconds": [
+        30,
+        60,
+        120
+      ],
+      "reward": true,
+      "expert_demonstrations": false
+    },
+    "C_supervised": {
+      "total_requested_target_demonstrations": [
+        2,
+        4,
+        8
+      ],
+      "balanced_modes": true,
+      "validation": "one complete demonstration per mode reserved within each total;2-demo point is validation-only, no supervised fit"
+    },
+    "accounting": "reset/preparation, failures, interrupted transitions, all real validation and exact replay separately reported and never rolled back",
+    "test": "future sealed final-test cohort; these P3 development scenes/seeds never become independent final test",
+    "source_training": "all pretraining, checkpoints, source physics and tuning attempts disclosed; source development is not target-data budget"
+  },
+  "inherited_rules_from": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/public_v3.json",
+    "canonical_sha256": "35e168ac5ca149bcbe55ed4418a3c8e5cab703ad4ff40319efb00ea299bb92d2"
+  },
+  "evaluation": {
+    "cost": "0 iff independent physical success and requested-mode match,1 otherwise; all requests retained",
+    "deadline_seconds": 15.0,
+    "position_tolerance_m": 0.002,
+    "orientation_tolerance_rad": 0.03490658503988659,
+    "measured_force_hold_N": [
+      2.5,
+      7.5
+    ],
+    "hold_seconds": 0.3,
+    "total_substep_force_limit_N": 25.0,
+    "lateral_substep_force_limit_N": 10.0,
+    "guide_scope": null,
+    "body": {
+      "height_min_m": 0.15,
+      "tilt_max_rad": 0.5,
+      "wbc_residual_max": 0.01,
+      "support_min_after_51_ticks": 2,
+      "WBC": "same host OSQP stance WBC for all methods; no navigation/gait claim"
+    },
+    "evaluator": "genedynamics.tasks.transfer.evaluation.evaluate_episode; unchanged predicates, physical truth used only by evaluator"
+  },
+  "development_cells": [
+    {
+      "robot": "go2_z1",
+      "servo_gain": 1.0,
+      "delay_steps": 0,
+      "payload_mass": 0.5
+    },
+    {
+      "robot": "go2_z1",
+      "servo_gain": 0.65,
+      "delay_steps": 3,
+      "payload_mass": 0.8
+    }
+  ],
+  "reset_scope": "Go2 task-space noise is0; distinct seeds at same mechanism are not distinct physical initial conditions. Reset diversity and body/motor cells require separate qualification.",
+  "status": "contract_frozen_not_scene_or_method_admission",
+  "GPU_physics_qualified": false,
+  "final_test": false,
+  "real_robot_evidence": false
+}

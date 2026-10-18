@@ -1,0 +1,120 @@
+{
+  "version": "T4-fixed-original-reference-cell-family-v1",
+  "base_contract_sha256": "d82d77ea62b6db69d6651d62bdc8f387edba82e5654d35016e59853d3f776eed",
+  "reset_binding": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/public_folded_reset_v1.json",
+    "sha256": "0b4fb07e30a174fa8e526a92434a4314bf30e8130477250dbd75d6367eb9db41"
+  },
+  "cells": [
+    {
+      "id": "arm065_delay0_mass0p5",
+      "mechanism": {
+        "servo_gain": 0.65,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "body_servo_gain": 1.0
+      },
+      "seeds": [
+        141000,
+        141001,
+        141002,
+        141003
+      ]
+    },
+    {
+      "id": "arm065_delay0_mass0p8",
+      "mechanism": {
+        "servo_gain": 0.65,
+        "delay_steps": 0,
+        "payload_mass": 0.8,
+        "body_servo_gain": 1.0
+      },
+      "seeds": [
+        141100,
+        141101,
+        141102,
+        141103
+      ]
+    },
+    {
+      "id": "arm065_delay1_mass0p5",
+      "mechanism": {
+        "servo_gain": 0.65,
+        "delay_steps": 1,
+        "payload_mass": 0.5,
+        "body_servo_gain": 1.0
+      },
+      "seeds": [
+        141200,
+        141201,
+        141202,
+        141203
+      ]
+    },
+    {
+      "id": "arm065_delay1_mass0p8",
+      "mechanism": {
+        "servo_gain": 0.65,
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "body_servo_gain": 1.0
+      },
+      "seeds": [
+        141300,
+        141301,
+        141302,
+        141303
+      ]
+    },
+    {
+      "id": "arm065_delay3_mass0p5",
+      "mechanism": {
+        "servo_gain": 0.65,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "body_servo_gain": 1.0
+      },
+      "seeds": [
+        141400,
+        141401,
+        141402,
+        141403
+      ]
+    },
+    {
+      "id": "arm065_delay3_mass0p8",
+      "mechanism": {
+        "servo_gain": 0.65,
+        "delay_steps": 3,
+        "payload_mass": 0.8,
+        "body_servo_gain": 1.0
+      },
+      "seeds": [
+        124010,
+        124011,
+        124012,
+        124013
+      ],
+      "retained_original_aliases": [
+        {
+          "path": "results/_development/p4_completion_20261015/results/quadruped/mobile_keyed_insertion_recovery/qualification/p4_public_independent_support_scene_v1/level_source_nominal_conditional_arm_cell1/seed_124000/target_scene/seed_124010/report.json",
+          "sha256": "17bd4eb9cac9dbb535d89ad4ca3c4e2caf69e0e603cfc44aa1461230dc594f95"
+        },
+        {
+          "path": "results/_development/p4_completion_20261015/results/quadruped/mobile_keyed_insertion_recovery/qualification/p4_public_independent_support_scene_v1/level_source_nominal_conditional_arm_cell1/seed_124000/target_scene/seed_124011/report.json",
+          "sha256": "313284cfeaee9958fb6a0d9f720fcff8f2253dda37521e9c3ee7163375304454"
+        },
+        {
+          "path": "results/_development/p4_completion_20261015/results/quadruped/mobile_keyed_insertion_recovery/qualification/p4_public_independent_support_scene_v1/level_source_nominal_conditional_arm_cell1/seed_124000/target_scene/seed_124012/report.json",
+          "sha256": "30a5e1255b0c54253d87fd050f1a5e3870dbb6094d80d9c81202851fee7ca3a0"
+        },
+        {
+          "path": "results/_development/p4_completion_20261015/results/quadruped/mobile_keyed_insertion_recovery/qualification/p4_public_independent_support_scene_v1/level_source_nominal_conditional_arm_cell1/seed_124000/target_scene/seed_124013/report.json",
+          "sha256": "d9767a45b52e1b08131302ff3efa2fd4e8f20f7d0124225c3563604b781a296a"
+        }
+      ]
+    }
+  ],
+  "primary_cell": "arm065_delay3_mass0p5",
+  "scope": "Explicitdifferentindependentlegsupportfamily, originalmode-preservingqualifiedpublicreference. Arm.65/body1, delays0/1/3 xpayload.5/.8; allsixreported. Existing.8delay3 impossiblecoldprefix4failures retainedaliases,not rerun/freeindependents. Primary.5delay3 fixedbeforeoutcomes, nooursperformance-basedcellselection. Nochangedforce/mode/bodythreshold/gait/WBC/resetconditions. Onephysicalinitialpercell, bothmodesfunctionalqualificationonly,notstatisticalresetrobustness. Not repair/replacement ofoldglobal-deratedcell; alloldnegativecostancestryretained."
+}

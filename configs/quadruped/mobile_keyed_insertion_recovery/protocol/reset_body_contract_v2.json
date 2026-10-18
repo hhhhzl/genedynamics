@@ -1,0 +1,45 @@
+{
+  "version": "cross-embodiment-t4-reset-body-contract-v2",
+  "extends": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/task_contract_v1.json",
+    "sha256": "d82d77ea62b6db69d6651d62bdc8f387edba82e5654d35016e59853d3f776eed"
+  },
+  "reset_binding": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/public_folded_reset_v1.json",
+    "sha256": "0b4fb07e30a174fa8e526a92434a4314bf30e8130477250dbd75d6367eb9db41"
+  },
+  "physical_initial_state_protocol": {
+    "config_override": {
+      "reset_joint_noise": 0.002
+    },
+    "rng": "existing SeedSequence([request.seed, sample_id]) Gaussian arm-joint perturbation before charged 50-step stance preparation",
+    "identity": "SHA256 of post-preparation, post-jam-placement integration state plus foot anchors, body reference, WBC carry, command buffer and controller carry",
+    "minimum_unique_states_per_body_mechanism_cell": 10,
+    "policy_seed_is_not_an_initial_state": true,
+    "failed_preparations_retained": true,
+    "outcome_based_replacement": false
+  },
+  "body_support_cells": [
+    {
+      "id": "support_nominal",
+      "body_servo_gain": 1.0,
+      "support_controller": "unchanged host OSQP stance WBC"
+    },
+    {
+      "id": "support_derated_0p90",
+      "body_servo_gain": 0.9,
+      "support_controller": "unchanged host OSQP stance WBC"
+    }
+  ],
+  "body_primary_predicates": {
+    "height_min_m": 0.15,
+    "tilt_max_rad": 0.5,
+    "wbc_residual_max": 0.01,
+    "support_min_after_51_ticks": 2
+  },
+  "admission": "Both body/support cells require source or known-nominal scene qualification before any learned method is scored. Failure is retained and the protocol version is not silently repaired.",
+  "scope": "Arm-only task command remains shared. The two cells vary physical support authority while preserving the same WBC, feet, force limits, reset family and task criteria.",
+  "status": "physical_cells_require_qualification",
+  "final_test": false,
+  "real_robot_evidence": false
+}
