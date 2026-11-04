@@ -1,20 +1,19 @@
-"""
-Runtime backends for computational operations.
+"""Public exports loaded on demand so optional backends remain optional."""
 
-This module provides concrete implementations of the Backend protocol
-for different computational frameworks (JAX, NumPy, PyTorch, etc.)
-with support for device selection (CPU, GPU, WebGPU).
-"""
+from importlib import import_module
 
-from genedynamics.core.backends.runtime.jax_backend import JaxBackend
-from genedynamics.core.backends.runtime.numpy_backend import NumpyBackend
-from genedynamics.core.backends.runtime.torch_backend import TorchBackend
-from genedynamics.core.backends.runtime.manager import RuntimeBackendManager
+__all__ = ['JaxBackend', 'NumpyBackend', 'TorchBackend', 'RuntimeBackendManager']
 
-__all__ = [
-    "JaxBackend",
-    "NumpyBackend",
-    "TorchBackend",
-    "RuntimeBackendManager",
-]
+_EXPORTS = {'JaxBackend': ('genedynamics.core.backends.runtime.jax_backend', 'JaxBackend'), 'NumpyBackend': ('genedynamics.core.backends.runtime.numpy_backend', 'NumpyBackend'), 'TorchBackend': ('genedynamics.core.backends.runtime.torch_backend', 'TorchBackend'), 'RuntimeBackendManager': ('genedynamics.core.backends.runtime.manager', 'RuntimeBackendManager')}
 
+def __getattr__(name):
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module, symbol = _EXPORTS[name]
+    value = getattr(import_module(module), symbol)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_EXPORTS))

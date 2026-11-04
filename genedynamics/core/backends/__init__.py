@@ -1,85 +1,19 @@
-"""
-Backend extensions for physics engines and rendering.
+"""Public exports loaded on demand so optional backends remain optional."""
 
-This module provides protocols for:
-- Backend: Computational backends (JAX, PyTorch, NumPy) - in base.py
-- PhysicsBackend: Physical simulation engines (MuJoCo, Isaac Sim, etc.)
-- RenderBackend: Rendering systems (MuJoCo, Isaac Sim, Matplotlib, etc.)
+from importlib import import_module
 
-The computational Backend (in base.py) handles tensor operations, while
-physics and rendering backends handle environment-specific operations.
-"""
+__all__ = ['Backend', 'JaxBackend', 'NumpyBackend', 'TorchBackend', 'get_backend', 'RuntimeBackendManager', 'PhysicsBackend', 'RenderBackend', 'MatplotlibRenderer', 'GymnasiumRenderer', 'NullRenderer']
 
-# Computational backend (base abstraction)
-from genedynamics.core.backends.base import (
-    Backend,
-    get_backend,
-)
+_EXPORTS = {'Backend': ('genedynamics.core.backends.base', 'Backend'), 'get_backend': ('genedynamics.core.backends.base', 'get_backend'), 'JaxBackend': ('genedynamics.core.backends.runtime', 'JaxBackend'), 'NumpyBackend': ('genedynamics.core.backends.runtime', 'NumpyBackend'), 'TorchBackend': ('genedynamics.core.backends.runtime', 'TorchBackend'), 'RuntimeBackendManager': ('genedynamics.core.backends.runtime', 'RuntimeBackendManager'), 'PhysicsBackend': ('genedynamics.core.backends.physics', 'PhysicsBackend'), 'RenderBackend': ('genedynamics.core.backends.render', 'RenderBackend'), 'MatplotlibRenderer': ('genedynamics.core.backends.render_impl', 'MatplotlibRenderer'), 'GymnasiumRenderer': ('genedynamics.core.backends.render_impl', 'GymnasiumRenderer'), 'NullRenderer': ('genedynamics.core.backends.render_impl', 'NullRenderer'), 'BraxRenderer': ('genedynamics.core.backends.render_impl', 'BraxRenderer'), 'MujocoRenderer': ('genedynamics.core.backends.render_impl', 'MujocoRenderer'), 'IsaacSimRenderer': ('genedynamics.core.backends.render_impl', 'IsaacSimRenderer'), 'MujocoPhysicsBackend': ('genedynamics.core.backends.adapters', 'MujocoPhysicsBackend'), 'IsaacSimBackend': ('genedynamics.core.backends.adapters', 'IsaacSimBackend')}
 
-# Runtime backends (concrete implementations)
-from genedynamics.core.backends.runtime import (
-    JaxBackend,
-    NumpyBackend,
-    TorchBackend,
-    RuntimeBackendManager,
-)
+def __getattr__(name):
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module, symbol = _EXPORTS[name]
+    value = getattr(import_module(module), symbol)
+    globals()[name] = value
+    return value
 
-# Physics and rendering backends
-from genedynamics.core.backends.physics import PhysicsBackend
-from genedynamics.core.backends.render import RenderBackend
 
-# Import concrete implementations
-from genedynamics.core.backends.render_impl import (
-    MatplotlibRenderer,
-    GymnasiumRenderer,
-    NullRenderer,
-)
-
-# Base __all__ with required exports
-__all__ = [
-    # Computational backends
-    "Backend",
-    "JaxBackend",
-    "NumpyBackend",
-    "TorchBackend",
-    "get_backend",
-    "RuntimeBackendManager",
-    # Physics and rendering
-    "PhysicsBackend",
-    "RenderBackend",
-    "MatplotlibRenderer",
-    "GymnasiumRenderer",
-    "NullRenderer",
-]
-
-# Optional renderers (may not be available)
-try:
-    from genedynamics.core.backends.render_impl import BraxRenderer
-    __all__.append("BraxRenderer")
-except ImportError:
-    pass
-
-try:
-    from genedynamics.core.backends.render_impl import MujocoRenderer
-    __all__.append("MujocoRenderer")
-except (ImportError, AttributeError):
-    pass
-
-try:
-    from genedynamics.core.backends.render_impl import IsaacSimRenderer
-    __all__.append("IsaacSimRenderer")
-except ImportError:
-    pass
-
-# Import physics backend adapters (optional)
-try:
-    from genedynamics.core.backends.adapters import MujocoPhysicsBackend
-    __all__.append("MujocoPhysicsBackend")
-except (ImportError, AttributeError):
-    pass
-
-try:
-    from genedynamics.core.backends.adapters import IsaacSimBackend
-    __all__.append("IsaacSimBackend")
-except ImportError:
-    pass
+def __dir__():
+    return sorted(set(globals()) | set(_EXPORTS))

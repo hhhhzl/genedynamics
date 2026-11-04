@@ -1,21 +1,13 @@
-"""
-Single solver implementations.
+"""Single-agent solvers; optional numerical libraries load only when selected."""
+from importlib import import_module
 
-This package contains individual solver implementations organized by solver type.
-"""
+__all__ = ['MBDSolver', 'EBMBDSolver', 'MDOCSolver', 'CFSMBDSolver', 'TwoGOSolver']
+_EXPORTS = {'MBDSolver': ('genedynamics.solvers.single.mbd.mbd', 'MBDSolver'), 'EBMBDSolver': ('genedynamics.solvers.single.ebmbd.ebmbd', 'EBMBDSolver'), 'MDOCSolver': ('genedynamics.solvers.single.mdoc.mdoc', 'MDOCSolver'), 'CFSMBDSolver': ('genedynamics.solvers.single.cfsmbd.cfsmbd', 'CFSMBDSolver'), 'TwoGOSolver': ('genedynamics.solvers.single.twogo.twogo', 'TwoGOSolver')}
 
-from genedynamics.solvers.single.mbd.mbd import MBDSolver
-from genedynamics.solvers.single.ebmbd.ebmbd import EBMBDSolver
-from genedynamics.solvers.single.mdoc.mdoc import MDOCSolver
-from genedynamics.solvers.single.cfsmbd.cfsmbd import CFSMBDSolver
-from genedynamics.solvers.single.twogo.twogo import TwoGOSolver
-
-__all__ = [
-    "MBDSolver",
-    "EBMBDSolver",
-    "MDOCSolver",
-    "CFSMBDSolver",
-    "TwoGOSolver",
-]
-
-
+def __getattr__(name):
+    if name not in _EXPORTS:
+        raise AttributeError(name)
+    module, symbol = _EXPORTS[name]
+    value = getattr(import_module(module), symbol)
+    globals()[name] = value
+    return value
