@@ -1,0 +1,67 @@
+{
+  "version": "human2sim2robot-learning-chain-audit-v1",
+  "task": "T2",
+  "body": "xarm7",
+  "mode": 0,
+  "seed": 175000,
+  "demonstration": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/qualification/p4_source_bank/level_source/seed_35000/collection/seed_35002/episode.npz",
+    "sha256": "68229446d069aa082f67c6f25a975a4a239a8b701184ddfd0c26fe1e2ce4e52a"
+  },
+  "historical_run": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/validation/p4_h2s2r_public_nominal_v1/level_native4096_mode0/seed_175000",
+    "report_sha256": "b1d713e059e735423270de8001614bab1a1e1d26aec9190bf7c194e58e26e3c8",
+    "learning_curve_sha256": "5d645cbc9281f7d7ce485208045f298ccd64a9879edceff19ff9eb736fe3c595",
+    "monitor_curve_sha256": "41a502d11a8e515329b4e72fa87ca2992efc50ba32b099ae9d4efab42ad46324"
+  },
+  "audit": {
+    "reset_samples": 8,
+    "neutral_rollout_steps": 64,
+    "reference_stop_error_m": 0.2,
+    "action_saturation_threshold": 0.98
+  },
+  "pilot": {
+    "status": "planned_not_started",
+    "launch_order": 3,
+    "physical_gpu": "GPU1",
+    "expected_physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "cuda_visible_devices": "1",
+    "process_device": "cuda:0",
+    "num_actors": 64,
+    "horizon_steps": 16,
+    "epochs": 1024,
+    "training_transitions": 1048576,
+    "monitor_epochs": [
+      64,
+      128,
+      256,
+      512,
+      1024
+    ],
+    "monitor_seeds": [
+      275010,
+      275011,
+      275012,
+      275013,
+      275014,
+      275015,
+      275016,
+      275017
+    ],
+    "checkpoint_selection": [
+      "success_rate",
+      "constraint_violation_rate",
+      "reference_completion",
+      "terminal_tracking_error",
+      "action_saturation",
+      "earliest_tie"
+    ],
+    "maximum_gpu_memory_gib": 6,
+    "maximum_wall_seconds": 18000,
+    "target_calls_during_training": 0,
+    "admission": "launch after the T1 and T3 routes; one-million-transition T2 learning sanity; retain every checkpoint and failure; require continuous nominal guide-contact progress without a constraint violation before target pilot"
+  },
+  "pilot_output": "results/arm/guided_contact_alignment/baseline/human2sim2robot/training/robot_source_sanity_1m/seed_275000",
+  "output": "results/arm/guided_contact_alignment/baseline/human2sim2robot/diagnostics/learning_chain_cpu_sanity_1m",
+  "scope": "CPU audit of the task-adapted robot-source trajectory route; not native human-video reproduction and not paper performance evidence"
+}

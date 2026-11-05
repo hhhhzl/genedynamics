@@ -80,13 +80,16 @@ class StateHistoryEncoder(nn.Module):
         return self.fusion(torch.cat(values,dim=-1))
 
 
-def model_configuration(history_len=8,horizon=16,seed=18420,*,shared_context=False):
+def model_configuration(
+    history_len=8, horizon=16, seed=18420, *, shared_context=False,
+    action_down_sample_steps=1,
+):
     from omegaconf import OmegaConf
     shapes={"tcp_relative_pose":9,"wrench_tool":6,"twist_tool":6,"goal_relative_pose":9,"elapsed_seconds":1}
     if shared_context: shapes["controller_context"] = 53
     meta={"action":{"shape":[19]},"obs":{key:{"shape":[size],"type":"low_dim"} for key,size in shapes.items()},
           "sample":{"obs":{"sparse":{key:{"horizon":history_len if key in {"tcp_relative_pose","wrench_tool","twist_tool"} else 1,"down_sample_steps":1} for key in shapes}},
-                    "action":{"sparse":{"horizon":horizon,"down_sample_steps":1}}}}
+                    "action":{"sparse":{"horizon":horizon,"down_sample_steps":int(action_down_sample_steps)}}}}
     cfg=OmegaConf.create({"optimizer":{"lr":3e-4,"betas":[.95,.999],"eps":1e-8,"weight_decay":1e-6},
                          "training":{"seed":seed,"gradient_accumulate_every":1,"use_ema":True,"lr_scheduler":"cosine","lr_warmup_steps":100},
                          "policy":{"obs_encoder":{"reduce_pretrained_lr":False}},
@@ -133,8 +136,14 @@ def build_policy(meta,history_len,*,down_dims=(256,512,1024),action_chart="nativ
 
 
 class SourceDemonstrations:
-    def __init__(self,paths,*,history_len=8,horizon=16,shared_context=False,action_chart="native19"):
+    def __init__(
+        self, paths, *, history_len=8, horizon=16, shared_context=False,
+        action_chart="native19", action_down_sample_steps=1,
+    ):
         self.history_len,self.horizon=history_len,horizon
+        self.action_down_sample_steps = int(action_down_sample_steps)
+        if self.action_down_sample_steps < 1:
+            raise ValueError("positive sparse action downsampling required")
         observations,actions=[],[]
         self.receipts=[]
         for path in map(Path,paths):
@@ -170,13 +179,14 @@ class SourceDemonstrations:
             if recorded_acp:
                 virtual=recorded_virtual
                 stiffness=recorded_stiffness
-            for t in range(len(reference)-horizon):
+            action_span = (horizon - 1) * self.action_down_sample_steps
+            for t in range(len(reference)-action_span):
                 history=[{key:public[key][index:index+1] for key in PUBLIC_FIELDS}
                          for index in range(max(0,t-history_len+1),t+1)]
                 observations.append({key:value[0] for key,value in history_features(history,history_len,
                     controller_context=contexts[t:t+1] if shared_context else None).items()})
                 base=spatial.SE3_inv(tool[t])
-                indices=np.arange(t,t+horizon)
+                indices=t + np.arange(horizon) * self.action_down_sample_steps
                 actions.append(np.concatenate([spatial.SE3_to_pose9(base@reference[indices]),
                     spatial.SE3_to_pose9(base@virtual[indices]),stiffness[indices,None]],axis=-1).astype(np.float32))
             self.receipts.append({"path":str(path),"sha256":digest,"public_observations":len(tool),
@@ -221,30 +231,68 @@ class SourceDemonstrations:
         return normalizer
 
 
-def sampling_profile(policy,dataset,indices=(0,1,30,90,180,250,268,300,500)):
+def _distribution(values):
+    values=np.asarray(values,dtype=np.float64)
+    if not values.size or not np.isfinite(values).all():
+        raise ValueError("ACP reconstruction metrics require finite nonempty values")
+    return {"mean":float(values.mean()),"median":float(np.median(values)),
+            "p90":float(np.percentile(values,90)),"maximum":float(values.max())}
+
+
+def sampling_profile(policy,dataset,indices=(0,1,30,90,180,250,268,300,500),*,seed_base=18499):
+    """Measure sampled native19 commands against held-out native19 labels.
+
+    ``ResponseChartACPPolicy.predict_action`` already inverts the training chart.
+    Comparing that prediction with ``dataset.actions`` when the dataset uses
+    response19 mixes units.  The physical profile therefore always uses the
+    immutable native labels retained by both ACP dataset implementations.
+    """
     from scipy.spatial.transform import Rotation
     device=next(policy.parameters()).device
     if device.type=="cuda":torch.cuda.reset_peak_memory_stats(device)
-    rows=[]
+    if not hasattr(dataset,"native_actions"):
+        raise ValueError("ACP physical reconstruction requires retained native actions")
+    rows=[];aggregate={key:[] for key in (
+        "reference_translation_error_m","virtual_translation_error_m",
+        "reference_rotation_error_rad","virtual_rotation_error_rad",
+        "stiffness_absolute_error_N_per_m",
+    )}
     policy.eval()
     for index in indices:
         if index>=len(dataset):continue
-        torch.manual_seed(18499+index)
+        torch.manual_seed(int(seed_base)+int(index))
+        if device.type=="cuda":torch.cuda.manual_seed_all(int(seed_base)+int(index))
         if device.type=="cuda":torch.cuda.synchronize(device)
         started=time.perf_counter()
+        batch=dataset.batch([index])["obs"]
+        batch={group:{key:value.to(device) for key,value in fields.items()}
+               for group,fields in batch.items()}
         with torch.inference_mode():
-            predicted=policy.predict_action(dataset.batch([index])["obs"])["sparse"][0].cpu().numpy()
+            predicted=policy.predict_action(batch)["sparse"][0].cpu().numpy()
         if device.type=="cuda":torch.cuda.synchronize(device)
-        expected=dataset.actions[index].numpy()
-        row={"window":index,"sampling_seconds":time.perf_counter()-started,
-             "reference_translation_error_m":float(np.linalg.norm(predicted[0,:3]-expected[0,:3])),
-             "virtual_translation_error_m":float(np.linalg.norm(predicted[0,9:12]-expected[0,9:12]))}
+        expected=dataset.native_actions[index].numpy()
+        if predicted.shape!=expected.shape or predicted.ndim!=2 or predicted.shape[-1]!=19:
+            raise ValueError("ACP sampled command differs from the native [H,19] chart")
+        metrics={
+            "reference_translation_error_m":np.linalg.norm(predicted[:,:3]-expected[:,:3],axis=-1),
+            "virtual_translation_error_m":np.linalg.norm(predicted[:,9:12]-expected[:,9:12],axis=-1),
+            "stiffness_absolute_error_N_per_m":np.abs(predicted[:,18]-expected[:,18]),
+        }
         for name,offset in [("reference",0),("virtual",9)]:
-            a=spatial.pose9_to_SE3(predicted[0,offset:offset+9])[:3,:3]
-            b=spatial.pose9_to_SE3(expected[0,offset:offset+9])[:3,:3]
-            row[name+"_rotation_error_rad"]=float(Rotation.from_matrix(a.T@b).magnitude())
+            a=spatial.pose9_to_SE3(predicted[:,offset:offset+9])[:,:3,:3]
+            b=spatial.pose9_to_SE3(expected[:,offset:offset+9])[:,:3,:3]
+            metrics[name+"_rotation_error_rad"]=Rotation.from_matrix(
+                np.swapaxes(a,-1,-2)@b
+            ).magnitude()
+        for key,value in metrics.items():aggregate[key].extend(np.asarray(value).tolist())
+        row={"window":int(index),"sampling_seed":int(seed_base)+int(index),
+             "sampling_seconds":time.perf_counter()-started,"horizon":len(expected),
+             **{key:_distribution(value) for key,value in metrics.items()}}
         rows.append(row)
-    return {"source_windows":rows,"device":str(device),
+    if not rows:raise ValueError("ACP reconstruction profile selected no held-out windows")
+    return {"native_action_chart_comparison":True,"dataset_action_chart":dataset.action_chart,
+             "windows":rows,"aggregate":{key:_distribution(value) for key,value in aggregate.items()},
+             "device":str(device),
              "gpu_peak_allocated_bytes":torch.cuda.max_memory_allocated(device) if device.type=="cuda" else 0,
              "gpu_peak_reserved_bytes":torch.cuda.max_memory_reserved(device) if device.type=="cuda" else 0,
              "rss_max_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,

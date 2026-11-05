@@ -1,0 +1,98 @@
+{
+  "version": "cross-embodiment-t2-shared-execution-v6",
+  "task": "guided_contact_alignment",
+  "alias": "T2",
+  "extends": [
+    {
+      "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v5.json",
+      "sha256": "0123b8644726df003e61f470fb4078e45d5e404629cea9d86a0c33f0fb9c42bb"
+    }
+  ],
+  "shared_execution": {
+    "version": "four-task-shared-execution-v6",
+    "physics_dt_seconds": 0.001,
+    "control_dt_seconds": 0.02,
+    "physics_substeps_per_control": 20,
+    "contact_time_constant_seconds": 0.04,
+    "contact_damping_ratio": 2.0,
+    "execution_profile": "substep_wrench_governor",
+    "strict_evaluator_version": "strict-guide-substep-v4",
+    "guide_mode0_transit_speed_mps": 0.00675,
+    "guide_mode0_post_outlet_route": "concurrent_monotone_lift_v3",
+    "guide_reference_admission": "response_normalized_completion",
+    "guide_controller_version": "public-T2-response-normalized-hybrid-force-v50",
+    "guide_route_version": "public-T2-response-normalized-guide-route-v4",
+    "guide_clearance_route_version": "public-T2-response-normalized-clearance-traverse-route-v3",
+    "terminal_actor_interface": "public-T2-handoff-viability-v7",
+    "surface_force_target_N": 5.0,
+    "terminal_surface_force_target_N": 6.0,
+    "mode0_preoutlet_stiffness_ramp_m": 0.002,
+    "mode0_transition_spring_budget_N": 8.8,
+    "log_stiffness_limit": 1.5,
+    "tangential_wrench_limit_N": 16.0,
+    "timeout_seconds": 20.0,
+    "terminal_position_tolerance_m": 0.002,
+    "terminal_orientation_tolerance_rad": 0.03490658503988659,
+    "terminal_dwell_controls": 15,
+    "force_limit_N": 25.0,
+    "lateral_force_limit_N": 10.0,
+    "terminal_actor_interface_parameters": {
+      "completion_reserve_controls": 150,
+      "reserve_taper_controls": 100,
+      "reference_lag_full_authority_m": 0.008,
+      "reference_lag_zero_authority_m": 0.012,
+      "maximum_authority_decay_per_control": 0.05
+    }
+  },
+  "controller_observation_contract": {
+    "allowed": [
+      "tcp_position",
+      "tcp_rotation",
+      "goal_position",
+      "goal_rotation",
+      "reference_position",
+      "tcp_twist",
+      "measured_wrench",
+      "elapsed_seconds"
+    ],
+    "forbidden": [
+      "delay_steps",
+      "payload_mass",
+      "servo_gain",
+      "evaluator_state",
+      "method_identity"
+    ]
+  },
+  "qualification": {
+    "config": {
+      "path": "configs/arm/guided_contact_alignment/validation/handoff_viability_release_gate.json",
+      "sha256": "cb86d0017cab2d53d642075212ecf4647e53cdcbc692613cd5f15f6db0b7c48a"
+    },
+    "report": {
+      "path": "results/arm/guided_contact_alignment/validation/handoff_viability_release_gate/report.json",
+      "sha256": "31a830220b6c962f96ca4988774a4ff7d959b6c39f00e9ab729b72975d509a96"
+    },
+    "independent_audit": {
+      "path": "results/arm/guided_contact_alignment/validation/handoff_viability_release_gate/independent_audit.json",
+      "sha256": "f1fe0c44c5fcf1f8e0985ad8896cca459cfcbc32f75b3f74bb2449f07688df7a"
+    },
+    "execution_device": "physical GPU1",
+    "physical_gpu_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "episodes": 72,
+    "public_successes": 8,
+    "cross_ebdm_successes": 64,
+    "constraint_violations": 0,
+    "execution_errors": 0,
+    "evidence_audits_passed": 72,
+    "confirmation_states_opened": 0
+  },
+  "known_limitations": {
+    "bounded_failure_set": "The complete 32-episode v13 failure-set replay records Cross-EBDM and gated-full at 4/4, task-only at 8/8, public geometry at 4/4, matching-no-band at 4/4, response MPC at 2/4 and band-only at 3/4. Baseline and ablation failures remain in their denominators.",
+    "rejected_candidates": "Post-outlet hard ownership v2, terminal selectors v4-v6, and stage-debt v8 remain rejected development candidates.",
+    "performance_claim": "Qualification establishes deployment compatibility only and does not show a transport performance advantage."
+  },
+  "scope": "Inherited unchanged by every executable T2 main-table baseline, ablation and Cross-EBDM row through the task-local base and canonical actor factory. Public geometry is the common controller itself and is not redundantly wrapped. The v7 parameters are part of the shared task contract, not method options.",
+  "historical_results": "All T2 runs without this handoff-viability interface remain development evidence and are not relabeled for the new main table.",
+  "status": "common_protocol_bound_requires_fresh_predeployment",
+  "final_test": false
+}

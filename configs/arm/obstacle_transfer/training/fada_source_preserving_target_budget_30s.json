@@ -1,0 +1,72 @@
+{
+  "version": "fada-planner-repair-idm-pilot-config-v1",
+  "robot": "xarm7",
+  "evaluation_windows": 256,
+  "wall_seconds": 600,
+  "source_training": {
+    "updates": 0,
+    "batch_size": 64,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.01,
+    "planner_obs_loss_coef": 0.0,
+    "offline_ratio": 0.2,
+    "online_real_ratio": 0.5,
+    "log_interval": 100,
+    "strategy": "preserve_qualified_checkpoint"
+  },
+  "target_adaptation": {
+    "updates": 1000,
+    "batch_size": 64,
+    "finetune_method": "full",
+    "rank": 8,
+    "alpha": 16.0,
+    "dropout": 0.05,
+    "target_scope": "encoder_decoder_qkv",
+    "learning_rate": 0.0001,
+    "weight_decay": 0.001,
+    "grad_clip": 0.5,
+    "horizon_gamma": 0.0,
+    "log_interval": 100
+  },
+  "acceptance": {
+    "minimum_source_planner_improvement_fraction": 0.5,
+    "maximum_source_idm_mse_ratio": 1.5,
+    "maximum_target_idm_mse_ratio": 1.0
+  },
+  "task": "T1",
+  "seed": 181100,
+  "source_checkpoint": {
+    "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/qualification/p4_fada_native_source_v2/level_source/seed_75000/stage_26/checkpoint.pt",
+    "sha256": "86285d5a979439a0d5e50ff9c1396bd942029929b26e9388883604fbceb54cb3"
+  },
+  "source_qualification": {
+    "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/qualification/p4_fada_native_source_v2/level_source/seed_75000/report.json",
+    "sha256": "b1cf8a0451ded56fe14e03150485c3050cb9a6406562e30246f09c5a42c3678f"
+  },
+  "source_data_manifest": {
+    "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/qualification/p4_fada_native_source_v2/level_source/seed_75000/data_manifest.json",
+    "sha256": "0d8358ef005b4cc0e5c31c2d0e133f42a149bb75fb467f162bc135f125cfe794"
+  },
+  "target_data_manifest": {
+    "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/validation/p4_robust_shared_weak_logs_v1/level_B_log_30_60_120/seed_138000/B_log/budget_30.json",
+    "sha256": "835b1f1e4377eef99dc60745dd6f8360991bd7d5f5ecb5bb984a12f1babc2c11"
+  },
+  "closed_loop_attribution": {
+    "path": "results/arm/obstacle_transfer/validation/fada_closed_loop_attribution/frozen_instance_01_mode_0_cpu_full/report.json",
+    "sha256": "916b446dd953715112dc646b26b82f7cc6f8178a756f2b288e56e2f325644b8b"
+  },
+  "target_binding": {
+    "public_known_body_path": [
+      0.5678590883444584,
+      0.6581064010126911,
+      0.6270149599348386,
+      0.6097529670246064
+    ]
+  },
+  "output": "results/arm/obstacle_transfer/baseline/fada/training/source_preserving_idm_target_budget_30s/instance_01",
+  "plan_output": "results/arm/obstacle_transfer/baseline/fada/training/source_preserving_idm_target_budget_30s/plan_instance_01.json",
+  "source_positive_control": {
+    "path": "results/arm/obstacle_transfer/baseline/fada/validation/qualified_source_reference_positive_control/seed_295100/report.json",
+    "sha256": "855a33482a77c3a7ade7ffb5a8dee28fc0055677db742e472c613e369be4728d"
+  }
+}

@@ -10,7 +10,9 @@ from genedynamics.learning.datasets.transfer.target import PublicTargetTrajector
 from .task_training import SourceDemonstrations,response_chart
 
 
-def public_target_windows(row, *, history_len=8, horizon=16):
+def public_target_windows(
+    row, *, history_len=8, horizon=16, action_down_sample_steps=1,
+):
     """Convert a sealed ACP19 target record into native history windows."""
     from genedynamics.tasks.transfer.guide_observation import context_sequence
     from genedynamics.tasks.transfer.specs import task_spec
@@ -21,6 +23,9 @@ def public_target_windows(row, *, history_len=8, horizon=16):
             or row.metadata["permission"] != "C_supervised"
             or row.metadata["chart"] != "acp_world19"):
         raise ValueError("executed native-controller supervised commands required")
+    action_down_sample_steps = int(action_down_sample_steps)
+    if action_down_sample_steps < 1:
+        raise ValueError("positive sparse action downsampling required")
     public = row.public
     count = len(row.requests)
     context = context_sequence(
@@ -31,7 +36,8 @@ def public_target_windows(row, *, history_len=8, horizon=16):
     reference = spatial.pose9_to_SE3(row.requests[:, :9])
     virtual = spatial.pose9_to_SE3(row.requests[:, 9:18])
     observations, actions = [], []
-    for step in range(count - horizon + 1):
+    action_span = (horizon - 1) * action_down_sample_steps
+    for step in range(count - action_span):
         history = [
             {key: public[key][index:index + 1] for key in PUBLIC_FIELDS}
             for index in range(max(0, step - history_len + 1), step + 1)
@@ -47,7 +53,7 @@ def public_target_windows(row, *, history_len=8, horizon=16):
         inverse = spatial.SE3_inv(pose(
             public["tcp_position"][step], public["tcp_rotation"][step]
         ))
-        indices = np.arange(step, step + horizon)
+        indices = step + np.arange(horizon) * action_down_sample_steps
         actions.append(np.concatenate((
             spatial.SE3_to_pose9(inverse @ reference[indices]),
             spatial.SE3_to_pose9(inverse @ virtual[indices]),
@@ -62,13 +68,19 @@ def public_target_windows(row, *, history_len=8, horizon=16):
 
 
 class PublicACPTaskDataset:
-    def __init__(self,rows,*,purpose,history_len=8,horizon=16,action_chart="response19"):
+    def __init__(
+        self, rows, *, purpose, history_len=8, horizon=16,
+        action_chart="response19", action_down_sample_steps=1,
+    ):
         if purpose not in {"fit","validation"} or not rows:raise ValueError("explicit nonempty episode split required")
         observations=[];actions=[];self.receipts=[]
         for row in rows:
             if not isinstance(row,PublicTargetTrajectory) or row.metadata["purpose"]!=purpose:
                 raise ValueError("target fit/validation episodes cannot cross the split")
-            obs,action=public_target_windows(row,history_len=history_len,horizon=horizon)
+            obs,action=public_target_windows(
+                row, history_len=history_len, horizon=horizon,
+                action_down_sample_steps=action_down_sample_steps,
+            )
             observations.append(obs);actions.append(action)
             self.receipts.append(dict(sha256=row.digest,robot=row.metadata["robot"],mode=row.metadata["mode"],purpose=purpose,controls=len(row.requests)))
         if len({r["sha256"] for r in self.receipts})!=len(rows):raise ValueError("duplicate complete target episode")

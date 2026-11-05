@@ -1,0 +1,26 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v2",
+  "task": "T2",
+  "method": "cross_ebdm",
+  "method_identity": "ours_mode0_contact_established_transport_v5",
+  "instance_id": "instance_04",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/main/cross_ebdm.yaml",
+    "sha256": "3394a21c31f8d7a28e9d84058adaec2f4dc3e104e819f6a79c08dba6660fc627"
+  },
+  "request_roster": {
+    "path": "configs/arm/guided_contact_alignment/protocol/independent_main_table_requests_v2.json",
+    "sha256": "fa3947b55097bd988f2f6d2de7b0bc7816213c6dd84ae719e554bb71fc2bfc1d"
+  },
+  "cell_admission": {
+    "path": "results/arm/guided_contact_alignment/validation/independent_main_table_admission_v2/cross_ebdm.json",
+    "sha256": "f30bf201d8c7bab1a209bd15b129ce8939ccb1c95e36f4be297cd1167324dd33"
+  },
+  "output": "results/arm/guided_contact_alignment/main/cross_ebdm/confirmation/independent_main_v2/instance_04",
+  "plan_output": "results/arm/guided_contact_alignment/main/cross_ebdm/confirmation/independent_main_v2/instance_04_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  }
+}

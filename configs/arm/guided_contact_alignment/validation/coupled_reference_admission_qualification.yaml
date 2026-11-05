@@ -1,0 +1,26 @@
+base: coupled_reference_admission.yaml
+name: guided_contact_alignment_coupled_reference_admission_qualification
+output_dir: results/arm/guided_contact_alignment/validation/coupled_reference_admission_qualification
+seeds:
+- 930294
+- 930295
+- 930296
+- 930297
+env_params:
+  robot: xarm7
+  execution_profile: substep_wrench_governor
+  physics_dt: 0.001
+method: public_geometry
+method_params:
+  actor_binding:
+    version: transfer-actor-binding-v1
+    reference_version: public_finite_state_guide_contact_v2
+metadata:
+  protocol: transfer_coupled_reference_admission_qualification
+  formal_experiment: false
+  formal_seeds: false
+  run_class: one_shot_development_qualification
+  requested_modes:
+  - 0
+  - 1
+  selection_rule: seeds were fixed before execution and were not used by any prior physical run; execute all eight requested episodes exactly once, retain every failure, and do not use them as paper performance evidence

@@ -1,0 +1,59 @@
+{
+  "version": "fada-planner-repair-idm-pilot-config-v1",
+  "robot": "xarm7",
+  "evaluation_windows": 256,
+  "wall_seconds": 600,
+  "source_training": {
+    "updates": 1000,
+    "batch_size": 64,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.01,
+    "planner_obs_loss_coef": 0.1,
+    "offline_ratio": 0.2,
+    "online_real_ratio": 0.5,
+    "log_interval": 100
+  },
+  "target_adaptation": {
+    "updates": 1000,
+    "batch_size": 64,
+    "finetune_method": "full",
+    "rank": 8,
+    "alpha": 16.0,
+    "dropout": 0.05,
+    "target_scope": "encoder_decoder_qkv",
+    "learning_rate": 0.0001,
+    "weight_decay": 0.001,
+    "grad_clip": 0.5,
+    "horizon_gamma": 0.0,
+    "log_interval": 100
+  },
+  "acceptance": {
+    "minimum_source_planner_improvement_fraction": 0.5,
+    "maximum_source_idm_mse_ratio": 1.5,
+    "maximum_target_idm_mse_ratio": 1.0
+  },
+  "task": "T2",
+  "seed": 181200,
+  "source_checkpoint": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/qualification/p4_fada_native_source_v2/level_source/seed_72000/stage_11/checkpoint.pt",
+    "sha256": "d0df8161b14c2098e4c665b6c0624d5319c1d54c3b08832a75e734b89aeb0195"
+  },
+  "source_qualification": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/qualification/p4_fada_native_source_v2/level_source/seed_72000/report.json",
+    "sha256": "88d0d1208018116a2df1ffe836d19ebec3d4a140112b98bdcb652e99ef27ec3b"
+  },
+  "source_data_manifest": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/qualification/p4_fada_native_source_v2/level_source/seed_72000/data_manifest.json",
+    "sha256": "9c59a07799dcf32dee5efc9ff85e08c377333a3a0dd34cd34564988015ba6677"
+  },
+  "target_data_manifest": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/validation/p4_corridor_shared_weak_logs_v1/level_B_log_30_60_120/seed_164000/B_log/budget_30.json",
+    "sha256": "c02126ecc5616833e4fb230968c4e76ab66459c4aa94cc6a37850b5eab38bea6"
+  },
+  "closed_loop_attribution": {
+    "path": "results/arm/guided_contact_alignment/validation/fada_closed_loop_attribution/frozen_instance_01_mode_0_cpu_full/report.json",
+    "sha256": "51e2e79091c8ff41db34614bfcb08c98c42682059405fb744124c847ea649d69"
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/fada/training/planner_repair_idm_target_budget_30s/instance_01",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/fada/training/planner_repair_idm_target_budget_30s/plan_instance_01.json"
+}

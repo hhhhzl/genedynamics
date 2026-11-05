@@ -18,7 +18,9 @@ def project_wrench_box_ball(desired,low,high,radius=9.):
     if np.linalg.norm(value)<=radius:return value,True
     left=0.;right=1.
     while np.linalg.norm(np.clip(desired/(1+right),low,high))>radius:right*=2.
-    for _ in range(48):
+    # Keep sufficient precision even when the KKT multiplier grows large;
+    # 48 bisections can leave a few nanonewtons outside the declared ball.
+    for _ in range(80):
         middle=(left+right)/2;candidate=np.clip(desired/(1+middle),low,high)
         if np.linalg.norm(candidate)>radius:left=middle
         else:right=middle

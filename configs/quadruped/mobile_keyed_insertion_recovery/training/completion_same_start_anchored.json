@@ -1,0 +1,28 @@
+{
+  "base_training_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport.json",
+    "sha256": "fa8eb3aff4b79aa960764f5fd089f87c3a240df24951e3acdbbb28f8a8228348"
+  },
+  "overrides": {
+    "version": "t4-completion-same-start-anchored-training-v1",
+    "training": {
+      "variant": "same_start_anchored",
+      "initialization": {
+        "kind": "recentered_current_checkpoint_fresh_optimizer",
+        "calibration": "fit_plus_weak_log_public_states",
+        "maximum_median_absolute_logit": 3.0
+      },
+      "control_checkpoint_policy": "terminal_update"
+    },
+    "actor_manifest": {
+      "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/actor_bindings.json",
+      "sha256": "0d60f56d00123a3e851ef526726c7ac015a96cfa1fe4784c656be8bb883aa527"
+    },
+    "preflight_output": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/preflight",
+    "preflight_report": {
+      "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/preflight/report.json",
+      "sha256": "07215476da0d5eddb8d304afe44bed771503de54048e90d1a5a63933702778b1"
+    },
+    "output": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/checkpoints"
+  }
+}

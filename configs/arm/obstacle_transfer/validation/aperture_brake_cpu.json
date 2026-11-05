@@ -1,0 +1,19 @@
+{
+  "version": "aperture-brake-cpu-source-qualification-v3",
+  "task": "aperture_brake",
+  "output_dir": "results/arm/obstacle_transfer/validation/aperture_brake",
+  "device": "cpu",
+  "robot": "panda",
+  "contract": "configs/arm/obstacle_transfer/protocol/subtasks/aperture_brake_v1.json",
+  "mechanism": {
+    "servo_gain": 1.0,
+    "delay_steps": 0,
+    "payload_mass": 0.5
+  },
+  "episodes": [
+    {"seed": 935001, "mode": 0, "start_position": [0.38, -0.105, 0.55], "purpose": "disjoint_source_qualification"},
+    {"seed": 935002, "mode": 0, "start_position": [0.38, -0.10, 0.55], "purpose": "disjoint_source_qualification"},
+    {"seed": 935101, "mode": 1, "start_position": [0.38, -0.075, 0.55], "purpose": "disjoint_source_qualification"},
+    {"seed": 935102, "mode": 1, "start_position": [0.38, -0.08, 0.55], "purpose": "disjoint_source_qualification"}
+  ]
+}

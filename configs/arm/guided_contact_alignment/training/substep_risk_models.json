@@ -1,0 +1,68 @@
+{
+  "version": "t2-substep-risk-model-training-v1",
+  "status": "frozen_unexecuted",
+  "scope": "GPU1-only development prototype. No confirmation states and no formal performance evidence.",
+  "dataset": {
+    "report": {
+      "path": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset/report.json",
+      "sha256": "b1ea5d64528256ac8daa2c365b416528867f8f9f82db5d31e4371e716e408c62"
+    },
+    "independent_audit": {
+      "path": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset/independent_audit.json",
+      "sha256": "39a409c019aa55baa895f5ac33351acaf92a04169328ad062691ae981c4cb34f"
+    },
+    "episodes": {
+      "path": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset/episodes.json",
+      "sha256": "6be2ed07d4e73d46f80c1c4202f7110c46bc27256fe19b71294ac604b5c6ed88"
+    },
+    "window_index": {
+      "path": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset/window_index.npz",
+      "sha256": "3a7c79a98541218f6740036e152d79a1e3563829e86dd459bee5dfe0040ee4f5"
+    }
+  },
+  "device": {
+    "physical_index": 1,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1",
+    "logical_device": "cuda:0",
+    "required_visible_device_count": 1
+  },
+  "model": {
+    "history_len": 4,
+    "horizon": 10,
+    "maximum_joints": 32,
+    "hidden": [128, 128],
+    "members": 3,
+    "learning_rate": 0.0003
+  },
+  "training": {
+    "seeds": [3264000, 3264001, 3264002, 3264003, 3264004, 3264005, 3264006, 3264007],
+    "updates": 3000,
+    "batch_size": 256,
+    "high_risk_fraction": 0.5,
+    "underprediction_weight": 4.0,
+    "log_interval": 250
+  },
+  "calibration": {
+    "miscoverage": 0.05,
+    "soft_force_limits_N": [20.0, 8.0],
+    "interpolation_fractions": [1.0, 0.5, 0.25, 0.0],
+    "exchangeability_unit": "recorded_episode_development_block"
+  },
+  "validation_gates": {
+    "minimum_total_force_episode_block_coverage": 0.9,
+    "minimum_lateral_force_episode_block_coverage": 0.9,
+    "minimum_high_risk_recall": 0.9,
+    "maximum_safe_window_rejection_rate": 0.5,
+    "require_all_eight_instances": true
+  },
+  "output": "results/arm/guided_contact_alignment/training/substep_risk_models",
+  "data_policy": {
+    "development_prototype_only": true,
+    "final_paper_checkpoint": false,
+    "confirmation_states_opened": 0,
+    "old_invalid_outcomes_used": false,
+    "performance_evidence": false,
+    "final_budget_must_be_refrozen": true
+  }
+}

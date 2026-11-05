@@ -1,0 +1,66 @@
+{
+  "version": "four-task-paired-contribution-contrast-v1",
+  "name": "finite_time_late_phase_contribution",
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda"
+  },
+  "methods": [
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_matched",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_gated_v5_late_phase",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase/checkpoints/report.json",
+          "sha256": "15e79cf7e0174f1501c42a52c2af1f2433af99ae64f97e486d0d1cdae30d7eb3"
+        }
+      }
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "task_only_matched",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "task_only_v1_late_phase_matched",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_matched_task_only/checkpoints_exclusive_gpu1/report.json",
+          "sha256": "e6fe4c66fcf67fcdeb4ece7680fbea5e231429b0c19a3712093f456f40e0eab1"
+        }
+      }
+    }
+  ],
+  "requested_modes": [
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "delay_steps": 1,
+        "payload_mass": 0.8
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "reset_slots_per_cell": 8,
+  "seed_anchor": 4710000,
+  "acceptance": {
+    "transport": "cross_ebdm_matched",
+    "task_only": "task_only_matched",
+    "required_pairs": 64,
+    "minimum_aggregate_success_rate_gain": 0.05,
+    "minimum_nonnegative_instances": 6,
+    "require_zero_extra_transport_constraint_violations": true
+  },
+  "scope": "Fresh paired T3 contribution contrast between response-anchored late-phase transport and a matched task-only control. Both policy sets use the same public logs, task objective, initialization style, update count, checkpoint rule, eight independent instances and paired reset requests; only response anchoring differs. This is a development direction gate and does not open confirmation state or paper performance evidence."
+}

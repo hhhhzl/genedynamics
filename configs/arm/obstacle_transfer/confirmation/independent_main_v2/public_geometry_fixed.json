@@ -1,0 +1,26 @@
+{
+  "cell_admission": {
+    "path": "results/arm/obstacle_transfer/validation/independent_main_table_admission_v2/public_geometry.json",
+    "sha256": "7f33f1f6b6f8a7b9884c99a29b04de3361fec65b8a0e08ee3540cca6b40636dd"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "instance_id": "fixed",
+  "method": "public_geometry",
+  "method_identity": "public_geometry",
+  "output": "results/arm/obstacle_transfer/baseline/public_geometry/confirmation/independent_main_v2/fixed",
+  "plan_output": "results/arm/obstacle_transfer/baseline/public_geometry/confirmation/independent_main_v2/fixed_plan.json",
+  "request_roster": {
+    "path": "configs/arm/obstacle_transfer/protocol/independent_main_table_requests_v2.json",
+    "sha256": "0b478de1d640a7cde0eab59bd1745d604a301b835e2bb7fb98de6e7557b07510"
+  },
+  "task": "T1",
+  "task_config": {
+    "path": "configs/arm/obstacle_transfer/baseline/public_geometry.yaml",
+    "sha256": "f309262f87e62dc67769f9ed161c703dc3c71915c9ad699361b74e63624e9eb1"
+  },
+  "version": "transfer-independent-main-table-evaluation-v2"
+}

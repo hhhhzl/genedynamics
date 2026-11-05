@@ -1,0 +1,41 @@
+name: compliant_keyed_insertion_recovery_development
+output_dir: results/arm/compliant_keyed_insertion_recovery/_invalid_base
+env_name: compliant_keyed_insertion_recovery
+method: public_geometry
+backend: numpy
+device: cpu
+seeds: [917201]
+n_steps: 750
+auto_report: false
+metrics: [transfer_task]
+visualizations: []
+obstacle_config:
+  generator: none
+env_params:
+  robot: xarm7
+  history_len: 4
+  mode: 0
+  mechanism:
+    fixture_mass_kg: 0.5
+    fixture_stiffness_Npm: 800.0
+    fixture_damping_Nspm: 12.0
+method_params:
+  mode: 0
+  task_actor_interface: passive-socket-relative-policy-v1
+  actor_binding:
+    version: transfer-actor-binding-v1
+    retreat_release_version: safe_settled_v1
+    feedback:
+      compensation_gain: 2.0
+      insertion_force_scale: 1.0
+      lift_before_lateral: true
+      guard_prediction_seconds: 0.0
+      insertion_lead_z_m: 0.015
+metadata:
+  paper: cross_ebdm
+  protocol: compliant-keyed-insertion-public-v1
+  observation_schema: public-fixture-world-v1
+  protocol_status: development
+  formal_experiment: false
+  run_class: development
+  failure_replacement: false

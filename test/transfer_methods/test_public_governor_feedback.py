@@ -41,3 +41,35 @@ def test_governor_batch_state_reorder_is_exact():
     other=PublicGovernorFeedbackPolicy(task.spec,modes=[0,1]);other.restore(actor.get_state())
     actor.reorder([1,0]);other.reorder([1,0]);public={k:v[[1,0]] for k,v in task.step(np.zeros((2,13))).observation.items()}
     np.testing.assert_array_equal(actor.act(public),other.act(public))
+
+
+def test_insertion_lead_is_phase_scoped_and_default_preserving():
+    base=PublicGovernorFeedbackSpec()
+    explicit=PublicGovernorFeedbackSpec(insertion_lead_z_m=.015)
+    actor=PublicGovernorFeedbackPolicy(instantiate_task("T3",robot="panda").spec,feedback=explicit)
+    np.testing.assert_array_equal(actor._translation_lead(np.array([2])),[[base.lead_xy_m,base.lead_xy_m,base.lead_z_m]])
+    np.testing.assert_array_equal(actor._translation_lead(np.array([3])),[[base.lead_xy_m,base.lead_xy_m,.015]])
+    default_actor=PublicGovernorFeedbackPolicy(actor.spec,feedback=base)
+    np.testing.assert_array_equal(default_actor._translation_lead(np.array([2,3])),[[.004,.004,.01],[.004,.004,.01]])
+    with pytest.raises(ValueError,match="outside declared public support"):
+        PublicGovernorFeedbackSpec(insertion_lead_z_m=.021)
+
+
+def test_public_reference_governor_enable_is_explicit_and_changes_only_lead_projection():
+    task=instantiate_task("T3",robot="panda");public=task.reset((31004,),seed=31004)
+    public["tcp_position"][:]=[.46,-.2,.614]
+    public["reference_position"][:]=[.444,-.2,.614]
+    public["tcp_rotation"][:]=public["reference_rotation"][:]=np.diag([1.,-1.,-1.])
+    public["tcp_twist"][:]=0.;public["elapsed_seconds"][:]=0.
+    enabled=PublicGovernorFeedbackPolicy(task.spec,feedback=PublicGovernorFeedbackSpec())
+    disabled=PublicGovernorFeedbackPolicy(
+        task.spec,feedback=PublicGovernorFeedbackSpec(reference_governor_enabled=False),
+    )
+    for actor in (enabled,disabled):
+        actor.observer.memory=actor.observer.memory._replace(phase=np.array([3]))
+    governed=enabled.act(deepcopy(public));ungoverned=disabled.act(deepcopy(public))
+    assert governed[0,0]>0
+    assert ungoverned[0,0]<0
+    np.testing.assert_array_equal(governed[:,6:],ungoverned[:,6:])
+    with pytest.raises(TypeError,match="enable must be boolean"):
+        PublicGovernorFeedbackSpec(reference_governor_enabled=1)

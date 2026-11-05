@@ -1,0 +1,22 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T2",
+  "method": "adaptsim",
+  "method_identity": "AdaptSim_task_adapted_CEM",
+  "task_config": "configs/arm/guided_contact_alignment/baseline/adaptsim.yaml",
+  "checkpoint": {
+    "path": "results/arm/guided_contact_alignment/baseline/adaptsim/training/guide_population_development_8764501/inference_and_policy.pt",
+    "sha256": "36f18020c39bece714d77e9275047ceea3ad3e3b9eac5682c123cdfbe348c59a"
+  },
+  "request_roster": {
+    "path": "configs/arm/guided_contact_alignment/validation/adaptsim_guide_fresh_actor_roster.json",
+    "sha256": "0301cec419a62efb975f7b7c306e137c386442b99c54d8f6dd1fa94f300b779f"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/adaptsim/validation/fresh_actor_pilot_3300900000",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/adaptsim/validation/fresh_actor_pilot_3300900000_plan.json"
+}

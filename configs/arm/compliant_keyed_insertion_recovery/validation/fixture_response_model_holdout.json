@@ -1,0 +1,74 @@
+{
+  "version": "fixture-response-frozen-model-holdout-v1",
+  "data_recipe": {
+    "path": "configs/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_data.json",
+    "sha256": "45e74653caf44870662c41a60973ac0e87483b57fba13c8e7302bbc9e066fcb8"
+  },
+  "data_metadata_sha256": "a588f5b7782404153b2a575f101c0f6112cacb1f61e50ae47893c8901ec4cf0b",
+  "data_tensor_sha256": "7d7a30ce7cf83cc5edbc39e18c1792cd9a1364421118063258592aaa0232029f",
+  "collection": [
+    {
+      "name": "fixture_response_holdout_soft_contact_x_probe",
+      "recipe": {
+        "path": "configs/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_soft_contact_x_probe.json",
+        "sha256": "e701dcf687fab13feb087d5d311897d6227bd617b3a87c5d5e819750116b594e"
+      },
+      "report": {
+        "path": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_soft_contact_x_probe/report.json",
+        "sha256": "a08cdeb658f3bd4e558925c38827c5b776713979b9a421a15658a6ad4907ebc5"
+      },
+      "output_dir": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_soft_contact_x_probe"
+    },
+    {
+      "name": "fixture_response_holdout_contact_x_probe_engaged",
+      "recipe": {
+        "path": "configs/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_contact_x_probe_engaged.json",
+        "sha256": "847fd8f51e8f1914b686a25b9044f0f4ed23af348cb9112919eb8b157af9f457"
+      },
+      "report": {
+        "path": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_contact_x_probe_engaged/report.json",
+        "sha256": "03bf68d6ec5932a34286a7f744304eaa55dcdbdd8f67b7c063574e71d1d9ac5b"
+      },
+      "output_dir": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_contact_x_probe_engaged"
+    }
+  ],
+  "mechanisms": [
+    "fixture_response_holdout_soft_contact_x_probe",
+    "fixture_response_holdout_contact_x_probe_engaged"
+  ],
+  "models": {
+    "conditional_v2": {
+      "recipe": {
+        "path": "configs/arm/compliant_keyed_insertion_recovery/training/segmented_response_event_gpu1.json",
+        "sha256": "2a4d9b27f05875f8b59af3517e32252c463f268d646363d7564c58f03d5b8c47"
+      },
+      "checkpoint": {
+        "path": "results/arm/compliant_keyed_insertion_recovery/training/segmented_response_event_gpu1/model.pt",
+        "sha256": "f151972f81c37fae034bc88a821646d720c0e66274f02b74aef0f56491451fbc"
+      }
+    },
+    "calibrated_v3": {
+      "recipe": {
+        "path": "configs/arm/compliant_keyed_insertion_recovery/training/segmented_response_calibrated_event_gpu1.json",
+        "sha256": "ee62e07b1d3aeea60ea384b4a7e4162c883442a3ee6072297e15c5b95f27749f"
+      },
+      "checkpoint": {
+        "path": "results/arm/compliant_keyed_insertion_recovery/training/segmented_response_calibrated_event_gpu1/model.pt",
+        "sha256": "f0f3788b3e48d518b5323116b50182d0e49aa1a572265473501bef1a61f42c09"
+      }
+    }
+  },
+  "event_threshold_m": 1e-05,
+  "formal_performance_evidence": false,
+  "output": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_model_holdout_20261031",
+  "source_bindings": [
+    {
+      "path": "scripts/paper/cross_ebdm/evaluate_fixture_response_holdout.py",
+      "sha256": "1f65ee7a5de32622f25dc01f73f2fe5e12f737a75c3318aa9b17f4cb2badd4b5"
+    },
+    {
+      "path": "scripts/paper/cross_ebdm/analyze_fixture_event_response.py",
+      "sha256": "4360026248f660f7282a18a30ddc8a02bcf4922e15b1e7e57bd727894e64394c"
+    }
+  ]
+}

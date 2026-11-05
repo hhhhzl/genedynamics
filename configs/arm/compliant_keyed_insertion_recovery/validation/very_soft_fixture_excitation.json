@@ -1,0 +1,54 @@
+{
+  "version": "compliant-socket-cpu-qualification-v1",
+  "environment": "compliant_keyed_insertion_recovery",
+  "output_dir": "results/arm/compliant_keyed_insertion_recovery/validation/very_soft_fixture_excitation",
+  "device": "cpu",
+  "contract": "configs/arm/compliant_keyed_insertion_recovery/protocol/public_v1.json",
+  "robot": "xarm7",
+  "mechanism": {
+    "fixture_mass_kg": 0.5,
+    "fixture_stiffness_Npm": 50.0,
+    "fixture_damping_Nspm": 2.0
+  },
+  "feedback": {
+    "compensation_gain": 2.0,
+    "insertion_force_scale": 1.0,
+    "lift_before_lateral": true,
+    "guard_prediction_seconds": 0.0,
+    "insertion_lead_z_m": 0.015
+  },
+  "ringdown": {
+    "seed": 937000,
+    "initial_offset_m": 0.004,
+    "controls": 150,
+    "maximum_final_energy_fraction": 0.01
+  },
+  "episodes": [
+    {
+      "seed": 937001,
+      "mode": 0,
+      "purpose": "fit"
+    },
+    {
+      "seed": 937002,
+      "mode": 1,
+      "purpose": "fit"
+    },
+    {
+      "seed": 937101,
+      "mode": 0,
+      "purpose": "validation"
+    },
+    {
+      "seed": 937102,
+      "mode": 1,
+      "purpose": "validation"
+    }
+  ],
+  "max_controls_per_episode": 750,
+  "permission": "B_log",
+  "success_filtering": false,
+  "failure_replacement": false,
+  "formal_performance_evidence": false,
+  "purpose": "predeclared broader passive-socket response coverage; retain all failures; not four-task main-table data"
+}

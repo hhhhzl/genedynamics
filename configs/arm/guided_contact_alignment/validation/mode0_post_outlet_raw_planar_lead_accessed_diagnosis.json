@@ -1,0 +1,62 @@
+{
+  "version": "t2-recontact-reference-projection-diagnosis-v1",
+  "device": "cpu",
+  "source_validation": {
+    "plan": {
+      "path": "results/arm/guided_contact_alignment/validation/substep_risk_admission/plan.json",
+      "sha256": "43f10efaefb311e25c970f3ebc93ec7f75125ac9da4a5d30b1d6bdc8fb4b7b1b"
+    },
+    "progress": {
+      "path": "results/arm/guided_contact_alignment/validation/substep_risk_admission/progress.jsonl",
+      "sha256": "2753f016c57994cc853b39a4b6f56be75fe0c534f3d9a523bc68c6b08a674ad0"
+    },
+    "report": {
+      "path": "results/arm/guided_contact_alignment/validation/substep_risk_admission/report.json",
+      "sha256": "5c2992adb90c276685ab80d5dc32e3bcd44be7fc9f5674b1be436abd257a7446"
+    },
+    "independent_audit": {
+      "path": "results/arm/guided_contact_alignment/validation/substep_risk_admission/independent_audit.json",
+      "sha256": "09841f1fa056483e3457ee276bb0ab6616c0a75354542b7d0a8c19524544cdcc"
+    }
+  },
+  "invalid_predecessor": {
+    "path": "results/arm/guided_contact_alignment/validation/mode0_post_outlet_planar_lead_accessed_diagnosis/INVALID_RUN.json",
+    "sha256": "8c4a380b4b1418f9dc7e0c930b431e5ff1b17713a679ceb9e8bd29c07495d601"
+  },
+  "sentinel_config": "configs/arm/guided_contact_alignment/baseline/public_geometry.yaml",
+  "execution_profiles": {
+    "candidate": {
+      "config_overrides": {
+        "execution_profile": "substep_wrench_governor",
+        "guide_mode0_transit_speed_mps": 0.00675,
+        "guide_mode0_post_outlet_route": "raw_planar_lead_lift"
+      }
+    }
+  },
+  "fresh_requests": {
+    "robot": "xarm7",
+    "reset_seed_anchor": 3267000,
+    "reset_slots": 16,
+    "requested_modes": [0, 1],
+    "mechanism_parameters": {
+      "delay_steps": 0,
+      "payload_mass": 0.5,
+      "servo_gain": 1.0
+    }
+  },
+  "gates": {
+    "candidate_successes": 32,
+    "maximum_candidate_constraint_violations": 0,
+    "candidate_recontact_reference_projection_required": false,
+    "frozen_reproduction_required": false,
+    "all_evidence_audited": true
+  },
+  "output": "results/arm/guided_contact_alignment/validation/mode0_post_outlet_raw_planar_lead_accessed_diagnosis",
+  "diagnostic_only": true,
+  "accessed_requests": true,
+  "confirmation_states_opened": 0,
+  "old_invalid_outcomes_used": false,
+  "performance_evidence": false,
+  "failure_replacement": false,
+  "selection_rule": "Test raw public lift with only an 8 mm x/y issued-reference lead clip and the predeclared 6.75 mm/s prefix. Require 32/32 success and zero violations on the accessed cohort before opening new seeds; reject without a scalar sweep otherwise."
+}

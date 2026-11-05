@@ -1,0 +1,71 @@
+{
+  "version": "four-task-task-first-phase-scheduled-adaptive-step-contrast-v1",
+  "name": "finite_time_task_first_phase_scheduled_adaptive_step_contrast",
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda"
+  },
+  "methods": [
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "phase_scheduled_adaptive_step_transport",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_margin_v1",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_margin/anchored/checkpoints/report.json",
+          "sha256": "e0009cd3132595efa66d4ecc4eae47bda6cce790e9c4635fed9b7a30bfb812cc"
+        }
+      }
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "phase_scheduled_adaptive_step_task_only",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "task_first_margin_task_only_v1",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_margin/task_only/checkpoints/report.json",
+          "sha256": "825fffc1ea442223904618355eda340e12a3be601814379fcbc41617c5e98aee"
+        }
+      }
+    }
+  ],
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "protocol_hard_target",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.65,
+        "delay_steps": 3,
+        "payload_mass": 0.8
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 7470000,
+  "acceptance": {
+    "transport": "phase_scheduled_adaptive_step_transport",
+    "task_only": "phase_scheduled_adaptive_step_task_only",
+    "required_pairs": 64,
+    "minimum_aggregate_success_rate_gain": 0.0,
+    "minimum_nonnegative_instances": 8,
+    "minimum_mean_control_step_reduction_fraction": 0.02,
+    "minimum_nonnegative_time_instances": 6,
+    "maximum_one_sided_exact_sign_p_value": 0.05,
+    "require_transport_to_preserve_every_task_only_success": true,
+    "require_zero_extra_transport_constraint_violations": true
+  },
+  "scope": "Fresh seed-disjoint T3 development contrast on the protocol-hard xArm7 target cell. Relative to the frozen v3 adaptive line search, only public phase-scheduled transport authority changes: phases zero and one retain maximum blend four; phase two adds bounded blend six; terminal phase three retains maximum blend four in mode zero and is capped at blend two in mode one. Paired task-only checkpoints, response model, all other gates and contribution thresholds are unchanged. Seeds 7470000-7470007 are excluded from all prior physical contrasts and public-log training data. Passing opens only a fresh seed-disjoint confirmation contrast and is not paper performance evidence."
+}

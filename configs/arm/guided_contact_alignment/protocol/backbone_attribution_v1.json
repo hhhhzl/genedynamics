@@ -1,0 +1,88 @@
+{
+  "version": "T2-backbone-attribution-public-v1",
+  "status": "frozen_before_new_training",
+  "output": "results/arm/guided_contact_alignment/training/backbone_attribution_v1",
+  "device": {
+    "logical_device": "cuda:0",
+    "process_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_gpu_gib": 8,
+    "maximum_wall_seconds": 43200
+  },
+  "scope": "T2 mechanism attribution with one common public execution binding; distinct from the historical full-system actor and from the independent paper main table",
+  "source_recipe": {
+    "path": "configs/arm/guided_contact_alignment/training/policy_instances_v3.json",
+    "sha256": "6c415a5fc1931b2aa84d0e7903e2585990cb2a5c8cb33935a7e1c4626f5cfd8d"
+  },
+  "source_report": {
+    "path": "results/arm/guided_contact_alignment/training/policy_instances_v3/report.json",
+    "sha256": "12197ca8668552bf4629848c06da559f307e360a8c570ed436a7fc662baa2aaf"
+  },
+  "method_identity_audit": {
+    "path": "results/_analysis/four_task_transfer/method_identity/report.json",
+    "sha256": "c925c09666d0fcfea759ef3926009a31bc287698fcd100e52df876a7b2a55b54"
+  },
+  "four_cells": [
+    "mlp/task_only",
+    "mlp/selective",
+    "diffusion/task_only",
+    "diffusion/selective"
+  ],
+  "methods": {
+    "mlp": "PublicTaskResidualTransport",
+    "diffusion": "PublicTaskDiffusionTransport"
+  },
+  "diffusion": {
+    "steps": 4,
+    "latent_seed_offset": 100000,
+    "sampling": "one deterministic fixed-latent DDIM chunk; no online best-of-N",
+    "score_matching_pretraining": false
+  },
+  "shared_execution": {
+    "actor": "PublicCorridorGuideDenseActor",
+    "base": "public finite-state guide-contact feedback",
+    "output_chart": "shared13 normalized request",
+    "control_dt_seconds": 0.02,
+    "horizon_controls": 10,
+    "transport_coordinates": [0, 1, 3, 4, 5],
+    "task_owned_coordinates": [2, 6, 7, 8, 9, 10, 11, 12],
+    "post_transport_execution_scale": 0.25,
+    "runtime_selector": "none for all four cells",
+    "maximum_query_distance": 5.0
+  },
+  "shared_training": {
+    "instances": 8,
+    "state_stride": 10,
+    "warmup_updates_per_backbone": 2000,
+    "branch_updates_per_cell": 2000,
+    "batch_size": 64,
+    "hidden": [128, 128],
+    "residual_scale": 0.025,
+    "same_fit_validation_episodes_and_response_per_instance": true,
+    "same_warm_state_within_backbone": true,
+    "same_branch_sample_indices_across_all_four_cells_per_instance": true,
+    "same_decoded_request_and_task_owned_projection": true,
+    "all_failed_checkpoints_and_rollouts_retained": true
+  },
+  "objectives": {
+    "warm": "C + risk + change",
+    "task_only": "C + risk + change",
+    "selective": "C + beta*[C-C_task_only-delta]_+ + lambda*detach(G)*R + risk + change",
+    "gate_calibration": "same quantile rule and validation windows for both backbones; each backbone uses its own matched task-only reference",
+    "delta": 0.05,
+    "beta": 100.0,
+    "checkpoint_selection": "same two-checkpoint model validation proxy and tolerance 0.05; report raw and selected checkpoints"
+  },
+  "comparison_claims": {
+    "within_backbone": "task-only versus selective estimates combined band+selective anchoring effect; ungated and band-only needed to isolate gate and response separately",
+    "across_backbones": "parameter-count comparison plus measured model calls and p50/p95/p99 online latency; do not call extra compute a mechanism gain",
+    "historical_full_system": "not a single-factor comparator because its runtime admission and training continuation differ"
+  },
+  "evaluation": {
+    "development_first": true,
+    "independent_request_cohort": "freeze after all four cells pass construction, checkpoint, numerical and latency checks; no historical confirmation reset reuse",
+    "primary_metrics": ["constrained_success", "capped_normalized_completion_time", "constraint_violation", "worst_group_constrained_success"],
+    "unit_of_uncertainty": "training_instance_by_request_block",
+    "all_rejections_in_denominator": true
+  }
+}

@@ -50,11 +50,14 @@ def decode_pose_transport(proto,state,feedback,dt=.02):
     z=torch.where(insert,clip(normal,-feedback.normal_velocity_limit,feedback.normal_velocity_limit),command[...,2]);force=torch.where(insert,0.,command[...,12])
     command=torch.cat((command[...,:2],z[...,None],command[...,3:12],force[...,None]),dim=-1)
     command=torch.cat((clip(command[...,:3],-.02,.02),clip(command[...,3:6],-.12,.12),command[...,6:]),dim=-1)
-    lead=command.new_tensor([feedback.lead_xy_m,feedback.lead_xy_m,feedback.lead_z_m]);rotation=clip(command[...,3:6],(-feedback.lead_rotation_rad-rl)/dt,(feedback.lead_rotation_rad-rl)/dt)
+    insertion_lead=feedback.lead_z_m if feedback.insertion_lead_z_m is None else feedback.insertion_lead_z_m
+    zlead=torch.where(insert,command.new_tensor(insertion_lead),command.new_tensor(feedback.lead_z_m))
+    xylead=torch.full_like(zlead,feedback.lead_xy_m);lead=torch.cat((xylead,xylead,zlead),dim=-1).unsqueeze(1)
+    rotation=clip(command[...,3:6],(-feedback.lead_rotation_rad-rl)/dt,(feedback.lead_rotation_rad-rl)/dt)
     velocity=clip(command[...,:3],(p-lead-rp)/dt,(p+lead-rp)/dt)
     command=torch.cat((torch.where(active[...,None],velocity,command[...,:3]),torch.where(active[...,None],rotation,command[...,3:6]),command[...,6:]),dim=-1)
     z=torch.where(state['waiting'][:,None],torch.maximum(command[...,2],command.new_zeros(())),command[...,2]);z=torch.where(state['retreating'][:,None],feedback.guard_retreat_speed,z)
-    z=torch.where(active,clip(z,(p[...,2]-feedback.lead_z_m-rp[...,2])/dt,(p[...,2]+feedback.lead_z_m-rp[...,2])/dt),z)
+    z=torch.where(active,clip(z,(p[...,2]-zlead-rp[...,2])/dt,(p[...,2]+zlead-rp[...,2])/dt),z)
     z=torch.where(insert,clip(z,-feedback.normal_velocity_limit,feedback.normal_velocity_limit),z)
     command=torch.cat((command[...,:2],z[...,None],command[...,3:]),dim=-1)
     command=torch.cat((command[...,:6]+torch.where(active[...,None],state['compensation'][:,None],0.),command[...,6:]),dim=-1)
@@ -79,9 +82,11 @@ class PublicResidualTransport(nn.Module):
             if i<len(sizes)-2:layers.append(nn.SiLU())
         self.network=nn.Sequential(*layers);nn.init.zeros_(self.network[-1].weight);nn.init.zeros_(self.network[-1].bias)
 
-    def forward(self,target_features,source_features,source_commands,base_proto,phase,own_decoder_context):
+    def forward(self,target_features,source_features,source_commands,base_proto,phase,
+                own_decoder_context):
         x=torch.cat((target_features,source_features,source_commands.flatten(start_dim=1),base_proto.flatten(start_dim=1),torch.nn.functional.one_hot(phase.long(),4).to(target_features.dtype),own_decoder_context),dim=1)
-        residual=torch.tanh(self.network(x)).reshape(-1,self.response_spec.horizon,13);value=base_proto+self.spec.residual_scale*residual
+        residual=torch.tanh(self.network(x))
+        residual=residual.reshape(-1,self.response_spec.horizon,13);value=base_proto+self.spec.residual_scale*residual
         return torch.cat((value[...,:12].clamp(-1,1),value[...,12:13].clamp(0,1)),dim=-1)
 
     def checkpoint(self):return dict(version='public-source-conditioned-transport-v1',response_spec=asdict(self.response_spec),transport_spec=asdict(self.spec),state_dict=to_cpu(self.state_dict()),private_state=False,stochastic_noise=False)

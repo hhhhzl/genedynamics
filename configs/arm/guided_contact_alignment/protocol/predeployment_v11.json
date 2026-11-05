@@ -1,0 +1,49 @@
+{
+  "version": "four-task-behavioral-predeployment-v11",
+  "task": "T2",
+  "extends": {
+    "path": "configs/arm/guided_contact_alignment/protocol/predeployment_v10.json",
+    "sha256": "d2e2ec8a0b8f9d4e35c84a7b521f13c7bdc56f49bd8bf0f2a4ed2aa477675a2d"
+  },
+  "shared_task_contract": {
+    "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v4.json",
+    "sha256": "398efe06d773acf2481fae0a0d208b1299e7d7e84f0f800790422bcac57c2842"
+  },
+  "seed_anchor": 4680000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "gate": {
+    "require_all_mode_correct_task_success": true,
+    "require_zero_constraint_violations": true,
+    "require_evidence_reaudit": true,
+    "require_exact_physics_contact_evidence": true,
+    "failure_replacement": false
+  },
+  "source_admission": "Validate every method's declared source or training artifact and SHA through the existing task-local actor manifest. Retain algorithm and external-resource rejections; never replace a rejected row or reuse a prior outcome.",
+  "scope": "Fresh task_contract_v4 behavior qualification for every executable T2 main, baseline and ablation row after the v49 public sentinel gate. This is predeployment evidence, not paper performance evidence."
+}

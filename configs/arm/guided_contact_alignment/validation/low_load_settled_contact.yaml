@@ -1,0 +1,14 @@
+base: settled_contact_ramp.yaml
+name: guided_contact_alignment_low_load_settled_contact
+output_dir: results/arm/guided_contact_alignment/validation/low_load_settled_contact
+seeds:
+- 930266
+- 930267
+- 930268
+- 930269
+method_params:
+  actor_binding:
+    reference_version: public_low_load_settled_contact_v10
+metadata:
+  protocol: transfer_low_load_settled_contact
+  selection_rule: require both requested xArm modes on all four fresh resets to satisfy the unchanged strict contact, force, mode, and deadline criteria

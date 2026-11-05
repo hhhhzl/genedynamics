@@ -1,0 +1,28 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T4",
+  "method": "acp",
+  "method_identity": "ACP_task_adapted_native19_diffusion",
+  "task_config": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/acp.yaml",
+  "checkpoint": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/acp/training/pilot/ema_update_8000.pt",
+    "sha256": "7f3ffa1c143afe3f6de7222d92a3986f7a80eba1588318075afb50b382d0ec61"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "requests": [
+    {"robot": "go2_z1", "requested_mode": 0, "reset_seed": 240500, "physical_initial_slot": 0, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 1, "reset_seed": 240501, "physical_initial_slot": 0, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 0, "reset_seed": 240502, "physical_initial_slot": 1, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 1, "reset_seed": 240503, "physical_initial_slot": 1, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 0, "reset_seed": 240504, "physical_initial_slot": 2, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 1, "reset_seed": 240505, "physical_initial_slot": 2, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 0, "reset_seed": 240506, "physical_initial_slot": 3, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 1, "reset_seed": 240507, "physical_initial_slot": 3, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}}
+  ],
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/acp/validation/target_pilot/seed_240500",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/acp/validation/target_pilot/plan_seed_240500.json"
+}

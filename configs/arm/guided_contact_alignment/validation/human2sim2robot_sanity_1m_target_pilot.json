@@ -1,0 +1,116 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T2",
+  "method": "human2sim2robot",
+  "method_identity": "Human2Sim2Robot_task_adapted_robot_source_trajectory_1M",
+  "task_config": "configs/arm/guided_contact_alignment/baseline/human2sim2robot.yaml",
+  "checkpoint": {
+    "path": "results/arm/guided_contact_alignment/baseline/human2sim2robot/training/robot_source_sanity_1m/seed_275000/selected_policy.pt",
+    "sha256": "0cb718d00b8fe31ba741d768167990a088f2d374e013af300818c7fde17e4f83"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "requests": [
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 275100,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 275101,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 275102,
+      "physical_initial_slot": 2,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 275103,
+      "physical_initial_slot": 3,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 275104,
+      "physical_initial_slot": 4,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 275105,
+      "physical_initial_slot": 5,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 275106,
+      "physical_initial_slot": 6,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 275107,
+      "physical_initial_slot": 7,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "output": "results/arm/guided_contact_alignment/baseline/human2sim2robot/validation/robot_source_sanity_1m_target_pilot/seed_275100",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/human2sim2robot/validation/robot_source_sanity_1m_target_pilot/plan_seed_275100.json"
+}

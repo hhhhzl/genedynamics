@@ -1,0 +1,60 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_index": 1,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "gate": {
+    "failure_replacement": false,
+    "require_all_mode_correct_task_success": true,
+    "require_evidence_reaudit": true,
+    "require_exact_physics_contact_evidence": true,
+    "require_zero_constraint_violations": true
+  },
+  "invalid_predecessor": {
+    "path": "results/_qualification/four_task_transfer/t2_contact_establishment_gpu1_predeployment_20261029/invalid_run.json",
+    "reusable_records": 0,
+    "sha256": "41b14870898a3314bd50e7389a46910c9080d148c622db875b266d284a7a0338"
+  },
+  "requested_modes": [
+    0,
+    1
+  ],
+  "reset_slots_per_cell": 2,
+  "scene_cells": [
+    {
+      "body_support_parameters": {},
+      "id": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "robot": "xarm7"
+    },
+    {
+      "body_support_parameters": {},
+      "id": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "robot": "xarm7"
+    }
+  ],
+  "scope": "Seed-disjoint physical-GPU1 qualification of all executable T2 rows after mode-conditioned Cross-EBDM contact-establishment admission. Mode0 projects transport until public load dwell; mode1 is byte-identical to transport-only. Task contract, strong baselines, learned checkpoints, evaluator, and failure-retention gate are unchanged. No v13 or invalid v18 record is reused.",
+  "seed_anchor": 7798000,
+  "shared_task_contract": {
+    "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v7.json",
+    "sha256": "98750a574c84516e43b023af180666dceabf775dfab80d36e00a75478f7c1004"
+  },
+  "source_admission": "Validate every method's declared source or training artifact and SHA through the existing task-local actor manifest. Retain algorithm and external-resource rejections; never replace a rejected row or reuse a prior outcome.",
+  "supersedes": {
+    "path": "configs/arm/guided_contact_alignment/protocol/predeployment_v18.json",
+    "sha256": "ce36aa3a87e2e031226d6c5b5b1a36bb43137d94052fec1aca42c35f5b09c85b"
+  },
+  "task": "T2",
+  "version": "four-task-behavioral-predeployment-v19"
+}

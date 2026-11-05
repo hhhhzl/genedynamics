@@ -1,0 +1,203 @@
+{
+  "base_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/main/cross_ebdm.yaml",
+    "sha256": "343620e2b6010257f11fe1871884ab0820d65b74dfee8467412039ca113bc3cf"
+  },
+  "gate": {
+    "expected_episodes_per_instance": 8,
+    "failure_replacement": false,
+    "minimum_candidate_admission_fraction": 0.25,
+    "require_all_mode_correct_task_success": true,
+    "require_every_mechanism_support_group_candidate_use": true,
+    "require_zero_constraint_violations": true
+  },
+  "instances": {
+    "instance_01": {
+      "candidate_checkpoint": {
+        "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport/checkpoints/instance_01/checkpoint.pt",
+        "sha256": "6edfd26eecd88664627ee448876c99f5638b2eafad7b788fd996551eb1d7f099"
+      }
+    }
+  },
+  "limits": {
+    "maximum_memory_GiB": 20,
+    "maximum_wall_seconds": 600,
+    "workers": 1
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/validation/completion_projected_transport/instance_01",
+  "projection_preflight": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/completion_projected_transport/preflight/report.json",
+    "sha256": "b69049bfcf3d2d84102b19864bd3e35d9baca51d708e441f15c3c59d9e362be5"
+  },
+  "requests": [
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION/latency_gain_shift/support_nominal/m0",
+      "requested_mode": 0,
+      "reset_seed": 4230000,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_nominal",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION/latency_gain_shift/support_nominal/m1",
+      "requested_mode": 1,
+      "reset_seed": 4230001,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_nominal",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION/latency_gain_shift/support_derated_0p90/m0",
+      "requested_mode": 0,
+      "reset_seed": 4230002,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_derated_0p90",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION/latency_gain_shift/support_derated_0p90/m1",
+      "requested_mode": 1,
+      "reset_seed": 4230003,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_derated_0p90",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION/payload_shift/support_nominal/m0",
+      "requested_mode": 0,
+      "reset_seed": 4230004,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_nominal",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION/payload_shift/support_nominal/m1",
+      "requested_mode": 1,
+      "reset_seed": 4230005,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_nominal",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION/payload_shift/support_derated_0p90/m0",
+      "requested_mode": 0,
+      "reset_seed": 4230006,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_derated_0p90",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION/payload_shift/support_derated_0p90/m1",
+      "requested_mode": 1,
+      "reset_seed": 4230007,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_derated_0p90",
+      "task": "T4"
+    }
+  ],
+  "version": "t4-completion-projected-execution-development-v1"
+}

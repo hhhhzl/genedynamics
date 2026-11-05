@@ -1,0 +1,22 @@
+{
+  "gate": {
+    "failure_replacement": false,
+    "require_all_mode_correct_task_success": true,
+    "require_evidence_reaudit": true,
+    "require_zero_constraint_violations": true
+  },
+  "requested_modes": [0, 1],
+  "reset_slots_per_cell": 2,
+  "scene_cells": [{
+    "body_support_parameters": {},
+    "id": "deployment_nominal",
+    "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0},
+    "robot": "xarm7"
+  }],
+  "scope": "Fresh post-training admission with the shared 15 mm insertion lead and safe-settled release for every executable T3 baseline, ablation and Cross-EBDM actor; no prior outcome is reusable.",
+  "seed_anchor": 3278000,
+  "source_admission": "Validate each method's declared source/training artifacts and provenance through its SHA-bound manifest; never deploy a target actor on a different source robot.",
+  "supersedes": {"path": "configs/arm/keyed_insertion_recovery/protocol/predeployment_v6.json", "sha256": "4eced2c13a7180c8450525a0dfbf25483b3a5b94e2f2c83c807105616a83d919"},
+  "task": "T3",
+  "version": "four-task-behavioral-predeployment-v7"
+}

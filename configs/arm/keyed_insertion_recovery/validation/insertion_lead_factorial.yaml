@@ -1,0 +1,16 @@
+base: mechanism_factorial.yaml
+name: keyed_insertion_recovery_insertion_lead_factorial
+output_dir: results/arm/keyed_insertion_recovery/validation/insertion_lead_factorial
+seeds:
+- 940500
+- 940501
+- 940502
+- 940503
+method_params:
+  actor_binding:
+    feedback:
+      insertion_lead_z_m: 0.015
+metadata:
+  protocol: transfer_insertion_lead_factorial
+  physics_episode_cap: 64
+  selection_rule: require the 15 mm insertion-only lead to retain every episode and report all sixteen frozen mechanism-mode cells on four fresh resets

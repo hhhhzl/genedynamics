@@ -1,0 +1,103 @@
+{
+  "version": "cross-embodiment-t2-shared-execution-v7",
+  "task": "guided_contact_alignment",
+  "alias": "T2",
+  "extends": [
+    {
+      "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v6.json",
+      "sha256": "6ffbb3f84be3bcb260174aab74ad752b58305046d08b8494175e72aac6c56162"
+    }
+  ],
+  "shared_execution": {
+    "version": "four-task-shared-execution-v7",
+    "physics_dt_seconds": 0.001,
+    "control_dt_seconds": 0.02,
+    "physics_substeps_per_control": 20,
+    "contact_time_constant_seconds": 0.04,
+    "contact_damping_ratio": 2.0,
+    "execution_profile": "substep_wrench_governor",
+    "strict_evaluator_version": "strict-guide-substep-v4",
+    "guide_mode0_transit_speed_mps": 0.00675,
+    "guide_mode0_post_outlet_route": "concurrent_monotone_lift_v3",
+    "guide_reference_admission": "response_normalized_completion",
+    "guide_controller_version": "public-T2-response-normalized-hybrid-force-v50",
+    "guide_route_version": "public-T2-response-normalized-guide-route-v4",
+    "guide_clearance_route_version": "public-T2-response-normalized-clearance-traverse-route-v3",
+    "terminal_actor_interface": "public-T2-completion-budget-causal-traverse-v18",
+    "surface_force_target_N": 5.0,
+    "terminal_surface_force_target_N": 6.0,
+    "mode0_preoutlet_stiffness_ramp_m": 0.002,
+    "mode0_transition_spring_budget_N": 8.8,
+    "log_stiffness_limit": 1.5,
+    "tangential_wrench_limit_N": 16.0,
+    "timeout_seconds": 20.0,
+    "terminal_position_tolerance_m": 0.002,
+    "terminal_orientation_tolerance_rad": 0.03490658503988659,
+    "terminal_dwell_controls": 15,
+    "force_limit_N": 25.0,
+    "lateral_force_limit_N": 10.0,
+    "terminal_actor_interface_parameters": {
+      "completion_reserve_controls": 150,
+      "reserve_taper_controls": 100,
+      "reference_lag_full_authority_m": 0.008,
+      "reference_lag_zero_authority_m": 0.012,
+      "maximum_authority_decay_per_control": 0.05,
+      "completion_progress_floor_mps": 0.02,
+      "post_traverse_reserve_controls": 100,
+      "completion_budget_taper_controls": 60,
+      "force_speed_full_authority_mps": 0.01,
+      "force_speed_zero_authority_mps": 0.025
+    }
+  },
+  "controller_observation_contract": {
+    "allowed": [
+      "tcp_position",
+      "tcp_rotation",
+      "goal_position",
+      "goal_rotation",
+      "reference_position",
+      "tcp_twist",
+      "measured_wrench",
+      "elapsed_seconds"
+    ],
+    "forbidden": [
+      "delay_steps",
+      "payload_mass",
+      "servo_gain",
+      "evaluator_state",
+      "method_identity"
+    ]
+  },
+  "qualification": {
+    "config": {
+      "path": "configs/arm/guided_contact_alignment/validation/completion_budget_causal_traverse_release_gate.json",
+      "sha256": "8a2d598b9617dbfb0483db4a5b77c2296a20c2e7a869c34497d176d9d8c017fa"
+    },
+    "report": {
+      "path": "results/arm/guided_contact_alignment/validation/completion_budget_causal_traverse_release_gate/report.json",
+      "sha256": "e8771c035f45ed4471419a124f57da5f3e5b59b21ec7c2041359796a5867c4ad"
+    },
+    "independent_audit": {
+      "path": "results/arm/guided_contact_alignment/validation/completion_budget_causal_traverse_release_gate/independent_audit.json",
+      "sha256": "8988acc106d02670a79de5998efc9043e2a7769d3b1238e8707a05de76a0a507"
+    },
+    "execution_device": "physical GPU1",
+    "physical_gpu_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "episodes": 72,
+    "public_successes": 8,
+    "cross_ebdm_successes": 64,
+    "constraint_violations": 0,
+    "execution_errors": 0,
+    "evidence_audits_passed": 72,
+    "confirmation_states_opened": 0
+  },
+  "known_limitations": {
+    "bounded_failure_set": "The seed-disjoint v18 targeted gate records public geometry, Cross-EBDM, response MPC and matching-no-band at 4/4 and task-only at 8/8, with zero violations or execution errors. The subsequent release gate records public geometry at 8/8 and all Cross-EBDM instances at 64/64.",
+    "rejected_candidates": "The v17 interface and its 200-control-reserve variant retain response-MPC and Cross-EBDM timeouts. The v18 change is restricted to a 60 mm/s public free-space clearance traverse below the inherited 80 mm/s task limit.",
+    "performance_claim": "Qualification establishes deployment compatibility only and does not show a transport performance advantage."
+  },
+  "scope": "Inherited unchanged by every executable T2 main-table baseline, ablation and Cross-EBDM row through the task-local base and canonical actor factory. Public geometry is the common controller itself and is not redundantly wrapped. The v18 parameters are part of the shared task contract, not method options.",
+  "historical_results": "All T2 runs without this causal-traverse interface remain development evidence and are not relabeled for the new main table.",
+  "status": "common_protocol_bound_requires_fresh_predeployment",
+  "final_test": false
+}

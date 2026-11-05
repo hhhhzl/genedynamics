@@ -14,12 +14,12 @@ class PublicArmTaskDenseActor:
     VERSION='public-T1-T2-actualrequest-dense-v1'
     def __init__(self,spec,policy,bank,*,mode,device='cpu',maximum_query_distance=5.):
         if spec.alias not in {'T1','T2'} or bank.task!=spec.alias or bank.spec!=policy.response_spec:raise ValueError('matching actualtask/sourcebank required')
-        self.spec,self.policy,self.bank=spec,policy,bank;self.mode=mode;self.device=torch.device(device);self.maximum_query_distance=maximum_query_distance;self.policy.to(self.device).eval();self.base=(PublicObstacleFeedbackPolicy(spec,modes=[mode]) if spec.alias=='T1' else PublicGuideFeedbackPolicy(spec,modes=[mode],lead_xy_m=.008,position_admittance=True));self.frames=[];self.last_tick=-1;self.fallback_controls=0;self.irreversible_network_calls=0;self.last_action_tick=-1;self.cached_action=None
-    def reset(self):self.base.reset();self.frames=[];self.last_tick=-1;self.fallback_controls=0;self.last_action_tick=-1;self.cached_action=None
-    def get_state(self):return deepcopy(dict(version=self.VERSION,base=self.base.get_state(),frames=self.frames,last_tick=self.last_tick,fallback_controls=self.fallback_controls,last_action_tick=self.last_action_tick,cached_action=self.cached_action))
+        self.spec,self.policy,self.bank=spec,policy,bank;self.mode=mode;self.device=torch.device(device);self.maximum_query_distance=maximum_query_distance;self.policy.to(self.device).eval();self.base=(PublicObstacleFeedbackPolicy(spec,modes=[mode]) if spec.alias=='T1' else PublicGuideFeedbackPolicy(spec,modes=[mode],lead_xy_m=.008,position_admittance=True));self.frames=[];self.last_tick=-1;self.fallback_controls=0;self.irreversible_network_calls=0;self.last_action_tick=-1;self.cached_action=None;self.last_common_action=None;self.last_candidate_action=None;self.last_selected_action=None;self.last_selector_code=0
+    def reset(self):self.base.reset();self.frames=[];self.last_tick=-1;self.fallback_controls=0;self.last_action_tick=-1;self.cached_action=None;self.last_common_action=None;self.last_candidate_action=None;self.last_selected_action=None;self.last_selector_code=0
+    def get_state(self):return deepcopy(dict(version=self.VERSION,base=self.base.get_state(),frames=self.frames,last_tick=self.last_tick,fallback_controls=self.fallback_controls,last_action_tick=self.last_action_tick,cached_action=self.cached_action,last_common_action=self.last_common_action,last_candidate_action=self.last_candidate_action,last_selected_action=self.last_selected_action,last_selector_code=self.last_selector_code))
     def restore(self,s):
         if s['version']!=self.VERSION:raise ValueError('armtask densebinding differs')
-        self.base.restore(s['base']);self.frames=deepcopy(s['frames']);self.last_tick=s['last_tick'];self.fallback_controls=s['fallback_controls'];self.last_action_tick=s['last_action_tick'];self.cached_action=deepcopy(s['cached_action'])
+        self.base.restore(s['base']);self.frames=deepcopy(s['frames']);self.last_tick=s['last_tick'];self.fallback_controls=s['fallback_controls'];self.last_action_tick=s['last_action_tick'];self.cached_action=deepcopy(s['cached_action']);self.last_common_action=deepcopy(s.get('last_common_action'));self.last_candidate_action=deepcopy(s.get('last_candidate_action'));self.last_selected_action=deepcopy(s.get('last_selected_action'));self.last_selector_code=int(s.get('last_selector_code',0))
     def prepare(self,public):
         if len(public['tcp_position'])!=1:raise ValueError('explicit batch1 publichistory')
         tick=int(np.rint(np.asarray(public['elapsed_seconds']).item()/self.spec.config.control_dt))
@@ -36,10 +36,18 @@ class PublicArmTaskDenseActor:
         tick=int(np.rint(np.asarray(public['elapsed_seconds']).item()/self.spec.config.control_dt))
         if tick==self.last_action_tick:return self.cached_action.copy()
         b,base=self.prepare(public)
-        if b['source_query_distance'][0]>self.maximum_query_distance:self.fallback_controls+=1;self.cached_action=base.copy();self.last_action_tick=tick;return base
+        self.last_common_action=base.copy()
+        if b['source_query_distance'][0]>self.maximum_query_distance:self.fallback_controls+=1;self.cached_action=base.copy();self.last_candidate_action=base.copy();self.last_selected_action=base.copy();self.last_selector_code=0;self.last_action_tick=tick;return base
         with torch.inference_mode():
             args=[torch.as_tensor(b[k],device=self.device,dtype=torch.float32) for k in ('target_features','source_features','source_commands','base_proto')];phase=torch.as_tensor(b['phase'],device=self.device);context=torch.as_tensor(b['own_context'],device=self.device);value=self.policy(*args,phase,context);self.irreversible_network_calls+=1
-        self.cached_action=(value[:,0]*value.new_tensor(BOUNDS)).cpu().numpy().astype(np.float32);self.last_action_tick=tick;return self.cached_action.copy()
+        if self.spec.alias=='T2' and torch.equal(value[:,0],args[3][:,0]):
+            self.cached_action=base.copy()
+        else:
+            self.cached_action=(value[:,0]*value.new_tensor(BOUNDS)).cpu().numpy().astype(np.float32)
+            if self.spec.alias=='T2':
+                from genedynamics.solvers.single.cross_ebdm.learning.task_transport import T2_TASK_OWNED_COORDINATES
+                self.cached_action[:,list(T2_TASK_OWNED_COORDINATES)]=base[:,list(T2_TASK_OWNED_COORDINATES)]
+        self.last_candidate_action=self.cached_action.copy();self.last_selected_action=self.cached_action.copy();self.last_selector_code=0;self.last_action_tick=tick;return self.cached_action.copy()
 
 
 class PublicArmTaskResponseMPCActor(PublicArmTaskDenseActor):
@@ -60,7 +68,7 @@ class PublicArmTaskResponseMPCActor(PublicArmTaskDenseActor):
 
 class PublicArmTaskSourcePriorActor(PublicArmTaskDenseActor):
     """Issue the nearest frozen Panda source request in shared-13 coordinates."""
-    VERSION = 'public-T1-T2-frozen-source-skill-prior-v1'
+    VERSION = 'public-T1-T2-frozen-source-skill-prior-v2'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -75,7 +83,25 @@ class PublicArmTaskSourcePriorActor(PublicArmTaskDenseActor):
             self.fallback_controls += 1
             action = base
         else:
-            action = np.asarray(batch['source_commands'][:, 0]) * BOUNDS
+            normalized = torch.as_tensor(
+                batch['source_commands'], device=self.device, dtype=torch.float32,
+            )
+            if self.spec.alias == 'T2':
+                from genedynamics.solvers.single.cross_ebdm.learning.task_transport import (
+                    project_task_owned_requests,
+                )
+                normalized = project_task_owned_requests(
+                    torch.as_tensor(
+                        batch['target_features'], device=self.device,
+                        dtype=torch.float32,
+                    ),
+                    normalized,
+                    torch.as_tensor(
+                        batch['base_proto'], device=self.device,
+                        dtype=torch.float32,
+                    ),
+                )
+            action = normalized[:, 0].cpu().numpy() * BOUNDS
             self.irreversible_source_prior_calls += 1
         self.cached_action = np.asarray(action, dtype=np.float32)
         self.last_action_tick = tick

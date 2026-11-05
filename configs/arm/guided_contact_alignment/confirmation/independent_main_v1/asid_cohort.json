@@ -1,0 +1,39 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v1",
+  "task": "T2",
+  "method": "asid",
+  "method_identity": "ASID_Fisher_exploration_grid_and_CEM_identification_CEM_task_policy",
+  "instance_ids": [
+    "independent_8802001",
+    "independent_8802002",
+    "independent_8802003",
+    "independent_8802004",
+    "independent_8802005",
+    "independent_8802006",
+    "independent_8802007",
+    "independent_8802008"
+  ],
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/baseline/asid.yaml",
+    "sha256": "88dfaf6b3bb75650b04fff5b0170035cbde96bf9349fc896810035ecc3edad7e"
+  },
+  "request_roster": {
+    "path": "configs/arm/guided_contact_alignment/protocol/independent_main_table_requests.json",
+    "sha256": "094b5518c680e8db1f9baa250b70a4aef6bef3e54625a0619498884831074c64"
+  },
+  "cell_admission": {
+    "path": "results/arm/guided_contact_alignment/validation/independent_main_table_admission_v1/asid.json",
+    "sha256": "d2d5e2b9f626057fce0e6fe7601a8311a565f2358d1e13f48e07fbb8a7fcd0c4"
+  },
+  "actor_package": {
+    "path": "results/arm/guided_contact_alignment/baseline/asid/validation/independent_actor_package_v1/report.json",
+    "sha256": "b17e04424e0062eee24477c36db1a55cbff072308501bcfbf00a521c04be4348"
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/asid/confirmation/independent_main_v1/{instance_id}",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/asid/confirmation/independent_main_v1/{instance_id}_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  }
+}

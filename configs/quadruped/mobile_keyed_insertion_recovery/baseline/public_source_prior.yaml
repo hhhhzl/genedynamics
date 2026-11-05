@@ -1,0 +1,7 @@
+base: ../_base.yaml
+name: mobile_keyed_insertion_recovery_public_source_prior
+method: public_source_prior
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/baseline/public_source_prior
+method_params:
+  actor_binding:
+    key: public_source_prior

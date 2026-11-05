@@ -1,0 +1,54 @@
+{
+  "version": "four-task-paired-development-diagnosis-v1",
+  "name": "response_normalized_public_geometry_release_gate",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cpu"
+  },
+  "seed_anchor": 4664000,
+  "reset_slots_per_cell": 8,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "label": "public_geometry_response_normalized",
+      "instances": "fixed",
+      "task_overrides": {
+        "guide_reference_admission": "response_normalized_completion",
+        "log_stiffness_limit": 1.5,
+        "tangential_wrench_limit": 16.0
+      }
+    }
+  ],
+  "scope": "Fresh joint 32-episode CPU release gate for the next response-normalized T2 task-controller revision: force-release spring-effort budgeting, bounded damping progress, checkpointed mode-zero endpoint unloading, mode-zero reserved terminal capture, public-force-scaled mode-one clearance descent and one additional mode-one capture dwell reserve; every cell requires 8/8 strict success, zero constraint violations, zero execution errors and complete exact-physics evidence before versioning."
+}

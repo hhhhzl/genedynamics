@@ -1,0 +1,54 @@
+{
+  "schema_version": "transfer-subtask-contract-v1",
+  "contract_version": "transfer-compliant-fixture-insertion-v1",
+  "semantic_id": "compliant_fixture_insertion",
+  "family": "connector_assembly_recovery",
+  "embodiment": "fixed_arm",
+  "environment": "compliant_keyed_insertion_recovery",
+  "implementation_status": "implemented_contract_frozen",
+  "semantics": {
+    "goal": "Recover and insert relative to a passively translating spring-damper fixture while keeping fixture motion, contact force, travel, and terminal stability within declared limits.",
+    "excludes": ["judging insertion in a fixed world frame", "pushing the fixture to a mechanical stop and treating it as static", "crediting short-horizon response prediction as task success", "using hidden fixture mass, stiffness, or damping as policy input"]
+  },
+  "event_order": [
+    {"id": "loaded_contact_established", "evidence": ["connector-fixture contact identity", "physics-substep contact wrench"]},
+    {"id": "fixture_motion_excited", "evidence": ["fixture displacement exceeds the frozen meaningful-motion threshold after contact", "fixture is not at a travel stop"]},
+    {"id": "unloading_or_recovery_completed", "evidence": ["relative connector retreat or unloading", "fixture and connector trajectories"]},
+    {"id": "relative_insertion_completed", "evidence": ["insertion depth in the current fixture frame", "relative orientation and lateral error"]},
+    {"id": "fixture_and_connector_stabilized", "evidence": ["fixture velocity and acceleration remain below frozen limits", "relative insertion, wrench, and pose remain within limits for the terminal dwell"]}
+  ],
+  "interface": {
+    "observations": {
+      "public": ["robot proprioception", "tcp pose and twist", "measured fixture pose and twist", "fixture-relative connector pose and twist", "goal pose relative to the current fixture", "measured wrench", "issued-action history"],
+      "hidden": ["fixture mass", "fixture stiffness", "fixture damping", "mechanical-stop and evaluator acceptance state"]
+    },
+    "action_authority": {
+      "method": ["bounded Cartesian translation and rotation", "declared stiffness and force request"],
+      "public_execution": ["common recovery guard", "joint and workspace projection", "common safety termination"],
+      "evaluator_only": ["fixture travel-stop classification", "relative insertion and stability acceptance", "event-order classification"]
+    }
+  },
+  "evaluation": {
+    "success": ["loaded contact excites meaningful passive fixture motion away from the travel stops", "the motion and recovery events precede relative insertion", "insertion succeeds in the current fixture frame", "fixture and connector settle for the terminal dwell within motion, force, pose, and travel limits"],
+    "violations": ["axial or lateral overforce", "fixture mechanical-stop impact or sustained stop contact", "fixture travel violation", "joint-limit or workspace termination", "relative insertion loss during dwell", "timeout"],
+    "anti_bypass": ["evaluate all insertion geometry in the moving fixture frame", "require meaningful fixture motion before success", "reject mechanical-stop bracing", "require a joint fixture-and-connector stability window after insertion"]
+  },
+  "mechanism_axes": [
+    {"name": "fixture_stiffness_class", "public": false, "train": ["fixed_control", "hard"], "development": ["hard", "medium"], "heldout": ["soft"]},
+    {"name": "fixture_damping_class", "public": false, "train": ["nominal"], "development": ["nominal", "low"], "heldout": ["low", "high"]},
+    {"name": "fixture_mass_class", "public": false, "train": ["nominal"], "development": ["light", "nominal"], "heldout": ["heavy"]},
+    {"name": "command_delay_controls", "public": false, "train": [0], "development": [0, 1], "heldout": [3]}
+  ],
+  "source_qualification": {
+    "status": "cpu_source_qualified_4_of_4",
+    "requirements": ["source skill excites measurable fixture motion without reaching a travel stop", "source completes recovery, relative insertion, and joint stabilization in event order", "qualification includes fixed-fixture control and at least one moving-fixture condition", "source actor, fixture parameters, and configuration digests are frozen before target development"],
+    "evidence_resolution": "physics substeps for fixture motion and contact peaks, control ticks for recovery and terminal stability"
+  },
+  "evaluator_evidence": {
+    "status": "implemented_contract_frozen",
+    "resolution": "physics_substep_for_fixture_and_contact_dynamics",
+    "implementation_path": "genedynamics/tasks/transfer/compliant_socket.py",
+    "required_signals": ["fixture pose, twist, acceleration, and travel", "mechanical-stop contacts", "fixture-relative connector pose and twist", "contact geom identities and wrench", "recovery event", "relative insertion depth", "terminal stability clock"]
+  },
+  "historical_evidence_policy": "Existing fixture probes and response-model holdouts remain development diagnostics only and are not relabeled as closed-loop compliant-fixture task results."
+}

@@ -1,0 +1,116 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T2",
+  "method": "fada",
+  "method_identity": "FADA_repaired_planner_frozen_IDM_target_budget_0s",
+  "task_config": "configs/arm/guided_contact_alignment/baseline/fada.yaml",
+  "checkpoint": {
+    "path": "results/arm/guided_contact_alignment/baseline/fada/training/planner_repair_idm_target_budget_30s/instance_01/target_initial_checkpoint.pt",
+    "sha256": "00be35df11049fb8a878f8fe743fc40bf462e4ddf492fef255a7e8b31d26643e"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "requests": [
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 182200,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 182201,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 182202,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 182203,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 182204,
+      "physical_initial_slot": 2,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 182205,
+      "physical_initial_slot": 2,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 182206,
+      "physical_initial_slot": 3,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 182207,
+      "physical_initial_slot": 3,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "output": "results/arm/guided_contact_alignment/baseline/fada/validation/target_data_curve/budget_0s",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/fada/validation/target_data_curve/plan_budget_0s.json"
+}

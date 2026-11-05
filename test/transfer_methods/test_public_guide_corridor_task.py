@@ -7,7 +7,7 @@ from genedynamics.solvers.single.cross_ebdm.learning.response import PublicRespo
 from genedynamics.solvers.single.cross_ebdm.learning.task_transport import PublicTaskResidualTransport
 from genedynamics.solvers.single.cross_ebdm.learning.residual_transport import PublicTransportSpec
 from genedynamics.tasks.transfer.controllers.cross_ebdm.guide_corridor import PublicCorridorGuideDenseActor
-from genedynamics.experiments.plugins.methods.transfer.fada.guide_corridor import PublicCorridorGuideMemory,corridor_context_sequence
+from genedynamics.tasks.transfer.controllers.fada.guide_corridor import PublicCorridorGuideMemory,corridor_context_sequence
 from test.transfer_methods.test_public_observed_response import record
 def test_phase_semantics_memory_continuation_and_frozen_source_context():
     p,_=record();s=PublicResponseSpec(history_len=4,horizon=10,hidden=(8,),members=1)

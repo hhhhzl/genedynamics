@@ -159,10 +159,12 @@ def load_source_trajectory(path, *, mode):
         if task_name == "obstacle_transfer":
             from genedynamics.tasks.transfer.routes import observed_route_modes
             observed = int(observed_route_modes(positions[:, :, None], valid[:, :, None])[0])
-        else:
+        elif task_name in {"guided_contact_alignment", "keyed_insertion_recovery", "mobile_keyed_insertion_recovery"}:
             from genedynamics.tasks.transfer.contact_reference import classify_contact_modes
             observed = int(classify_contact_modes(positions, source["public.measured_wrench"][1:, 2][None],
-                                                  valid, insertion=True)[0])
+                                                  valid, insertion=task_name != "guided_contact_alignment")[0])
+        else:
+            raise ValueError(f"unknown source task for physical mode classification: {task_name}")
         if observed != mode:
             raise ValueError(f"source physical mode is {observed}, not requested label {mode}; unknown modes cannot be forced")
         public = {key: source["public." + key] for key in PORTABLE_FIELDS}

@@ -1,0 +1,39 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v2",
+  "task": "T4",
+  "method": "asid",
+  "method_identity": "ASID_Fisher_32step_grid_CEM_mobile_mating_policy",
+  "instance_ids": [
+    "independent_8804101",
+    "independent_8804102",
+    "independent_8804103",
+    "independent_8804104",
+    "independent_8804105",
+    "independent_8804106",
+    "independent_8804107",
+    "independent_8804108"
+  ],
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/asid.yaml",
+    "sha256": "571bfee5deb8eb504f1b885ff628a36f5a6e8f2e2ca741ff554e4a0a041d02a0"
+  },
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/independent_main_table_requests_v2.json",
+    "sha256": "dcc15a93229e5ad99f0a629b8ee9bd074f21d7e3fc067eddef23fa058474c788"
+  },
+  "cell_admission": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/independent_main_table_admission_v2/asid.json",
+    "sha256": "3cc98faf56a5c91ca34ad9bd2e03912426927ef560ed8e841e89bab1d858ea7d"
+  },
+  "actor_package": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/validation/independent_actor_package_v1/report.json",
+    "sha256": "fe73fba4f2c3006a0de87b37cb416b39bd9d3a392efb90524572885eedf976d4"
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/confirmation/independent_main_v2/{instance_id}",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/confirmation/independent_main_v2/{instance_id}_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  }
+}

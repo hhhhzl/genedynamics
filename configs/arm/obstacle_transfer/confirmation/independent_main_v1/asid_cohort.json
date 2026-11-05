@@ -1,0 +1,39 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v1",
+  "task": "T1",
+  "method": "asid",
+  "method_identity": "ASID_task_adapted_CEM",
+  "instance_ids": [
+    "independent_8801002",
+    "independent_8801003",
+    "independent_8801004",
+    "independent_8801005",
+    "independent_8801006",
+    "independent_8801007",
+    "independent_8801008",
+    "independent_8801009"
+  ],
+  "task_config": {
+    "path": "configs/arm/obstacle_transfer/baseline/asid.yaml",
+    "sha256": "eab89dd821ab29500684f794260ebfb3337a2a082d17d0ec8d180b792b83dae8"
+  },
+  "request_roster": {
+    "path": "configs/arm/obstacle_transfer/protocol/independent_main_table_requests.json",
+    "sha256": "9a5c2ea0bfebdadd816baf0642dcd7eb6537536e8bdb528d37d2a69882827240"
+  },
+  "cell_admission": {
+    "path": "results/arm/obstacle_transfer/validation/independent_main_table_admission_v1/asid.json",
+    "sha256": "b3954be0b05cd6b9bdf09bde042bcbfe6d0bac3b9d8e4715d42ba1b6841bd0e1"
+  },
+  "actor_package": {
+    "path": "results/arm/obstacle_transfer/baseline/asid/validation/independent_actor_package_v1/report.json",
+    "sha256": "5fc4c1a61e2c5a04d43831cea18b49771a930e526a187ca616e81c830f271fc8"
+  },
+  "output": "results/arm/obstacle_transfer/baseline/asid/confirmation/independent_main_v1/{instance_id}",
+  "plan_output": "results/arm/obstacle_transfer/baseline/asid/confirmation/independent_main_v1/{instance_id}_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  }
+}

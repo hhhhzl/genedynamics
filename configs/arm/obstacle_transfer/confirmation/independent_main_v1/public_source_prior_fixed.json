@@ -1,0 +1,26 @@
+{
+  "cell_admission": {
+    "path": "results/arm/obstacle_transfer/validation/independent_main_table_admission_v1/public_source_prior.json",
+    "sha256": "9f8a6962a569dbf486ee6a904e64b6cce0ed51f7b0ba6756e54f0e9badffa3a9"
+  },
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "instance_id": "fixed",
+  "method": "public_source_prior",
+  "method_identity": "public_source_prior",
+  "output": "results/arm/obstacle_transfer/baseline/public_source_prior/confirmation/independent_main_v1/fixed",
+  "plan_output": "results/arm/obstacle_transfer/baseline/public_source_prior/confirmation/independent_main_v1/fixed_plan.json",
+  "request_roster": {
+    "path": "configs/arm/obstacle_transfer/protocol/independent_main_table_requests.json",
+    "sha256": "9a5c2ea0bfebdadd816baf0642dcd7eb6537536e8bdb528d37d2a69882827240"
+  },
+  "task": "T1",
+  "task_config": {
+    "path": "configs/arm/obstacle_transfer/baseline/public_source_prior.yaml",
+    "sha256": "c2fd173581a87a60562b8c689389d49b2a748f37f670e8aa1a5e46ed7369db68"
+  },
+  "version": "transfer-independent-main-table-evaluation-v1"
+}

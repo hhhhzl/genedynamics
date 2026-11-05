@@ -1,0 +1,28 @@
+base: coupled_reference_admission.yaml
+name: guided_contact_alignment_coupled_reference_admission_accessed_extension
+output_dir: results/arm/guided_contact_alignment/validation/coupled_reference_admission_accessed_extension
+seeds:
+- 930294
+- 930295
+- 930296
+- 930297
+env_params:
+  robot: xarm7
+  execution_profile: substep_wrench_governor
+  physics_dt: 0.001
+mechanism_params:
+  contact_time_constant: 0.04
+method: public_geometry
+method_params:
+  actor_binding:
+    version: transfer-actor-binding-v1
+    reference_version: public_finite_state_guide_contact_v2
+metadata:
+  protocol: transfer_coupled_reference_admission_accessed_extension
+  formal_experiment: false
+  formal_seeds: false
+  run_class: accessed_development_regression
+  requested_modes:
+  - 0
+  - 1
+  selection_rule: all seeds were opened by the failed v1 qualification; use only for mechanism regression, preserve every failure, and never restore independent qualification status

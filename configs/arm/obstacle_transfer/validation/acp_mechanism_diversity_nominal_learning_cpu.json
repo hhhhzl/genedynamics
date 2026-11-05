@@ -1,0 +1,41 @@
+{
+  "version": "acp-nominal-learning-diagnostic-v1",
+  "task": "T1",
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/baseline/acp/training/mechanism_diversity_sparse_dt100ms/ema_update_6000.pt",
+    "sha256": "69aa66dff6075f5e60ab1d4edf7f02ec47bef43db338d01eec4860beb7bd3394"
+  },
+  "training_report": {
+    "path": "results/arm/obstacle_transfer/baseline/acp/training/mechanism_diversity_sparse_dt100ms/report.json",
+    "sha256": "f6610fb8367718b3f267331f62e41a5b43535b9af37b46f8e4bb2ad5054113cf"
+  },
+  "demonstration_report": {
+    "path": "results/arm/obstacle_transfer/baseline/acp/demonstrations/mechanism_diversity_sparse_dt100ms/report.json",
+    "sha256": "5f25f9e4eb8ff552dec8c253a92f3edcdb9cae75c16d8fbf38c3adeb80931e21"
+  },
+  "teacher_collection_config": {
+    "path": "configs/arm/obstacle_transfer/validation/acp_native_impedance_teacher_mechanism_diversity.json",
+    "sha256": "53c0263f610bcfce3673f2853398cad87f856e9511c1c525cdf815e4388abdc1"
+  },
+  "sampling_seed": 426200,
+  "requests": [
+    {
+      "purpose": "fit",
+      "mode": 0,
+      "seed": 8261000
+    },
+    {
+      "purpose": "validation",
+      "mode": 1,
+      "seed": 8261007
+    }
+  ],
+  "budget": {
+    "episodes": 2,
+    "maximum_wall_seconds": 600,
+    "cpu_threads": 1,
+    "new_training_updates": 0,
+    "gpu_allowed": false
+  },
+  "output": "results/arm/obstacle_transfer/baseline/acp/diagnostics/mechanism_diversity_nominal_learning_cpu"
+}

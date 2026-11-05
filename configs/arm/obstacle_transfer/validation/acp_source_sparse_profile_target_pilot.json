@@ -1,0 +1,116 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T1",
+  "method": "acp",
+  "method_identity": "ACP_task_adapted_native19_diffusion_source_sparse_dt100ms_h12",
+  "task_config": "configs/arm/obstacle_transfer/baseline/acp.yaml",
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/baseline/acp/training/native_impedance_teacher_scalar_2175_sparse_dt100ms/ema_update_8000.pt",
+    "sha256": "7e4522ab318b76d9a3e6be6d9aa537fb95a044ccdd8089041379e6abedcb58ee"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "requests": [
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 181200,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 181201,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 181202,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 181203,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 181204,
+      "physical_initial_slot": 2,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 181205,
+      "physical_initial_slot": 2,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 181206,
+      "physical_initial_slot": 3,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 181207,
+      "physical_initial_slot": 3,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "output": "results/arm/obstacle_transfer/baseline/acp/validation/source_sparse_profile_target_pilot/ema_update_8000",
+  "plan_output": "results/arm/obstacle_transfer/baseline/acp/validation/source_sparse_profile_target_pilot/plan_ema_update_8000.json"
+}

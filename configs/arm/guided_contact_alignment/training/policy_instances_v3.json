@@ -1,0 +1,170 @@
+{
+  "ablation_objectives": {
+    "band_only": "C+H",
+    "frozen_warm": "warm control",
+    "gated_full": "C+H+G*R",
+    "matching_no_band": "C+R",
+    "task_only": "C",
+    "ungated_full": "C+H+R"
+  },
+  "actor_manifest": {
+    "path": "configs/arm/guided_contact_alignment/protocol/actor_bindings.json",
+    "sha256": "3bb68bb730ff45a7d1c654a5d2f541090fef106ed548941c38b21c66d3ae8aed"
+  },
+  "admission": {
+    "behavioral_predeployment": {
+      "path": "results/_qualification/four_task_transfer/behavioral_predeployment_20261021_v5/report.json",
+      "sha256": "faefb84d27561ae99c479707c38bce6ef6e846e410ab5b5232e2519b73258634"
+    },
+    "execution_radius_diagnosis": {
+      "path": "results/_protocol/four_task_transfer/diagnostics/t2_post_transport_radius_20261021.json",
+      "sha256": "19809bd5da533570b62e9efc96d048c19d3b0014af480d8db281c8cb456363e6"
+    },
+    "independent_behavior_audit": {
+      "path": "results/_qualification/four_task_transfer/behavioral_predeployment_20261021_v5/independent_audit.json",
+      "sha256": "f2351f9fafb77cace2ca8170862f5c67da4a9ae11be64289b901ff5b08a6f3c9"
+    },
+    "policy_interface_diagnosis": {
+      "path": "results/_protocol/four_task_transfer/diagnostics/t2_policy_interface_failure_20261021.json",
+      "sha256": "eb42dbd250b4becfefcbdb257f56a7ee7c8e006beebf93d1cd87b5df5932067b"
+    },
+    "zero_physics": {
+      "path": "results/_architecture/cross_ebdm_shared_protocol_20261021_v5",
+      "sha256": "d867396c6d2cb73c34bd97d6e3bcf3d02cdca45e45c7ed0f2c726cc38a37ca4d"
+    }
+  },
+  "data_policy": {
+    "confirmation_states_opened": 0,
+    "new_physics_calls": 0,
+    "old_invalid_outcomes_used": false,
+    "source_and_known_nominal_only": true,
+    "target_performance_labels_opened": false
+  },
+  "device": {
+    "logical_device": "cuda:0",
+    "physical_index": 1,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1",
+    "required_visible_device_count": 1
+  },
+  "failure_replacement": false,
+  "frozen_public_inputs": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/validation/p4_corridor_shared_response_v1/level_B_log_0_30_60_120/seed_167000/frozen_inputs.json",
+    "sha256": "d8a8742024c1f1129f00a3c3ccf1b3f334be9b375cdc9529e22341300ef7cf44"
+  },
+  "instances": {
+    "instance_01": {
+      "response_checkpoint": {
+        "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/validation/p4_corridor_shared_response_v1/level_B_log_0_30_60_120/seed_167000/budget_60/checkpoint.pt",
+        "sha256": "d616cf28e2aebee09f43d508424c666154b924ebde5faaa885b34765f69203e1"
+      },
+      "seed": 342000
+    },
+    "instance_02": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v1/level_B_log_60/instance_02/response/budget_60/checkpoint.pt",
+        "sha256": "496678228d89daf52a6dbce43198c6376d164c31525aef65152bbc4a5c9433ca"
+      },
+      "seed": 342001
+    },
+    "instance_03": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v1/level_B_log_60/instance_03/response/budget_60/checkpoint.pt",
+        "sha256": "08102c2fe1ff620356b2bf8a24c8715fb63bb8ee8939b2753e9c29d450f6e44f"
+      },
+      "seed": 342002
+    },
+    "instance_04": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v1/level_B_log_60/instance_04/response/budget_60/checkpoint.pt",
+        "sha256": "0593b42f16269cbb59fc779d57072d91ba169984cb34fa5bf8dbce8bed710a30"
+      },
+      "seed": 342003
+    },
+    "instance_05": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v1/level_B_log_60/instance_05/response/budget_60/checkpoint.pt",
+        "sha256": "c14ea6de43a8abd19698e56a8607bddfa1d088944fbd765cb75866f6b2b748a2"
+      },
+      "seed": 342004
+    },
+    "instance_06": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v2/level_B_log_60/instance_06/response/budget_60/checkpoint.pt",
+        "sha256": "065c1f8d4acd375be0e47458ae9977c4528be9752f405fbfe2ebd1001c9edeec"
+      },
+      "seed": 342005
+    },
+    "instance_07": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v2/level_B_log_60/instance_07/response/budget_60/checkpoint.pt",
+        "sha256": "57126c5c25dd9eab26c42a8f9d37e700c34f34691c029d880e3fea998672214f"
+      },
+      "seed": 342006
+    },
+    "instance_08": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v2/level_B_log_60/instance_08/response/budget_60/checkpoint.pt",
+        "sha256": "c5891e18f29ca2dad2274528c40722573041921532becc74332ad41fa1de4dfd"
+      },
+      "seed": 342007
+    }
+  },
+  "output": "results/arm/guided_contact_alignment/training/policy_instances_v3",
+  "scope": "Eight independent T2 policy instances on physical GPU1 with the shared finite-state contact base, task-owned coordinate projection, and frozen 25% post-transport execution radius. Source/known-nominal histories only; no confirmation or target-performance access.",
+  "source_manifest": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/qualification/p4_source_bank/level_source/seed_35000/data_manifest.json",
+    "sha256": "07af407254aaf3969ebd7861fdf8eb6a50a178ecf5c063c27e6830387b2d497e"
+  },
+  "status": "frozen_unexecuted",
+  "task": "T2",
+  "task_owned_projection": {
+    "base_policy_factory": "public_finite_state_guide_contact_policy",
+    "checkpoint_version": "public-T1-T2-task-owned-request-transport-v3",
+    "effective_normalized_residual_radius": 0.00625,
+    "execution_scale": 0.25,
+    "requires_posttraining_fresh_seed_qualification": true,
+    "task_owned_coordinates": [
+      2,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "transport_coordinates": [
+      0,
+      1,
+      3,
+      4,
+      5
+    ],
+    "zero_residual_requires_bitwise_base_identity": true
+  },
+  "training": {
+    "band_penalty": 100.0,
+    "batch_size": 64,
+    "branch_updates": 2000,
+    "condition_quantile": 0.95,
+    "log_interval": 100,
+    "quantile_method": "higher",
+    "selection_tolerance": 0.05,
+    "state_stride": 10,
+    "task_tolerance": 0.05,
+    "transport_spec": {
+      "change_weight": 0.01,
+      "hidden": [
+        128,
+        128
+      ],
+      "learning_rate": 0.0003,
+      "residual_scale": 0.025,
+      "response_weight": 1.0,
+      "risk_weight": 1.0
+    },
+    "warmup_updates": 2000
+  },
+  "version": "t2-policy-instances-training-v3"
+}

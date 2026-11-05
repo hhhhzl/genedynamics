@@ -1,8 +1,10 @@
 """Public-only currentencoder chart and nativefuture-chart initialization parity."""
+from types import SimpleNamespace
 import numpy as np
 import torch
 from genedynamics.tasks.transfer.specs import task_spec
-from genedynamics.experiments.plugins.methods.transfer.fada.joint import joint_context,lift_joint_checkpoint,JOINT_CONTEXT_DIM
+from genedynamics.tasks.transfer.controllers.fada.base import PublicFADATaskActor,PublicTaskHistory
+from genedynamics.tasks.transfer.controllers.fada.joint import joint_context,lift_joint_checkpoint,JOINT_CONTEXT_DIM
 from genedynamics.solvers.single.fada import FADASolver
 from genedynamics.solvers.single.fada.learning.task_training import released_model_config
 from genedynamics.solvers.single.fada.backends.model import PlannerIDMPolicy
@@ -14,6 +16,24 @@ def test_current_joint_features_do_not_claim_joint_correspondence_or_accept_priv
     changed={k:v.copy() for k,v in p.items()};changed['joint_position'][:,0]+=.1;b=joint_context(changed,'panda');np.testing.assert_allclose(b[:,0]-a[:,0],.1/np.pi,rtol=1e-5);np.testing.assert_array_equal(b[:,1:],a[:,1:])
     import pytest
     with pytest.raises(ValueError):joint_context(dict(p,mechanism=np.ones((2,1))),'panda')
+
+
+def test_public_actor_times_only_new_inference_and_restores_resource_accounting():
+    class Policy:
+        def __init__(self):
+            self.public_memory=None;self.solver=SimpleNamespace(_actions=None,_index=0)
+        def reset(self):pass
+        def act(self,history):
+            assert history['history_valid_mask'].shape==(1,2)
+            return np.zeros((1,13),np.float32)
+    spec=task_spec('T3',robot='xarm7');actor=PublicFADATaskActor.__new__(PublicFADATaskActor)
+    actor.spec=spec;actor.mode=0;actor.view=PublicTaskHistory(spec,0,2);actor.policy=Policy();actor.reset()
+    trajectory,_=record(n=1);rows=[{key:np.asarray(value[index:index+1]).copy() for key,value in trajectory.items()} for index in range(2)]
+    first=actor.act(rows[0]);state=actor.get_state()
+    np.testing.assert_array_equal(actor.act(rows[0]),first)
+    assert len(actor.inference_seconds)==1 and actor.irreversible_network_calls==1 and actor.inference_seconds[0]>0
+    actor.act(rows[1]);assert len(actor.inference_seconds)==2 and actor.irreversible_network_calls==2
+    actor.restore(state);assert len(actor.inference_seconds)==1 and actor.irreversible_network_calls==1
 
 
 def test_lift_preserves_taskspace_planner_and_native_inverse_can_observe_current_joints():

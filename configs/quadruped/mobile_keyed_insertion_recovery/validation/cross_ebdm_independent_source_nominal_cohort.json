@@ -1,0 +1,42 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "first_instance_audit": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/main/cross_ebdm/validation/source_nominal_actor_screen_3301400000/independent_audit.json",
+    "sha256": "7a275c81e2fdbae17a6da8f41cd37af079cc181a2e35e00b7685a152ff1d0d39"
+  },
+  "first_instance_report": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/main/cross_ebdm/validation/source_nominal_actor_screen_3301400000/report.json",
+    "sha256": "00bba7035d7b6b46e3a0abfac436e69ba2db381eae3ef90dd643fd9587304310"
+  },
+  "formal_request_seed_access": 0,
+  "instance_ids": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "maximum_cohort_physical_episodes": 64,
+  "maximum_new_physical_episodes": 56,
+  "method": "cross_ebdm",
+  "method_identity": "ours_gated_v2_completion_projected",
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/main/cross_ebdm/validation/independent_source_nominal_cohort_v1",
+  "source_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/method_source_nominal_actor_roster_native.json",
+    "sha256": "70dd4758752e671372132e80d0890ac2d2e7bf18c6bffa00fcffd6d7caa5b50a"
+  },
+  "task": "T4",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/main/cross_ebdm.yaml",
+    "sha256": "343620e2b6010257f11fe1871884ab0820d65b74dfee8467412039ca113bc3cf"
+  },
+  "version": "transfer-legacy-independent-source-nominal-cohort-v1"
+}

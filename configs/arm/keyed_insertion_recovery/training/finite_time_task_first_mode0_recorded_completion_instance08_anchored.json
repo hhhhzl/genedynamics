@@ -1,0 +1,212 @@
+{
+  "actor_manifest": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/actor_bindings.json",
+    "sha256": "867bf9e88ae5ad7c698ad3b9889204b426df0993a558913cdf76ddb753d8892d"
+  },
+  "data": {
+    "additional_weak_log_manifests": [
+      {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_mode0_public_log/gpu1/public_log_manifest.json",
+        "sha256": "1dafc7445184943ffb15141a53cde5480183ad17790f09d1ce90f1a2b91012e9"
+      }
+    ],
+    "episode_tasks": [
+      "T3"
+    ],
+    "frozen_episode_task": "T3",
+    "frozen_mode": 0,
+    "frozen_public_inputs": {
+      "path": "results/_development/p4_completion_20261015/results/arm/keyed_insertion_recovery/validation/p4_public_issued_response/level_B_log/seed_38000/frozen_inputs.json",
+      "sha256": "ca09470e498f51b2419f48544b3c02900e9e121962873e82e060f812f9cf3e32"
+    },
+    "source_manifest": {
+      "path": "results/_development/p4_derated_20261014/results/arm/keyed_insertion_recovery/qualification/fada_derated_source_opportunity/level_source/seed_28440/qualification.json",
+      "sha256": "0956436687ab283c4f6aa5aaf910a0a3f86d46c5c86dc6d6123a222e1fd3d1c3"
+    },
+    "source_prior": {
+      "path": "results/_development/p0p1_20261013_v2/results/arm/keyed_insertion_recovery/validation/cross_ebdm/_source/prior",
+      "sha256": {
+        "metadata.json": "9299cf19d96042ad4f1007f30087e7d0e994f5f1cb71a98a479f5cd8c83349db",
+        "tensors-6b33a9480cc879ee3d1f470f3d2ad55f79b2682b9575e4bca824a970d7ef22d7.npz": "6b33a9480cc879ee3d1f470f3d2ad55f79b2682b9575e4bca824a970d7ef22d7"
+      }
+    },
+    "state_stride": 5,
+    "validation_bodies": [
+      "xarm7"
+    ],
+    "weak_log_manifest": {
+      "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_public_log/gpu1/public_log_manifest.json",
+      "sha256": "90b94ce415951875c12c148c6660a2a72eec8e62d38984a9714191dfbb13ddf7"
+    },
+    "weak_log_remaining_controls_max": 150,
+    "weak_log_remaining_controls_target": "recorded_episode_end",
+    "weak_log_split": {
+      "kind": "entry_index_modulo",
+      "modulus": 4,
+      "validation_residue": 0
+    }
+  },
+  "development_evidence": {
+    "public_log_collection": {
+      "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_public_log/gpu1/report.json",
+      "sha256": "0feb45f75f80f2e1dd6c322a4bbedf3c9879d16558cb975331a856b2f4bfab53"
+    },
+    "rejected_qualification": {
+      "path": "results/arm/keyed_insertion_recovery/validation/finite_time_terminal_progress_paired/gpu1/report.json",
+      "sha256": "dbb7cb020aee68b5cb417941511a04f7d16256b6c04d475d70e0033220e91d1d"
+    },
+    "rejected_terminal_stability_qualification": {
+      "path": "results/arm/keyed_insertion_recovery/validation/finite_time_terminal_stability_paired/gpu1/report.json",
+      "sha256": "87da830bd74b36f7fc0abe335c6fac3d4ffe469c7c1f070788dffb998780cd8d"
+    }
+  },
+  "device": {
+    "logical_device": "cuda:0",
+    "physical_uuid": "58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1",
+    "required_visible_device_count": 1
+  },
+  "feedback": {
+    "alignment_spatial_stiffness": 1.0,
+    "compensation_gain": 2.0,
+    "compensation_limit": 0.04,
+    "execution_horizon": 1,
+    "guard_clear_z_m": 0.61,
+    "guard_prediction_seconds": 0.0,
+    "guard_retreat_speed": 0.006,
+    "guard_seat_gap_m": 0.006,
+    "guard_settle_ticks": 4,
+    "insertion_force_scale": 1.0,
+    "insertion_spatial_stiffness": 1.0,
+    "integral_scale": 0.0,
+    "issued_reference_gain": 2.0,
+    "lead_rotation_rad": 0.04,
+    "lead_xy_m": 0.008,
+    "lead_z_m": 0.01,
+    "lift_before_lateral": true,
+    "normal_admittance_gain": 0.004,
+    "normal_control": "position_admittance",
+    "normal_velocity_limit": 0.015,
+    "position_gain": 6.0,
+    "recovery_spatial_stiffness": 0.25,
+    "rotation_gain": 4.0,
+    "twist_damping": 1.0
+  },
+  "finite_time_progress": {
+    "angular_progress_scale": 0.0001,
+    "candidate_residual_scale": 0.025,
+    "control_dt_seconds": 0.02,
+    "hold_controls": 15,
+    "linear_progress_scale": 0.00001,
+    "minimum_candidate_delta": 0.0001,
+    "orientation_tolerance_rad": 0.03490658503988659,
+    "phase": 3,
+    "position_tolerance_m": 0.002,
+    "progress_tolerance": 1E-7,
+    "progress_weight": 1.0,
+    "tail_fraction": 0.1,
+    "tail_weight": 4.0,
+    "terminal_weight": 1.0
+  },
+  "instances": {
+    "instance_08": {
+      "current_checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_stability/checkpoints/instance_08/checkpoint.pt",
+        "sha256": "68e093578b8918917d060b78eee67300c454c0830e2bf71af43dc28af3f8c4ea"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/gated_v2_contact/T3/frozen.json",
+        "sha256": "7a4b82aa01b762f6b3310e3731658b36e6d7768880729f76569a7d40d4054a4f"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/T3/response/budget_60/checkpoint.pt",
+        "sha256": "20a9e81ca49ce9222d04ae791d894c8d807c06afb90ef62d920c67ba22c7f71e"
+      },
+      "seed": 434008,
+      "task_only_checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_directional/task_only/checkpoints/instance_08/checkpoint.pt",
+        "sha256": "48ae85b8c1df26f400d1bd55de361a950c1226bbc5c949368d8e034822b3891e"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/gated_v2_contact/T3/continuation.pt",
+        "sha256": "8c35e777307c2ee41ff00de4e6d57ddf3a99a80368d180f3058861c431d232a5"
+      }
+    }
+  },
+  "limits": {
+    "maximum_gpu_GiB": 10,
+    "wall_seconds": 1800
+  },
+  "output": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/checkpoints_instance_08",
+  "parent_attempt": {
+    "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_progress/recentered/checkpoints/report.json",
+    "sha256": "221a82f079bf115eb5106f596e7b9bd73880a683421d86985fa539570c81e2ce"
+  },
+  "preflight_output": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/preflight_mode_specific_batch",
+  "preflight_report": {
+    "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/preflight_mode_specific_batch/report.json",
+    "sha256": "bdb235157391c3c78f9abb2c777b0de489b1fbdd347149a078ab89bf2a387873"
+  },
+  "resolved_base_training_config": {
+    "path": "configs/arm/keyed_insertion_recovery/training/finite_time_late_phase_preflight.json",
+    "sha256": "de5c12d648654d38d5862d4e3b3720a4c47d796aea54a616f8fb87142194ff93"
+  },
+  "resolved_shared_start_report": {
+    "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_directional/task_only/checkpoints/report.json",
+    "sha256": "20ac36a124b46479e6cb35344b0e618780c7b555ca55fd803b5c0e44e969e6aa"
+  },
+  "selection": {
+    "minimum_useful_fraction": 0.25,
+    "progress_tolerance": 1E-7,
+    "required_modes": [
+      0
+    ],
+    "task_tolerance": 0.05
+  },
+  "task": "T3",
+  "training": {
+    "batch_size": 64,
+    "checkpoint_selection": {
+      "interval_updates": 100,
+      "minimum_update": 100,
+      "rule": "best_validation_paired_progress"
+    },
+    "control_checkpoint_policy": "frozen_selector",
+    "ensemble_task": {
+      "reduction": "worst_paired_member"
+    },
+    "initialization": {
+      "calibration": "fit_plus_weak_log_public_states",
+      "kind": "recentered_current_checkpoint_fresh_optimizer",
+      "maximum_median_absolute_logit": 3.0
+    },
+    "log_interval": 100,
+    "paired_progress": {
+      "angular_margin": 0.0001,
+      "linear_margin": 0.00001,
+      "requested_mode": 0,
+      "tail_fraction": 0.1,
+      "tail_weight": 4.0,
+      "weight": 1.0
+    },
+    "response_normalization": {
+      "minimum_source_task_advantage": 0.0,
+      "reference_floor": 0.0001
+    },
+    "retain_validation_checkpoints": true,
+    "shared_start_report": {
+      "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_directional/task_only/checkpoints/report.json",
+      "sha256": "20ac36a124b46479e6cb35344b0e618780c7b555ca55fd803b5c0e44e969e6aa"
+    },
+    "target_sampling": {
+      "kind": "mode_specific",
+      "modes": [
+        0
+      ]
+    },
+    "target_state_fraction": 0.5,
+    "updates": 1500,
+    "variant": "task_first_ensemble_robust_anchored"
+  },
+  "version": "t3-task-first-mode-specific-recorded-completion-training-v9"
+}

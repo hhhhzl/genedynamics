@@ -1,0 +1,28 @@
+{
+  "version": "transfer-independent-actor-development-evaluation-v1",
+  "task": "T1",
+  "method": "asid",
+  "method_identity": "ASID_task_adapted_CEM",
+  "actor_binding_source": "independent_actor_package",
+  "actor_package": {
+    "path": "results/arm/obstacle_transfer/baseline/asid/validation/independent_actor_package_v1/report.json",
+    "sha256": "5fc4c1a61e2c5a04d43831cea18b49771a930e526a187ca616e81c830f271fc8"
+  },
+  "instance_id": "independent_8801004",
+  "task_config": "configs/arm/obstacle_transfer/baseline/asid.yaml",
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/baseline/asid/training/independent_training_8801004/checkpoint.json",
+    "sha256": "2a69b4410d3521a364de0b454eb31ee721b9546b36e5c1952746c474e72f3c3b"
+  },
+  "request_roster": {
+    "path": "configs/arm/obstacle_transfer/validation/asid_independent_actor_source_nominal_roster.json",
+    "sha256": "6cbeaa9806bdd0e5e07de170b7d5596811f003b76e636432ff7326b82496709f"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/arm/obstacle_transfer/baseline/asid/validation/independent_source_nominal_8801004",
+  "plan_output": "results/arm/obstacle_transfer/baseline/asid/validation/plans/independent_source_nominal_8801004.json"
+}

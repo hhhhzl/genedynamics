@@ -5,7 +5,7 @@ actor in `backends/`. The backend owns recurrent state, native normalization,
 action scaling, and strict actor checkpoint restore.
 
 The object-trajectory task binding lives in
-`genedynamics.experiments.plugins.methods.transfer.human2sim2robot`. Dataset,
+`genedynamics.tasks.transfer.controllers.human2sim2robot`. Dataset,
 task-environment, and training code live in `genedynamics.solvers.single.human2sim2robot.learning`.
 Simulator assets and task acceptance remain environment/task responsibilities.
 

@@ -1,0 +1,137 @@
+{
+  "ablation_objectives": {
+    "band_only": "C+H",
+    "frozen_warm": "warm control",
+    "gated_full": "C+H+G*R",
+    "matching_no_band": "C+R",
+    "task_only": "C",
+    "ungated_full": "C+H+R"
+  },
+  "actor_manifest": {
+    "path": "configs/arm/guided_contact_alignment/protocol/actor_bindings.json",
+    "sha256": "dbd58305b2b6f68bade860bbc72a32189aff772927c01d63ab426e066b1e5ed3"
+  },
+  "admission": {
+    "behavioral_predeployment": {
+      "path": "results/_qualification/four_task_transfer/behavioral_predeployment_20261021_v3/report.json",
+      "sha256": "c3ef2be0662c02f953f59cf8e9587662c0631d8ffe597ae892eadb9635e16263"
+    },
+    "cpu_behavioral_closeout": {
+      "path": "results/_protocol/four_task_transfer/diagnostics/cpu_behavioral_closeout_20261021.json",
+      "sha256": "30ac70f2cac6c26c3819bdfd98dc0aa1aeb030b336e5754112a9990e3f11f94e"
+    },
+    "zero_physics": {
+      "path": "results/_architecture/cross_ebdm_shared_protocol_20261021_v3/report.json",
+      "sha256": "3bb093230e56bd4c3cb968a50f59ca54fc6ea314d0d49fca28f5325985e7a048"
+    }
+  },
+  "data_policy": {
+    "confirmation_states_opened": 0,
+    "new_physics_calls": 0,
+    "old_invalid_outcomes_used": false,
+    "source_and_known_nominal_only": true,
+    "target_performance_labels_opened": false
+  },
+  "device": {
+    "logical_device": "cuda:0",
+    "physical_index": 1,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1",
+    "required_visible_device_count": 1
+  },
+  "failure_replacement": false,
+  "frozen_public_inputs": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/validation/p4_corridor_shared_response_v1/level_B_log_0_30_60_120/seed_167000/frozen_inputs.json",
+    "sha256": "d8a8742024c1f1129f00a3c3ccf1b3f334be9b375cdc9529e22341300ef7cf44"
+  },
+  "instances": {
+    "instance_01": {
+      "response_checkpoint": {
+        "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/validation/p4_corridor_shared_response_v1/level_B_log_0_30_60_120/seed_167000/budget_60/checkpoint.pt",
+        "sha256": "d616cf28e2aebee09f43d508424c666154b924ebde5faaa885b34765f69203e1"
+      },
+      "seed": 322000
+    },
+    "instance_02": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v1/level_B_log_60/instance_02/response/budget_60/checkpoint.pt",
+        "sha256": "496678228d89daf52a6dbce43198c6376d164c31525aef65152bbc4a5c9433ca"
+      },
+      "seed": 323000
+    },
+    "instance_03": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v1/level_B_log_60/instance_03/response/budget_60/checkpoint.pt",
+        "sha256": "08102c2fe1ff620356b2bf8a24c8715fb63bb8ee8939b2753e9c29d450f6e44f"
+      },
+      "seed": 324000
+    },
+    "instance_04": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v1/level_B_log_60/instance_04/response/budget_60/checkpoint.pt",
+        "sha256": "0593b42f16269cbb59fc779d57072d91ba169984cb34fa5bf8dbce8bed710a30"
+      },
+      "seed": 325000
+    },
+    "instance_05": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v1/level_B_log_60/instance_05/response/budget_60/checkpoint.pt",
+        "sha256": "c14ea6de43a8abd19698e56a8607bddfa1d088944fbd765cb75866f6b2b748a2"
+      },
+      "seed": 326000
+    },
+    "instance_06": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v2/level_B_log_60/instance_06/response/budget_60/checkpoint.pt",
+        "sha256": "065c1f8d4acd375be0e47458ae9977c4528be9752f405fbfe2ebd1001c9edeec"
+      },
+      "seed": 327000
+    },
+    "instance_07": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v2/level_B_log_60/instance_07/response/budget_60/checkpoint.pt",
+        "sha256": "57126c5c25dd9eab26c42a8f9d37e700c34f34691c029d880e3fea998672214f"
+      },
+      "seed": 328000
+    },
+    "instance_08": {
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_independent_t2_model_instances_v2/level_B_log_60/instance_08/response/budget_60/checkpoint.pt",
+        "sha256": "c5891e18f29ca2dad2274528c40722573041921532becc74332ad41fa1de4dfd"
+      },
+      "seed": 329000
+    }
+  },
+  "output": "results/arm/guided_contact_alignment/training/policy_instances_v1",
+  "scope": "Eight independent T2 policy instances on physical GPU1 after the shared 1 ms / 40 ms cell passed CPU behavioral qualification. Fixed public response models and SHA-bound source/known-nominal histories only; no confirmation or target-performance access.",
+  "source_manifest": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/qualification/p4_source_bank/level_source/seed_35000/data_manifest.json",
+    "sha256": "07af407254aaf3969ebd7861fdf8eb6a50a178ecf5c063c27e6830387b2d497e"
+  },
+  "status": "frozen_unexecuted",
+  "task": "T2",
+  "training": {
+    "band_penalty": 100.0,
+    "batch_size": 64,
+    "branch_updates": 2000,
+    "condition_quantile": 0.95,
+    "log_interval": 100,
+    "quantile_method": "higher",
+    "selection_tolerance": 0.05,
+    "state_stride": 10,
+    "task_tolerance": 0.05,
+    "transport_spec": {
+      "change_weight": 0.01,
+      "hidden": [
+        128,
+        128
+      ],
+      "learning_rate": 0.0003,
+      "residual_scale": 0.025,
+      "response_weight": 1.0,
+      "risk_weight": 1.0
+    },
+    "warmup_updates": 2000
+  },
+  "version": "t2-policy-instances-training-v1"
+}

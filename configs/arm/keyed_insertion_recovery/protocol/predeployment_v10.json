@@ -1,0 +1,58 @@
+{
+  "version": "four-task-behavioral-predeployment-v10",
+  "task": "T3",
+  "supersedes": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/predeployment_v9.json",
+    "sha256": "8a0e7938b5c207ea9977c0daf695dd4c8d236584d0ce45b69b57a460a159b2d4"
+  },
+  "shared_task_contract": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/public_v6.json",
+    "sha256": "ba1e0aaaaf0591decba128f40e666394ba43c729b16d5de4c817dff617bf8a96"
+  },
+  "actor_manifest": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/actor_bindings.json",
+    "sha256": "94fdcb9e62b71c4e1d653ecb5489a17dcde36743d20483b2beabcc74bcccd460"
+  },
+  "seed_anchor": 9271000,
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_index": 0,
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "gate": {
+    "require_all_mode_correct_task_success": true,
+    "require_zero_constraint_violations": true,
+    "require_evidence_reaudit": true,
+    "failure_replacement": false
+  },
+  "source_admission": "Validate every method's declared source or training artifact and SHA through the task-local actor manifest. Retain algorithm and external-resource rejections; never replace a rejected row or reuse a prior outcome.",
+  "scope": "Fresh physical-GPU0 portability qualification of every executable T3 main, baseline and ablation row after the seed-disjoint v21 transport confirmation was migrated into the common public actor resolver. The prior GPU1 selection and confirmation artifacts remain immutable training and development provenance; all behavior outcomes in this protocol use new reset seeds on GPU0. The two mechanism cells exactly match the frozen four-task evaluation roster. Baseline and ablation failures remain in their denominators. This is predeployment evidence, not paper performance evidence."
+}

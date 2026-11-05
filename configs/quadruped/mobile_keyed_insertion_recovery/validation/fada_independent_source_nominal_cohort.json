@@ -1,0 +1,42 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "first_instance_audit": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/fada/validation/source_nominal_actor_screen_3301400000/independent_audit.json",
+    "sha256": "bb35e76d629fa25f1f0937bf9dc44474db207742bf594994b708c588cf3dff51"
+  },
+  "first_instance_report": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/fada/validation/source_nominal_actor_screen_3301400000/report.json",
+    "sha256": "c7a9ca8677f6d588553d41a528a8085f45d8ff694297889a67d55193746aaf58"
+  },
+  "formal_request_seed_access": 0,
+  "instance_ids": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "maximum_cohort_physical_episodes": 64,
+  "maximum_new_physical_episodes": 56,
+  "method": "fada",
+  "method_identity": "FADA_task_adapted",
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/fada/validation/independent_source_nominal_cohort_v1",
+  "source_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/method_source_nominal_actor_roster_native.json",
+    "sha256": "70dd4758752e671372132e80d0890ac2d2e7bf18c6bffa00fcffd6d7caa5b50a"
+  },
+  "task": "T4",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/fada.yaml",
+    "sha256": "d6907f926898863dc9efb8a8060f0e4e3bb9ea16e84dfc87e9e9024001a4bee3"
+  },
+  "version": "transfer-legacy-independent-source-nominal-cohort-v1"
+}

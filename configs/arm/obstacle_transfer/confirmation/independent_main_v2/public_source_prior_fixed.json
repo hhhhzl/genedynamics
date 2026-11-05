@@ -1,0 +1,26 @@
+{
+  "cell_admission": {
+    "path": "results/arm/obstacle_transfer/validation/independent_main_table_admission_v2/public_source_prior.json",
+    "sha256": "10b9e5909d7cd49aa196cdb8c4cec3a5ae7a28ee5694f7749632d404c9e95f74"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "instance_id": "fixed",
+  "method": "public_source_prior",
+  "method_identity": "public_source_prior",
+  "output": "results/arm/obstacle_transfer/baseline/public_source_prior/confirmation/independent_main_v2/fixed",
+  "plan_output": "results/arm/obstacle_transfer/baseline/public_source_prior/confirmation/independent_main_v2/fixed_plan.json",
+  "request_roster": {
+    "path": "configs/arm/obstacle_transfer/protocol/independent_main_table_requests_v2.json",
+    "sha256": "0b478de1d640a7cde0eab59bd1745d604a301b835e2bb7fb98de6e7557b07510"
+  },
+  "task": "T1",
+  "task_config": {
+    "path": "configs/arm/obstacle_transfer/baseline/public_source_prior.yaml",
+    "sha256": "c2fd173581a87a60562b8c689389d49b2a748f37f670e8aa1a5e46ed7369db68"
+  },
+  "version": "transfer-independent-main-table-evaluation-v2"
+}

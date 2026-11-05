@@ -1,0 +1,24 @@
+base: mechanism_factorial.yaml
+name: keyed_insertion_recovery_retreat_release_replay
+output_dir: results/arm/keyed_insertion_recovery/validation/retreat_release_replay
+seeds:
+- 940302
+method_params:
+  actor_binding:
+    feedback:
+      insertion_lead_z_m: 0.01
+    retreat_release_version: safe_settled_v1
+metadata:
+  protocol: transfer_retreat_release_replay
+  physics_episode_cap: 1
+  selection_rule: replay only the archived delay-3 gain-1 payload-0.8 mode-0 latch timeout with the safe-settled release; compare against the retained legacy trace without replacing it
+suites:
+- name: safe_settled_delay_3_gain_1_payload_0p8_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 3
+      servo_gain: 1.0
+      payload_mass: 0.8
+  method_params:
+    mode: 0

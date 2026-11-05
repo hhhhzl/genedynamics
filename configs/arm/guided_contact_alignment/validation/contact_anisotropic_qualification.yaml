@@ -1,0 +1,12 @@
+base: contact_unilateral_qualification.yaml
+name: guided_contact_alignment_contact_anisotropic_qualification
+output_dir: results/arm/guided_contact_alignment/validation/contact_anisotropic_qualification
+seeds:
+- 930224
+- 930225
+method_params:
+  actor_binding:
+    reference_version: public_guide_contact_v10
+metadata:
+  protocol: transfer_contact_anisotropic_qualification
+  selection_rule: require both requested xArm modes on both fresh resets to satisfy unchanged strict criteria with the predeclared x/y tangent limits of 6.5/10 mm/s

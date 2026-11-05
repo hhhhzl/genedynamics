@@ -18,6 +18,16 @@ from genedynamics.robots.xarm7.profile import xarm7_profile
 from genedynamics.robots.ur5e.profile import ur5e_profile
 
 
+# This UR branch is the unique enumerated start-pose family found to admit
+# continuous, collision-free local IK along both public T1 routes.  Keeping the
+# seed beside the task workcell avoids turning a task-specific reset into a
+# solver or global robot-profile option.
+UR5E_OBSTACLE_START_IK_SEED = np.asarray([
+    .03706749024522321, -1.3108973548162532, -1.6348679788564078,
+    4.5165617101457665, -4.712388939207581, 4.749456471519152,
+])
+
+
 def _vec(x):
     return " ".join(str(float(v)) for v in x)
 
@@ -78,17 +88,36 @@ def _enclosing_capsule(vertices):
     return center-axis*length, center+axis*length, radius
 
 
-def solve_ik(model, site_id, q0, position, target_rotation):
-    """Construction-time DLS feasibility check; not a learned source query."""
+def solve_ik(model, site_id, q0, position, target_rotation, *, joint_ids=None):
+    """Construction-time DLS feasibility check over declared robot joints.
+
+    An explicit scalar-joint subset leaves passive scene coordinates exactly
+    at q0. The six-DoF restart budget belongs to the robot, not the full scene.
+    Omitting the subset retains the historical all-joint construction path.
+    """
     from scipy.spatial.transform import Rotation
     data = mujoco.MjData(model)
     data.qpos[:] = q0
+    if joint_ids is None:
+        qindices, dofs, active_count = slice(None), slice(None), model.nq
+        limits = model.jnt_range
+    else:
+        joints = np.asarray(joint_ids)
+        if (joints.ndim != 1 or not len(joints) or joints.dtype.kind not in "iu"
+                or len(np.unique(joints)) != len(joints)
+                or np.any(joints < 0) or np.any(joints >= model.njnt)
+                or not np.isin(model.jnt_type[joints],
+                               [mujoco.mjtJoint.mjJNT_HINGE, mujoco.mjtJoint.mjJNT_SLIDE]).all()):
+            raise ValueError("IK requires unique scalar robot joint IDs")
+        qindices, dofs = model.jnt_qposadr[joints], model.jnt_dofadr[joints]
+        active_count = len(qindices)
+        limits = model.jnt_range[joints]
     jp, jr = np.zeros((3, model.nv)), np.zeros((3, model.nv))
     rng=np.random.default_rng(1701)
-    for iteration in range(350*(12 if model.nq==6 else 1)):
+    for iteration in range(350*(12 if active_count==6 else 1)):
         if iteration and iteration%350==0:
-            data.qpos[:]=np.clip(np.asarray(q0)+rng.uniform(-3.,3.,model.nq),
-                                 model.jnt_range[:,0]+.002,model.jnt_range[:,1]-.002)
+            data.qpos[qindices]=np.clip(np.asarray(q0)[qindices]+rng.uniform(-3.,3.,active_count),
+                                       limits[:,0]+.002,limits[:,1]-.002)
         mujoco.mj_forward(model, data)
         current = data.site_xmat[site_id].reshape(3, 3)
         angular = Rotation.from_matrix(target_rotation @ current.T).as_rotvec()
@@ -96,10 +125,10 @@ def solve_ik(model, site_id, q0, position, target_rotation):
         if np.linalg.norm(error[:3]) < 2e-5 and np.linalg.norm(error[3:]) < 2e-4:
             return data.qpos.copy()
         mujoco.mj_jacSite(model, data, jp, jr, site_id)
-        jac = np.vstack((jp, jr))
+        jac = np.vstack((jp, jr))[:, dofs]
         dq = jac.T @ np.linalg.solve(jac @ jac.T + .002**2 * np.eye(6), error)
-        data.qpos[:] = np.clip(data.qpos + np.clip(dq, -.12, .12),
-                               model.jnt_range[:, 0] + .002, model.jnt_range[:, 1] - .002)
+        data.qpos[qindices] = np.clip(data.qpos[qindices] + np.clip(dq, -.12, .12),
+                                     limits[:, 0] + .002, limits[:, 1] - .002)
     raise ValueError(f"ObstacleTransfer {model.names[:30]!r} pose unreachable: residual {error}")
 
 
@@ -185,18 +214,48 @@ def build_workcell(task, mechanism, *, validate_scene=True):
                   ("payload_bar", (0., 0., .07), (.06, .01, .01), mechanism.payload_mass / 2),
                   ("payload_leg", (-.05, .04, .07), (.01, .03, .01), mechanism.payload_mass / 2)]
     for name, pos, size, mass in tool_geoms:
+        payload_only_frame = task.scene_profile == "aperture_brake_v1" and name.startswith("payload")
         ET.SubElement(tool, "geom", name=name, type="box", pos=_vec(pos), size=_vec(size),
-                      mass=str(mass), contype="1", conaffinity="3", margin=str(task.contact_margin),
+                      mass=str(mass), contype="4" if payload_only_frame else "1",
+                      conaffinity="7" if payload_only_frame else "3", margin=str(task.contact_margin),
                       rgba="0.85 0.55 0.2 1")
     # The attached tool and two preceding links have intended mounting overlap.
     for name in names[-3:]:
         ET.SubElement(contact, "exclude", body1=name, body2="transfer_tool")
-    obstacles = [("blocker", (.50, 0., .42), (.035, .055, .09)),
-                 ("side_panel", (.50, .40, .52), (.18, .015, .17)),
-                 ("crossbeam", (.50, 0., 1.10), (.18, .30, .025))]
+    if task.scene_profile == "aperture_brake_v1":
+        outer_half_width = .24
+        outer_half_height = .25
+        side_half_width = (outer_half_width - task.aperture_half_width) / 2
+        cap_half_height = (outer_half_height - task.aperture_half_height) / 2
+        obstacles = [
+            ("aperture_left", (
+                task.aperture_plane_x,
+                task.aperture_center_y - task.aperture_half_width - side_half_width,
+                task.aperture_center_z,
+            ), (task.aperture_frame_thickness, side_half_width, outer_half_height)),
+            ("aperture_right", (
+                task.aperture_plane_x,
+                task.aperture_center_y + task.aperture_half_width + side_half_width,
+                task.aperture_center_z,
+            ), (task.aperture_frame_thickness, side_half_width, outer_half_height)),
+            ("aperture_top", (
+                task.aperture_plane_x, task.aperture_center_y,
+                task.aperture_center_z + task.aperture_half_height + cap_half_height,
+            ), (task.aperture_frame_thickness, task.aperture_half_width, cap_half_height)),
+            ("aperture_bottom", (
+                task.aperture_plane_x, task.aperture_center_y,
+                task.aperture_center_z - task.aperture_half_height - cap_half_height,
+            ), (task.aperture_frame_thickness, task.aperture_half_width, cap_half_height)),
+        ]
+    else:
+        obstacles = [("blocker", (.50, 0., .42), (.035, .055, .09)),
+                     ("side_panel", (.50, .40, .52), (.18, .015, .17)),
+                     ("crossbeam", (.50, 0., 1.10), (.18, .30, .025))]
     for name, pos, size in obstacles:
         ET.SubElement(world, "geom", name=name, type="box", pos=_vec(pos), size=_vec(size),
-                      contype="2", conaffinity="1", margin=str(task.contact_margin), rgba=".6 .6 .6 1")
+                      contype="4" if name.startswith("aperture_") else "2",
+                      conaffinity="4" if name.startswith("aperture_") else "1",
+                      margin=str(task.contact_margin), rgba=".6 .6 .6 1")
     ET.SubElement(world, "geom", name="floor", type="plane", pos="0 0 -.15", size="2 2 .05",
                   contype="2", conaffinity="1", margin=str(task.contact_margin))
     ET.SubElement(world, "site", name="goal", pos=_vec(task.goal_position), size=".012", rgba="0 1 0 .5")
@@ -209,7 +268,9 @@ def build_workcell(task, mechanism, *, validate_scene=True):
     model = mujoco.MjModel.from_xml_string(xml)
     binding = RobotBinding.from_mujoco_model(profile, model)
     sid = binding.element_ids["tool_mount"]
-    start = solve_ik(model, sid, profile.controller_defaults["home_qpos"],
+    start_seed = (UR5E_OBSTACLE_START_IK_SEED if task.robot == "ur5e" else
+                  np.asarray(profile.controller_defaults["home_qpos"]))
+    start = solve_ik(model, sid, start_seed,
                      np.array(task.start_position), rotation())
     goal = solve_ik(model, sid, start, np.array(task.goal_position), rotation(task.goal_yaw))
     for label, q in (("start", start), ("goal", goal)):
@@ -238,6 +299,12 @@ def build_workcell(task, mechanism, *, validate_scene=True):
                                          "null_stiffness": 10., "null_dls_regularization": .001,
                                          "integral_gains": [400.]*3 + [20.]*3,
                                          "integral_limits": [.1]*6},
+                "start_ik_seed": start_seed.tolist(),
+                "scene_profile": task.scene_profile,
+                "aperture_frame_geoms": (
+                    [name for name, _, _ in obstacles if name.startswith("aperture_")]
+                    if task.scene_profile == "aperture_brake_v1" else []
+                ),
                 "clearance": "contact-derived, censored at contact_margin; not exact distance",
                 "start_qpos": start.tolist(), "goal_qpos": goal.tolist()}
     return Workcell(model, binding, start, goal, nominal_masses, nominal_ipos, xml, manifest)

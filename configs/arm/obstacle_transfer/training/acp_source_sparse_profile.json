@@ -1,0 +1,36 @@
+{
+  "version": "acp-qualified-public-demonstrations-v1",
+  "task": "T1",
+  "source_role": "target_supervised_public_teacher",
+  "source_manifests": [
+    "results/arm/obstacle_transfer/baseline/acp/validation/native_impedance_teacher/scalar_2175/data_manifest.json"
+  ],
+  "history_len": 8,
+  "horizon": 16,
+  "minimum_episodes_per_mode": {
+    "fit": 3,
+    "validation": 1
+  },
+  "output": "results/arm/obstacle_transfer/baseline/acp/demonstrations/native_impedance_teacher_scalar_2175_sparse_dt100ms",
+  "gpu_training": {
+    "device": "cuda:0",
+    "expected_physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "history_len": 8,
+    "horizon": 16,
+    "action_chart": "response19",
+    "seed": 240101,
+    "batch_size": 16,
+    "max_updates": 8000,
+    "evaluation_interval": 2000,
+    "validation_windows": 256,
+    "maximum_gpu_GiB": 5.5,
+    "estimated_wall_seconds": [
+      800,
+      1200
+    ],
+    "estimate_basis": "same native ACP model and fixed 8000 updates; only labels use the source-faithful 100 ms sparse waypoint interval",
+    "output": "results/arm/obstacle_transfer/baseline/acp/training/native_impedance_teacher_scalar_2175_sparse_dt100ms",
+    "action_down_sample_steps": 5
+  },
+  "action_down_sample_steps": 5
+}

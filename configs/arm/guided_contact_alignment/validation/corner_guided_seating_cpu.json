@@ -1,0 +1,18 @@
+{
+  "version": "corner-guided-seating-cpu-qualification-v1",
+  "task": "corner_guided_seating",
+  "output_dir": "results/arm/guided_contact_alignment/validation/corner_guided_seating",
+  "device": "cpu",
+  "contract": "configs/arm/guided_contact_alignment/protocol/subtasks/corner_guided_seating_v1.json",
+  "robot": "xarm7",
+  "mechanism": {"contact_friction": 0.4, "contact_time_constant": 0.04},
+  "episodes": [
+    {"seed": 771001, "mode": 0, "purpose": "source_qualification"},
+    {"seed": 771002, "mode": 0, "purpose": "source_qualification"},
+    {"seed": 771101, "mode": 0, "purpose": "source_validation"},
+    {"seed": 771102, "mode": 0, "purpose": "source_validation"}
+  ],
+  "success_filtering": false,
+  "failure_replacement": false,
+  "formal_performance_evidence": false
+}

@@ -1,0 +1,61 @@
+{
+  "version": "four-task-paired-constraint-stress-v1",
+  "name": "gated_ungated_constraint_stress",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cpu"
+  },
+  "seed_anchor": 4501000,
+  "reset_slots_per_cell": 8,
+  "requested_modes": [
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "ablation",
+      "key": "gated_full",
+      "label": "gated_full",
+      "instances": "all"
+    },
+    {
+      "family": "ablation",
+      "key": "ungated_full",
+      "label": "ungated_full",
+      "instances": "all"
+    }
+  ],
+  "stress_contract": {
+    "comparators": [
+      "gated_full",
+      "ungated_full"
+    ],
+    "event": "measured_force_or_joint_speed_limit",
+    "force_limit_N": 25.0,
+    "lateral_force_limit_N": 10.0,
+    "joint_speed_limit_radps": 3.0,
+    "require_exact_1ms_substeps": true,
+    "claim_rule": "exact_paired_two_sided_p_below_0.05_and_ungated_only_exceeds_gated_only",
+    "predicted_margin_policy": "unavailable_without_a_calibrated_public_predictor"
+  },
+  "source_decision": {
+    "path": "results/arm/guided_contact_alignment/validation/deadline_reference_admission_formal_cells_paired/action_support_screen.json",
+    "sha256": "db6407e6a57f907c6036ad868463da0258cfb82eda9fc581e425add80221e832"
+  },
+  "scope": "Fresh paired CPU diagnosis of the existing public contact guard on the failed payload/mode-1 cell. It opens no confirmation state and cannot become performance evidence."
+}

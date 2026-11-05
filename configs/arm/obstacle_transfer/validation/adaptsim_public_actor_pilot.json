@@ -1,0 +1,52 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T1",
+  "method": "adaptsim",
+  "method_identity": "AdaptSim_task_adapted_CEM",
+  "task_config": "configs/arm/obstacle_transfer/baseline/adaptsim.yaml",
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/baseline/adaptsim/training/meta_coordinate_ledger_replay_928505/inference_and_policy.pt",
+    "sha256": "6861746e088ae1690d96dacd021f9a801279d4f82defcb7aa9d40830c1ba17c4"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "requests": [
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3300600000,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {"servo_gain": 1.0, "payload_mass": 0.5, "delay_steps": 0},
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3300600001,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {"servo_gain": 1.0, "payload_mass": 0.5, "delay_steps": 0},
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3300601000,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {"servo_gain": 0.7, "payload_mass": 0.5, "delay_steps": 0},
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3300601001,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {"servo_gain": 0.7, "payload_mass": 0.5, "delay_steps": 0},
+      "body_support_parameters": {}
+    }
+  ],
+  "output": "results/arm/obstacle_transfer/baseline/adaptsim/validation/public_actor_pilot_3300600000",
+  "plan_output": "results/arm/obstacle_transfer/baseline/adaptsim/validation/public_actor_pilot_3300600000_plan.json"
+}

@@ -35,6 +35,80 @@ def _measured_record(task):
     return TaskTrajectory(obs, np.asarray(actions), command, previous, "short_real_source_training_fixture")
 
 
+def _saved_source_record(tmp_path, task_name, positions):
+    """Portable arrays only: no task construction, simulation, or training."""
+    import hashlib
+    import json
+
+    position = np.asarray([positions[0], *positions], dtype=np.float32)
+    count = len(position)
+    public = {
+        "tcp_position": position,
+        "tcp_rotation": np.repeat(np.eye(3)[None], count, axis=0),
+        "tcp_twist": np.zeros((count, 6)),
+        "measured_wrench": np.repeat(np.array([[0., 0., 5., 0., 0., 0.]]), count, axis=0),
+        "body_position": np.zeros((count, 3)),
+        "body_twist": np.zeros((count, 6)),
+        "controller_feedback": np.zeros((count, 2)),
+        "previous_action": np.zeros((count, 13)),
+        "goal_position": np.zeros((count, 3)),
+        "goal_rotation": np.repeat(np.eye(3)[None], count, axis=0),
+    }
+    path = tmp_path / "episode.npz"
+    np.savez(path, **{"public." + key: value for key, value in public.items()},
+             **{"trace.valid": np.ones(count - 1, dtype=bool),
+                "actions": np.zeros((count - 1, 13), dtype=np.float32)})
+    (tmp_path / "report.json").write_text(json.dumps({
+        "valid_source_demo": True,
+        "episode_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "contract": {"task": {"name": task_name}},
+    }))
+    return path
+
+
+@pytest.mark.parametrize("task_name,mode,positions", [
+    ("guided_contact_alignment", 0, [(.38, -.20, .596), (.40, -.20, .596), (.44, -.19, .596)]),
+    ("guided_contact_alignment", 1, [(.38, -.20, .596), (.38, -.19, .596), (.40, -.19, .596)]),
+    ("keyed_insertion_recovery", 0, [(.44, -.20, .596), (.44, -.20, .610)]),
+    ("mobile_keyed_insertion_recovery", 1, [(.44, -.20, .596), (.44, -.21, .600), (.44, -.21, .610)]),
+])
+def test_source_loader_selects_task_specific_mode_classifier(tmp_path, task_name, mode, positions):
+    from genedynamics.solvers.single.fada.learning.task_training import load_source_trajectory
+
+    path = _saved_source_record(tmp_path, task_name, positions)
+    row = load_source_trajectory(path, mode=mode)
+    assert row.obs.shape == (len(positions) + 1, 35)
+    assert row.actions.shape == (len(positions), 13)
+    np.testing.assert_array_equal(row.current_command[:, -2:], np.repeat(np.eye(2)[mode][None], len(row.obs), axis=0))
+    with pytest.raises(ValueError, match="source physical mode"):
+        load_source_trajectory(path, mode=1 - mode)
+
+
+@pytest.mark.parametrize("positions", [
+    [(.38, -.20, .596), (.40, -.19, .596)],  # simultaneous crossings
+    [(.38, -.20, .596), (.40, -.20, .596)],  # y crossing missing
+])
+def test_source_loader_rejects_ambiguous_or_incomplete_guide_evidence(tmp_path, positions):
+    from genedynamics.solvers.single.fada.learning.task_training import load_source_trajectory
+
+    path = _saved_source_record(tmp_path, "guided_contact_alignment", positions)
+    for mode in (0, 1):
+        with pytest.raises(ValueError, match="source physical mode"):
+            load_source_trajectory(path, mode=mode)
+
+
+def test_source_loader_rejects_unknown_task_and_changed_source_bytes(tmp_path):
+    from genedynamics.solvers.single.fada.learning.task_training import load_source_trajectory
+
+    path = _saved_source_record(tmp_path, "unknown_task", [(.44, -.20, .596), (.44, -.20, .610)])
+    with pytest.raises(ValueError, match="unknown source task"):
+        load_source_trajectory(path, mode=0)
+    with path.open("ab") as stream:
+        stream.write(b"changed")
+    with pytest.raises(ValueError, match="SHA changed"):
+        load_source_trajectory(path, mode=0)
+
+
 def _trainer_and_data():
     task = instantiate_task("T3", robot="panda", history_len=4)
     row = _measured_record(task)

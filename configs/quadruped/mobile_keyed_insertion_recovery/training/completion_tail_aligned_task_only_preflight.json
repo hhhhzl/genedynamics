@@ -1,0 +1,23 @@
+{
+  "base_training_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport_preflight.json",
+    "sha256": "2ce0c1b743989a0edc317dcf882b17a0c876728d401ae9b6bb5dcb9c86ecbee3"
+  },
+  "overrides": {
+    "version": "t4-completion-tail-aligned-matched-task-only-training-v1",
+    "training": {
+      "variant": "matched_task_only",
+      "initialization": {
+        "kind": "recentered_current_checkpoint_fresh_optimizer",
+        "calibration": "fit_plus_weak_log_public_states",
+        "maximum_median_absolute_logit": 3.0
+      }
+    },
+    "actor_manifest": {
+      "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/actor_bindings.json",
+      "sha256": "0d60f56d00123a3e851ef526726c7ac015a96cfa1fe4784c656be8bb883aa527"
+    },
+    "preflight_output": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_task_only/preflight",
+    "output": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_task_only/checkpoints"
+  }
+}

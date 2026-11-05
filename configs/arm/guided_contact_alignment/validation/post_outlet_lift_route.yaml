@@ -1,0 +1,14 @@
+base: low_load_settled_contact.yaml
+name: guided_contact_alignment_post_outlet_lift_route
+output_dir: results/arm/guided_contact_alignment/validation/post_outlet_lift_route
+seeds:
+- 930270
+- 930271
+- 930272
+- 930273
+method_params:
+  actor_binding:
+    reference_version: public_post_outlet_lift_route_v11
+metadata:
+  protocol: transfer_post_outlet_lift_route
+  selection_rule: require strict contact through the requested outlet and frozen terminal success in both xArm modes on all four fresh resets without changing evaluator thresholds

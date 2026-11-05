@@ -1,0 +1,22 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T3",
+  "method": "adaptsim",
+  "method_identity": "AdaptSim_task_adapted_CEM",
+  "task_config": "configs/arm/keyed_insertion_recovery/baseline/adaptsim.yaml",
+  "checkpoint": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/adaptsim/training/feedback_population_development_8737217/inference_and_policy.pt",
+    "sha256": "d01c7f66459320e25ab1ac55114c400f74cda89e9c3f792d90cc6e6ba9cea28b"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/arm/keyed_insertion_recovery/baseline/adaptsim/validation/asid_paired_pilot_3302500000",
+  "plan_output": "results/arm/keyed_insertion_recovery/baseline/adaptsim/validation/asid_paired_pilot_3302500000_plan.json",
+  "request_roster": {
+    "path": "configs/arm/keyed_insertion_recovery/validation/asid_adaptsim_public_fresh_roster.json",
+    "sha256": "44cce72f940b6bf1b8e366074ac6c091008393b83f730320af2c0cc0e5ba7b4d"
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "version": "fixture-response-data-preparation-v1",
+  "output": "results/arm/compliant_keyed_insertion_recovery/training/segmented_response_data/mixed_public_interventions",
+  "response_spec": {
+    "history_len": 4,
+    "horizon": 10,
+    "maximum_joints": 32
+  },
+  "segment_steps": [
+    3,
+    6,
+    10
+  ],
+  "calibration_context": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "trajectories": [
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/cpu_qualification_robot_ik/seed_917001/public",
+      "public_sha256": "cb5b7405fb16e41635d71a0c5b25510681c32a67d5314cc8efeedd3ce0ce4312"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/cpu_qualification_robot_ik/seed_917002/public",
+      "public_sha256": "bee452acfe4d8f1b7f50248a5870fd5816375b771f7aa1d35bdd5b918db2c0ea"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/cpu_qualification_robot_ik/seed_917101/public",
+      "public_sha256": "ee94a2d9e08a902a3e9bbfbd269d8bfc4cad4a3adcf997e88d85dc7036cbdb0b"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/cpu_qualification_robot_ik/seed_917102/public",
+      "public_sha256": "c3c8446bd18ffea5f2319c2e59e5e683b296116795f1f8dae0ca80b053cc884c"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_fixture_excitation/seed_927001/public",
+      "public_sha256": "08ba5f61e0d52ba3506557b35d84579cda0c39854eb37af3ce59b17000e5e462"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_fixture_excitation/seed_927002/public",
+      "public_sha256": "fe827c7941a43845cfe3d8575d160418793013b3230f817e364123cb134058b4"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_fixture_excitation/seed_927101/public",
+      "public_sha256": "5b340b72aa9f47a93d08d89c3117cdf1ad7f2ab279130a2ed91809091e161fd7"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_fixture_excitation/seed_927102/public",
+      "public_sha256": "90ac753167ca6dad4e115977d020159d480b0917e0ec2d3589ac58cb9e81bae3"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/very_soft_fixture_excitation/seed_937001/public",
+      "public_sha256": "5691dd3e7e8e2b6fd0532a3ce1ebb79b855e97f6c308963da4a03efe9b9c4176"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/very_soft_fixture_excitation/seed_937002/public",
+      "public_sha256": "711474189c61d394511fabec48333fcb9c6c530b812f9e2b39582558ee0b7e90"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/very_soft_fixture_excitation/seed_937101/public",
+      "public_sha256": "2cd67e8be104c9a360403661735e9d7d29d28ca452d03e02345e54555bf755c4"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/very_soft_fixture_excitation/seed_937102/public",
+      "public_sha256": "98714e48ab3b517a8badb27e99462d82a3afe8e8f7719b03a71023dfc175dafa"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/contact_x_probe/seed_947001/public",
+      "public_sha256": "f5f73c5064629fc18e8d31efcd41cd8b340b15fc7cf8f59761fe70cdb2f3f91f"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/contact_x_probe/seed_947002/public",
+      "public_sha256": "e1b885183355a24931720d79b85dfa56df164c3b9aad429653758d21b77a2f25"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/contact_x_probe/seed_947101/public",
+      "public_sha256": "65d78433412aae8f8173cafd1f9004873c71d5fdc051b72a93b23971bb58fc65"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/contact_x_probe/seed_947102/public",
+      "public_sha256": "cec39de746d53cf011ea32e3201e687e2e015927644b52d57fb9261024591ea6"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/contact_x_probe_engaged/seed_957001/public",
+      "public_sha256": "a3d4237d5bc3fdcd78b1886bfdd9d28d842e78d12e3c31e29afe74a1765befe6"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/contact_x_probe_engaged/seed_957002/public",
+      "public_sha256": "f04d19ecc537ea79a0eb0ac109c7f7a46a8628a14ac62078a9c2d306201ff447"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/contact_x_probe_engaged/seed_957101/public",
+      "public_sha256": "a70847193e75e004e98b80af757859c6db7a7b1023c75185e85cc652d7cba173"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/contact_x_probe_engaged/seed_957102/public",
+      "public_sha256": "87059f66f6df33dd2d160e00e8b9831584c4438b01927bd2fece9f5af944bbf7"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_contact_x_probe/seed_967001/public",
+      "public_sha256": "224cb95f84d80590813b1b8e176ff3e72e00bc9bc3da78fa1ee99c56ce265210"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_contact_x_probe/seed_967002/public",
+      "public_sha256": "f46e46db3758f3e7f33158b852874eac132f4bcf5f486346e470b9f48671afab"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_contact_x_probe/seed_967101/public",
+      "public_sha256": "e3c520c3e9e2db2b6f736ead3f49064bd32a440a90d2ed73e5a8596bacd5f40f"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_contact_x_probe/seed_967102/public",
+      "public_sha256": "f5232014d46ba2b38209b3f659caf9a5607f7c8cc9c435d0393bafe348c3accb"
+    }
+  ],
+  "scope": "development mixture of nominal, soft, very-soft and two adaptively chosen public contact pulses; all episodes retained, not a formal mechanism-generalization cohort"
+}

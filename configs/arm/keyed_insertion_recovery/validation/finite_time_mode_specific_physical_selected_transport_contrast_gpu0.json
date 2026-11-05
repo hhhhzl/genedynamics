@@ -1,0 +1,82 @@
+{
+  "version": "four-task-mode-specific-physical-selected-transport-contrast-v1",
+  "name": "finite_time_mode_specific_physical_selected_transport_contrast",
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_index": 0,
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "methods": [
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "mode_specific_physical_selected_transport",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode0",
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/aggregation/report.json",
+          "sha256": "3c7e081abe93b1c90150d00120d26c80477c8516b4b1ddb6ec95b8bac5c0ac01"
+        }
+      }
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "mode_specific_physical_selected_task_only",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "task_only_shared_start_mode_specific_v9",
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/aggregation/report.json",
+          "sha256": "3c7e081abe93b1c90150d00120d26c80477c8516b4b1ddb6ec95b8bac5c0ac01"
+        }
+      }
+    }
+  ],
+  "mode_one_candidate_policy_set": {
+    "method_identity": "ours_task_first_mode_specific_physical_selected_v19_mode1",
+    "aggregation_report": {
+      "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/aggregation/report.json",
+      "sha256": "c19ccf758187e8d82f5b03d3e44d04ce7e9f29fd1a974123ebd4fa8c7f8baa3f"
+    },
+    "physical_selection_report": {
+      "path": "results/arm/keyed_insertion_recovery/validation/finite_time_mode_specific_physical_checkpoint_selector/gpu0/report.json",
+      "sha256": "eaa63a644dbad8d62e282c459d1427f09c42c544932b9da341401126cd13d78a"
+    }
+  },
+  "requested_modes": [0, 1],
+  "scene_cells": [
+    {
+      "id": "protocol_hard_target",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.65,
+        "delay_steps": 3,
+        "payload_mass": 0.8
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 8370000,
+  "acceptance": {
+    "transport": "mode_specific_physical_selected_transport",
+    "task_only": "mode_specific_physical_selected_task_only",
+    "required_pairs": 64,
+    "minimum_aggregate_success_rate_gain": 0.0,
+    "minimum_nonnegative_instances": 8,
+    "minimum_mean_control_step_reduction_fraction": 0.02,
+    "minimum_nonnegative_time_instances": 6,
+    "maximum_one_sided_exact_sign_p_value": 0.05,
+    "require_transport_to_preserve_every_task_only_success": true,
+    "require_zero_extra_transport_constraint_violations": true
+  },
+  "scope": "Fresh seed-disjoint T3 development contrast on the protocol-frozen hard xArm7 target cell. Mode zero uses its frozen recorded-completion checkpoint. Mode one uses the immutable full-episode physical selector, including exact task-only fallback where no retained checkpoint improved completion time. Both branches share task-only checkpoints, response admission, evaluator, requests, and GPU0 execution. A pass only admits one formal seed-disjoint confirmation."
+}

@@ -1,0 +1,26 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v1",
+  "task": "T1",
+  "method": "dial_transfer",
+  "method_identity": "DIAL_MPC",
+  "instance_id": "instance_08",
+  "task_config": {
+    "path": "configs/arm/obstacle_transfer/baseline/dial.yaml",
+    "sha256": "97b4660b79db8a05b0327970de5fedcd82e61b3b7629a3961e390cf741f39637"
+  },
+  "request_roster": {
+    "path": "configs/arm/obstacle_transfer/protocol/independent_main_table_requests.json",
+    "sha256": "9a5c2ea0bfebdadd816baf0642dcd7eb6537536e8bdb528d37d2a69882827240"
+  },
+  "cell_admission": {
+    "path": "results/arm/obstacle_transfer/validation/independent_main_table_admission_v1/dial_transfer.json",
+    "sha256": "ec20d2a538a0830a19d8d0f815a51c307af00043ed763fba219f84989ebd0f77"
+  },
+  "output": "results/arm/obstacle_transfer/baseline/dial/confirmation/independent_main_v1/instance_08",
+  "plan_output": "results/arm/obstacle_transfer/baseline/dial/confirmation/independent_main_v1/instance_08_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  }
+}

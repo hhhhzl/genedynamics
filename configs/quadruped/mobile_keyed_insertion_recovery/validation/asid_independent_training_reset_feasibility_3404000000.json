@@ -1,0 +1,54 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "maximum_gpu_memory_gib": 2,
+    "maximum_reset_calls": 256,
+    "maximum_wall_seconds": 900,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "formal_performance_evidence": false,
+  "mechanisms": {
+    "source": {
+      "body_servo_gain": 1.0,
+      "delay_steps": 0,
+      "payload_mass": 0.65,
+      "servo_gain": 0.85
+    },
+    "target": {
+      "body_servo_gain": 0.9,
+      "delay_steps": 3,
+      "payload_mass": 0.5,
+      "servo_gain": 0.7
+    }
+  },
+  "modes": [
+    0,
+    1
+  ],
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/diagnostics/independent_training_reset_feasibility_3404000000",
+  "physical_initial_slot": 0,
+  "robot": "go2_z1",
+  "seed_count": 64,
+  "seed_start": 3404000000,
+  "shared_execution": {
+    "body_intent_duration_seconds": 6.0,
+    "body_intent_profile": "public_planar_v1",
+    "body_intent_start_seconds": 0.0,
+    "body_velocity_world": [
+      0.005,
+      0.005,
+      0.0
+    ],
+    "execution_profile": "joint_margin_public_reference",
+    "reset_joint_noise_rad": 0.002,
+    "reset_profile": "folded_stance",
+    "version": "four-task-shared-execution-v3"
+  },
+  "task": "T4",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/_base.yaml",
+    "sha256": "61b5856d0b16e8fe602f50c7d937e7154abb090af7b5127872606d39e1c0699f"
+  },
+  "version": "asid-t4-independent-training-reset-feasibility-v1"
+}

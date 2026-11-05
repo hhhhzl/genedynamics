@@ -1,0 +1,7 @@
+base: ../_base.yaml
+name: guided_contact_alignment_public_source_prior
+method: public_source_prior
+output_dir: results/arm/guided_contact_alignment/baseline/public_source_prior
+method_params:
+  actor_binding:
+    key: public_source_prior

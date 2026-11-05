@@ -1,0 +1,61 @@
+{
+  "version": "t2-recontact-reference-projection-diagnosis-v1",
+  "device": "cpu",
+  "source_validation": {
+    "plan": {
+      "path": "results/arm/guided_contact_alignment/validation/substep_risk_admission/plan.json",
+      "sha256": "43f10efaefb311e25c970f3ebc93ec7f75125ac9da4a5d30b1d6bdc8fb4b7b1b"
+    },
+    "progress": {
+      "path": "results/arm/guided_contact_alignment/validation/substep_risk_admission/progress.jsonl",
+      "sha256": "2753f016c57994cc853b39a4b6f56be75fe0c534f3d9a523bc68c6b08a674ad0"
+    },
+    "report": {
+      "path": "results/arm/guided_contact_alignment/validation/substep_risk_admission/report.json",
+      "sha256": "5c2992adb90c276685ab80d5dc32e3bcd44be7fc9f5674b1be436abd257a7446"
+    },
+    "independent_audit": {
+      "path": "results/arm/guided_contact_alignment/validation/substep_risk_admission/independent_audit.json",
+      "sha256": "09841f1fa056483e3457ee276bb0ab6616c0a75354542b7d0a8c19524544cdcc"
+    }
+  },
+  "accessed_diagnostic": {
+    "path": "results/arm/guided_contact_alignment/validation/mode0_deadline_reachable_transit_speed/report.json",
+    "sha256": "43b9b4160af738ebd25de72a2cfd8a9b96a242338d7cb531de387b47851c8b01"
+  },
+  "sentinel_config": "configs/arm/guided_contact_alignment/baseline/public_geometry.yaml",
+  "execution_profiles": {
+    "candidate": {
+      "config_overrides": {
+        "execution_profile": "substep_wrench_governor",
+        "guide_mode0_transit_speed_mps": 0.0065
+      }
+    }
+  },
+  "fresh_requests": {
+    "robot": "xarm7",
+    "reset_seed_anchor": 3267000,
+    "reset_slots": 16,
+    "requested_modes": [0, 1],
+    "mechanism_parameters": {
+      "delay_steps": 0,
+      "payload_mass": 0.5,
+      "servo_gain": 1.0
+    }
+  },
+  "gates": {
+    "candidate_successes": 32,
+    "maximum_candidate_constraint_violations": 0,
+    "candidate_recontact_reference_projection_required": false,
+    "frozen_reproduction_required": false,
+    "all_evidence_audited": true
+  },
+  "output": "results/arm/guided_contact_alignment/validation/mode0_transit_speed_fresh_qualification",
+  "diagnostic_only": false,
+  "accessed_requests": false,
+  "confirmation_states_opened": 0,
+  "old_invalid_outcomes_used": false,
+  "performance_evidence": false,
+  "failure_replacement": false,
+  "selection_rule": "The single 6.5 mm/s candidate was fixed before these requests. Require 32/32 fresh public-sentinel successes, zero constraint violations, disjoint reset seeds, and complete evidence audit before rebinding the shared protocol."
+}

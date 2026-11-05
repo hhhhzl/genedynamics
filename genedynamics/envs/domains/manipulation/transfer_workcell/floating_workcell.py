@@ -37,7 +37,10 @@ def build_go2_z1(config,mechanism):
     mounted=arm.find("worldbody/body"); mounted.set("pos",".02 0 .11"); trunk.append(mounted)
     endpoint=mounted.find(".//body[@name='z1_link06']")
     ET.SubElement(endpoint,"site",name="mobile_tcp",pos=".055 0 0",quat=".707106781 0 .707106781 0",size=".004")
-    fixture=build_contact_workcell(replace(config,robot="panda",mobile=False),mechanism)
+    # This temporary fixed-arm config contributes fixture geometry only;
+    # floating execution/reset profiles belong to the composite provider.
+    fixture=build_contact_workcell(replace(config,robot="panda",mobile=False,
+        execution_profile="legacy",reset_profile="legacy"),mechanism)
     fixture_root=ET.fromstring(fixture.xml)
     tool=copy.deepcopy(fixture_root.find(".//body[@name='transfer_tool']"))
     tool.set("pos",".055 0 0"); tool.set("quat",".707106781 0 .707106781 0"); endpoint.append(tool)

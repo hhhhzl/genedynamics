@@ -1,0 +1,18 @@
+{
+  "version": "transfer-backbone-attribution-preflight-v1",
+  "task": "T2",
+  "attribution_contract": {
+    "path": "configs/arm/guided_contact_alignment/protocol/backbone_attribution_v1.json",
+    "sha256": "ba3dfaf385e3a1c3001542ba45b568314fa1e2b0da1e593297049049ab723dfd"
+  },
+  "training_report": {
+    "path": "results/arm/guided_contact_alignment/training/backbone_attribution_v1/report.json",
+    "sha256": "f5811037187d1e7b43f54956b42cdcd4c48824e0b4f180bc0fb484f0563484d5"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/arm/guided_contact_alignment/validation/backbone_attribution_preflight_v1"
+}

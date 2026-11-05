@@ -1,0 +1,81 @@
+{
+  "version": "four-task-task-first-directional-same-state-contrast-v1",
+  "name": "finite_time_task_first_directional_same_state_contrast",
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda"
+  },
+  "methods": [
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "directional_transport",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_directional_same_state_v1",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_directional_same_state/anchored/checkpoints/report.json",
+          "sha256": "e97731c69d4c66ccdac1734290c2be3fbf4883171360651d82cb18f160307248"
+        }
+      }
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "directional_task_only",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "task_first_directional_same_state_task_only_v1",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_directional_same_state/task_only/checkpoints/report.json",
+          "sha256": "be5a87dd6b9120f9fd4c1b581251610e2e8c896503a86d09c56cfbab6a27ddb1"
+        }
+      }
+    }
+  ],
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "delay_steps": 3,
+        "payload_mass": 0.5
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "delay_steps": 1,
+        "payload_mass": 0.8
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 4740000,
+  "acceptance": {
+    "transport": "directional_transport",
+    "task_only": "directional_task_only",
+    "required_pairs": 128,
+    "minimum_aggregate_success_rate_gain": 0.0,
+    "minimum_nonnegative_instances": 8,
+    "minimum_mean_control_step_reduction_fraction": 0.02,
+    "minimum_nonnegative_time_instances": 6,
+    "maximum_one_sided_exact_sign_p_value": 0.05,
+    "require_transport_to_preserve_every_task_only_success": true,
+    "require_zero_extra_transport_constraint_violations": true
+  },
+  "scope": "Fresh T3 same-state directional response development contrast. Both branches use the same selected task-only start, public data, sample stream, model capacity, update budget, mode-stratified checkpoint selector, mechanisms, reset requests, and evaluator. The only training factor is directional response anchoring with source-task advantage evaluated for both commands in the same public target state. Acceptance thresholds are unchanged from the v1 directional contrast. This is development evidence and opens no confirmation state."
+}

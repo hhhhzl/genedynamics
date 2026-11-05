@@ -1,0 +1,76 @@
+{
+  "version": "cross-embodiment-t2-shared-execution-v4",
+  "task": "guided_contact_alignment",
+  "alias": "T2",
+  "extends": [
+    {
+      "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v3.json",
+      "sha256": "6e5aae09b937d934b3681a835b01ff292a12b3ee4cab12024ee7f80a6924d0df"
+    }
+  ],
+  "shared_execution": {
+    "version": "four-task-shared-execution-v4",
+    "physics_dt_seconds": 0.001,
+    "control_dt_seconds": 0.02,
+    "physics_substeps_per_control": 20,
+    "contact_time_constant_seconds": 0.04,
+    "contact_damping_ratio": 2.0,
+    "execution_profile": "substep_wrench_governor",
+    "strict_evaluator_version": "strict-guide-substep-v4",
+    "guide_mode0_transit_speed_mps": 0.00675,
+    "guide_mode0_post_outlet_route": "concurrent_monotone_lift_v3",
+    "guide_reference_admission": "response_normalized_completion",
+    "guide_controller_version": "public-T2-response-normalized-hybrid-force-v50",
+    "guide_route_version": "public-T2-response-normalized-guide-route-v4",
+    "guide_clearance_route_version": "public-T2-response-normalized-clearance-traverse-route-v3",
+    "surface_force_target_N": 5.0,
+    "terminal_surface_force_target_N": 6.0,
+    "mode0_preoutlet_stiffness_ramp_m": 0.002,
+    "mode0_transition_spring_budget_N": 8.8,
+    "log_stiffness_limit": 1.5,
+    "tangential_wrench_limit_N": 16.0,
+    "timeout_seconds": 20.0,
+    "terminal_position_tolerance_m": 0.002,
+    "terminal_orientation_tolerance_rad": 0.03490658503988659,
+    "terminal_dwell_controls": 15,
+    "force_limit_N": 25.0,
+    "lateral_force_limit_N": 10.0
+  },
+  "controller_observation_contract": {
+    "allowed": [
+      "tcp_position",
+      "reference_position",
+      "tcp_twist",
+      "measured_wrench",
+      "elapsed_seconds"
+    ],
+    "forbidden": [
+      "delay_steps",
+      "payload_mass",
+      "servo_gain",
+      "evaluator_state",
+      "method_identity"
+    ]
+  },
+  "qualification": {
+    "config": {
+      "path": "configs/arm/guided_contact_alignment/validation/outlet_latched_public_geometry_release_gate.json",
+      "sha256": "32be5f5e619762129784cc71790577240f7332850f0c051254cbef82ccf512cc"
+    },
+    "report": {
+      "path": "results/arm/guided_contact_alignment/validation/outlet_latched_public_geometry_release_gate/report.json",
+      "sha256": "2a86d494879f8dc403e3466f67268603c7f4a0553075cfd360b28ca0a8b65ee6"
+    },
+    "episodes": 32,
+    "successes": 32,
+    "constraint_violations": 0,
+    "execution_errors": 0,
+    "evidence_audits_passed": 32,
+    "exact_physics_audits_passed": 32,
+    "confirmation_states_opened": 0
+  },
+  "scope": "Inherited unchanged by every T2 main-table baseline, ablation and Cross-EBDM row through the task-local base config.",
+  "historical_results": "All T2 runs without this response-normalized task contract remain invalid for the new main table.",
+  "status": "common_protocol_bound_requires_fresh_predeployment",
+  "final_test": false
+}

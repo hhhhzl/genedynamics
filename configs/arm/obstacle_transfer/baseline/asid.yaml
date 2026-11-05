@@ -1,0 +1,28 @@
+base: ../_base.yaml
+name: obstacle_transfer_asid
+method: asid
+output_dir: results/arm/obstacle_transfer/baseline/asid
+metadata:
+  formal_experiment: false
+  formal_seeds: false
+  run_class: development
+method_params:
+  actor_binding:
+    version: transfer-actor-binding-v1
+    manifest: null
+    task: T1
+    family: main
+    binding_key: asid
+    actor: asid
+    status: instances_ready
+    instance_id: development_3817251
+    method_identity: ASID_task_adapted_CEM
+    checkpoint:
+      path: results/arm/obstacle_transfer/baseline/asid/training/grid_seeded_development_3817251/checkpoint.json
+      sha256: 0bd5aad46be1223fafdca21b82f0c0513e7630ab428250a0b4d2178005548857
+    training_recipe:
+      path: results/arm/obstacle_transfer/baseline/asid/training/grid_seeded_development_3817251/recipe.json
+      sha256: 53f1dcb5f5031260347ae105fb781fcf50ddc78b71f97feba02f90d5b0930b12
+    training_report:
+      path: results/arm/obstacle_transfer/baseline/asid/training/grid_seeded_development_3817251/report.json
+      sha256: 44c93745ffb77e904b6571ea401b1c6e7d3b3b3609f372ba077cc94cab2858af

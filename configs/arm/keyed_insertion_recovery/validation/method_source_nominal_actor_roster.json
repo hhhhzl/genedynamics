@@ -1,0 +1,34 @@
+{
+  "version": "method-source-nominal-actor-roster-v2",
+  "task": "T3",
+  "robot": "xarm7",
+  "task_config": {
+    "path": "configs/arm/keyed_insertion_recovery/_base.yaml",
+    "sha256": "d08e4c3aa5fc5d3981037adc6694a838f56e54bf2a1105d216570c947851ac30"
+  },
+  "methods": [
+    "cross_ebdm", "task_only", "fada", "dial_transfer",
+    "response_mpc", "public_geometry", "public_source_prior"
+  ],
+  "requests": [
+    {"request_id": "T3/ACTOR-SCREEN/source/s0/m0", "scene_cell": "source", "robot": "xarm7", "requested_mode": 0, "reset_seed": 3301200000, "physical_initial_slot": 0, "mechanism_parameters": {"servo_gain": 0.85, "payload_mass": 0.65, "delay_steps": 0}, "body_support_parameters": {}},
+    {"request_id": "T3/ACTOR-SCREEN/source/s0/m1", "scene_cell": "source", "robot": "xarm7", "requested_mode": 1, "reset_seed": 3301200001, "physical_initial_slot": 0, "mechanism_parameters": {"servo_gain": 0.85, "payload_mass": 0.65, "delay_steps": 0}, "body_support_parameters": {}},
+    {"request_id": "T3/ACTOR-SCREEN/source/s1/m0", "scene_cell": "source", "robot": "xarm7", "requested_mode": 0, "reset_seed": 3301200002, "physical_initial_slot": 1, "mechanism_parameters": {"servo_gain": 0.85, "payload_mass": 0.65, "delay_steps": 0}, "body_support_parameters": {}},
+    {"request_id": "T3/ACTOR-SCREEN/source/s1/m1", "scene_cell": "source", "robot": "xarm7", "requested_mode": 1, "reset_seed": 3301200003, "physical_initial_slot": 1, "mechanism_parameters": {"servo_gain": 0.85, "payload_mass": 0.65, "delay_steps": 0}, "body_support_parameters": {}},
+    {"request_id": "T3/ACTOR-SCREEN/nominal/s0/m0", "scene_cell": "nominal", "robot": "xarm7", "requested_mode": 0, "reset_seed": 3301200004, "physical_initial_slot": 0, "mechanism_parameters": {"servo_gain": 1.0, "payload_mass": 0.5, "delay_steps": 0}, "body_support_parameters": {}},
+    {"request_id": "T3/ACTOR-SCREEN/nominal/s0/m1", "scene_cell": "nominal", "robot": "xarm7", "requested_mode": 1, "reset_seed": 3301200005, "physical_initial_slot": 0, "mechanism_parameters": {"servo_gain": 1.0, "payload_mass": 0.5, "delay_steps": 0}, "body_support_parameters": {}},
+    {"request_id": "T3/ACTOR-SCREEN/nominal/s1/m0", "scene_cell": "nominal", "robot": "xarm7", "requested_mode": 0, "reset_seed": 3301200006, "physical_initial_slot": 1, "mechanism_parameters": {"servo_gain": 1.0, "payload_mass": 0.5, "delay_steps": 0}, "body_support_parameters": {}},
+    {"request_id": "T3/ACTOR-SCREEN/nominal/s1/m1", "scene_cell": "nominal", "robot": "xarm7", "requested_mode": 1, "reset_seed": 3301200007, "physical_initial_slot": 1, "mechanism_parameters": {"servo_gain": 1.0, "payload_mass": 0.5, "delay_steps": 0}, "body_support_parameters": {}}
+  ],
+  "requests_per_method": 8,
+  "maximum_total_physics_episodes": 56,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 2400,
+    "maximum_gpu_memory_gib": 2
+  },
+  "failure_replacement": false,
+  "formal_performance_evidence": false,
+  "scope": "one true actor instance per learned legacy method; paired T3 source-mechanism and nominal target-robot development screen, not independent paper performance"
+}

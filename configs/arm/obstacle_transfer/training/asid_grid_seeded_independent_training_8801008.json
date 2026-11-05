@@ -1,0 +1,206 @@
+{
+  "delay_steps": 0,
+  "delta": 0.1,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "maximum_gpu_memory_gib": 2,
+    "maximum_wall_seconds": 600,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "exploration": {
+    "anchor": [
+      0.5678590883444584,
+      0.6581064010126911,
+      0.6270149599348386,
+      0.6097529670246064,
+      1.0,
+      1.0
+    ],
+    "elite": 2,
+    "iterations": 2,
+    "lower": [
+      0.52,
+      0.6,
+      0.58,
+      0.55,
+      0.65,
+      0.65
+    ],
+    "population": 7,
+    "upper": [
+      0.62,
+      0.73,
+      0.7,
+      0.69,
+      1.15,
+      1.15
+    ]
+  },
+  "exploration_controls": 60,
+  "exploration_modes": [
+    0,
+    1
+  ],
+  "identification": {
+    "anchor": [
+      0.85,
+      0.65
+    ],
+    "elite": 3,
+    "iterations": 3,
+    "lower": [
+      0.4,
+      0.2
+    ],
+    "population": 10,
+    "upper": [
+      1.4,
+      1.2
+    ]
+  },
+  "identification_grid": {
+    "payload_mass": [
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0,
+      1.1,
+      1.2
+    ],
+    "servo_gain": [
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0,
+      1.1,
+      1.2,
+      1.3,
+      1.4
+    ]
+  },
+  "output": "results/arm/obstacle_transfer/baseline/asid/training/independent_training_8801008",
+  "robot": "xarm7",
+  "seed": 8801008,
+  "source_bindings": [
+    {
+      "path": "genedynamics/core/control/transfer.py",
+      "sha256": "aaa3cf68b3d7f16d0ff23ac2b307eab2a8c4d7402f892cf84b5456257ceb41ab"
+    },
+    {
+      "path": "genedynamics/envs/adapters/transfer_task.py",
+      "sha256": "f14bd0d8769c0da8b9c741db1160f72b382cf34a00acf576757ff5eb8a9a0eea"
+    },
+    {
+      "path": "genedynamics/solvers/single/asid/asid.py",
+      "sha256": "ab7b342129a634396f47ae7354d64cd0496f8b935e98e227271b0e99fe9ab59d"
+    },
+    {
+      "path": "genedynamics/solvers/single/asid/backends/asid_numpy.py",
+      "sha256": "4d48c6e3059e7dc641c6719aa30a91918b10d2f2f61abac15365aece3e030354"
+    },
+    {
+      "path": "genedynamics/solvers/single/asid/learning/search.py",
+      "sha256": "1770b0c2fd51be3bee72d6f5bca4944803e044a8fe89c9c771346a2fcfe4aee0"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/asid.py",
+      "sha256": "b01dc95b08cc3b09ca701701935b95656982ac355155963434871f2860b08c29"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/bindings.py",
+      "sha256": "de692527cf7fd246460d3663bebc0088944bbcc59bdb14fe795412e420f7a3f8"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/obstacle_path.py",
+      "sha256": "b8d03dd2b818a56288665fa9e5b3da2b838259e751b18b5d1332ed51a85af798"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/obstacle_scaled_path.py",
+      "sha256": "96391819bfca8fb1fd3c9e37d47068da7b3e04a4d497b57ca26c1d5bb089b060"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/episode.py",
+      "sha256": "dab1ffa1e360fb2f98d1b8a4ab31597a7c01fd8fca3f9d7f1c828083571d6a1f"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/evaluation.py",
+      "sha256": "83e8e48a38ea889f52f6ac2c2e4b0def7ce3d54bac6ba36ba89c162d017c3fae"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/obstacle_asid.py",
+      "sha256": "4d9f4a056badc01581b3d16c35938a43447570b7450b74a36737d7b0b21e8b9c"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/obstacle_policy_search.py",
+      "sha256": "05e21da186a86de4e53d613baff482e888de26d37fa13223686299fc6d264adb"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/runtime.py",
+      "sha256": "cab01ef52c5b3113ec5d2e807ace0951646845c5a8857429c25898625b69366f"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/specs.py",
+      "sha256": "60ee10ef80e24ca71001d4e55af7c58953e67145a061fbc8514ea17298f824ac"
+    },
+    {
+      "path": "scripts/paper/cross_ebdm/train_asid_development.py",
+      "sha256": "69f40f6311e7761d62242601473ae62caae38db6e183d84279d02332af6d9960"
+    }
+  ],
+  "source_commit": "cf2cb670fb983f67cf2af156d4e17b4a690787e2",
+  "source_mechanism": {
+    "delay_steps": 0,
+    "payload_mass": 0.65,
+    "servo_gain": 0.85
+  },
+  "target_interaction_budget": {
+    "deployment_episodes": 2,
+    "exploration_episodes": 1
+  },
+  "target_mechanism": {
+    "delay_steps": 0,
+    "payload_mass": 0.5,
+    "servo_gain": 0.7
+  },
+  "task": "T1",
+  "task_policy": {
+    "anchor": [
+      0.5678590883444584,
+      0.6581064010126911,
+      0.6270149599348386,
+      0.6097529670246064,
+      1.0,
+      1.0
+    ],
+    "elite": 2,
+    "iterations": 2,
+    "lower": [
+      0.52,
+      0.6,
+      0.58,
+      0.55,
+      0.65,
+      0.65
+    ],
+    "population": 7,
+    "simulator_samples_per_candidate": 2,
+    "upper": [
+      0.62,
+      0.73,
+      0.7,
+      0.69,
+      1.15,
+      1.15
+    ]
+  },
+  "training_cohort": "independent_main_table_training_v1",
+  "version": "asid-obstacle-grid-seeded-development-v2"
+}

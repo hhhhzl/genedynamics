@@ -1,0 +1,22 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T4",
+  "method": "adaptsim",
+  "method_identity": "AdaptSim_four_parameter_mobile_population_CEM",
+  "task_config": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim.yaml",
+  "checkpoint": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/training/mobile_population_development_8737318/inference_and_policy.pt",
+    "sha256": "c64b42e62d4ab986b12fe823c57064e8d68039f9c8e44f238853ba6983bccde5"
+  },
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/asid_adaptsim_public_fresh_actor_roster_v2.json",
+    "sha256": "a36bf14e347082aa375216c9487da94ce6123c301e33b8c71dba93002a9c07c2"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/validation/asid_adaptsim_v2_paired_pilot_3302900000",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/validation/asid_adaptsim_v2_paired_pilot_3302900000_plan.json"
+}

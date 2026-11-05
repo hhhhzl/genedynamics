@@ -23,7 +23,7 @@ def contact_teacher(config,state,elapsed,mode=0,*,recovery=False):
 
 
 def classify_contact_modes(position,force,valid,*,insertion):
-    """Actual trace evidence; unknown=-1, no requested-label shortcut."""
+    """Actual trace evidence; unknown=-1, ambiguous=2, no label shortcut."""
     b=position.shape[0]; p=position.reshape(b,-1,3); f=force.reshape(b,-1); v=valid.reshape(b,-1)
     result=np.full(b,-1,np.int32)
     for i in range(b):
@@ -41,5 +41,6 @@ def classify_contact_modes(position,force,valid,*,insertion):
         else:
             dx=points[:,0]-points[0,0]; dy=points[:,1]-points[0,1]
             x=np.flatnonzero(dx>.015); y=np.flatnonzero(dy>.008)
-            if len(x) and len(y): result[i]=0 if x[0]<y[0] else 1
+            if len(x) and len(y):
+                result[i]=2 if x[0]==y[0] else 0 if x[0]<y[0] else 1
     return result

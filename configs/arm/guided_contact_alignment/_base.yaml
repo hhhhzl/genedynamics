@@ -4,10 +4,14 @@ env_name: guided_contact_alignment
 method: cross_ebdm
 backend: numpy
 device: cpu
-seeds: [4100, 5100, 6100]
+seeds:
+- 4100
+- 5100
+- 6100
 n_steps: 1000
 auto_report: false
-metrics: [transfer_task]
+metrics:
+- transfer_task
 visualizations: []
 obstacle_config:
   generator: none
@@ -15,13 +19,145 @@ env_params:
   robot: xarm7
   history_len: 4
   mode: 0
+  physics_dt: 0.001
+  execution_profile: substep_wrench_governor
+  guide_mode0_transit_speed_mps: 0.00675
+  guide_mode0_post_outlet_route: concurrent_monotone_lift_v3
+  guide_reference_admission: response_normalized_completion
+  log_stiffness_limit: 1.5
+  tangential_wrench_limit: 16.0
+  mechanism:
+    contact_time_constant: 0.04
+  shared_execution:
+    version: four-task-shared-execution-v7
+    strict_evaluator_version: strict-guide-substep-v4
+    physics_dt_seconds: 0.001
+    control_dt_seconds: 0.02
+    contact_time_constant_seconds: 0.04
+    contact_damping_ratio: 2.0
+    execution_profile: substep_wrench_governor
+    guide_mode0_transit_speed_mps: 0.00675
+    guide_mode0_post_outlet_route: concurrent_monotone_lift_v3
+    guide_reference_admission: response_normalized_completion
+    guide_controller_version: public-T2-response-normalized-hybrid-force-v50
+    guide_route_version: public-T2-response-normalized-guide-route-v4
+    guide_clearance_route_version: public-T2-response-normalized-clearance-traverse-route-v3
+    terminal_actor_interface: public-T2-completion-budget-causal-traverse-v18
+    terminal_actor_interface_parameters:
+      completion_reserve_controls: 150
+      reserve_taper_controls: 100
+      reference_lag_full_authority_m: 0.008
+      reference_lag_zero_authority_m: 0.012
+      maximum_authority_decay_per_control: 0.05
+      completion_progress_floor_mps: 0.02
+      post_traverse_reserve_controls: 100
+      completion_budget_taper_controls: 60
+      force_speed_full_authority_mps: 0.01
+      force_speed_zero_authority_mps: 0.025
+    surface_force_target_N: 5.0
+    terminal_surface_force_target_N: 6.0
+    mode0_preoutlet_stiffness_ramp_m: 0.002
+    mode0_transition_spring_budget_N: 8.8
+    log_stiffness_limit: 1.5
+    tangential_wrench_limit_N: 16.0
+    timeout_seconds: 20.0
+    terminal_position_tolerance_m: 0.002
+    terminal_orientation_tolerance_rad: 0.03490658503988659
+    terminal_dwell_controls: 15
+    force_limit_N: 25.0
+    lateral_force_limit_N: 10.0
 method_params:
   mode: 0
+  actor_binding:
+    version: transfer-actor-binding-v1
+    manifest:
+      path: configs/arm/guided_contact_alignment/protocol/actor_bindings_mode_conditioned_contact_establishment_v2.json
+      sha256: b7b6758b059aac873d8c55e147d31b2cceb2d6b22d7defc986e1ce42e0b06af4
+    family: main
 metadata:
   paper: cross_ebdm
   benchmark: four_task_transfer
-  protocol: transfer_main_table_v1
-  protocol_status: architecture_refactor_pending
+  protocol: transfer_confirmation_v14
+  protocol_status: frozen_after_architecture_equivalence_v3
   formal_experiment: true
-  formal_seeds: false
-  run_class: development
+  formal_seeds: true
+  run_class: formal
+  shared_task_contract:
+    path: configs/arm/guided_contact_alignment/protocol/task_contract_v7.json
+    sha256: 98750a574c84516e43b023af180666dceabf775dfab80d36e00a75478f7c1004
+  prior_formal_confirmation:
+    run_audit:
+      path: results/_protocol/four_task_transfer/confirmation_v13/run/audit.json
+      sha256: 35197d5ff03433df6aad95d222dbd97235239757f420aded63cbcedf27233229
+    statistics:
+      path: results/_protocol/four_task_transfer/confirmation_v13/statistics/report.json
+      sha256: 09d099711f28a4529c581eb801f140d254c98b86be237902757112a5ea463b80
+    conclusion: stable_transport_supported_but_strong_baseline_superiority_blocked_by_one_T2_overforce
+  development_revision:
+    name: public_mode0_contact_establishment_transport_admission_v2
+    confirmation_states_opened: 0
+    prior_outcomes_reused_for_development_only: true
+    qualification_or_confirmation_reuse: false
+    decision_evidence:
+      path: results/arm/guided_contact_alignment/validation/first_contact_complementarity/mode_conditioned_v2/report.json
+      sha256: 55a490ea0311c786215b48ed1997ecb542b843f06fc1dbfdf83cf0d07fdd79d6
+    actor_manifest:
+      path: configs/arm/guided_contact_alignment/protocol/actor_bindings_mode_conditioned_contact_establishment_v2.json
+      sha256: b7b6758b059aac873d8c55e147d31b2cceb2d6b22d7defc986e1ce42e0b06af4
+    invalid_predecessor:
+      path: results/_qualification/four_task_transfer/t2_contact_establishment_gpu1_predeployment_20261029/invalid_run.json
+      sha256: 41b14870898a3314bd50e7389a46910c9080d148c622db875b266d284a7a0338
+      reusable_records: 0
+    qualification_status: passed_seed_disjoint_gpu1_predeployment_v19
+    qualification_report:
+      path: results/_qualification/four_task_transfer/t2_mode_conditioned_contact_establishment_gpu1_predeployment_20261029/execution_admission.json
+      sha256: a527bcac3df53dd6cb181056bfe8e4557530efa81cfa85043d264f1cc871e438
+    qualification_audit:
+      path: results/_qualification/four_task_transfer/t2_mode_conditioned_contact_establishment_gpu1_predeployment_20261029/independent_audit.json
+      sha256: 467ea9972db6ab2167831dec68e40ac53c722fe5e994947ffdae07af9aa39d8b
+  architecture_equivalence: passed
+  frozen_design:
+    admission_scope: fresh_current_protocol_predeployment
+    migration_rule: rebind_and_prove_equivalence_before_confirmation
+    main_table_rows: 9
+    ablation_cells: 6
+    training_or_calibration_instances: 8
+    confirmation_accessed: false
+    artifacts:
+      protocol_validity:
+        path: results/_architecture/cross_ebdm_mode_conditioned_contact_gpu1_execution_admission_20261029/protocol_validity.json
+        sha256: 7cf33184916cef0d86a3fc706ba81f67e00966b413ca996fd79e43932e4d392a
+      architecture_equivalence:
+        path: results/_architecture/cross_ebdm_mode_conditioned_contact_gpu1_execution_admission_20261029/architecture_equivalence.json
+        sha256: f67f8095dfd36dc79a4d0c835ef1925ee1e23562beac88c1bd6e58b24d71a0dd
+      zero_physics_preflight:
+        path: results/_architecture/cross_ebdm_mode_conditioned_contact_gpu1_execution_admission_20261029/report.json
+        sha256: f6c4a22b1cd43f20e5a4eea7a9aac089b96a8860eed01e108c66289ab21c3b6d
+      predeployment_qualification:
+        path: results/_qualification/four_task_transfer/mode_conditioned_contact_gpu1_execution_admission_20261029/report.json
+        sha256: 9f883ed6838c2aed75558747ac3e7cfc85c7b3c0d7b3bffc3328e798c5993afa
+      predeployment_audit:
+        path: results/_qualification/four_task_transfer/mode_conditioned_contact_gpu1_execution_admission_20261029/independent_audit.json
+        sha256: de5d34e2e955240096f8828d1b57dcb3a23267b9cfd7128cef6e87b2f891ea95
+      cpu_package_qualification:
+        path: results/_qualification/four_task_transfer/method_packages_mode_conditioned_contact_admission_cpu_20261029/report.json
+        sha256: 7174b2dce53d05d6d1928edbbe379e29ab8e5e72ae4c5f2fc36765a9247be6a1
+      gpu_calibration:
+        path: results/_calibration/four_task_transfer/method_packages_mode_conditioned_contact_admission_gpu1_20261029/report.json
+        sha256: 540839283f6844c5ce8c6398a1fd7a7ff820c063baa57244e4a6187190ca7aeb
+  formal_schedule:
+    status: sealed_unaccessed
+    package_report:
+      path: results/_protocol/four_task_transfer/confirmation_v14/package/report.json
+      sha256: 702bb461a871267244a5038b4535181c20ef230156fb16dd1e7bffb7a2683ed4
+    preaccess_audit:
+      path: results/_protocol/four_task_transfer/confirmation_v14/package/preaccess_audit.json
+      sha256: 9dd119e91508ca789027d410ece532b5a1b354277eb17c8f59573afa0cfc222d
+    request_roster:
+      path: results/_protocol/four_task_transfer/confirmation_v14/package/request_roster.jsonl
+      sha256: 5bd05756b51583c006b56965a19b31fb433d578a30af15345c8be45c7d546fe8
+    evaluation_schedule:
+      path: results/_protocol/four_task_transfer/confirmation_v14/package/evaluation_schedule.jsonl
+      sha256: da5d212b2d1d90a276ec9864db5bb5b716225d142d32d9fbcdd70c5c69fd2ec8
+    failure_replacement: false
+    launches_allowed: 1

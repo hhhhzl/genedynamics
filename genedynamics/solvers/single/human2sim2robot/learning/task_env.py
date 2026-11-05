@@ -17,7 +17,7 @@ from .native_task_math import compute_reward_jit
 
 class ObjectTrajectoryTaskEnv:
     def __init__(self, task, demonstration, *, num_envs=2, seed=0, demo_dt=None,
-                 action_smoothing_weight=-.01):
+                 action_smoothing_weight=-.01, terminate_on_reference_end=False):
         import gym
 
         self.task, self.num_envs, self.seed = task, int(num_envs), int(seed)
@@ -30,6 +30,9 @@ class ObjectTrajectoryTaskEnv:
         if not np.isfinite(self.demo_dt) or self.demo_dt <= 0:
             raise ValueError("demo_dt must be finite and positive")
         self.action_smoothing_weight = float(action_smoothing_weight)
+        # Explicit new-training option.  Existing checkpoints and experiments
+        # retain their original task-terminal-only episode definition.
+        self.terminate_on_reference_end = bool(terminate_on_reference_end)
         contact = task.spec.family == "contact"
         if contact:
             linear, angular, stiffness = .08, .4, 1.
@@ -106,10 +109,20 @@ class ObjectTrajectoryTaskEnv:
         reward = (reward_terms["Object Tracking Reward"]
                   + self.action_smoothing_weight * reward_terms["Action Smoothing Penalty"]).numpy()
         self.previous_actions[:] = native_actions
+        reference_done = self.reference_index.astype(int) >= len(self.demonstration)
         self.reference_index += np.where(distance > .2, 0., self.task.config.control_dt / self.demo_dt)
         done = transition.done.copy()
         info = {"task_status": transition.status.copy(), "reference_tracking_error": distance,
                 "time_outs": transition.status == 5, "source_method": "human2sim2robot_adapted"}
+        if self.terminate_on_reference_end:
+            # Upstream force-reference-tracking training resets when the
+            # pre-increment integer reference index reaches trajectory length.
+            # Native compute_reset runs before its end-of-step clock update.
+            # This terminal training transition does not assert task success and
+            # must not receive timeout value bootstrapping.
+            done = np.logical_or(done, reference_done)
+            info["reference_motion_done"] = reference_done.copy()
+            info["time_outs"] = np.logical_and(info["time_outs"], ~reference_done)
         if auto_reset and done.any():
             self.reset_generation += 1
             self.task.reset(tuple(range(self.num_envs)), seed=self.seed + self.reset_generation, mask=done)
@@ -122,17 +135,22 @@ class ObjectTrajectoryTaskEnv:
         self.training_frame = int(frame)
 
     def get_env_state(self):
-        return deepcopy({"schema": "h2s2r-held-object-adaptation-v2", "task": self.task.get_checkpoint(),
+        state = {"schema": "h2s2r-held-object-adaptation-v2", "task": self.task.get_checkpoint(),
                          "demonstration_sha256": self.demonstration_sha256, "demo_dt": self.demo_dt,
                          "reset_generation": self.reset_generation, "reference_index": self.reference_index,
                          "previous_actions": self.previous_actions, "smallest_distance": self.smallest_distance,
-                         "training_frame": getattr(self, "training_frame", 0)})
+                         "training_frame": getattr(self, "training_frame", 0)}
+        if self.terminate_on_reference_end:
+            state["terminate_on_reference_end"] = True
+        return deepcopy(state)
 
     def set_env_state(self, payload):
         if payload is None or payload.get("schema") != "h2s2r-held-object-adaptation-v2":
             raise ValueError("complete environment state is required for continuation")
         if payload["demonstration_sha256"] != self.demonstration_sha256 or payload["demo_dt"] != self.demo_dt:
             raise ValueError("continuation demonstration or sampling clock differs")
+        if bool(payload.get("terminate_on_reference_end", False)) != self.terminate_on_reference_end:
+            raise ValueError("continuation training termination differs")
         self.task.restore_checkpoint(payload["task"])
         self.reset_generation = int(payload["reset_generation"])
         for name in ("reference_index", "previous_actions", "smallest_distance"):

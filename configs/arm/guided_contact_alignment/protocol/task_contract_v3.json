@@ -1,0 +1,35 @@
+{
+  "version": "cross-embodiment-t2-shared-execution-v3",
+  "task": "guided_contact_alignment",
+  "alias": "T2",
+  "extends": [
+    {
+      "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v2.json",
+      "sha256": "c264694c1cb15f9dad0049cc55243eb8e9fa729bc471e37d6f0ba34314b00279"
+    }
+  ],
+  "shared_execution": {
+    "version": "four-task-shared-execution-v3",
+    "physics_dt_seconds": 0.001,
+    "control_dt_seconds": 0.02,
+    "physics_substeps_per_control": 20,
+    "contact_time_constant_seconds": 0.04,
+    "contact_damping_ratio": 2.0,
+    "execution_profile": "substep_wrench_governor",
+    "strict_evaluator_version": "strict-guide-substep-v4",
+    "guide_mode0_transit_speed_mps": 0.00675,
+    "guide_mode0_post_outlet_route": "concurrent_monotone_lift_v3"
+  },
+  "qualification": {
+    "path": "results/arm/guided_contact_alignment/validation/mode0_post_outlet_concurrent_feedback_fresh_qualification/report.json",
+    "sha256": "e980e0c8a714249b51a689f83a1f40d71baeeaf1dc9481313de24236adf99deb",
+    "episodes": 64,
+    "successes": 64,
+    "constraint_violations": 0,
+    "confirmation_states_opened": 0
+  },
+  "scope": "Inherited unchanged by every main-table baseline, ablation and Cross-EBDM row.",
+  "historical_results": "All runs without this qualified mode-0 route remain invalid for the new main table.",
+  "status": "common_protocol_bound_requires_fresh_predeployment",
+  "final_test": false
+}

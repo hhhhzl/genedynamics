@@ -1,0 +1,26 @@
+{
+  "version": "cross-embodiment-t4-shared-execution-v3",
+  "task": "mobile_keyed_insertion_recovery",
+  "alias": "T4",
+  "extends": [
+    {
+      "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/task_contract_v2.json",
+      "sha256": "d479eab61b530d231d9ac0be4d6c0aa1994262baf147cc5de4965e06bf7c59e3"
+    }
+  ],
+  "shared_execution": {
+    "version": "four-task-shared-execution-v3",
+    "execution_profile": "joint_margin_public_reference",
+    "reset_profile": "folded_stance",
+    "reset_joint_noise_rad": 0.002,
+    "preparation_control_steps": 50,
+    "body_intent_profile": "public_planar_v1",
+    "body_velocity_world": [0.005, 0.005, 0.0],
+    "body_intent_start_seconds": 0.0,
+    "body_intent_duration_seconds": 6.0
+  },
+  "scope": "The task adapter supplies the same finite public body intent after every method action, so every main-table baseline, ablation and Cross-EBDM row receives the same reachability support.",
+  "historical_results": "Runs without the folded noisy reset or without the task-owned body intent remain invalid for the new main table.",
+  "status": "common_protocol_bound_requires_fresh_predeployment",
+  "final_test": false
+}

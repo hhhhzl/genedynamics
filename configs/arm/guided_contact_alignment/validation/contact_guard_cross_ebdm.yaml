@@ -1,0 +1,12 @@
+base: ../main/cross_ebdm.yaml
+name: guided_contact_alignment_contact_guard_cross_ebdm
+output_dir: results/arm/guided_contact_alignment/validation/contact_guard_cross_ebdm
+method_params:
+  actor_binding:
+    manifest:
+      path: configs/arm/guided_contact_alignment/protocol/actor_bindings_contact_guard_v1.json
+      sha256: c7319dae315a35dd31e888d34c4df2d874a447618d0c595a9cb97db2c80ab449
+metadata:
+  protocol: public_measured_contact_guard_v1
+  scope: CPU development diagnosis; exact v12 failure reproduction followed by fresh requests
+  performance_evidence: false

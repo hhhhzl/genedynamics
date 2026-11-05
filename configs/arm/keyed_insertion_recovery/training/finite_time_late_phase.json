@@ -1,0 +1,322 @@
+{
+  "actor_manifest": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/actor_bindings.json",
+    "sha256": "a815a742019bedb54a6dff685ca5ec6d779a04da0aa12f6871d51ea66e3def05"
+  },
+  "data": {
+    "episode_tasks": [
+      "T3"
+    ],
+    "frozen_episode_task": "T3",
+    "frozen_mode": 0,
+    "frozen_public_inputs": {
+      "path": "results/_development/p4_completion_20261015/results/arm/keyed_insertion_recovery/validation/p4_public_issued_response/level_B_log/seed_38000/frozen_inputs.json",
+      "sha256": "ca09470e498f51b2419f48544b3c02900e9e121962873e82e060f812f9cf3e32"
+    },
+    "source_manifest": {
+      "path": "results/_development/p4_derated_20261014/results/arm/keyed_insertion_recovery/qualification/fada_derated_source_opportunity/level_source/seed_28440/qualification.json",
+      "sha256": "0956436687ab283c4f6aa5aaf910a0a3f86d46c5c86dc6d6123a222e1fd3d1c3"
+    },
+    "source_prior": {
+      "path": "results/_development/p0p1_20261013_v2/results/arm/keyed_insertion_recovery/validation/cross_ebdm/_source/prior",
+      "sha256": {
+        "metadata.json": "9299cf19d96042ad4f1007f30087e7d0e994f5f1cb71a98a479f5cd8c83349db",
+        "tensors-6b33a9480cc879ee3d1f470f3d2ad55f79b2682b9575e4bca824a970d7ef22d7.npz": "6b33a9480cc879ee3d1f470f3d2ad55f79b2682b9575e4bca824a970d7ef22d7"
+      }
+    },
+    "state_stride": 5,
+    "validation_bodies": [
+      "xarm7"
+    ],
+    "weak_log_manifest": {
+      "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_public_log/gpu1/public_log_manifest.json",
+      "sha256": "90b94ce415951875c12c148c6660a2a72eec8e62d38984a9714191dfbb13ddf7"
+    },
+    "weak_log_remaining_controls_max": 150
+  },
+  "development_evidence": {
+    "public_log_collection": {
+      "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_public_log/gpu1/report.json",
+      "sha256": "0feb45f75f80f2e1dd6c322a4bbedf3c9879d16558cb975331a856b2f4bfab53"
+    },
+    "rejected_qualification": {
+      "path": "results/arm/keyed_insertion_recovery/validation/finite_time_terminal_progress_paired/gpu1/report.json",
+      "sha256": "dbb7cb020aee68b5cb417941511a04f7d16256b6c04d475d70e0033220e91d1d"
+    },
+    "rejected_terminal_stability_qualification": {
+      "path": "results/arm/keyed_insertion_recovery/validation/finite_time_terminal_stability_paired/gpu1/report.json",
+      "sha256": "87da830bd74b36f7fc0abe335c6fac3d4ffe469c7c1f070788dffb998780cd8d"
+    }
+  },
+  "device": {
+    "logical_device": "cuda:0",
+    "physical_uuid": "58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1",
+    "required_visible_device_count": 1
+  },
+  "feedback": {
+    "alignment_spatial_stiffness": 1.0,
+    "compensation_gain": 2.0,
+    "compensation_limit": 0.04,
+    "execution_horizon": 1,
+    "guard_clear_z_m": 0.61,
+    "guard_prediction_seconds": 0.0,
+    "guard_retreat_speed": 0.006,
+    "guard_seat_gap_m": 0.006,
+    "guard_settle_ticks": 4,
+    "insertion_force_scale": 1.0,
+    "insertion_spatial_stiffness": 1.0,
+    "integral_scale": 0.0,
+    "issued_reference_gain": 2.0,
+    "lead_rotation_rad": 0.04,
+    "lead_xy_m": 0.008,
+    "lead_z_m": 0.01,
+    "lift_before_lateral": true,
+    "normal_admittance_gain": 0.004,
+    "normal_control": "position_admittance",
+    "normal_velocity_limit": 0.015,
+    "position_gain": 6.0,
+    "recovery_spatial_stiffness": 0.25,
+    "rotation_gain": 4.0,
+    "twist_damping": 1.0
+  },
+  "finite_time_progress": {
+    "angular_progress_scale": 0.0001,
+    "candidate_residual_scale": 0.025,
+    "control_dt_seconds": 0.02,
+    "hold_controls": 15,
+    "linear_progress_scale": 1e-05,
+    "minimum_candidate_delta": 0.0001,
+    "orientation_tolerance_rad": 0.03490658503988659,
+    "phase": 3,
+    "position_tolerance_m": 0.002,
+    "progress_tolerance": 1e-07,
+    "progress_weight": 1.0,
+    "tail_fraction": 0.1,
+    "tail_weight": 4.0,
+    "terminal_weight": 1.0
+  },
+  "instances": {
+    "instance_01": {
+      "current_checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_stability/checkpoints/instance_01/checkpoint.pt",
+        "sha256": "8c01420cf7022bb928eec22cbcc9adba018801b46cba0d8052c20d4df4482e33"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p5p6_method_identity_20261016/results/cross_embodiment/four_task_benchmark/method/p5p6_task_compatible_gate_training_v4/level_B_log_60/seed_221300/T3/frozen.json",
+        "sha256": "d8161a44cc5bdbfceb52fb10f9d23c6007a90a40bc079e37646fdda78b997970"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p4_completion_20261015/results/arm/keyed_insertion_recovery/validation/p4_public_local_response_curve/level_B_log/seed_38000/budget_60/checkpoint.pt",
+        "sha256": "b74f34c64da327963e7e71a307b3388b577359479c4759fc0c6150463c01b75e"
+      },
+      "seed": 434001,
+      "task_only_checkpoint": {
+        "path": "results/_development/p4_completion_20261015/results/arm/keyed_insertion_recovery/validation/p4_public_local_dense_training_curve/level_B_log/seed_48000/budget_60/task_only/checkpoint.pt",
+        "sha256": "3c1a4003aa5f8733641102068443f864203b0ad3f191e847222f6a044d6ef1ce"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p5p6_method_identity_20261016/results/cross_embodiment/four_task_benchmark/method/p5p6_task_compatible_gate_training_v4/level_B_log_60/seed_221300/T3/continuation.pt",
+        "sha256": "17237256adf3d8958bf2667fb9997433a03297032656a2785606f9d6acccd539"
+      }
+    },
+    "instance_02": {
+      "current_checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_stability/checkpoints/instance_02/checkpoint.pt",
+        "sha256": "f2ef5cb3f3a715cc46820883bd2288e244303c5947321c1d3dd773d8c40b3e3d"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_02/gated_v2_contact/T3/frozen.json",
+        "sha256": "525260435b9ffb020460ca8433fe9edce3c3c268ef74f9981ff3324f37fa14e7"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v1/level_B_log_60/instance_02/T3/response/budget_60/checkpoint.pt",
+        "sha256": "3908ee699a8af32f4fa5615d92f71f284118b430f84cb11044b9cec9b38f7a7c"
+      },
+      "seed": 434002,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v1/level_B_log_60/instance_02/T3/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "11f6bdf20dcca4602777e314c40f8e1359e7454f7b6fb742c927533979ee1932"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_02/gated_v2_contact/T3/continuation.pt",
+        "sha256": "b4b0ce4b132de14678dd6d79b20acd18a7cee909f690b17223c76ebac6e3ae47"
+      }
+    },
+    "instance_03": {
+      "current_checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_stability/checkpoints/instance_03/checkpoint.pt",
+        "sha256": "03cc728cb4d09d8ec0f7c398c873dd6b4e51fc559a028967cdb97c4ca4ffe484"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/gated_v2_contact/T3/frozen.json",
+        "sha256": "4c83e1800ed1cef6e272a4ae9f62348be55440ac6debaba0b129881915e9df23"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/T3/response/budget_60/checkpoint.pt",
+        "sha256": "e9597769701ac91e67652954ee45ee1cbf64e8cc0be70ffe337dda928a50df5c"
+      },
+      "seed": 434003,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/T3/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "bc8b915a47359ee745c27839e9b4857949c4b1c77db3776edbf39f9cd75ab950"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/gated_v2_contact/T3/continuation.pt",
+        "sha256": "70d278fc6833f4201b015bb902f57a4db2a1d96a7df1bc0366c92bea433bcbbe"
+      }
+    },
+    "instance_04": {
+      "current_checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_stability/checkpoints/instance_04/checkpoint.pt",
+        "sha256": "0feb47e48c1ec20aaabfbc34fb9d0ccad6c0f1bbd80f817ee4bb8426ff473e29"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/gated_v2_contact/T3/frozen.json",
+        "sha256": "b2733bc8341b5017a56010839b45a71c3ed1f321eed8df0bb2e3aab4a35216c6"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/T3/response/budget_60/checkpoint.pt",
+        "sha256": "bf31789e48b6ba81573d2b580da60a70e62599b3eb8a779868582ceecd5b9858"
+      },
+      "seed": 434004,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/T3/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "942e63ce361205ffa6c6496908b358d0b4e7cc008b96086915614816dd90ac90"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/gated_v2_contact/T3/continuation.pt",
+        "sha256": "be0dbb51c801de35b87b96f630f78c6988e493da16f29f113519455dc4e9548a"
+      }
+    },
+    "instance_05": {
+      "current_checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_stability/checkpoints/instance_05/checkpoint.pt",
+        "sha256": "98131c8de3a23498dfcd01f5cdaa3ff0dffc558d78a168d568f4a3b83d26aab0"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/gated_v2_contact/T3/frozen.json",
+        "sha256": "b6f82336f269b8ffff18ff73a2a5c5ad7592dc65d7bcd998ffdda3e66866f70c"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/T3/response/budget_60/checkpoint.pt",
+        "sha256": "9aaea76c9bdc727da8c4d6e94c480c6d0b2b9daa383486cb9756e08990025847"
+      },
+      "seed": 434005,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/T3/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "58a080d353fc29534991cdb22e41ed9989b03f24e93e55537cb93e04c2c7edfa"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/gated_v2_contact/T3/continuation.pt",
+        "sha256": "01851612e26b3aed9515df164efdf56dfd65eeff643851b9daae5d79943852a3"
+      }
+    },
+    "instance_06": {
+      "current_checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_stability/checkpoints/instance_06/checkpoint.pt",
+        "sha256": "333c7191a41a4f72186ef4f9712fc6a51d1356acd22850650f4a3fb69ddbe7e9"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/gated_v2_contact/T3/frozen.json",
+        "sha256": "86876708ddc0f35166108755125de5cfff94a9733392225b0151654c5d9f4f01"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/T3/response/budget_60/checkpoint.pt",
+        "sha256": "cd6f1854e53b5780d45826393de205117f2db0dbd78e7f6ffef9aa64dcdcd15c"
+      },
+      "seed": 434006,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/T3/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "ae8f0d47cc08630bfec86ff84d9eeb09d95f8bb70f472f21d96f2a14d37bbf3e"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/gated_v2_contact/T3/continuation.pt",
+        "sha256": "3467b3af4dc35c16545bd4d98add09ea27743d44119d8b77228ef592e4678795"
+      }
+    },
+    "instance_07": {
+      "current_checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_stability/checkpoints/instance_07/checkpoint.pt",
+        "sha256": "78e200f34cdb175ee2467921941dbeba64cbb1628261cc7b12e1749238164bbb"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/gated_v2_contact/T3/frozen.json",
+        "sha256": "95ccc5b6b2180dbcc040bfe9c9aa5975ef61138c49297bdea7972e3ed2a705f2"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/T3/response/budget_60/checkpoint.pt",
+        "sha256": "6dc52b035c89f50545f778f3aba08f019ab4e148a7dbc2474895dbf521eb0963"
+      },
+      "seed": 434007,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/T3/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "11721f52d37ca457850d9d8ad0d62d23a7eb0a4d60f3cd243376e4fdd59ef082"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/gated_v2_contact/T3/continuation.pt",
+        "sha256": "5e051baea67610224c02e3ecec5ce49438906b7845b0d7c0055a077d1a875849"
+      }
+    },
+    "instance_08": {
+      "current_checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_stability/checkpoints/instance_08/checkpoint.pt",
+        "sha256": "68e093578b8918917d060b78eee67300c454c0830e2bf71af43dc28af3f8c4ea"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/gated_v2_contact/T3/frozen.json",
+        "sha256": "7a4b82aa01b762f6b3310e3731658b36e6d7768880729f76569a7d40d4054a4f"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/T3/response/budget_60/checkpoint.pt",
+        "sha256": "20a9e81ca49ce9222d04ae791d894c8d807c06afb90ef62d920c67ba22c7f71e"
+      },
+      "seed": 434008,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/T3/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "8281cb3c120955ba997c50ab35f69fb0b1765f524707428b6201ef4c81c2b0f0"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/gated_v2_contact/T3/continuation.pt",
+        "sha256": "8c35e777307c2ee41ff00de4e6d57ddf3a99a80368d180f3058861c431d232a5"
+      }
+    }
+  },
+  "limits": {
+    "maximum_gpu_GiB": 10,
+    "wall_seconds": 1800
+  },
+  "output": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase/checkpoints",
+  "parent_attempt": {
+    "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_progress/recentered/checkpoints/report.json",
+    "sha256": "221a82f079bf115eb5106f596e7b9bd73880a683421d86985fa539570c81e2ce"
+  },
+  "preflight_output": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase/preflight",
+  "preflight_report": {
+    "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase/preflight/report.json",
+    "sha256": "c4296002d6770bd01365a32336e903686a4e301204d7cd610604fbefcb98f167"
+  },
+  "selection": {
+    "minimum_useful_fraction": 0.25,
+    "progress_tolerance": 1e-07,
+    "task_tolerance": 0.05
+  },
+  "task": "T3",
+  "training": {
+    "batch_size": 64,
+    "checkpoint_selection": {
+      "interval_updates": 100,
+      "minimum_update": 100,
+      "rule": "best_validation_progress_margin"
+    },
+    "initialization": {
+      "calibration": "fit_plus_weak_log_public_states",
+      "kind": "recentered_current_checkpoint_fresh_optimizer",
+      "maximum_median_absolute_logit": 3.0
+    },
+    "log_interval": 100,
+    "target_state_fraction": 0.5,
+    "updates": 1500
+  },
+  "version": "t3-finite-time-terminal-progress-training-v5"
+}

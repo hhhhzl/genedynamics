@@ -1,0 +1,49 @@
+{
+  "version": "four-task-paired-development-diagnosis-v2",
+  "name": "public_sentinel_terminal_binding_regression",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda"
+  },
+  "seed_anchor": 4694000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "label": "public_geometry_unwrapped_terminal_binding",
+      "instances": "fixed"
+    }
+  ],
+  "scope": "Bounded GPU1 regression of the public-geometry task sentinel after terminal-interface parameter routing was repaired. Reuse the eight v14 public requests exactly. Require 8/8 strict success, zero execution errors, zero constraint violations and eight audited evidence files. Development evidence only; no performance claim or failure replacement."
+}

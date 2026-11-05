@@ -1,0 +1,54 @@
+{
+  "schema_version": "transfer-subtask-contract-v1",
+  "contract_version": "transfer-corner-guided-seating-v1",
+  "semantic_id": "corner_guided_seating",
+  "family": "guided_contact_alignment",
+  "embodiment": "fixed_arm",
+  "environment": "guided_contact_alignment",
+  "implementation_status": "implemented_contract_frozen",
+  "semantics": {
+    "goal": "Establish loaded contact on a planar guide, traverse the first segment, turn through the physical corner while retaining declared contact, traverse the second segment, and settle against the end stop.",
+    "excludes": ["lifting over either guide wall", "jumping from the first segment directly to the stop", "using evaluator contact identities as private policy input", "claiming a spatial curved-surface task from a planar guide"]
+  },
+  "event_order": [
+    {"id": "loaded_contact_established", "evidence": ["guide-floor or side-wall contact identity", "physics-substep loaded-contact threshold"]},
+    {"id": "first_segment_traversed", "evidence": ["monotone first-segment progress", "loaded-contact coverage"]},
+    {"id": "corner_transition_completed", "evidence": ["entry and exit of the frozen corner region", "local tangent changes to the second segment", "no wall bypass"]},
+    {"id": "second_segment_traversed", "evidence": ["monotone second-segment progress", "loaded-contact coverage"]},
+    {"id": "endstop_seated", "evidence": ["physical end-stop proximity", "bounded wrench and low-velocity terminal dwell"]}
+  ],
+  "interface": {
+    "observations": {
+      "public": ["tcp pose and twist", "measured wrench", "known planar guide geometry", "local path tangent", "path progress", "next segment target", "issued-action history"],
+      "hidden": ["servo gain", "command delay", "friction", "evaluator contact identity and acceptance clocks"]
+    },
+    "action_authority": {
+      "method": ["bounded tangential and rotational request", "declared stiffness and normal-force request"],
+      "public_execution": ["common wrench governor", "joint and workspace projection", "common safety termination"],
+      "evaluator_only": ["guide-geom contact classification", "ordered segment and corner events", "end-stop seating acceptance"]
+    }
+  },
+  "evaluation": {
+    "success": ["loaded contact precedes traversal", "both segments and the corner occur in order", "declared contact coverage and gap limits hold in each guided region", "the end stop is reached and held at bounded wrench and velocity"],
+    "violations": ["normal or lateral overforce", "guide-wall penetration or undeclared collision", "joint-limit or workspace termination", "segment-order violation", "timeout"],
+    "anti_bypass": ["solid guide walls and end stop prevent geometric shortcutting", "ordered region events reject direct terminal flight", "contact identity comes from physics rather than policy phase", "lifting outside the frozen guide clearance is rejected"]
+  },
+  "mechanism_axes": [
+    {"name": "corner_angle_class", "public": true, "train": ["shallow"], "development": ["shallow", "right_angle"], "heldout": ["right_angle"]},
+    {"name": "corner_radius_class", "public": true, "train": ["large"], "development": ["large", "medium"], "heldout": ["small"]},
+    {"name": "contact_friction_class", "public": false, "train": ["nominal"], "development": ["nominal", "moderate"], "heldout": ["low", "high"]},
+    {"name": "command_delay_controls", "public": false, "train": [0], "development": [0, 1], "heldout": [3]}
+  ],
+  "source_qualification": {
+    "status": "cpu_source_qualified_4_of_4",
+    "requirements": ["source traverses both guide segments and the corner in order", "qualification records substep contact coverage and end-stop seating", "guide geometry is feasible without wall penetration", "source actor and geometry digests are frozen before target development"],
+    "evidence_resolution": "physics substeps for contact and wall interaction, control ticks for ordered progress"
+  },
+  "evaluator_evidence": {
+    "status": "implemented_contract_frozen",
+    "resolution": "physics_substep_for_contact_and_control_tick_for_path_regions",
+    "implementation_path": "genedynamics/tasks/transfer/guide_evaluation.py",
+    "required_signals": ["contact geom identities", "normal and tangential wrench", "first-segment, corner, and second-segment region membership", "local path progress", "end-stop separation", "tcp pose and twist", "terminal dwell clock"]
+  },
+  "historical_evidence_policy": "No dual-channel result is relabeled as corner-guided seating; all source and target evidence for this suite must be newly collected after implementation."
+}

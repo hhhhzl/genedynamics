@@ -29,13 +29,32 @@ def test_known_task_issuance_matches_both_native_limiters_in_original_units():
         np.testing.assert_allclose(actual,np.asarray(expected),atol=3e-7,rtol=2e-6)
 
 
-def test_task_transport_preserves_T1_box_and_force_off_and_checkpoint():
+def test_task_transport_preserves_T1_box_and_T2_task_owned_coordinates():
     for task in ('T1','T2'):
-        spec,f=inputs(task);model=PublicTaskResidualTransport(spec,PublicTransportSpec(residual_scale=.025,hidden=(8,)));base=torch.zeros(2,10,13);base[:,:,:6]=1.49 if task=='T1' else .99
+        spec,f=inputs(task);model=PublicTaskResidualTransport(spec,PublicTransportSpec(residual_scale=.025,hidden=(8,)));base=torch.zeros(2,10,13);base[:,:,:6]=1.49 if task=='T1' else .37
+        if task=='T2':
+            base[:,:,2]=-.125;base[:,:,6:12]=torch.tensor([1.,1.,0.,1.,1.,1.]);base[:,:,12]=.03
         with torch.no_grad():model.network[-1].bias.fill_(100.)
         y=model(f,f,torch.zeros_like(base),base,torch.zeros(2,dtype=torch.long),torch.zeros(2,9));bound=1.5 if task=='T1' else 1.
-        assert torch.all(y[:,:,:6]<=bound) and torch.all(y[:,:,:6]>=base[:,:,:6]) and torch.all(y[:,:,12]==0)
+        assert torch.all(y[:,:,:6]<=bound)
+        if task=='T1':
+            assert torch.all(y[:,:,:6]>=base[:,:,:6]) and torch.all(y[:,:,12]==0)
+        else:
+            owned=list(PublicTaskResidualTransport.T2_TASK_OWNED_COORDINATES)
+            torch.testing.assert_close(y[:,:,owned],base[:,:,owned],rtol=0,atol=0)
+            assert torch.all(y[:,:,[0,1,3,4,5]]>base[:,:,[0,1,3,4,5]])
         loaded=PublicTaskResidualTransport.from_checkpoint(model.checkpoint());torch.testing.assert_close(y,loaded(f,f,torch.zeros_like(base),base,torch.zeros(2,dtype=torch.long),torch.zeros(2,9)),rtol=0,atol=0)
+
+
+def test_legacy_task_transport_checkpoint_remains_explicitly_legacy():
+    spec,f=inputs('T2');model=PublicTaskResidualTransport(spec,PublicTransportSpec(residual_scale=.025,hidden=(8,)))
+    payload=model.checkpoint();payload['version']=model.LEGACY_VERSION;payload.pop('t2_transport_coordinates');payload.pop('t2_task_owned_coordinates')
+    loaded=PublicTaskResidualTransport.from_checkpoint(payload)
+    assert loaded.legacy_full_request is True
+    base=torch.zeros(2,10,13)
+    with torch.no_grad():loaded.network[-1].bias.fill_(100.)
+    y=loaded(f,f,torch.zeros_like(base),base,torch.zeros(2,dtype=torch.long),torch.zeros(2,9))
+    assert torch.all(y[:,:,2]>base[:,:,2]) and torch.all(y[:,:,6:12]>base[:,:,6:12])
 
 
 def test_ordinary_adam_mpc_risk_gate_counts_and_cached_tick():
@@ -59,3 +78,70 @@ def test_ordinary_adam_mpc_risk_gate_counts_and_cached_tick():
         # All H slots are optimized identically in this symmetric model.
         selected[:]=selected[:,:1].clone()
         assert float(objective(selected))<=float(objective(base))
+
+
+def test_t2_dial_and_source_prior_preserve_task_owned_coordinates():
+    from types import SimpleNamespace
+
+    from genedynamics.tasks.transfer.controllers.cross_ebdm.arm_dense import (
+        PublicArmTaskSourcePriorActor,
+    )
+    from genedynamics.tasks.transfer.controllers.dial import PublicArmTaskDIALMPCActor
+    from genedynamics.solvers.single.cross_ebdm.learning.task_transport import (
+        T2_TASK_OWNED_COORDINATES,
+        T2_TRANSPORT_COORDINATES,
+    )
+
+    _, feature = inputs('T2', 1)
+    base = torch.zeros(1, 10, 13)
+    base[:, :, 2] = -.125
+    base[:, :, 6:12] = torch.tensor([1., 1., 0., 1., 1., 1.])
+    base[:, :, 12] = .03
+    candidate = torch.full_like(base, .5)
+    batch = {
+        'target_features': feature.numpy(),
+        'source_commands': candidate.numpy(),
+        'base_proto': base.numpy(),
+        'source_query_distance': np.array([0.], dtype=np.float32),
+        'current': {
+            'position': np.zeros((1, 3), dtype=np.float32),
+            'rotation': np.eye(3, dtype=np.float32)[None],
+            'wrench': np.zeros((1, 6), dtype=np.float32),
+        },
+        'task_reference': np.concatenate((
+            np.zeros((1, 3), dtype=np.float32),
+            np.eye(3, dtype=np.float32).reshape(1, 9),
+            np.zeros((1, 1), dtype=np.float32),
+        ), axis=1),
+    }
+    public = {'elapsed_seconds': np.array([[0.]], dtype=np.float32)}
+    base_action = (base[:, 0].numpy() * BOUNDS).astype(np.float32)
+    owned = list(T2_TASK_OWNED_COORDINATES)
+    transported = list(T2_TRANSPORT_COORDINATES)
+
+    prior = PublicArmTaskSourcePriorActor.__new__(PublicArmTaskSourcePriorActor)
+    prior.spec = SimpleNamespace(alias='T2', config=SimpleNamespace(control_dt=.02))
+    prior.device = torch.device('cpu')
+    prior.last_action_tick = -1
+    prior.cached_action = None
+    prior.maximum_query_distance = 5.
+    prior.fallback_controls = 0
+    prior.irreversible_source_prior_calls = 0
+    prior.prepare = lambda _: (batch, base_action)
+    prior_action = prior.act(public)
+    np.testing.assert_array_equal(prior_action[:, owned], base_action[:, owned])
+    assert np.any(prior_action[:, transported] != base_action[:, transported])
+
+    dial = PublicArmTaskDIALMPCActor.__new__(PublicArmTaskDIALMPCActor)
+    dial.spec = SimpleNamespace(alias='T2', config=SimpleNamespace(control_dt=.02))
+    dial.device = torch.device('cpu')
+    dial.last_action_tick = -1
+    dial.cached_action = None
+    dial.maximum_query_distance = 5.
+    dial.fallback_controls = 0
+    dial.inference_seconds = []
+    dial.prepare = lambda _: (batch, base_action)
+    dial._run_dial = lambda _: torch.ones(13)
+    dial_action = dial.act(public)
+    np.testing.assert_array_equal(dial_action[:, owned], base_action[:, owned])
+    assert np.any(dial_action[:, transported] != base_action[:, transported])

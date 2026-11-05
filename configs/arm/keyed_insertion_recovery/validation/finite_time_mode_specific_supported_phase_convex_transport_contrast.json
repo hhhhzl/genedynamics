@@ -1,0 +1,78 @@
+{
+  "acceptance": {
+    "maximum_one_sided_exact_sign_p_value": 0.05,
+    "minimum_aggregate_success_rate_gain": 0.0,
+    "minimum_mean_control_step_reduction_fraction": 0.02,
+    "minimum_nonnegative_instances": 8,
+    "minimum_nonnegative_time_instances": 6,
+    "require_transport_to_preserve_every_task_only_success": true,
+    "require_zero_extra_transport_constraint_violations": true,
+    "required_pairs": 64,
+    "task_only": "mode_specific_supported_phase_convex_task_only",
+    "transport": "mode_specific_supported_phase_convex_transport"
+  },
+  "confirmation_states_opened": 0,
+  "diagnostic_only": true,
+  "execution": {
+    "device": "cuda"
+  },
+  "failure_replacement": false,
+  "methods": [
+    {
+      "candidate_policy_set": {
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/aggregation/report.json",
+          "sha256": "3c7e081abe93b1c90150d00120d26c80477c8516b4b1ddb6ec95b8bac5c0ac01"
+        },
+        "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode0"
+      },
+      "family": "main",
+      "instances": "all",
+      "key": "cross_ebdm",
+      "label": "mode_specific_supported_phase_convex_transport"
+    },
+    {
+      "candidate_policy_set": {
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/aggregation/report.json",
+          "sha256": "3c7e081abe93b1c90150d00120d26c80477c8516b4b1ddb6ec95b8bac5c0ac01"
+        },
+        "method_identity": "task_only_shared_start_mode_specific_v9"
+      },
+      "family": "main",
+      "instances": "all",
+      "key": "task_only",
+      "label": "mode_specific_supported_phase_convex_task_only"
+    }
+  ],
+  "mode_one_candidate_policy_set": {
+    "aggregation_report": {
+      "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/aggregation/report.json",
+      "sha256": "c19ccf758187e8d82f5b03d3e44d04ce7e9f29fd1a974123ebd4fa8c7f8baa3f"
+    },
+    "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode1"
+  },
+  "name": "finite_time_mode_specific_supported_phase_convex_transport_contrast",
+  "performance_evidence": false,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "reset_slots_per_cell": 4,
+  "scene_cells": [
+    {
+      "body_support_parameters": {},
+      "id": "protocol_hard_target",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.8,
+        "servo_gain": 0.65
+      },
+      "robot": "xarm7"
+    }
+  ],
+  "scope": "Fresh T3 development contrast on the protocol-frozen hard xArm7 target cell after the completed v15 failure attribution. Mode 0 retains the SHA-bound recorded-completion policy and robust expanded admission. Mode 1 uses the same SHA-bound policy and robust public scores but limits transport to convex blends in public phases one and two; phases zero and three remain task-only. Both rows share the same task-only checkpoints, evaluator, two modes, four reset slots, and GPU1 execution. Thresholds are unchanged, no confirmation state is opened, and failures are not replaced.",
+  "seed_anchor": 7870000,
+  "task": "T3",
+  "version": "four-task-mode-specific-supported-phase-convex-transport-contrast-v1"
+}

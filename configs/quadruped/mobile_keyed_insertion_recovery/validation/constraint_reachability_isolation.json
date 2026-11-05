@@ -1,0 +1,60 @@
+{
+  "version": "t4-constraint-reachability-isolation-v1",
+  "device": "cpu",
+  "output_dir": "results/quadruped/mobile_keyed_insertion_recovery/validation/constraint_reachability_isolation",
+  "formal_experiment": false,
+  "run_class": "development",
+  "reset": {
+    "profile": "folded_stance",
+    "joint_noise": 0.002,
+    "fresh_seed_base": 931100,
+    "states_per_mode_cell": 2
+  },
+  "mechanisms": [
+    {
+      "id": "latency_gain_shift",
+      "servo_gain": 0.7,
+      "delay_steps": 3,
+      "payload_mass": 0.5
+    },
+    {
+      "id": "payload_shift",
+      "servo_gain": 0.85,
+      "delay_steps": 1,
+      "payload_mass": 0.8
+    }
+  ],
+  "support_cells": [
+    {"id": "support_nominal", "body_servo_gain": 1.0},
+    {"id": "support_derated_0p90", "body_servo_gain": 0.9}
+  ],
+  "profiles": [
+    {
+      "id": "legacy",
+      "execution_profile": "legacy",
+      "public_reference_governor": false
+    },
+    {
+      "id": "bounds_only",
+      "execution_profile": "joint_margin_bounds",
+      "public_reference_governor": false
+    },
+    {
+      "id": "bounds_public_reference",
+      "execution_profile": "joint_margin_public_reference",
+      "public_reference_governor": true
+    }
+  ],
+  "requested_modes": [0, 1],
+  "expected_receipts": 16,
+  "expected_episodes": 48,
+  "gate": {
+    "require_exact_profile_pairing": true,
+    "require_no_construction_failure": true,
+    "require_task_completion": true,
+    "require_zero_constraint_violations": true,
+    "minimum_support_count": 2
+  },
+  "conditional_body_intent": "Run only if bounds_public_reference preserves hard constraints but has at least one timeout or unreachable terminal state.",
+  "scope": "CPU-only paired development isolation; one charged folded preparation per physical state, cloned exactly across runtime profiles. No GPU, training, confirmation reuse or outcome replacement."
+}

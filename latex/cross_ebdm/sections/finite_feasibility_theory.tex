@@ -43,6 +43,46 @@ controller carry 与事件。故前缀失败事件对全族相同；整体成功
 该失败。对恢复前缀扩大控制支持时，应向同类控制对照开放相同参数化，
 并保持任务约束不变。
 
+\textbf{模式条件的事件接纳。} 上述前缀边界也给出 transport 应在何时开始
+作用。令 $z_k$ 为公开的增广状态，$u_c(z_k,m)$ 为 task-owned 动作，
+$u_T(z_k,m)$ 为 transported 候选。对预先声明的模式集合
+$\mathcal M_E$，令 $E_m(z_{0:k})\in\{0,1\}$ 是只依赖公开历史的吸收事件：
+一旦成立，后续保持为一。事件接纳策略定义为
+\begin{equation}
+ u_E(z_k,m)=
+ \begin{cases}
+  u_c(z_k,m), & m\in\mathcal M_E,\ E_m(z_{0:k})=0,\\
+  u_T(z_k,m), & \text{otherwise}.
+ \end{cases}
+ \label{eq:event-admitted-transport}
+\end{equation}
+模式集合、事件观测、dwell 和吸收规则必须在独立目标评估前固定；它们不能
+读取 evaluator truth 或失败后的反事实标签。
+
+\begin{proposition}[事件接纳的前缀继承与模式直通]
+将 Eq.~\eqref{eq:event-admitted-transport} 与 common 策略从相同初态、相同
+controller carry 和相同物理随机流耦合。对任意
+$m\in\mathcal M_E$，两者在首次事件时刻
+$\sigma_m=\inf\{k:E_m(z_{0:k})=1\}$ 之前具有相同的增广轨迹，因而任何只依赖
+该前缀的失败事件具有相同真值。对任意 $m\notin\mathcal M_E$，事件接纳策略
+与原 transport 策略在全部时刻逐动作相同。
+
+进一步，设 $\mathcal K_{\rm pre}^m$ 是 common 策略可在不触发硬约束的条件下
+到达 $E_m=1$ 的前缀集合，$\mathcal K_{\rm post}^m$ 是事件后由 transport
+保持约束的增广状态集合。只有在初态属于 $\mathcal K_{\rm pre}^m$，且事件
+交接状态属于 $\mathcal K_{\rm post}^m$ 时，组合策略才继承相应的条件安全性。
+\end{proposition}
+\begin{proof}
+在 $k<\sigma_m$ 时，Eq.~\eqref{eq:event-admitted-transport} 精确选择 $u_c$；
+对闭环递推归纳即得状态、carry 与事件历史相同。$m\notin\mathcal M_E$ 时分段
+定义在每一步都选择 $u_T$。最后一项分别应用两个集合的定义，并在事件交接
+状态处组合前缀与后缀。
+\end{proof}
+该命题没有证明 $\mathcal K_{\rm pre}^m$ 或 $\mathcal K_{\rm post}^m$ 很大，
+也没有从平均 wrench 误差推出冲击上界。事件前回退可以消除 transport 对该
+前缀的因果影响，却不能修复 common 前缀本身的失败；事件后的任务收益与安全
+仍须由 seed-disjoint 配对实验验证。
+
 \textbf{保留模式质量与停止的代价。} 设 $S$ 是给定可行性规则允许保留
 的源模式集合，$p_s(S)>0$。若目标 law $q$ 只在 $S$ 上分配质量，则
 \[
@@ -76,6 +116,8 @@ $\widehat C,\widehat R$。先求 $\widehat C_*=\min_{\phi\in\mathcal A}
 任务约束、mode 条件、候选容量和模拟缓冲对完整方法与 task-only 相同。
 $\delta$ 在封存目标评估前固定；它公开允许的任务成本代价，而不是通过
 反复调节响应权重寻找最终测试优势。
+这是用于分析的硬预算选择问题。实现中的加法 hinge 是软惩罚，
+不保证严格满足该约束，因而下述结论不能不经核验地直接套用到训练输出。
 
 \begin{proposition}[同一有限集合内的任务预算与响应比较]
 若在 $\mathcal A$ 上 $|C-\widehat C|\le\epsilon_C$、
@@ -103,14 +145,62 @@ $\widehat C(\phi)\le C_*+\delta-\epsilon_C
 该命题只比较同一候选集合。容差 $\delta$ 须在独立评估前确定；若未认证
 统一 $\epsilon_C,\epsilon_R$，经验预算带不能被解释为总体非劣或真实安全保证。
 
+\textbf{Population oracle 与有限预算 learner。} 固定声明的目标条件分布
+$\nu$、评价时域 $H$ 与共同候选类 $\mathcal A$。记 $C_{t,H}$ 和 $R_{t,H}$
+为该分布下的真实期望任务成本与响应成本；上文的 $C,R$ 可取这两个量。
+Population oracle $\phi_\star$ 最小化真实期望成本。实际训练只访问有限数据
+$\mathcal D$ 与校准模型，得到
+$\widehat\phi_T=\mathcal L_T(\mathcal D,\zeta)$ 和
+$\widehat\phi_A=\mathcal L_A(\mathcal D,\zeta)$；$\zeta$ 记录初始化、采样流及
+有限优化预算。两者属于同一 $\mathcal A$，但均不被假定达到 population optimum。
+使用完整 episode 成本时必须另记 $C_{t,\mathrm{ep}}$；短时代理的次序不自动
+推广到该成本。
+
+\begin{proposition}[响应约束不支配真实任务 oracle]
+若 $\phi_\star\in\arg\min_{\phi\in\mathcal A}C_{t,H}(\phi)$ 存在，则任意
+$\phi\in\mathcal A$ 均满足
+\[
+ C_{t,H}(\phi)\ge C_{t,H}(\phi_\star).
+\]
+正权响应归一化或 detached selective gate 改变训练目标，不改变这一
+population 最优性的定义；它们也不确定两个有限预算 learner 的成本次序。
+\end{proposition}
+\begin{proof}
+第一式由 $\phi_\star$ 的定义成立。两个 learner 的次优差
+$C_{t,H}(\widehat\phi_T)-C_{t,H}(\phi_\star)$ 与
+$C_{t,H}(\widehat\phi_A)-C_{t,H}(\phi_\star)$ 均非负，而其差可取任一符号。
+\end{proof}
+
+\textbf{有限预算收益需要额外联系。} 比较的是
+$\widehat\phi_A$ 与 $\widehat\phi_T$，而不是超越 $\phi_\star$。
+对事先声明的 $\nu,H$，一种足够的 response--task bridge 条件为
+\begin{equation}
+ \begin{split}
+ C_{t,H}(\widehat\phi_A)-C_{t,H}(\widehat\phi_T)
+ &\le -\kappa\!\left[R_{t,H}(\widehat\phi_T)
+                    -R_{t,H}(\widehat\phi_A)\right]
+       +\epsilon_{\rm bridge},\\[-0.2em]
+ &\hspace{4em}\kappa>0,\qquad\epsilon_{\rm bridge}\ge0.
+ \end{split}
+ \label{eq:response-task-bridge}
+\end{equation}
+只有真实响应下降大于 $\epsilon_{\rm bridge}/\kappa$ 时，该假设才蕴含
+同一评价对象上的正任务收益。它是额外的、需独立论证的条件，不是由 response
+matching 或 gate 推导出的定理；用样本估计该下降时还须计入估计误差。
+源响应在任务阶段与 mode 内的适用性、模型误差和事件裕度可以帮助检验该
+条件，但不能以观测到的成功差事后定义条件来证明同一成功差。
+有限预算收益可能来自归纳偏置降低估计或优化误差；归一化改善梯度尺度也
+不保证其符号。相应主张由独立训练实例与配对目标请求上的效果及预算曲线
+检验，不要求逐请求支配，也不把总体 oracle 当成可实现的实验对照。
+
 \textbf{冻结实现的 selective gate 只改变 anchoring 项。}
 对固定参数 $\varphi$ 和固定 detached gate $G\in\{0,1\}$，记
 $H=[\widehat C-\widehat C_T-\delta]_+$。加法 band 的 gated 与 ungated
 模型目标分别为
 \[
- \widehat J_G(\varphi)=\E[\widehat C+\beta H+\lambda G\widehat R],
+ \widehat J_G(\varphi)=\E[\widehat C+\beta H+\lambda G\widehat R+\Omega],
  \qquad
- \widehat J_U(\varphi)=\E[\widehat C+\beta H+\lambda\widehat R].
+ \widehat J_U(\varphi)=\E[\widehat C+\beta H+\lambda\widehat R+\Omega].
 \]
 由于 $\widehat R\ge0$，有精确恒等式
 \begin{equation}
@@ -120,31 +210,68 @@ $H=[\widehat C-\widehat C_T-\delta]_+$。加法 band 的 gated 与 ungated
 \end{equation}
 它只说明同一个 $\varphi$ 下关闭 unsupported anchoring 会降低所定义的训练目标；
 两种目标各自优化后的策略不同，Eq.~\eqref{eq:gated-ungated-identity} 不给出
-真实任务成本、成功率或安全性的次序。特别地，gate coverage 低可能只是把
-方法退化为 task-first 行为；coverage 高也不说明被接受的 source response
-对目标任务有帮助。
+真实任务成本、成功率或安全性的次序。$G=0$ 只移除该训练样本的响应损失；
+共享参数仍受其他样本和先前更新影响，不推出该状态的动作等于 task-only，
+更不推出对应条件下的任务增量为零。只有实际执行策略明确选择同一参照请求，
+并在相同增广状态与物理随机流下比较时，才有相应的逐步动作相等。
+训练 gate coverage 低或高本身均不能说明 anchoring 的条件任务效果。
 
-\begin{proposition}[二选一 checkpoint fallback 的条件任务界]
-设 $\widehat C_T,\widehat C_A$ 分别是 matched task-only 与 anchoring
-候选在冻结 held-out 模型代理上的成本，选择规则在
-$\widehat C_A\le\widehat C_T+\delta$ 时选 $A$，否则选 $T$。
+\textbf{方向资格必须固定反事实状态。} 对公开目标状态 $z_t$、由源上下文产生的
+命令 $u_s$ 和同状态的 task-only 命令 $u_T$，定义模型代理优势
+\[
+ \widehat A_{\rm dir}(z_t,u_s)
+ =\widehat C_{t,H}(z_t,u_T)-\widehat C_{t,H}(z_t,u_s).
+\]
+只有在同一个 $z_t$ 上评价两条命令，$\widehat A_{\rm dir}$ 的符号才可解释为
+命令方向的模型内比较。用源状态评价 $u_s$，却用目标状态评价 $u_T$，会将
+状态差异混入方向判断。即使同状态门以
+$\widehat A_{\rm dir}\ge\delta_{\rm dir}$ 接纳源响应锚定，这仍只是校准模型
+上的资格条件；真实闭环增益须由独立目标初态的配对执行检验。
+
+\textbf{动态响应的事件分解。} 令 $Y_x$ 为固定短时域内的夹具位移，
+$E=\mathbf 1\{|Y_x|>\tau\}$，$h$ 为公开历史与已发请求。写
+$p=\Pr(E=1\mid h)$、$\mu_e=\E[Y_x\mid E=1,h]$，则
+\[
+ \E[Y_x\mid h]=p\mu_e+(1-p)\mu_0,
+ \qquad |\mu_0|\le\tau.
+\]
+因此事件概率头与条件位移头组成的预测 $\widehat p\widehat\mu_e$ 满足
+\[
+ \big|\E[Y_x\mid h]-\widehat p\widehat\mu_e\big|
+ \le |p-\widehat p|\,|\mu_e|
+   +\widehat p\,|\mu_e-\widehat\mu_e|+(1-p)\tau.
+\]
+这要求分别检查事件概率校准、真实事件窗位移和静止窗偏置；总体回归误差
+下降不足以保证每个子组改善，也不提供物理子步力峰值的安全界。
+
+\begin{proposition}[二选一 checkpoint 的条件短时代理界]
+固定两个 checkpoint $\widehat\phi_T,\widehat\phi_A$、同一条件分布 $\nu$、
+时域 $H$、执行接口与采样协议。记 $C_{H,b}$ 为 checkpoint $b\in\{T,A\}$
+在真实短时响应上计算的声明任务代理的期望，
+$\widehat C^{\rm val}_{H,b}$ 为独立模型验证对同一量的估计。
+选择规则在 $\widehat C^{\rm val}_{H,A}\le
+\widehat C^{\rm val}_{H,T}+\delta$ 时选 $A$，否则选 $T$。
 若只对这两个冻结 checkpoint 有
-$|C_T-\widehat C_T|\le\epsilon$ 与
-$|C_A-\widehat C_A|\le\epsilon$，则被选 checkpoint $S$ 满足
+$|C_{H,b}-\widehat C^{\rm val}_{H,b}|\le\epsilon$，则被选 checkpoint $S$ 满足
 \begin{equation}
- C_S\le C_T+\delta+2\epsilon.
+ C_{H,S}\le C_{H,T}+\delta+2\epsilon.
  \label{eq:fallback-pair-bound}
 \end{equation}
 \end{proposition}
 \begin{proof}
 若回退到 $T$，结论由 $\delta,\epsilon\ge0$ 直接成立。若选择 $A$，则
-$C_A\le\widehat C_A+\epsilon\le\widehat C_T+\delta+\epsilon
-\le C_T+\delta+2\epsilon$。
+$C_{H,A}\le\widehat C^{\rm val}_{H,A}+\epsilon
+\le\widehat C^{\rm val}_{H,T}+\delta+\epsilon
+\le C_{H,T}+\delta+2\epsilon$。
 \end{proof}
 该结论只需二点误差界，不需要宣称覆盖整个神经网络参数类；但实验仍未认证
-真实任务代理误差 $\epsilon$。因此实现中的 $+0.05$ 只能称为模型选择容差，
-Eq.~\eqref{eq:fallback-pair-bound} 不能改写成真实 success 非退化或约束保证。
-soft hinge 训练期间的瞬时 band violation 也不会被该二选一结论消除。
+真实短时任务代理误差 $\epsilon$，它还须覆盖模型偏差与验证采样误差。
+因此 $+0.05$ 只能称为模型选择容差，Eq.~\eqref{eq:fallback-pair-bound}
+不推出 episode success、完成时间或物理约束的保证，也不约束两策略诱导的
+不同闭环访问分布。先从多个 checkpoint 中选择候选时，应使用新的独立验证
+或覆盖整个选择过程的误差界；不能直接套用固定二点的采样论证。
+在线按状态切换候选属于另一条策略，同样不由该离线选择界自动覆盖。
+soft hinge 训练期间的瞬时 band violation 也不会被该结论消除。
 
 \textbf{gate 帮助事件对应所需的额外条件。} 对接触切换、卡滞与恢复等
 hybrid event，至少需要同时满足三项：被 gate 接受的 anchoring 在真实目标上
@@ -153,6 +280,178 @@ hybrid event，至少需要同时满足三项：被 gate 接受的 anchoring 在
 controller carry。若任一条件不成立，减小平均 response discrepancy 仍可
 跨过错误事件边界并降低任务成功。故 selective gate 是一个可检验的
 条件机制，不预测跨任务一致的正收益。
+
+\textbf{单次干预与后续闭环的可分解归因。} 在同一首次接纳的增广状态与
+后续物理随机流上，令 $\pi_T$ 始终执行匹配的 task-only 策略，
+$\pi_1$ 只执行一次候选命令、其后执行 $\pi_T$，$\pi_A$ 则继续执行
+完整方法。对任一固定时域 $H$ 的真实轨迹泛函 $J_H$，包括子步峰值
+越限指示或任务进展成本，有恒等式
+\[
+ \E[J_H(\pi_A)-J_H(\pi_T)]
+ =\E[J_H(\pi_A)-J_H(\pi_1)]
+  +\E[J_H(\pi_1)-J_H(\pi_T)].
+\]
+第二项是首次命令替换及其后续状态效应，第一项是共享首次命令后继续
+采用方法策略的增量；两者均需在同一接纳状态上通过物理分叉估计。
+首次命令的代理收益或瞬时受力不能决定第一项的符号，且两项各自可与
+总效果方向不同。因此只给首次命令加安全门，不足以证明反复接纳的
+闭环策略安全或有益。该分解本身不给出统计置信度、跨接纳状态覆盖、
+完整 episode 成功率或硬约束保证；这些还需独立样本与真实执行验证。
+
+分段动态响应若以事件概率 $\widehat p$ 乘条件幅度 $\widehat a$ 预测
+某一坐标的位移 $\Delta$，令 $E=\mathbf 1\{|\Delta|>\tau\}$，则逐样本有
+\begin{equation}
+ |\widehat p\widehat a-\Delta|
+ \le E|\widehat a-\Delta|
+     +|\widehat p-E|\,|\widehat a|
+     +(1-E)|\Delta|.
+ \label{eq:event-response-error-decomposition}
+\end{equation}
+这是将误差写为 $E(\widehat a-\Delta)+(\widehat p-E)\widehat a
+-(1-E)\Delta$ 后应用三角不等式，且最后一项至多为 $\tau$。
+因此验证平均误差须分别测事件段幅度、按幅度加权的门控误差和近静止
+残差；总体平均误差下降可能与事件漏检或长时域静止误差上升并存。
+Eq.~\eqref{eq:event-response-error-decomposition} 只涉及被观测坐标的
+预测值，不给出未观测物理子步的力峰上界，也不推出闭环任务收益。
+
+\begin{proposition}[增广状态上的离散事件保持]
+令第 $k$ 个采样时刻的增广闭环状态为 $x_k$，事件判据为有限个
+$L_j$-Lipschitz 函数 $h_j(x_k)$ 的符号及其首次成立顺序。若真实轨迹满足
+\[
+ \gamma=\min_{j,k}|h_j(x_k)|>0,
+ \qquad \max_k\|x_k-\widehat x_k\|<
+ \min_j\frac{\gamma}{L_j},
+\]
+则真实与预测轨迹在全部采样时刻具有相同判据真值，从而具有相同的离散
+事件顺序。
+\end{proposition}
+\begin{proof}
+由 Lipschitz 性，
+$|h_j(x_k)-h_j(\widehat x_k)|<\gamma\le |h_j(x_k)|$，故每个判据的
+符号保持；对全部 $j,k$ 同时成立即保持首次成立时刻及顺序。
+\end{proof}
+这里的 $x_k$ 必须包含 phase、计数器、积分器、issued/applied reference
+及其他会改变下一步转移的 controller carry。仅控制投影响应
+$y_k=P x_k$ 的误差不能推出上述增广状态误差；事件恰在阈值附近时
+$\gamma=0$，该命题也不给出保证。因此 response matching 要支持事件主张，
+必须测量增广误差与事件裕度，而非只报告 TCP/wrench 均值误差。
+
+\begin{proposition}[安全可行不推出有限时完成]
+令 $V(x)\ge0$ 为剩余任务进展，终止集合为 $V\le\varepsilon$，总时限为
+$H$ 个控制步，终止还需保持 $b$ 步。若轨迹保持全部硬约束，且每个尚未
+终止的步均满足
+\[
+ V(x_k)-V(x_{k+1})\ge\rho>0,
+ \qquad (H-b)\rho\ge V(x_0)-\varepsilon,
+\]
+并且进入终止集合后存在满足约束的 $b$ 步保持控制，则任务在时限内完成。
+反之，仅有约束不变性、模式正确和可行控制，并不能给出正的完成概率下界。
+\end{proposition}
+\begin{proof}
+将进展下界求和，至多
+$\lceil(V(x_0)-\varepsilon)/\rho\rceil\le H-b$ 步进入终止集合，随后执行
+$b$ 步保持。反向结论由满足全部约束但令 $V(x_{k+1})=V(x_k)>\varepsilon$
+的可行轨迹直接构成。
+\end{proof}
+这个区分对应实验中的 timeout：无越限、模式正确或 reference governor
+可行，只说明轨迹未违反已编码约束；若没有独立验证的正进展裕度，就不能
+声称有限时可达。扩大控制余量只有在实测 $V$ 进展上通过冻结对照后，才能
+被解释为完成机制，而非安全保证。
+
+\begin{proposition}[增广状态交接的可组合归因]
+令 $z_k$ 包含物理状态、公开 reference、延迟动作队列、phase、控制器记忆和
+剩余 dwell/time budget。设 $\mathcal D_c$ 是预先声明的 common completion
+接纳域，$\mathcal K_c\subseteq\mathcal D_c$ 是从该增广状态出发由 common
+策略满足约束并在剩余预算内完成的状态集合。若方法前缀在时刻 $\tau$ 安全，
+$z_\tau\in\mathcal K_c$，且从 $\tau$ 起精确执行 common 策略，则组合轨迹完成。
+仅有 $u_\tau=u_c(z_\tau)$ 或随后切回 common，并不能推出
+$z_\tau\in\mathcal K_c$。
+
+进一步，在相同 $z_\tau$ 与相同后续物理随机流的配对分叉中，若 exact-common
+分支完成而方法分支失败，则该失败不能归因于 common 从 $z_\tau$ 出发的
+continuation；若 exact-common 分支失败，只有当 $z_\tau\in\mathcal D_c$ 时，
+该结果才构成继续修订 shared completion 的证据。若
+$z_\tau\notin\mathcal D_c$，失败属于前缀的交接义务，而不是 common 在其
+声明域内的反例。
+\end{proposition}
+\begin{proof}
+$z_\tau\in\mathcal K_c$ 时，完成性由 $\mathcal K_c$ 的定义直接成立。
+动作相等只约束一个控制时刻，不能消除已存储的 reference、速度、延迟队列或
+dwell 债务，故不能推出集合包含关系。配对分叉固定同一增广状态与后续随机流；
+exact-common 成功给出 common continuation 在该状态上的直接反事实，而两分支
+此后的首个策略差异是方法干预。exact-common 失败若发生在声明域之外，至多
+否证前缀把状态交到接纳域的能力；它不检验 common 在声明域内的义务。
+\end{proof}
+该命题给出公共控制器修改的停止规则：shared controller 的迭代只响应
+接纳域内的 exact-common 反例。方法比较必须另行度量交接状态是否进入
+$\mathcal D_c$，以及方法 continuation 相对 matched task-only 是否改善任务
+结果；把二者混成一个 wrapper 成功率会错误归因共享基础设施的收益。
+
+\begin{proposition}[有限混合投影的逐步代理界]
+令 $u_c(x)$ 和 $u_\ell(x)$ 分别为同一公开状态上的 common 与 learned
+动作，$e_p(x),e_R(x)$ 为公开目标的平移与旋转误差。对
+$u_\alpha=u_c+\alpha(u_\ell-u_c)$，定义
+\[
+ \Delta_p(\alpha;x)=
+ \langle u_{c,p},e_p\rangle-\langle u_{\alpha,p},e_p\rangle,
+ \qquad
+ \Delta_R(\alpha;x)=
+ \langle u_{c,R},e_R\rangle-\langle u_{\alpha,R},e_R\rangle.
+\]
+若有限混合集 $B\subset[0,1]$ 包含 $0$，并选择
+\[
+ \alpha^*(x)=\max\{\alpha\in B:
+ \Delta_p(\alpha;x)\le\eta_p,
+ \Delta_R(\alpha;x)\le\eta_R\},
+\]
+则接纳集处处非空，且所发动作在这两个公开方向代理上至多比 common
+差 $\eta_p,\eta_R$。若在终端邻域强制 $\alpha^*=0$，则该邻域中精确恢复
+common 的保持动作。
+\end{proposition}
+\begin{proof}
+$\alpha=0$ 时 $u_\alpha=u_c$，两个差值均为零，所以接纳集非空。
+所选 $\alpha^*$ 属于该集合，两个不等式由定义成立；终端邻域结论由
+$u_0=u_c$ 直接得到。
+\end{proof}
+这是动作空间中的逐步代理结论。它没有控制动作到下一物理状态之间的接触
+模型误差，也没有单独约束关节、支撑、力或 hybrid guard carry，因而不能
+称为安全、可达性或有限时完成证书。要从它推出上一命题中的 $V$ 下降，仍需
+common 的真实进展下界，以及动作代理误差小于该下界的独立条件。
+
+该投影也给出必要的归因检查。若部署占用测度 $\mu$ 满足
+\[
+ \mu\{x:\alpha^*(x)>0,
+ \ \|u_\ell(x)-u_c(x)\|\ge\tau\}=0
+\]
+（某个预先固定的 $\tau>0$），组合策略在几乎处处都退化为 common，成功
+不能归因于 learned transport。正测度使用只是必要条件；即使它成立，性能
+优势仍须由独立 reset 上相对 task-only/common 的配对任务结果支持，不能由
+接纳率或逐步代理非劣单独推出。
+
+\begin{proposition}[公共执行器与 anchoring 的增量分解]
+令 $P$ 是不读取方法身份、向两分支开放的同一确定性公共执行器，
+$\phi_A,\phi_T$ 分别是 anchoring 与 matched task-only 策略，$J$ 是在同一
+请求分布上的期望任务成本。则有恒等式
+\begin{equation}
+ J(P\circ\phi_A)-J(\phi_T)
+ =\underbrace{J(P\circ\phi_A)-J(P\circ\phi_T)}_{\text{anchoring increment}}
+ +\underbrace{J(P\circ\phi_T)-J(\phi_T)}_{\text{common-executor increment}}.
+ \label{eq:executor-attribution}
+\end{equation}
+若两策略由相同 warm start、数据、sample stream、优化器、更新预算和选择规则
+产生，则第一项是 response objective 的配对增量；缺少任一匹配条件时，它还
+混入 continued training 或选择差异。若第一项为零，组合系统相对
+$\phi_T$ 的任何收益都只能由第二项解释，不能归因于 source anchoring。
+\end{proposition}
+\begin{proof}
+在等式右侧加减 $J(P\circ\phi_T)$ 即得分解。相同训练合同使两分支的预声明
+处理差异只剩 response objective；第一项为零时结论直接由等式成立。
+\end{proof}
+这一定理只解决记账，不保证两项的符号。任务成功率等越大越好的指标可用
+同样的加减法分解。若两分支在有限样本上全部成功并逐请求持平，只能在该
+评估分布和分辨率上拒绝接纳正增量；它不证明所有未见分布上的真实效应严格
+为零。后续若改变机制族、数据预算或 admission threshold，必须在新的封存
+评估前预声明，不能用测试集寻找能使第一项为正的子集。
 
 \textbf{模型偏差与 reset 采样误差分开。} 上式的 $\epsilon_C$ 若将有限
 训练均值当作 $\widehat C$，必须同时覆盖模型偏差与 Monte Carlo 误差。
@@ -167,6 +466,9 @@ controller carry。若任一条件不成立，减小平均 response discrepancy 
 也可能在新的独立初态上失败。当采样误差大于所选任务容差时，经验筛选
 不能支持总体非劣结论。
 对有限样本的精确枚举最优，也不等于对期望目标的 $\epsilon_{\rm opt}=0$。
+这里的 $n$ 是独立抽样的物理 reset cluster 数；在同一物理初态上更换
+episode 标签、请求模式或策略随机种子，只能作为 cluster 内条件或重复测量，
+不能增加该集中界里的独立样本数。
 
 \textbf{数值模型误差单独计入。} 设 $C_{\rm ref}$ 为目标参考机制的
 期望成本，$C_{\rm twin,ref}$ 为校准模型在参考数值实现下的成本，
@@ -184,6 +486,61 @@ $C_{\rm twin,train}$ 为同一模型在训练数值实现下的成本。若分�
 接触求解的数值差异可能通过阶段切换、保持终止或不可恢复失败放大。
 因此校准精度与训练模型的任务预测精度是不同条件；有限配对验证也不能
 被解释为对所有候选与未来初态的统一界。
+
+\textbf{接触离散化属于共享任务合同。} 物理步长、接触正则化时间常数、
+阻尼比与接触事件的采样分辨率共同定义数值接触映射。它们必须在方法比较前
+冻结并由所有方法共享；在查看某个方法的目标结果后单独调整其中任一项，会
+同时改变任务与安全判据的经验含义。控制周期末端的单点接触标记不能代表
+周期内的混合接触轨迹，最长失联时间与接触覆盖率应由物理子步事件计算。
+即使有限reset上的力峰值和失联时间全部通过，这仍只给出冻结数值单元上的
+经验能力门。若没有关于接触求解器一致性、冲量增长和离散误差的统一界，
+不得把该门写成连续真实系统上的力安全证书；共享接触单元的修订也不能计入
+某个transport方法的任务收益。
+
+\textbf{风险接纳必须处理空可行集。} 给定增广状态 $x$、有限候选集
+$\mathcal U(x)$、风险上界 $\overline r(x,u)$ 和冻结阈值 $b$，定义经验接纳集
+\[
+ \widehat{\mathcal U}_{b}(x)
+ =\{u\in\mathcal U(x):\overline r(x,u)\le b\}.
+\]
+这里的不等式逐约束解释。接纳规则只有在所选指令确实属于
+$\widehat{\mathcal U}_{b}(x)$ 时才保留其风险判据含义。
+若 $\widehat{\mathcal U}_{b}(x)=\varnothing$，却把某个默认指令 $u_0$
+强制标记为可接受并执行，则 $\overline r(x,u_0)>b$ 时接纳命题直接为假；
+离线校准覆盖率不能修复这一逻辑覆盖。合法处理只能是将独立认证的
+brake/retreat 指令放入同一候选集并接受同一检查，或显式停止/拒绝并把未完成
+计为任务失败。前者只使接纳规则有定义，仍需验证该动作在时限内保留后续
+可达性；后者也不能被从总体分母中删除。
+
+该可达性条件通常是各向异性的。设动作分解为障碍邻近的平面分量
+$u_{\parallel}$ 与已声明自由空间通道中的分量 $u_{\perp}$。对二者施加同一
+reference-lead 半径，只有在该乘积集合同时包含约束可行方向和满足剩余时限的
+正进展方向时，才可能兼顾安全与完成。平面 lead 界可以限制朝向障碍的已发出
+参考，但这不推出同一界适合抬升或下降通道；反之，放宽自由空间通道也不允许
+放宽平面障碍裕度。因而共享执行器的资格应分别报告各通道的约束裕度、阶段
+耗时与终止保持预算。有限样本上通过这种各向异性分解仍是经验能力门，不是
+连续系统可达性或安全性的证书。
+
+episode-block conformal coverage 还是对校准分布与部署 block 可交换时的边际
+陈述。闭环中 $x_k$ 与候选 $u_k$ 由此前的接纳结果自适应产生；若训练数据只
+覆盖行为策略指令，而部署查询 transport 插值或 emergency 指令，所需可交换性
+没有自动成立。即使每步边际覆盖有效，也不推出整条轨迹同时满足约束或安全集
+前向不变。后者需要与实际候选生成器匹配的独立闭环校准，以及额外的时序或
+viability 条件。本文因此把风险模型作为可检验的经验接纳机制，不称为力安全
+证书。
+
+\textbf{风险标签必须经过真实执行映射。} 区分策略请求 $q_k$、公共执行器
+实际发出的动作 $u_k=P(z_k,q_k)$，以及由延迟队列和物理状态确定的 plant
+动作 $a_k=D(z_k,u_{0:k})$。接触约束使用控制周期内物理子步的力峰值
+$F^{\max}_{k:k+H}=\max_{i=k}^{k+H}\max_s\|f_{i,s}\|$，而不是周期末端
+测得的 wrench 或对 $q_k$ 的代理评分。即使两种策略的 $q_k$ 明显不同，
+公共 rate limit 与投影也可能压缩它们的 $u_k$ 差异；反之，较小的
+$u_k$ 差异仍可经 controller carry 和接触事件放大为未来峰值差异。
+因此风险模型若接受 $q_k$，必须把 $P,D$ 及其相关增广状态纳入预测与
+校准；若接受 $u_k$，训练和部署都须使用同一执行后动作定义。评估候选与
+task-only 的增量风险时，应从相同物理 checkpoint 分叉，保留各方法在共同
+公开前缀上形成的控制器状态，并分别计入两条后续物理轨迹。这样的短时
+同状态对照是经验标签，不自动证明整条闭环轨迹的安全或任务增益。
 
 \textbf{表达误差不能被模型精度消除。} 对更宽的参考策略类
 $\Psi\supseteq\mathcal A$，定义

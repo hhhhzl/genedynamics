@@ -1,0 +1,278 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "maximum_gpu_memory_gib": 2,
+    "maximum_reset_calls": 16,
+    "maximum_wall_seconds": 300,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "formal_performance_evidence": false,
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/validation/asid_adaptsim_fresh_reset_check_3302900000",
+  "policy_episodes": 0,
+  "requests": [
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/source/s0/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302900000,
+      "robot": "go2_z1",
+      "scene_cell": "source"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/source/s0/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302900001,
+      "robot": "go2_z1",
+      "scene_cell": "source"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/source/s1/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302900002,
+      "robot": "go2_z1",
+      "scene_cell": "source"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/source/s1/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302900003,
+      "robot": "go2_z1",
+      "scene_cell": "source"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/nominal/s0/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302900004,
+      "robot": "go2_z1",
+      "scene_cell": "nominal"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/nominal/s0/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302900005,
+      "robot": "go2_z1",
+      "scene_cell": "nominal"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/nominal/s1/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302900006,
+      "robot": "go2_z1",
+      "scene_cell": "nominal"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/nominal/s1/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302900007,
+      "robot": "go2_z1",
+      "scene_cell": "nominal"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/latency_gain_shift/s0/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302900008,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/latency_gain_shift/s0/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302900009,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/latency_gain_shift/s1/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302900010,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/latency_gain_shift/s1/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302900011,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 1.0,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/payload_shift/s0/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302900012,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 1.0,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/payload_shift/s0/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302900013,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 1.0,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/payload_shift/s1/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302900014,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 1.0,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ASID-ADAPTSIM-FRESH/payload_shift/s1/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302900015,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift"
+    }
+  ],
+  "robot": "go2_z1",
+  "task": "T4",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/_base.yaml",
+    "sha256": "61b5856d0b16e8fe602f50c7d937e7154abb090af7b5127872606d39e1c0699f"
+  },
+  "version": "t4-three-method-fresh-reset-feasibility-v1"
+}

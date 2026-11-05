@@ -1,0 +1,71 @@
+{
+  "version": "t2-transport-coordinate-scope-diagnosis-v1",
+  "device": "cpu",
+  "execution_scale": 0.25,
+  "methods": {
+    "cross_ebdm": "main/cross_ebdm.yaml",
+    "task_only": "baseline/task_only.yaml"
+  },
+  "instances": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "coordinate_scopes": [
+    {
+      "key": "current_tangent_and_orientation",
+      "coordinates": [0, 1, 3, 4, 5]
+    },
+    {
+      "key": "tangent_translation",
+      "coordinates": [0, 1]
+    },
+    {
+      "key": "orientation_only",
+      "coordinates": [3, 4, 5]
+    },
+    {
+      "key": "active_axis_translation",
+      "coordinates": "requested_mode"
+    }
+  ],
+  "selection": {
+    "candidate": "tangent_translation",
+    "required_successes_per_method": 64,
+    "required_constraint_violations_per_method": 0,
+    "public_geometry_required_successes": 8
+  },
+  "requests": {
+    "robot": "xarm7",
+    "reset_seed_anchor": 3262000,
+    "reset_slots": 4,
+    "requested_modes": [0, 1],
+    "mechanism_parameters": {
+      "delay_steps": 0,
+      "payload_mass": 0.5,
+      "servo_gain": 1.0
+    }
+  },
+  "diagnostic_only": true,
+  "confirmation_states_opened": 0,
+  "old_invalid_outcomes_used": false,
+  "qualification_evidence": {
+    "radius_report": {
+      "path": "results/arm/guided_contact_alignment/validation/transport_execution_radius/report.json",
+      "sha256": "bab8f7b1ae5ae31259783d7a260ddde4c63399a9d84f92ce01e36c17dd63f8e6"
+    },
+    "radius_audit": {
+      "path": "results/arm/guided_contact_alignment/validation/transport_execution_radius/independent_audit.json",
+      "sha256": "e446bddf0b8932e87a8cbb9345f202a2d47dca4fb945d0bd35961b66cf84bc74"
+    },
+    "mechanism_analysis": {
+      "path": "results/arm/guided_contact_alignment/validation/transport_execution_radius/mechanism_analysis.json",
+      "sha256": "2689674c766ede2ac48665eda72373c0daea513c9251f1dcc547b3e8fd010604"
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "version": "four-task-task-first-expanded-ensemble-robust-adaptive-step-contrast-v1",
+  "name": "finite_time_task_first_expanded_ensemble_robust_adaptive_step_contrast",
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {"device": "cuda"},
+  "methods": [
+    {
+      "family": "main", "key": "cross_ebdm",
+      "label": "expanded_ensemble_robust_transport", "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_physical_selected_v1",
+        "physical_selection_report": {
+          "path": "results/arm/keyed_insertion_recovery/validation/finite_time_task_first_physical_checkpoint_selector/gpu1/report.json",
+          "sha256": "654430d5f4b52561503d32d42fbaba12ac28ce69a0b76d0f1a3dbb0b7e7f65e4"
+        }
+      }
+    },
+    {
+      "family": "main", "key": "task_only",
+      "label": "expanded_ensemble_robust_task_only", "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "task_first_margin_task_only_v1",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_margin/task_only/checkpoints/report.json",
+          "sha256": "825fffc1ea442223904618355eda340e12a3be601814379fcbc41617c5e98aee"
+        }
+      }
+    }
+  ],
+  "requested_modes": [0, 1],
+  "scene_cells": [
+    {
+      "id": "protocol_hard_target", "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.65, "delay_steps": 3, "payload_mass": 0.8
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 5570000,
+  "acceptance": {
+    "transport": "expanded_ensemble_robust_transport",
+    "task_only": "expanded_ensemble_robust_task_only",
+    "required_pairs": 64,
+    "minimum_aggregate_success_rate_gain": 0.0,
+    "minimum_nonnegative_instances": 8,
+    "minimum_mean_control_step_reduction_fraction": 0.02,
+    "minimum_nonnegative_time_instances": 6,
+    "maximum_one_sided_exact_sign_p_value": 0.05,
+    "require_transport_to_preserve_every_task_only_success": true,
+    "require_zero_extra_transport_constraint_violations": true
+  },
+  "scope": "Fresh seed-disjoint T3 development factorial cell using the eight checkpoints frozen by the held-out physical selector. It differs from the ensemble-consensus contrast only by adding the previously frozen blend 8 candidate to the public trust-region grid. Selector seeds 5270000-5270003 and earlier contrast seeds 5370000-5470007 are excluded; this contrast uses 5570000-5570007. Passing opens only a future confirmation contrast and is not paper performance evidence."
+}

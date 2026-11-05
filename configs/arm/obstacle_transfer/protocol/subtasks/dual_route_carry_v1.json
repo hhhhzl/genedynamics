@@ -1,0 +1,69 @@
+{
+  "schema_version": "transfer-subtask-contract-v1",
+  "contract_version": "transfer-dual-route-carry-v1",
+  "semantic_id": "dual_route_carry",
+  "family": "constrained_object_transport",
+  "embodiment": "fixed_arm",
+  "environment": "obstacle_transfer",
+  "implementation_status": "implemented_contract_frozen",
+  "semantics": {
+    "goal": "Carry the rigidly attached L-shaped object around the declared upper or lateral route, clear the obstacle with the whole object, and settle at the requested pose.",
+    "excludes": [
+      "regrasping or changing the rigid tool-object attachment",
+      "counting a tool-center-point path that leaves the carried object in collision",
+      "treating delay, payload, or servo variation as a separate subtask"
+    ]
+  },
+  "event_order": [
+    {
+      "id": "route_committed",
+      "evidence": ["requested route identity", "carried-object pose relative to the declared route corridor"]
+    },
+    {
+      "id": "whole_object_cleared_obstacle",
+      "evidence": ["carried-object collision geoms", "obstacle separation and signed clearance"]
+    },
+    {
+      "id": "terminal_pose_reached",
+      "evidence": ["object position error", "object orientation error"]
+    },
+    {
+      "id": "terminal_hold_completed",
+      "evidence": ["continuous terminal dwell", "object linear and angular velocity"]
+    }
+  ],
+  "interface": {
+    "observations": {
+      "public": ["robot proprioception", "tcp pose and twist", "carried-object pose", "goal pose", "known obstacle and route geometry", "issued-action history"],
+      "hidden": ["servo gain", "command delay", "payload mass", "evaluator collision state"]
+    },
+    "action_authority": {
+      "method": ["bounded Cartesian translation", "bounded Cartesian rotation", "declared stiffness and force request"],
+      "public_execution": ["robot inverse kinematics", "joint and workspace projection", "common safety termination"],
+      "evaluator_only": ["collision classification", "whole-object clearance", "terminal dwell acceptance"]
+    }
+  },
+  "evaluation": {
+    "success": ["declared route is completed", "the whole carried object clears the obstacle", "terminal object error is within 5 mm and 3 degrees", "terminal pose is held continuously for 0.3 seconds before the 10 second deadline"],
+    "violations": ["carried-object or robot collision", "joint-limit termination", "workspace or force safety termination", "timeout"],
+    "anti_bypass": ["evaluate carried-object geoms instead of tcp crossing", "require the declared route event before terminal acceptance", "reject terminal arrival after collision"]
+  },
+  "mechanism_axes": [
+    {"name": "route", "public": true, "train": ["upper", "lateral"], "development": ["upper", "lateral"], "heldout": ["upper", "lateral"]},
+    {"name": "servo_gain", "public": false, "train": [1.0], "development": [0.8, 1.0], "heldout": [0.65]},
+    {"name": "command_delay_controls", "public": false, "train": [0], "development": [0, 1], "heldout": [3]},
+    {"name": "payload_mass_kg", "public": false, "train": [0.5], "development": [0.5, 0.65], "heldout": [0.8]}
+  ],
+  "source_qualification": {
+    "status": "fresh_qualification_required_for_new_protocol",
+    "requirements": ["both declared routes complete from disjoint initial states", "whole-object collision and terminal pose are independently replayed", "source actor and configuration digests are frozen", "no failed source episode is replaced"],
+    "evidence_resolution": "every control tick plus terminal physics state"
+  },
+  "evaluator_evidence": {
+    "status": "current_implementation_bound_fresh_protocol_validation_required",
+    "resolution": "control_tick_and_terminal_physics_state",
+    "implementation_path": "genedynamics/tasks/transfer/evaluation.py",
+    "required_signals": ["object pose and twist", "robot and object collision pairs", "route identity and progress", "joint and workspace limits", "terminal dwell clock"]
+  },
+  "historical_evidence_policy": "Existing obstacle-transfer results remain immutable evidence under their original protocol; this semantic contract does not relabel or overwrite them."
+}

@@ -1,0 +1,12 @@
+base: contact_wrench_memory_qualification.yaml
+name: guided_contact_alignment_contact_rate_qualification
+output_dir: results/arm/guided_contact_alignment/validation/contact_rate_qualification
+seeds:
+- 930214
+- 930215
+method_params:
+  actor_binding:
+    reference_version: public_guide_contact_v5
+metadata:
+  protocol: transfer_contact_rate_qualification
+  selection_rule: require both requested xArm modes on both fresh resets to satisfy unchanged strict criteria with the predeclared 7.5 mm/s tangent cap before expanding the matrix

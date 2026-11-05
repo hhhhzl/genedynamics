@@ -1,0 +1,8 @@
+base: ../_base.yaml
+name: mobile_keyed_insertion_recovery_frozen_warm
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/ablation/frozen_warm
+method_params:
+  ablation_cell: frozen_warm
+  actor_binding:
+    family: ablation
+    key: frozen_warm

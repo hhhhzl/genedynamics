@@ -1,0 +1,59 @@
+base: mechanism_factorial.yaml
+name: keyed_insertion_recovery_insertion_lead_qualification
+output_dir: results/arm/keyed_insertion_recovery/validation/insertion_lead_qualification
+seeds:
+- 940400
+- 940401
+metadata:
+  protocol: transfer_insertion_lead_qualification
+  physics_episode_cap: 8
+  selection_rule: require the 15 mm insertion-only lead to pass both modes on the nominal source mechanism before testing the diagnosed slow-response condition
+suites:
+- name: lead_10mm_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 0
+      servo_gain: 1.0
+      payload_mass: 0.5
+  method_params:
+    mode: 0
+    actor_binding:
+      feedback:
+        insertion_lead_z_m: 0.01
+- name: lead_10mm_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 0
+      servo_gain: 1.0
+      payload_mass: 0.5
+  method_params:
+    mode: 1
+    actor_binding:
+      feedback:
+        insertion_lead_z_m: 0.01
+- name: lead_15mm_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 0
+      servo_gain: 1.0
+      payload_mass: 0.5
+  method_params:
+    mode: 0
+    actor_binding:
+      feedback:
+        insertion_lead_z_m: 0.015
+- name: lead_15mm_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 0
+      servo_gain: 1.0
+      payload_mass: 0.5
+  method_params:
+    mode: 1
+    actor_binding:
+      feedback:
+        insertion_lead_z_m: 0.015

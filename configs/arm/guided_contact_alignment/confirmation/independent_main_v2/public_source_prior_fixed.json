@@ -1,0 +1,26 @@
+{
+  "cell_admission": {
+    "path": "results/arm/guided_contact_alignment/validation/independent_main_table_admission_v2/public_source_prior.json",
+    "sha256": "b292ce6f8e2419d817bf2819b15adf7d42d754537aa17d50271f6d532c73e9de"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "instance_id": "fixed",
+  "method": "public_source_prior",
+  "method_identity": "public_source_prior",
+  "output": "results/arm/guided_contact_alignment/baseline/public_source_prior/confirmation/independent_main_v2/fixed",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/public_source_prior/confirmation/independent_main_v2/fixed_plan.json",
+  "request_roster": {
+    "path": "configs/arm/guided_contact_alignment/protocol/independent_main_table_requests_v2.json",
+    "sha256": "fa3947b55097bd988f2f6d2de7b0bc7816213c6dd84ae719e554bb71fc2bfc1d"
+  },
+  "task": "T2",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/baseline/public_source_prior.yaml",
+    "sha256": "a43e32d526cd9f59fd86e50b86553f0f3b6b9d1e2ccedc00635302a09b6e7d67"
+  },
+  "version": "transfer-independent-main-table-evaluation-v2"
+}

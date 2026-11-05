@@ -1,0 +1,123 @@
+{
+  "version": "four-task-task-first-physical-checkpoint-selector-v1",
+  "name": "finite_time_task_first_physical_checkpoint_selector",
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {"device": "cuda"},
+  "methods": [
+    {
+      "family": "main", "key": "cross_ebdm",
+      "label": "physical_selector_update_0900", "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_physical_selector_v3",
+        "retained_update": 900,
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_physical_selector/anchored/checkpoints/report.json",
+          "sha256": "e9bde6f01fc0f1ab8f46ef42fdf1216b27b439f28657e03f57fbdd261f56334d"
+        }
+      }
+    },
+    {
+      "family": "main", "key": "cross_ebdm",
+      "label": "physical_selector_update_1000", "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_physical_selector_v3",
+        "retained_update": 1000,
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_physical_selector/anchored/checkpoints/report.json",
+          "sha256": "e9bde6f01fc0f1ab8f46ef42fdf1216b27b439f28657e03f57fbdd261f56334d"
+        }
+      }
+    },
+    {
+      "family": "main", "key": "cross_ebdm",
+      "label": "physical_selector_update_1200", "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_physical_selector_v3",
+        "retained_update": 1200,
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_physical_selector/anchored/checkpoints/report.json",
+          "sha256": "e9bde6f01fc0f1ab8f46ef42fdf1216b27b439f28657e03f57fbdd261f56334d"
+        }
+      }
+    },
+    {
+      "family": "main", "key": "cross_ebdm",
+      "label": "physical_selector_update_1300", "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_physical_selector_v3",
+        "retained_update": 1300,
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_physical_selector/anchored/checkpoints/report.json",
+          "sha256": "e9bde6f01fc0f1ab8f46ef42fdf1216b27b439f28657e03f57fbdd261f56334d"
+        }
+      }
+    },
+    {
+      "family": "main", "key": "cross_ebdm",
+      "label": "physical_selector_update_1400", "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_physical_selector_v3",
+        "retained_update": 1400,
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_physical_selector/anchored/checkpoints/report.json",
+          "sha256": "e9bde6f01fc0f1ab8f46ef42fdf1216b27b439f28657e03f57fbdd261f56334d"
+        }
+      }
+    },
+    {
+      "family": "main", "key": "cross_ebdm",
+      "label": "physical_selector_update_1500", "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_physical_selector_v3",
+        "retained_update": 1500,
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_physical_selector/anchored/checkpoints/report.json",
+          "sha256": "e9bde6f01fc0f1ab8f46ef42fdf1216b27b439f28657e03f57fbdd261f56334d"
+        }
+      }
+    },
+    {
+      "family": "main", "key": "task_only",
+      "label": "physical_selector_task_only", "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "task_first_margin_task_only_v1",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_margin/task_only/checkpoints/report.json",
+          "sha256": "825fffc1ea442223904618355eda340e12a3be601814379fcbc41617c5e98aee"
+        }
+      }
+    }
+  ],
+  "requested_modes": [0, 1],
+  "scene_cells": [
+    {
+      "id": "protocol_hard_target", "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.65, "delay_steps": 3, "payload_mass": 0.8
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "reset_slots_per_cell": 2,
+  "seed_anchor": 5270000,
+  "acceptance": {
+    "task_only": "physical_selector_task_only",
+    "candidate_updates": {
+      "physical_selector_update_0900": 900,
+      "physical_selector_update_1000": 1000,
+      "physical_selector_update_1200": 1200,
+      "physical_selector_update_1300": 1300,
+      "physical_selector_update_1400": 1400,
+      "physical_selector_update_1500": 1500
+    },
+    "required_requests_per_instance": 4,
+    "selection_rule": "maximize_successes_then_minimize_mean_capped_control_steps_then_lower_update",
+    "require_candidate_to_preserve_every_task_only_success": true,
+    "require_zero_extra_candidate_constraint_violations": true
+  },
+  "scope": "Held-out physical development selector over six predeclared training updates that passed the frozen offline compatibility gate for all eight instances. Every checkpoint and the paired task-only controller receives the same four protocol-hard-cell requests per instance. Selection maximizes success count, then minimizes capped mean control steps, then prefers the earlier update. This run does not test the contribution claim or open confirmation state."
+}

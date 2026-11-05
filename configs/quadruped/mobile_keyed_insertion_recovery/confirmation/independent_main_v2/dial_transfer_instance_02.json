@@ -1,0 +1,26 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v2",
+  "task": "T4",
+  "method": "dial_transfer",
+  "method_identity": "DIAL_MPC",
+  "instance_id": "instance_02",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/dial.yaml",
+    "sha256": "558ce5e5239a43b7bd047147e50c65eab6b72353160d248d47bb3d34f5a77f47"
+  },
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/independent_main_table_requests_v2.json",
+    "sha256": "dcc15a93229e5ad99f0a629b8ee9bd074f21d7e3fc067eddef23fa058474c788"
+  },
+  "cell_admission": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/independent_main_table_admission_v2/dial_transfer.json",
+    "sha256": "32eb2c8022152199701593a266d85f8f3ee22f383de05f7cd817de3a1a4dd9d7"
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/dial/confirmation/independent_main_v2/instance_02",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/dial/confirmation/independent_main_v2/instance_02_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  }
+}

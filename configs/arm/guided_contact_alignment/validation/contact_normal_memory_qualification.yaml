@@ -1,0 +1,12 @@
+base: contact_rate_qualification.yaml
+name: guided_contact_alignment_contact_normal_memory_qualification
+output_dir: results/arm/guided_contact_alignment/validation/contact_normal_memory_qualification
+seeds:
+- 930218
+- 930219
+method_params:
+  actor_binding:
+    reference_version: public_guide_contact_v7
+metadata:
+  protocol: transfer_contact_normal_memory_qualification
+  selection_rule: require both requested xArm modes on both fresh resets to satisfy unchanged strict criteria using the 7.5 mm/s governor and predeclared 0.8 public normal-force decay

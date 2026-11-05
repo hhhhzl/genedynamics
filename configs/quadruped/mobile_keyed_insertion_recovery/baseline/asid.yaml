@@ -1,0 +1,31 @@
+base: ../_base.yaml
+name: mobile_keyed_insertion_recovery_asid
+method: asid
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/baseline/asid
+metadata:
+  formal_experiment: false
+  formal_seeds: false
+  run_class: development
+method_params:
+  actor_binding:
+    version: transfer-actor-binding-v1
+    manifest: null
+    task: T4
+    family: main
+    binding_key: asid
+    actor: asid
+    status: instances_ready
+    instance_id: development_8764802
+    method_identity: ASID_Fisher_32step_grid_CEM_mobile_mating_policy
+    checkpoint:
+      path: results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/training/full_chain_development_8764802/checkpoint.json
+      sha256: f879937607da882b2fe863bb0dded85c13229fb1f7a4e53bbf8e144e69d1a995
+    training_recipe:
+      path: results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/training/full_chain_development_8764802/recipe.json
+      sha256: 614ff0d4edd9177ab477b96557517c1eb381de228529a7f93d434673c5a372f1
+    training_report:
+      path: results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/training/full_chain_development_8764802/report.json
+      sha256: f9a016863b15b7918da7508073a7d4718dc9b06b71868efe9165cc0a30cd463c
+    training_audit:
+      path: results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/training/full_chain_development_8764802/independent_audit.json
+      sha256: 592f904ef586a8aa1452f94bb2401e34342e428338fcfbb21948ee97a7a810d9

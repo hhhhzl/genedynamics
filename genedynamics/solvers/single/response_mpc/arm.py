@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from genedynamics.solvers.single.cross_ebdm.learning.task_response import task_amplitude
 from genedynamics.solvers.single.cross_ebdm.learning.residual_transport import BOUNDS,task_proxy
+from genedynamics.solvers.single.cross_ebdm.learning.task_transport import project_task_owned_requests,T2_TASK_OWNED_COORDINATES
 from genedynamics.tasks.transfer.controllers.cross_ebdm.arm_dense import PublicArmTaskDenseActor
 
 
@@ -22,7 +23,7 @@ class PublicArmTaskAdamMPCActor(PublicArmTaskDenseActor):
         with torch.inference_mode(False),torch.enable_grad():
             latent=torch.nn.Parameter(torch.zeros_like(base));optimizer=torch.optim.Adam([latent],lr=.25)
             def commands():
-                value=base+.025*amplitude*torch.tanh(latent);value=torch.minimum(torch.maximum(value,-amplitude),amplitude);force=torch.where(base[...,12:13]*25>.1,value[...,12:13].clamp(min=0),torch.zeros_like(value[...,12:13]));return torch.cat((value[...,:12],force),dim=-1)
+                value=base+.025*amplitude*torch.tanh(latent);value=torch.minimum(torch.maximum(value,-amplitude),amplitude);return project_task_owned_requests(f,value,base)
             def objective(value):
                 predicted=self.response(f,value);self.irreversible_model_calls+=1;peaks=torch.expm1(predicted[...,18:20]).clamp(min=0);risk=((peaks[...,0]/25.-1).clamp(min=0)**2+(peaks[...,1]/10.-1).clamp(min=0)**2).max();return task_proxy(predicted,current,reference).mean()+risk+.01*((value-base)**2).mean()
             initial=None
@@ -34,5 +35,10 @@ class PublicArmTaskAdamMPCActor(PublicArmTaskDenseActor):
             with torch.no_grad():
                 value=commands();cost=float(objective(value))
                 if not np.isfinite(cost) or cost>initial:value=base;self.model_acceptance_fallbacks+=1
-                self.cached_action=(value[:,0]*value.new_tensor(BOUNDS)).cpu().numpy().astype(np.float32)
+                t2=getattr(self.spec,'alias',None)=='T2'
+                if t2 and torch.equal(value[:,0],base[:,0]):
+                    self.cached_action=base_action.copy()
+                else:
+                    self.cached_action=(value[:,0]*value.new_tensor(BOUNDS)).cpu().numpy().astype(np.float32)
+                    if t2:self.cached_action[:,list(T2_TASK_OWNED_COORDINATES)]=base_action[:,list(T2_TASK_OWNED_COORDINATES)]
         self.last_action_tick=tick;return self.cached_action.copy()

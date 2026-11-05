@@ -86,6 +86,16 @@ class ObstacleTransferConfig:
     joint_speed_limit: float = 2.5
     contact_margin: float = 0.005
     collision_tolerance: float = 1e-5
+    scene_profile: str = "dual_route"
+    aperture_plane_x: float = 0.52
+    aperture_center_y: float = -0.12
+    aperture_center_z: float = 0.48
+    aperture_half_width: float = 0.085
+    aperture_half_height: float = 0.03
+    aperture_frame_thickness: float = 0.015
+    aperture_exit_zone: tuple = (0.58, 0.66)
+    aperture_brake_speed: float = 0.012
+    aperture_alignment_tolerance: float = math.radians(4.)
 
     def __post_init__(self):
         if self.robot not in {"panda", "xarm7", "ur5e"}:
@@ -104,6 +114,25 @@ class ObstacleTransferConfig:
             raise ValueError("reset_joint_noise must be finite and nonnegative")
         if not math.isfinite(self.goal_yaw) or not math.isfinite(self.collision_tolerance) or self.collision_tolerance < 0:
             raise ValueError("invalid yaw/collision tolerance")
+        if self.scene_profile not in {"dual_route", "aperture_brake_v1"}:
+            raise ValueError("unsupported obstacle-transfer scene profile")
+        aperture_values = (
+            self.aperture_plane_x, self.aperture_center_y,
+            self.aperture_center_z, self.aperture_half_width,
+            self.aperture_half_height, self.aperture_frame_thickness,
+            self.aperture_brake_speed, self.aperture_alignment_tolerance,
+        )
+        if not all(math.isfinite(value) for value in aperture_values):
+            raise ValueError("aperture geometry must be finite")
+        if any(value <= 0 for value in (
+                self.aperture_half_width, self.aperture_half_height,
+                self.aperture_frame_thickness, self.aperture_brake_speed,
+                self.aperture_alignment_tolerance)):
+            raise ValueError("aperture dimensions and thresholds must be positive")
+        if (len(self.aperture_exit_zone) != 2
+                or not all(math.isfinite(value) for value in self.aperture_exit_zone)
+                or not self.aperture_plane_x < self.aperture_exit_zone[0] < self.aperture_exit_zone[1]):
+            raise ValueError("aperture exit zone must lie beyond its plane")
         for pos in (self.start_position, self.goal_position):
             if len(pos) != 3 or not all(math.isfinite(x) for x in pos):
                 raise ValueError("task positions must be finite xyz triples")

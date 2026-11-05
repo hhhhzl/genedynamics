@@ -1,0 +1,14 @@
+base: ../_base.yaml
+name: keyed_insertion_recovery_frozen_warm
+output_dir: results/arm/keyed_insertion_recovery/ablation/frozen_warm
+method_params:
+  ablation_cell: frozen_warm
+  actor_binding:
+    family: ablation
+    key: frozen_warm
+metadata:
+  legacy_ablation:
+    semantic_predecessor: null
+    clean_contract: configs/arm/keyed_insertion_recovery/ablation/clean_treatment_contract.json
+    evidence_reusable_for_clean_comparison: false
+    reason: frozen warm start is not the no-calibration treatment

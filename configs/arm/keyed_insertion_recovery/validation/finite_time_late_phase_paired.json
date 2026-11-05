@@ -1,0 +1,74 @@
+{
+  "acceptance": {
+    "band_only": "band_only",
+    "candidate": "cross_ebdm_finite_time",
+    "current": "cross_ebdm_current",
+    "preserve_every_paired_current_success": true,
+    "require_candidate_to_beat_band_only": true,
+    "require_candidate_to_meet_or_exceed_strong_reference": true,
+    "require_zero_candidate_constraint_violations": true,
+    "required_candidate_successes": 64,
+    "strong_reference": "response_mpc"
+  },
+  "confirmation_states_opened": 0,
+  "diagnostic_only": true,
+  "execution": {
+    "device": "cuda"
+  },
+  "failure_replacement": false,
+  "methods": [
+    {
+      "family": "main",
+      "instances": "all",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_current"
+    },
+    {
+      "candidate_policy_set": {
+        "method_identity": "ours_gated_v5_late_phase",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase/checkpoints/report.json",
+          "sha256": "15e79cf7e0174f1501c42a52c2af1f2433af99ae64f97e486d0d1cdae30d7eb3"
+        }
+      },
+      "family": "main",
+      "instances": "all",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_finite_time"
+    },
+    {
+      "family": "ablation",
+      "instances": "all",
+      "key": "band_only",
+      "label": "band_only"
+    },
+    {
+      "family": "main",
+      "instances": "all",
+      "key": "response_mpc",
+      "label": "response_mpc"
+    }
+  ],
+  "name": "finite_time_late_phase_paired",
+  "performance_evidence": false,
+  "requested_modes": [
+    1
+  ],
+  "reset_slots_per_cell": 8,
+  "scene_cells": [
+    {
+      "body_support_parameters": {},
+      "id": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "robot": "xarm7"
+    }
+  ],
+  "scope": "Fresh paired T3 payload-mode-1 qualification of late-phase public-log-trained Cross-EBDM against the frozen current actor, band-only ablation and response MPC. All eight instances use their own SHA-bound v5 checkpoint and a seed set disjoint from training and prior qualifications; no formal binding, confirmation state or paper performance evidence is opened.",
+  "seed_anchor": 4402000,
+  "task": "T3",
+  "version": "four-task-paired-development-qualification-v3"
+}

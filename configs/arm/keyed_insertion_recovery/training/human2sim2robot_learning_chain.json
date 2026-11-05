@@ -1,0 +1,45 @@
+{
+  "version": "human2sim2robot-learning-chain-audit-v1",
+  "task": "T3",
+  "body": "xarm7",
+  "mode": 0,
+  "seed": 190000,
+  "demonstration": {
+    "path": "results/_development/p4_pose_support_20261015/results/arm/keyed_insertion_recovery/validation/cross_ebdm_baseline_data_admission/level_derated_B_log_C_supervised/seed_28800/qualification/shared13_public_teacher/source/seed_28802/episode.npz",
+    "sha256": "78cbb5c9eaa2a3a9e1f6f90079baaf24137567a6745fd6a263ada64a23599079"
+  },
+  "historical_run": {
+    "path": "results/_development/main_table_fill_20261016/results/arm/keyed_insertion_recovery/validation/h2s2r_public_nominal_v1/level_native4096_mode0/seed_190000",
+    "report_sha256": "17fe37be0bf7a12452542c5f6f82c4ed3dc7380d2469db0a467ca09a6489ecfb",
+    "learning_curve_sha256": "baec05dbb132553834dcc832acb6ee81f7fe8be9de8963a7929db343666c97c6",
+    "monitor_curve_sha256": "0bba2ac8f91c6e7d5bb2964ce99e7ee52d537fcb605a90c80f7492bf3b237483"
+  },
+  "audit": {
+    "reset_samples": 8,
+    "neutral_rollout_steps": 64,
+    "reference_stop_error_m": 0.2,
+    "action_saturation_threshold": 0.98
+  },
+  "pilot": {
+    "status": "planned_not_started",
+    "launch_order": 2,
+    "physical_gpu": "GPU1",
+    "expected_physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "cuda_visible_devices": "1",
+    "process_device": "cuda:0",
+    "num_actors": 16,
+    "horizon_steps": 16,
+    "epochs": 1024,
+    "training_transitions": 262144,
+    "monitor_epochs": [64, 128, 256, 512, 1024],
+    "monitor_seeds": [290010, 290011, 290012, 290013, 290014, 290015, 290016, 290017],
+    "checkpoint_selection": ["success_rate", "constraint_violation_rate", "reference_completion", "terminal_tracking_error", "action_saturation", "earliest_tie"],
+    "maximum_gpu_memory_gib": 4,
+    "maximum_wall_seconds": 9000,
+    "target_calls_during_training": 0,
+    "admission": "retain every checkpoint and failure; require continuous nominal insertion progress without overforce before target pilot"
+  },
+  "pilot_output": "results/arm/keyed_insertion_recovery/baseline/human2sim2robot/training/robot_source_pilot/seed_290000",
+  "output": "results/arm/keyed_insertion_recovery/baseline/human2sim2robot/diagnostics/learning_chain_cpu",
+  "scope": "CPU audit of the task-adapted robot-source trajectory route; not native human-video reproduction and not paper performance evidence"
+}

@@ -1,0 +1,50 @@
+{
+  "confirmation_states_opened": 0,
+  "diagnostic_only": true,
+  "execution": {
+    "device": "cuda"
+  },
+  "failure_replacement": false,
+  "methods": [
+    {
+      "candidate_policy_set": {
+        "method_identity": "ours_gated_v4_terminal_stable",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_stability/checkpoints/report.json",
+          "sha256": "129c2e248acbe4d7432cf4b74877f2716995e9fee02c702ebbc8062bf844725a"
+        }
+      },
+      "family": "main",
+      "instances": "all",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_late_phase"
+    }
+  ],
+  "name": "finite_time_late_phase_public_log",
+  "performance_evidence": false,
+  "public_log": {
+    "chart": "shared13",
+    "permission": "B_log",
+    "purpose": "fit"
+  },
+  "requested_modes": [
+    1
+  ],
+  "reset_slots_per_cell": 8,
+  "scene_cells": [
+    {
+      "body_support_parameters": {},
+      "id": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "robot": "xarm7"
+    }
+  ],
+  "scope": "Fresh GPU1 execution of all eight terminal-stable T3 actors for a complete, unfiltered public B-log. Only strict public observations and issued shared13 requests are serialized; reward, evaluator outcome, hidden mechanism state and confirmation states are excluded.",
+  "seed_anchor": 4302000,
+  "task": "T3",
+  "version": "four-task-public-log-collection-v1"
+}

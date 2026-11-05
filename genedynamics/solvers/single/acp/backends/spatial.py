@@ -3,6 +3,31 @@
 """ACP numpy coordinates: SI translation, row-based rotation6d, (linear, angular) twists."""
 import numpy as np
 
+
+def interpolate_SE3(start, end, fraction):
+    """Geodesically interpolate batched SE(3) poses, as ACP's source runner does."""
+    from scipy.spatial.transform import Rotation
+
+    start = np.asarray(start)
+    end = np.asarray(end)
+    if start.shape != end.shape or start.shape[-2:] != (4, 4):
+        raise ValueError("SE3 interpolation requires equal (...,4,4) pose arrays")
+    fraction = float(fraction)
+    if not 0. <= fraction <= 1. or not np.isfinite(fraction):
+        raise ValueError("SE3 interpolation fraction must be finite in [0,1]")
+    result = np.zeros_like(start)
+    result[..., :3, 3] = (
+        (1. - fraction) * start[..., :3, 3]
+        + fraction * end[..., :3, 3]
+    )
+    start_rotation = start[..., :3, :3]
+    relative = np.swapaxes(start_rotation, -1, -2) @ end[..., :3, :3]
+    rotation_vector = Rotation.from_matrix(relative).as_rotvec()
+    increment = Rotation.from_rotvec(fraction * rotation_vector).as_matrix()
+    result[..., :3, :3] = start_rotation @ increment
+    result[..., 3, 3] = 1.
+    return result
+
 def transpose(mat):
     """
     Transpose the last two dimensions of a batch of matrices.

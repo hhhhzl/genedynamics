@@ -1,0 +1,114 @@
+{
+  "acceptance": {
+    "maximum_one_sided_exact_sign_p_value": 0.05,
+    "minimum_aggregate_success_rate_gain": 0.0,
+    "minimum_mean_control_step_reduction_fraction": 0.02,
+    "minimum_nonnegative_instances": 8,
+    "minimum_nonnegative_time_instances": 6,
+    "require_transport_to_preserve_every_task_only_success": true,
+    "require_zero_extra_transport_constraint_violations": true,
+    "required_pairs": 64,
+    "task_only": "mode_specific_calibrated_authority_task_only",
+    "transport": "mode_specific_calibrated_authority_transport"
+  },
+  "confirmation_states_opened": 0,
+  "diagnostic_only": true,
+  "execution": {
+    "device": "cuda"
+  },
+  "failure_replacement": false,
+  "methods": [
+    {
+      "candidate_policy_set": {
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/aggregation/report.json",
+          "sha256": "3c7e081abe93b1c90150d00120d26c80477c8516b4b1ddb6ec95b8bac5c0ac01"
+        },
+        "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode0"
+      },
+      "family": "main",
+      "instances": "all",
+      "key": "cross_ebdm",
+      "label": "mode_specific_calibrated_authority_transport"
+    },
+    {
+      "candidate_policy_set": {
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/aggregation/report.json",
+          "sha256": "3c7e081abe93b1c90150d00120d26c80477c8516b4b1ddb6ec95b8bac5c0ac01"
+        },
+        "method_identity": "task_only_shared_start_mode_specific_v9"
+      },
+      "family": "main",
+      "instances": "all",
+      "key": "task_only",
+      "label": "mode_specific_calibrated_authority_task_only"
+    }
+  ],
+  "mode_one_authority_calibration": {
+    "rule": {
+      "fallback_blend": 0,
+      "requested_mode": 1,
+      "require_both_methods_to_succeed_on_every_pair": true,
+      "require_nonnegative_control_step_delta_on_every_pair": true,
+      "require_zero_constraint_violations": true,
+      "reset_slots_per_source": 4,
+      "selection": "largest_mean_control_step_reduction_then_smallest_blend"
+    },
+    "selected_mode_one_max_blend_by_instance": {
+      "instance_01": 1,
+      "instance_02": 8,
+      "instance_03": 0,
+      "instance_04": 0,
+      "instance_05": 0,
+      "instance_06": 1,
+      "instance_07": 0,
+      "instance_08": 0
+    },
+    "sources": {
+      "blend_1": {
+        "path": "results/arm/keyed_insertion_recovery/validation/finite_time_mode_specific_supported_phase_convex_transport_contrast/gpu1/report.json",
+        "sha256": "e0b653b5447b89df05d353bbde575cfd162bca5a9341d1466834ad794086c81d"
+      },
+      "blend_2": {
+        "path": "results/arm/keyed_insertion_recovery/validation/finite_time_mode_specific_supported_phase_capped_expansion_transport_contrast/gpu1/report.json",
+        "sha256": "7c597102cfd25584a37513571fc551a4eca2acf69d6099d8b81abcbd182e82c5"
+      },
+      "blend_8": {
+        "path": "results/arm/keyed_insertion_recovery/validation/finite_time_mode_specific_recorded_completion_transport_contrast/gpu1/report.json",
+        "sha256": "68bfcc511094ac2794b5bd4db531dde973c2690951edd15d5fcb2b1bd94af32b"
+      }
+    },
+    "version": "t3-mode-one-paired-authority-calibration-v1"
+  },
+  "mode_one_candidate_policy_set": {
+    "aggregation_report": {
+      "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/aggregation/report.json",
+      "sha256": "c19ccf758187e8d82f5b03d3e44d04ce7e9f29fd1a974123ebd4fa8c7f8baa3f"
+    },
+    "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode1"
+  },
+  "name": "finite_time_mode_specific_calibrated_authority_transport_contrast",
+  "performance_evidence": false,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "reset_slots_per_cell": 4,
+  "scene_cells": [
+    {
+      "body_support_parameters": {},
+      "id": "protocol_hard_target",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.8,
+        "servo_gain": 0.65
+      },
+      "robot": "xarm7"
+    }
+  ],
+  "scope": "Fresh T3 development contrast after three complete, seed-disjoint authority cohorts. Mode zero is unchanged. For mode one, a frozen rule selects maximum blend 0, 1, 2, or 8 per training instance only when all four paired development requests preserve both successes, have zero constraint violations, and every control-step delta is nonnegative; it then maximizes mean reduction and breaks ties toward smaller authority. Transport remains disabled in phases zero and three. The new reset seeds are disjoint from every calibration cohort. Models, task-only checkpoints, evaluator, two modes, four reset slots, GPU1 execution, and all acceptance thresholds are unchanged. No confirmation state is opened and failures are not replaced.",
+  "seed_anchor": 8070000,
+  "task": "T3",
+  "version": "four-task-mode-specific-calibrated-authority-transport-contrast-v1"
+}

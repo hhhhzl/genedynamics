@@ -1,0 +1,64 @@
+{
+  "version": "t2-substep-risk-data-v1",
+  "device": "cpu",
+  "methods": {
+    "cross_ebdm": "main/cross_ebdm.yaml",
+    "task_only": "baseline/task_only.yaml"
+  },
+  "instances": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "execution_scales": [0.25, 0.5, 1.0],
+  "requests": {
+    "robot": "xarm7",
+    "reset_seed_anchor": 3265000,
+    "reset_slots": 6,
+    "requested_modes": [0, 1],
+    "mechanism_parameters": {
+      "delay_steps": 0,
+      "payload_mass": 0.5,
+      "servo_gain": 1.0
+    }
+  },
+  "split_by_physical_initial_slot": {
+    "fit": [0, 1, 2, 3],
+    "calibration": [4],
+    "validation": [5]
+  },
+  "risk_window": {
+    "horizon_control_steps": 10,
+    "high_risk_total_force_N": 20.0,
+    "high_risk_lateral_force_N": 8.0,
+    "minimum_fit_high_risk_windows_per_instance": 0
+  },
+  "frozen_public_inputs": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/validation/p4_corridor_shared_response_v1/level_B_log_0_30_60_120/seed_167000/frozen_inputs.json",
+    "sha256": "d8a8742024c1f1129f00a3c3ccf1b3f334be9b375cdc9529e22341300ef7cf44"
+  },
+  "fresh_validation_only": true,
+  "qualification_policy": "All 576 learned episodes across the six new physical slots are held out from model fitting and development calibration. The legacy fit/calibration/validation labels are retained only because the immutable collector schema requires them.",
+  "diagnostic_only": true,
+  "confirmation_states_opened": 0,
+  "old_invalid_outcomes_used": false,
+  "qualification_evidence": {
+    "coordinate_scope_audit": {
+      "path": "results/arm/guided_contact_alignment/validation/transport_coordinate_scope/independent_audit.json",
+      "sha256": "0421b963a55b2eaebc5b6ac527894814c9bd8a7f9e19fd34f5c5aea53011bf2a"
+    },
+    "response_risk_report": {
+      "path": "results/arm/guided_contact_alignment/validation/response_risk_observability/report.json",
+      "sha256": "1b449306328f975668ad3f6ed4413e2f5b6f901a5381077954026a0e0081d6d5"
+    },
+    "response_risk_audit": {
+      "path": "results/arm/guided_contact_alignment/validation/response_risk_observability/independent_audit.json",
+      "sha256": "e0f318e9daf6251afe05deab3bdf46fc5955e9867d7b797199e4ae74546197e1"
+    }
+  }
+}

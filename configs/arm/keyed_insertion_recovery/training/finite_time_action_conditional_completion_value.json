@@ -1,0 +1,57 @@
+{
+  "acceptance": {
+    "maximum_pair_mae_controls": 5.0,
+    "maximum_state_mae_controls": 60.0,
+    "minimum_all_members_positive_fraction": 0.9,
+    "minimum_pair_direction_accuracy": 0.95
+  },
+  "data": {
+    "episode_split": {
+      "kind": "within_manifest_entry_modulo",
+      "modulus": 4,
+      "validation_residue": 0
+    },
+    "hold_decision_context_for_pair_endpoint": true,
+    "public_log_manifests": [
+      {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_public_log/gpu1/public_log_manifest.json",
+        "sha256": "90b94ce415951875c12c148c6660a2a72eec8e62d38984a9714191dfbb13ddf7"
+      },
+      {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_mode0_public_log/gpu1/public_log_manifest.json",
+        "sha256": "1dafc7445184943ffb15141a53cde5480183ad17790f09d1ce90f1a2b91012e9"
+      }
+    ],
+    "state_stride": 1,
+    "temporal_horizon_controls": 10
+  },
+  "device": {
+    "logical_device": "cuda:0",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1"
+  },
+  "model": {
+    "hidden": [128, 128],
+    "learning_rate": 0.0003,
+    "maximum_remaining_controls": 750,
+    "members": 5
+  },
+  "output": "results/arm/keyed_insertion_recovery/training/finite_time_action_conditional_completion_value/checkpoint",
+  "preflight_output": "results/arm/keyed_insertion_recovery/training/finite_time_action_conditional_completion_value/preflight",
+  "preflight_report": {
+    "path": "results/arm/keyed_insertion_recovery/training/finite_time_action_conditional_completion_value/preflight/report.json",
+    "sha256": "7058b7072a7563c63a1f80f5918d16082f6967183f0c8ec1a1f80246759e89ad"
+  },
+  "status": "frozen_unexecuted",
+  "task": "T3",
+  "training": {
+    "batch_size": 256,
+    "pair_batch_size": 256,
+    "sampling": "mode_and_public_controller_state_balanced_by_phase",
+    "seed": 6770000,
+    "temporal_weight": 5.0,
+    "updates": 4000,
+    "validation_interval": 100
+  },
+  "version": "t3-public-action-conditional-completion-value-training-v4"
+}

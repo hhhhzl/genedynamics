@@ -1,0 +1,26 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v1",
+  "task": "T2",
+  "method": "fada",
+  "method_identity": "FADA_task_adapted",
+  "instance_id": "instance_04",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/baseline/fada.yaml",
+    "sha256": "f68cb28f6d679228240b2627239d3220e6fd04d5f21cf45e7315868ec45ed3e1"
+  },
+  "request_roster": {
+    "path": "configs/arm/guided_contact_alignment/protocol/independent_main_table_requests.json",
+    "sha256": "094b5518c680e8db1f9baa250b70a4aef6bef3e54625a0619498884831074c64"
+  },
+  "cell_admission": {
+    "path": "results/arm/guided_contact_alignment/validation/independent_main_table_admission_v1/fada.json",
+    "sha256": "ccbdd3da253d88e3799edad49a5f86be45cd5d0446aacfafc2a97a559e2df522"
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/fada/confirmation/independent_main_v1/instance_04",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/fada/confirmation/independent_main_v1/instance_04_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  }
+}

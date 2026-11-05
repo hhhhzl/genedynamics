@@ -1,0 +1,41 @@
+{
+  "version": "acp-nominal-learning-diagnostic-v1",
+  "task": "T4",
+  "checkpoint": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/acp/training/public_teacher_scalar_800_sparse_dt100ms/ema_update_8000.pt",
+    "sha256": "f8829fb36ad69adbee00480bf7804ddefe8b1ee13d1d31134652f39ae99740d8"
+  },
+  "training_report": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/acp/training/public_teacher_scalar_800_sparse_dt100ms/report.json",
+    "sha256": "4c7a78e2d0835fa2e98a0f7674f038a4a4b1481c49534dbb1a9c70e84cb6c257"
+  },
+  "demonstration_report": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/acp/demonstrations/public_teacher_scalar_800_sparse_dt100ms/report.json",
+    "sha256": "b9011390e7f7ab24c0f19755e9ebffa6ad76f72a7c31de6c3feb4356e658d285"
+  },
+  "teacher_collection_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/training/acp_teacher_collection.json",
+    "sha256": "4d331d105d1ed1fc1c29998ab995b7268d0923f4583d4d663ad508dfba96aa97"
+  },
+  "sampling_seed": 426103,
+  "requests": [
+    {
+      "purpose": "fit",
+      "mode": 0,
+      "seed": 8244000
+    },
+    {
+      "purpose": "validation",
+      "mode": 0,
+      "seed": 8244006
+    }
+  ],
+  "budget": {
+    "episodes": 2,
+    "maximum_wall_seconds": 600,
+    "cpu_threads": 1,
+    "new_training_updates": 0,
+    "gpu_allowed": false
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/acp/diagnostics/nominal_learning_cpu"
+}

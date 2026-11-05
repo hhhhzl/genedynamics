@@ -1,0 +1,31 @@
+{
+  "version": "four-task-behavioral-predeployment-v3",
+  "task": "T4",
+  "seed_anchor": 2913000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [0, 1],
+  "scene_cells": [
+    {
+      "id": "deployment_nominal",
+      "robot": "go2_z1",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "support_controller": "unchanged host OSQP stance WBC"
+      }
+    }
+  ],
+  "gate": {
+    "require_all_mode_correct_task_success": true,
+    "require_zero_constraint_violations": true,
+    "require_minimum_support_count": 2,
+    "require_evidence_reaudit": true,
+    "failure_replacement": false
+  },
+  "source_admission": "Validate each method's declared source/training artifacts and provenance through its SHA-bound manifest; never deploy a target actor on a different source robot.",
+  "scope": "Common joint-margin, folded-reset and public body-intent deployment-known-nominal admission for every executable T4 main, baseline and ablation actor. Development evidence only."
+}

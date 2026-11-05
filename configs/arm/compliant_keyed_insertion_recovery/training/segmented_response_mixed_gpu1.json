@@ -1,0 +1,38 @@
+{
+  "version": "compliant-socket-segmented-response-training-v1",
+  "data": {
+    "path": "results/arm/compliant_keyed_insertion_recovery/training/segmented_response_data/mixed_public_interventions",
+    "metadata_sha256": "e49b6c769bec9ee094f8ab1f24b0f04ac6e79bb3693aa60515bc0ac8ad190124",
+    "tensor_sha256": "0d8bd5ae1d453848f2bcb2bdecaae356cafa6f94d01a1813a153b47ff830ad15"
+  },
+  "model": {
+    "history_len": 4,
+    "horizon": 10,
+    "maximum_joints": 32,
+    "segment_steps": [
+      3,
+      6,
+      10
+    ],
+    "hidden": [
+      256,
+      256
+    ],
+    "members": 3
+  },
+  "execution": {
+    "device": "cuda:0",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "seed": 917300,
+  "budget": {
+    "updates": 600,
+    "batch_size": 128,
+    "learning_rate": 0.0003,
+    "maximum_wall_seconds": 900,
+    "maximum_gpu_gib": 4
+  },
+  "output": "results/arm/compliant_keyed_insertion_recovery/training/segmented_response_mixed_gpu1",
+  "scope": "development data coverage contrast versus nominal-only fit; same model, seed, batch, updates and optimizer; adaptive public probe selection disclosed"
+}

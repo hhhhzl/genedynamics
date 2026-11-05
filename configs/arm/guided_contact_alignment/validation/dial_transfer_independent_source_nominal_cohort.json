@@ -1,0 +1,42 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "first_instance_audit": {
+    "path": "results/arm/guided_contact_alignment/baseline/dial/validation/source_nominal_actor_screen_3301100000/independent_audit.json",
+    "sha256": "a9a34b7f71e231ca417df148b58419b8bbd93cee8d45105767434815c5cbb797"
+  },
+  "first_instance_report": {
+    "path": "results/arm/guided_contact_alignment/baseline/dial/validation/source_nominal_actor_screen_3301100000/report.json",
+    "sha256": "5d1da431f334551a212997542f48b88dcae9c13390b105913541cbe2393c74f3"
+  },
+  "formal_request_seed_access": 0,
+  "instance_ids": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "maximum_cohort_physical_episodes": 64,
+  "maximum_new_physical_episodes": 56,
+  "method": "dial_transfer",
+  "method_identity": "DIAL_MPC",
+  "output": "results/arm/guided_contact_alignment/baseline/dial/validation/independent_source_nominal_cohort_v1",
+  "source_roster": {
+    "path": "configs/arm/guided_contact_alignment/validation/method_source_nominal_actor_roster.json",
+    "sha256": "537889f695bc6bcf2a8b9e93da24a1363371d187b5f0c99cc03dc3734f367813"
+  },
+  "task": "T2",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/baseline/dial.yaml",
+    "sha256": "fcee02b6405c3e9d14c0a5557061bc58c8646a3349c0e7ab59fd51d1466c183a"
+  },
+  "version": "transfer-legacy-independent-source-nominal-cohort-v1"
+}

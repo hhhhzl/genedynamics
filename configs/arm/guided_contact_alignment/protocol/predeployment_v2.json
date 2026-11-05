@@ -1,0 +1,37 @@
+{
+  "version": "four-task-behavioral-predeployment-v2",
+  "task": "T2",
+  "seed_anchor": 2901000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [0, 1],
+  "scene_cells": [
+    {
+      "id": "source_nominal",
+      "robot": "panda",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "deployment_nominal",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "gate": {
+    "require_all_mode_correct_task_success": true,
+    "require_zero_constraint_violations": true,
+    "require_exact_physics_contact_evidence": true,
+    "require_evidence_reaudit": true,
+    "failure_replacement": false
+  },
+  "scope": "Shared 1 ms / 40 ms strict-contact behavioral admission for every executable T2 main, baseline and ablation actor. Development evidence only."
+}

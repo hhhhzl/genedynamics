@@ -1,0 +1,42 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "first_instance_audit": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/task_only/validation/source_nominal_actor_screen_3301300000/independent_audit.json",
+    "sha256": "58118b0a854fc660de125c52b6196ff788697ab5a860837cc663aca681404e4f"
+  },
+  "first_instance_report": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/task_only/validation/source_nominal_actor_screen_3301300000/report.json",
+    "sha256": "2cd740ede6fcf7f0c7ea5335b0f47e3affab360b74d16760963bbc0553a1c3f4"
+  },
+  "formal_request_seed_access": 0,
+  "instance_ids": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "maximum_cohort_physical_episodes": 64,
+  "maximum_new_physical_episodes": 56,
+  "method": "task_only",
+  "method_identity": "task_only_shared_start_mode_specific_v9",
+  "output": "results/arm/keyed_insertion_recovery/baseline/task_only/validation/independent_source_nominal_cohort_v1",
+  "source_roster": {
+    "path": "configs/arm/keyed_insertion_recovery/validation/method_source_nominal_actor_roster_native.json",
+    "sha256": "2ca1929aec90a5cf055cb30ba584072386f65f46f07d8d4fae9e2960116bdc16"
+  },
+  "task": "T3",
+  "task_config": {
+    "path": "configs/arm/keyed_insertion_recovery/baseline/task_only.yaml",
+    "sha256": "ad242683fc4a3519fcce4ed3df373b7db4c848f31e32835f7cc1a6f1f4257711"
+  },
+  "version": "transfer-legacy-independent-source-nominal-cohort-v1"
+}

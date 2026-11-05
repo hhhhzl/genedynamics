@@ -1,0 +1,24 @@
+{
+  "version": "t3-public-early-contact-guard-development-v1",
+  "task": "T3",
+  "sentinel_plan": {
+    "path": "results/arm/keyed_insertion_recovery/validation/finite_time_current_public_geometry_sentinel/gpu1/plan.json",
+    "sha256": "ccf21d7c4c67fe9a4f60122bb425fbf5222ffcaaf42376a66fd683bc17cb2aa2"
+  },
+  "sentinel_report": {
+    "path": "results/arm/keyed_insertion_recovery/validation/finite_time_current_public_geometry_sentinel/gpu1/report.json",
+    "sha256": "1bb0fbad1db7603a25ce471c0f0a6f05f8b661da9e2ef914a59e94baab72a6e8"
+  },
+  "guard": {
+    "release_z_m": 0.5965,
+    "clear_z_m": 0.604,
+    "retreat_speed_mps": 0.008
+  },
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 360,
+    "maximum_gpu_memory_gib": 2
+  },
+  "output": "results/arm/keyed_insertion_recovery/validation/early_contact_public_guard_development/gpu1"
+}

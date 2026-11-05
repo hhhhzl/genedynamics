@@ -1,0 +1,28 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T4",
+  "method": "fada",
+  "method_identity": "FADA_task_adapted_IDM60_current_actor_identity_matched",
+  "task_config": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/fada.yaml",
+  "checkpoint": {
+    "path": "results/_development/p4_completion_20261015/results/quadruped/mobile_keyed_insertion_recovery/validation/p4_fada_primary_full_target_v1/level_B_log_0_30_60_120/seed_157000/budget_60/checkpoint.pt",
+    "sha256": "33a0cfe99b1ded4949d640be1d92188d0ae2a9a993035d4b2043fda4b80f1127"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "requests": [
+    {"robot": "go2_z1", "requested_mode": 0, "reset_seed": 240500, "physical_initial_slot": 0, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 1, "reset_seed": 240501, "physical_initial_slot": 0, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 0, "reset_seed": 240502, "physical_initial_slot": 1, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 1, "reset_seed": 240503, "physical_initial_slot": 1, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 0, "reset_seed": 240504, "physical_initial_slot": 2, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 1, "reset_seed": 240505, "physical_initial_slot": 2, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 0, "reset_seed": 240506, "physical_initial_slot": 3, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"robot": "go2_z1", "requested_mode": 1, "reset_seed": 240507, "physical_initial_slot": 3, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}}
+  ],
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/fada/validation/identity_matched_target_pilot/instance_01",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/fada/validation/identity_matched_target_pilot/plan_instance_01.json"
+}

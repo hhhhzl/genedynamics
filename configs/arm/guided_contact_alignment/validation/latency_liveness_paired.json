@@ -1,0 +1,30 @@
+{
+  "version": "four-task-paired-development-diagnosis-v1",
+  "name": "latency_liveness_paired",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "seed_anchor": 3901000,
+  "reset_slots_per_cell": 8,
+  "requested_modes": [0, 1],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {"delay_steps": 3, "payload_mass": 0.5, "servo_gain": 0.7},
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {"delay_steps": 1, "payload_mass": 0.8, "servo_gain": 0.85},
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {"family": "main", "key": "public_geometry", "instances": "fixed"}
+  ],
+  "scope": "Fresh public-sentinel reproduction of the formal T2 latency/contact and payload/post-outlet liveness cells; no confirmation state or outcome is read or reused."
+}

@@ -1,0 +1,55 @@
+{
+  "version": "four-task-behavioral-predeployment-v16",
+  "task": "T2",
+  "extends": {
+    "path": "configs/arm/guided_contact_alignment/protocol/predeployment_v15.json",
+    "sha256": "ad127b1e955c13a3a808b75a246531395fc2e3d7c344e4ee47a96fc6de888d53"
+  },
+  "shared_task_contract": {
+    "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v7.json",
+    "sha256": "98750a574c84516e43b023af180666dceabf775dfab80d36e00a75478f7c1004"
+  },
+  "seed_anchor": 4696000,
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_index": 0,
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "gate": {
+    "require_all_mode_correct_task_success": true,
+    "require_zero_constraint_violations": true,
+    "require_evidence_reaudit": true,
+    "require_exact_physics_contact_evidence": true,
+    "failure_replacement": false
+  },
+  "source_admission": "Validate every method's declared source or training artifact and SHA through the existing task-local actor manifest. Retain algorithm and external-resource rejections; never replace a rejected row or reuse a prior outcome.",
+  "scope": "Fresh physical-GPU0 portability qualification of every executable T2 main, baseline and ablation row under the unchanged task_contract_v7 and public v18 causal-traverse interface. The prior GPU1 release evidence remains immutable development provenance; all behavior outcomes in this protocol use new reset seeds on GPU0. Baseline and ablation failures remain in their denominators. This is predeployment evidence, not paper performance evidence."
+}

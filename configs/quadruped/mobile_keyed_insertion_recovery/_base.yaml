@@ -4,10 +4,14 @@ env_name: mobile_keyed_insertion_recovery
 method: cross_ebdm
 backend: numpy
 device: cpu
-seeds: [4100, 5100, 6100]
+seeds:
+- 4100
+- 5100
+- 6100
 n_steps: 750
 auto_report: false
-metrics: [transfer_task]
+metrics:
+- transfer_task
 visualizations: []
 obstacle_config:
   generator: none
@@ -15,13 +19,80 @@ env_params:
   robot: go2_z1
   history_len: 4
   mode: 0
+  execution_profile: joint_margin_public_reference
+  reset_profile: folded_stance
+  reset_joint_noise: 0.002
+  shared_execution:
+    version: four-task-shared-execution-v3
+    execution_profile: joint_margin_public_reference
+    reset_profile: folded_stance
+    reset_joint_noise_rad: 0.002
+    body_intent_profile: public_planar_v1
+    body_velocity_world: [0.005, 0.005, 0.0]
+    body_intent_start_seconds: 0.0
+    body_intent_duration_seconds: 6.0
 method_params:
   mode: 0
+  actor_binding:
+    version: transfer-actor-binding-v1
+    manifest:
+      path: configs/quadruped/mobile_keyed_insertion_recovery/protocol/actor_bindings.json
+      sha256: 0d60f56d00123a3e851ef526726c7ac015a96cfa1fe4784c656be8bb883aa527
+    family: main
 metadata:
   paper: cross_ebdm
   benchmark: four_task_transfer
-  protocol: transfer_main_table_v1
-  protocol_status: architecture_refactor_pending
+  protocol: transfer_confirmation_v14
+  protocol_status: frozen_after_architecture_equivalence_v3
   formal_experiment: true
-  formal_seeds: false
-  run_class: development
+  formal_seeds: true
+  run_class: formal
+  shared_task_contract:
+    path: configs/quadruped/mobile_keyed_insertion_recovery/protocol/task_contract_v3.json
+    sha256: d4c47cf301c27d48b14e420bb518469b487b002073a0d85818ba292414d86045
+  architecture_equivalence: passed
+  frozen_design:
+    admission_scope: fresh_current_protocol_predeployment
+    migration_rule: rebind_and_prove_equivalence_before_confirmation
+    main_table_rows: 9
+    ablation_cells: 6
+    training_or_calibration_instances: 8
+    confirmation_accessed: false
+    artifacts:
+      protocol_validity:
+        path: results/_architecture/cross_ebdm_mode_conditioned_contact_gpu1_execution_admission_20261029/protocol_validity.json
+        sha256: 7cf33184916cef0d86a3fc706ba81f67e00966b413ca996fd79e43932e4d392a
+      architecture_equivalence:
+        path: results/_architecture/cross_ebdm_mode_conditioned_contact_gpu1_execution_admission_20261029/architecture_equivalence.json
+        sha256: f67f8095dfd36dc79a4d0c835ef1925ee1e23562beac88c1bd6e58b24d71a0dd
+      zero_physics_preflight:
+        path: results/_architecture/cross_ebdm_mode_conditioned_contact_gpu1_execution_admission_20261029/report.json
+        sha256: f6c4a22b1cd43f20e5a4eea7a9aac089b96a8860eed01e108c66289ab21c3b6d
+      predeployment_qualification:
+        path: results/_qualification/four_task_transfer/mode_conditioned_contact_gpu1_execution_admission_20261029/report.json
+        sha256: 9f883ed6838c2aed75558747ac3e7cfc85c7b3c0d7b3bffc3328e798c5993afa
+      predeployment_audit:
+        path: results/_qualification/four_task_transfer/mode_conditioned_contact_gpu1_execution_admission_20261029/independent_audit.json
+        sha256: de5d34e2e955240096f8828d1b57dcb3a23267b9cfd7128cef6e87b2f891ea95
+      cpu_package_qualification:
+        path: results/_qualification/four_task_transfer/method_packages_mode_conditioned_contact_admission_cpu_20261029/report.json
+        sha256: 7174b2dce53d05d6d1928edbbe379e29ab8e5e72ae4c5f2fc36765a9247be6a1
+      gpu_calibration:
+        path: results/_calibration/four_task_transfer/method_packages_mode_conditioned_contact_admission_gpu1_20261029/report.json
+        sha256: 540839283f6844c5ce8c6398a1fd7a7ff820c063baa57244e4a6187190ca7aeb
+  formal_schedule:
+    status: sealed_unaccessed
+    package_report:
+      path: results/_protocol/four_task_transfer/confirmation_v14/package/report.json
+      sha256: 702bb461a871267244a5038b4535181c20ef230156fb16dd1e7bffb7a2683ed4
+    preaccess_audit:
+      path: results/_protocol/four_task_transfer/confirmation_v14/package/preaccess_audit.json
+      sha256: 9dd119e91508ca789027d410ece532b5a1b354277eb17c8f59573afa0cfc222d
+    request_roster:
+      path: results/_protocol/four_task_transfer/confirmation_v14/package/request_roster.jsonl
+      sha256: 5bd05756b51583c006b56965a19b31fb433d578a30af15345c8be45c7d546fe8
+    evaluation_schedule:
+      path: results/_protocol/four_task_transfer/confirmation_v14/package/evaluation_schedule.jsonl
+      sha256: da5d212b2d1d90a276ec9864db5bb5b716225d142d32d9fbcdd70c5c69fd2ec8
+    failure_replacement: false
+    launches_allowed: 1

@@ -1,0 +1,76 @@
+{
+  "version": "adaptsim-t3-feedback-diagnosis-v2",
+  "task": "T3",
+  "robot": "xarm7",
+  "training_report": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/adaptsim/training/feedback_development_737215/report.json",
+    "sha256": "226b05d4ecacde1aad495af9ad459afbc6ff844a64483a0e3e3527332189ed2c"
+  },
+  "checkpoint": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/adaptsim/training/feedback_development_737215/inference_and_policy.pt",
+    "sha256": "953fdc371bca4c115aa15ff3b55a9b7ba5f896e75d9e35bdfbe23ef2e1f10956"
+  },
+  "seed_anchor": 3100400000,
+  "reset_slots_per_cell": 8,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "source",
+      "mechanism": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      }
+    },
+    {
+      "id": "nominal",
+      "mechanism": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      }
+    },
+    {
+      "id": "latency_gain_shift",
+      "mechanism": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3
+      }
+    }
+  ],
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 600,
+    "maximum_gpu_memory_gib": 2
+  },
+  "output": "results/arm/keyed_insertion_recovery/baseline/adaptsim/validation/feedback_heldout_diagnosis_737215",
+  "formal_performance_evidence": false,
+  "failure_replacement": false,
+  "source_bindings": [
+    {
+      "path": "genedynamics/tasks/transfer/controllers/mating_feedback.py",
+      "sha256": "30fc83a11a88799b569ebf6a25372671830af9a7f903f47897b327a84f9f7f23"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/episode.py",
+      "sha256": "dab1ffa1e360fb2f98d1b8a4ab31597a7c01fd8fca3f9d7f1c828083571d6a1f"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/evaluation.py",
+      "sha256": "83e8e48a38ea889f52f6ac2c2e4b0def7ce3d54bac6ba36ba89c162d017c3fae"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/mating_policy_search.py",
+      "sha256": "35718deafb5b9270242972a0ff3e99915fe178898d53ac46475e6f579b7a93ee"
+    },
+    {
+      "path": "scripts/paper/cross_ebdm/diagnose_adaptsim_feedback.py",
+      "sha256": "723c0d98c19a1e6a21c6f6c36dddddd9a74b0de01423cfa3c7c2ea14cb710ea1"
+    }
+  ]
+}

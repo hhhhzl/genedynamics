@@ -1,0 +1,53 @@
+{
+  "version": "four-task-paired-development-diagnosis-v1",
+  "name": "clearance_progress_release_gate",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cpu"
+  },
+  "seed_anchor": 4691000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [0, 1],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "label": "public_geometry_current",
+      "instances": "fixed"
+    },
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_clearance_progress",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-progress-authority-v3"
+    }
+  ],
+  "scope": "Fresh CPU release gate for the selected v3 T2 compatibility interface. Require the public sentinel to remain 8/8 and Cross-EBDM to achieve 64/64 strict success with zero constraint violations, execution errors, guide-contact failures or evidence gaps. The gate is development-only, uses a seed block disjoint from exact replay and prior release gates, and does not replace any failed baseline or ablation outcome."
+}

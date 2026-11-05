@@ -1,0 +1,270 @@
+{
+  "version": "asid-guide-fresh-actor-roster-v1",
+  "task": "T2",
+  "robot": "xarm7",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/_base.yaml",
+    "sha256": "8dca404194707eee8cdc70a1af375447ea5dd68d6eb979ad626aa9a8ed2a2306"
+  },
+  "training_recipe": {
+    "path": "results/arm/guided_contact_alignment/baseline/asid/training/full_chain_development_8764601/recipe.json",
+    "sha256": "a1c838079881c31efb3e33c756f0be9ad72729cf881bd85a88ab619d3b606ae3"
+  },
+  "methods": [
+    "asid",
+    "public_geometry"
+  ],
+  "requests": [
+    {
+      "request_id": "T2/ASID-FRESH/source/s0/m0",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3302200000,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/source/s0/m1",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3302200001,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/source/s1/m0",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3302200002,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/source/s1/m1",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3302200003,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/nominal/s0/m0",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3302200004,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/nominal/s0/m1",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3302200005,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/nominal/s1/m0",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3302200006,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/nominal/s1/m1",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3302200007,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/latency_gain_shift/s0/m0",
+      "scene_cell": "latency_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3302200008,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/latency_gain_shift/s0/m1",
+      "scene_cell": "latency_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3302200009,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/latency_gain_shift/s1/m0",
+      "scene_cell": "latency_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3302200010,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/latency_gain_shift/s1/m1",
+      "scene_cell": "latency_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3302200011,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/payload_shift/s0/m0",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3302200012,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.8,
+        "delay_steps": 1,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/payload_shift/s0/m1",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3302200013,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.8,
+        "delay_steps": 1,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/payload_shift/s1/m0",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3302200014,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.8,
+        "delay_steps": 1,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ASID-FRESH/payload_shift/s1/m1",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3302200015,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.8,
+        "delay_steps": 1,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "requests_per_method": 16,
+  "maximum_total_physics_episodes": 32,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 1800,
+    "maximum_gpu_memory_gib": 2
+  },
+  "failure_replacement": false,
+  "formal_performance_evidence": false,
+  "scope": "predeclared disjoint T2 ASID/public-geometry source/nominal/latency/payload paired development; no formal performance evidence"
+}

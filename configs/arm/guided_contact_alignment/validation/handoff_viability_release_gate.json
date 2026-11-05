@@ -1,0 +1,63 @@
+{
+  "version": "four-task-paired-development-diagnosis-v2",
+  "name": "handoff_viability_release_gate",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda"
+  },
+  "seed_anchor": 4693000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "label": "public_geometry_current",
+      "instances": "fixed"
+    },
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_handoff_viability",
+      "instances": "all",
+      "task_actor_interface": "public-T2-handoff-viability-v7",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.008,
+        "reference_lag_zero_authority_m": 0.012,
+        "maximum_authority_decay_per_control": 0.05
+      }
+    }
+  ],
+  "scope": "Fresh GPU1 release gate for the selected v7 T2 compatibility interface. Require the public sentinel to remain 8/8 and Cross-EBDM to achieve 64/64 strict success with zero constraint violations, execution errors, guide-contact failures or evidence gaps. The seed block is disjoint from the v13 diagnosis, exact replays and prior release gates. Development evidence only; no performance claim or failure replacement."
+}

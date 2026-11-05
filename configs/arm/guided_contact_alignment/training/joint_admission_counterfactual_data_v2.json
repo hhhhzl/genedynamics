@@ -1,0 +1,155 @@
+{
+  "version": "t2-joint-force-contact-counterfactual-data-v2",
+  "status": "frozen_cpu_design_unexecuted",
+  "scope": "CPU-only development data from exact same-state counterfactual branches. No confirmation state, target-performance claim, or GPU use.",
+  "task": "T2",
+  "device": "cpu",
+  "bindings": {
+    "task_contract": {
+      "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v3.json",
+      "sha256": "6e5aae09b937d934b3681a835b01ff292a12b3ee4cab12024ee7f80a6924d0df"
+    },
+    "actor_manifest": {
+      "path": "configs/arm/guided_contact_alignment/protocol/actor_bindings.json",
+      "sha256": "9899a5b28b033da9686620203dedc0484c19634c2b46032883ae2e2d6c64b76c"
+    },
+    "fresh_predeployment_report": {
+      "path": "results/_qualification/four_task_transfer/behavioral_predeployment_20261022_v12/report.json",
+      "sha256": "c282718777bdc4d5916bf76da8a68d6faf5c1d95cf4a1c1dbf8510b1509afdf7"
+    },
+    "fresh_predeployment_audit": {
+      "path": "results/_qualification/four_task_transfer/behavioral_predeployment_20261022_v12/independent_audit.json",
+      "sha256": "1ef1ea5af17f1ab4b6bc0537cb92dbb69a72490326c4046beefc43810752c2ac"
+    },
+    "offline_diagnosis": {
+      "path": "results/_analysis/four_task_transfer/predeployment_20261022_v12_offline_closeout/diagnosis_plan.json",
+      "sha256": "4add41c27a39b5566c1cc4566247b13fdb85a371eedf5c6af52dc246929e0bcf"
+    }
+  },
+  "state_generators": [
+    "cross_ebdm",
+    "task_only"
+  ],
+  "instances": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "requests": {
+    "robot": "xarm7",
+    "reset_seed_anchor": 3274000,
+    "reset_blocks": 8,
+    "requested_modes": [
+      0,
+      1
+    ],
+    "mechanism_parameters": {
+      "delay_steps": 0,
+      "payload_mass": 0.5,
+      "servo_gain": 1.0
+    }
+  },
+  "split_by_reset_block": {
+    "fit": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "calibration": [
+      4,
+      5
+    ],
+    "held_out_qualification": [
+      6,
+      7
+    ]
+  },
+  "checkpoint_sampling": {
+    "history_control_steps": 4,
+    "branch_horizon_control_steps": 10,
+    "stride_control_steps": 10,
+    "required_phases": [
+      "pre_contact",
+      "supported_traversal",
+      "outlet_transition",
+      "post_outlet"
+    ],
+    "lineage_rule": "Every task checkpoint, actor checkpoint, and descendant branch remains in one reset-block split."
+  },
+  "candidate_generator": {
+    "ordered_transport_fractions": [
+      1.0,
+      0.5,
+      0.25,
+      0.0
+    ],
+    "append_emergency_reference_brake": true,
+    "transport_coordinates": [
+      0,
+      1,
+      3,
+      4,
+      5
+    ],
+    "task_owned_coordinates": [
+      2,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "task_owned_coordinates_must_be_bitwise_identical": true,
+    "all_candidates_use_the_same_public_predictor": true,
+    "no_candidate_forced_safe": true
+  },
+  "branch_execution": {
+    "same_state_requirement": "Restore the exact task and actor checkpoints before every branch.",
+    "branches_per_checkpoint": 5,
+    "charge_every_branch": true,
+    "retain_every_failure": true,
+    "replace_failed_branch": false,
+    "stop_branch_after_terminal_status": true
+  },
+  "labels": {
+    "physics_resolution_seconds": 0.001,
+    "maximum_total_force_N": true,
+    "maximum_lateral_force_N": true,
+    "minimum_axial_support_coverage": true,
+    "maximum_continuous_contact_loss_seconds": true,
+    "frozen_force_limits_N": [
+      20.0,
+      8.0
+    ],
+    "frozen_maximum_contact_loss_seconds": 0.15
+  },
+  "qualification_gates": {
+    "task_and_actor_checkpoint_roundtrip_exact": true,
+    "candidate_zero_physics_identity_passed": true,
+    "all_reset_blocks_present": true,
+    "all_instances_present": true,
+    "both_modes_present": true,
+    "all_five_candidates_present_per_checkpoint": true,
+    "zero_split_lineage_leakage": true,
+    "zero_unaccounted_physics_steps": true,
+    "zero_failure_replacement": true
+  },
+  "output": "results/arm/guided_contact_alignment/training/joint_admission_counterfactual_data_v2",
+  "data_policy": {
+    "diagnostic_and_development_only": true,
+    "old_risk_v1_windows_reused": false,
+    "old_invalid_outcomes_used": false,
+    "confirmation_states_opened": 0,
+    "performance_evidence": false,
+    "gpu_used": false,
+    "final_paper_checkpoint": false
+  }
+}

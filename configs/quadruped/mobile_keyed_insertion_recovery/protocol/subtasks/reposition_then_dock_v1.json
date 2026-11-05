@@ -1,0 +1,54 @@
+{
+  "schema_version": "transfer-subtask-contract-v1",
+  "contract_version": "transfer-reposition-then-dock-v1",
+  "semantic_id": "reposition_then_dock",
+  "family": "support_coupled_assembly",
+  "embodiment": "quadruped_manipulator",
+  "environment": "mobile_keyed_insertion_recovery",
+  "implementation_status": "contract_frozen_implementation_pending",
+  "semantics": {
+    "goal": "Issue a task-directed body target within the fixed-foot support region, stabilize the base and tool, then execute recovery and insertion at the docking fixture.",
+    "excludes": ["renaming the existing fixed-duration body drift", "walking, stepping, or navigation", "allowing only one method to command the body target", "using unreachable initial states to manufacture failures"]
+  },
+  "event_order": [
+    {"id": "dock_target_observed", "evidence": ["public dock pose", "frozen arm-body reachability classification"]},
+    {"id": "body_reposition_completed", "evidence": ["actual base pose reaches the declared target region", "all feet remain in the declared support"]},
+    {"id": "predock_stability_completed", "evidence": ["base and tcp speed below frozen limits", "body tilt, height, support, and joint margins remain valid for the stability dwell"]},
+    {"id": "loaded_recovery_completed", "evidence": ["physical contact load", "actual retreat or unloading after stabilization"]},
+    {"id": "docking_hold_completed", "evidence": ["fixture-relative insertion depth", "terminal pose, wrench, support, and dwell conditions"]}
+  ],
+  "interface": {
+    "observations": {
+      "public": ["quadruped and arm proprioception", "base pose and twist", "foot contact and support summary", "tcp and dock-relative state", "measured wrench", "public body target and bounds", "issued body and arm request history"],
+      "hidden": ["support gain", "servo gain", "command delay", "ground-contact evaluator state", "whole-body solver internals"]
+    },
+    "action_authority": {
+      "method": ["bounded planar body target request", "bounded manipulator Cartesian request", "declared stiffness or force request"],
+      "public_execution": ["common stance whole-body controller", "body-target and joint-margin projection", "common safety termination"],
+      "evaluator_only": ["support and foot-slip classification", "ordered reposition-stabilize-dock events", "recovery and insertion acceptance"]
+    }
+  },
+  "evaluation": {
+    "success": ["the base reaches the task-directed target within fixed-foot support", "the predock stability dwell completes before contact recovery", "the recovery event precedes insertion", "docking is held within pose, force, support, body, and joint limits"],
+    "violations": ["foot slip, relocation, or undeclared contact loss", "body height or tilt violation", "whole-body solver failure", "joint-limit or self-collision termination", "axial or lateral overforce", "event-order violation", "timeout"],
+    "anti_bypass": ["require actual base displacement toward the task-directed target", "reject docking before the predock stability event", "derive fixed-foot support from physical contact traces", "use a preregistered jointly reachable initial-state set for all methods"]
+  },
+  "mechanism_axes": [
+    {"name": "body_shift_class", "public": true, "train": ["small"], "development": ["small", "medium"], "heldout": ["large_within_support"]},
+    {"name": "dock_offset_class", "public": true, "train": ["centered"], "development": ["centered", "lateral"], "heldout": ["lateral_and_yaw"]},
+    {"name": "support_gain_class", "public": false, "train": ["nominal"], "development": ["nominal", "derated"], "heldout": ["derated"]},
+    {"name": "insertion_reaction_class", "public": false, "train": ["nominal"], "development": ["nominal", "moderate"], "heldout": ["high"]}
+  ],
+  "source_qualification": {
+    "status": "contract_frozen_coordinated_source_skill_pending",
+    "requirements": ["source performs task-directed body reposition rather than a timed drift", "source completes reposition, predock stabilization, recovery, insertion, and hold in order", "qualification demonstrates joint arm-body feasibility without foot relocation", "source actor, reachable-state roster, and configuration digests are frozen before target development"],
+    "evidence_resolution": "control ticks for ordered body-arm events plus physics foot-contact and wrench evidence"
+  },
+  "evaluator_evidence": {
+    "status": "contract_frozen_implementation_pending",
+    "resolution": "control_tick_with_physical_support_and_contact_events",
+    "implementation_path": "genedynamics/tasks/transfer/evaluation.py",
+    "required_signals": ["public body target", "actual base pose and twist", "foot contact forces and slip", "support polygon", "whole-body solver status", "joint margins", "dock-relative connector state", "measured wrench", "predock and terminal dwell clocks"]
+  },
+  "historical_evidence_policy": "The existing timed body-intent task remains stance-insertion evidence only; no historical mobile result is relabeled as task-directed reposition-then-dock."
+}

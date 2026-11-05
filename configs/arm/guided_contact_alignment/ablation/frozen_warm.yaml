@@ -1,0 +1,8 @@
+base: ../_base.yaml
+name: guided_contact_alignment_frozen_warm
+output_dir: results/arm/guided_contact_alignment/ablation/frozen_warm
+method_params:
+  ablation_cell: frozen_warm
+  actor_binding:
+    family: ablation
+    key: frozen_warm

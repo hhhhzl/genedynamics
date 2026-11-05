@@ -1,3 +1,7 @@
 base: ../_base.yaml
 name: guided_contact_alignment_cross_ebdm
 output_dir: results/arm/guided_contact_alignment/main/cross_ebdm
+method_params:
+  ablation_cell: gated_full
+  actor_binding:
+    key: cross_ebdm

@@ -1,0 +1,42 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "first_instance_audit": {
+    "path": "results/arm/guided_contact_alignment/main/cross_ebdm/validation/source_nominal_actor_screen_3301100000/independent_audit.json",
+    "sha256": "d9843ce4d524010fa2bb37d45be6aff1038ef124a7b0728f3ce2c4ce7da3f134"
+  },
+  "first_instance_report": {
+    "path": "results/arm/guided_contact_alignment/main/cross_ebdm/validation/source_nominal_actor_screen_3301100000/report.json",
+    "sha256": "3dbc15c05db4dc4ef6ff1f6e204e0b5d31d9d154a4f8f99a652df651f710d863"
+  },
+  "formal_request_seed_access": 0,
+  "instance_ids": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "maximum_cohort_physical_episodes": 64,
+  "maximum_new_physical_episodes": 56,
+  "method": "cross_ebdm",
+  "method_identity": "ours_mode0_contact_established_transport_v5",
+  "output": "results/arm/guided_contact_alignment/main/cross_ebdm/validation/independent_source_nominal_cohort_v1",
+  "source_roster": {
+    "path": "configs/arm/guided_contact_alignment/validation/method_source_nominal_actor_roster.json",
+    "sha256": "537889f695bc6bcf2a8b9e93da24a1363371d187b5f0c99cc03dc3734f367813"
+  },
+  "task": "T2",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/main/cross_ebdm.yaml",
+    "sha256": "3394a21c31f8d7a28e9d84058adaec2f4dc3e104e819f6a79c08dba6660fc627"
+  },
+  "version": "transfer-legacy-independent-source-nominal-cohort-v1"
+}

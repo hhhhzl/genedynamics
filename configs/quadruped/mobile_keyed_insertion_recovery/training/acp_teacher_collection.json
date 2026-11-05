@@ -1,0 +1,19 @@
+{
+  "version": "acp-public-teacher-collection-v1",
+  "task": "T4",
+  "teacher_config": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/public_geometry.yaml",
+  "n_steps": 750,
+  "scalar_stiffness": 800.0,
+  "require_exact_replay": true,
+  "episodes": [
+    {"mode": 0, "purpose": "fit", "seed": 8244000, "sample_id": 8244000, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"mode": 1, "purpose": "fit", "seed": 8244001, "sample_id": 8244001, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"mode": 0, "purpose": "fit", "seed": 8244002, "sample_id": 8244002, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"mode": 1, "purpose": "fit", "seed": 8244003, "sample_id": 8244003, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"mode": 0, "purpose": "fit", "seed": 8244004, "sample_id": 8244004, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"mode": 1, "purpose": "fit", "seed": 8244005, "sample_id": 8244005, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"mode": 0, "purpose": "validation", "seed": 8244006, "sample_id": 8244006, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"mode": 1, "purpose": "validation", "seed": 8244007, "sample_id": 8244007, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {"body_servo_gain": 1.0}}
+  ],
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/acp/demonstrations/teacher_collection"
+}

@@ -1,0 +1,26 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v1",
+  "task": "T4",
+  "method": "response_mpc",
+  "method_identity": "ordinary_response_MPC",
+  "instance_id": "instance_07",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/response_mpc.yaml",
+    "sha256": "d7b59de006c23e05afc3e562f6a02ab3f9ac8e0f672b6db0395bac16d41ebaa0"
+  },
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/independent_main_table_requests.json",
+    "sha256": "b8cf00a768339b0c3b025a4e2d6829a6a906a8cf21a38cb04bf1941adae81549"
+  },
+  "cell_admission": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/independent_main_table_admission_v1/response_mpc.json",
+    "sha256": "9217975ff879537dffdd11ff9d332f8b2380d63441b463ca8e3f5ae4023d44bd"
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/response_mpc/confirmation/independent_main_v1/instance_07",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/response_mpc/confirmation/independent_main_v1/instance_07_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  }
+}

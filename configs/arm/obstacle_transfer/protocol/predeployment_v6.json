@@ -1,0 +1,22 @@
+{
+  "gate": {
+    "failure_replacement": false,
+    "require_all_mode_correct_task_success": true,
+    "require_evidence_reaudit": true,
+    "require_zero_constraint_violations": true
+  },
+  "requested_modes": [0, 1],
+  "reset_slots_per_cell": 2,
+  "scene_cells": [{
+    "body_support_parameters": {},
+    "id": "deployment_nominal",
+    "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0},
+    "robot": "xarm7"
+  }],
+  "scope": "Fresh common-protocol-v3 behavioral admission for every executable T1 baseline, ablation and Cross-EBDM actor; no prior outcome is reusable.",
+  "seed_anchor": 3270000,
+  "source_admission": "Validate each method's declared source/training artifacts and provenance through its SHA-bound manifest; never deploy a target actor on a different source robot.",
+  "supersedes": {"path": "configs/arm/obstacle_transfer/protocol/predeployment_v5.json", "sha256": "bb807c7ba70902eb036862a5cfe2ba9049e480c99b0493dc4bd0419578e11efd"},
+  "task": "T1",
+  "version": "four-task-behavioral-predeployment-v6"
+}

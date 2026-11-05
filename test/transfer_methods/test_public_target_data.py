@@ -47,6 +47,24 @@ def test_native_acp_labels_keep_world_commands_and_relative_action_time():
     with pytest.raises(ValueError):public_target_trajectory(acp)
 
 
+def test_native_acp_sparse_labels_follow_declared_waypoint_interval():
+    row = trajectory()
+    world = spatial.SE3_to_pose9(pose(
+        row.public["tcp_position"][:-1], row.public["tcp_rotation"][:-1],
+    ))
+    commands = np.concatenate((world, world, np.full((20, 1), 200.)), axis=-1)
+    acp = PublicTargetTrajectory(
+        dict(row.metadata, permission="C_supervised", chart="acp_world19"),
+        row.public, commands,
+    )
+    observations, actions = public_target_windows(
+        acp, horizon=4, action_down_sample_steps=5,
+    )
+    assert len(actions) == 5
+    assert actions.shape == (5, 4, 19)
+    assert len(observations["tcp_relative_pose"]) == 5
+
+
 @pytest.mark.parametrize("task,robot", [("T1","xarm7"),("T2","xarm7"),("T3","xarm7"),("T4","go2_z1")])
 def test_v2_native_acp_data_binds_task_specific_public_context(task,robot):
     source=trajectory();world=spatial.SE3_to_pose9(pose(source.public["tcp_position"][:-1],source.public["tcp_rotation"][:-1]))

@@ -1,0 +1,40 @@
+{
+  "base_training_config": {
+    "path": "configs/arm/keyed_insertion_recovery/training/finite_time_late_phase.json",
+    "sha256": "109252e88f538c7f9cbb9d3f15e90eb74c8f5ab98518aecf71a0dcbf83ad2984"
+  },
+  "overrides": {
+    "version": "t3-task-first-directional-same-state-anchored-training-v1",
+    "training": {
+      "variant": "task_first_directional_same_state_anchored",
+      "control_checkpoint_policy": "frozen_selector",
+      "response_normalization": {
+        "reference_floor": 0.0001,
+        "minimum_source_task_advantage": 0.0,
+        "source_task_state": "target"
+      },
+      "shared_start_report": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_relative_response/task_only/checkpoints/report.json",
+        "sha256": "d2cfd46e1304f4e775e0b4dd8892de514554968fa82a7f2010bcef727b7d840c"
+      }
+    },
+    "data": {
+      "weak_log_split": {
+        "kind": "entry_index_modulo",
+        "modulus": 4,
+        "validation_residue": 0
+      }
+    },
+    "selection": {"required_modes": [0, 1]},
+    "actor_manifest": {
+      "path": "configs/arm/keyed_insertion_recovery/protocol/actor_bindings.json",
+      "sha256": "94fdcb9e62b71c4e1d653ecb5489a17dcde36743d20483b2beabcc74bcccd460"
+    },
+    "preflight_output": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_directional_same_state/anchored/preflight",
+    "preflight_report": {
+      "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_directional_same_state/anchored/preflight/report.json",
+      "sha256": "a3e338f8bfe3b8e32e8fbc201ef8c88a9738608ad5b03526a6eae090abab8a57"
+    },
+    "output": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_directional_same_state/anchored/checkpoints"
+  }
+}

@@ -21,15 +21,29 @@ def effective_commands(candidate,batch):
 
 def recovery_policy_commands(policy,feedback,batch):
     """Return normalized candidates and the commands visible to the model."""
-    normalized=policy(batch['target_features'],batch['source_features'],batch['source_commands'],batch['base_proto'],batch['decoder']['phase'],decoder_context(batch['decoder'],feedback))
+    normalized=policy(
+        batch['target_features'],batch['source_features'],batch['source_commands'],
+        batch['base_proto'],batch['decoder']['phase'],
+        decoder_context(batch['decoder'],feedback),
+    )
     decoded=decode_pose_transport(normalized*normalized.new_tensor(BOUNDS),batch['decoder'],feedback)/normalized.new_tensor(BOUNDS)
     return normalized,effective_commands(decoded,batch)
 
 
-def recovery_task_proxy(policy,response,feedback,batch):
-    """Per-sample model task proxy under the deployed recovery command rule."""
+def recovery_task_proxy_members(policy,response,feedback,batch):
+    """Per-member task proxies under the deployed recovery command rule."""
     _,commands=recovery_policy_commands(policy,feedback,batch)
-    return task_proxy(response(batch['target_features'],commands),batch['current'],batch['task_reference']).mean(0)
+    return task_proxy(
+        response(batch['target_features'],commands),
+        batch['current'],batch['task_reference'],
+    )
+
+
+def recovery_task_proxy(policy,response,feedback,batch):
+    """Mean per-sample model task proxy under the recovery command rule."""
+    return recovery_task_proxy_members(
+        policy,response,feedback,batch,
+    ).mean(0)
 
 class PublicRecoveryTransportTrainer(PublicTransportTrainer):
     def objective(self,batch,*,response_weight=None,task_band_reference=None,tolerance=.05):

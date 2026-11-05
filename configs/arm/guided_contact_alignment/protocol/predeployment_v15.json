@@ -1,0 +1,52 @@
+{
+  "version": "four-task-behavioral-predeployment-v15",
+  "task": "T2",
+  "extends": {
+    "path": "configs/arm/guided_contact_alignment/protocol/predeployment_v14.json",
+    "sha256": "98bc9c9674c21791a6d07087cc10e86d9d7074e81bff40e9e8038a7ee1ef6335"
+  },
+  "shared_task_contract": {
+    "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v7.json",
+    "sha256": "98750a574c84516e43b023af180666dceabf775dfab80d36e00a75478f7c1004"
+  },
+  "seed_anchor": 4695000,
+  "execution": {
+    "device": "cuda"
+  },
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "gate": {
+    "require_all_mode_correct_task_success": true,
+    "require_zero_constraint_violations": true,
+    "require_evidence_reaudit": true,
+    "require_exact_physics_contact_evidence": true,
+    "failure_replacement": false
+  },
+  "source_admission": "Validate every method's declared source or training artifact and SHA through the existing task-local actor manifest. Retain algorithm and external-resource rejections; never replace a rejected row or reuse a prior outcome.",
+  "scope": "Fresh task_contract_v7 behavior qualification for every executable T2 main, baseline and ablation row after the v18 causal-traverse interface passed its seed-disjoint GPU1 release gate at public 8/8 and Cross-EBDM 64/64 with all 72 evidence records independently reaudited. Baseline and ablation failures remain in their denominators. This is predeployment evidence, not paper performance evidence."
+}

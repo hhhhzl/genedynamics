@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/WEIRDLabUW/asid.git",
+  "commit": "cf2cb670fb983f67cf2af156d4e17b4a690787e2",
+  "license": "No license file in upstream public repository",
+  "implementation": "Independent implementation of released mathematical objective; no author source copied",
+  "reference_files": ["env/wrappers/asid_reward.py"],
+  "implemented": ["central-difference observation Jacobian", "trace(J^T J) clipped information reward", "independent bounded CEM search", "task-adapted T1-T4 exploration, grid-seeded target parameter fitting, and task policy training development chains"],
+  "pending": ["author-native rod-specific SAC training parity", "independent training-instance qualification", "four-task nominal qualification and frozen main-table evaluation"]
+}

@@ -19,6 +19,13 @@ class ContactRunner:
         self.config = config or ContactConfig()
         mechanism = MechanismSpec() if mechanism is None else mechanism
         mechanism_specs(mechanism)
+        compliant = getattr(self.config, "fixture_profile", None) == "passive_x_v1"
+        if compliant:
+            from genedynamics.tasks.transfer.compliant_socket import CompliantSocketMechanismSpec
+            if backend != "numpy" or device != "cpu":
+                raise NotImplementedError("passive socket v1 is explicitly CPU-only")
+            if not isinstance(mechanism, CompliantSocketMechanismSpec):
+                raise TypeError("passive socket requires its declared construction mechanism")
         nonlegacy = (
             self.config.socket_profile != "legacy"
             or self.config.guide_profile != "legacy"
@@ -57,7 +64,10 @@ class ContactRunner:
 
             provider = FloatingContact
         elif backend == "numpy":
-            if isinstance(mechanism, MechanismSpec):
+            if compliant:
+                from .backends.contact import MujocoCompliantSocket
+                provider = MujocoCompliantSocket
+            elif isinstance(mechanism, MechanismSpec):
                 from .backends.contact import MujocoContact
 
                 provider = MujocoContact

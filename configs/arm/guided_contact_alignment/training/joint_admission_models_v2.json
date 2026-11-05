@@ -1,0 +1,91 @@
+{
+  "calibration": {
+    "exchangeability_unit": "reset-block episode lineage",
+    "interpolation_fractions": [
+      1.0,
+      0.5,
+      0.25,
+      0.0
+    ],
+    "miscoverage": 0.1,
+    "risk_limits": [
+      20.0,
+      8.0,
+      0.15,
+      0.5
+    ]
+  },
+  "data_policy": {
+    "candidate_generator_matched": true,
+    "confirmation_states_opened": 0,
+    "development_prototype_only": true,
+    "failure_replacement": false,
+    "final_paper_checkpoint": false,
+    "gpu_physical_index": 1,
+    "old_invalid_outcomes_used": false,
+    "old_risk_v1_windows_reused": false,
+    "performance_evidence": false,
+    "split_by_reset_block": true
+  },
+  "dataset": {
+    "independent_audit": {
+      "path": "results/arm/guided_contact_alignment/training/joint_admission_counterfactual_data_v2_rerun/independent_audit.json",
+      "sha256": "f0afc3bac9bc2baa59b49212db95bda1792ced8cabfa3a60172bc6826c06f91a"
+    },
+    "progress": {
+      "path": "results/arm/guided_contact_alignment/training/joint_admission_counterfactual_data_v2_rerun/progress.jsonl",
+      "sha256": "7871d70a9ba9b2e83f870fdfbbe2d757c0b7d94c652ecc604c9cb059d6e31e43"
+    },
+    "report": {
+      "path": "results/arm/guided_contact_alignment/training/joint_admission_counterfactual_data_v2_rerun/report.json",
+      "sha256": "427904a8b2fa57d4f032c41d4f502dfbbb946c2445ed3c4dae6ce288f1b447f6"
+    }
+  },
+  "device": {
+    "logical_device": "cuda:0",
+    "physical_index": 1,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1",
+    "required_visible_device_count": 1
+  },
+  "model": {
+    "hidden": [
+      128,
+      128
+    ],
+    "history_len": 4,
+    "horizon": 10,
+    "learning_rate": 0.0003,
+    "maximum_joints": 32,
+    "members": 3
+  },
+  "output": "results/arm/guided_contact_alignment/training/joint_admission_models_v2",
+  "scope": "GPU1-only development training and split-block calibration on the predeclared same-state candidate dataset. No confirmation state or paper performance evidence.",
+  "status": "frozen_unexecuted",
+  "training": {
+    "batch_size": 512,
+    "high_risk_fraction": 0.5,
+    "log_interval": 250,
+    "seeds": [
+      3275000,
+      3275001,
+      3275002,
+      3275003,
+      3275004,
+      3275005,
+      3275006,
+      3275007
+    ],
+    "underprediction_weight": 4.0,
+    "updates": 3000
+  },
+  "validation_gates": {
+    "maximum_safe_rejection_rate": 0.5,
+    "minimum_contact_violation_recall": 0.9,
+    "minimum_episode_block_coverage": 0.85,
+    "minimum_high_risk_recall": 0.9,
+    "require_all_eight_instances": true,
+    "require_all_five_candidates": true
+  },
+  "version": "t2-joint-admission-model-training-v2"
+}

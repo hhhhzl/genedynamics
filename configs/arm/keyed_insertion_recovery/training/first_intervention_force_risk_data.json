@@ -1,0 +1,998 @@
+{
+  "version": "t3-first-intervention-force-risk-data-v1",
+  "task": "T3",
+  "actor_roster": {
+    "path": "configs/arm/keyed_insertion_recovery/validation/method_source_nominal_actor_roster_native.json",
+    "sha256": "2ca1929aec90a5cf055cb30ba584072386f65f46f07d8d4fae9e2960116bdc16"
+  },
+  "native_library": {
+    "path": ".runtime/cross_ebdm/native/libcross_ebdm.so",
+    "sha256": "40f532dda955a39e99455ecff0d362f310ab31c33cde1d546c6c78f0f43f1a09"
+  },
+  "methods": [
+    "cross_ebdm",
+    "task_only"
+  ],
+  "requests": [
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i00",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600000,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i01",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600001,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i02",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600002,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i03",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600003,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i04",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600004,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i05",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600005,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i06",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600006,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i07",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600007,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i08",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600008,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i09",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600009,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i10",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600010,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/source/i11",
+      "split": "fit",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600011,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i00",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600012,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i01",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600013,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i02",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600014,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i03",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600015,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i04",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600016,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i05",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600017,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i06",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600018,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i07",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600019,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i08",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600020,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i09",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600021,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i10",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600022,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/fit/nominal/i11",
+      "split": "fit",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600023,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/source/i00",
+      "split": "calibration",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600024,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/source/i01",
+      "split": "calibration",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600025,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/source/i02",
+      "split": "calibration",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600026,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/source/i03",
+      "split": "calibration",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600027,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/source/i04",
+      "split": "calibration",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600028,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/source/i05",
+      "split": "calibration",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600029,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/nominal/i00",
+      "split": "calibration",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600030,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/nominal/i01",
+      "split": "calibration",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600031,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/nominal/i02",
+      "split": "calibration",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600032,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/nominal/i03",
+      "split": "calibration",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600033,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/nominal/i04",
+      "split": "calibration",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600034,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/calibration/nominal/i05",
+      "split": "calibration",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600035,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/source/i00",
+      "split": "validation",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600036,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/source/i01",
+      "split": "validation",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600037,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/source/i02",
+      "split": "validation",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600038,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/source/i03",
+      "split": "validation",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600039,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/source/i04",
+      "split": "validation",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600040,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/source/i05",
+      "split": "validation",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600041,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/nominal/i00",
+      "split": "validation",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600042,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/nominal/i01",
+      "split": "validation",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600043,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/nominal/i02",
+      "split": "validation",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600044,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/nominal/i03",
+      "split": "validation",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600045,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/nominal/i04",
+      "split": "validation",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600046,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/validation/nominal/i05",
+      "split": "validation",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600047,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/delay_gain_shift/i00",
+      "split": "mechanism_holdout",
+      "scene_cell": "delay_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600048,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/delay_gain_shift/i01",
+      "split": "mechanism_holdout",
+      "scene_cell": "delay_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600049,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/delay_gain_shift/i02",
+      "split": "mechanism_holdout",
+      "scene_cell": "delay_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600050,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/delay_gain_shift/i03",
+      "split": "mechanism_holdout",
+      "scene_cell": "delay_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600051,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/delay_gain_shift/i04",
+      "split": "mechanism_holdout",
+      "scene_cell": "delay_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600052,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/delay_gain_shift/i05",
+      "split": "mechanism_holdout",
+      "scene_cell": "delay_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600053,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/delay_gain_shift/i06",
+      "split": "mechanism_holdout",
+      "scene_cell": "delay_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600054,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/delay_gain_shift/i07",
+      "split": "mechanism_holdout",
+      "scene_cell": "delay_gain_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600055,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/payload_shift/i00",
+      "split": "mechanism_holdout",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600056,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 1.0,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/payload_shift/i01",
+      "split": "mechanism_holdout",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600057,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 1.0,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/payload_shift/i02",
+      "split": "mechanism_holdout",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600058,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 1.0,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/payload_shift/i03",
+      "split": "mechanism_holdout",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600059,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 1.0,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/payload_shift/i04",
+      "split": "mechanism_holdout",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600060,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 1.0,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/payload_shift/i05",
+      "split": "mechanism_holdout",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600061,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 1.0,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/payload_shift/i06",
+      "split": "mechanism_holdout",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600062,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 1.0,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T3/FIRST-INTERVENTION-RISK/mechanism_holdout/payload_shift/i07",
+      "split": "mechanism_holdout",
+      "scene_cell": "payload_shift",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301600063,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 1.0,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "split_counts": {
+    "fit": 24,
+    "calibration": 12,
+    "validation": 12,
+    "mechanism_holdout": 16
+  },
+  "maximum_prefix_controls": 160,
+  "branch_horizon_controls": 32,
+  "maximum_physical_control_steps": 14336,
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_gpu_memory_gib": 2,
+    "maximum_wall_seconds": 2400
+  },
+  "output": "results/arm/keyed_insertion_recovery/training/first_intervention_force_risk_data_3301600000",
+  "formal_performance_evidence": false,
+  "failure_replacement": false,
+  "scope": "64 new independent mode-zero T3 requests. Fit/calibration/validation use disjoint episodes under source and nominal mechanisms; delay/gain and payload shifts are separate unseen-mechanism holdouts. Branch only the first admitted transport action for 32 controls against matched task-only from the same full physical state; retain no-admission and all failures. No formal task-performance or safety certificate."
+}

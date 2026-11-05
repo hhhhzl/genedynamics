@@ -1,0 +1,27 @@
+{
+  "version": "t3-mode-specific-recorded-completion-aggregation-v1",
+  "mode": 1,
+  "sources": [
+    {
+      "plan": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/checkpoints_instances_01_04/plan.json",
+        "sha256": "c153b403e582908f6f3895d0cf07da8fa0a2ccae521524c9d851ec54ac5b36d7"
+      },
+      "report": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/checkpoints_instances_01_04/report.json",
+        "sha256": "ed98a194bb4261c87f5a0b12038f0335b0359842efecac9808fb0b12c6792710"
+      }
+    },
+    {
+      "plan": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/checkpoints_instances_05_08/plan.json",
+        "sha256": "22bb2b8c6285ceba42451d5fde3e6993a74889cd6853c6b4ccd3af2e7df53b7c"
+      },
+      "report": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/checkpoints_instances_05_08/report.json",
+        "sha256": "23ff1d045737329c08c381aa887c7c1713799015a92fa3ffa8a60f69137dd0f5"
+      }
+    }
+  ],
+  "output": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/aggregation"
+}

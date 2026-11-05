@@ -1,0 +1,32 @@
+{
+  "version": "constraint-reachability-body-intent-v1",
+  "device": "cpu",
+  "formal_experiment": false,
+  "run_class": "development",
+  "output_dir": "results/quadruped/mobile_keyed_insertion_recovery/validation/constraint_reachability_body_intent",
+  "source": {
+    "matrix_config": "configs/quadruped/mobile_keyed_insertion_recovery/validation/constraint_reachability_isolation.json",
+    "matrix_config_sha256": "5a5d06f0d8ac8ae1eb28f1d9b5f62bdef870086c4ab4b97d5c2cdd28f4fb8817",
+    "isolation_results": "results/quadruped/mobile_keyed_insertion_recovery/validation/constraint_reachability_isolation",
+    "isolation_report_sha256": "3fa30dadd0ea0dbabebb0d66784e1541328f706d9ba270ac6c5d22474859939d",
+    "isolation_audit_sha256": "9c46f2a8cc371a5776679ba57181e06da8db55c1ca62c384b6000cd26f7d823d",
+    "required_trigger": "bounds_public_reference has zero constraint violations and at least one non-success"
+  },
+  "execution_profile": "joint_margin_public_reference",
+  "public_reference_governor": true,
+  "body_intent": {
+    "velocity_world": [0.005, 0.005, 0.0],
+    "start_seconds": 0.0,
+    "duration_seconds": 6.0,
+    "scope": "public world-planar vx/vy/yaw-rate command; no vertical body channel"
+  },
+  "expected_receipts": 16,
+  "expected_episodes": 16,
+  "gate": {
+    "require_exact_receipt_restore": true,
+    "require_all_task_success": true,
+    "require_zero_constraint_violations": true,
+    "minimum_support_count": 2
+  },
+  "scope": "Triggered CPU-only paired development branch over the exact 16 isolation receipts. No new resets, GPU, training, target selection, hidden mechanism feedback, vertical body command, or outcome replacement."
+}

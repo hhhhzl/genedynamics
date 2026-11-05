@@ -1,0 +1,50 @@
+{
+  "version": "t2-pooled-substep-risk-dataset-v1",
+  "device": "cpu",
+  "source": {
+    "plan": {
+      "path": "results/arm/guided_contact_alignment/training/substep_risk_data/plan.json",
+      "sha256": "b7a431fa3f2ca9549ae7deb294e17abee9fc84343796005b3cc1fb8c318e4741"
+    },
+    "progress": {
+      "path": "results/arm/guided_contact_alignment/training/substep_risk_data/progress.jsonl",
+      "sha256": "5276498d9c80f321dfaa14240be5e9a0153795b93d921470ff5757f9d563699b"
+    },
+    "report": {
+      "path": "results/arm/guided_contact_alignment/training/substep_risk_data/report.json",
+      "sha256": "72663170cfd69175532cdeb5ca8202cb19494b9e6b5af2c0f8e94ce99926628c"
+    },
+    "independent_audit": {
+      "path": "results/arm/guided_contact_alignment/training/substep_risk_data/independent_audit.json",
+      "sha256": "f7c5fdb3295c8b0a30fd868dc4b6827f935481bc3e6761163a9ae9f7c46c183c"
+    }
+  },
+  "inclusion": {
+    "methods": ["cross_ebdm", "task_only"],
+    "exclude_public_geometry_sentinel": true,
+    "history_control_steps": 4,
+    "horizon_control_steps": 10,
+    "physics_dt_seconds": 0.001,
+    "calibration_context": [0.0, 0.0, 0.0],
+    "fit_safe_window_stride": 10,
+    "retain_every_high_risk_fit_window": true,
+    "retain_every_calibration_and_validation_window": true
+  },
+  "risk_thresholds_N": {
+    "total": 20.0,
+    "lateral": 8.0
+  },
+  "pooled_admission": {
+    "minimum_fit_high_risk_windows": 200,
+    "minimum_calibration_high_risk_windows": 30,
+    "minimum_validation_high_risk_windows": 30,
+    "require_disjoint_physical_initial_slots": true,
+    "require_source_audit_passed": true,
+    "accept_source_collection_status": "failed_per_instance_tail_coverage"
+  },
+  "output": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset",
+  "diagnostic_only": true,
+  "confirmation_states_opened": 0,
+  "old_invalid_outcomes_used": false,
+  "performance_evidence": false
+}

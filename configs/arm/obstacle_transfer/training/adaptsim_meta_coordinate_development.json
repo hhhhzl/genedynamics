@@ -1,0 +1,126 @@
+{
+  "version": "adaptsim-obstacle-meta-development-v2",
+  "task": "T1",
+  "robot": "xarm7",
+  "delay_steps": 0,
+  "seed": 928505,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 1500,
+    "maximum_gpu_memory_gib": 2
+  },
+  "parameters": [
+    {
+      "name": "servo_gain",
+      "minimum": 0.4,
+      "maximum": 1.4,
+      "step": 0.1,
+      "distribution": "gaussian",
+      "min_std": 0.05,
+      "max_std": 0.25
+    },
+    {
+      "name": "payload_mass",
+      "minimum": 0.2,
+      "maximum": 1.2,
+      "step": 0.1,
+      "distribution": "gaussian",
+      "min_std": 0.05,
+      "max_std": 0.25
+    }
+  ],
+  "particles": [
+    {
+      "kind": "gaussian",
+      "left": [
+        0.7,
+        0.5
+      ],
+      "right": [
+        0.1,
+        0.1
+      ]
+    },
+    {
+      "kind": "gaussian",
+      "left": [
+        0.95,
+        0.5
+      ],
+      "right": [
+        0.1,
+        0.1
+      ]
+    },
+    {
+      "kind": "gaussian",
+      "left": [
+        1.2,
+        0.8
+      ],
+      "right": [
+        0.1,
+        0.1
+      ]
+    }
+  ],
+  "task_policy_search": {
+    "anchor": [
+      0.5678590883444584,
+      0.6581064010126911,
+      0.6270149599348386,
+      0.6097529670246064,
+      1.0,
+      1.0
+    ],
+    "lower": [
+      0.52,
+      0.6,
+      0.58,
+      0.55,
+      0.65,
+      0.65
+    ],
+    "upper": [
+      0.62,
+      0.73,
+      0.7,
+      0.69,
+      1.15,
+      1.15
+    ],
+    "population": 7,
+    "elite": 1,
+    "iterations": 1,
+    "tasks_per_candidate": 1,
+    "coordinate_probes": [
+      4,
+      5
+    ],
+    "probe_fraction": 0.1
+  },
+  "meta_training": {
+    "outer_iterations": 4,
+    "inner_episodes_per_iteration": 2,
+    "adaptation_steps": 2,
+    "kill_frequency": 2,
+    "spawn_reward_threshold": 0.5,
+    "meta_spawn_perturbation": 0.1,
+    "inner_spawn_perturbation": 0.05,
+    "batch_size": 4,
+    "update_every": 1,
+    "gradient_steps": 4,
+    "exploration_probability": 0.5
+  },
+  "deployment_target": {
+    "mechanism": {
+      "servo_gain": 0.7,
+      "payload_mass": 0.5,
+      "delay_steps": 0
+    },
+    "updates": 2,
+    "select_particles": true
+  },
+  "output": "results/arm/obstacle_transfer/baseline/adaptsim/training/meta_coordinate_development_928505"
+}

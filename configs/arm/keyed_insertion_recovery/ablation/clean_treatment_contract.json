@@ -1,0 +1,102 @@
+{
+  "schema_version": "keyed-insertion-clean-ablation-v1",
+  "task": "keyed_insertion_recovery",
+  "status": "development_contract_requires_fresh_matched_training",
+  "shared": {
+    "warm_start": {
+      "policy_set": "task_only_shared_start_v9",
+      "initialization": "same checkpoint per logical instance",
+      "optimizer_state": "fresh for every treatment"
+    },
+    "data": {
+      "fit_and_validation_manifests": "byte-identical per logical instance",
+      "weak_log_manifest": "byte-identical per logical instance",
+      "batch_index_stream": "exact replay from one persisted seed stream",
+      "target_interaction_budget": "identical and fully charged",
+      "checkpoint_access": "no formal outcome access"
+    },
+    "optimizer": {
+      "implementation": "AdamW",
+      "learning_rate": "from the same PublicTransportSpec",
+      "batch_size": "identical",
+      "update_count": "identical",
+      "gradient_clip": 1.0
+    },
+    "action_authority": {
+      "policy_class": "PublicLocalResidualTransport",
+      "decoder": "recovery_policy_commands",
+      "command_bounds": "BOUNDS",
+      "projection": "same public pose/admittance projection",
+      "candidate_blends": [8.0, 4.0, 2.0, 1.0, 0.5, 0.25, 0.0]
+    },
+    "recovery": {
+      "policy": "same qualified public keyed-insertion recovery for every row",
+      "feedback_parameters": "byte-identical",
+      "early_contact_release": "must be jointly qualified before any clean row runs"
+    },
+    "runtime_selector": {
+      "implementation": "same selector class and parameters for every row",
+      "response_calls": "same accounting and candidate horizon",
+      "force_admission": "must be frozen jointly after static-insertion development"
+    },
+    "checkpoint_selection": {
+      "rule": "same validation metric and tie break",
+      "validation_states": "byte-identical",
+      "evaluation_intervals": "identical",
+      "selected_once": true
+    }
+  },
+  "treatments": {
+    "full": {
+      "calibration": "target_calibrated",
+      "response_weight": 1.0,
+      "task_band": true,
+      "anchoring_gate": "selective",
+      "only_difference_from_full": []
+    },
+    "no_calibration": {
+      "calibration": "nominal_uncalibrated",
+      "response_weight": 1.0,
+      "task_band": true,
+      "anchoring_gate": "selective",
+      "only_difference_from_full": ["calibration"],
+      "required_artifact": "nominal response checkpoint with the same architecture and source data"
+    },
+    "no_response_anchoring": {
+      "calibration": "target_calibrated",
+      "response_weight": 0.0,
+      "task_band": true,
+      "anchoring_gate": "selective",
+      "only_difference_from_full": ["response_weight"]
+    },
+    "unconditional_response_anchoring": {
+      "calibration": "target_calibrated",
+      "response_weight": 1.0,
+      "task_band": true,
+      "anchoring_gate": "unconditional",
+      "only_difference_from_full": ["anchoring_gate"]
+    }
+  },
+  "legacy_compatibility": {
+    "band_only": {
+      "semantic_predecessor": "no_response_anchoring",
+      "evidence_reusable": false,
+      "reason": "legacy checkpoint was not trained and selected under this shared lock"
+    },
+    "ungated_full": {
+      "semantic_predecessor": "unconditional_response_anchoring",
+      "evidence_reusable": false,
+      "reason": "legacy checkpoint was not trained and selected under this shared lock"
+    },
+    "frozen_warm": {
+      "semantic_predecessor": null,
+      "evidence_reusable": false,
+      "reason": "no continued training is not the no-calibration treatment"
+    },
+    "matching_no_band": {
+      "semantic_predecessor": null,
+      "evidence_reusable": false,
+      "reason": "removing the task band changes a different theoretical component"
+    }
+  }
+}

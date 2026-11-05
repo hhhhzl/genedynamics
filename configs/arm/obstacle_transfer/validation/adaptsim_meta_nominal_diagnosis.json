@@ -1,0 +1,35 @@
+{
+  "version": "adaptsim-obstacle-nominal-diagnosis-v1",
+  "task": "T1",
+  "robot": "xarm7",
+  "delay_steps": 0,
+  "training_report": {
+    "path": "results/arm/obstacle_transfer/baseline/adaptsim/training/meta_coordinate_development_928505/report.json",
+    "sha256": "a827abd541d144043286871c02bb7c29a4e61ef906bd62e71de39150d334a4c6"
+  },
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/baseline/adaptsim/training/meta_coordinate_development_928505/inference_and_policy.pt",
+    "sha256": "800b5d9b21d28c04159f7b775f0ff5770c3b966c34f7f030e070cfca1d638801"
+  },
+  "anchor": [0.5678590883444584, 0.6581064010126911, 0.6270149599348386, 0.6097529670246064, 1.0, 1.0],
+  "scene_cells": [
+    {
+      "id": "deployment_nominal",
+      "mechanism": {"servo_gain": 1.0, "payload_mass": 0.5, "delay_steps": 0}
+    },
+    {
+      "id": "target_gain_shift",
+      "mechanism": {"servo_gain": 0.7, "payload_mass": 0.5, "delay_steps": 0}
+    }
+  ],
+  "requested_modes": [0, 1],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 3000100000,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 240,
+    "maximum_gpu_memory_gib": 2
+  },
+  "output": "results/arm/obstacle_transfer/baseline/adaptsim/validation/nominal_diagnosis_meta_928505"
+}

@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/irom-princeton/AdaptSim.git",
+  "commit": "9cf80fb4268749fddf21c39eb861498bc7b052c3",
+  "license": "MIT; see LICENSE",
+  "reference_files": [
+    "adaptsim/param/parameter_base.py",
+    "adaptsim/model/branching_q_network.py",
+    "adaptsim/learner/branching_q.py",
+    "adaptsim/param/param_inference.py",
+    "adaptsim/agent/adapt_trainer.py"
+  ],
+  "implemented": ["uniform and Gaussian parameter distributions", "discrete parameter update action map", "Torch branching-Q value/advantage network", "single-step and temporal-difference losses", "simulated-target replay training with a parameter-particle pool, outer evaluation/replacement, and explicit interaction accounting", "callback-driven deployment target adaptation with frozen inference weights"],
+  "local_adaptations": ["The simulated-target trainer retains replay across outer particle iterations; its reward scale is task-provided. Deployment target rewards never train the inference Q network.", "The T1 xArm7 task binding optimizes a six-parameter path/velocity policy using bounded CEM in sampled MuJoCo mechanisms; upstream pushing uses a one-step 2D NAF policy instead.", "The T2 xArm7 task binding optimizes three public guide-contact gains under the task's frozen execution contract.", "The T3 xArm7 task binding optimizes seven public feedback parameters with bounded CEM and extends the simulator distribution to a discrete control delay; this is not an upstream-native policy or parameter axis.", "The T4 Go2+Z1 task binding optimizes seven public feedback parameters with bounded CEM, adds public body intent and a four-dimensional simulator mechanism, and retains reset-unreachable candidates in its ledger."],
+  "pending": ["task-policy optimization fidelity and independent multi-instance qualification on all four tasks", "separate reporting of discrete-delay and mobile-body method extensions", "frozen four-task main-table evaluation"]
+}

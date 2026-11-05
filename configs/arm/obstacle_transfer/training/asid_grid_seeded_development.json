@@ -1,0 +1,165 @@
+{
+  "delay_steps": 0,
+  "delta": 0.1,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "maximum_gpu_memory_gib": 2,
+    "maximum_wall_seconds": 600,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "exploration": {
+    "anchor": [
+      0.5678590883444584,
+      0.6581064010126911,
+      0.6270149599348386,
+      0.6097529670246064,
+      1.0,
+      1.0
+    ],
+    "elite": 2,
+    "iterations": 2,
+    "lower": [
+      0.52,
+      0.6,
+      0.58,
+      0.55,
+      0.65,
+      0.65
+    ],
+    "population": 7,
+    "upper": [
+      0.62,
+      0.73,
+      0.7,
+      0.69,
+      1.15,
+      1.15
+    ]
+  },
+  "exploration_controls": 60,
+  "exploration_modes": [
+    0,
+    1
+  ],
+  "identification": {
+    "anchor": [
+      0.85,
+      0.65
+    ],
+    "elite": 3,
+    "iterations": 3,
+    "lower": [
+      0.4,
+      0.2
+    ],
+    "population": 10,
+    "upper": [
+      1.4,
+      1.2
+    ]
+  },
+  "identification_grid": {
+    "payload_mass": [
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0,
+      1.1,
+      1.2
+    ],
+    "servo_gain": [
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0,
+      1.1,
+      1.2,
+      1.3,
+      1.4
+    ]
+  },
+  "output": "results/arm/obstacle_transfer/baseline/asid/training/grid_seeded_development_3817251",
+  "robot": "xarm7",
+  "seed": 3817251,
+  "source_bindings": [
+    {
+      "path": "genedynamics/solvers/single/asid/asid.py",
+      "sha256": "ab7b342129a634396f47ae7354d64cd0496f8b935e98e227271b0e99fe9ab59d"
+    },
+    {
+      "path": "genedynamics/solvers/single/asid/backends/asid_numpy.py",
+      "sha256": "4d48c6e3059e7dc641c6719aa30a91918b10d2f2f61abac15365aece3e030354"
+    },
+    {
+      "path": "genedynamics/solvers/single/asid/learning/search.py",
+      "sha256": "1770b0c2fd51be3bee72d6f5bca4944803e044a8fe89c9c771346a2fcfe4aee0"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/obstacle_asid.py",
+      "sha256": "7ef286ad39248ed94be0353e52a93d7b9ae8ed65c822524b8bf2be1e491e9a8c"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/obstacle_policy_search.py",
+      "sha256": "e9763afc0cef2545b88ccbfbb7cebbe4d86efb3ab8edeba7e1b530b29d81d6d9"
+    },
+    {
+      "path": "scripts/paper/cross_ebdm/train_asid_development.py",
+      "sha256": "69f40f6311e7761d62242601473ae62caae38db6e183d84279d02332af6d9960"
+    }
+  ],
+  "source_commit": "cf2cb670fb983f67cf2af156d4e17b4a690787e2",
+  "source_mechanism": {
+    "delay_steps": 0,
+    "payload_mass": 0.65,
+    "servo_gain": 0.85
+  },
+  "target_interaction_budget": {
+    "deployment_episodes": 2,
+    "exploration_episodes": 1
+  },
+  "target_mechanism": {
+    "delay_steps": 0,
+    "payload_mass": 0.5,
+    "servo_gain": 0.7
+  },
+  "task": "T1",
+  "task_policy": {
+    "anchor": [
+      0.5678590883444584,
+      0.6581064010126911,
+      0.6270149599348386,
+      0.6097529670246064,
+      1.0,
+      1.0
+    ],
+    "elite": 2,
+    "iterations": 2,
+    "lower": [
+      0.52,
+      0.6,
+      0.58,
+      0.55,
+      0.65,
+      0.65
+    ],
+    "population": 7,
+    "simulator_samples_per_candidate": 2,
+    "upper": [
+      0.62,
+      0.73,
+      0.7,
+      0.69,
+      1.15,
+      1.15
+    ]
+  },
+  "version": "asid-obstacle-grid-seeded-development-v2"
+}

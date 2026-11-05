@@ -1,0 +1,51 @@
+{
+  "execution_variants": [
+    "learned",
+    "perfect_future_sparse_oracle"
+  ],
+  "failure_replacement": false,
+  "fixed_resets": [
+    {
+      "mode": 0,
+      "purpose": "fit",
+      "seed": 8261000
+    },
+    {
+      "mode": 1,
+      "purpose": "validation",
+      "seed": 8261007
+    }
+  ],
+  "maximum_episode_controls": 500,
+  "output": "results/arm/obstacle_transfer/baseline/acp/diagnostics/reference_response_time",
+  "reference_original_time_seconds": 0.02,
+  "response_time_seconds": [
+    0.1,
+    0.2
+  ],
+  "sampling_seed": 426200,
+  "scope": "development adapter diagnostic; scale only public translational and angular velocity requests after native ACP reference decoding; not original ACP performance",
+  "source": {
+    "checkpoint": {
+      "path": "results/arm/obstacle_transfer/baseline/acp/training/mechanism_diversity_sparse_dt100ms/ema_update_6000.pt",
+      "sha256": "69aa66dff6075f5e60ab1d4edf7f02ec47bef43db338d01eec4860beb7bd3394"
+    },
+    "collection_config": {
+      "path": "configs/arm/obstacle_transfer/validation/acp_native_impedance_teacher_mechanism_diversity.json",
+      "sha256": "53c0263f610bcfce3673f2853398cad87f856e9511c1c525cdf815e4388abdc1"
+    },
+    "collection_manifest": {
+      "path": "results/arm/obstacle_transfer/baseline/acp/validation/native_impedance_teacher/mechanism_diversity/data_manifest.json",
+      "sha256": "d750e63559878a46e5c1269052d7dcdd58f583c68418d5c3cc5ae1239f72f264"
+    },
+    "original_nominal_report": {
+      "path": "results/arm/obstacle_transfer/baseline/acp/diagnostics/mechanism_diversity_nominal_learning_cpu/report.json",
+      "sha256": "d45e582821b6810195659e0bbd06fe25c751c0cb1e260723dd491e9b5ccfe47f"
+    },
+    "original_sparse_oracle_report": {
+      "path": "results/_analysis/four_task_transfer/baseline_pilots/acp_sparse_oracle_closed_loop/report.json",
+      "sha256": "999e837fa421d83f7c4eb828c709ba4ea57a4853d2767cdc5ecef7de81397d80"
+    }
+  },
+  "version": "acp-reference-response-time-diagnostic-v1"
+}

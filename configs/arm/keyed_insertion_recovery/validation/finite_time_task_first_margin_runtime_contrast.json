@@ -1,0 +1,76 @@
+{
+  "version": "four-task-task-first-margin-runtime-dominance-contrast-v1",
+  "name": "finite_time_task_first_margin_runtime_contrast",
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {"device": "cuda"},
+  "methods": [
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "margin_runtime_transport",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_margin_v1",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_margin/anchored/checkpoints/report.json",
+          "sha256": "e0009cd3132595efa66d4ecc4eae47bda6cce790e9c4635fed9b7a30bfb812cc"
+        }
+      }
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "margin_runtime_task_only",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "task_first_margin_task_only_v1",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_margin/task_only/checkpoints/report.json",
+          "sha256": "825fffc1ea442223904618355eda340e12a3be601814379fcbc41617c5e98aee"
+        }
+      }
+    }
+  ],
+  "requested_modes": [0, 1],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "delay_steps": 3,
+        "payload_mass": 0.5
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "delay_steps": 1,
+        "payload_mass": 0.8
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 4770000,
+  "acceptance": {
+    "transport": "margin_runtime_transport",
+    "task_only": "margin_runtime_task_only",
+    "required_pairs": 128,
+    "minimum_aggregate_success_rate_gain": 0.0,
+    "minimum_nonnegative_instances": 8,
+    "minimum_mean_control_step_reduction_fraction": 0.02,
+    "minimum_nonnegative_time_instances": 6,
+    "maximum_one_sided_exact_sign_p_value": 0.05,
+    "require_transport_to_preserve_every_task_only_success": true,
+    "require_zero_extra_transport_constraint_violations": true
+  },
+  "scope": "Fresh T3 development contrast for task-first transport with an explicit paired progress margin and full-action runtime dominance. Both branches continue from the same selected checkpoint with identical public data, sample streams, capacity, budgets, mode-stratified selector, mechanisms, modes, reset requests, and evaluator. The full route adds directionally admitted response transport plus paired linear/angular progress margins, then executes transport only when it publicly dominates the paired task-only action. The predeclared task gate is unchanged and no confirmation state is opened."
+}

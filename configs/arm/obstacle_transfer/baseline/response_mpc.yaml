@@ -2,3 +2,6 @@ base: ../_base.yaml
 name: obstacle_transfer_response_mpc
 method: response_mpc
 output_dir: results/arm/obstacle_transfer/baseline/response_mpc
+method_params:
+  actor_binding:
+    key: response_mpc

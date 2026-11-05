@@ -1,0 +1,26 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v2",
+  "task": "T4",
+  "method": "fada",
+  "method_identity": "FADA_task_adapted",
+  "instance_id": "instance_06",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/fada.yaml",
+    "sha256": "d6907f926898863dc9efb8a8060f0e4e3bb9ea16e84dfc87e9e9024001a4bee3"
+  },
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/independent_main_table_requests_v2.json",
+    "sha256": "dcc15a93229e5ad99f0a629b8ee9bd074f21d7e3fc067eddef23fa058474c788"
+  },
+  "cell_admission": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/independent_main_table_admission_v2/fada.json",
+    "sha256": "ff38eb1a2b003779c4e37fca9ef619fc7ec75cd2337e3bd3e98ec51ee07d0b27"
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/fada/confirmation/independent_main_v2/instance_06",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/fada/confirmation/independent_main_v2/instance_06_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  }
+}

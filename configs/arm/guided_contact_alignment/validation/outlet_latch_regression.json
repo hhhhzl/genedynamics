@@ -1,0 +1,41 @@
+{
+  "version": "four-task-paired-development-diagnosis-v1",
+  "name": "outlet_latch_regression",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cpu"
+  },
+  "seed_anchor": 4680000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_outlet_latch_v50",
+      "instances": [
+        "instance_04"
+      ]
+    }
+  ],
+  "scope": "Exact CPU regression for the two instance-04 latency mode-zero timeouts caused by losing the public outlet predicate after endpoint latching."
+}

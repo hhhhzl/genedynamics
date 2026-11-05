@@ -1,0 +1,19 @@
+{
+  "version": "fada-closed-loop-attribution-config-v1",
+  "task": "T2",
+  "robot": "xarm7",
+  "mode": 0,
+  "checkpoint": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/validation/p4_fada_corridor_full_target_v2/level_B_log_0_30_60_120/seed_169000/budget_60/checkpoint.pt",
+    "sha256": "f126f3dd7671ced20bc2cec02414d0b8e4a12bf3ac820ebed36b708c646ec103"
+  },
+  "episode": {
+    "path": "results/_development/p4_completion_20261015/results/arm/guided_contact_alignment/validation/p4_corridor_fourbudget_target_v3/level_B_log_0_30_60_120/seed_172000/budget_60/FADA_full_IDM199/target/seed_172000/episode.npz",
+    "sha256": "649dce1d5cc32b04a0d1019f664d128f9b858868a4300378536c5ab1b6ac10db"
+  },
+  "sample_limit": 64,
+  "batch_size": 32,
+  "replay_action_abs_tolerance": 0.000002,
+  "teacher_action_normalized_linf_threshold": 0.1,
+  "output": "results/arm/guided_contact_alignment/validation/fada_closed_loop_attribution/frozen_instance_01_mode_0_gpu1"
+}

@@ -1,0 +1,15 @@
+{
+  "base_training_config": {
+    "path": "configs/arm/keyed_insertion_recovery/training/clean_no_response_anchoring_mode1_preflight.json",
+    "sha256": "0bba4012ebd6980bb286b6bed9b77bce996bbe65ff731bc351d255bb5f9dfda4"
+  },
+  "overrides": {
+    "preflight_report": {
+      "path": "results/arm/keyed_insertion_recovery/training/clean_ablation/no_response_anchoring/mode_1/preflight/report.json",
+      "sha256": "893413df0591ce61c350ee315bbc56a1f10ce53a731477977aa5ae622799ba1c"
+    },
+    "limits": {
+      "wall_seconds": 7200
+    }
+  }
+}

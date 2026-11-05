@@ -1,0 +1,49 @@
+{
+  "version": "four-task-paired-development-diagnosis-v1",
+  "name": "outlet_latched_public_geometry_release_gate",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cpu"
+  },
+  "seed_anchor": 4681000,
+  "reset_slots_per_cell": 8,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "label": "public_geometry_outlet_latched_v50",
+      "instances": "fixed"
+    }
+  ],
+  "scope": "Fresh 32-episode CPU release gate for the task_contract_v4 response-normalized v50 controller and route-v4 monotone outlet latch. Every latency/payload by mode cell requires 8/8 strict success, zero constraint violations, zero execution errors and complete exact-physics evidence."
+}

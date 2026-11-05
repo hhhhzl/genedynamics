@@ -1,0 +1,54 @@
+{
+  "version": "adaptsim-t3-feedback-source-nominal-screen-v1",
+  "task": "T3",
+  "robot": "xarm7",
+  "training_report": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/adaptsim/training/feedback_development_737215/report.json",
+    "sha256": "226b05d4ecacde1aad495af9ad459afbc6ff844a64483a0e3e3527332189ed2c"
+  },
+  "checkpoint": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/adaptsim/training/feedback_development_737215/inference_and_policy.pt",
+    "sha256": "953fdc371bca4c115aa15ff3b55a9b7ba5f896e75d9e35bdfbe23ef2e1f10956"
+  },
+  "seed_anchor": 3000400000,
+  "reset_slots_per_cell": 1,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "source",
+      "mechanism": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      }
+    },
+    {
+      "id": "nominal",
+      "mechanism": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      }
+    },
+    {
+      "id": "latency_gain_shift",
+      "mechanism": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3
+      }
+    }
+  ],
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 180,
+    "maximum_gpu_memory_gib": 2
+  },
+  "output": "results/arm/keyed_insertion_recovery/baseline/adaptsim/validation/feedback_source_nominal_screen_737215",
+  "formal_performance_evidence": false,
+  "failure_replacement": false
+}

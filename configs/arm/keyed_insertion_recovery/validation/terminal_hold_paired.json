@@ -1,0 +1,26 @@
+{
+  "version": "four-task-paired-development-diagnosis-v1",
+  "name": "terminal_hold_paired",
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "seed_anchor": 3902000,
+  "reset_slots_per_cell": 8,
+  "requested_modes": [1],
+  "scene_cells": [
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {"delay_steps": 1, "payload_mass": 0.8, "servo_gain": 0.85},
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {"family": "main", "key": "cross_ebdm", "instances": "all"},
+    {"family": "ablation", "key": "band_only", "instances": "all"},
+    {"family": "main", "key": "response_mpc", "instances": "all"}
+  ],
+  "scope": "Fresh paired T3 payload-mode-1 terminal entry, release and hold diagnosis across Cross-EBDM, band-only and response MPC; no confirmation state or outcome is read or reused."
+}

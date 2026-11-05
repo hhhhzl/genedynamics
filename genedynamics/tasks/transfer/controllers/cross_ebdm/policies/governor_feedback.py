@@ -15,6 +15,7 @@ from .pose_feedback import PublicPoseFeedbackPolicy, PublicPoseFeedbackSpec
 
 @dataclass(frozen=True)
 class PublicGovernorFeedbackSpec(PublicPoseFeedbackSpec):
+    reference_governor_enabled: bool = True
     position_gain: float = 4.
     rotation_gain: float = 4.
     issued_reference_gain: float = 2.
@@ -23,6 +24,7 @@ class PublicGovernorFeedbackSpec(PublicPoseFeedbackSpec):
     normal_velocity_limit: float = .015
     lead_xy_m: float = .004
     lead_z_m: float = .010
+    insertion_lead_z_m: float | None = None
     lead_rotation_rad: float = .04
     guard_prediction_seconds: float = .08
     guard_settle_ticks: int = 4
@@ -32,9 +34,13 @@ class PublicGovernorFeedbackSpec(PublicPoseFeedbackSpec):
 
     def __post_init__(self):
         super().__post_init__()
-        values=(self.lead_xy_m,self.lead_z_m,self.lead_rotation_rad,self.guard_prediction_seconds,
+        if not isinstance(self.reference_governor_enabled, bool):
+            raise TypeError("reference governor enable must be boolean")
+        insertion_lead = self.lead_z_m if self.insertion_lead_z_m is None else self.insertion_lead_z_m
+        values=(self.lead_xy_m,self.lead_z_m,insertion_lead,self.lead_rotation_rad,self.guard_prediction_seconds,
             self.guard_clear_z_m,self.guard_retreat_speed,self.guard_seat_gap_m)
         if not np.isfinite(values).all() or not (.001<=self.lead_xy_m<=.010 and .006<=self.lead_z_m<=.020
+                and .006<=insertion_lead<=.020
                 and .01<=self.lead_rotation_rad<=.1 and 0<=self.guard_prediction_seconds<=.2
                 and .609<=self.guard_clear_z_m<=.614 and 0<self.guard_retreat_speed<=.02 and .002<=self.guard_seat_gap_m<=.008):
             raise ValueError("reference governor outside declared public support")
@@ -74,6 +80,17 @@ class PublicGovernorFeedbackPolicy(PublicPoseFeedbackPolicy):
         self.retreating|=approaching&~safe&(p[:,2]<fb.guard_clear_z_m-.001)
         self.retreating&=p[:,2]<fb.guard_clear_z_m
 
+    def _translation_lead(self, phase):
+        """Return the public-reference box, widening only insertion if requested."""
+        fb = self.pose_feedback
+        insertion = fb.lead_z_m if fb.insertion_lead_z_m is None else fb.insertion_lead_z_m
+        z = np.where(np.asarray(phase) == 3, insertion, fb.lead_z_m)
+        return np.column_stack((
+            np.full_like(z, fb.lead_xy_m, dtype=float),
+            np.full_like(z, fb.lead_xy_m, dtype=float),
+            z,
+        ))
+
     def act(self,public):
         command=super().act(public).copy();fb=self.pose_feedback;dt=self.spec.config.control_dt
         p=np.asarray(public["tcp_position"]);r=np.asarray(public["tcp_rotation"]);twist=np.asarray(public["tcp_twist"])
@@ -81,11 +98,13 @@ class PublicGovernorFeedbackPolicy(PublicPoseFeedbackPolicy):
         # Clamp the NEXT self-issued pose relative to actual public pose.
         # A lead already outside the box is unwound at the same velocity cap;
         # there is no direct reset of hidden/public actuator carry.
-        lead=np.asarray([fb.lead_xy_m,fb.lead_xy_m,fb.lead_z_m])
+        lead=self._translation_lead(phase)
         rp=np.asarray(public["reference_position"])
-        velocity=np.clip(command[:,:3],(p-lead-rp)/dt,(p+lead-rp)/dt)
+        velocity=(np.clip(command[:,:3],(p-lead-rp)/dt,(p+lead-rp)/dt)
+                  if fb.reference_governor_enabled else command[:,:3])
         rotation_lead=np.stack([orientation_error(np,a,b) for a,b in zip(r,public["reference_rotation"])])
-        angular=np.clip(command[:,3:6],(-fb.lead_rotation_rad-rotation_lead)/dt,(fb.lead_rotation_rad-rotation_lead)/dt)
+        angular=(np.clip(command[:,3:6],(-fb.lead_rotation_rad-rotation_lead)/dt,(fb.lead_rotation_rad-rotation_lead)/dt)
+                 if fb.reference_governor_enabled else command[:,3:6])
         command[:,:3]=np.where(active[:,None],velocity,command[:,:3]);command[:,3:6]=np.where(active[:,None],angular,command[:,3:6])
         predicted_p=p+fb.guard_prediction_seconds*twist[:,:3]
         predicted_r=np.stack([integrate_rotation(np,a,w,fb.guard_prediction_seconds) for a,w in zip(r,twist[:,3:])])
@@ -99,8 +118,9 @@ class PublicGovernorFeedbackPolicy(PublicPoseFeedbackPolicy):
         waiting=approaching&(self.clear_count<fb.guard_settle_ticks)
         command[:,2]=np.where(waiting,np.maximum(command[:,2],0.),command[:,2])
         command[:,2]=np.where(self.retreating,fb.guard_retreat_speed,command[:,2])
-        bounded_z=np.clip(command[:,2],(p[:,2]-fb.lead_z_m-rp[:,2])/dt,(p[:,2]+fb.lead_z_m-rp[:,2])/dt)
-        command[:,2]=np.where(active,bounded_z,command[:,2])
+        if fb.reference_governor_enabled:
+            bounded_z=np.clip(command[:,2],(p[:,2]-lead[:,2]-rp[:,2])/dt,(p[:,2]+lead[:,2]-rp[:,2])/dt)
+            command[:,2]=np.where(active,bounded_z,command[:,2])
         command[:,2]=np.where(phase==3,np.clip(command[:,2],-fb.normal_velocity_limit,fb.normal_velocity_limit),command[:,2])
         self.guard_tick=self.observer.last_tick.copy()
         command[:,:6]=np.clip(command[:,:6],[-.02]*3+[-.12]*3,[.02]*3+[.12]*3)

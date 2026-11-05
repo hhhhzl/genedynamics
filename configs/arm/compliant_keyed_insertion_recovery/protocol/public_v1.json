@@ -1,0 +1,25 @@
+{
+  "contract_version": "compliant-keyed-insertion-public-v1",
+  "environment": "compliant_keyed_insertion_recovery",
+  "task_family": "T3",
+  "scope": "CPU development extension; static T3 results retain their original identity",
+  "fixture": {
+    "profile": "passive_x_v1",
+    "rest_position_m": [0.44, -0.2, 0.0],
+    "axis_world": [1.0, 0.0, 0.0],
+    "travel_m": 0.012,
+    "actuator": null,
+    "dynamics": "physical slide with positive mass, spring, damper and joint stops"
+  },
+  "clocks": {"physics_dt_seconds": 0.002, "control_dt_seconds": 0.02, "response_horizon_controls": 10},
+  "observation_schema": "public-fixture-world-v1",
+  "fixture_fields": ["fixture_position", "fixture_rotation", "fixture_twist"],
+  "robot_state": "only robot joint coordinates; passive fixture state is not an encoder channel",
+  "action": "shared13 world velocity, stiffness and normal force; task-relative controllers add measured fixture translation velocity",
+  "geometry": "existing matched peg/keyway, 16 mm insertion; all predicates evaluated in current measured socket frame",
+  "evaluation": "same requested modes and force/pose/dwell predicates as static T3, with current socket pose; retain all failed or incomplete requests",
+  "forbidden_policy_inputs": ["fixture_mass_kg", "fixture_stiffness_Npm", "fixture_damping_Nspm", "future_fixture_pose", "contact_truth"],
+  "old_checkpoint_reuse": false,
+  "gpu_provider_qualified": false,
+  "formal_performance_evidence": false
+}

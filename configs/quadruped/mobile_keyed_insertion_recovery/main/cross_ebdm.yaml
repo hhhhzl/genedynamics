@@ -1,3 +1,7 @@
 base: ../_base.yaml
 name: mobile_keyed_insertion_recovery_cross_ebdm
 output_dir: results/quadruped/mobile_keyed_insertion_recovery/main/cross_ebdm
+method_params:
+  ablation_cell: gated_full
+  actor_binding:
+    key: cross_ebdm

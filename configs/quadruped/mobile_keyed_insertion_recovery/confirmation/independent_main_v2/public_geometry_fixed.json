@@ -1,0 +1,26 @@
+{
+  "cell_admission": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/independent_main_table_admission_v2/public_geometry.json",
+    "sha256": "63e5217674f6e37216794c1f680a3ff391c28b0162f4491abf88b40ebcac377b"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "instance_id": "fixed",
+  "method": "public_geometry",
+  "method_identity": "public_geometry",
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/public_geometry/confirmation/independent_main_v2/fixed",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/public_geometry/confirmation/independent_main_v2/fixed_plan.json",
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/independent_main_table_requests_v2.json",
+    "sha256": "dcc15a93229e5ad99f0a629b8ee9bd074f21d7e3fc067eddef23fa058474c788"
+  },
+  "task": "T4",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/public_geometry.yaml",
+    "sha256": "336a6cdac3da306f39126b7c1c7c20be9e16d598639b9a14f419a485c914afef"
+  },
+  "version": "transfer-independent-main-table-evaluation-v2"
+}

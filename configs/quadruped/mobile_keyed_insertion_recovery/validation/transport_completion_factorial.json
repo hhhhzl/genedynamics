@@ -1,0 +1,178 @@
+{
+  "version": "t4-transport-completion-factorial-v1",
+  "name": "transport_completion_factorial",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda"
+  },
+  "base_configs": {
+    "transport": {
+      "path": "configs/quadruped/mobile_keyed_insertion_recovery/main/cross_ebdm.yaml",
+      "sha256": "343620e2b6010257f11fe1871884ab0820d65b74dfee8467412039ca113bc3cf"
+    },
+    "task_only": {
+      "path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/task_only.yaml",
+      "sha256": "b082a5d1127bb1b94614ca04b4a78d4431d8a902a77dcfc6d13d3aae40e57d72"
+    }
+  },
+  "policy_sets": {
+    "transport": {
+      "training_report": {
+        "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport/checkpoints/report.json",
+        "sha256": "2bb6f3d9625c986d8c0e07ba1683c85670678e19b37ab49b2c28a736ddc9cb6c"
+      },
+      "composite_qualification": {
+        "config": {
+          "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/completion_projected_transport_all_instances.json",
+          "sha256": "1c3b8e278c3866690c515bfde146b4a9d6bf1c521d681b49398c68c69ab678e7"
+        },
+        "report": {
+          "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/completion_projected_transport/all_instances/report.json",
+          "sha256": "6fc0d742bff20cf5ae36df919a63f369be6d742b6075a378e5de935830c85851"
+        }
+      },
+      "method_identity": "ours_completion_tail_aligned_transport",
+      "binding_key": "cross_ebdm",
+      "control_policy": "qualified_completion_composite_endpoints"
+    },
+    "task_only": {
+      "training_report": {
+        "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_task_only/checkpoints/report.json",
+        "sha256": "6f519c116dac14871fca5d0bc2908497c29a178cc362c4d940d61a8fa11f3689"
+      },
+      "method_identity": "task_only_frozen_fallback",
+      "binding_key": "task_only",
+      "control_policy": "predeclared_frozen_task_only_fallback"
+    }
+  },
+  "design": {
+    "requests_per_instance": 8,
+    "factors": [
+      "policy_transport_vs_strong_task_only",
+      "public_completion_projection_off_vs_on"
+    ],
+    "same_checkpoint_within_projection_pair": true,
+    "same_requests_for_all_four_cells": true
+  },
+  "decision": {
+    "minimum_primary_success_rate_gain": 0.05,
+    "minimum_nonnegative_instances": 6,
+    "maximum_two_sided_exact_mcnemar_p_value": 0.05
+  },
+  "requests": [
+    {
+      "request_id": "TRANSPORT-COMPLETION-FACTORIAL/latency_gain_shift/support_nominal/m0",
+      "task": "T4",
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_nominal",
+      "requested_mode": 0,
+      "physical_initial_slot": 0,
+      "reset_seed": 4711000,
+      "mechanism_parameters": {"servo_gain": 0.7, "delay_steps": 3, "payload_mass": 0.5},
+      "body_support_parameters": {"robot": "go2_z1", "body_servo_gain": 1.0, "support_controller": "unchanged host OSQP stance WBC"},
+      "confirmation_state": false,
+      "performance_evidence": false
+    },
+    {
+      "request_id": "TRANSPORT-COMPLETION-FACTORIAL/latency_gain_shift/support_nominal/m1",
+      "task": "T4",
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_nominal",
+      "requested_mode": 1,
+      "physical_initial_slot": 0,
+      "reset_seed": 4711001,
+      "mechanism_parameters": {"servo_gain": 0.7, "delay_steps": 3, "payload_mass": 0.5},
+      "body_support_parameters": {"robot": "go2_z1", "body_servo_gain": 1.0, "support_controller": "unchanged host OSQP stance WBC"},
+      "confirmation_state": false,
+      "performance_evidence": false
+    },
+    {
+      "request_id": "TRANSPORT-COMPLETION-FACTORIAL/latency_gain_shift/support_derated_0p90/m0",
+      "task": "T4",
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_derated_0p90",
+      "requested_mode": 0,
+      "physical_initial_slot": 0,
+      "reset_seed": 4711002,
+      "mechanism_parameters": {"servo_gain": 0.7, "delay_steps": 3, "payload_mass": 0.5},
+      "body_support_parameters": {"robot": "go2_z1", "body_servo_gain": 0.9, "support_controller": "unchanged host OSQP stance WBC"},
+      "confirmation_state": false,
+      "performance_evidence": false
+    },
+    {
+      "request_id": "TRANSPORT-COMPLETION-FACTORIAL/latency_gain_shift/support_derated_0p90/m1",
+      "task": "T4",
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_derated_0p90",
+      "requested_mode": 1,
+      "physical_initial_slot": 0,
+      "reset_seed": 4711003,
+      "mechanism_parameters": {"servo_gain": 0.7, "delay_steps": 3, "payload_mass": 0.5},
+      "body_support_parameters": {"robot": "go2_z1", "body_servo_gain": 0.9, "support_controller": "unchanged host OSQP stance WBC"},
+      "confirmation_state": false,
+      "performance_evidence": false
+    },
+    {
+      "request_id": "TRANSPORT-COMPLETION-FACTORIAL/payload_shift/support_nominal/m0",
+      "task": "T4",
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_nominal",
+      "requested_mode": 0,
+      "physical_initial_slot": 0,
+      "reset_seed": 4711004,
+      "mechanism_parameters": {"servo_gain": 0.85, "delay_steps": 1, "payload_mass": 0.8},
+      "body_support_parameters": {"robot": "go2_z1", "body_servo_gain": 1.0, "support_controller": "unchanged host OSQP stance WBC"},
+      "confirmation_state": false,
+      "performance_evidence": false
+    },
+    {
+      "request_id": "TRANSPORT-COMPLETION-FACTORIAL/payload_shift/support_nominal/m1",
+      "task": "T4",
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_nominal",
+      "requested_mode": 1,
+      "physical_initial_slot": 0,
+      "reset_seed": 4711005,
+      "mechanism_parameters": {"servo_gain": 0.85, "delay_steps": 1, "payload_mass": 0.8},
+      "body_support_parameters": {"robot": "go2_z1", "body_servo_gain": 1.0, "support_controller": "unchanged host OSQP stance WBC"},
+      "confirmation_state": false,
+      "performance_evidence": false
+    },
+    {
+      "request_id": "TRANSPORT-COMPLETION-FACTORIAL/payload_shift/support_derated_0p90/m0",
+      "task": "T4",
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_derated_0p90",
+      "requested_mode": 0,
+      "physical_initial_slot": 0,
+      "reset_seed": 4711006,
+      "mechanism_parameters": {"servo_gain": 0.85, "delay_steps": 1, "payload_mass": 0.8},
+      "body_support_parameters": {"robot": "go2_z1", "body_servo_gain": 0.9, "support_controller": "unchanged host OSQP stance WBC"},
+      "confirmation_state": false,
+      "performance_evidence": false
+    },
+    {
+      "request_id": "TRANSPORT-COMPLETION-FACTORIAL/payload_shift/support_derated_0p90/m1",
+      "task": "T4",
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_derated_0p90",
+      "requested_mode": 1,
+      "physical_initial_slot": 0,
+      "reset_seed": 4711007,
+      "mechanism_parameters": {"servo_gain": 0.85, "delay_steps": 1, "payload_mass": 0.8},
+      "body_support_parameters": {"robot": "go2_z1", "body_servo_gain": 0.9, "support_controller": "unchanged host OSQP stance WBC"},
+      "confirmation_state": false,
+      "performance_evidence": false
+    }
+  ],
+  "limits": {
+    "workers": 4,
+    "maximum_wall_seconds": 1800,
+    "maximum_gpu_memory_GiB": 12,
+    "maximum_memory_GiB": 20
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/validation/transport_completion_factorial/qualified_composite_vs_task_only_gpu1"
+}

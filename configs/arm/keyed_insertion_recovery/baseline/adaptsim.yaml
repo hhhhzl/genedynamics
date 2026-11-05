@@ -1,0 +1,28 @@
+base: ../_base.yaml
+name: keyed_insertion_recovery_adaptsim
+method: adaptsim
+output_dir: results/arm/keyed_insertion_recovery/baseline/adaptsim
+metadata:
+  formal_experiment: false
+  formal_seeds: false
+  run_class: development
+method_params:
+  actor_binding:
+    version: transfer-actor-binding-v1
+    manifest: null
+    task: T3
+    family: main
+    binding_key: adaptsim
+    actor: adaptsim
+    status: instances_ready
+    instance_id: development_8737217
+    method_identity: AdaptSim_task_adapted_CEM
+    checkpoint:
+      path: results/arm/keyed_insertion_recovery/baseline/adaptsim/training/feedback_population_development_8737217/inference_and_policy.pt
+      sha256: d01c7f66459320e25ab1ac55114c400f74cda89e9c3f792d90cc6e6ba9cea28b
+    training_recipe:
+      path: results/arm/keyed_insertion_recovery/baseline/adaptsim/training/feedback_population_development_8737217/recipe.json
+      sha256: 218be39d306a60dd303ab756895773ccad1bd23e3aa4a22829941aace6a164f3
+    training_report:
+      path: results/arm/keyed_insertion_recovery/baseline/adaptsim/training/feedback_population_development_8737217/report.json
+      sha256: a69286eea4a86495d5755b30b0337de5a8dd794a3604d7cfb83b2d04932549fc

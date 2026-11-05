@@ -1,0 +1,28 @@
+{
+  "version": "transfer-independent-actor-development-evaluation-v1",
+  "task": "T1",
+  "method": "adaptsim",
+  "method_identity": "AdaptSim_task_adapted_CEM",
+  "actor_binding_source": "independent_actor_package",
+  "actor_package": {
+    "path": "results/arm/obstacle_transfer/baseline/adaptsim/validation/independent_actor_package_v1/report.json",
+    "sha256": "6255fbced92618446a38986cfe93e378464f73d33219504fd0599d69582e87af"
+  },
+  "instance_id": "independent_8811004",
+  "task_config": "configs/arm/obstacle_transfer/baseline/adaptsim.yaml",
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/baseline/adaptsim/training/independent_training_8811004/inference_and_policy.pt",
+    "sha256": "5d0a7669a72c4dc85fee3908ff34168ae7d9daafd19f1c661c73115c3da8a1a0"
+  },
+  "request_roster": {
+    "path": "configs/arm/obstacle_transfer/validation/adaptsim_independent_actor_source_nominal_roster.json",
+    "sha256": "3de6ca142619b8c7eb1673f66813ac0610acc32046d395a61d0c7e902c96d336"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/arm/obstacle_transfer/baseline/adaptsim/validation/independent_source_nominal_8811004",
+  "plan_output": "results/arm/obstacle_transfer/baseline/adaptsim/validation/plans/independent_source_nominal_8811004.json"
+}

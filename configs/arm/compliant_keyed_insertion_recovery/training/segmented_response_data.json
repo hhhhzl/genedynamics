@@ -1,0 +1,37 @@
+{
+  "version": "fixture-response-data-preparation-v1",
+  "output": "results/arm/compliant_keyed_insertion_recovery/training/segmented_response_data/robot_ik",
+  "response_spec": {
+    "history_len": 4,
+    "horizon": 10,
+    "maximum_joints": 32
+  },
+  "segment_steps": [
+    3,
+    6,
+    10
+  ],
+  "calibration_context": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "trajectories": [
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/cpu_qualification_robot_ik/seed_917001/public",
+      "public_sha256": "cb5b7405fb16e41635d71a0c5b25510681c32a67d5314cc8efeedd3ce0ce4312"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/cpu_qualification_robot_ik/seed_917002/public",
+      "public_sha256": "bee452acfe4d8f1b7f50248a5870fd5816375b771f7aa1d35bdd5b918db2c0ea"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/cpu_qualification_robot_ik/seed_917101/public",
+      "public_sha256": "ee94a2d9e08a902a3e9bbfbd269d8bfc4cad4a3adcf997e88d85dc7036cbdb0b"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/cpu_qualification_robot_ik/seed_917102/public",
+      "public_sha256": "c3c8446bd18ffea5f2319c2e59e5e683b296116795f1f8dae0ca80b053cc884c"
+    }
+  ]
+}

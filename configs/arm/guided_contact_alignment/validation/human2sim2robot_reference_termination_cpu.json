@@ -1,0 +1,25 @@
+{
+  "version": "human2sim2robot-reference-termination-diagnostic-v1",
+  "task": "T2",
+  "training_config": {
+    "path": "configs/arm/guided_contact_alignment/training/human2sim2robot_sanity_1m.json",
+    "sha256": "c562ab7d02918d08f828e1a01ecd365689f7079bc41026cf0bff1db7e33a2cb8"
+  },
+  "checkpoint": {
+    "path": "results/arm/guided_contact_alignment/baseline/human2sim2robot/training/robot_source_sanity_1m/seed_275000/selected_policy.pt",
+    "sha256": "0cb718d00b8fe31ba741d768167990a088f2d374e013af300818c7fde17e4f83"
+  },
+  "seed": 428200,
+  "budget": {
+    "nominal_episodes": 2,
+    "ppo_epochs": 2,
+    "ppo_actors": 4,
+    "ppo_horizon": 16,
+    "maximum_wall_seconds": 600,
+    "cpu_threads": 1,
+    "gpu_allowed": false
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/human2sim2robot/diagnostics/reference_termination_cpu",
+  "training_only_change": "terminate_on_reference_end=True; compare same selected checkpoint; original task success and safety unchanged",
+  "smoke_only": "PPO uses first two recorded reference frames solely to trigger terminal resets within 128 transitions; no performance evidence"
+}

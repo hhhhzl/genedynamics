@@ -6,7 +6,7 @@ The solver consumes public history tensors and returns policy actions; it does
 not construct task observations or own experiment lifecycle.
 
 Four-task history, command, body-chart, and action-decoder bindings live in
-`genedynamics.experiments.plugins.methods.transfer.fada`. Training, datasets,
+`genedynamics.tasks.transfer.controllers.fada`. Training, datasets,
 normalization, LoRA adaptation, and checkpoint production live in
 `genedynamics.solvers.single.fada.learning`.
 

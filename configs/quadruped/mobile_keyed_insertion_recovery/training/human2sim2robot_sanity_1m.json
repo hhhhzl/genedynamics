@@ -1,0 +1,67 @@
+{
+  "version": "human2sim2robot-learning-chain-audit-v1",
+  "task": "T4",
+  "body": "go2_z1",
+  "mode": 0,
+  "seed": 225000,
+  "demonstration": {
+    "path": "results/_development/p4_completion_20261015/results/quadruped/mobile_keyed_insertion_recovery/qualification/p4_public_dense_source_nominal_v1/level_zero_target/seed_87000/public_geometry/source/seed_87000/episode.npz",
+    "sha256": "f43af4a17301d3c87e44212f96e3690253fdb73f2efa029e071113f932c235b7"
+  },
+  "historical_run": {
+    "path": "results/_development/p5p6_baseline_completion_20261017/results/quadruped/mobile_keyed_insertion_recovery/validation/h2s2r_public_nominal_v1/level_native4096_mode0/seed_225000",
+    "report_sha256": "a9ca9f8cb786e61c3002a6342655023440c139f91231563242ae76ccec8f10be",
+    "learning_curve_sha256": "6213e71b5c959aecd7fd341e223a70145e3a55597cdbc6b7ae12a9997e13b4dc",
+    "monitor_curve_sha256": "660c21efda381420a66dfcfdbdcf7cc891ae89e7d183be8a4ce9be6e114a38f6"
+  },
+  "audit": {
+    "reset_samples": 8,
+    "neutral_rollout_steps": 64,
+    "reference_stop_error_m": 0.2,
+    "action_saturation_threshold": 0.98
+  },
+  "pilot": {
+    "status": "planned_not_started",
+    "launch_order": 4,
+    "physical_gpu": "GPU1",
+    "expected_physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "cuda_visible_devices": "1",
+    "process_device": "cuda:0",
+    "num_actors": 64,
+    "horizon_steps": 16,
+    "epochs": 1024,
+    "training_transitions": 1048576,
+    "monitor_epochs": [
+      64,
+      128,
+      256,
+      512,
+      1024
+    ],
+    "monitor_seeds": [
+      325010,
+      325011,
+      325012,
+      325013,
+      325014,
+      325015,
+      325016,
+      325017
+    ],
+    "checkpoint_selection": [
+      "success_rate",
+      "constraint_violation_rate",
+      "reference_completion",
+      "terminal_tracking_error",
+      "action_saturation",
+      "earliest_tie"
+    ],
+    "maximum_gpu_memory_gib": 6,
+    "maximum_wall_seconds": 27000,
+    "target_calls_during_training": 0,
+    "admission": "launch after the T1, T3, and T2 routes; one-million-transition T4 learning sanity; retain every checkpoint and failure; require coupled support and reference progress without a constraint violation before target pilot"
+  },
+  "pilot_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/human2sim2robot/training/robot_source_sanity_1m/seed_325000",
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/human2sim2robot/diagnostics/learning_chain_cpu_sanity_1m",
+  "scope": "CPU audit of the task-adapted robot-source trajectory route; not native human-video reproduction and not paper performance evidence"
+}

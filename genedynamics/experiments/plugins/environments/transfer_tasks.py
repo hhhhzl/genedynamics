@@ -8,7 +8,7 @@ import numpy as np
 
 from genedynamics.envs.adapters.transfer_task import instantiate_task
 from genedynamics.experiments.framework.base import EnvironmentPlugin
-from genedynamics.tasks.transfer.runtime import MechanismSpec
+from genedynamics.tasks.transfer.specs import mechanism_spec
 
 
 class TransferTaskEnvironmentPlugin(EnvironmentPlugin):
@@ -30,8 +30,14 @@ class TransferTaskEnvironmentPlugin(EnvironmentPlugin):
         history_len = int(values.pop("history_len", 4))
         initial = values.pop("initial", None)
         mode = int(values.pop("mode", 0))
+        shared_execution = values.pop("shared_execution", None)
         mechanism_values = dict(values.pop("mechanism", {}))
-        mechanism = MechanismSpec(**mechanism_values) if mechanism_values else None
+        body_support = dict(values.pop("body_support", {}))
+        mechanism = mechanism_spec(
+            self.task_name,
+            mechanism_values,
+            body_support_parameters=body_support,
+        )
         task = instantiate_task(
             self.task_name,
             robot=robot,
@@ -39,6 +45,7 @@ class TransferTaskEnvironmentPlugin(EnvironmentPlugin):
             seed=seed,
             history_len=history_len,
             config_overrides=values or None,
+            shared_execution=shared_execution,
         )
         task.target = np.asarray(
             task.config.goal_position
@@ -60,15 +67,26 @@ class TransferTaskEnvironmentPlugin(EnvironmentPlugin):
     def extract_position(self, state: Any) -> np.ndarray:
         if isinstance(state, dict) and "tcp_position" in state:
             return np.asarray(state["tcp_position"]).reshape(-1, 3)[0]
-        value = np.asarray(state)
-        return value.reshape(-1)[:3]
+        if not hasattr(self, "_public_tcp_slice"):
+            raise ValueError("reset the transfer environment before decoding flat states")
+        return np.asarray(state).reshape(-1)[self._public_tcp_slice]
 
     def reset_state(self, env: Any, seed: int) -> Any:
-        public = env.reset(
-            (int(seed),), seed=int(seed), initial=env._experiment_initial
-        )
-        env.set_modes([env._experiment_mode])
-        return public
+        try:
+            public = env.reset(
+                (int(seed),), seed=int(seed), initial=env._experiment_initial,
+                modes=[env._experiment_mode],
+            )
+            field = next(row for row in env.public_state_fields() if row["name"] == "tcp_position")
+            self._public_tcp_slice = slice(field["start"], field["stop"])
+            return public
+        except Exception as error:
+            from genedynamics.tasks.transfer.episode import episode_evidence
+            error.recorded_evidence = {
+                "transfer_episodes": episode_evidence(env.records, env.spec, env.evaluate()),
+            }
+            error.execution_accounting = dict(env.accounting)
+            raise
 
 
 def transfer_environment_plugins() -> list[TransferTaskEnvironmentPlugin]:
@@ -79,6 +97,10 @@ def transfer_environment_plugins() -> list[TransferTaskEnvironmentPlugin]:
             "guided_contact_alignment",
             "keyed_insertion_recovery",
             "mobile_keyed_insertion_recovery",
+            "compliant_keyed_insertion_recovery",
+            "aperture_brake",
+            "corner_guided_seating",
+            "compliant_fixture_insertion",
         )
     ]
 

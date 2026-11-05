@@ -1,0 +1,181 @@
+{
+  "version": "four-task-paired-development-diagnosis-v2",
+  "name": "completion_budget_pre_descent_settling_exact_request_gate",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda"
+  },
+  "seed_anchor": 4694000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "label": "public_geometry_pre_descent_settling_reference",
+      "instances": "fixed"
+    },
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_pre_descent_settling",
+      "instances": [
+        "instance_06",
+        "instance_07"
+      ],
+      "task_actor_interface": "public-T2-completion-budget-pre-descent-settling-v14",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.008,
+        "reference_lag_zero_authority_m": 0.012,
+        "maximum_authority_decay_per_control": 0.05,
+        "completion_progress_floor_mps": 0.02,
+        "post_traverse_reserve_controls": 100,
+        "completion_budget_taper_controls": 60,
+        "force_speed_full_authority_mps": 0.01,
+        "force_speed_zero_authority_mps": 0.025
+      }
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "task_only_pre_descent_settling",
+      "instances": [
+        "instance_01",
+        "instance_02",
+        "instance_04",
+        "instance_06",
+        "instance_08"
+      ],
+      "task_actor_interface": "public-T2-completion-budget-pre-descent-settling-v14",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.008,
+        "reference_lag_zero_authority_m": 0.012,
+        "maximum_authority_decay_per_control": 0.05,
+        "completion_progress_floor_mps": 0.02,
+        "post_traverse_reserve_controls": 100,
+        "completion_budget_taper_controls": 60,
+        "force_speed_full_authority_mps": 0.01,
+        "force_speed_zero_authority_mps": 0.025
+      }
+    },
+    {
+      "family": "main",
+      "key": "response_mpc",
+      "label": "response_mpc_pre_descent_settling",
+      "instances": [
+        "instance_04"
+      ],
+      "task_actor_interface": "public-T2-completion-budget-pre-descent-settling-v14",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.008,
+        "reference_lag_zero_authority_m": 0.012,
+        "maximum_authority_decay_per_control": 0.05,
+        "completion_progress_floor_mps": 0.02,
+        "post_traverse_reserve_controls": 100,
+        "completion_budget_taper_controls": 60,
+        "force_speed_full_authority_mps": 0.01,
+        "force_speed_zero_authority_mps": 0.025
+      }
+    },
+    {
+      "family": "ablation",
+      "key": "matching_no_band",
+      "label": "matching_no_band_pre_descent_settling",
+      "instances": [
+        "instance_06",
+        "instance_07"
+      ],
+      "task_actor_interface": "public-T2-completion-budget-pre-descent-settling-v14",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.008,
+        "reference_lag_zero_authority_m": 0.012,
+        "maximum_authority_decay_per_control": 0.05,
+        "completion_progress_floor_mps": 0.02,
+        "post_traverse_reserve_controls": 100,
+        "completion_budget_taper_controls": 60,
+        "force_speed_full_authority_mps": 0.01,
+        "force_speed_zero_authority_mps": 0.025
+      }
+    },
+    {
+      "family": "ablation",
+      "key": "band_only",
+      "label": "band_only_pre_descent_settling",
+      "instances": [
+        "instance_08"
+      ],
+      "task_actor_interface": "public-T2-completion-budget-pre-descent-settling-v14",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.008,
+        "reference_lag_zero_authority_m": 0.012,
+        "maximum_authority_decay_per_control": 0.05,
+        "completion_progress_floor_mps": 0.02,
+        "post_traverse_reserve_controls": 100,
+        "completion_budget_taper_controls": 60,
+        "force_speed_full_authority_mps": 0.01,
+        "force_speed_zero_authority_mps": 0.025
+      }
+    },
+    {
+      "family": "ablation",
+      "key": "ungated_full",
+      "label": "ungated_full_pre_descent_settling",
+      "instances": [
+        "instance_04"
+      ],
+      "task_actor_interface": "public-T2-completion-budget-pre-descent-settling-v14",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.008,
+        "reference_lag_zero_authority_m": 0.012,
+        "maximum_authority_decay_per_control": 0.05,
+        "completion_progress_floor_mps": 0.02,
+        "post_traverse_reserve_controls": 100,
+        "completion_budget_taper_controls": 60,
+        "force_speed_full_authority_mps": 0.01,
+        "force_speed_zero_authority_mps": 0.025
+      }
+    }
+  ],
+  "scope": "GPU1-only exact-request bounded gate for the public-T2-completion-budget-pre-descent-settling-v14 interface. Pair the same 104 requests used to reject v13 against the frozen v12/v13 evidence: all selected mode-1 failures and preserved-success neighbors, the declared ungated mode-0 pre-outlet collision, and eight unwrapped public sentinels. Retain the v12 far-field requirement, capture latch, post-settling completion feedback, authority law, task limits, deadline, actors, reset seeds, mode-0 behavior and evaluator. Require public 8/8, all 48 wrapped mode-1 episodes successful, all 47 prior wrapped mode-0 successes preserved, the ungated mode-0 collision as the sole declared failure, and zero execution/evidence errors. Development evidence only; no performance claim, failure replacement or parameter scan."
+}

@@ -1,0 +1,14 @@
+base: progress_qualified_contact.yaml
+name: guided_contact_alignment_wrench_governed_contact
+output_dir: results/arm/guided_contact_alignment/validation/wrench_governed_contact
+seeds:
+- 930238
+- 930239
+- 930240
+- 930241
+method_params:
+  actor_binding:
+    reference_version: public_wrench_governed_guide_contact_v3
+metadata:
+  protocol: transfer_wrench_governed_contact
+  selection_rule: require both requested xArm modes on all four fresh resets to satisfy the unchanged strict contact, force, mode, and deadline criteria

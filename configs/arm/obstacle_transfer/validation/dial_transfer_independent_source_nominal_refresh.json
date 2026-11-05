@@ -1,0 +1,45 @@
+{
+  "controller_source": {
+    "path": "genedynamics/tasks/transfer/controllers/dial.py",
+    "sha256": "6d4d95202ab8b3c29d26cde0c42203d467ff98898da8b6d1ad9b0617afd7638a"
+  },
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "formal_request_seed_access": 0,
+  "instance_ids": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "maximum_physical_episodes": 64,
+  "method": "dial_transfer",
+  "method_identity": "DIAL_MPC",
+  "output": "results/arm/obstacle_transfer/baseline/dial/validation/independent_source_nominal_cohort_v2",
+  "previous_cohort": {
+    "path": "results/arm/obstacle_transfer/baseline/dial/validation/independent_source_nominal_cohort_v1/independent_audit.json",
+    "sha256": "230ac578dd19a0c8ac5ed3fde1463fa7f942012171524f757e9054d14e5dd6bd"
+  },
+  "source_manifest": {
+    "path": "genedynamics/solvers/single/dial/source_manifest.json",
+    "sha256": "e80c876698af966e0348d7856a6a98230a6d212ce7d8ea2ea114c8c60b8487ec"
+  },
+  "source_roster": {
+    "path": "configs/arm/obstacle_transfer/validation/method_source_nominal_actor_roster.json",
+    "sha256": "23483cfb756ee4c73a4929abdf73f3a31491dd8497a9d995e47872dd2af24cc1"
+  },
+  "task": "T1",
+  "task_config": {
+    "path": "configs/arm/obstacle_transfer/baseline/dial.yaml",
+    "sha256": "97b4660b79db8a05b0327970de5fedcd82e61b3b7629a3961e390cf741f39637"
+  },
+  "version": "transfer-dial-current-source-nominal-cohort-v2"
+}

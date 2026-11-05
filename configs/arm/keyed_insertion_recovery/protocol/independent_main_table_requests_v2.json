@@ -1,0 +1,823 @@
+{
+  "failure_replacement": false,
+  "formal_performance_evidence": false,
+  "request_access": "sealed_unaccessed; no training, tuning, or pilot may use these seeds",
+  "request_count": 40,
+  "requests": [
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/source/xarm7_fixed_base/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703000,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/source/xarm7_fixed_base/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703001,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/source/xarm7_fixed_base/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703002,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/source/xarm7_fixed_base/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703003,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/source/xarm7_fixed_base/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703004,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/source/xarm7_fixed_base/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703005,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/source/xarm7_fixed_base/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703006,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/source/xarm7_fixed_base/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703007,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/source/xarm7_fixed_base/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703008,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/source/xarm7_fixed_base/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703009,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/nominal/xarm7_fixed_base/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703010,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/nominal/xarm7_fixed_base/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703011,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/nominal/xarm7_fixed_base/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703012,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/nominal/xarm7_fixed_base/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703013,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/nominal/xarm7_fixed_base/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703014,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/nominal/xarm7_fixed_base/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703015,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/nominal/xarm7_fixed_base/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703016,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/nominal/xarm7_fixed_base/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703017,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/nominal/xarm7_fixed_base/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703018,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/nominal/xarm7_fixed_base/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703019,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/latency_gain_shift/xarm7_fixed_base/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703020,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/latency_gain_shift/xarm7_fixed_base/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703021,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/latency_gain_shift/xarm7_fixed_base/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703022,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/latency_gain_shift/xarm7_fixed_base/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703023,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/latency_gain_shift/xarm7_fixed_base/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703024,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/latency_gain_shift/xarm7_fixed_base/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703025,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/latency_gain_shift/xarm7_fixed_base/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703026,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/latency_gain_shift/xarm7_fixed_base/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703027,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/latency_gain_shift/xarm7_fixed_base/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703028,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/latency_gain_shift/xarm7_fixed_base/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703029,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/payload_shift/xarm7_fixed_base/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703030,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/payload_shift/xarm7_fixed_base/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703031,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/payload_shift/xarm7_fixed_base/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703032,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/payload_shift/xarm7_fixed_base/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703033,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/payload_shift/xarm7_fixed_base/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703034,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/payload_shift/xarm7_fixed_base/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703035,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/payload_shift/xarm7_fixed_base/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703036,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/payload_shift/xarm7_fixed_base/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703037,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/payload_shift/xarm7_fixed_base/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9703038,
+      "task": "T3"
+    },
+    {
+      "body_support_group": "xarm7_fixed_base",
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v2/T3/payload_shift/xarm7_fixed_base/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9703039,
+      "task": "T3"
+    }
+  ],
+  "shared_execution": {
+    "insertion_lead_z_m": 0.015,
+    "retreat_release_version": "safe_settled_v1",
+    "version": "four-task-shared-execution-v3"
+  },
+  "shared_task_contract": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/public_v6.json",
+    "sha256": "ba1e0aaaaf0591decba128f40e666394ba43c729b16d5de4c817dff617bf8a96"
+  },
+  "task": "T3",
+  "task_config": {
+    "path": "configs/arm/keyed_insertion_recovery/_base.yaml",
+    "sha256": "d08e4c3aa5fc5d3981037adc6694a838f56e54bf2a1105d216570c947851ac30"
+  },
+  "version": "four-task-independent-main-table-requests-v2"
+}

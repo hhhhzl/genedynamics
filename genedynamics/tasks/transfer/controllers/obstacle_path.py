@@ -11,6 +11,8 @@ class PublicObstaclePathPolicy(PublicObstacleFeedbackPolicy):
         if self.path.shape!=(4,) or not np.isfinite(self.path).all():raise ValueError('x2/z2/x3/z3 public path parameters')
         super().__init__(spec,modes=modes)
         if spec.config.robot=='xarm7':self.routes[0,1,[0,2]]=self.path[:2];self.routes[0,2,[0,2]]=self.path[2:]
+        elif spec.config.robot=='ur5e':self.routes[0,2,[0,2]]=self.path[:2];self.routes[0,3,[0,2]]=self.path[2:]
+        self._refresh_routes()
     def get_state(self):return dict(super().get_state(),path=self.path.copy())
     def restore(self,state):
         if not np.array_equal(state['path'],self.path):raise ValueError('planned route differs')

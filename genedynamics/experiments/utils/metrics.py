@@ -13,7 +13,7 @@ import argparse
 import csv
 import hashlib
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
@@ -516,6 +516,747 @@ def _paired_sign_flip_p(delta: np.ndarray, seed: int = 20260824) -> float:
     signs = rng.choice((-1.0, 1.0), size=(10000, delta.size))
     null = np.abs((signs * delta[None, :]).mean(axis=1))
     return float((np.count_nonzero(null >= observed) + 1) / (len(null) + 1))
+
+
+def paired_block_bootstrap(
+    values: np.ndarray, *, resamples: int = 10000, seed: int = 267100,
+) -> np.ndarray:
+    """Resample crossed instance/request units, retaining modes in each block.
+
+    Axes: instance, fixed stratum, physical initial block, mode, metric.
+    Request draws are shared across sampled instances; otherwise a common
+    evaluation cohort would incorrectly become independent reset cohorts.
+    Returned axes: bootstrap draw, stratum, mode, metric.  A deterministic
+    comparator is broadcast before subtraction, never resampled as trained
+    instances.  No physics or learned runtime is imported here.
+    """
+    values = np.asarray(values, dtype=float)
+    if values.ndim != 5 or min(values.shape) < 1 or not np.isfinite(values).all():
+        raise ValueError("expected finite instance/stratum/initial/mode/metric tensor")
+    if resamples < 1:
+        raise ValueError("resamples must be positive")
+    instances, strata, initials, _, _ = values.shape
+    rng = np.random.default_rng(seed)
+    result = []
+    # Bound temporary memory even for a larger experiment matrix.
+    for start in range(0, resamples, 200):
+        count = min(200, resamples - start)
+        instance_draw = rng.integers(instances, size=(count, instances))
+        initial_draw = rng.integers(initials, size=(count, strata, initials))
+        sampled = values[
+            instance_draw[:, :, None, None],
+            np.arange(strata)[None, None, :, None],
+            initial_draw[:, None, :, :],
+        ]
+        result.append(sampled.mean(axis=(1, 3)))
+    return np.concatenate(result)
+
+
+def exact_instance_sign_flip(delta: np.ndarray) -> float | None:
+    """Supplemental two-sided symmetry test, conditional on evaluated requests.
+
+    This is not a randomized treatment test or a replacement for the crossed
+    bootstrap.  Each whole trained/calibrated instance gets one sign.
+    """
+    delta = np.asarray(delta, dtype=float)
+    if delta.ndim != 1 or not np.isfinite(delta).all():
+        raise ValueError("instance differences must be a finite vector")
+    if len(delta) < 2:
+        return None
+    if len(delta) > 16:
+        raise ValueError("exact sign flip is limited to 16 independent instances")
+    masks = np.arange(2 ** len(delta))[:, None]
+    signs = 2 * ((masks >> np.arange(len(delta))) & 1) - 1
+    null = np.abs((signs * delta).mean(axis=1))
+    return float(np.mean(null >= abs(delta.mean()) - 1e-12))
+
+
+def holm_adjust(pvalues: Sequence[float]) -> list[float]:
+    """Holm adjusted p-values in the original order, including ties."""
+    values = np.asarray(pvalues, dtype=float)
+    if not np.isfinite(values).all() or np.any((values < 0) | (values > 1)):
+        raise ValueError("invalid p-value")
+    order = np.argsort(values, kind="stable")
+    adjusted = np.empty(len(values))
+    if len(values):
+        adjusted[order] = np.minimum(
+            1, np.maximum.accumulate(values[order] * np.arange(len(values), 0, -1))
+        )
+    return adjusted.tolist()
+
+
+_OUTCOME_METRICS = (
+    "constrained_success", "constraint_violation",
+    "capped_normalized_completion_time",
+)
+_TABLE_METRICS = (
+    "constrained_success_rate", "constraint_violation_rate",
+    "capped_normalized_completion_time", "worst_group_constrained_success",
+)
+
+
+def _outcome_tensor(rows: Sequence[dict]) -> tuple[np.ndarray, dict]:
+    """Validate a balanced outcome cell and collapse non-training aliases."""
+    roles = {row["instance_role"] for row in rows}
+    if len(roles) != 1:
+        raise ValueError("a cell must have one explicit instance role")
+    learned = roles == {"independent_training_or_calibration_instance"}
+    rejected = all(row["predeployment_rejection"] == 1 for row in rows)
+    if not learned and not rejected and roles != {"deterministic_single_identity"}:
+        raise ValueError("unrecognized independent-unit definition")
+    instances = sorted({row["training_or_calibration_instance"] for row in rows})
+    strata = sorted({(r["mechanism_group"], r["body_support_cell"]) for r in rows})
+    initials = sorted({int(r["physical_initial_slot"]) for r in rows})
+    modes = sorted({int(r["requested_mode"]) for r in rows})
+    lookup = {}
+    for row in rows:
+        key = (row["training_or_calibration_instance"],
+               (row["mechanism_group"], row["body_support_cell"]),
+               int(row["physical_initial_slot"]), int(row["requested_mode"]))
+        if key in lookup:
+            raise ValueError("duplicate instance/request outcome")
+        lookup[key] = [float(row[key]) for key in _OUTCOME_METRICS]
+    if len(lookup) != len(instances) * len(strata) * len(initials) * len(modes):
+        raise ValueError("unbalanced outcome cell; never silently drop pairs")
+    tensor = np.asarray([
+        [[[lookup[instance, stratum, initial, mode] for mode in modes]
+          for initial in initials] for stratum in strata] for instance in instances
+    ])
+    if not learned:
+        if not np.array_equal(tensor, np.broadcast_to(tensor[0], tensor.shape)):
+            raise ValueError("non-training slots are not identical scoring aliases")
+        tensor = tensor[:1]
+    return tensor, {
+        "independent_training_instances": len(instances) if learned else 0,
+        "deterministic_identities": int(not learned and not rejected),
+        "planned_instance_slots": len(instances),
+        "all_predeployment_rejected": rejected,
+        "instance_ids": instances if learned else [],
+        "strata": strata, "initial_blocks_per_stratum": len(initials),
+        "initial_ids": initials, "modes": modes,
+    }
+
+
+def _outcome_statistics(group_means: np.ndarray) -> np.ndarray:
+    """Last axes are mechanism/support, mode, metric; worst is their joint min."""
+    return np.concatenate((
+        group_means.mean(axis=(-3, -2)),
+        group_means[..., 0].min(axis=(-2, -1))[..., None],
+    ), axis=-1)
+
+
+def _interval(values: np.ndarray) -> list[float]:
+    return np.quantile(values, [0.025, 0.975]).tolist()
+
+
+def _select_strongest_baseline(points: dict[str, np.ndarray]) -> str:
+    """Apply the frozen success/safety/speed/ascending-id ordering."""
+    if not points:
+        raise ValueError("at least one strong baseline is required")
+    return min(
+        points,
+        key=lambda method: (
+            -float(points[method][0]),
+            float(points[method][1]),
+            float(points[method][2]),
+            method,
+        ),
+    )
+
+
+def _alias_specs(aliases: dict[str, Any], tasks: Sequence[str]) -> list[dict[str, Any]]:
+    """Normalize legacy all-task aliases and task-scoped alias declarations."""
+    known_tasks = set(tasks)
+    specs = []
+    for main, declaration in aliases.items():
+        if isinstance(declaration, str):
+            spec = {
+                "main": main, "ablation": declaration, "tasks": list(tasks),
+                "tolerated_failure_categories": [],
+            }
+        elif isinstance(declaration, dict):
+            allowed = {"method", "tasks", "tolerated_failure_categories"}
+            unexpected = set(declaration) - allowed
+            if unexpected:
+                raise ValueError(f"unexpected alias fields: {sorted(unexpected)}")
+            spec = {
+                "main": main,
+                "ablation": declaration["method"],
+                "tasks": list(declaration.get("tasks", tasks)),
+                "tolerated_failure_categories": list(
+                    declaration.get("tolerated_failure_categories", ())
+                ),
+            }
+        else:
+            raise TypeError("alias declaration must be a method name or mapping")
+        unknown = set(spec["tasks"]) - known_tasks
+        if unknown:
+            raise ValueError(f"alias names unknown tasks: {sorted(unknown)}")
+        specs.append(spec)
+    return specs
+
+
+def summarize_confirmation(
+    root: Path, source: Path, output: Path, *, references: dict[str, str],
+    ablation_terms: dict[str, dict[str, float]], aliases: dict[str, str],
+    permission_classes: dict[str, str],
+    resamples: int = 10000, seed: int = 267100,
+    contract_limitations: Sequence[str] = (),
+    protocol_sources: Sequence[dict] = (),
+) -> dict:
+    """Independently audit saved outcomes and write new CPU-only statistics.
+
+    Does not call the execution aggregator, change its SHA-bound artifacts, or
+    certify physical predicates that were not persisted.  References and named
+    scientific contrasts are supplied by the paper entrypoint.
+    """
+    root = root.resolve()
+    source = (root / source).resolve()
+    output = (root / output).resolve()
+    if output.exists():
+        raise FileExistsError(f"derived output must be a new directory: {output}")
+    launch_path, audit_path = source / "launch.json", source / "audit.json"
+    launch = json.loads(launch_path.read_text())
+    audit = json.loads(audit_path.read_text())
+    if launch["status"] != "complete" or not audit["passed"]:
+        raise ValueError("input confirmation is not complete and execution-audited")
+    inputs = {}
+
+    def checked(label, pointer):
+        path = (root / pointer["path"]).resolve()
+        actual = _file_sha256(path)
+        if actual != pointer["sha256"]:
+            raise ValueError(f"input SHA256 mismatch: {label}")
+        inputs[label] = {"path": str(path.relative_to(root)), "sha256": actual}
+        return path
+
+    for label, pointer in audit["artifacts"].items():
+        checked(f"audit.{label}", pointer)
+    paths = {
+        label: checked(label, launch[label])
+        for label in ("outcomes", "aggregates", "state_receipts", "package_report")
+    }
+    paths.update({
+        label: checked(label, pointer)
+        for label, pointer in launch["sealed_artifacts"].items()
+    })
+    package = json.loads(paths["package_report"].read_text())
+    claim_contract = package.get("transport_claim_contract")
+    if (
+        package.get("version") == "four-task-transfer-confirmation-package-v11"
+        and claim_contract is None
+    ):
+        raise ValueError("confirmation package has no frozen transport claim contract")
+    if claim_contract is not None and (
+        not isinstance(claim_contract, dict)
+        or claim_contract.get("version")
+        != "four-task-stable-transport-and-strong-baseline-v1"
+    ):
+        raise ValueError("confirmation package has an invalid transport claim contract")
+    inputs["launch"] = {"path": str(launch_path.relative_to(root)),
+                        "sha256": _file_sha256(launch_path)}
+    inputs["execution_audit"] = {"path": str(audit_path.relative_to(root)),
+                                 "sha256": _file_sha256(audit_path)}
+    protocol_evidence = []
+    for index, pointer in enumerate(protocol_sources):
+        path = checked(f"protocol.{index}", pointer)
+        evidence = dict(pointer)
+        if pointer.get("member"):
+            import zipfile
+
+            with zipfile.ZipFile(path) as archive:
+                data = archive.read(pointer["member"])
+            if hashlib.sha256(data).hexdigest() != pointer["member_sha256"]:
+                raise ValueError("archived protocol member SHA256 mismatch")
+        protocol_evidence.append(evidence)
+
+    def read_lines(path):
+        return [json.loads(line) for line in path.read_text().splitlines() if line]
+
+    rows = read_lines(paths["outcomes"])
+    schedule = read_lines(paths["evaluation_schedule"])
+    roster_rows = read_lines(paths["request_roster"])
+    roster = {r["request_id"]: r for r in roster_rows}
+    if len(roster) != len(roster_rows):
+        raise ValueError("duplicate roster request")
+    by_id = {row["record_id"]: row for row in rows}
+    if len(by_id) != len(rows) or set(by_id) != {r["schedule_id"] for r in schedule}:
+        raise ValueError("outcomes do not uniquely cover the frozen schedule")
+    if len(schedule) != len(rows) or len(rows) != launch["completed_records"]:
+        raise ValueError("schedule/launch count mismatch")
+    if sorted(r["ordinal"] for r in rows) != list(range(1, len(rows) + 1)):
+        raise ValueError("outcome ordinals are not a complete unique sequence")
+    for scheduled in schedule:
+        row = by_id[scheduled["schedule_id"]]
+        for key in ("family", "method", "task"):
+            if row[key] != scheduled[key]:
+                raise ValueError(f"schedule identity mismatch: {key}")
+        if row["base_request_id"] != scheduled["request_id"]:
+            raise ValueError("scheduled request identity mismatch")
+        scheduled_instance = scheduled.get("instance") or scheduled.get("training_or_calibration_instance")
+        if scheduled_instance and row["training_or_calibration_instance"] != scheduled_instance:
+            raise ValueError("scheduled instance identity mismatch")
+        request = roster[row["base_request_id"]]
+        for key in ("task", "mechanism_group", "body_support_cell",
+                    "requested_mode", "physical_initial_slot"):
+            if row[key] != request[key]:
+                raise ValueError(f"roster metadata mismatch: {key}")
+        if row["confirmation_seed"] != request["reset_seed"]:
+            raise ValueError("confirmation seed mismatch")
+        scores = [row[m] for m in _OUTCOME_METRICS]
+        if not all(np.isfinite(v) and 0 <= v <= 1 for v in scores):
+            raise ValueError("invalid bounded metric")
+        rejected = bool(row["predeployment_rejection"])
+        if rejected and (scores != [0, 1, 1] or row["target_physical_execution"]):
+            raise ValueError("rejection penalty/execution mismatch")
+        if not rejected and not row["target_physical_execution"]:
+            raise ValueError("non-rejected result has no physical execution")
+        if row["constrained_success"] and (row["constraint_violation"] or rejected):
+            raise ValueError("successful outcome conflicts with penalty")
+    receipts = read_lines(paths["state_receipts"])
+    physical_ids = {r["record_id"] for r in rows if r["target_physical_execution"]}
+    if len(physical_ids) != launch["physical_executions"]:
+        raise ValueError("launch physical count differs from outcomes")
+    if len(receipts) != len(physical_ids) or {r["record_id"] for r in receipts} != physical_ids:
+        raise ValueError("physical receipts do not uniquely cover execution")
+    reset_hashes = defaultdict(set)
+    for receipt in receipts:
+        if receipt["written_before_first_actuation"] is not True:
+            raise ValueError("receipt was not persisted before action")
+        row = by_id[receipt["record_id"]]
+        for key in ("base_request_id", "task", "family", "method", "instance_role",
+                    "training_or_calibration_instance", "requested_mode", "body_support_cell",
+                    "mechanism_group", "physical_initial_slot", "confirmation_seed"):
+            if receipt[key] != row[key]:
+                raise ValueError(f"receipt identity mismatch: {key}")
+        reset_hashes[receipt["base_request_id"]].add(receipt["post_reset_state_sha256"])
+    if any(len(hashes) != 1 for hashes in reset_hashes.values()):
+        raise ValueError("paired requests have inconsistent reset states")
+
+    cells = defaultdict(list)
+    for row in rows:
+        cells[row["family"], row["method"], row["task"]].append(row)
+    old = {(r["family"], r["method"], r["task"]): r
+           for r in json.loads(paths["aggregates"].read_text())}
+    if set(cells) != set(old):
+        raise ValueError("stored aggregate identities differ from raw outcomes")
+    summaries, groups, corrections, tensors, draws, metadata = [], [], [], {}, {}, {}
+    for key, items in sorted(cells.items()):
+        tensor, meta = _outcome_tensor(items)
+        tensors[key], metadata[key] = tensor, meta
+        bootstrap = paired_block_bootstrap(tensor, resamples=resamples, seed=seed)
+        draws[key] = _outcome_statistics(bootstrap)
+        point = _outcome_statistics(tensor.mean(axis=(0, 2)))
+        count = len(items)
+        physical = [r for r in items if r["target_physical_execution"]]
+        summary = dict(zip(("family", "method", "task"), key))
+        summary.update(meta)
+        summary.update({
+            "requested_episodes": count, "unique_requests": len({r["base_request_id"] for r in items}),
+            "target_physical_execution_count": len(physical),
+            "successes": sum(r["constrained_success"] for r in items),
+            "predeployment_rejection_rate": sum(r["predeployment_rejection"] for r in items) / count,
+            "executed_constraint_violation_rate": (
+                sum(r["constraint_violation"] for r in physical) / len(physical)
+                if physical else None
+            ),
+            "outcomes": dict(Counter(r["failure_category"] for r in items)),
+            "rejection_reasons": dict(Counter(r["rejection_reason"] for r in items
+                                             if r["predeployment_rejection"])),
+            "metric_scope": "recorded_evaluator_scores",
+        })
+        for index, metric in enumerate(_TABLE_METRICS):
+            summary[metric] = float(point[index])
+            summary[f"{metric}_ci95"] = (
+                None if meta["all_predeployment_rejected"] else _interval(draws[key][:, index])
+            )
+            previous = old[key][metric]
+            if not np.isclose(previous, point[index], atol=1e-12, rtol=0):
+                if metric != "worst_group_constrained_success":
+                    raise ValueError(f"unexpected aggregate discrepancy: {key}/{metric}")
+                corrections.append({**dict(zip(("family", "method", "task"), key)),
+                                    "metric": metric, "original": previous,
+                                    "corrected": float(point[index]),
+                                    "reason": "joint mechanism/support/requested-mode groups"})
+        for metric in ("requested_episodes", "target_physical_execution_count",
+                       "predeployment_rejection_rate", "outcomes"):
+            if summary[metric] != old[key][metric]:
+                raise ValueError(f"independent count audit failed: {key}/{metric}")
+        summaries.append(summary)
+        grouped = defaultdict(list)
+        for row in items:
+            grouped[row["mechanism_group"], row["body_support_cell"], row["requested_mode"]].append(row)
+        for group, members in sorted(grouped.items()):
+            physical_group = [r for r in members if r["target_physical_execution"]]
+            group_row = {**dict(zip(("family", "method", "task"), key)),
+                         **dict(zip(("mechanism_group", "body_support_cell", "requested_mode"), group)),
+                         "requested_episodes": len(members),
+                         "physical_executions": len(physical_group),
+                         "successes": sum(r["constrained_success"] for r in members),
+                         "outcomes": dict(Counter(r["failure_category"] for r in members))}
+            for name in ("physical_control_steps", "final_position_error_m", "force_peak_N",
+                         "continuous_guide_contact_ratio"):
+                values = [r[name] for r in physical_group if r.get(name) is not None]
+                group_row[f"{name}_min_median_max"] = (
+                    [min(values), float(np.median(values)), max(values)] if values else None
+                )
+            groups.append(group_row)
+
+    alias_checks = []
+    compared_fields = (*_OUTCOME_METRICS, "predeployment_rejection", "action_stream_sha256",
+                       "physical_control_steps", "failure_category")
+    tasks = sorted({r["task"] for r in rows})
+    for spec in _alias_specs(aliases, tasks):
+        main, ablation = spec["main"], spec["ablation"]
+        tolerated = set(spec["tolerated_failure_categories"])
+        for task in spec["tasks"]:
+            left = cells["main", main, task]
+            right = {(r["training_or_calibration_instance"], r["base_request_id"]): r
+                     for r in cells["ablation", ablation, task]}
+            if len(left) != len(right):
+                raise ValueError("main/ablation shared-method measurements disagree")
+            tolerated_pairs = 0
+            identical_pairs = 0
+            for row in left:
+                key = row["training_or_calibration_instance"], row["base_request_id"]
+                if key not in right:
+                    raise ValueError("main/ablation shared-method measurements disagree")
+                paired = right[key]
+                if row["failure_category"] in tolerated or paired["failure_category"] in tolerated:
+                    tolerated_pairs += 1
+                    continue
+                if any(row.get(field) != paired.get(field) for field in compared_fields):
+                    raise ValueError("main/ablation shared-method measurements disagree")
+                identical_pairs += 1
+            alias_checks.append({"main": main, "ablation": ablation, "task": task,
+                                 "identical_measurements": identical_pairs,
+                                 "tolerated_failure_mismatches": tolerated_pairs,
+                                 "tolerated_failure_categories": sorted(tolerated),
+                                 "independent_extra_evidence": False})
+
+    contrasts = []
+    terms_by_family = {
+        "main": {f"{references['main']}_minus_{method}": {references["main"]: 1, method: -1}
+                 for method in sorted({k[1] for k in cells if k[0] == "main"})
+                 if method != references["main"]},
+        "ablation": ablation_terms,
+    }
+    for family, named_terms in terms_by_family.items():
+        for name, terms in named_terms.items():
+            for task in tasks:
+                keys = [(family, method, task) for method in terms]
+                metas = [metadata[key] for key in keys]
+                instance_sets = {tuple(m["instance_ids"]) for m in metas if m["instance_ids"]}
+                if len(instance_sets) > 1 or len({str((m["strata"], m["modes"], m["initial_ids"])) for m in metas}) != 1:
+                    raise ValueError("contrast lacks exactly matched instances/requests")
+                count = max(tensors[key].shape[0] for key in keys)
+                coefficients = list(terms.values())
+                delta_tensor = sum(coef * tensors[key] for coef, key in zip(coefficients, keys))
+                # Bootstrap linear metrics as paired differences, so fixed references
+                # share the same request draws with every learned instance.
+                paired_draws = paired_block_bootstrap(delta_tensor, resamples=resamples, seed=seed)
+                linear_draws = paired_draws.mean(axis=(1, 2))
+                estimates = sum(coef * _outcome_statistics(tensors[key].mean(axis=(0, 2)))
+                                for coef, key in zip(coefficients, keys))
+                # The worst-group contrast is difference of minima, NOT min difference.
+                joint_draws = [paired_block_bootstrap(
+                    np.broadcast_to(tensors[key], (count, *tensors[key].shape[1:])),
+                    resamples=resamples, seed=seed,
+                ) for key in keys]
+                worst_draws = sum(coef * _outcome_statistics(draw)[:, 3]
+                                  for coef, draw in zip(coefficients, joint_draws))
+                is_learned = any(m["independent_training_instances"] for m in metas)
+                all_rejected = all(m["all_predeployment_rejected"] for m in metas)
+                permissions = {method: permission_classes[method] for method in terms}
+                same_permission = len(set(permissions.values())) == 1
+                for index, metric in enumerate(_TABLE_METRICS):
+                    row = {"family": family, "contrast": name, "task": task,
+                           "metric": metric, "terms": terms,
+                           "estimate": float(estimates[index]),
+                           "ci95": None if all_rejected else _interval(
+                               linear_draws[:, index] if index < 3 else worst_draws),
+                           "independent_training_instances": count if is_learned else 0,
+                           "permission_classes": permissions,
+                           "comparison_scope": "same_permission" if same_permission else "cross_permission_descriptive_only",
+                           "fixed_reference_broadcast_is_not_replication": any(not m["instance_ids"] for m in metas),
+                           "supplemental_instance_sign_flip_p": exact_instance_sign_flip(
+                               delta_tensor[..., index].mean(axis=(1, 2, 3))
+                           ) if index < 3 and is_learned and same_permission else None,
+                           "inference_scope": "recorded_scores_fixed_mechanism_support_mixture"}
+                    if index == 0 and len(terms) == 2 and sorted(coefficients) == [-1, 1]:
+                        row["favorable_pairs"] = int(np.count_nonzero(delta_tensor[..., 0] > 0))
+                        row["adverse_pairs"] = int(np.count_nonzero(delta_tensor[..., 0] < 0))
+                    contrasts.append(row)
+    for family in terms_by_family:
+        valid = [row for row in contrasts if row["family"] == family
+                 and row["supplemental_instance_sign_flip_p"] is not None]
+        adjusted = holm_adjust([r["supplemental_instance_sign_flip_p"] for r in valid])
+        for row, pvalue in zip(valid, adjusted):
+            row["supplemental_holm_p"] = pvalue
+            row["holm_family_size"] = len(valid)
+
+    claim_evaluation = None
+    if claim_contract is not None:
+        claim_tasks = ["T1", "T2", "T3", "T4"]
+        if sorted(tasks) != claim_tasks:
+            raise ValueError("transport claim requires exactly T1 through T4")
+        claim_reference = str(references["main"])
+        claim_control = str(claim_contract["transport_control"])
+        strong_baselines = list(claim_contract["strong_executable_baselines"])
+        if (
+            claim_reference != "cross_ebdm"
+            or claim_control != "task_only"
+            or strong_baselines != ["fada", "dial_transfer", "response_mpc"]
+            or claim_contract.get("task_weighting")
+            != "equal_macro_average_over_T1_T2_T3_T4"
+        ):
+            raise ValueError("transport claim identities or task weighting changed")
+
+        def macro_method_point(method: str) -> np.ndarray:
+            return np.mean([
+                _outcome_statistics(
+                    tensors["main", method, task].mean(axis=(0, 2))
+                )
+                for task in claim_tasks
+            ], axis=0)
+
+        def macro_pair(reference: str, comparator: str) -> dict[str, Any]:
+            task_points = []
+            task_draws = []
+            success_pairs = {}
+            for task_index, task in enumerate(claim_tasks):
+                left_key = ("main", reference, task)
+                right_key = ("main", comparator, task)
+                left, right = tensors[left_key], tensors[right_key]
+                left_meta, right_meta = metadata[left_key], metadata[right_key]
+                learned_instance_sets = {
+                    tuple(value) for value in (
+                        left_meta["instance_ids"], right_meta["instance_ids"]
+                    ) if value
+                }
+                if (
+                    len(learned_instance_sets) > 1
+                    or left_meta["strata"] != right_meta["strata"]
+                    or left_meta["initial_ids"] != right_meta["initial_ids"]
+                    or left_meta["modes"] != right_meta["modes"]
+                ):
+                    raise ValueError(
+                        f"macro claim pair lacks matched units: {task}/{comparator}"
+                    )
+                count = max(left.shape[0], right.shape[0])
+                left = np.broadcast_to(left, (count, *left.shape[1:]))
+                right = np.broadcast_to(right, (count, *right.shape[1:]))
+                left_success = left[..., 0]
+                right_success = right[..., 0]
+                success_pairs[task] = {
+                    "favorable_pairs": int(np.count_nonzero(
+                        (left_success > .5) & (right_success <= .5)
+                    )),
+                    "adverse_pairs": int(np.count_nonzero(
+                        (left_success <= .5) & (right_success > .5)
+                    )),
+                    "tied_success_pairs": int(np.count_nonzero(
+                        (left_success > .5) & (right_success > .5)
+                    )),
+                    "tied_failure_pairs": int(np.count_nonzero(
+                        (left_success <= .5) & (right_success <= .5)
+                    )),
+                    "total_pairs": int(left_success.size),
+                }
+                task_points.append(
+                    _outcome_statistics(left.mean(axis=(0, 2)))
+                    - _outcome_statistics(right.mean(axis=(0, 2)))
+                )
+                task_seed = seed + 1009 * (task_index + 1)
+                linear = paired_block_bootstrap(
+                    left - right, resamples=resamples, seed=task_seed,
+                ).mean(axis=(1, 2))
+                left_draw = paired_block_bootstrap(
+                    left, resamples=resamples, seed=task_seed,
+                )
+                right_draw = paired_block_bootstrap(
+                    right, resamples=resamples, seed=task_seed,
+                )
+                worst = (
+                    _outcome_statistics(left_draw)[:, 3]
+                    - _outcome_statistics(right_draw)[:, 3]
+                )
+                task_draws.append(np.column_stack((linear, worst)))
+            point = np.mean(task_points, axis=0)
+            draws_macro = np.mean(task_draws, axis=0)
+            return {
+                "reference": reference,
+                "comparator": comparator,
+                "metrics": {
+                    metric: {
+                        "macro_delta": float(point[index]),
+                        "paired_bootstrap_ci95": _interval(draws_macro[:, index]),
+                    }
+                    for index, metric in enumerate(_TABLE_METRICS)
+                },
+                "task_deltas": {
+                    task: {
+                        metric: float(task_points[task_index][metric_index])
+                        for metric_index, metric in enumerate(_TABLE_METRICS)
+                    }
+                    for task_index, task in enumerate(claim_tasks)
+                },
+                "paired_success_outcomes": success_pairs,
+            }
+
+        transport_pair = macro_pair(claim_reference, claim_control)
+        strong_pairs = {
+            method: macro_pair(claim_reference, method)
+            for method in strong_baselines
+        }
+        strong_points = {
+            method: macro_method_point(method) for method in strong_baselines
+        }
+        selected_strongest = _select_strongest_baseline(strong_points)
+        stable_gate = claim_contract["stable_transport_gate"]
+        success_by_task = [
+            transport_pair["task_deltas"][task]["constrained_success_rate"]
+            for task in claim_tasks
+        ]
+        stable_checks = {
+            "all_four_task_success_deltas_nonnegative": sum(
+                value >= -1e-12 for value in success_by_task
+            ) >= int(stable_gate["minimum_nonnegative_task_success_deltas"]),
+            "at_least_one_task_success_delta_positive": sum(
+                value > 1e-12 for value in success_by_task
+            ) >= int(stable_gate["minimum_strictly_positive_task_success_deltas"]),
+            "macro_success_delta_strictly_positive": (
+                transport_pair["metrics"]["constrained_success_rate"]["macro_delta"]
+                > float(stable_gate["minimum_macro_success_delta"]) + 1e-12
+            ),
+            "macro_constraint_delta_nonpositive": (
+                transport_pair["metrics"]["constraint_violation_rate"]["macro_delta"]
+                <= float(stable_gate["maximum_macro_constraint_violation_delta"]) + 1e-12
+            ),
+            "macro_capped_completion_delta_nonpositive": (
+                transport_pair["metrics"]["capped_normalized_completion_time"]["macro_delta"]
+                <= float(stable_gate["maximum_macro_capped_completion_time_delta"]) + 1e-12
+            ),
+            "transport_preserves_every_task_only_success": (
+                not bool(stable_gate.get(
+                    "require_transport_to_preserve_every_task_only_success", False,
+                ))
+                or all(
+                    transport_pair["paired_success_outcomes"][task]["adverse_pairs"] == 0
+                    for task in claim_tasks
+                )
+            ),
+        }
+        reference_permission = permission_classes[claim_reference]
+        strong_checks = {
+            "all_superiority_comparisons_same_permission": all(
+                permission_classes[method] == reference_permission
+                for method in strong_baselines
+            ),
+            "positive_macro_success_delta_against_every_strong_baseline": all(
+                pair["metrics"]["constrained_success_rate"]["macro_delta"] > 1e-12
+                for pair in strong_pairs.values()
+            ),
+            "nonpositive_macro_constraint_delta_against_every_strong_baseline": all(
+                pair["metrics"]["constraint_violation_rate"]["macro_delta"] <= 1e-12
+                for pair in strong_pairs.values()
+            ),
+            "selected_strongest_success_ci95_strictly_positive": (
+                strong_pairs[selected_strongest]["metrics"][
+                    "constrained_success_rate"
+                ]["paired_bootstrap_ci95"][0] > 0.
+            ),
+        }
+        claim_evaluation = {
+            "version": claim_contract["version"],
+            "contract": claim_contract,
+            "task_weighting": claim_contract["task_weighting"],
+            "transport_pair": transport_pair,
+            "strong_baseline_pairs": strong_pairs,
+            "strong_baseline_macro_points": {
+                method: {
+                    metric: float(values[index])
+                    for index, metric in enumerate(_TABLE_METRICS)
+                }
+                for method, values in strong_points.items()
+            },
+            "selected_strongest_baseline": selected_strongest,
+            "stable_transport_checks": stable_checks,
+            "strong_baseline_checks": strong_checks,
+            "stable_transport_supported": all(stable_checks.values()),
+            "strong_baseline_superiority_supported": all(strong_checks.values()),
+            "core_claim_supported": (
+                all(stable_checks.values()) and all(strong_checks.values())
+            ),
+            "coverage_only_rows_excluded_from_superiority_claim": list(
+                claim_contract["coverage_only_rows"]
+            ),
+        }
+
+    report = {
+        "version": "frozen-outcome-offline-statistics-v1",
+        "status": "complete_recorded_score_analysis",
+        "raw_integrity_passed": True,
+        "full_task_contract_certified": False if contract_limitations else None,
+        "contract_limitations": list(contract_limitations),
+        "inputs": inputs,
+        "protocol_evidence": protocol_evidence,
+        "analysis_source": {"path": str(Path(__file__).resolve().relative_to(root)),
+                            "sha256": _file_sha256(Path(__file__))},
+        "analysis_recipe": {
+            "references": references, "ablation_terms": ablation_terms,
+            "aliases": aliases, "permission_classes": permission_classes,
+            "numpy_version": np.__version__, "physics_calls": 0,
+            "gpu_calls": 0,
+        },
+        "counts": {"records": len(rows), "physical_executions": len(physical_ids),
+                   "predeployment_rejections": len(rows) - len(physical_ids),
+                   "cells": len(summaries), "corrected_scalar_cells": len(corrections)},
+        "statistics": {
+            "bootstrap_resamples": resamples, "bootstrap_seed": seed,
+            "interval": "pointwise 95% empirical percentile, not simultaneous confidence intervals",
+            "resampling": "instances crossed with shared initial-block draws within fixed mechanism/support strata; modes paired",
+            "worst_group": ["mechanism_group", "body_support_cell", "requested_mode"],
+            "primary_scientific_contrast": "gated full minus matched task-only",
+            "holm": "supplemental exact instance sign-flip p; all three mean metrics, tasks and contrasts in each main/ablation family",
+            "holm_family_membership": "conservative post-access clarification, not a newly preregistered list",
+            "sign_flip_assumption": "independent symmetric instance differences conditional on evaluated requests; not a randomized treatment test",
+            "rejected_slots": "included in scoring denominator, excluded from training-instance resampling",
+            "saturated_interval": "a collapsed empirical interval is not certification of true zero/one probability or equivalence",
+            "cross_permission_comparisons": "descriptive only; no causal or superiority claims",
+            "wall_seconds": "contended episode time, not end-to-end per-control latency",
+        },
+        **({"transport_claim": claim_evaluation}
+           if claim_evaluation is not None else {}),
+        "main_ablation_alias_checks": alias_checks,
+    }
+    output.mkdir(parents=True, exist_ok=False)
+    for name, records in (("summary", summaries),
+                          ("main_table", [r for r in summaries if r["family"] == "main"]),
+                          ("ablation_table", [r for r in summaries if r["family"] == "ablation"]),
+                          ("contrasts", contrasts),
+                          ("failure_groups", groups), ("aggregate_corrections", corrections)):
+        path = output / f"{name}.json"
+        path.write_text(json.dumps(records, indent=2, sort_keys=True, allow_nan=False) + "\n")
+        if records:
+            fields = sorted({key for record in records for key in record})
+            with (output / f"{name}.csv").open("w", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows({key: json.dumps(value, sort_keys=True) if isinstance(value, (dict, list, tuple)) else value
+                                  for key, value in row.items()} for row in records)
+    if claim_evaluation is not None:
+        (output / "transport_claim.json").write_text(
+            json.dumps(claim_evaluation, indent=2, sort_keys=True) + "\n"
+        )
+    # Check again after analysis so even an accidental concurrent input rewrite fails.
+    for pointer in inputs.values():
+        if _file_sha256(root / pointer["path"]) != pointer["sha256"]:
+            raise ValueError("an input changed during offline analysis")
+    report["input_sha_recheck_passed"] = True
+    report["outputs"] = {path.name: _file_sha256(path) for path in sorted(output.iterdir())}
+    (output / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    return report
 
 
 def collect_results(roots: Sequence[str]) -> List[Dict[str, Any]]:

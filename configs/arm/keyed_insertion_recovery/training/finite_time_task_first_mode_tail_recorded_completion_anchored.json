@@ -1,0 +1,74 @@
+{
+  "base_training_config": {
+    "path": "configs/arm/keyed_insertion_recovery/training/finite_time_late_phase_preflight.json",
+    "sha256": "de5c12d648654d38d5862d4e3b3720a4c47d796aea54a616f8fb87142194ff93"
+  },
+  "overrides": {
+    "actor_manifest": {
+      "path": "configs/arm/keyed_insertion_recovery/protocol/actor_bindings.json",
+      "sha256": "867bf9e88ae5ad7c698ad3b9889204b426df0993a558913cdf76ddb753d8892d"
+    },
+    "data": {
+      "additional_weak_log_manifests": [
+        {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_mode0_public_log/gpu1/public_log_manifest.json",
+          "sha256": "1dafc7445184943ffb15141a53cde5480183ad17790f09d1ce90f1a2b91012e9"
+        }
+      ],
+      "weak_log_remaining_controls_target": "recorded_episode_end",
+      "weak_log_split": {
+        "kind": "entry_index_modulo",
+        "modulus": 4,
+        "validation_residue": 0
+      }
+    },
+    "output": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_tail_recorded_completion/anchored/checkpoints",
+    "preflight_output": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_tail_recorded_completion/anchored/preflight",
+    "preflight_report": {
+      "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_tail_recorded_completion/anchored/preflight/report.json",
+      "sha256": "3b3b071d0267b7afa2ec41f74dbfee05fe164014311ff8d6367450a0613f6b53"
+    },
+    "selection": {
+      "required_modes": [
+        0,
+        1
+      ]
+    },
+    "training": {
+      "checkpoint_selection": {
+        "interval_updates": 100,
+        "minimum_update": 100,
+        "rule": "best_validation_paired_progress"
+      },
+      "control_checkpoint_policy": "frozen_selector",
+      "ensemble_task": {
+        "reduction": "worst_paired_member"
+      },
+      "paired_progress": {
+        "angular_margin": 0.0001,
+        "linear_margin": 1e-05,
+        "tail_fraction": 0.1,
+        "tail_weight": 4.0,
+        "weight": 1.0
+      },
+      "response_normalization": {
+        "minimum_source_task_advantage": 0.0,
+        "reference_floor": 0.0001
+      },
+      "retain_validation_checkpoints": true,
+      "shared_start_report": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_directional/task_only/checkpoints/report.json",
+        "sha256": "20ac36a124b46479e6cb35344b0e618780c7b555ca55fd803b5c0e44e969e6aa"
+      },
+      "target_sampling": {
+        "kind": "mode_balanced",
+        "modes": [
+          0,
+          1
+        ]
+      },
+      "variant": "task_first_ensemble_robust_anchored"
+    },
+    "version": "t3-task-first-mode-tail-recorded-completion-training-v8"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "version": "cross-embodiment-t3-public-v5",
+  "task": "keyed_insertion_recovery",
+  "alias": "T3",
+  "extends": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/public_v4.json",
+    "sha256": "4bc202eaaa604bb961512e017c37ad16ea81e1cb8a9231f1e8272caebff1cdf7"
+  },
+  "shared_execution": {
+    "version": "four-task-shared-execution-v2",
+    "insertion_lead_z_m": 0.015,
+    "retreat_release_version": "safe_settled_v1",
+    "retreat_release_predicate": "Release after the existing height condition or after phase 3 is safe and settled for the existing guard clock."
+  },
+  "scope": "The task contract and public-reference implementation are inherited unchanged by every main-table baseline, ablation and Cross-EBDM row; methods retain their own learned or analytic residual decisions.",
+  "historical_results": "Runs using the 10 mm default lead or legacy latched retreat remain invalid for the new main table.",
+  "status": "common_protocol_bound_requires_fresh_qualification",
+  "final_test": false
+}

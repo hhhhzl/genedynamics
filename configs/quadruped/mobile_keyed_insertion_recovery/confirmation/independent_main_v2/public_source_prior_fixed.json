@@ -1,0 +1,26 @@
+{
+  "cell_admission": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/independent_main_table_admission_v2/public_source_prior.json",
+    "sha256": "2b4811bda23ebcc518a10ca9e7464777a5142404fca4a01ae061f791b3aa8eab"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "instance_id": "fixed",
+  "method": "public_source_prior",
+  "method_identity": "public_source_prior",
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/public_source_prior/confirmation/independent_main_v2/fixed",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/public_source_prior/confirmation/independent_main_v2/fixed_plan.json",
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/independent_main_table_requests_v2.json",
+    "sha256": "dcc15a93229e5ad99f0a629b8ee9bd074f21d7e3fc067eddef23fa058474c788"
+  },
+  "task": "T4",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/public_source_prior.yaml",
+    "sha256": "4e9151d281d3e57c6aa037cd1ce3022851eb26fde37dea210f4ac63726b20c35"
+  },
+  "version": "transfer-independent-main-table-evaluation-v2"
+}

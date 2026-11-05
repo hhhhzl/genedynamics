@@ -1,0 +1,26 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v1",
+  "task": "T2",
+  "method": "dial_transfer",
+  "method_identity": "DIAL_MPC",
+  "instance_id": "instance_07",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/baseline/dial.yaml",
+    "sha256": "fcee02b6405c3e9d14c0a5557061bc58c8646a3349c0e7ab59fd51d1466c183a"
+  },
+  "request_roster": {
+    "path": "configs/arm/guided_contact_alignment/protocol/independent_main_table_requests.json",
+    "sha256": "094b5518c680e8db1f9baa250b70a4aef6bef3e54625a0619498884831074c64"
+  },
+  "cell_admission": {
+    "path": "results/arm/guided_contact_alignment/validation/independent_main_table_admission_v1/dial_transfer.json",
+    "sha256": "1cec38bb1f2628833f1f73edd44c4a1a70ab44afc4fe030b2137fc0fd46e233f"
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/dial/confirmation/independent_main_v1/instance_07",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/dial/confirmation/independent_main_v1/instance_07_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  }
+}

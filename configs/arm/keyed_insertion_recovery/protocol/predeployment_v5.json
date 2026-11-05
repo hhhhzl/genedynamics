@@ -1,0 +1,31 @@
+{
+  "gate": {
+    "failure_replacement": false,
+    "require_all_mode_correct_task_success": true,
+    "require_evidence_reaudit": true,
+    "require_zero_constraint_violations": true
+  },
+  "requested_modes": [0, 1],
+  "reset_slots_per_cell": 2,
+  "scene_cells": [
+    {
+      "body_support_parameters": {},
+      "id": "deployment_nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "robot": "xarm7"
+    }
+  ],
+  "scope": "Common 15 mm insertion-only lead and safe-settled-release deployment-known-nominal admission for every executable T3 main, baseline and ablation actor after the T2 baseline adapter correction. Fresh CPU development seeds; no prior outcome is reusable.",
+  "seed_anchor": 3252000,
+  "source_admission": "Validate each method's declared source/training artifacts and provenance through its SHA-bound manifest; never deploy a target actor on a different source robot.",
+  "supersedes": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/predeployment_v4.json",
+    "sha256": "d5586291bb30de50f02175fb9cd04c2a772cb195f72cfb64e9f766c071b78394"
+  },
+  "task": "T3",
+  "version": "four-task-behavioral-predeployment-v5"
+}

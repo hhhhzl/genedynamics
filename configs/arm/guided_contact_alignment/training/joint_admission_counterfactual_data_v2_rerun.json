@@ -1,0 +1,159 @@
+{
+  "bindings": {
+    "actor_manifest": {
+      "path": "configs/arm/guided_contact_alignment/protocol/actor_bindings.json",
+      "sha256": "9899a5b28b033da9686620203dedc0484c19634c2b46032883ae2e2d6c64b76c"
+    },
+    "fresh_predeployment_audit": {
+      "path": "results/_qualification/four_task_transfer/behavioral_predeployment_20261022_v12/independent_audit.json",
+      "sha256": "1ef1ea5af17f1ab4b6bc0537cb92dbb69a72490326c4046beefc43810752c2ac"
+    },
+    "fresh_predeployment_report": {
+      "path": "results/_qualification/four_task_transfer/behavioral_predeployment_20261022_v12/report.json",
+      "sha256": "c282718777bdc4d5916bf76da8a68d6faf5c1d95cf4a1c1dbf8510b1509afdf7"
+    },
+    "offline_diagnosis": {
+      "path": "results/_analysis/four_task_transfer/predeployment_20261022_v12_offline_closeout/diagnosis_plan.json",
+      "sha256": "4add41c27a39b5566c1cc4566247b13fdb85a371eedf5c6af52dc246929e0bcf"
+    },
+    "task_contract": {
+      "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v3.json",
+      "sha256": "6e5aae09b937d934b3681a835b01ff292a12b3ee4cab12024ee7f80a6924d0df"
+    }
+  },
+  "branch_execution": {
+    "branches_per_checkpoint": 5,
+    "charge_every_branch": true,
+    "replace_failed_branch": false,
+    "retain_every_failure": true,
+    "same_state_requirement": "Restore the exact task and actor checkpoints before every branch.",
+    "stop_branch_after_terminal_status": true
+  },
+  "candidate_generator": {
+    "all_candidates_use_the_same_public_predictor": true,
+    "append_emergency_reference_brake": true,
+    "no_candidate_forced_safe": true,
+    "ordered_transport_fractions": [
+      1.0,
+      0.5,
+      0.25,
+      0.0
+    ],
+    "task_owned_coordinates": [
+      2,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "task_owned_coordinates_must_be_bitwise_identical": true,
+    "transport_coordinates": [
+      0,
+      1,
+      3,
+      4,
+      5
+    ]
+  },
+  "checkpoint_sampling": {
+    "branch_horizon_control_steps": 10,
+    "history_control_steps": 4,
+    "lineage_rule": "Every task checkpoint, actor checkpoint, and descendant branch remains in one reset-block split.",
+    "required_phases": [
+      "pre_contact",
+      "supported_traversal",
+      "outlet_transition",
+      "post_outlet"
+    ],
+    "stride_control_steps": 10
+  },
+  "data_policy": {
+    "confirmation_states_opened": 0,
+    "diagnostic_and_development_only": true,
+    "final_paper_checkpoint": false,
+    "gpu_used": false,
+    "old_invalid_outcomes_used": false,
+    "old_risk_v1_windows_reused": false,
+    "performance_evidence": false
+  },
+  "device": "cpu",
+  "instances": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "labels": {
+    "frozen_force_limits_N": [
+      20.0,
+      8.0
+    ],
+    "frozen_maximum_contact_loss_seconds": 0.15,
+    "maximum_continuous_contact_loss_seconds": true,
+    "maximum_lateral_force_N": true,
+    "maximum_total_force_N": true,
+    "minimum_axial_support_coverage": true,
+    "physics_resolution_seconds": 0.001
+  },
+  "output": "results/arm/guided_contact_alignment/training/joint_admission_counterfactual_data_v2_rerun",
+  "qualification_gates": {
+    "all_five_candidates_present_per_checkpoint": true,
+    "all_instances_present": true,
+    "all_reset_blocks_present": true,
+    "both_modes_present": true,
+    "candidate_zero_physics_identity_passed": true,
+    "task_and_actor_checkpoint_roundtrip_exact": true,
+    "zero_failure_replacement": true,
+    "zero_split_lineage_leakage": true,
+    "zero_unaccounted_physics_steps": true
+  },
+  "requests": {
+    "mechanism_parameters": {
+      "delay_steps": 0,
+      "payload_mass": 0.5,
+      "servo_gain": 1.0
+    },
+    "requested_modes": [
+      0,
+      1
+    ],
+    "reset_blocks": 8,
+    "reset_seed_anchor": 3274000,
+    "robot": "xarm7"
+  },
+  "scope": "CPU-only fresh rerun after v2 mixed evaluator-source hashes failed independent audit. The data design is unchanged; no confirmation state, target-performance claim, or GPU use.",
+  "split_by_reset_block": {
+    "calibration": [
+      4,
+      5
+    ],
+    "fit": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "held_out_qualification": [
+      6,
+      7
+    ]
+  },
+  "state_generators": [
+    "cross_ebdm",
+    "task_only"
+  ],
+  "status": "frozen_cpu_design_unexecuted",
+  "supersedes_invalid_run": {
+    "path": "results/arm/guided_contact_alignment/training/joint_admission_counterfactual_data_v2/independent_audit.json",
+    "reason": "mixed episode.py evaluator-source hashes; 79 of 256 evidence files failed provenance revalidation"
+  },
+  "task": "T2",
+  "version": "t2-joint-force-contact-counterfactual-data-v2"
+}

@@ -10,7 +10,7 @@ ACP follows the repository's single-solver package contract:
 
 Learned model topology and training live in `genedynamics.solvers.single.acp.learning`. The
 four-task observation/action binding lives in
-`genedynamics.experiments.plugins.methods.transfer.acp`. Demonstrators live in
+`genedynamics.tasks.transfer.controllers.acp`. Demonstrators live in
 `genedynamics.tasks.transfer.demonstrators`. The solver therefore does not own
 task state, experiment result paths, training loops, or paper workflows.
 

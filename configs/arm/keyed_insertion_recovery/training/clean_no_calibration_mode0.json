@@ -1,0 +1,15 @@
+{
+  "base_training_config": {
+    "path": "configs/arm/keyed_insertion_recovery/training/clean_no_calibration_mode0_preflight.json",
+    "sha256": "1116002c2ecf79c4e24f9db14ceb5061e3b6c44e192df0b6cd6cc4c084749978"
+  },
+  "overrides": {
+    "preflight_report": {
+      "path": "results/arm/keyed_insertion_recovery/training/clean_ablation/no_calibration/mode_0/preflight/report.json",
+      "sha256": "055af8a1241e7effcb7b06d46a51c3293c6a8ade7d4efdaf61201de7b45f5346"
+    },
+    "limits": {
+      "wall_seconds": 7200
+    }
+  }
+}

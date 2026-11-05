@@ -1,0 +1,45 @@
+{
+  "version": "four-task-behavioral-predeployment-v10",
+  "task": "T2",
+  "extends": {
+    "path": "configs/arm/guided_contact_alignment/protocol/predeployment_v9.json",
+    "sha256": "023fe437f7a16fe177e979e5c55b9d86aa9b80278307f764f151f5251550e6a6"
+  },
+  "seed_anchor": 4670000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "gate": {
+    "require_all_mode_correct_task_success": true,
+    "require_zero_constraint_violations": true,
+    "require_evidence_reaudit": true,
+    "require_exact_physics_contact_evidence": true,
+    "failure_replacement": false
+  },
+  "source_admission": "Validate every method's declared source or training artifact and SHA through the existing task-local actor manifest. No rejected method is replaced and no prior outcome is reused.",
+  "scope": "Fresh task_contract_v4 behavior qualification for every executable T2 main, baseline and ablation row on the two public release-gate mechanism cells. This is predeployment evidence, not paper performance evidence."
+}

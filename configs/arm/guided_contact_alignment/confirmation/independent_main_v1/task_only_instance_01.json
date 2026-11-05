@@ -1,0 +1,26 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v1",
+  "task": "T2",
+  "method": "task_only",
+  "method_identity": "task_only",
+  "instance_id": "instance_01",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/baseline/task_only.yaml",
+    "sha256": "a91998e5452e1d25b86e6608f73d94c73b022d633a3eba78ac97406bb8620118"
+  },
+  "request_roster": {
+    "path": "configs/arm/guided_contact_alignment/protocol/independent_main_table_requests.json",
+    "sha256": "094b5518c680e8db1f9baa250b70a4aef6bef3e54625a0619498884831074c64"
+  },
+  "cell_admission": {
+    "path": "results/arm/guided_contact_alignment/validation/independent_main_table_admission_v1/task_only.json",
+    "sha256": "0def90a759ad5a91d256d9a2964da2fba0bb7177fbd43f6c767b166490dfc5c5"
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/task_only/confirmation/independent_main_v1/instance_01",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/task_only/confirmation/independent_main_v1/instance_01_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  }
+}

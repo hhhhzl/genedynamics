@@ -1,0 +1,57 @@
+{
+  "version": "t2-handoff-state-attribution-v1",
+  "name": "handoff_state_attribution",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda"
+  },
+  "source_validation": {
+    "plan": {
+      "path": "results/arm/guided_contact_alignment/validation/completion_budget_causal_reference_unloading_interface_parameter_gate/plan.json",
+      "sha256": "d64b3765ade7bbeb831043b8117b7fb54f34559c781972f087718db35ed321fc"
+    },
+    "report": {
+      "path": "results/arm/guided_contact_alignment/validation/completion_budget_causal_reference_unloading_interface_parameter_gate/report.json",
+      "sha256": "99742d413fa102f7dafe0364e7c834cb84ed6c63ba0264fbdb728a9702fa395b"
+    },
+    "rejection": {
+      "path": "results/arm/guided_contact_alignment/validation/completion_budget_causal_reference_unloading_interface_parameter_gate/REJECTED_CANDIDATE.json",
+      "sha256": "fd6d2f9844923820d31b003cfc102770f975e2149a70a09861c63a509b6a108b"
+    }
+  },
+  "selected_record_ids": [
+    "T2/main/response_mpc_causal_reference_unloading/instance_04/DEVELOPMENT/completion_budget_causal_reference_unloading_exact_request_gate/T2/latency_gain_shift/i00/m1",
+    "T2/main/response_mpc_causal_reference_unloading/instance_04/DEVELOPMENT/completion_budget_causal_reference_unloading_exact_request_gate/T2/latency_gain_shift/i01/m1",
+    "T2/main/response_mpc_causal_reference_unloading/instance_04/DEVELOPMENT/completion_budget_causal_reference_unloading_exact_request_gate/T2/payload_shift/i00/m1",
+    "T2/main/response_mpc_causal_reference_unloading/instance_04/DEVELOPMENT/completion_budget_causal_reference_unloading_exact_request_gate/T2/payload_shift/i01/m1",
+    "T2/ablation/matching_no_band_causal_reference_unloading/instance_07/DEVELOPMENT/completion_budget_causal_reference_unloading_exact_request_gate/T2/latency_gain_shift/i00/m1",
+    "T2/ablation/matching_no_band_causal_reference_unloading/instance_07/DEVELOPMENT/completion_budget_causal_reference_unloading_exact_request_gate/T2/latency_gain_shift/i01/m1"
+  ],
+  "handoff": {
+    "event": "first_public_common_completion_switch",
+    "intervention": "force_exact_common_action_from_identical_task_and_controller_checkpoint"
+  },
+  "admissible_envelope": {
+    "minimum_remaining_controls": 150,
+    "maximum_reference_lag_m": 0.012,
+    "maximum_planar_tcp_speed_mps": 0.025,
+    "maximum_force_utilization": 0.55,
+    "require_finite_public_state": true,
+    "require_no_pre_handoff_constraint_violation": true
+  },
+  "decision_rule": {
+    "continue_shared_controller_repair": "a reproduced failure remains a failure under exact-common continuation from a handoff inside the frozen admissible envelope",
+    "method_or_interface_failure": "a reproduced failure succeeds under exact-common continuation from the identical handoff state",
+    "inadmissible_method_handoff": "both continuations fail and the captured handoff lies outside the frozen admissible envelope",
+    "inconclusive": "the source outcome, exact snapshot restore, evidence audit, or successful-control preservation does not reproduce"
+  },
+  "limits": {
+    "maximum_wall_seconds": 900,
+    "maximum_gpu_memory_GiB": 12,
+    "workers": 1
+  },
+  "output": "results/arm/guided_contact_alignment/validation/handoff_state_attribution/gpu1_exact_state"
+}

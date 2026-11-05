@@ -1,0 +1,155 @@
+{
+  "version": "transfer-backbone-attribution-development-v1",
+  "task": "T2",
+  "attribution_contract": {
+    "path": "configs/arm/guided_contact_alignment/protocol/backbone_attribution_v1.json",
+    "sha256": "ba3dfaf385e3a1c3001542ba45b568314fa1e2b0da1e593297049049ab723dfd"
+  },
+  "training_report": {
+    "path": "results/arm/guided_contact_alignment/training/backbone_attribution_v1/report.json",
+    "sha256": "f5811037187d1e7b43f54956b42cdcd4c48824e0b4f180bc0fb484f0563484d5"
+  },
+  "numerical_preflight": {
+    "path": "results/arm/guided_contact_alignment/validation/backbone_attribution_preflight_v1/report.json",
+    "sha256": "0e220af8eb4500128de7511dc071f01e04cdf399b245e938952978832175e20d"
+  },
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/main/cross_ebdm.yaml",
+    "sha256": "3394a21c31f8d7a28e9d84058adaec2f4dc3e104e819f6a79c08dba6660fc627"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "requests": [
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 9824000,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      }
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 9824001,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      }
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 9824002,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      }
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 9824003,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      }
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 9824004,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      }
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 9824005,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      }
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 9824006,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      }
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 9824007,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {
+        "robot": "xarm7",
+        "support_controller": "fixed_base"
+      }
+    }
+  ],
+  "bootstrap_seed": 54790,
+  "budget": {
+    "maximum_wall_seconds": 14400,
+    "maximum_gpu_gib": 8
+  },
+  "output": "results/arm/guided_contact_alignment/validation/backbone_attribution_development_v1",
+  "scope": "T2 paired development comparison over two frozen mechanism groups, two modes, two reset slots, eight training instances; not main-table or confirmation evidence",
+  "independent_seed_check": "Prior to writing this recipe, exact reset_seed and seed keys 9824000 through 9824007 had zero matches in configs and results JSON/JSONL."
+}

@@ -1,0 +1,48 @@
+{
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "delay_steps": 3,
+        "payload_mass": 0.5
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "delay_steps": 1,
+        "payload_mass": 0.8
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 4740000,
+  "version": "four-task-paired-development-diagnosis-v2",
+  "name": "finite_time_current_public_geometry_sentinel",
+  "execution": {
+    "device": "cuda"
+  },
+  "methods": [
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "instances": "fixed"
+    }
+  ],
+  "scope": "Current-runtime shared T3 public-geometry sentinel on the exact 16 mechanism/mode/reset slots of the same-state directional contrast; diagnosis only, zero confirmation states."
+}

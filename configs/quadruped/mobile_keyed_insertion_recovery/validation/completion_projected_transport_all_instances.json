@@ -1,0 +1,245 @@
+{
+  "base_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/main/cross_ebdm.yaml",
+    "sha256": "343620e2b6010257f11fe1871884ab0820d65b74dfee8467412039ca113bc3cf"
+  },
+  "gate": {
+    "expected_episodes_per_instance": 8,
+    "failure_replacement": false,
+    "minimum_candidate_admission_fraction": 0.25,
+    "require_all_mode_correct_task_success": true,
+    "require_every_mechanism_support_group_candidate_use": true,
+    "require_zero_constraint_violations": true
+  },
+  "instances": {
+    "instance_01": {
+      "candidate_checkpoint": {
+        "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport/checkpoints/instance_01/checkpoint.pt",
+        "sha256": "6edfd26eecd88664627ee448876c99f5638b2eafad7b788fd996551eb1d7f099"
+      }
+    },
+    "instance_02": {
+      "candidate_checkpoint": {
+        "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport/checkpoints/instance_02/checkpoint.pt",
+        "sha256": "59242b61707ac7e47f50574da11b3464286921ebdde817185f5a06cfa254162b"
+      }
+    },
+    "instance_03": {
+      "candidate_checkpoint": {
+        "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport/checkpoints/instance_03/checkpoint.pt",
+        "sha256": "9970d68c07ac47374d280c27460019d1a7c27cdf1ed4f71e53515d9318946930"
+      }
+    },
+    "instance_04": {
+      "candidate_checkpoint": {
+        "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport/checkpoints/instance_04/checkpoint.pt",
+        "sha256": "14119df8a2b1bfae4f66393352f0e4f427caed28af2ac99bfd8795a85de0c979"
+      }
+    },
+    "instance_05": {
+      "candidate_checkpoint": {
+        "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport/checkpoints/instance_05/checkpoint.pt",
+        "sha256": "3971e9d31c2f8d6231230b985505186bd30015cd010e46858e30e6ca95b5118d"
+      }
+    },
+    "instance_06": {
+      "candidate_checkpoint": {
+        "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport/checkpoints/instance_06/checkpoint.pt",
+        "sha256": "b87a082c41b1c20d0d437b47258255a968119b57bbd7aeb43576a410b185f501"
+      }
+    },
+    "instance_07": {
+      "candidate_checkpoint": {
+        "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport/checkpoints/instance_07/checkpoint.pt",
+        "sha256": "566889763b8240b2ded6a2cad9b17465a4d2da187645d3a32d8073961f9daaad"
+      }
+    },
+    "instance_08": {
+      "candidate_checkpoint": {
+        "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_tail_aligned_transport/checkpoints/instance_08/checkpoint.pt",
+        "sha256": "704e754e17561241df9162e605ff61953e458865668ddb0ca813c98464f1ce08"
+      }
+    }
+  },
+  "limits": {
+    "maximum_memory_GiB": 20,
+    "maximum_wall_seconds": 1200,
+    "workers": 8
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/validation/completion_projected_transport/all_instances",
+  "projection_preflight": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/completion_projected_transport/preflight/report.json",
+    "sha256": "b69049bfcf3d2d84102b19864bd3e35d9baca51d708e441f15c3c59d9e362be5"
+  },
+  "requests": [
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION-ALL/latency_gain_shift/support_nominal/m0",
+      "requested_mode": 0,
+      "reset_seed": 4240000,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_nominal",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION-ALL/latency_gain_shift/support_nominal/m1",
+      "requested_mode": 1,
+      "reset_seed": 4240001,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_nominal",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION-ALL/latency_gain_shift/support_derated_0p90/m0",
+      "requested_mode": 0,
+      "reset_seed": 4240002,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_derated_0p90",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION-ALL/latency_gain_shift/support_derated_0p90/m1",
+      "requested_mode": 1,
+      "reset_seed": 4240003,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift/support_derated_0p90",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION-ALL/payload_shift/support_nominal/m0",
+      "requested_mode": 0,
+      "reset_seed": 4240004,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_nominal",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION-ALL/payload_shift/support_nominal/m1",
+      "requested_mode": 1,
+      "reset_seed": 4240005,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_nominal",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION-ALL/payload_shift/support_derated_0p90/m0",
+      "requested_mode": 0,
+      "reset_seed": 4240006,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_derated_0p90",
+      "task": "T4"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "confirmation_state": false,
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "performance_evidence": false,
+      "physical_initial_slot": 0,
+      "request_id": "PROJECTED-COMPLETION-ALL/payload_shift/support_derated_0p90/m1",
+      "requested_mode": 1,
+      "reset_seed": 4240007,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift/support_derated_0p90",
+      "task": "T4"
+    }
+  ],
+  "version": "t4-completion-projected-execution-development-v1"
+}

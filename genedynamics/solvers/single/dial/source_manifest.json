@@ -1,0 +1,17 @@
+{
+  "version": "dial-source-port-v1",
+  "repository": "https://github.com/LeCAR-Lab/dial-mpc.git",
+  "commit": "871c84f1cefbe9fa9d83a06b05ab4f0243c1a05c",
+  "license": "Apache-2.0",
+  "author_core": {
+    "path": "baselines/DIAL-MPC/dial_mpc/core/dial_core.py",
+    "sha256": "a4471963c53b04ee2d8c67c7cefbe0aeced83fa3d2b97338c42e69d7238ba64c"
+  },
+  "local_solver": [
+    "genedynamics/solvers/single/dial/spline.py",
+    "genedynamics/solvers/single/dial/backends/dial_jax.py",
+    "genedynamics/solvers/single/dial/dial.py"
+  ],
+  "task_adapter": "genedynamics/tasks/transfer/controllers/dial.py",
+  "adaptation_scope": "DIAL node-spline and weighted-mean annealing on a calibrated public response ensemble; the author uses full-order Brax dynamics and torque-level locomotion, so four-task results must be labeled task-adapted DIAL-MPC"
+}

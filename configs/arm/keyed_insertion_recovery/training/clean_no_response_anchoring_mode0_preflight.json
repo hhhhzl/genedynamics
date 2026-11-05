@@ -1,0 +1,20 @@
+{
+  "base_training_config": {
+    "path": "configs/arm/keyed_insertion_recovery/training/finite_time_task_first_mode0_recorded_completion_anchored.json",
+    "sha256": "cf0ed20e183215fb2c092c1e817973ac64edaf9670951ba9ac4bec7e39216855"
+  },
+  "overrides": {
+    "actor_manifest": {
+      "path": "configs/arm/keyed_insertion_recovery/protocol/actor_bindings.json",
+      "sha256": "94fdcb9e62b71c4e1d653ecb5489a17dcde36743d20483b2beabcc74bcccd460"
+    },
+    "training": {
+      "clean_treatment": "no_response_anchoring",
+      "pilot_instances": [
+        "instance_01"
+      ]
+    },
+    "preflight_output": "results/arm/keyed_insertion_recovery/training/clean_ablation/no_response_anchoring/mode_0/preflight",
+    "output": "results/arm/keyed_insertion_recovery/training/clean_ablation/no_response_anchoring/mode_0/checkpoints"
+  }
+}

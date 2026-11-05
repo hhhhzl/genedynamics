@@ -28,6 +28,17 @@ def test_real_scene_and_nominal_gravity(pair):
     np.testing.assert_allclose(impl._gravity(state.physics[0]), state.physics[0].qfrc_bias, atol=1e-8)
 
 
+def test_ur5e_obstacle_reset_uses_well_conditioned_continuous_branch():
+    import mujoco
+    runner=make("numpy","ur5e",reset_joint_noise=0.)
+    state=runner.reset_batch(RandomRequest(376700,(0,)),noise_batch=np.zeros((1,6)))
+    impl=runner._impl;data=state.physics[0];jp=np.zeros((3,6));jr=np.zeros((3,6))
+    mujoco.mj_jacSite(impl.model,data,jp,jr,impl.sid);singular=np.linalg.svd(np.vstack((jp,jr)),compute_uv=False)
+    assert impl.model.nq==impl.model.nv==impl.model.nu==6
+    assert float(singular.max()/singular.min())<9.
+    assert not [contact for contact in data.contact if contact.dist < -runner.task.collision_tolerance]
+
+
 def test_jax_reference_chunk_parity_and_continuation(pair):
     reference, compiled = pair
     noise = np.array([[0.]*7, [.2,-.3,.1,.2,.1,-.1,.1]], dtype=np.float32)

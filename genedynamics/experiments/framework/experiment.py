@@ -8,6 +8,8 @@ experiment execution using the plugin system.
 import inspect
 import time
 import json
+import gzip
+import hashlib
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import numpy as np
@@ -119,6 +121,13 @@ def _compact_contact_state(state: Any) -> Dict[str, Any]:
         out["q"] = convert_to_json_serializable(pipeline_state.q)
         out["qd"] = convert_to_json_serializable(pipeline_state.qd)
     return out
+
+
+def _serialize_trajectory_state(state: Any) -> Any:
+    """Preserve ordinary array/dict states and compact structured sim states."""
+    if getattr(state, "pipeline_state", None) is not None or hasattr(state, "obs"):
+        return _compact_contact_state(state)
+    return convert_to_json_serializable(state)
 
 
 class ExperimentRunner:
@@ -338,6 +347,7 @@ class ExperimentRunner:
             'task': getattr(self.config, 'env_name', None),
             'task_level': self.config.env_params.get('level', level),
             'n_steps': int(getattr(self.config, 'n_steps', 100)),
+            'device': getattr(self.config, 'device', 'cpu'),
             'controller_method': controller_method,
             'env_params': self.config.env_params,
             'execution_env_params': self.config.execution_env_params,
@@ -896,11 +906,13 @@ class ExperimentRunner:
                                 self.results.append(completed)
                                 continue
                         print(f"\n[experiment] Running level={level}, seed={seed}...")
+                        attempt_started = time.time()
                         try:
                             result = self.run_single_experiment(level, seed)
                             all_results.append(result)
                             self.results.append(result)
-                            self._save_result(result)
+                            saved = self._save_result(result)
+                            self._record_execution_failure(saved or result)
                         except Exception as e:
                             failure = {
                                 "level": level,
@@ -911,6 +923,39 @@ class ExperimentRunner:
                             suite = run_config.metadata.get("suite")
                             if suite is not None:
                                 failure["suite"] = suite
+                            evidence = getattr(e, "recorded_evidence", None)
+                            accounting = getattr(e, "execution_accounting", None)
+                            if isinstance(evidence, dict) or isinstance(accounting, dict):
+                                status = {
+                                    "state": "aborted_unrecoverable",
+                                    "reason": str(e), "error_type": type(e).__name__,
+                                    "planning_time_measured": False,
+                                    "execution_accounting": accounting or {},
+                                }
+                                retained = {
+                                    "level": level, "seed": seed,
+                                    "planning_time": 0.,
+                                    "total_time": float(time.time()-attempt_started),
+                                    "execution_status": status,
+                                    "config_snapshot": run_config.to_dict(),
+                                    "metrics": {
+                                        name: getattr(self.registry.get_plugin("metric", name),
+                                                      "execution_failure_metrics", None)
+                                        for name in run_config.metrics
+                                    },
+                                    "result": {"recorded_evidence": evidence or {}},
+                                }
+                                try:
+                                    saved = self._save_result(retained)
+                                    failure.update(
+                                        retained_result=True,
+                                        recorded_evidence=(saved or {}).get("recorded_evidence", {}),
+                                        execution_accounting=accounting or {},
+                                    )
+                                    all_results.append(retained)
+                                    self.results.append(retained)
+                                except Exception as retention_error:
+                                    failure["evidence_persistence_error"] = str(retention_error)
                             self.failures.append(failure)
                             print(
                                 f"Error in level={level}, seed={seed} "
@@ -926,17 +971,50 @@ class ExperimentRunner:
         # a later batch cannot replace a 30-run aggregate with its last run.
         failed_keys = {
             (str(item["level"]), int(item["seed"])) for item in self.failures
+            if not item.get("retained_result", False)
         }
-        persisted = self._collect_completed_results(exclude=failed_keys)
-        self._save_summary(persisted if persisted else all_results)
+        persisted = self._collect_completed_results(
+            exclude=failed_keys, include_aborted=True,
+        )
+        for result in persisted:
+            self._record_execution_failure(result)
+        fallback = [result for result in all_results
+                    if (str(result["level"]), int(result["seed"])) not in failed_keys]
+        self._save_summary(persisted if persisted else fallback)
 
         if getattr(self.config, "auto_report", True):
             self._generate_report()
 
         return all_results
 
+    def _record_execution_failure(self, result: Dict[str, Any]) -> None:
+        """Count a retained aborted attempt once, including reloaded results."""
+        status = result.get("execution_status") or {}
+        if status.get("state", "completed") == "completed":
+            return
+        key = (str(result["level"]), int(result["seed"]))
+        if any((str(row["level"]), int(row["seed"])) == key for row in self.failures):
+            return
+        failure = {
+            "level": result["level"], "seed": result["seed"],
+            "error_type": status.get("error_type", "ExecutionAborted"),
+            "error": status.get("reason", status["state"]),
+            "execution_status": status,
+            "retained_result": True,
+        }
+        for name in ("recorded_evidence", "execution_accounting"):
+            if name in result:
+                failure[name] = result[name]
+            elif name in status:
+                failure[name] = status[name]
+        suite = (result.get("config_snapshot") or {}).get("metadata", {}).get("suite")
+        if suite is not None:
+            failure["suite"] = suite
+        self.failures.append(failure)
+
     def _collect_completed_results(
         self, *, exclude: Optional[set[tuple[str, int]]] = None,
+        include_aborted: bool = False,
     ) -> List[Dict[str, Any]]:
         """Load compatible completed trials already present in output_dir.
 
@@ -958,9 +1036,9 @@ class ExperimentRunner:
             key = (str(result.get("level")), int(result.get("seed", -1)))
             if key in exclude:
                 continue
-            if (result.get("execution_status") or {}).get(
-                "state", "completed"
-            ) != "completed":
+            state = (result.get("execution_status") or {}).get("state", "completed")
+            allowed_states = {"completed", "aborted_unrecoverable"} if include_aborted else {"completed"}
+            if state not in allowed_states:
                 continue
             snapshot = result.get("config_snapshot")
             if not isinstance(snapshot, dict):
@@ -1034,6 +1112,33 @@ class ExperimentRunner:
                 checkpoints[label] = {
                     "path": str(checkpoint), "sha256": digest,
                 }
+        def collect_bound_artifacts(value, prefix="method_params"):
+            if isinstance(value, dict):
+                if "path" in value and "sha256" in value:
+                    path = Path(str(value["path"])).expanduser()
+                    if not path.is_absolute():
+                        path = Path.cwd() / path
+                    if path.is_file():
+                        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+                    elif path.is_dir():
+                        actual = {
+                            child.name: hashlib.sha256(child.read_bytes()).hexdigest()
+                            for child in sorted(path.iterdir()) if child.is_file()
+                        }
+                    else:
+                        actual = None
+                    checkpoints[prefix] = {
+                        "path": str(value["path"]),
+                        "declared_sha256": value["sha256"],
+                        "actual_sha256": actual,
+                    }
+                for key, child in value.items():
+                    collect_bound_artifacts(child, f"{prefix}.{key}")
+            elif isinstance(value, (list, tuple)):
+                for index, child in enumerate(value):
+                    collect_bound_artifacts(child, f"{prefix}[{index}]")
+
+        collect_bound_artifacts(self.config.method_params)
         manifest = {
             "schema_version": 1,
             "git_sha": git_sha,
@@ -2977,7 +3082,28 @@ class ExperimentRunner:
         output_path.mkdir(parents=True, exist_ok=True)
         return output_path
     
-    def _save_result(self, result: Dict[str, Any]) -> None:
+    def _save_recorded_evidence(self, output_path: Path, evidence: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist plugin-owned evidence equally for normal and aborted runs."""
+        if not evidence:
+            return {}
+        evidence_dir = output_path / "trajectory"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        pointers = {}
+        for name, payload in evidence.items():
+            if not isinstance(name, str) or not name or not name.replace("_", "").isalnum():
+                raise ValueError("evidence artifact name must be a simple identifier")
+            content = json.dumps(convert_to_json_serializable(payload),
+                                 sort_keys=True, allow_nan=False).encode()
+            compressed = gzip.compress(content, mtime=0)
+            artifact = evidence_dir / f"{name}.json.gz"
+            artifact.write_bytes(compressed)
+            pointers[name] = {
+                "path": str(artifact), "sha256": hashlib.sha256(compressed).hexdigest(),
+                "uncompressed_bytes": len(content),
+            }
+        return pointers
+
+    def _save_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """
         Save individual experiment result.
         
@@ -3061,6 +3187,13 @@ class ExperimentRunner:
         
         # Add planning result data if available (omit large arrays exec_states/exec_actions from results.json)
         if isinstance(planning_result, dict):
+            # Plugins own evidence schemas; the framework only persists named
+            # JSON artifacts and their hashes. No task or solver dispatch here.
+            evidence = planning_result.get("recorded_evidence", {})
+            if evidence:
+                serializable_result["recorded_evidence"] = self._save_recorded_evidence(
+                    output_path, evidence,
+                )
             if "component_contract" in planning_result:
                 serializable_result["component_contract"] = (
                     convert_to_json_serializable(
@@ -3097,8 +3230,8 @@ class ExperimentRunner:
                 trajectory_dir.mkdir(parents=True, exist_ok=True)
                 executed = {
                     "schema_version": 2,
-                    "state_layout": "brax_state_compact",
-                    "states": [_compact_contact_state(s) for s in direct.states],
+                    "state_layout": planning_result.get("state_layout", "brax_state_compact"),
+                    "states": [_serialize_trajectory_state(s) for s in direct.states],
                     "actions": convert_to_json_serializable(direct.actions),
                     "infos": convert_to_json_serializable(
                         planning_result.get("infos", [])
@@ -3107,6 +3240,10 @@ class ExperimentRunner:
                         planning_result.get("costs", [])
                     ),
                 }
+                if "state_fields" in planning_result:
+                    executed["state_fields"] = convert_to_json_serializable(
+                        planning_result["state_fields"]
+                    )
                 artifacts = planning_result.get("metric_artifacts", {})
                 if planning_result.get("execution_status"):
                     executed["execution_status"] = convert_to_json_serializable(
@@ -3195,6 +3332,7 @@ class ExperimentRunner:
         with open(output_path / "results.json", 'w') as f:
             json.dump(convert_to_json_serializable(serializable_result), f,
                       indent=2, allow_nan=False)
+        return serializable_result
     
     def _save_summary(self, all_results: List[Dict[str, Any]]) -> None:
         """
@@ -3211,13 +3349,14 @@ class ExperimentRunner:
                 r for r in all_results if str(r['level']) == str(level)
             ]
             if level_results:
-                pt_list = [r['planning_time'] for r in level_results]
+                pt_list = [r['planning_time'] for r in level_results
+                           if (r.get('execution_status') or {}).get('planning_time_measured', True)]
                 n_pt = len(pt_list)
                 # Compute average metrics
                 summary = {
                     'level': level,
-                    'num_experiments': n_pt,
-                    'avg_planning_time': float(np.mean(pt_list)),
+                    'num_experiments': len(level_results),
+                    'avg_planning_time': float(np.mean(pt_list)) if pt_list else None,
                     'std_planning_time': float(np.std(pt_list)) if n_pt > 1 else 0.0,
                 }
                 summary['metrics'] = {
@@ -3299,10 +3438,11 @@ class ExperimentRunner:
             r['metrics']['best'] for r in all_results
             if isinstance(r.get('metrics'), dict) and isinstance(r['metrics'].get('best'), dict)
         ]
-        pt_all = [r['planning_time'] for r in all_results]
+        pt_all = [r['planning_time'] for r in all_results
+                  if (r.get('execution_status') or {}).get('planning_time_measured', True)]
         n_all = len(pt_all)
         overall_summary = {
-            'total_experiments': n_all,
+            'total_experiments': len(all_results),
             'avg_planning_time': float(np.mean(pt_all)) if pt_all else None,
             'std_planning_time': float(np.std(pt_all)) if n_all > 1 else 0.0,
             'level_summaries': level_summaries,

@@ -1,0 +1,74 @@
+{
+  "version": "four-task-paired-development-qualification-v2",
+  "name": "finite_time_terminal_progress_paired",
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "seed_anchor": 4102000,
+  "reset_slots_per_cell": 8,
+  "requested_modes": [
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "execution": {
+    "device": "cuda"
+  },
+  "methods": [
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_current",
+      "instances": "all"
+    },
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_finite_time",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_gated_v3_finite_time",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_progress/validation_selected/checkpoints/report.json",
+          "sha256": "45c44c3f44d72d0525c21204a7e473d9a464e275747d2d93a4d014a78a7fabb5"
+        }
+      }
+    },
+    {
+      "family": "ablation",
+      "key": "band_only",
+      "label": "band_only",
+      "instances": "all"
+    },
+    {
+      "family": "main",
+      "key": "response_mpc",
+      "label": "response_mpc",
+      "instances": "all"
+    }
+  ],
+  "acceptance": {
+    "candidate": "cross_ebdm_finite_time",
+    "current": "cross_ebdm_current",
+    "band_only": "band_only",
+    "strong_reference": "response_mpc",
+    "required_candidate_successes": 64,
+    "preserve_every_paired_current_success": true,
+    "require_zero_candidate_constraint_violations": true,
+    "require_candidate_to_beat_band_only": true,
+    "require_candidate_to_match_strong_reference": true
+  },
+  "scope": "Fresh paired T3 payload-mode-1 qualification of the finite-time Cross-EBDM candidate against the frozen current actor, band-only ablation and response MPC. All eight independent instances use their own SHA-bound checkpoint; no formal binding, confirmation state or paper performance evidence is opened."
+}

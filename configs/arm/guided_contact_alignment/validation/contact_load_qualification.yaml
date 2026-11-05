@@ -1,0 +1,37 @@
+base: ../baseline/public_geometry.yaml
+name: guided_contact_alignment_contact_load_qualification
+output_dir: results/arm/guided_contact_alignment/validation/contact_load_qualification
+backend: numpy
+device: cpu
+seeds:
+- 930204
+- 930205
+n_steps: 1000
+env_params:
+  robot: xarm7
+method_params:
+  actor_binding:
+    manifest: null
+    reference_version: public_guide_contact_v2
+metadata:
+  formal_experiment: false
+  formal_seeds: false
+  protocol_status: development
+  run_class: development
+  protocol: transfer_contact_load_qualification
+  cpu_only: true
+  physics_episode_cap: 4
+  failure_replacement: false
+  evaluation_contract: cross-embodiment-strict-contact-v3
+  selection_rule: require both requested modes to satisfy the unchanged strict contact and force criteria
+suites:
+- name: xarm7_mode_0
+  env_params:
+    mode: 0
+  method_params:
+    mode: 0
+- name: xarm7_mode_1
+  env_params:
+    mode: 1
+  method_params:
+    mode: 1

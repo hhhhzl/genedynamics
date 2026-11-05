@@ -6,6 +6,7 @@ to run experiments from YAML configuration files.
 """
 
 import argparse
+import hashlib
 import os
 import warnings
 from pathlib import Path
@@ -95,23 +96,114 @@ from genedynamics.experiments.plugins import (
 def _formal_readiness_errors(config: ExperimentConfig) -> list[str]:
     """Return execution blockers for a canonical formal result directory.
 
-    Development runs deliberately use the same resolved algorithm config, so
-    they must remain available while learned components are being trained and
-    calibrated.  Canonical formal output, however, stays closed until the
-    shared protocol explicitly declares itself frozen.
+    Development runs use the same resolved algorithm config under an isolated
+    output root.  A ``run_class: development`` label inside a canonical config
+    is not isolation and must never bypass this gate.
     """
     metadata = config.metadata or {}
-    if metadata.get("run_class") == "development":
-        return []
     if not metadata.get("formal_experiment", True):
         return []
+    errors: list[str] = []
+    if metadata.get("benchmark") == "four_task_transfer":
+        if config.env_name != "obstacle_transfer":
+            pointer = metadata.get("shared_task_contract")
+            if not isinstance(pointer, dict):
+                errors.append("four-task transfer config has no shared_task_contract binding")
+            else:
+                project_root = config._find_project_root()
+                path = Path(str(pointer.get("path", ""))).expanduser()
+                if not path.is_absolute() and project_root is not None:
+                    path = project_root / path
+                expected = str(pointer.get("sha256", ""))
+                if not path.is_file():
+                    errors.append(f"shared_task_contract is missing: {path}")
+                elif not expected or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                    errors.append("shared_task_contract failed SHA256 validation")
+        frozen = metadata.get("frozen_design")
+        if not isinstance(frozen, dict):
+            errors.append("four-task transfer config has no frozen_design binding")
+        else:
+            expected_design = {
+                "admission_scope": "pre_refactor_design_and_preaccess",
+                "migration_rule": "rebind_and_prove_equivalence_before_confirmation",
+                "main_table_rows": 9,
+                "ablation_cells": 6,
+                "training_or_calibration_instances": 8,
+            }
+            for key, expected in expected_design.items():
+                if frozen.get(key) != expected:
+                    errors.append(
+                        f"frozen_design.{key} must be {expected}, got "
+                        f"{frozen.get(key)!r}"
+                    )
+            if frozen.get("confirmation_accessed") is not False:
+                errors.append("frozen_design must declare confirmation_accessed: false")
+            artifacts = frozen.get("artifacts")
+            if not isinstance(artifacts, dict) or not artifacts:
+                errors.append("frozen_design has no published artifact bindings")
+            else:
+                project_root = config._find_project_root()
+                for label, pointer in artifacts.items():
+                    if not isinstance(pointer, dict):
+                        errors.append(f"frozen_design artifact {label!r} is malformed")
+                        continue
+                    path = Path(str(pointer.get("path", ""))).expanduser()
+                    if not path.is_absolute() and project_root is not None:
+                        path = project_root / path
+                    expected = str(pointer.get("sha256", ""))
+                    if not path.is_file():
+                        errors.append(f"frozen_design artifact {label!r} is missing: {path}")
+                    elif not expected or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                        errors.append(f"frozen_design artifact {label!r} failed SHA256 validation")
+        if config.method != "task_reference":
+            binding = config.method_params.get("actor_binding")
+            if (
+                not isinstance(binding, dict)
+                or binding.get("version") != "transfer-actor-binding-v1"
+            ):
+                errors.append(
+                    "method has no transfer-actor-binding-v1; bind and hash all "
+                    "package-owned artifacts before any task reset"
+                )
+            elif "manifest" in binding:
+                try:
+                    from genedynamics.tasks.transfer.controllers.bindings import (
+                        resolve_transfer_binding,
+                        validate_transfer_actor_manifest,
+                    )
+
+                    validate_transfer_actor_manifest(binding["manifest"])
+                    resolved = resolve_transfer_binding(config.method_params)
+                    if resolved.get("status") == "instances_ready":
+                        errors.append(
+                            "learned actor selection requires one explicit "
+                            "instance_01 through instance_08 before execution"
+                        )
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    errors.append(f"actor binding manifest failed validation: {exc}")
+
+    isolated = bool(metadata.get("development_output_root"))
+    if isolated:
+        return errors
+    if metadata.get("run_class") == "development":
+        errors.append(
+            "canonical output cannot use run_class 'development'; pass "
+            "--development-root to create an isolated development run"
+        )
     status = str(metadata.get("protocol_status", "")).strip()
-    if status and not status.startswith("frozen"):
-        return [
+    if not status.startswith("frozen"):
+        errors.append(
             f"formal protocol is {status!r}; use --development-root for probes "
             "and freeze the shared protocol before writing canonical results"
-        ]
-    return []
+        )
+    if metadata.get("formal_seeds") is not True:
+        errors.append("canonical formal execution requires formal_seeds: true")
+    if (
+        metadata.get("benchmark") == "four_task_transfer"
+        and metadata.get("architecture_equivalence") != "passed"
+    ):
+        errors.append("four-task transfer architecture equivalence is not passed")
+    return errors
 
 
 def main():

@@ -1,0 +1,8 @@
+base: ../_base.yaml
+name: mobile_keyed_insertion_recovery_matching_no_band
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/ablation/matching_no_band
+method_params:
+  ablation_cell: matching_no_band
+  actor_binding:
+    family: ablation
+    key: matching_no_band

@@ -1,0 +1,18 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "method": "public_geometry",
+  "method_identity": "public_geometry",
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/public_geometry/validation/asid_adaptsim_paired_pilot_3302900000",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/public_geometry/validation/asid_adaptsim_paired_pilot_3302900000_plan.json",
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/asid_adaptsim_public_fresh_actor_roster.json",
+    "sha256": "7e22d74862a683fa08db8e9570f49309be7bf09360d1fe1ec62882063f3d2587"
+  },
+  "task": "T4",
+  "task_config": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/public_geometry.yaml",
+  "version": "transfer-method-development-evaluation-v1"
+}

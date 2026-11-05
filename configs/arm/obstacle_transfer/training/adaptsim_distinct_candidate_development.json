@@ -1,0 +1,43 @@
+{
+  "version": "adaptsim-obstacle-development-v1",
+  "task": "T1",
+  "robot": "xarm7",
+  "delay_steps": 0,
+  "seed": 928501,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 180,
+    "maximum_gpu_memory_gib": 2
+  },
+  "parameters": [
+    {"name": "servo_gain", "minimum": 0.4, "maximum": 1.4, "step": 0.1, "distribution": "gaussian", "min_std": 0.05, "max_std": 0.25},
+    {"name": "payload_mass", "minimum": 0.2, "maximum": 1.2, "step": 0.1, "distribution": "gaussian", "min_std": 0.05, "max_std": 0.25}
+  ],
+  "particles": [
+    {"kind": "gaussian", "left": [0.85, 0.5], "right": [0.1, 0.1]},
+    {"kind": "gaussian", "left": [1.05, 0.7], "right": [0.1, 0.1]}
+  ],
+  "task_policy_search": {
+    "anchor": [0.5678590883444584, 0.6581064010126911, 0.6270149599348386, 0.6097529670246064, 1.0, 1.0],
+    "lower": [0.52, 0.60, 0.58, 0.55, 0.65, 0.65],
+    "upper": [0.62, 0.73, 0.70, 0.69, 1.15, 1.15],
+    "population": 3,
+    "elite": 1,
+    "iterations": 1,
+    "tasks_per_candidate": 1
+  },
+  "meta_training": {
+    "episodes": 1,
+    "adaptation_steps": 1,
+    "batch_size": 1,
+    "update_every": 1,
+    "gradient_steps": 1,
+    "exploration_probability": 1.0
+  },
+  "deployment_target": {
+    "mechanism": {"servo_gain": 0.7, "payload_mass": 0.5, "delay_steps": 0},
+    "updates": 1
+  },
+  "output": "results/arm/obstacle_transfer/baseline/adaptsim/training/development_distinct_candidates_928501"
+}

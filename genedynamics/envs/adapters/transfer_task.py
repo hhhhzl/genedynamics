@@ -41,7 +41,8 @@ def _take(value, order):
 class CpuTaskAdapter:
     action_size = 13
 
-    def __init__(self, spec, *, mechanism_spec=None, seed=0, history_len=4):
+    def __init__(self, spec, *, mechanism_spec=None, seed=0, history_len=4,
+                 shared_execution=None):
         import mujoco
         from genedynamics.tasks.transfer.runtime import ExecutionSpec, MechanismSpec
 
@@ -51,6 +52,10 @@ class CpuTaskAdapter:
         self.seed, self.history_len = int(seed), int(history_len)
         if mechanism_spec is not None and not isinstance(mechanism_spec, MechanismSpec):
             raise TypeError("one construction-only mechanism per adapter; heterogeneous batches need separate adapters")
+        from genedynamics.tasks.transfer.specs import validate_shared_execution
+        self.shared_execution = validate_shared_execution(
+            spec, mechanism_spec or MechanismSpec(), shared_execution,
+        )
         if spec.family == "obstacle":
             from genedynamics.envs.domains.manipulation.transfer_workcell.runtime import TransferWorkcell
             self.runner = TransferWorkcell(execution=ExecutionSpec(backend="numpy", device="cpu", physics_backend="mujoco"),
@@ -59,6 +64,11 @@ class CpuTaskAdapter:
             from genedynamics.envs.domains.manipulation.transfer_workcell.contact_runtime import ContactRunner
             self.runner = ContactRunner(config=self.config, mechanism=mechanism_spec)
         self._provider = self.runner._impl
+        # CPU contact tasks retain exact physics-rate contact evidence for
+        # independent evaluation.  The provider keeps it on a diagnostic side
+        # channel; it never enters observe(), histories, or policy inputs.
+        if spec.family != "obstacle" or spec.name == "aperture_brake":
+            self._provider.record_events = True
         self._model, self._sid = self._provider.model, self._provider.sid
         self._state = None
         self._episodes = []
@@ -106,7 +116,21 @@ class CpuTaskAdapter:
                 "flat_fields": FLAT_FIELDS, "command_size": self.command_size,
                 "action_size": self.action_size, "accounting": dict(self.accounting),
                 "lifetime_accounting": dict(self.lifetime_accounting),
+                "shared_execution": deepcopy(self.shared_execution),
                 "scope": "adapted task interface, not native baseline or GPU physical equivalence"}
+
+    def public_body_intent(self, public):
+        """Return the task-owned body request shared by every T4 method row."""
+        if self.shared_execution.get("body_intent_profile") != "public_planar_v1":
+            return None
+        elapsed = np.asarray(public["elapsed_seconds"], dtype=float).reshape(-1)
+        start = float(self.shared_execution["body_intent_start_seconds"])
+        stop = start + float(self.shared_execution["body_intent_duration_seconds"])
+        active = (elapsed >= start) & (elapsed < stop)
+        velocity = np.asarray(
+            self.shared_execution["body_velocity_world"], dtype=np.float32,
+        )
+        return np.where(active[:, None], velocity[None], 0.).astype(np.float32)
 
     def _require_reset(self):
         if self._state is None:
@@ -116,7 +140,7 @@ class CpuTaskAdapter:
         self.accounting[key] += int(value)
         self.lifetime_accounting[key] += int(value)
 
-    def reset(self, sample_ids=(0,), *, seed=None, mask=None, initial=None):
+    def reset(self, sample_ids=(0,), *, seed=None, mask=None, initial=None, modes=None):
         from genedynamics.tasks.transfer.runtime import RandomRequest
 
         sample_ids = tuple(int(value) for value in sample_ids)
@@ -134,6 +158,12 @@ class CpuTaskAdapter:
                 raise ValueError("partial reset mask must have one flag per sample")
         else:
             reset_mask = np.ones(len(sample_ids), dtype=bool)
+        reset_modes = np.asarray(
+            (self._mode if mask is not None else np.zeros(len(sample_ids), dtype=int))
+            if modes is None else modes,
+        )
+        if reset_modes.shape != (len(sample_ids),) or not np.isin(reset_modes, (0, 1)).all():
+            raise ValueError("reset modes must contain one 0/1 request per world")
         # Preparation is part of a target interaction. Go2 matched-keyway
         # reset performs 50 genuine 20 ms stance transitions before placement.
         self._charge("reset_calls", 1)
@@ -146,7 +176,8 @@ class CpuTaskAdapter:
             identity = sample_ids[slot]
             generation = sum(record.sample_id == identity for record in self._episodes)
             self._current[slot] = len(self._episodes)
-            self._episodes.append(EpisodeRecord(identity, used_seed, generation, initial))
+            self._episodes.append(EpisodeRecord(identity, used_seed, generation, initial,
+                                                requested_mode=int(reset_modes[slot])))
         kwargs = {} if mask is None else dict(previous=old, mask=reset_mask)
         if self.spec.family != "obstacle":
             kwargs["initial"] = initial
@@ -170,9 +201,27 @@ class CpuTaskAdapter:
                 self._provider._step = original_step
         else:
             self._state = self.runner.reset_batch(request, **kwargs)
+        for index in np.flatnonzero(reset_mask):
+            data = self._state.physics[index]
+            physical = {
+                key: np.asarray(getattr(data, key)).tolist()
+                for key in ("qpos", "qvel", "act", "mocap_pos", "mocap_quat")
+            }
+            self._episodes[self._current[index]].reset_evidence = {
+                "physical_state": physical,
+                "physical_state_sha256": hashlib.sha256(
+                    json.dumps(physical, sort_keys=True, allow_nan=False).encode()
+                ).hexdigest(),
+                "identity_excluded_from_physical_hash": True,
+                "tcp_position": data.site_xpos[self._sid].copy(),
+                "tcp_rotation": data.site_xmat[self._sid].reshape(3, 3).copy(),
+                "reset_profile": getattr(self.config, "reset_profile", "legacy"),
+                "reset_joint_noise": getattr(self.config, "reset_joint_noise", None),
+                "reset_task_noise": getattr(self.config, "reset_task_noise", None),
+            }
         self.seed = used_seed
         if mask is None:
-            self._mode = np.zeros(len(sample_ids), dtype=np.int32)
+            self._mode = reset_modes.astype(np.int32, copy=True)
             self._previous_request = np.zeros((len(sample_ids), 13), dtype=np.float32)
             self._previous_action = np.zeros_like(self._previous_request)
             self._public_reference_position = np.stack([data.site_xpos[self._sid].copy() for data in self._state.physics])
@@ -181,6 +230,7 @@ class CpuTaskAdapter:
             self._history_act = np.zeros((len(sample_ids), self.history_len, 13), dtype=np.float32)
             self._history_valid = np.zeros((len(sample_ids), self.history_len), dtype=bool)
         else:
+            self._mode[reset_mask] = reset_modes[reset_mask]
             self._previous_request[reset_mask] = 0
             self._previous_action[reset_mask] = 0
             self._history_obs[reset_mask] = 0
@@ -202,6 +252,10 @@ class CpuTaskAdapter:
         if modes.shape != (self.num_envs,) or not np.isin(modes, (0, 1)).all():
             raise ValueError("one declared source-mode request (0/1) per world is required")
         self._mode = modes.copy()
+        for slot, mode in enumerate(modes):
+            current = self._current[slot]
+            if current >= 0:
+                self._episodes[current].requested_mode = int(mode)
 
     def observe(self):
         import mujoco
@@ -251,6 +305,26 @@ class CpuTaskAdapter:
             elapsed_seconds=np.asarray(state.steps)[:, None] * self.config.control_dt,
             body_position=body_positions, body_twist=body_twists, controller_feedback=feedback,
         )
+        if self.spec.name == "aperture_brake":
+            from genedynamics.tasks.transfer.aperture import object_pose_and_twist
+            object_positions, object_rotations, object_twists = [], [], []
+            for position, rotation_value, twist in zip(positions, rotations, twists):
+                object_position, object_rotation, object_twist = object_pose_and_twist(
+                    np.asarray(position), np.asarray(rotation_value), np.asarray(twist),
+                )
+                object_positions.append(object_position)
+                object_rotations.append(object_rotation)
+                object_twists.append(object_twist)
+            data.update(
+                carried_object_position=object_positions,
+                carried_object_rotation=object_rotations,
+                carried_object_twist=object_twists,
+                aperture_geometry=np.tile(np.asarray([
+                    self.config.aperture_plane_x, self.config.aperture_center_y,
+                    self.config.aperture_center_z, self.config.aperture_half_width,
+                    self.config.aperture_half_height, *self.config.aperture_exit_zone,
+                ]), (self.num_envs, 1)),
+            )
         # Own every array. A policy cannot mutate simulator/controller/history
         # state by modifying an observation it was given.
         return {key: np.array(value, dtype=np.float32, copy=True) for key, value in data.items()}
@@ -258,6 +332,17 @@ class CpuTaskAdapter:
     def flat_observation(self, observation=None):
         observation = self.observe() if observation is None else observation
         return np.concatenate([np.asarray(observation[key]).reshape(self.num_envs, -1) for key in FLAT_FIELDS], axis=-1)
+
+    def public_state_fields(self):
+        """Describe the serialized public vector without private state fields."""
+        public, fields, offset = self.observe(), [], 0
+        for name in FLAT_FIELDS:
+            value = np.asarray(public[name])
+            size = int(np.prod(value.shape[1:]))
+            fields.append(dict(name=name, shape=list(value.shape[1:]),
+                               start=offset, stop=offset + size, dtype=str(value.dtype)))
+            offset += size
+        return fields
 
     def _push_history(self, mask):
         indices = np.flatnonzero(mask)
@@ -302,6 +387,19 @@ class CpuTaskAdapter:
                "finite": bool(np.isfinite(data.qpos).all() and np.isfinite(data.qvel).all() and np.isfinite(requested).all())}
         if self.spec.family == "obstacle":
             row.update(clearance=float(scalar("clearance_lower_bound")), joint_speed_peak=float(scalar("max_joint_speed")))
+            if self.spec.name == "aperture_brake":
+                events = getattr(self._provider, "last_event_trace", None)
+                required = (
+                    "tcp_position_substeps", "tcp_rotation_substeps",
+                    "tcp_twist_substeps", "frame_contact_substeps",
+                    "frame_contact_mask_substeps",
+                )
+                if events is None or any(name not in events for name in required):
+                    raise RuntimeError("aperture step omitted physics-rate evaluator evidence")
+                row.update(**{
+                    name: np.asarray(events[name][index, 0]).copy()
+                    for name in required
+                })
             joint_pos, joint_ids = data.qpos, np.arange(model.njnt)
         elif self.config.robot == "go2_z1":
             joint_pos = data.qpos[self._provider.qindices]
@@ -316,13 +414,102 @@ class CpuTaskAdapter:
         tolerance = 1e-5 if self.spec.family == "obstacle" else 1e-4
         row["joint_limit"] = bool(np.any(joint_pos < model.jnt_range[joint_ids, 0] - tolerance)
                                   or np.any(joint_pos > model.jnt_range[joint_ids, 1] + tolerance))
+        # Evaluator-only evidence. None of these plant-applied fields is added
+        # to observe()/flat_observation(), so the public actor contract stays fixed.
+        limited = np.asarray(model.jnt_limited[joint_ids], dtype=bool)
+        margins = np.minimum(joint_pos - model.jnt_range[joint_ids, 0],
+                             model.jnt_range[joint_ids, 1] - joint_pos)
+        limiting = int(np.argmin(np.where(limited, margins, np.inf)))
+        row.update(
+            joint_position=np.asarray(data.qpos).copy(),
+            joint_velocity=np.asarray(data.qvel).copy(),
+            joint_margin_rad=margins.copy(),
+            minimum_joint_margin_rad=float(margins[limiting]) if limited.any() else None,
+            limiting_joint=str(model.joint(int(joint_ids[limiting])).name) if limited.any() else None,
+            public_reference_position=self._public_reference_position[index].copy(),
+            public_reference_rotation=self._public_reference_rotation[index].copy(),
+            public_reference_lead=(self._public_reference_position[index] - row["tcp_position"]).copy(),
+            issued_action=self._previous_action[index].copy(),
+            applied_action=np.asarray(trace.command[index, 0]).copy(),
+        )
+        for name in ("force_integral", "approach_integral", "contact_seen", "loss_count", "hold_count"):
+            value = getattr(self._state, name, None)
+            if value is not None:
+                row[f"execution_{name}"] = np.asarray(value)[index].copy()
+        for name in ("reference_position", "reference_rotation"):
+            value = getattr(self._state, name, None)
+            if value is not None:
+                row[f"applied_{name}"] = np.asarray(value)[index].copy()
         if self.spec.family != "obstacle":
             row.update(normal_force=float(scalar("normal_force")), force_peak=float(scalar("force_peak")),
                        lateral_force_peak=float(scalar("lateral_force_peak")),
                        forbidden_collision=bool(scalar("forbidden_collision")),
                        axial_support=bool(self._provider._axial_support(data)),
                        loading=bool(requested[12] > .1 and trace.command[index, 0, 12] > .1))
+            exact_evidence_task = (
+                self.config.execution_profile == "substep_wrench_governor"
+                or getattr(self.config,"guide_profile",None)=="planar_corner_v1"
+                or hasattr(self._provider,"fixture_observation")
+            )
+            if (self._episodes[self._current[index]].controller == "shared_skill"
+                    and exact_evidence_task):
+                events = getattr(self._provider, "last_event_trace", None)
+                required = (
+                    "axial_support_substeps", "normal_force_substeps",
+                    "tcp_position_substeps", "joint_speed_substeps",
+                    "force_peak_substeps", "lateral_force_substeps",
+                )
+                if events is None or any(name not in events for name in required):
+                    raise RuntimeError("shared contact step omitted physics-rate evaluator evidence")
+                row.update(
+                    axial_support_substeps=np.asarray(
+                        events["axial_support_substeps"][index, 0], dtype=bool,
+                    ).copy(),
+                    normal_force_substeps=np.asarray(
+                        events["normal_force_substeps"][index, 0], dtype=float,
+                    ).copy(),
+                    tcp_position_substeps=np.asarray(
+                        events["tcp_position_substeps"][index, 0], dtype=float,
+                    ).copy(),
+                    joint_speed_substeps=np.asarray(
+                        events["joint_speed_substeps"][index, 0], dtype=float,
+                    ).copy(),
+                    force_peak_substeps=np.asarray(
+                        events["force_peak_substeps"][index, 0], dtype=float,
+                    ).copy(),
+                    lateral_force_substeps=np.asarray(
+                        events["lateral_force_substeps"][index, 0], dtype=float,
+                    ).copy(),
+                    contact_region_substeps=np.asarray(
+                        events["contact_region_substeps"][index, 0], dtype=np.uint8,
+                    ).copy(),
+                )
+                if hasattr(self._provider,"fixture_observation"):
+                    fixture_required=("fixture_position_substeps","fixture_twist_substeps","fixture_stop_substeps")
+                    if any(name not in events for name in fixture_required):
+                        raise RuntimeError("compliant step omitted physics-rate fixture evidence")
+                    row.update(
+                        fixture_position_substeps=np.asarray(
+                            events["fixture_position_substeps"][index,0],dtype=float,
+                        ).copy(),
+                        fixture_twist_substeps=np.asarray(
+                            events["fixture_twist_substeps"][index,0],dtype=float,
+                        ).copy(),
+                        fixture_stop_substeps=np.asarray(
+                            events["fixture_stop_substeps"][index,0],dtype=bool,
+                        ).copy(),
+                    )
         return row
+
+    def record_control_diagnostics(self, diagnostics):
+        """Attach pre-transition public controller memory to the latest step."""
+        if self.num_envs != 1:
+            raise ValueError("controller diagnostics require an explicit per-world binding")
+        record = self._episodes[self._current[0]]
+        if (not record.traces or len(record.traces) != len(record.control_diagnostics)
+                or record.control_diagnostics[-1] != {"recording": "unavailable"}):
+            raise ValueError("one diagnostic snapshot must follow each physical step")
+        record.control_diagnostics[-1] = deepcopy(diagnostics)
 
     def step(self, action):
         self._require_reset()
@@ -341,7 +528,61 @@ class CpuTaskAdapter:
         self._state = result.state
         return self._finish_step(action, result.trace, active)
 
+    def step_contact(self, action, *, body_twist):
+        """Execute one shared skill tick with an explicit public body intent.
+
+        The body command is an ordinary low-level input carried by
+        ``ContactCommands``.  It is recorded with the requested skill and does
+        not expose plant carry, mechanism parameters, or evaluator state.
+        """
+        from genedynamics.tasks.transfer.contact import ContactCommands
+
+        self._require_reset()
+        if self.spec.family == "obstacle" or not getattr(self.config, "mobile", False):
+            raise ValueError("body intent requires a mobile contact task")
+        action = numpy_action(action).astype(np.float32, copy=False)
+        if action.shape == (13,) and self.num_envs == 1:
+            action = action[None]
+        body_twist = numpy_action(body_twist).astype(np.float32, copy=False)
+        if body_twist.shape == (3,) and self.num_envs == 1:
+            body_twist = body_twist[None]
+        if action.shape != (self.num_envs, 13):
+            raise ValueError("shared skill action must have shape [B,13]")
+        if body_twist.shape != (self.num_envs, 3):
+            raise ValueError("public planar body twist must have shape [B,3]")
+        if not np.isfinite(body_twist).all():
+            raise ValueError("public planar body twist must be finite")
+        active = np.asarray(self._state.status) == 0
+        if not active.any():
+            raise RuntimeError("all episodes ended; reset before requesting more target execution")
+        if any(self._episodes[self._current[i]].controller != "shared_skill" for i in np.flatnonzero(active)):
+            raise ValueError("controller family cannot change inside an episode")
+        self._charge("command_requests", int(active.sum()))
+        result = self.runner.collect_chunk(
+            self._state,
+            ContactCommands(action[:, None, :], body_twist[:, None, :]),
+        )
+        self._state = result.state
+        requests = [
+            {"skill": action[index].copy(), "body_twist": body_twist[index].copy()}
+            for index in range(self.num_envs)
+        ]
+        step = self._finish_step(
+            action, result.trace, active, replay_request=requests,
+        )
+        executed = {
+            "skill": step.executed_action,
+            "body_twist": body_twist.copy(),
+        }
+        return type(step)(step.observation, step.reward, step.done, step.status,
+                          executed, step.trace)
+
     def _finish_step(self, action, trace, active, *, applied_action=None, replay_request=None):
+        # The transition already happened. Charge before recording/observation,
+        # so a serialization or sensor error cannot erase incurred physics.
+        steps = int(np.count_nonzero(np.asarray(trace.valid)[:, 0]))
+        self._charge("control_steps", steps)
+        self._charge("physics_steps", steps * self.config.substeps)
         applied = np.asarray(trace.command[:, 0], dtype=np.float32) if applied_action is None else applied_action
         self._previous_request[active] = action[active]
         if applied_action is None:
@@ -352,6 +593,11 @@ class CpuTaskAdapter:
                 self._public_reference_position[index] += issued[index, :3] * self.config.control_dt
                 if self.spec.family != "obstacle" and issued[index, 12] > .01:
                     self._public_reference_position[index, 2] = trace.tcp_position[index, 0, 2]
+                if (self.spec.family != "obstacle"
+                        and self.config.execution_profile == "substep_wrench_governor"):
+                    self._public_reference_position[index, :2] = np.asarray(
+                        self._state.reference_position,
+                    )[index, :2]
                 self._public_reference_rotation[index] = integrate_rotation(
                     np, self._public_reference_rotation[index], issued[index, 3:6], self.config.control_dt)
         else:
@@ -360,20 +606,31 @@ class CpuTaskAdapter:
             self._previous_action[active] = 0.
         trace_dict = {key: np.asarray(getattr(trace, key))[:, 0].copy() for key in trace._fields}
         rewards = np.zeros(self.num_envs, dtype=np.float32)
+        recording_errors = []
         for index in np.flatnonzero(active):
             record = self._episodes[self._current[index]]
             request = action[index].copy() if replay_request is None else deepcopy(replay_request[index])
+            try:
+                row = self._row(trace, index, action[index])
+            except Exception as error:
+                record.state = "aborted"
+                record.incomplete_transitions.append({
+                    "requested_action": request,
+                    "physical_trace": {key: value[index].copy() for key, value in trace_dict.items()},
+                    "error_type": type(error).__name__, "reason": str(error),
+                })
+                recording_errors.append(error)
+                continue
             record.requested_actions.append(request)
-            row = self._row(trace, index, action[index])
             record.traces.append(row)
+            record.control_diagnostics.append({"recording": "unavailable"})
             if row["backend_status"]:
                 record.state = "ended"
             goal = self.config.goal_position if self.spec.family == "obstacle" else self.config.goal
             distance = np.linalg.norm(row["tcp_position"] - goal)
             rewards[index] = -float(distance) - .001 + (1. if row["backend_status"] == 1 else -1. if row["backend_status"] else 0.)
-        steps = int(np.count_nonzero(trace_dict["valid"]))
-        self._charge("control_steps", steps)
-        self._charge("physics_steps", steps * self.config.substeps)
+        if recording_errors:
+            raise recording_errors[0]
         self._push_history(active)
         return TaskStep(self.observe(), rewards, np.asarray(self._state.status) != 0,
                         np.asarray(self._state.status).copy(), applied.copy(), trace_dict)
@@ -397,8 +654,47 @@ class CpuTaskAdapter:
 
     def _contract_hash(self):
         value = dict(version=CONTRACT_VERSION, task=self.spec.name, config=asdict(self.config),
-                     history_len=self.history_len, scene=self.runner.describe())
+                     history_len=self.history_len, scene=self.runner.describe(),
+                     shared_execution=self.shared_execution)
         return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
+
+    def _runtime_profile_neutral_hash(self):
+        """Hash physical/reset identity while excluding the runtime profile.
+
+        This receipt is intentionally narrower than a normal checkpoint
+        contract.  It permits one T4 post-preparation integration state to be
+        cloned across predeclared runtime-controller profiles, while still
+        binding the MuJoCo model, construction mechanism, reset contract and
+        public history schema.  It must never be used to move a continuation
+        between mechanisms, reset families or task geometries.
+        """
+        config = asdict(self.config)
+        config.pop("execution_profile", None)
+        mechanism = asdict(self._provider.mechanism)
+        model = self._model
+        digest = hashlib.sha256(json.dumps(dict(
+            version=CONTRACT_VERSION,
+            task=self.spec.name,
+            config=config,
+            mechanism=mechanism,
+            history_len=self.history_len,
+            provider=f"{type(self._provider).__module__}.{type(self._provider).__qualname__}",
+            model=dict(nq=model.nq, nv=model.nv, nu=model.nu, nbody=model.nbody,
+                       njnt=model.njnt, ngeom=model.ngeom),
+        ), sort_keys=True, default=str).encode())
+        for value in (
+            model.body_mass, model.body_inertia, model.body_ipos,
+            model.jnt_type, model.jnt_qposadr, model.jnt_dofadr,
+            model.jnt_range, model.dof_damping, model.actuator_ctrlrange,
+            model.geom_bodyid, model.geom_size, model.geom_pos,
+            model.geom_quat, model.geom_friction, model.geom_solref,
+            model.geom_solimp,
+        ):
+            array = np.ascontiguousarray(value)
+            digest.update(str(array.dtype).encode())
+            digest.update(np.asarray(array.shape, dtype=np.int64).tobytes())
+            digest.update(array.tobytes())
+        return digest.hexdigest()
 
     def get_checkpoint(self):
         """Portable full integration/controller/history state; no target replay."""
@@ -414,7 +710,9 @@ class CpuTaskAdapter:
             if isinstance(value, tuple) and hasattr(value, "_fields"):
                 return {"namedtuple": type(value).__name__, "fields": {key: encode(getattr(value, key)) for key in value._fields if key != "physics"}}
             return np.asarray(value).copy()
-        return dict(schema_version=1, contract_sha256=self._contract_hash(), integration=np.stack(integration),
+        return dict(schema_version=1, contract_sha256=self._contract_hash(),
+                    runtime_profile_neutral_sha256=self._runtime_profile_neutral_hash(),
+                    integration=np.stack(integration),
                     state=encode(self._state), seed=self.seed, episodes=[asdict(row) for row in self._episodes],
                     current=list(self._current), accounting=dict(self.accounting),
                     lifetime_accounting_at_export=dict(self.lifetime_accounting),
@@ -465,6 +763,19 @@ class CpuTaskAdapter:
             self._acp_executor = None
         return self.observe()
 
+    def restore_runtime_profile_checkpoint(self, payload):
+        """Clone an exact post-preparation T4 state across runtime profiles."""
+        allowed = {
+            "legacy", "joint_margin_bounds", "joint_margin_public_reference",
+        }
+        if self.spec.alias != "T4" or self.config.execution_profile not in allowed:
+            raise ValueError("runtime-profile continuation cloning is restricted to T4 isolation profiles")
+        if payload.get("runtime_profile_neutral_sha256") != self._runtime_profile_neutral_hash():
+            raise ValueError("runtime-profile continuation physical/reset contract differs")
+        value = deepcopy(payload)
+        value["contract_sha256"] = self._contract_hash()
+        return self.restore_checkpoint(value)
+
     def replay_episode(self, record):
         """Fresh CPU execution of one frozen command stream, explicitly charged."""
         from genedynamics.tasks.transfer.evaluation import evaluate_episode
@@ -472,19 +783,26 @@ class CpuTaskAdapter:
         if not isinstance(record, EpisodeRecord):
             record = EpisodeRecord(**deepcopy(record))
         mechanism = self._provider.mechanism
-        replay = CpuTaskAdapter(self.spec, mechanism_spec=mechanism, seed=record.seed, history_len=self.history_len)
+        replay = type(self)(self.spec, mechanism_spec=mechanism, seed=record.seed, history_len=self.history_len)
         replay.reset((record.sample_id,), seed=record.seed, initial=record.initial)
+        replay.set_modes([record.requested_mode])
         for command in record.requested_actions:
             if record.controller == "shared_skill":
-                replay.step(np.asarray(command)[None])
+                if isinstance(command, dict) and set(command) == {"skill", "body_twist"}:
+                    replay.step_contact(
+                        np.asarray(command["skill"])[None],
+                        body_twist=np.asarray(command["body_twist"])[None],
+                    )
+                else:
+                    replay.step(np.asarray(command)[None])
             else:
                 replay.step_acp(command)
         if record.state == "rejected":
             replay.reject(record.rejection_reason)
         reproduced = replay.records[0]
         # It is a distinct charged audit replay, not a new independent sample.
-        original = evaluate_episode(record, self.spec)
-        actual = evaluate_episode(reproduced, self.spec)
+        original = evaluate_records([record], self.spec)["episodes"][0]
+        actual = evaluate_records([reproduced], self.spec)["episodes"][0]
         errors = []
         mismatches = set()
         if len(record.traces) != len(reproduced.traces):
@@ -556,6 +874,13 @@ class CpuTaskAdapter:
                 "requested_control_steps": controls, "executed_control_steps": len(steps)}
 
 
-def instantiate_task(task, robot=None, mechanism_spec=None, seed=0, *, history_len=4, config_overrides=None):
-    return CpuTaskAdapter(task_spec(task, robot=robot, config_overrides=config_overrides),
-                          mechanism_spec=mechanism_spec, seed=seed, history_len=history_len)
+def instantiate_task(task, robot=None, mechanism_spec=None, seed=0, *, history_len=4,
+                     config_overrides=None, shared_execution=None):
+    from genedynamics.tasks.transfer.compliant_socket import ENVIRONMENT_NAME
+    adapter = CpuTaskAdapter
+    if task in {ENVIRONMENT_NAME,"compliant_fixture_insertion"}:
+        from .compliant_socket import CompliantSocketTaskAdapter
+        adapter = CompliantSocketTaskAdapter
+    return adapter(task_spec(task, robot=robot, config_overrides=config_overrides),
+                          mechanism_spec=mechanism_spec, seed=seed, history_len=history_len,
+                          shared_execution=shared_execution)

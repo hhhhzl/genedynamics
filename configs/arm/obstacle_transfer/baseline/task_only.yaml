@@ -1,0 +1,8 @@
+base: ../_base.yaml
+name: obstacle_transfer_task_only
+method: task_only
+output_dir: results/arm/obstacle_transfer/baseline/task_only
+method_params:
+  ablation_cell: task_only
+  actor_binding:
+    key: task_only

@@ -1,0 +1,8 @@
+base: ../_base.yaml
+name: obstacle_transfer_ungated_full
+output_dir: results/arm/obstacle_transfer/ablation/ungated_full
+method_params:
+  ablation_cell: ungated_full
+  actor_binding:
+    family: ablation
+    key: ungated_full

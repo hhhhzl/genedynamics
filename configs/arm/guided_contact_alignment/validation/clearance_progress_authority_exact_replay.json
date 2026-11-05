@@ -1,0 +1,112 @@
+{
+  "version": "four-task-paired-development-diagnosis-v1",
+  "name": "clearance_progress_authority_exact_replay",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cpu"
+  },
+  "seed_anchor": 4682000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "label": "public_geometry_current",
+      "instances": "fixed"
+    },
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_clearance_progress",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-progress-authority-v3"
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "task_only_clearance_progress",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-progress-authority-v3"
+    },
+    {
+      "family": "main",
+      "key": "response_mpc",
+      "label": "response_mpc_clearance_progress",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-progress-authority-v3"
+    },
+    {
+      "family": "ablation",
+      "key": "frozen_warm",
+      "label": "frozen_warm_clearance_progress",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-progress-authority-v3"
+    },
+    {
+      "family": "ablation",
+      "key": "task_only",
+      "label": "ablation_task_only_clearance_progress",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-progress-authority-v3"
+    },
+    {
+      "family": "ablation",
+      "key": "matching_no_band",
+      "label": "matching_no_band_clearance_progress",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-progress-authority-v3"
+    },
+    {
+      "family": "ablation",
+      "key": "band_only",
+      "label": "band_only_clearance_progress",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-progress-authority-v3"
+    },
+    {
+      "family": "ablation",
+      "key": "ungated_full",
+      "label": "ungated_full_clearance_progress",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-progress-authority-v3"
+    },
+    {
+      "family": "ablation",
+      "key": "gated_full",
+      "label": "gated_full_clearance_progress",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-progress-authority-v3"
+    }
+  ],
+  "scope": "Exact CPU counterfactual on the sealed v12 reset seeds. Candidate authority is unchanged through mode-1 clearance lift, then its full-request residual is continuously scaled by public planar remaining-distance during clearance traverse and reaches exact common authority before descent; mode 0 remains unchanged. Candidate actors continue every causal call. This is development-only replay, not performance evidence or failure replacement."
+}

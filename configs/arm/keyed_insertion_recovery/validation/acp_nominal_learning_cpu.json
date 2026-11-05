@@ -1,0 +1,41 @@
+{
+  "version": "acp-nominal-learning-diagnostic-v1",
+  "task": "T3",
+  "checkpoint": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/acp/training/native_impedance_teacher_scalar_2175_sparse_dt100ms/ema_update_8000.pt",
+    "sha256": "1b68ac6b68a1dc8617809f2bb9bdb31918ed668e4c88ed72ca7bed8eaffa1289"
+  },
+  "training_report": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/acp/training/native_impedance_teacher_scalar_2175_sparse_dt100ms/report.json",
+    "sha256": "17ba40103018b08de5b58e169e315dac275ecb0cff69255ad568e0384c9b5d0e"
+  },
+  "demonstration_report": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/acp/demonstrations/native_impedance_teacher_scalar_2175_sparse_dt100ms/report.json",
+    "sha256": "38944a4473b8a83fa530316bce402d86ae456c93c6f5a18a93b884a20bea5e6a"
+  },
+  "teacher_collection_config": {
+    "path": "configs/arm/keyed_insertion_recovery/validation/acp_native_impedance_teacher.json",
+    "sha256": "9cd660ca353f99f77d20ef7efc8c1111487f1b55dadd366236ec6968a0f76cd7"
+  },
+  "sampling_seed": 426102,
+  "requests": [
+    {
+      "purpose": "fit",
+      "mode": 0,
+      "seed": 8253000
+    },
+    {
+      "purpose": "validation",
+      "mode": 0,
+      "seed": 8253006
+    }
+  ],
+  "budget": {
+    "episodes": 2,
+    "maximum_wall_seconds": 600,
+    "cpu_threads": 1,
+    "new_training_updates": 0,
+    "gpu_allowed": false
+  },
+  "output": "results/arm/keyed_insertion_recovery/baseline/acp/diagnostics/nominal_learning_cpu"
+}

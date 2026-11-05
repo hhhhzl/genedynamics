@@ -1,0 +1,41 @@
+{
+  "version": "acp-nominal-learning-diagnostic-v1",
+  "task": "T2",
+  "checkpoint": {
+    "path": "results/arm/guided_contact_alignment/baseline/acp/training/native_impedance_teacher_scalar_2175_sparse_dt100ms/ema_update_8000.pt",
+    "sha256": "b40c4bcc340ef210e6693fa9dfdd44d508cb05e8d2bb4fb87fb10dfaa4564910"
+  },
+  "training_report": {
+    "path": "results/arm/guided_contact_alignment/baseline/acp/training/native_impedance_teacher_scalar_2175_sparse_dt100ms/report.json",
+    "sha256": "6789aa1ffbb0f45fdd3c32ebe31fd4139e8f7674c8cab0ab5bd54d38e4f38892"
+  },
+  "demonstration_report": {
+    "path": "results/arm/guided_contact_alignment/baseline/acp/demonstrations/native_impedance_teacher_scalar_2175_sparse_dt100ms/report.json",
+    "sha256": "5263a9ce03d00c458a28eff514aaef16e3ae55760ec0d236feb73b527ab315c3"
+  },
+  "teacher_collection_config": {
+    "path": "configs/arm/guided_contact_alignment/validation/acp_native_impedance_teacher.json",
+    "sha256": "2ad7616dfe0cffb2174be03e07aae46bef58bb64858f0f9b71077403cde1902b"
+  },
+  "sampling_seed": 426101,
+  "requests": [
+    {
+      "purpose": "fit",
+      "mode": 0,
+      "seed": 8252000
+    },
+    {
+      "purpose": "validation",
+      "mode": 0,
+      "seed": 8252006
+    }
+  ],
+  "budget": {
+    "episodes": 2,
+    "maximum_wall_seconds": 600,
+    "cpu_threads": 1,
+    "new_training_updates": 0,
+    "gpu_allowed": false
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/acp/diagnostics/nominal_learning_cpu"
+}

@@ -18,6 +18,10 @@ META={"version","permission","robot","mode","seed","purpose","chart","controls",
 FOUR_TASK_META=META|{"task"}
 VERSION="public-target-task-data-v1"
 FOUR_TASK_VERSION="public-target-task-data-v2"
+FIXTURE_VERSION="public-target-task-data-v3"
+FIXTURE_SCHEMA="public-fixture-world-v1"
+FIXTURE_FIELDS=("fixture_position", "fixture_rotation", "fixture_twist")
+FIXTURE_META=FOUR_TASK_META|{"environment", "observation_schema"}
 
 
 @dataclass(frozen=True)
@@ -28,11 +32,18 @@ class PublicTargetTrajectory:
 
     def __post_init__(self):
         m=dict(self.metadata);r=np.array(self.requests,dtype=np.float32,copy=True)
-        expected_meta = META if m.get("version") == VERSION else FOUR_TASK_META if m.get("version") == FOUR_TASK_VERSION else set()
+        fixture = m.get("version") == FIXTURE_VERSION
+        expected_meta = META if m.get("version") == VERSION else FOUR_TASK_META if m.get("version") == FOUR_TASK_VERSION else FIXTURE_META if fixture else set()
         if set(m)!=expected_meta or m["permission"] not in {"B_log","C_supervised"}:
             raise ValueError("strict public target metadata required")
         if m["version"] == VERSION:
             valid_body = m["robot"] == "xarm7"
+        elif fixture:
+            valid_body = (
+                m["task"] == "T3" and m["robot"] in {"panda", "xarm7", "ur5e"}
+                and m["environment"] == "compliant_keyed_insertion_recovery"
+                and m["observation_schema"] == FIXTURE_SCHEMA
+            )
         else:
             valid_body = (m["task"] in {"T1","T2","T3"} and m["robot"] == "xarm7") or (m["task"] == "T4" and m["robot"] == "go2_z1")
         if not valid_body or m["mode"] not in (0,1) or m["purpose"] not in {"fit","validation"}:
@@ -45,14 +56,26 @@ class PublicTargetTrajectory:
         maximum_controls = 1000 if m.get("task") == "T2" else 750
         if isinstance(n,bool) or not isinstance(n,int) or not 1<=n<=maximum_controls or r.shape!=(n,width) or not np.isfinite(r).all():
             raise ValueError("one finite command per observed20ms transition required")
-        if set(self.public)!=set(FLAT_FIELDS):raise ValueError("public sensor schema only")
+        public_fields = set(FLAT_FIELDS) | (set(FIXTURE_FIELDS) if fixture else set())
+        if set(self.public)!=public_fields:raise ValueError("public sensor schema only")
         mobile = m.get("task") == "T4"
-        expected=dict(joint_position=(25,) if mobile else (7,),joint_velocity=(24,) if mobile else (7,),tcp_position=(3,),tcp_rotation=(3,3),tcp_twist=(6,),
+        fixed_joints = 6 if fixture and m["robot"] == "ur5e" else 7
+        expected=dict(joint_position=(25,) if mobile else (fixed_joints,),joint_velocity=(24,) if mobile else (fixed_joints,),tcp_position=(3,),tcp_rotation=(3,3),tcp_twist=(6,),
             measured_wrench=(6,),goal_position=(3,),goal_rotation=(3,3),previous_action=(13,),previous_request=(13,),
             reference_position=(3,),reference_rotation=(3,3),elapsed_seconds=(1,),body_position=(3,),body_twist=(6,),controller_feedback=(2,))
+        if fixture:
+            expected.update(fixture_position=(3,), fixture_rotation=(3,3), fixture_twist=(6,))
         p={k:np.array(v,dtype=np.float32,copy=True) for k,v in self.public.items()}
         if any(v.shape!=(n+1,*expected[k]) or not np.isfinite(v).all() for k,v in p.items()):
             raise ValueError("public observation before and after each command required")
+        if fixture:
+            from genedynamics.tasks.transfer.compliant_socket import validate_fixture_observation
+
+            rotations = p["fixture_rotation"]
+            if (not np.allclose(rotations @ np.swapaxes(rotations, -1, -2), np.eye(3), atol=1e-5)
+                    or not np.allclose(np.linalg.det(rotations), 1., atol=1e-5)):
+                raise ValueError("fixture rotation must be a proper world-from-fixture rotation")
+            validate_fixture_observation(p)
         if not np.allclose(p["elapsed_seconds"].reshape(-1),np.arange(n+1)*.02,atol=1e-6):
             raise ValueError("complete causal cold-reset episode prefixes required")
         if np.any(p["previous_action"][0]) or np.any(p["previous_request"][0]):raise ValueError("fresh public reset required")
@@ -88,9 +111,11 @@ class PublicTargetTrajectory:
     @classmethod
     def load(cls,path):
         path=Path(path)
+        metadata=json.loads((path/"public.json").read_text())
+        fields=tuple(FLAT_FIELDS)+(FIXTURE_FIELDS if metadata.get("version")==FIXTURE_VERSION else ())
         with np.load(path/"public.npz",allow_pickle=False) as z:
-            if set(z.files)!={"requests"}|{"public."+k for k in FLAT_FIELDS}:raise ValueError("private/unknown arrays forbidden")
-            row=cls(json.loads((path/"public.json").read_text()),{k:z["public."+k] for k in FLAT_FIELDS},z["requests"])
+            if set(z.files)!={"requests"}|{"public."+k for k in fields}:raise ValueError("private/unknown arrays forbidden")
+            row=cls(metadata,{k:z["public."+k] for k in fields},z["requests"])
         if row.digest!=(path/"public.sha256").read_text().strip():raise ValueError("public target buffer SHA changed")
         return row
 

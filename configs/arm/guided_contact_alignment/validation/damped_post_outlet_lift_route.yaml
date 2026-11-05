@@ -1,0 +1,14 @@
+base: post_outlet_lift_route.yaml
+name: guided_contact_alignment_damped_post_outlet_lift_route
+output_dir: results/arm/guided_contact_alignment/validation/damped_post_outlet_lift_route
+seeds:
+- 930274
+- 930275
+- 930276
+- 930277
+method_params:
+  actor_binding:
+    reference_version: public_damped_post_outlet_lift_route_v12
+metadata:
+  protocol: transfer_damped_post_outlet_lift_route
+  selection_rule: require strict contact through the requested outlet without normal contact loss reimpact and report frozen terminal success on both xArm modes for all four fresh resets

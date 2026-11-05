@@ -1,0 +1,39 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v1",
+  "task": "T4",
+  "method": "adaptsim",
+  "method_identity": "AdaptSim_four_parameter_mobile_population_CEM",
+  "instance_ids": [
+    "independent_8814101",
+    "independent_8814102",
+    "independent_8814103",
+    "independent_8814104",
+    "independent_8814105",
+    "independent_8814106",
+    "independent_8814107",
+    "independent_8814108"
+  ],
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim.yaml",
+    "sha256": "0bde6cc1de06f979a28a99aa0f41c42bc302f5c440299e475f67273787d52921"
+  },
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/independent_main_table_requests.json",
+    "sha256": "b8cf00a768339b0c3b025a4e2d6829a6a906a8cf21a38cb04bf1941adae81549"
+  },
+  "cell_admission": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/independent_main_table_admission_v1/adaptsim.json",
+    "sha256": "bb9cd2f2150a066e94ec973a5fb82cf169dabe75c8b763a7ed4059f008b61621"
+  },
+  "actor_package": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/validation/independent_actor_package_v1/report.json",
+    "sha256": "5c8bd1f798177d201e4a70259d9120bf95a5550039bd549f997b4cc7135a2896"
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/confirmation/independent_main_v1/{instance_id}",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/confirmation/independent_main_v1/{instance_id}_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  }
+}

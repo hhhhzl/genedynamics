@@ -1,0 +1,58 @@
+{
+  "version": "compliant-socket-segmented-calibrated-event-response-training-v3",
+  "data": {
+    "path": "results/arm/compliant_keyed_insertion_recovery/training/segmented_response_data/mixed_public_interventions",
+    "metadata_sha256": "e49b6c769bec9ee094f8ab1f24b0f04ac6e79bb3693aa60515bc0ac8ad190124",
+    "tensor_sha256": "0d8bd5ae1d453848f2bcb2bdecaae356cafa6f94d01a1813a153b47ff830ad15"
+  },
+  "model": {
+    "history_len": 4,
+    "horizon": 10,
+    "maximum_joints": 32,
+    "segment_steps": [
+      3,
+      6,
+      10
+    ],
+    "hidden": [
+      256,
+      256
+    ],
+    "members": 3,
+    "event_head": true,
+    "event_threshold_m": 1e-05
+  },
+  "execution": {
+    "device": "cuda:0",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "seed": 917301,
+  "budget": {
+    "updates": 600,
+    "batch_size": 128,
+    "learning_rate": 0.0003,
+    "maximum_wall_seconds": 900,
+    "maximum_gpu_gib": 4
+  },
+  "output": "results/arm/compliant_keyed_insertion_recovery/training/segmented_response_calibrated_event_gpu1",
+  "scope": "development contrast of conditional event amplitude versus deployed expected motion on the frozen public bundle; not an independent task benefit claim",
+  "source_bindings": [
+    {
+      "path": "genedynamics/solvers/single/cross_ebdm/learning/fixture_response.py",
+      "sha256": "80b1883d6bfae64b66fa6c23f5cb84cddae302840ef7059e3b7a169d246e8b12"
+    },
+    {
+      "path": "genedynamics/solvers/single/cross_ebdm/learning/response.py",
+      "sha256": "0f564400e45e6978d76d74c0c8531202bcd1ef89e6cdf906abe462e7fb2bcb61"
+    },
+    {
+      "path": "genedynamics/solvers/single/cross_ebdm/learning/artifact_bundle.py",
+      "sha256": "de76f99c0bad657943f4f582270627b16722c1145dc13404e892c7342e1913e5"
+    },
+    {
+      "path": "scripts/paper/cross_ebdm/train_fixture_response.py",
+      "sha256": "20560b757f31fea3c00d52a61cc0d3cc0543a5bb5b73c5c75eb0a624ef4ccc7d"
+    }
+  ]
+}

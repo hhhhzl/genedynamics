@@ -1,0 +1,31 @@
+base: ../_base.yaml
+name: guided_contact_alignment_asid
+method: asid
+output_dir: results/arm/guided_contact_alignment/baseline/asid
+metadata:
+  formal_experiment: false
+  formal_seeds: false
+  run_class: development
+method_params:
+  actor_binding:
+    version: transfer-actor-binding-v1
+    manifest: null
+    task: T2
+    family: main
+    binding_key: asid
+    actor: asid
+    status: instances_ready
+    instance_id: development_8764601
+    method_identity: ASID_Fisher_exploration_grid_and_CEM_identification_CEM_task_policy
+    checkpoint:
+      path: results/arm/guided_contact_alignment/baseline/asid/training/full_chain_development_8764601/checkpoint.json
+      sha256: 0a1420f55e275544b797c2e27f6c58af1ab7aab74160f5430a030d6207560aa8
+    training_recipe:
+      path: results/arm/guided_contact_alignment/baseline/asid/training/full_chain_development_8764601/recipe.json
+      sha256: a1c838079881c31efb3e33c756f0be9ad72729cf881bd85a88ab619d3b606ae3
+    training_report:
+      path: results/arm/guided_contact_alignment/baseline/asid/training/full_chain_development_8764601/report.json
+      sha256: 5aa9737b86d2c5461efc6450d394bd2b01e16e532c4ac9b736d38735b6ed4848
+    training_audit:
+      path: results/arm/guided_contact_alignment/baseline/asid/training/full_chain_development_8764601/independent_audit.json
+      sha256: 8881f29b478fd5d4ce87fcf623e177fb809267c7e776bc871c282a2bcf346401

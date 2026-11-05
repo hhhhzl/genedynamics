@@ -1,0 +1,23 @@
+{
+  "base_training_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/completion_projected_transport_preflight.json",
+    "sha256": "44da11626561358f5382d4a22f65cc709c15a4b813d59ba60aac1992de38a323"
+  },
+  "overrides": {
+    "actor_manifest": {
+      "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/actor_bindings.json",
+      "sha256": "0d60f56d00123a3e851ef526726c7ac015a96cfa1fe4784c656be8bb883aa527"
+    },
+    "projection_preflight_output": "results/quadruped/mobile_keyed_insertion_recovery/validation/completion_same_start_anchored/projection_preflight",
+    "instances": {
+      "instance_01": {"candidate_checkpoint": {"path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/checkpoints/instance_01/checkpoint.pt", "sha256": "8b0277dbb669cc56ef92cde57b3ec25844bd5939456dfd359ad8500c6bdc1fef"}},
+      "instance_02": {"candidate_checkpoint": {"path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/checkpoints/instance_02/checkpoint.pt", "sha256": "101e03583fc24f18520f5ea9fb54131f397a53052b2b26775f7a2beb5d3bc91e"}},
+      "instance_03": {"candidate_checkpoint": {"path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/checkpoints/instance_03/checkpoint.pt", "sha256": "f1a3329a02e5cf5d193fd4840e2e5ee7fcf41f822ce04f116363e2ba6f79bffb"}},
+      "instance_04": {"candidate_checkpoint": {"path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/checkpoints/instance_04/checkpoint.pt", "sha256": "8d4e7e983ea5acad1efa64959a199692f7498f28263db96a4b04c29fde79fa62"}},
+      "instance_05": {"candidate_checkpoint": {"path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/checkpoints/instance_05/checkpoint.pt", "sha256": "db4464e69c6af3cdf97aac44a5fed01911662976f1ddae3d69b0c9918e732f93"}},
+      "instance_06": {"candidate_checkpoint": {"path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/checkpoints/instance_06/checkpoint.pt", "sha256": "d63d52344b7450e48ce85b4a19906461969defd5bf63e4731319d52fa94acd6e"}},
+      "instance_07": {"candidate_checkpoint": {"path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/checkpoints/instance_07/checkpoint.pt", "sha256": "e7cfa4e3b3db0a0ea70337278ec47657a5861429cfc6a1fe530c39e3a76f8260"}},
+      "instance_08": {"candidate_checkpoint": {"path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/checkpoints/instance_08/checkpoint.pt", "sha256": "1970874dd78115d98cff11f50eb7163c15eb875433205634f6ea2ad9545b8cde"}}
+    }
+  }
+}

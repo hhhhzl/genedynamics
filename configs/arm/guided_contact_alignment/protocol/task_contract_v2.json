@@ -1,0 +1,29 @@
+{
+  "version": "cross-embodiment-t2-shared-execution-v2",
+  "task": "guided_contact_alignment",
+  "alias": "T2",
+  "extends": [
+    {
+      "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v1.json",
+      "sha256": "58199b44afce6a09a08e442bd7099d73fac4a8e68ace945d8e68fb8dacc14cd6"
+    },
+    {
+      "path": "configs/arm/guided_contact_alignment/protocol/strict_contact_contract_v2.json",
+      "sha256": "e944b2aa21ca2bbeaeaf8813f7ffb6972c2efbbb71f2eba64541efe831a74cc1"
+    }
+  ],
+  "shared_execution": {
+    "version": "four-task-shared-execution-v2",
+    "physics_dt_seconds": 0.001,
+    "control_dt_seconds": 0.02,
+    "physics_substeps_per_control": 20,
+    "contact_time_constant_seconds": 0.04,
+    "contact_damping_ratio": 2.0,
+    "execution_profile": "substep_wrench_governor",
+    "strict_evaluator_version": "strict-guide-substep-v4"
+  },
+  "scope": "Inherited unchanged by every main-table baseline, ablation and Cross-EBDM row.",
+  "historical_results": "All runs using the former 2 ms / 20 ms contact unit remain invalid for the new main table.",
+  "status": "common_protocol_bound_requires_fresh_qualification",
+  "final_test": false
+}

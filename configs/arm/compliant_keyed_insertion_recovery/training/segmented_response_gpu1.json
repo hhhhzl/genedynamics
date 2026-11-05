@@ -1,0 +1,30 @@
+{
+  "version": "compliant-socket-segmented-response-training-v1",
+  "data": {
+    "path": "results/arm/compliant_keyed_insertion_recovery/training/segmented_response_data/robot_ik",
+    "metadata_sha256": "46314b67fdf2f603b7ff4d3cb251f27e00539d37100889f9b185c665138731c4",
+    "tensor_sha256": "cf7be4bb7a3a02a8bd13d8865b2f629ad0c8eae98d093ddcff5727ad8727e1ad"
+  },
+  "model": {
+    "history_len": 4,
+    "horizon": 10,
+    "maximum_joints": 32,
+    "segment_steps": [3, 6, 10],
+    "hidden": [256, 256],
+    "members": 3
+  },
+  "execution": {
+    "device": "cuda:0",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "seed": 917300,
+  "budget": {
+    "updates": 600,
+    "batch_size": 128,
+    "learning_rate": 0.0003,
+    "maximum_wall_seconds": 900,
+    "maximum_gpu_gib": 4
+  },
+  "output": "results/arm/compliant_keyed_insertion_recovery/training/segmented_response_model_gpu1"
+}

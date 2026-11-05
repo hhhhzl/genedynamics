@@ -1,5 +1,6 @@
 """Real scene execution, privacy, histories and independent task accounting."""
 from copy import deepcopy
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -61,7 +62,7 @@ def test_reorder_partial_reset_histories_and_full_denominator():
     task.reject("source unavailable", mask=[True, False])
     report = task.evaluate()
     assert report["requested_episodes"] == 3
-    assert report["outcomes"] == {"incomplete": 2, "rejected": 1}
+    assert report["outcomes"] == {"incomplete": 2, "source unavailable": 1}
     assert report["mean_task_cost"] == 1
     assert task.accounting["reset_worlds"] == 3
     with pytest.raises(ValueError, match="slot identities"):
@@ -88,6 +89,57 @@ def test_full_checkpoint_restores_physics_history_delay_and_ledger_without_reset
     assert second_report["accounting"] == first_report["accounting"]
     assert second_report["lifetime_accounting"]["control_steps"] == first_report["lifetime_accounting"]["control_steps"] + 2
     assert task.accounting["reset_calls"] == 1
+
+
+def test_t2_governor_checkpoint_and_public_reference_accounting_are_exact():
+    from genedynamics.envs.adapters.transfer_task import CpuTaskAdapter
+    from genedynamics.tasks.transfer.contact import GOVERNOR_NOMINAL
+    from genedynamics.tasks.transfer.controllers.guide_contact import (
+        PublicFiniteStateGuideContactMode0Policy,
+    )
+
+    base = task_spec("T2", robot="xarm7")
+    spec = replace(
+        base,
+        config=replace(
+            base.config,
+            execution_profile="substep_wrench_governor",
+        ),
+    )
+    task = CpuTaskAdapter(spec, seed=930270)
+    task.reset((930270,), seed=930270, modes=(0,))
+    actor = PublicFiniteStateGuideContactMode0Policy(spec, mode=0)
+    checkpoint = actor_state = None
+    for _ in range(400):
+        public = task.observe()
+        reference_before = public["reference_position"].copy()
+        action = actor.act(public)
+        step = task.step(action)
+        admitted = np.asarray(task.state.reference_position)
+        np.testing.assert_allclose(
+            step.observation["reference_position"][:, :2],
+            admitted[:, :2],
+            rtol=0., atol=1e-7,
+        )
+        if int(np.asarray(task.state.governor_phase)[0]) != GOVERNOR_NOMINAL:
+            checkpoint = task.get_checkpoint()
+            actor_state = actor.get_state()
+            break
+    assert checkpoint is not None
+
+    public = task.observe()
+    first_action = actor.act(public)
+    first = task.step(first_action)
+    first_actor_state = actor.get_state()
+    task.restore_checkpoint(checkpoint)
+    actor.restore(actor_state)
+    second_action = actor.act(task.observe())
+    second = task.step(second_action)
+    np.testing.assert_array_equal(first_action, second_action)
+    for name in first.observation:
+        np.testing.assert_array_equal(first.observation[name], second.observation[name])
+    assert first.status.tolist() == second.status.tolist()
+    np.testing.assert_equal(first_actor_state, actor.get_state())
 
 
 @pytest.mark.parametrize("name", ["T1", "T2", "T3"])

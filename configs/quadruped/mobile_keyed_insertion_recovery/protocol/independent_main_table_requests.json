@@ -1,0 +1,1632 @@
+{
+  "failure_replacement": false,
+  "formal_performance_evidence": false,
+  "request_access": "sealed_unaccessed; no training, tuning, or pilot may use these seeds",
+  "request_count": 80,
+  "requests": [
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_nominal/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694000,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_nominal/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694001,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_nominal/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694002,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_nominal/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694003,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_nominal/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694004,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_nominal/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694005,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_nominal/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694006,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_nominal/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694007,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_nominal/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694008,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_nominal/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694009,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_derated_0p90/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694010,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_derated_0p90/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694011,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_derated_0p90/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694012,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_derated_0p90/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694013,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_derated_0p90/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694014,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_derated_0p90/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694015,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_derated_0p90/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694016,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_derated_0p90/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694017,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_derated_0p90/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694018,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "source",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/source/support_derated_0p90/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694019,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_nominal/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694020,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_nominal/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694021,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_nominal/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694022,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_nominal/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694023,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_nominal/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694024,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_nominal/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694025,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_nominal/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694026,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_nominal/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694027,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_nominal/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694028,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_nominal/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694029,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_derated_0p90/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694030,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_derated_0p90/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694031,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_derated_0p90/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694032,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_derated_0p90/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694033,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_derated_0p90/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694034,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_derated_0p90/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694035,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_derated_0p90/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694036,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_derated_0p90/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694037,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_derated_0p90/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694038,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "nominal",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/nominal/support_derated_0p90/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694039,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_nominal/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694040,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_nominal/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694041,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_nominal/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694042,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_nominal/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694043,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_nominal/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694044,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_nominal/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694045,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_nominal/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694046,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_nominal/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694047,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_nominal/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694048,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_nominal/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694049,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_derated_0p90/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694050,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_derated_0p90/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694051,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_derated_0p90/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694052,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_derated_0p90/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694053,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_derated_0p90/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694054,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_derated_0p90/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694055,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_derated_0p90/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694056,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_derated_0p90/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694057,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_derated_0p90/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694058,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "latency_gain_shift",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/latency_gain_shift/support_derated_0p90/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694059,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_nominal/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694060,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_nominal/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694061,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_nominal/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694062,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_nominal/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694063,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_nominal/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694064,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_nominal/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694065,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_nominal/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694066,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_nominal/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694067,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_nominal/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694068,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_nominal",
+      "body_support_parameters": {
+        "body_servo_gain": 1.0,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_nominal/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694069,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_derated_0p90/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694070,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_derated_0p90/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694071,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_derated_0p90/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694072,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_derated_0p90/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694073,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_derated_0p90/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694074,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 2,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_derated_0p90/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694075,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_derated_0p90/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694076,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 3,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_derated_0p90/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694077,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_derated_0p90/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 9694078,
+      "task": "T4"
+    },
+    {
+      "body_support_group": "support_derated_0p90",
+      "body_support_parameters": {
+        "body_servo_gain": 0.9,
+        "robot": "go2_z1",
+        "support_controller": "unchanged host OSQP stance WBC"
+      },
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_group": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 4,
+      "request_id": "INDEPENDENT-MAIN-v1/T4/payload_shift/support_derated_0p90/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 9694079,
+      "task": "T4"
+    }
+  ],
+  "shared_execution": {
+    "body_intent_duration_seconds": 6.0,
+    "body_intent_profile": "public_planar_v1",
+    "body_intent_start_seconds": 0.0,
+    "body_velocity_world": [
+      0.005,
+      0.005,
+      0.0
+    ],
+    "execution_profile": "joint_margin_public_reference",
+    "reset_joint_noise_rad": 0.002,
+    "reset_profile": "folded_stance",
+    "version": "four-task-shared-execution-v3"
+  },
+  "shared_task_contract": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/task_contract_v3.json",
+    "sha256": "d4c47cf301c27d48b14e420bb518469b487b002073a0d85818ba292414d86045"
+  },
+  "task": "T4",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/_base.yaml",
+    "sha256": "61b5856d0b16e8fe602f50c7d937e7154abb090af7b5127872606d39e1c0699f"
+  },
+  "version": "four-task-independent-main-table-requests-v1"
+}

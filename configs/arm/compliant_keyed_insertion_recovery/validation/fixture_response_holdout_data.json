@@ -1,0 +1,54 @@
+{
+  "version": "fixture-response-data-preparation-v1",
+  "output": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_bundle_20261031",
+  "response_spec": {
+    "history_len": 4,
+    "horizon": 10,
+    "maximum_joints": 32
+  },
+  "segment_steps": [
+    3,
+    6,
+    10
+  ],
+  "calibration_context": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "trajectories": [
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_soft_contact_x_probe/seed_977001/public",
+      "public_sha256": "44bb3ba63b67108d638a2b5baf9b3267c23189f429a09d0ea136f86dee5f26fc"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_soft_contact_x_probe/seed_977002/public",
+      "public_sha256": "dfb7b1b3426e69c2331ab92a5d83c902a4839496f2523f2bfa9a7d97e6b3621c"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_soft_contact_x_probe/seed_977101/public",
+      "public_sha256": "91b2c31d821e84d830e7a15868cdace5c7945b060d7b89f4b880cbeaf885a50e"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_soft_contact_x_probe/seed_977102/public",
+      "public_sha256": "d30c83260493070c3bf803b4c9f3a114ca7c3c7449cae37d31a1951a157debc4"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_contact_x_probe_engaged/seed_987001/public",
+      "public_sha256": "0f6a7c9dfc245bac4d84a5689cddf7d29936552376b2b469eba983a98f5cce3a"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_contact_x_probe_engaged/seed_987002/public",
+      "public_sha256": "4bbf7e415b7970a0e25cd1966b6f0f936b25d5590b32fad55b6c77632d7ac11c"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_contact_x_probe_engaged/seed_987101/public",
+      "public_sha256": "1c1d7167e4a0f8c81cdf439974c9623ff12e22b84cdda5b30e66d6f7f4b6c114"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/fixture_response_holdout_contact_x_probe_engaged/seed_987102/public",
+      "public_sha256": "28be7eff09b0806c2eb2363940b10d24f0de6a6531edfe9ae7092d230f32a73f"
+    }
+  ],
+  "scope": "Eight entirely new public episodes across soft and engaged fixture mechanisms; held out from both frozen models; existing fit/validation labels only satisfy dataset schema, both subsets are external test data; no model update or threshold choice."
+}

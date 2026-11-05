@@ -1,0 +1,15 @@
+base: insertion_lead_factorial.yaml
+name: keyed_insertion_recovery_insertion_lead_retreat_release_factorial
+output_dir: results/arm/keyed_insertion_recovery/validation/insertion_lead_retreat_release_factorial
+seeds:
+- 940540
+- 940541
+- 940542
+- 940543
+method_params:
+  actor_binding:
+    retreat_release_version: safe_settled_v1
+metadata:
+  protocol: transfer_insertion_lead_retreat_release_factorial
+  physics_episode_cap: 64
+  selection_rule: require the orthogonally qualified 15 mm insertion lead and safe-settled retreat release to pass all sixteen mechanism-mode cells on four fresh resets with every failure retained

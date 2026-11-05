@@ -1,0 +1,47 @@
+{
+  "version": "t2-substep-risk-admission-validation-v1",
+  "device": "cpu",
+  "risk_qualification": {
+    "path": "results/arm/guided_contact_alignment/training/substep_risk_fresh_qualification_serialization_retry/report.json",
+    "sha256": "87af6222fec1d4f355b22e96b3b6281cb7dfc822ebb23a97df3297b31cd2e5a5"
+  },
+  "methods": {
+    "cross_ebdm": "main/cross_ebdm.yaml",
+    "task_only": "baseline/task_only.yaml"
+  },
+  "variants": ["risk_admitted", "unchanged"],
+  "instances": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "requests": {
+    "robot": "xarm7",
+    "reset_seed_anchor": 3266000,
+    "reset_slots": 4,
+    "requested_modes": [0, 1],
+    "mechanism_parameters": {
+      "delay_steps": 0,
+      "payload_mass": 0.5,
+      "servo_gain": 1.0
+    }
+  },
+  "gates": {
+    "risk_admitted_cross_ebdm_successes": 64,
+    "risk_admitted_task_only_successes": 64,
+    "maximum_risk_admitted_constraint_violations": 0,
+    "public_geometry_sentinel_successes": 8,
+    "require_nonzero_risk_model_calls": true
+  },
+  "output": "results/arm/guided_contact_alignment/validation/substep_risk_admission",
+  "diagnostic_only": true,
+  "confirmation_states_opened": 0,
+  "old_invalid_outcomes_used": false,
+  "performance_evidence": false,
+  "failure_replacement": false
+}

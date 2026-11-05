@@ -1,0 +1,14 @@
+base: bounded_unloading_post_outlet_route.yaml
+name: guided_contact_alignment_filtered_normal_post_outlet_route
+output_dir: results/arm/guided_contact_alignment/validation/filtered_normal_post_outlet_route
+seeds:
+- 930282
+- 930283
+- 930284
+- 930285
+method_params:
+  actor_binding:
+    reference_version: public_filtered_normal_post_outlet_route_v14
+metadata:
+  protocol: transfer_filtered_normal_post_outlet_route
+  selection_rule: require strict contact through the requested outlet with filtered public normal-force feedback and report frozen terminal success on both xArm modes for all four fresh resets

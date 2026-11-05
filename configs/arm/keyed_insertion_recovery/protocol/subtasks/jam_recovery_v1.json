@@ -1,0 +1,54 @@
+{
+  "schema_version": "transfer-subtask-contract-v1",
+  "contract_version": "transfer-jam-recovery-v1",
+  "semantic_id": "jam_recovery",
+  "family": "connector_assembly_recovery",
+  "embodiment": "fixed_arm",
+  "environment": "keyed_insertion_recovery",
+  "implementation_status": "implemented_contract_frozen",
+  "semantics": {
+    "goal": "Enter a physically loaded jam, unload or retreat from it, realign with the keyway, insert, and maintain a safe terminal hold.",
+    "excludes": ["counting a direct insertion that never enters the requested recovery mode", "using a policy-reported phase as proof of retreat", "replacing a failed recovery request with a new episode"]
+  },
+  "event_order": [
+    {"id": "loaded_jam_established", "evidence": ["measured contact load exceeds 0.3 N", "requested recovery mode matches independent physical classification"]},
+    {"id": "unloading_or_retreat_completed", "evidence": ["contact load decreases", "actual tcp trajectory retreats by at least 12 mm for retreat mode"]},
+    {"id": "keyway_realigned", "evidence": ["relative connector position and orientation", "shoulder and keyway separation"]},
+    {"id": "insertion_depth_reached", "evidence": ["relative insertion depth", "bounded contact wrench"]},
+    {"id": "terminal_hold_completed", "evidence": ["continuous depth, pose, and force dwell", "low terminal velocity"]}
+  ],
+  "interface": {
+    "observations": {
+      "public": ["robot proprioception", "tcp pose and twist", "socket-relative pose", "goal and public reference pose", "measured wrench", "requested recovery mode", "issued-action history"],
+      "hidden": ["servo gain", "command delay", "payload mass", "evaluator mode and event clocks"]
+    },
+    "action_authority": {
+      "method": ["bounded Cartesian translation and rotation", "declared stiffness and normal-force request"],
+      "public_execution": ["common recovery guard", "joint and workspace projection", "common safety termination"],
+      "evaluator_only": ["physical recovery-mode classification", "retreat and unload evidence", "insertion and terminal acceptance"]
+    }
+  },
+  "evaluation": {
+    "success": ["the requested loaded jam is physically established", "unloading or retreat occurs before realignment", "keyway realignment precedes insertion", "insertion reaches and holds the frozen relative depth within force and pose limits"],
+    "violations": ["axial or lateral overforce", "shoulder or connector collision outside declared contact", "joint-limit or workspace termination", "wrong recovery mode", "timeout"],
+    "anti_bypass": ["require measured loading before recovery credit", "derive retreat from the physical trajectory", "require at least 12 mm retreat in retreat mode", "reject direct insertion that skips the requested recovery event"]
+  },
+  "mechanism_axes": [
+    {"name": "recovery_mode", "public": true, "train": ["unload", "retreat"], "development": ["unload", "retreat"], "heldout": ["unload", "retreat"]},
+    {"name": "servo_gain", "public": false, "train": [1.0], "development": [0.8, 1.0], "heldout": [0.65]},
+    {"name": "command_delay_controls", "public": false, "train": [0], "development": [0, 1], "heldout": [3]},
+    {"name": "payload_mass_kg", "public": false, "train": [0.5], "development": [0.5, 0.65], "heldout": [0.8]}
+  ],
+  "source_qualification": {
+    "status": "fresh_qualification_required_for_new_protocol",
+    "requirements": ["both recovery modes establish a loaded jam and complete the correct recovery chain", "mode classification and retreat are independently replayed from physical traces", "source actor and configuration digests are frozen", "qualification uses disjoint initial states with no failed-episode replacement"],
+    "evidence_resolution": "every control tick plus contact-event and terminal physics evidence"
+  },
+  "evaluator_evidence": {
+    "status": "current_implementation_bound_fresh_protocol_validation_required",
+    "resolution": "control_tick_with_physical_contact_events",
+    "implementation_path": "genedynamics/tasks/transfer/evaluation.py",
+    "required_signals": ["socket-relative pose and twist", "tcp trajectory", "measured wrench", "contact geom identities", "requested and independently classified mode", "insertion depth", "terminal dwell clock"]
+  },
+  "historical_evidence_policy": "Existing keyed-insertion results retain their original protocol identity and remain immutable; the semantic suite governs only fresh executions."
+}

@@ -1,0 +1,20 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T1",
+  "method": "dial_transfer",
+  "method_identity": "DIAL_MPC",
+  "task_config": "configs/arm/obstacle_transfer/baseline/dial.yaml",
+  "actor_binding_source": "task_config_manifest",
+  "instance_id": "instance_01",
+  "request_roster": {
+    "path": "configs/arm/obstacle_transfer/validation/method_source_nominal_actor_roster.json",
+    "sha256": "23483cfb756ee4c73a4929abdf73f3a31491dd8497a9d995e47872dd2af24cc1"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/arm/obstacle_transfer/baseline/dial/validation/source_nominal_actor_screen_3301000000",
+  "plan_output": "results/arm/obstacle_transfer/baseline/dial/validation/source_nominal_actor_screen_3301000000_plan.json"
+}

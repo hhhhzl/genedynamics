@@ -1,0 +1,45 @@
+{
+  "base_training_config": {
+    "path": "configs/arm/keyed_insertion_recovery/training/finite_time_late_phase_preflight.json",
+    "sha256": "de5c12d648654d38d5862d4e3b3720a4c47d796aea54a616f8fb87142194ff93"
+  },
+  "overrides": {
+    "version": "t3-task-first-stable-margin-anchored-training-v2",
+    "training": {
+      "variant": "task_first_stable_margin_anchored",
+      "control_checkpoint_policy": "frozen_selector",
+      "response_normalization": {
+        "reference_floor": 0.0001,
+        "minimum_source_task_advantage": 0.0
+      },
+      "paired_progress": {
+        "linear_margin": 0.00001,
+        "angular_margin": 0.0001,
+        "weight": 1.0
+      },
+      "checkpoint_selection": {
+        "rule": "best_validation_paired_progress",
+        "interval_updates": 100,
+        "minimum_update": 100
+      },
+      "shared_start_report": {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_directional/task_only/checkpoints/report.json",
+        "sha256": "20ac36a124b46479e6cb35344b0e618780c7b555ca55fd803b5c0e44e969e6aa"
+      }
+    },
+    "data": {
+      "weak_log_split": {
+        "kind": "entry_index_modulo",
+        "modulus": 4,
+        "validation_residue": 0
+      }
+    },
+    "selection": {"required_modes": [0, 1]},
+    "actor_manifest": {
+      "path": "configs/arm/keyed_insertion_recovery/protocol/actor_bindings.json",
+      "sha256": "867bf9e88ae5ad7c698ad3b9889204b426df0993a558913cdf76ddb753d8892d"
+    },
+    "preflight_output": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_stable_margin/anchored/preflight",
+    "output": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_stable_margin/anchored/checkpoints"
+  }
+}

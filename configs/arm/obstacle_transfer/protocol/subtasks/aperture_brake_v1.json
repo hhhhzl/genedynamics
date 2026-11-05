@@ -1,0 +1,55 @@
+{
+  "schema_version": "transfer-subtask-contract-v1",
+  "contract_version": "transfer-aperture-brake-v1",
+  "semantic_id": "aperture_brake",
+  "family": "constrained_object_transport",
+  "embodiment": "fixed_arm",
+  "environment": "obstacle_transfer",
+  "implementation_status": "implemented_contract_frozen",
+  "semantics": {
+    "goal": "Orient the rigidly attached object for a framed aperture, pass the complete object envelope through it, brake within the exit zone, and hold the requested terminal pose.",
+    "excludes": ["tcp-only aperture crossing", "moving above or around the aperture frame", "using frame contact as a braking surface", "selecting aperture geometry after observing method rankings"]
+  },
+  "event_order": [
+    {"id": "approach_entered", "evidence": ["object envelope in the approach corridor", "aperture-side signed position"]},
+    {"id": "orientation_aligned", "evidence": ["object-aperture orientation error", "pre-entry envelope clearance"]},
+    {"id": "whole_object_crossed_aperture", "evidence": ["front and rear object extremities cross the aperture plane", "zero frame contact during crossing"]},
+    {"id": "exit_braking_completed", "evidence": ["object speed below the frozen threshold inside the exit zone", "no exit-zone overshoot"]},
+    {"id": "terminal_hold_completed", "evidence": ["terminal pose error", "continuous low-velocity dwell"]}
+  ],
+  "interface": {
+    "observations": {
+      "public": ["robot proprioception", "tcp and carried-object pose and twist", "goal pose", "known aperture frame geometry", "known exit zone", "issued-action history"],
+      "hidden": ["servo gain", "command delay", "payload mass", "frame-contact and acceptance state"]
+    },
+    "action_authority": {
+      "method": ["bounded Cartesian translation", "bounded Cartesian rotation", "declared stiffness and force request"],
+      "public_execution": ["robot inverse kinematics", "joint and workspace projection", "common safety termination"],
+      "evaluator_only": ["whole-envelope crossing", "frame-contact classification", "braking and terminal dwell acceptance"]
+    }
+  },
+  "evaluation": {
+    "success": ["orientation alignment precedes aperture entry", "the complete object envelope crosses the aperture without frame contact", "the object brakes inside the declared exit zone", "the terminal pose and low-velocity hold are completed before timeout"],
+    "violations": ["aperture-frame collision", "object or robot collision outside declared free space", "joint-limit or safety termination", "exit-zone overshoot", "timeout"],
+    "anti_bypass": ["require both front and rear object extremities to cross", "use solid top and side frame collision geoms", "reject paths outside the framed opening", "reject arrival after frame contact or without the braking event"]
+  },
+  "mechanism_axes": [
+    {"name": "aperture_clearance_class", "public": true, "train": ["wide"], "development": ["wide", "medium"], "heldout": ["narrow"]},
+    {"name": "braking_distance_class", "public": true, "train": ["long"], "development": ["long", "medium"], "heldout": ["short"]},
+    {"name": "servo_gain", "public": false, "train": [1.0], "development": [0.8, 1.0], "heldout": [0.65]},
+    {"name": "command_delay_controls", "public": false, "train": [0], "development": [0, 1], "heldout": [3]},
+    {"name": "payload_mass_kg", "public": false, "train": [0.5], "development": [0.5, 0.65], "heldout": [0.8]}
+  ],
+  "source_qualification": {
+    "status": "cpu_source_qualified_4_of_4",
+    "requirements": ["source skill completes alignment, whole-object crossing, braking, and hold in event order", "source geometry is feasible for the complete object envelope", "qualification includes disjoint initial poses and exact physical replay", "source actor and geometry digests are frozen before target development"],
+    "evidence_resolution": "results/arm/obstacle_transfer/validation/aperture_brake/report.json; every control tick, every physics-substep frame-contact event, complete object envelope, braking event, and terminal state; four compressed episodes independently reevaluated"
+  },
+  "evaluator_evidence": {
+    "status": "implemented_contract_frozen",
+    "resolution": "physics_substep_for_frame_contact_and_control_tick_for_event_order",
+    "implementation_path": "genedynamics/tasks/transfer/evaluation.py",
+    "required_signals": ["complete object envelope", "frame collision pairs", "aperture-plane crossing for all object extremities", "object pose and twist", "exit-zone membership", "terminal dwell clock"]
+  },
+  "historical_evidence_policy": "No historical obstacle-transfer result is an aperture-brake result; the new suite starts with fresh source, development, and heldout evidence."
+}

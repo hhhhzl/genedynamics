@@ -1,0 +1,75 @@
+{
+  "acceptance": {
+    "maximum_calibrated_optimism_controls": 10.0,
+    "maximum_conservative_mae_controls": 12.0,
+    "minimum_conservative_direction_accuracy": 0.9
+  },
+  "calibration": {
+    "one_sided_optimism_quantile": 0.99
+  },
+  "completion_value_checkpoint": {
+    "path": "results/arm/keyed_insertion_recovery/training/finite_time_completion_value/checkpoint/checkpoint.pt",
+    "sha256": "657e3c24125d69b9263d9b91b87727a3d9585d4c28dce04fd58ada6d461af025"
+  },
+  "data": {
+    "episode_split": {
+      "kind": "within_manifest_entry_modulo",
+      "modulus": 4,
+      "validation_residue": 0
+    },
+    "maximum_remaining_controls": 150,
+    "public_log_manifests": [
+      {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_public_log/gpu1/public_log_manifest.json",
+        "sha256": "90b94ce415951875c12c148c6660a2a72eec8e62d38984a9714191dfbb13ddf7"
+      },
+      {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_mode0_public_log/gpu1/public_log_manifest.json",
+        "sha256": "1dafc7445184943ffb15141a53cde5480183ad17790f09d1ce90f1a2b91012e9"
+      }
+    ]
+  },
+  "device": {
+    "logical_device": "cuda:0",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1"
+  },
+  "output": "results/arm/keyed_insertion_recovery/validation/finite_time_completion_response_calibration/gpu1",
+  "response_checkpoints": {
+    "instance_01": {
+      "path": "results/_development/p4_completion_20261015/results/arm/keyed_insertion_recovery/validation/p4_public_local_response_curve/level_B_log/seed_38000/budget_60/checkpoint.pt",
+      "sha256": "b74f34c64da327963e7e71a307b3388b577359479c4759fc0c6150463c01b75e"
+    },
+    "instance_02": {
+      "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v1/level_B_log_60/instance_02/T3/response/budget_60/checkpoint.pt",
+      "sha256": "3908ee699a8af32f4fa5615d92f71f284118b430f84cb11044b9cec9b38f7a7c"
+    },
+    "instance_03": {
+      "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/T3/response/budget_60/checkpoint.pt",
+      "sha256": "e9597769701ac91e67652954ee45ee1cbf64e8cc0be70ffe337dda928a50df5c"
+    },
+    "instance_04": {
+      "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/T3/response/budget_60/checkpoint.pt",
+      "sha256": "bf31789e48b6ba81573d2b580da60a70e62599b3eb8a779868582ceecd5b9858"
+    },
+    "instance_05": {
+      "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/T3/response/budget_60/checkpoint.pt",
+      "sha256": "9aaea76c9bdc727da8c4d6e94c480c6d0b2b9daa383486cb9756e08990025847"
+    },
+    "instance_06": {
+      "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/T3/response/budget_60/checkpoint.pt",
+      "sha256": "cd6f1854e53b5780d45826393de205117f2db0dbd78e7f6ffef9aa64dcdcd15c"
+    },
+    "instance_07": {
+      "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/T3/response/budget_60/checkpoint.pt",
+      "sha256": "6dc52b035c89f50545f778f3aba08f019ab4e148a7dbc2474895dbf521eb0963"
+    },
+    "instance_08": {
+      "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/T3/response/budget_60/checkpoint.pt",
+      "sha256": "20a9e81ca49ce9222d04ae791d894c8d807c06afb90ef62d920c67ba22c7f71e"
+    }
+  },
+  "status": "frozen_unexecuted",
+  "task": "T3",
+  "version": "t3-public-completion-response-calibration-v1"
+}

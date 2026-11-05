@@ -1,0 +1,77 @@
+{
+  "version": "t2-substep-risk-model-training-v1",
+  "status": "frozen_unexecuted",
+  "scope": "GPU1-only development revision after the alpha=0.05 episode-block coverage failure. A new untouched physical cohort is required after this run.",
+  "dataset": {
+    "report": {
+      "path": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset/report.json",
+      "sha256": "b1ea5d64528256ac8daa2c365b416528867f8f9f82db5d31e4371e716e408c62"
+    },
+    "independent_audit": {
+      "path": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset/independent_audit.json",
+      "sha256": "39a409c019aa55baa895f5ac33351acaf92a04169328ad062691ae981c4cb34f"
+    },
+    "episodes": {
+      "path": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset/episodes.json",
+      "sha256": "6be2ed07d4e73d46f80c1c4202f7110c46bc27256fe19b71294ac604b5c6ed88"
+    },
+    "window_index": {
+      "path": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset/window_index.npz",
+      "sha256": "3a7c79a98541218f6740036e152d79a1e3563829e86dd459bee5dfe0040ee4f5"
+    }
+  },
+  "revision_evidence": {
+    "failed_prototype": {
+      "path": "results/arm/guided_contact_alignment/training/substep_risk_models/report.json",
+      "sha256": "0b9abc26bd4282fa019b163ad69500b7e68b2a42f87f17a9b2699db35f88ca2e"
+    },
+    "decision": "The original validation split was opened only to diagnose the failed alpha=0.05 block calibration. Alpha=0.02 is frozen before retraining; neither the original validation split nor this rerun can qualify the revision."
+  },
+  "device": {
+    "physical_index": 1,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1",
+    "logical_device": "cuda:0",
+    "required_visible_device_count": 1
+  },
+  "model": {
+    "history_len": 4,
+    "horizon": 10,
+    "maximum_joints": 32,
+    "hidden": [128, 128],
+    "members": 3,
+    "learning_rate": 0.0003
+  },
+  "training": {
+    "seeds": [3264100, 3264101, 3264102, 3264103, 3264104, 3264105, 3264106, 3264107],
+    "updates": 3000,
+    "batch_size": 256,
+    "high_risk_fraction": 0.5,
+    "underprediction_weight": 4.0,
+    "log_interval": 250
+  },
+  "calibration": {
+    "miscoverage": 0.02,
+    "soft_force_limits_N": [20.0, 8.0],
+    "interpolation_fractions": [1.0, 0.5, 0.25, 0.0],
+    "exchangeability_unit": "recorded_episode_development_block"
+  },
+  "validation_gates": {
+    "minimum_total_force_episode_block_coverage": 0.9,
+    "minimum_lateral_force_episode_block_coverage": 0.9,
+    "minimum_high_risk_recall": 0.9,
+    "maximum_safe_window_rejection_rate": 0.5,
+    "require_all_eight_instances": true
+  },
+  "output": "results/arm/guided_contact_alignment/training/substep_risk_models_conservative",
+  "data_policy": {
+    "development_prototype_only": true,
+    "final_paper_checkpoint": false,
+    "confirmation_states_opened": 0,
+    "old_invalid_outcomes_used": false,
+    "performance_evidence": false,
+    "original_validation_opened_for_revision": true,
+    "fresh_physical_qualification_required": true,
+    "final_budget_must_be_refrozen": true
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "acceptance": {
+    "maximum_completion_calibrated_optimism_controls": 12.0,
+    "maximum_completion_conservative_mae_controls": 12.0,
+    "maximum_controller_context_delta_mae": 0.05,
+    "maximum_normalized_contact_count_mae": 0.1,
+    "maximum_position_delta_vector_mae_m": 0.004,
+    "maximum_rotation_delta_vector_mae_rad": 0.04,
+    "minimum_completion_conservative_direction_accuracy": 0.9,
+    "minimum_controller_phase_accuracy": 0.95
+  },
+  "completion_value_checkpoint": {
+    "path": "results/arm/keyed_insertion_recovery/training/finite_time_qualified_context_completion_value/checkpoint/checkpoint.pt",
+    "sha256": "a0e2689917e8ed6696a6d93922c0b6b7a7e88fb851a059771c507faac66c4e63"
+  },
+  "data": {
+    "episode_split": {
+      "calibration_residue": 0,
+      "fit_residues": [
+        1,
+        2
+      ],
+      "kind": "within_manifest_entry_modulo",
+      "modulus": 4,
+      "selection_residue": 3
+    },
+    "maximum_remaining_controls": 750,
+    "public_log_manifests": [
+      {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_public_log/gpu1/public_log_manifest.json",
+        "sha256": "90b94ce415951875c12c148c6660a2a72eec8e62d38984a9714191dfbb13ddf7"
+      },
+      {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_mode0_public_log/gpu1/public_log_manifest.json",
+        "sha256": "1dafc7445184943ffb15141a53cde5480183ad17790f09d1ce90f1a2b91012e9"
+      }
+    ]
+  },
+  "device": {
+    "logical_device": "cuda:0",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1"
+  },
+  "model": {
+    "hidden": [
+      256,
+      256
+    ],
+    "history_len": 4,
+    "horizon": 10,
+    "learning_rate": 0.0003,
+    "maximum_joints": 32,
+    "members": 3
+  },
+  "output": "results/arm/keyed_insertion_recovery/training/finite_time_controller_context_response/instances",
+  "preflight_output": "results/arm/keyed_insertion_recovery/training/finite_time_controller_context_response/preflight",
+  "preflight_report": {
+    "path": "results/arm/keyed_insertion_recovery/training/finite_time_controller_context_response/preflight/report.json",
+    "sha256": "700ddc446fb0b63466735481c0b8ba28d80d71c89f04928e5375a52d044b9bd7"
+  },
+  "selection": {
+    "one_sided_optimism_quantile": 0.99
+  },
+  "status": "frozen_unexecuted",
+  "task": "T3",
+  "training": {
+    "batch_size": 256,
+    "completion_weight": 5.0,
+    "context_weight": 1.0,
+    "instance_seeds": {
+      "instance_01": 7080001,
+      "instance_02": 7080002,
+      "instance_03": 7080003,
+      "instance_04": 7080004,
+      "instance_05": 7080005,
+      "instance_06": 7080006,
+      "instance_07": 7080007,
+      "instance_08": 7080008
+    },
+    "updates": 3000,
+    "validation_interval": 100
+  },
+  "version": "t3-controller-context-response-training-v2"
+}

@@ -1,0 +1,37 @@
+{
+  "version": "fixture-response-data-preparation-v1",
+  "output": "results/arm/compliant_keyed_insertion_recovery/training/segmented_response_data/soft_fixture",
+  "response_spec": {
+    "history_len": 4,
+    "horizon": 10,
+    "maximum_joints": 32
+  },
+  "segment_steps": [
+    3,
+    6,
+    10
+  ],
+  "calibration_context": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "trajectories": [
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_fixture_excitation/seed_927001/public",
+      "public_sha256": "08ba5f61e0d52ba3506557b35d84579cda0c39854eb37af3ce59b17000e5e462"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_fixture_excitation/seed_927002/public",
+      "public_sha256": "fe827c7941a43845cfe3d8575d160418793013b3230f817e364123cb134058b4"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_fixture_excitation/seed_927101/public",
+      "public_sha256": "5b340b72aa9f47a93d08d89c3117cdf1ad7f2ab279130a2ed91809091e161fd7"
+    },
+    {
+      "path": "results/arm/compliant_keyed_insertion_recovery/validation/soft_fixture_excitation/seed_927102/public",
+      "public_sha256": "90ac753167ca6dad4e115977d020159d480b0917e0ec2d3589ac58cb9e81bae3"
+    }
+  ]
+}

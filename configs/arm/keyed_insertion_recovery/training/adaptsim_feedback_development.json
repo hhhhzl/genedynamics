@@ -1,0 +1,195 @@
+{
+  "version": "adaptsim-mating-feedback-development-v1",
+  "task": "T3",
+  "robot": "xarm7",
+  "seed": 737215,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 900,
+    "maximum_gpu_memory_gib": 2
+  },
+  "shared_execution": {
+    "version": "four-task-shared-execution-v3",
+    "insertion_lead_z_m": 0.015,
+    "retreat_release_version": "safe_settled_v1"
+  },
+  "feedback_base": {
+    "alignment_spatial_stiffness": 1.0,
+    "compensation_gain": 2.0,
+    "compensation_limit": 0.04,
+    "execution_horizon": 1,
+    "guard_clear_z_m": 0.61,
+    "guard_prediction_seconds": 0.0,
+    "guard_retreat_speed": 0.006,
+    "guard_seat_gap_m": 0.006,
+    "guard_settle_ticks": 4,
+    "insertion_force_scale": 1.0,
+    "insertion_spatial_stiffness": 1.0,
+    "integral_scale": 0.0,
+    "issued_reference_gain": 2.0,
+    "lead_rotation_rad": 0.04,
+    "lead_xy_m": 0.008,
+    "lead_z_m": 0.01,
+    "lift_before_lateral": true,
+    "normal_admittance_gain": 0.004,
+    "normal_control": "position_admittance",
+    "normal_velocity_limit": 0.015,
+    "position_gain": 6.0,
+    "recovery_spatial_stiffness": 0.25,
+    "rotation_gain": 4.0,
+    "twist_damping": 1.0,
+    "insertion_lead_z_m": 0.015
+  },
+  "policy_fields": [
+    "recovery_spatial_stiffness",
+    "position_gain",
+    "compensation_gain",
+    "lead_xy_m",
+    "normal_admittance_gain",
+    "insertion_force_scale",
+    "guard_prediction_seconds"
+  ],
+  "task_policy_search": {
+    "lower": [
+      0.1,
+      4.0,
+      0.8,
+      0.004,
+      0.002,
+      0.8,
+      0.0
+    ],
+    "upper": [
+      0.5,
+      8.0,
+      2.0,
+      0.01,
+      0.006,
+      1.2,
+      0.08
+    ],
+    "anchor": [
+      0.25,
+      6.0,
+      2.0,
+      0.008,
+      0.004,
+      1.0,
+      0.0
+    ],
+    "population": 5,
+    "elite": 1,
+    "iterations": 1,
+    "tasks_per_candidate": 1
+  },
+  "parameters": [
+    {
+      "name": "servo_gain",
+      "minimum": 0.4,
+      "maximum": 1.4,
+      "step": 0.1,
+      "distribution": "gaussian",
+      "min_std": 0.05,
+      "max_std": 0.25
+    },
+    {
+      "name": "payload_mass",
+      "minimum": 0.2,
+      "maximum": 1.2,
+      "step": 0.1,
+      "distribution": "gaussian",
+      "min_std": 0.05,
+      "max_std": 0.25
+    },
+    {
+      "name": "delay_steps",
+      "minimum": 0.0,
+      "maximum": 3.0,
+      "step": 1.0,
+      "distribution": "gaussian",
+      "min_std": 0.1,
+      "max_std": 1.0
+    }
+  ],
+  "particles": [
+    {
+      "kind": "gaussian",
+      "left": [
+        0.85,
+        0.65,
+        0.0
+      ],
+      "right": [
+        0.1,
+        0.1,
+        0.5
+      ]
+    },
+    {
+      "kind": "gaussian",
+      "left": [
+        1.0,
+        0.8,
+        2.0
+      ],
+      "right": [
+        0.1,
+        0.1,
+        0.5
+      ]
+    }
+  ],
+  "meta_training": {
+    "episodes": 1,
+    "adaptation_steps": 1,
+    "batch_size": 1,
+    "update_every": 1,
+    "gradient_steps": 1,
+    "exploration_probability": 0.5
+  },
+  "deployment_target": {
+    "mechanism": {
+      "servo_gain": 0.7,
+      "payload_mass": 0.5,
+      "delay_steps": 3
+    },
+    "updates": 1,
+    "select_particles": true
+  },
+  "output": "results/arm/keyed_insertion_recovery/baseline/adaptsim/training/feedback_development_737215",
+  "source_bindings": [
+    {
+      "path": "genedynamics/solvers/single/adaptsim/adaptsim.py",
+      "sha256": "2ac4616156be0c978665f51c913a1da036caaa93a713d2c800f8707c3d9d93d2"
+    },
+    {
+      "path": "genedynamics/solvers/single/adaptsim/backends/branching_q_torch.py",
+      "sha256": "4de8d2c7b7299f00cb1e43f824619771909dfc63d3b99c27c4774a8fc91295ca"
+    },
+    {
+      "path": "genedynamics/solvers/single/adaptsim/learning/meta_training.py",
+      "sha256": "ec2ae4605f66a8e27b8fdee4d02a23ca3b09915c86d3617aebb95f36d483f106"
+    },
+    {
+      "path": "genedynamics/solvers/single/adaptsim/learning/adaptation.py",
+      "sha256": "b8c402d452867e0f1233662a3272d6221d7b28394019238ab3dc6a3da7ef5d7b"
+    },
+    {
+      "path": "genedynamics/solvers/single/adaptsim/learning/task_policy_search.py",
+      "sha256": "e0c71bc1bee7baa0c7f0a1fc8797fb99b71b92a9b69106e00c5052139a26d9b8"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/mating_policy_search.py",
+      "sha256": "35718deafb5b9270242972a0ff3e99915fe178898d53ac46475e6f579b7a93ee"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/mating_feedback.py",
+      "sha256": "30fc83a11a88799b569ebf6a25372671830af9a7f903f47897b327a84f9f7f23"
+    },
+    {
+      "path": "scripts/paper/cross_ebdm/train_adaptsim_development.py",
+      "sha256": "b1b6eb7b9a9cb220da10e56e18045ba2a14254d5fcdd54f39b9a10d38ed90668"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import torch
 
-from genedynamics.experiments.plugins.methods.transfer.dial import TorchDIALPlanner
+from genedynamics.tasks.transfer.controllers.dial import TorchDIALPlanner
 
 
 def test_dial_sampling_moves_future_plan_toward_quadratic_optimum():

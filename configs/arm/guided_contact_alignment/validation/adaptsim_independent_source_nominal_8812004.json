@@ -1,0 +1,28 @@
+{
+  "version": "transfer-independent-actor-development-evaluation-v1",
+  "task": "T2",
+  "method": "adaptsim",
+  "method_identity": "AdaptSim_task_adapted_CEM",
+  "actor_binding_source": "independent_actor_package",
+  "actor_package": {
+    "path": "results/arm/guided_contact_alignment/baseline/adaptsim/validation/independent_actor_package_v1/report.json",
+    "sha256": "671c1598b6342e24de3a61882e06132e75d581c12bee867c7d4f321e1008b923"
+  },
+  "instance_id": "independent_8812004",
+  "task_config": "configs/arm/guided_contact_alignment/baseline/adaptsim.yaml",
+  "checkpoint": {
+    "path": "results/arm/guided_contact_alignment/baseline/adaptsim/training/independent_training_8812004/inference_and_policy.pt",
+    "sha256": "a1816a95e5d84e8e7182b86c8c9fdf426a4c9235c0d181903a7ec7e11b36905c"
+  },
+  "request_roster": {
+    "path": "configs/arm/guided_contact_alignment/validation/adaptsim_independent_actor_source_nominal_roster.json",
+    "sha256": "44339272537cdb7b4a1a1d2be3208bdee3d255b1faecbdf5a03ad9bd69045866"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/adaptsim/validation/independent_source_nominal_8812004",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/adaptsim/validation/plans/independent_source_nominal_8812004.json"
+}

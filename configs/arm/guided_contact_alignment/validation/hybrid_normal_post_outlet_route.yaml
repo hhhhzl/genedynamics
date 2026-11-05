@@ -1,0 +1,14 @@
+base: filtered_normal_post_outlet_route.yaml
+name: guided_contact_alignment_hybrid_normal_post_outlet_route
+output_dir: results/arm/guided_contact_alignment/validation/hybrid_normal_post_outlet_route
+seeds:
+- 930286
+- 930287
+- 930288
+- 930289
+method_params:
+  actor_binding:
+    reference_version: public_hybrid_normal_post_outlet_route_v15
+metadata:
+  protocol: transfer_hybrid_normal_post_outlet_route
+  selection_rule: require strict contact through the requested outlet under the existing physics-rate hybrid normal-force channel and report frozen terminal success on both xArm modes for all four fresh resets

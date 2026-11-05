@@ -1,0 +1,23 @@
+{
+  "gate": {
+    "failure_replacement": false,
+    "require_all_mode_correct_task_success": true,
+    "require_evidence_reaudit": true,
+    "require_minimum_support_count": 2,
+    "require_zero_constraint_violations": true
+  },
+  "requested_modes": [0, 1],
+  "reset_slots_per_cell": 2,
+  "scene_cells": [{
+    "body_support_parameters": {"body_servo_gain": 1.0, "support_controller": "unchanged host OSQP stance WBC"},
+    "id": "deployment_nominal",
+    "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0},
+    "robot": "go2_z1"
+  }],
+  "scope": "Fresh final-actor admission with the shared joint-margin executor, folded reset, public body intent and completion-projected Cross-EBDM actor; no prior request, state or outcome is reusable.",
+  "seed_anchor": 3703000,
+  "source_admission": "Validate each method's declared source/training artifacts and provenance through its SHA-bound manifest; never deploy a target actor on a different source robot.",
+  "supersedes": {"path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/predeployment_v7.json", "sha256": "5b41abf3401e6c43e0c1e75fcd6f950237241775c82b22ebe59fec6b6e76003d"},
+  "task": "T4",
+  "version": "four-task-behavioral-predeployment-v8"
+}

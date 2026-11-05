@@ -1,0 +1,26 @@
+{
+  "base_training_config": {
+    "path": "configs/arm/keyed_insertion_recovery/training/finite_time_late_phase.json",
+    "sha256": "109252e88f538c7f9cbb9d3f15e90eb74c8f5ab98518aecf71a0dcbf83ad2984"
+  },
+  "overrides": {
+    "version": "t3-finite-time-same-start-relative-anchored-training-v1",
+    "training": {
+      "variant": "same_start_relative_anchored",
+      "control_checkpoint_policy": "terminal_update",
+      "response_normalization": {
+        "reference_floor": 0.0001
+      }
+    },
+    "actor_manifest": {
+      "path": "configs/arm/keyed_insertion_recovery/protocol/actor_bindings.json",
+      "sha256": "867bf9e88ae5ad7c698ad3b9889204b426df0993a558913cdf76ddb753d8892d"
+    },
+    "preflight_output": "results/arm/keyed_insertion_recovery/training/finite_time_relative_response/anchored/preflight",
+    "preflight_report": {
+      "path": "results/arm/keyed_insertion_recovery/training/finite_time_relative_response/anchored/preflight/report.json",
+      "sha256": "521efe357ebeb267bf0c0f29d1d2741f0104ee6cd3eed693ca7ebe1255f3b338"
+    },
+    "output": "results/arm/keyed_insertion_recovery/training/finite_time_relative_response/anchored/checkpoints"
+  }
+}

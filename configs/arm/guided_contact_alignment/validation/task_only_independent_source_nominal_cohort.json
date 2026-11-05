@@ -1,0 +1,42 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "first_instance_audit": {
+    "path": "results/arm/guided_contact_alignment/baseline/task_only/validation/source_nominal_actor_screen_3301100000/independent_audit.json",
+    "sha256": "2300d2ad37fa3b7b2b33e6fe3c0749011b518c8a022058bc14a840751d640d0a"
+  },
+  "first_instance_report": {
+    "path": "results/arm/guided_contact_alignment/baseline/task_only/validation/source_nominal_actor_screen_3301100000/report.json",
+    "sha256": "056616586938d79cb057fcc1101b17b106e2e92582b3fa21529e1e00cc7d01c1"
+  },
+  "formal_request_seed_access": 0,
+  "instance_ids": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "maximum_cohort_physical_episodes": 64,
+  "maximum_new_physical_episodes": 56,
+  "method": "task_only",
+  "method_identity": "task_only",
+  "output": "results/arm/guided_contact_alignment/baseline/task_only/validation/independent_source_nominal_cohort_v1",
+  "source_roster": {
+    "path": "configs/arm/guided_contact_alignment/validation/method_source_nominal_actor_roster.json",
+    "sha256": "537889f695bc6bcf2a8b9e93da24a1363371d187b5f0c99cc03dc3734f367813"
+  },
+  "task": "T2",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/baseline/task_only.yaml",
+    "sha256": "a91998e5452e1d25b86e6608f73d94c73b022d633a3eba78ac97406bb8620118"
+  },
+  "version": "transfer-legacy-independent-source-nominal-cohort-v1"
+}

@@ -1,0 +1,52 @@
+{
+  "version": "t3-public-completion-value-training-v1",
+  "status": "frozen_unexecuted",
+  "task": "T3",
+  "device": {
+    "process_visible_devices": "1",
+    "logical_device": "cuda:0",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "data": {
+    "public_log_manifests": [
+      {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_public_log/gpu1/public_log_manifest.json",
+        "sha256": "90b94ce415951875c12c148c6660a2a72eec8e62d38984a9714191dfbb13ddf7"
+      },
+      {
+        "path": "results/arm/keyed_insertion_recovery/training/finite_time_late_phase_mode0_public_log/gpu1/public_log_manifest.json",
+        "sha256": "1dafc7445184943ffb15141a53cde5480183ad17790f09d1ce90f1a2b91012e9"
+      }
+    ],
+    "episode_split": {
+      "kind": "within_manifest_entry_modulo",
+      "modulus": 4,
+      "validation_residue": 0
+    },
+    "state_stride": 1,
+    "temporal_horizon_controls": 10
+  },
+  "model": {
+    "hidden": [128, 128],
+    "members": 5,
+    "maximum_remaining_controls": 150,
+    "learning_rate": 0.0003
+  },
+  "training": {
+    "seed": 6370000,
+    "batch_size": 256,
+    "pair_batch_size": 256,
+    "updates": 3000,
+    "validation_interval": 100,
+    "temporal_weight": 5.0
+  },
+  "acceptance": {
+    "maximum_state_mae_controls": 25.0,
+    "maximum_pair_mae_controls": 3.0,
+    "minimum_pair_direction_accuracy": 0.98,
+    "minimum_all_members_positive_fraction": 0.95
+  },
+  "preflight_output": "results/arm/keyed_insertion_recovery/training/finite_time_completion_value/preflight",
+  "preflight_report": null,
+  "output": "results/arm/keyed_insertion_recovery/training/finite_time_completion_value/checkpoint"
+}

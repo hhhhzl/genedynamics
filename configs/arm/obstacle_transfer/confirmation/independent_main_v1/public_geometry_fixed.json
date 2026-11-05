@@ -1,0 +1,26 @@
+{
+  "cell_admission": {
+    "path": "results/arm/obstacle_transfer/validation/independent_main_table_admission_v1/public_geometry.json",
+    "sha256": "4945cb9ced69d252acc09f1da9097a79230b06ffeb155d9ed43bb98615d72390"
+  },
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "instance_id": "fixed",
+  "method": "public_geometry",
+  "method_identity": "public_geometry",
+  "output": "results/arm/obstacle_transfer/baseline/public_geometry/confirmation/independent_main_v1/fixed",
+  "plan_output": "results/arm/obstacle_transfer/baseline/public_geometry/confirmation/independent_main_v1/fixed_plan.json",
+  "request_roster": {
+    "path": "configs/arm/obstacle_transfer/protocol/independent_main_table_requests.json",
+    "sha256": "9a5c2ea0bfebdadd816baf0642dcd7eb6537536e8bdb528d37d2a69882827240"
+  },
+  "task": "T1",
+  "task_config": {
+    "path": "configs/arm/obstacle_transfer/baseline/public_geometry.yaml",
+    "sha256": "f309262f87e62dc67769f9ed161c703dc3c71915c9ad699361b74e63624e9eb1"
+  },
+  "version": "transfer-independent-main-table-evaluation-v1"
+}

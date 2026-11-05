@@ -1,0 +1,15 @@
+base: contact_load_qualification.yaml
+name: guided_contact_alignment_predictive_contact_qualification
+output_dir: results/arm/guided_contact_alignment/validation/predictive_contact_qualification
+seeds:
+- 930230
+- 930231
+- 930232
+- 930233
+method_params:
+  actor_binding:
+    reference_version: public_predictive_guide_contact_v1
+metadata:
+  protocol: transfer_predictive_contact_qualification
+  physics_episode_cap: 8
+  selection_rule: require both requested xArm modes on all four fresh resets to satisfy the unchanged strict contact, force, mode, and deadline criteria

@@ -1,0 +1,290 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "maximum_gpu_memory_gib": 2,
+    "maximum_wall_seconds": 2400,
+    "native_library": {
+      "path": ".runtime/cross_ebdm/native/libcross_ebdm.so",
+      "sha256": "40f532dda955a39e99455ecff0d362f310ab31c33cde1d546c6c78f0f43f1a09"
+    },
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "formal_performance_evidence": false,
+  "maximum_total_physics_episodes": 32,
+  "methods": [
+    "adaptsim",
+    "public_geometry"
+  ],
+  "requests": [
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ADAPTSIM-FRESH/source/s0/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302600000,
+      "robot": "go2_z1",
+      "scene_cell": "source"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ADAPTSIM-FRESH/source/s0/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302600001,
+      "robot": "go2_z1",
+      "scene_cell": "source"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ADAPTSIM-FRESH/source/s1/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302600002,
+      "robot": "go2_z1",
+      "scene_cell": "source"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.65,
+        "servo_gain": 0.85
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ADAPTSIM-FRESH/source/s1/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302600003,
+      "robot": "go2_z1",
+      "scene_cell": "source"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ADAPTSIM-FRESH/nominal/s0/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302600004,
+      "robot": "go2_z1",
+      "scene_cell": "nominal"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ADAPTSIM-FRESH/nominal/s0/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302600005,
+      "robot": "go2_z1",
+      "scene_cell": "nominal"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ADAPTSIM-FRESH/nominal/s1/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302600006,
+      "robot": "go2_z1",
+      "scene_cell": "nominal"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ADAPTSIM-FRESH/nominal/s1/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302600007,
+      "robot": "go2_z1",
+      "scene_cell": "nominal"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ADAPTSIM-FRESH/latency_gain_shift/s0/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302600008,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ADAPTSIM-FRESH/latency_gain_shift/s0/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302600009,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ADAPTSIM-FRESH/latency_gain_shift/s1/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302600010,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ADAPTSIM-FRESH/latency_gain_shift/s1/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302600011,
+      "robot": "go2_z1",
+      "scene_cell": "latency_gain_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 1.0,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ADAPTSIM-FRESH/payload_shift/s0/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302600012,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 1.0,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "T4/ADAPTSIM-FRESH/payload_shift/s0/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302600013,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 1.0,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ADAPTSIM-FRESH/payload_shift/s1/m0",
+      "requested_mode": 0,
+      "reset_seed": 3302600014,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift"
+    },
+    {
+      "body_support_parameters": {
+        "body_servo_gain": 0.9
+      },
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 1.0,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "T4/ADAPTSIM-FRESH/payload_shift/s1/m1",
+      "requested_mode": 1,
+      "reset_seed": 3302600015,
+      "robot": "go2_z1",
+      "scene_cell": "payload_shift"
+    }
+  ],
+  "requests_per_method": 16,
+  "robot": "go2_z1",
+  "scope": "same predeclared 16 T4 physical requests under reset-qualified AdaptSim v2 recipe; old reference run retained; development only",
+  "task": "T4",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/_base.yaml",
+    "sha256": "61b5856d0b16e8fe602f50c7d937e7154abb090af7b5127872606d39e1c0699f"
+  },
+  "training_recipe": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/training/adaptsim_mobile_population_development_v2.json",
+    "sha256": "c517642feee3d32366d4d27f944464ddbe5f3bbdb49361bcabc76fbecf9c3f5a"
+  },
+  "version": "adaptsim-t4-fresh-actor-roster-v2"
+}

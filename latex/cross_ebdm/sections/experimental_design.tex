@@ -1,8 +1,9 @@
 \section{Experiments}
 \label{sec:experiments}
-实验围绕三个问题组织：少量目标交互是否改善受约束任务表现；校准后的
-分布迁移是否提供超出动作适应与模型控制的收益；这种收益能否推广到未见
-机制和身体。本节给出拟采用的比较协议，正式结果表和结论留待独立评估。
+实验围绕三个问题组织：完整方法相对成熟方法的任务与资源权衡；校准及
+选择性响应迁移的机制与适用条件；同一技能接口在不同身体上的可执行性。
+T1--T3 是主要操作性能比较，T4 是形态扩展，所有方法均报告四任务结果。
+本节给出下一轮拟采用的比较协议，正式结果表和结论留待独立评估。
 
 \subsection{Tasks, Bodies, and Shared Control Interface}
 源机器人为 Panda，固定臂目标为 xArm7，并以 UR5e 检验跨自由度迁移。
@@ -72,45 +73,50 @@ UMI-on-Legs 提供操作策略与全身控制分层的参照\cite{umilegs}；
 预算内记录构建的模型。隐藏目标环境仅提供计费探针及封存评估，
 实际机制参数不向训练开放。
 
-\textbf{冻结主表。} 主表固定为九行，并要求每行参加四个任务：本文方法、
-matched task-only、FADA task-adapted、ACP task-adapted、
-Human2Sim2Robot source-trajectory adaptation、DIAL-MPC task-adapted、
-ordinary response MPC、public geometry/feedback 与 public source prior。
-这一组合覆盖 2025/2026 年近期强方法、Karen Liu 与 Guanya Shi 参与的路线，
-并保留三个不依赖论文适配细节的强公共控制\cite{human2sim,fada,acp,dialmpc}。
+\textbf{四任务主表。} 预定的方法名册为九行：本文方法、同容量 matched
+task-only、FADA task-adapted、DIAL-MPC task-adapted、ordinary response MPC、
+public geometry/feedback、public source prior、AdaptSim task-adapted 和
+ASID task-adapted。每行在四个任务保留位置；只有具备可核验任务 actor、
+训练/目标访问账本及统一合同下的物理执行证据时才填入任务指标。
+缺少资产、未完成适配或部署前不合格的格子明确记为未执行，不能将其记作
+零成功来支撑优越性结论。同容量 task-only 同时进入主表与机制消融；
+它检验 transport 的增量，不替代成熟外部方法比较。这一名册兼有近期完整
+方法、辨识/仿真适配方法及强公共控制\cite{fada,dialmpc,adaptsim,asid}。
 
 \begingroup\small
 \begin{longtable}{L{3.2cm}L{2.2cm}L{2.7cm}L{4.5cm}}
 \toprule
 主表行 & 权限 & 身份 & 可解释的比较范围\\\midrule\endfirsthead
 \toprule 主表行 & 权限 & 身份 & 可解释的比较范围\\\midrule\endhead
-Ours gated transport & B-log & $C+H+GR$ & 与 task-only/FADA 做同权限任务比较；gate 机制另由六格消融识别。\\
-Task-only & B-log & $C$ & 同容量、同数据、同训练流与同 checkpoint fallback 的首要对照。\\
+Ours & B-log & selective transport system & 与外部方法比较任务与资源表现；response/gate 的作用由对齐消融识别。\\
+Matched task-only & B-log & 同容量、同公共执行器 & 与 Ours 配对识别 source anchoring 增量；任务性能也进入主表。\\
 FADA & B-log & Planner/IDM task adaptation & 保留公开 planner/IDM 核心；标为任务适配，不冒充原人形定量复现\cite{fada}。\\
-ACP & C-supervised & virtual target/stiffness adaptation & 目标示范与力监督单列；不能与 B-log 作相同信息因果比较\cite{acp}。\\
-Human2Sim2Robot & C-supervised-model & robot-source trajectory proxy & 原人类资产不可用时明确标为 source-trajectory 改编，不推广成原方法结论\cite{human2sim}。\\
 DIAL-\newline MPC & B-log\newline model & annealed diffusion\newline online MPC & 保留在线 candidate rollout 与 receding horizon；模型调用与 deadline miss 进入资源列\cite{dialmpc}。\\
 Ordinary response MPC & B-log\newline model & online Adam shooting & 与 DIAL-MPC 使用同一公共 response model 和 decoder/WBC。\\
 Public geometry & no-target-learning & 固定几何/反馈 & 检验任务是否已可由强公共反馈解决。\\
 Public source prior & no-target-learning & 冻结 source skill & 检验不做目标适配时的直接迁移与部署前拒绝。\\
+AdaptSim & B-online & 粒子适配与任务策略搜索 & 保留目标交互及模拟候选账本；任务适配 CEM 不冒充原生策略训练器\cite{adaptsim}。\\
+ASID & B-log & Fisher 探索、辨识及重训 & 报告主动探索与参数估计链；任务适配搜索不冒充作者特定任务 SAC\cite{asid}。\\
 \bottomrule
 \end{longtable}
 \endgroup
 
+ACP 与 Human2Sim2Robot 的不完整任务适配保留在表外诊断，不把它们的
+未执行请求记成零分\cite{acp,human2sim}。
 Play2Perfect、ASAP、SPI-Active 与 XMoP 保留为相关或后续扩展路线，
-不在冻结九行中用不完整代理占据主表位置\cite{play2perfect,asap,spi,xmop}。
+不以不完整代理占据主表位置\cite{play2perfect,asap,spi,xmop}。
 原生复现、完整系统比较与共同接口改编不能互相替代；每个 task-adapted 行
 均报告 source、known-nominal 与目标三段漏斗。
 
-\textbf{部署前拒绝。} 一个实现若耗尽预声明机会并在 source/known-nominal
-资格门失败，仍覆盖该任务单元。其每个计划请求记
-constrained success $=0$、constraint violation $=1$、capped normalized
-time $=1$、pre-deployment rejection $=1$、target execution $=0$。
-这里的 violation 是算法部署合同失败，不表示未执行目标轨迹发生了物理超限。
-主表同时报告 rejection rate、target execution rate 与物理执行数。
+\textbf{有效实现与部署前拒绝。} 方法应具有正确动作/数据接口、忠实的核心
+训练机制及合理训练和调参机会，质量检查不要求所有名义请求都成功。
+没有训练出的 policy 或未完成的适配标为未完成，不能用合成零分支持胜过该
+方法。已经形成可评估算法的部署拒绝计入全部请求分母，未完成请求的 capped
+time 取一；拒绝率与物理执行数单列。实际物理 violation 只由已执行轨迹判定，
+未执行请求不自动视为物理超限。真实低成功率与失败均保留并解释。
 
-DR/recurrent PPO、经典 Residual RL、通用校准 MPC、Mirage 和 ASID
-保留为基础参照\cite{dr,ppo,rppo,residualrl,mjpc,mirage,asid}。
+DR/recurrent PPO、经典 Residual RL、通用校准 MPC 和 Mirage
+保留为基础参照\cite{dr,ppo,rppo,residualrl,mjpc,mirage}。
 FORGE 是 RA-L 2025 接触参照，不列作已核验的近期顶会主会方法\cite{forge}。
 同容量 task-only、deterministic transport、reweighting-only 和去响应/模式/
 风险项属于内部消融。强对照可使用连续动作、技能 chunk、历史条件与合理
@@ -125,6 +131,9 @@ ASAP 所需状态对齐与额外测量权限单列；同组方法获得相同可
 B-online 允许计费的目标任务交互与 reward；
 C-supervised 比较向本文扩展版本提供相同可用示范并标明监督；信息不同的
 原生系统另报性能--成本前沿，不作同预算排名。外部预训练单列。
+完整系统允许在资源已声明的前提下比较表现，不能仅因权限标签字符串不同
+就否定比较。是否同信息量取决于实际数据与模型来源；在共同模型上进行在线
+优化主要改变计算量，应通过在线延迟、模型调用及 deadline miss 描述。
 D-oracle 仅作
 具有目标真参数的封存诊断。需要大量随机目标数据的 latent alignment、
 目标演示训练的 diffusion/latent-action policy，以及目标在线 residual RL
@@ -171,7 +180,9 @@ mechanism/body/initial request block 做 $10{,}000$ 次层级配对 bootstrap。
 
 \subsection{Aligned Six-Cell Ablation}
 六格消融与主方法使用相同 warm checkpoint、数据流、优化器、更新数、
-held-out 模型代理和 task-only $+0.05$ fallback：
+sample stream、checkpoint 规则、held-out 模型代理和 task-only $+0.05$
+fallback。所有 learned cell 都通过相同公共 decoder、completion 与 feasibility
+projection 执行：
 \begin{center}
 \begin{tabular}{lll}
 \toprule
@@ -189,10 +200,18 @@ $C,C+R,C+H,C+H+R$ 是严格的无 gate $2\times2$；只用
 gated-full$-$ungated-full 识别 gate。六格都参加四任务记账；若整个任务族在
 冻结资格门失败，则六格均按部署前拒绝进入分母，不训练或查看目标结果。
 历史上用 hinge $H$ 替换 $C$ 的五格工件与当前方法身份不一致，不进入推断。
+公共执行器的 on/off 另构成 matched task-only/anchoring $\times$ executor
+off/on 的 $2\times2$ 归因实验；它不替代六格目标消融。主方法的 transport
+增量只由 executor-on 的 anchoring 与 task-only 配对差识别，公共投影带来的
+改善单独记入 executor 增量。两分支必须从相同 warm start 训练；不同
+continuation 或不同 checkpoint 不能进入该因果比较。
 
 \subsection{Performance Evidence and Contribution Tests}
-主要评价无碰撞且满足力/身体约束的任务成功、失败风险、完成时间，以及
-获得这些表现所需的目标数据与计算成本。dense reward 用于训练；统一的任务
+四任务主表统一报告受约束成功率、物理约束违规率、失败记为一的截断归一化
+完成时间，以及机制组中最低的受约束成功率；T1--T3 等权宏平均，T4 单列
+为形态扩展。成功率饱和时仍比较完成时间与风险，不能只挑双方成功的 episode
+报告速度。目标交互、训练计算与在线时延另列，权限不同的方法不据此作
+同信息量因果排名。dense reward 用于训练；统一的任务
 成功判据用于评估，累计 reward 不能跨任务代替成功与安全表现。
 
 \begin{enumerate}
@@ -208,3 +227,10 @@ gated-full$-$ungated-full 识别 gate。六格都参加四任务记账；若整�
 \end{enumerate}
 源--目标响应距离下降、额外噪声或更大模型本身不构成性能贡献。
 方法是否成立取决于上述比较，不能预设所有任务或指标均优于现有方法。
+完整系统的主比较在新测试前确定任务集合、效应量与比较家族，以 T1--T3
+等权任务指标及逐任务结果评价总体权衡；T4 单列形态扩展表现。部分任务
+持平或小幅退步不自动否定其他任务上的收益，但风险、失败及不确定性均须
+完整报告。task-only 消融用于解释响应项在特定条件下的作用，不要求逐请求
+支配或四任务全胜。公共执行器、continued training 与 checkpoint 选择带来的
+收益可以属于完整系统表现，但只有匹配这些因素的消融才能把差异单独归因
+于 source response 或 gate。条件性收益的适用范围须与评估条件一致。

@@ -1,0 +1,42 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "first_instance_audit": {
+    "path": "results/arm/guided_contact_alignment/baseline/fada/validation/source_nominal_actor_screen_3301100000/independent_audit.json",
+    "sha256": "c68e5a0d155608b5303f734051fa4f2ec643b5109e6c1b7e36032b2c9c85c691"
+  },
+  "first_instance_report": {
+    "path": "results/arm/guided_contact_alignment/baseline/fada/validation/source_nominal_actor_screen_3301100000/report.json",
+    "sha256": "30011c3040e237a0b81778d2c36fd700f1d1c6557bd9c4008f74dd68d23f4ebe"
+  },
+  "formal_request_seed_access": 0,
+  "instance_ids": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "maximum_cohort_physical_episodes": 64,
+  "maximum_new_physical_episodes": 56,
+  "method": "fada",
+  "method_identity": "FADA_task_adapted",
+  "output": "results/arm/guided_contact_alignment/baseline/fada/validation/independent_source_nominal_cohort_v1",
+  "source_roster": {
+    "path": "configs/arm/guided_contact_alignment/validation/method_source_nominal_actor_roster.json",
+    "sha256": "537889f695bc6bcf2a8b9e93da24a1363371d187b5f0c99cc03dc3734f367813"
+  },
+  "task": "T2",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/baseline/fada.yaml",
+    "sha256": "f68cb28f6d679228240b2627239d3220e6fd04d5f21cf45e7315868ec45ed3e1"
+  },
+  "version": "transfer-legacy-independent-source-nominal-cohort-v1"
+}

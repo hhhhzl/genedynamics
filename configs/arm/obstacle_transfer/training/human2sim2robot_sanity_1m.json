@@ -1,0 +1,67 @@
+{
+  "version": "human2sim2robot-learning-chain-audit-v1",
+  "task": "T1",
+  "body": "xarm7",
+  "mode": 0,
+  "seed": 174000,
+  "demonstration": {
+    "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/qualification/p4_source_bank/level_source/seed_41000/collection/seed_41002/episode.npz",
+    "sha256": "7d9c33e159bfed41919827c08e3dc9337a5a5453eb3dace6c5604b99b378e0f3"
+  },
+  "historical_run": {
+    "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/validation/p4_h2s2r_public_nominal_v1/level_native4096_mode0/seed_174000",
+    "report_sha256": "d7e3aa974f930573e75c5d2555b1650c2d5f82c429d011535a8316ff849f1107",
+    "learning_curve_sha256": "6d9d2fc838d7db2927aa88083d62650db36f95333828cbedc61efddecef85dd4",
+    "monitor_curve_sha256": "efc74d788cfc470d14fbb05152b4dad70f7c43a5f7b435259a391c897dc5b721"
+  },
+  "audit": {
+    "reset_samples": 8,
+    "neutral_rollout_steps": 64,
+    "reference_stop_error_m": 0.2,
+    "action_saturation_threshold": 0.98
+  },
+  "pilot": {
+    "status": "planned_not_started",
+    "launch_order": 1,
+    "physical_gpu": "GPU1",
+    "expected_physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "cuda_visible_devices": "1",
+    "process_device": "cuda:0",
+    "num_actors": 64,
+    "horizon_steps": 16,
+    "epochs": 1024,
+    "training_transitions": 1048576,
+    "monitor_epochs": [
+      64,
+      128,
+      256,
+      512,
+      1024
+    ],
+    "monitor_seeds": [
+      274010,
+      274011,
+      274012,
+      274013,
+      274014,
+      274015,
+      274016,
+      274017
+    ],
+    "checkpoint_selection": [
+      "success_rate",
+      "constraint_violation_rate",
+      "reference_completion",
+      "terminal_tracking_error",
+      "action_saturation",
+      "earliest_tie"
+    ],
+    "maximum_gpu_memory_gib": 6,
+    "maximum_wall_seconds": 14400,
+    "target_calls_during_training": 0,
+    "admission": "one-million-transition T1 learning sanity; retain every checkpoint and failure; expand to T3/T2 only if trajectory completion and safety improve"
+  },
+  "pilot_output": "results/arm/obstacle_transfer/baseline/human2sim2robot/training/robot_source_sanity_1m/seed_274000",
+  "output": "results/arm/obstacle_transfer/baseline/human2sim2robot/diagnostics/learning_chain_cpu_sanity_1m",
+  "scope": "CPU audit of the task-adapted robot-source trajectory route; not native human-video reproduction and not paper performance evidence"
+}

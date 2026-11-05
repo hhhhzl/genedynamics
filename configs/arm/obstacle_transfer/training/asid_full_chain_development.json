@@ -1,0 +1,65 @@
+{
+  "version": "asid-obstacle-full-chain-development-v1",
+  "task": "T1",
+  "robot": "xarm7",
+  "source_commit": "cf2cb670fb983f67cf2af156d4e17b4a690787e2",
+  "seed": 3817251,
+  "delay_steps": 0,
+  "exploration_controls": 60,
+  "exploration_modes": [0, 1],
+  "delta": 0.1,
+  "source_mechanism": {
+    "servo_gain": 0.85,
+    "payload_mass": 0.65,
+    "delay_steps": 0
+  },
+  "target_mechanism": {
+    "servo_gain": 0.7,
+    "payload_mass": 0.5,
+    "delay_steps": 0
+  },
+  "exploration": {
+    "lower": [0.52, 0.6, 0.58, 0.55, 0.65, 0.65],
+    "upper": [0.62, 0.73, 0.7, 0.69, 1.15, 1.15],
+    "anchor": [0.5678590883444584, 0.6581064010126911, 0.6270149599348386, 0.6097529670246064, 1.0, 1.0],
+    "population": 7,
+    "elite": 2,
+    "iterations": 2
+  },
+  "identification": {
+    "lower": [0.4, 0.2],
+    "upper": [1.4, 1.2],
+    "anchor": [0.85, 0.65],
+    "population": 10,
+    "elite": 3,
+    "iterations": 3
+  },
+  "task_policy": {
+    "lower": [0.52, 0.6, 0.58, 0.55, 0.65, 0.65],
+    "upper": [0.62, 0.73, 0.7, 0.69, 1.15, 1.15],
+    "anchor": [0.5678590883444584, 0.6581064010126911, 0.6270149599348386, 0.6097529670246064, 1.0, 1.0],
+    "population": 7,
+    "elite": 2,
+    "iterations": 2,
+    "simulator_samples_per_candidate": 2
+  },
+  "target_interaction_budget": {
+    "exploration_episodes": 1,
+    "deployment_episodes": 2
+  },
+  "source_bindings": [
+    {"path": "genedynamics/solvers/single/asid/asid.py", "sha256": "ab7b342129a634396f47ae7354d64cd0496f8b935e98e227271b0e99fe9ab59d"},
+    {"path": "genedynamics/solvers/single/asid/backends/asid_numpy.py", "sha256": "4d48c6e3059e7dc641c6719aa30a91918b10d2f2f61abac15365aece3e030354"},
+    {"path": "genedynamics/solvers/single/asid/learning/search.py", "sha256": "1770b0c2fd51be3bee72d6f5bca4944803e044a8fe89c9c771346a2fcfe4aee0"},
+    {"path": "genedynamics/tasks/transfer/obstacle_asid.py", "sha256": "f467d1d7d07fea7eccc4311aa40201998b58acf6e30b4931cd5add4279e66147"},
+    {"path": "genedynamics/tasks/transfer/obstacle_policy_search.py", "sha256": "e9763afc0cef2545b88ccbfbb7cebbe4d86efb3ab8edeba7e1b530b29d81d6d9"},
+    {"path": "scripts/paper/cross_ebdm/train_asid_development.py", "sha256": "69f40f6311e7761d62242601473ae62caae38db6e183d84279d02332af6d9960"}
+  ],
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 600,
+    "maximum_gpu_memory_gib": 2
+  },
+  "output": "results/arm/obstacle_transfer/baseline/asid/training/full_chain_development_3817251"
+}

@@ -1,0 +1,349 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "maximum_gpu_memory_gib": 2,
+    "maximum_wall_seconds": 3600,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "exploration": {
+    "anchor": [
+      0.25,
+      6.0,
+      2.0,
+      0.008,
+      0.004,
+      1.0,
+      0.0
+    ],
+    "elite": 2,
+    "iterations": 2,
+    "lower": [
+      0.1,
+      4.0,
+      0.8,
+      0.004,
+      0.002,
+      0.8,
+      0.0
+    ],
+    "modes": [
+      0,
+      1
+    ],
+    "normalization": 100.0,
+    "population": 4,
+    "upper": [
+      0.5,
+      8.0,
+      2.0,
+      0.01,
+      0.006,
+      1.2,
+      0.08
+    ]
+  },
+  "exploration_controls": 32,
+  "failure_replacement": false,
+  "feedback_base": {
+    "alignment_spatial_stiffness": 1.0,
+    "compensation_gain": 2.0,
+    "compensation_limit": 0.04,
+    "execution_horizon": 1,
+    "guard_clear_z_m": 0.61,
+    "guard_prediction_seconds": 0.0,
+    "guard_retreat_speed": 0.006,
+    "guard_seat_gap_m": 0.006,
+    "guard_settle_ticks": 4,
+    "insertion_force_scale": 1.0,
+    "insertion_lead_z_m": 0.015,
+    "insertion_spatial_stiffness": 1.0,
+    "integral_scale": 0.0,
+    "issued_reference_gain": 2.0,
+    "lead_rotation_rad": 0.04,
+    "lead_xy_m": 0.008,
+    "lead_z_m": 0.01,
+    "lift_before_lateral": true,
+    "normal_admittance_gain": 0.004,
+    "normal_control": "position_admittance",
+    "normal_velocity_limit": 0.015,
+    "position_gain": 6.0,
+    "recovery_spatial_stiffness": 0.25,
+    "rotation_gain": 4.0,
+    "twist_damping": 1.0
+  },
+  "formal_performance_evidence": false,
+  "identification": {
+    "delta": 0.1,
+    "elite": 2,
+    "iterations": 2,
+    "lower": [
+      0.4,
+      0.2,
+      0.7
+    ],
+    "population": 6,
+    "upper": [
+      1.4,
+      1.2,
+      1.3
+    ]
+  },
+  "identification_grid": {
+    "body_servo_gain": [
+      0.8,
+      0.9,
+      1.0
+    ],
+    "delay_steps": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "payload_mass": [
+      0.4,
+      0.5,
+      0.6
+    ],
+    "servo_gain": [
+      0.6,
+      0.7,
+      0.8,
+      0.9
+    ]
+  },
+  "information_probe_audit": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/diagnostics/prejoint_limit_information_3302700062/independent_audit.json",
+    "sha256": "0e5599e8b9fca23b3625c984949ca0d4ccce9f74b1a19917b2511a14be7daf34"
+  },
+  "maximum_physical_control_steps": 40108,
+  "maximum_simulator_episodes": 308,
+  "maximum_target_episodes": 3,
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/training/independent_training_8804007",
+  "policy_fields": [
+    "recovery_spatial_stiffness",
+    "position_gain",
+    "compensation_gain",
+    "lead_xy_m",
+    "normal_admittance_gain",
+    "insertion_force_scale",
+    "guard_prediction_seconds"
+  ],
+  "public_policy_basis": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/training/adaptsim_mobile_population_development_v2.json",
+    "sha256": "c517642feee3d32366d4d27f944464ddbe5f3bbdb49361bcabc76fbecf9c3f5a"
+  },
+  "reset_seed_audit": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/diagnostics/independent_training_reset_feasibility_3404000000/independent_audit.json",
+    "sha256": "ab86fb6bccba185d8d08744dd087a9cf2601f96b30afb76ce68a292e5a794c1b"
+  },
+  "reset_seed_pool": [
+    3404000000,
+    3404000001,
+    3404000002,
+    3404000003,
+    3404000004,
+    3404000005,
+    3404000006,
+    3404000007,
+    3404000008,
+    3404000009,
+    3404000010,
+    3404000011,
+    3404000012,
+    3404000013,
+    3404000014,
+    3404000015,
+    3404000016,
+    3404000017,
+    3404000018,
+    3404000019,
+    3404000020,
+    3404000021,
+    3404000022,
+    3404000023,
+    3404000024,
+    3404000025,
+    3404000026,
+    3404000027,
+    3404000028,
+    3404000029,
+    3404000030,
+    3404000031,
+    3404000032,
+    3404000033,
+    3404000034,
+    3404000035,
+    3404000036,
+    3404000037,
+    3404000038,
+    3404000039,
+    3404000040,
+    3404000041,
+    3404000042,
+    3404000043,
+    3404000044,
+    3404000045,
+    3404000046,
+    3404000047,
+    3404000048,
+    3404000049,
+    3404000050,
+    3404000051,
+    3404000052,
+    3404000053,
+    3404000054,
+    3404000055,
+    3404000056,
+    3404000057,
+    3404000058,
+    3404000059,
+    3404000060,
+    3404000061,
+    3404000062,
+    3404000063
+  ],
+  "robot": "go2_z1",
+  "shared_execution": {
+    "body_intent_duration_seconds": 6.0,
+    "body_intent_profile": "public_planar_v1",
+    "body_intent_start_seconds": 0.0,
+    "body_velocity_world": [
+      0.005,
+      0.005,
+      0.0
+    ],
+    "execution_profile": "joint_margin_public_reference",
+    "reset_joint_noise_rad": 0.002,
+    "reset_profile": "folded_stance",
+    "version": "four-task-shared-execution-v3"
+  },
+  "source_bindings": [
+    {
+      "path": "genedynamics/core/control/transfer.py",
+      "sha256": "aaa3cf68b3d7f16d0ff23ac2b307eab2a8c4d7402f892cf84b5456257ceb41ab"
+    },
+    {
+      "path": "genedynamics/envs/adapters/transfer_task.py",
+      "sha256": "f14bd0d8769c0da8b9c741db1160f72b382cf34a00acf576757ff5eb8a9a0eea"
+    },
+    {
+      "path": "genedynamics/solvers/single/asid/asid.py",
+      "sha256": "ab7b342129a634396f47ae7354d64cd0496f8b935e98e227271b0e99fe9ab59d"
+    },
+    {
+      "path": "genedynamics/solvers/single/asid/backends/asid_numpy.py",
+      "sha256": "4d48c6e3059e7dc641c6719aa30a91918b10d2f2f61abac15365aece3e030354"
+    },
+    {
+      "path": "genedynamics/solvers/single/asid/learning/search.py",
+      "sha256": "1770b0c2fd51be3bee72d6f5bca4944803e044a8fe89c9c771346a2fcfe4aee0"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/contact.py",
+      "sha256": "070fd24045a3f971011ed9a0ba678880e5068ebe34757d619e427beabd36eacd"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/bias_feedback.py",
+      "sha256": "660da300dbf2c1383ce3a67c02da81c2fb603cf4b02065fb2714ad1f847b6c22"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/governor_feedback.py",
+      "sha256": "aca05f0682d5427705a98b8edbab77c0259bb9638500fd3f3e697804768fe455"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/liveness.py",
+      "sha256": "73146e88b0c9faf51c2ddb49047cc628edb8db9e8ee370262bc8797ac8dae65d"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/mating_feedback.py",
+      "sha256": "30fc83a11a88799b569ebf6a25372671830af9a7f903f47897b327a84f9f7f23"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/episode.py",
+      "sha256": "dab1ffa1e360fb2f98d1b8a4ab31597a7c01fd8fca3f9d7f1c828083571d6a1f"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/evaluation.py",
+      "sha256": "83e8e48a38ea889f52f6ac2c2e4b0def7ce3d54bac6ba36ba89c162d017c3fae"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/mobile_asid_training.py",
+      "sha256": "cbc8178386b1d9c6dafb7498ca6e82dc1e13979f26e8d676423972c5f512d249"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/mobile_mating_asid.py",
+      "sha256": "fdd43777f03db31948091b700c31f980a468354dc71e173af4aabb4cfc04425a"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/mobile_mating_policy_search.py",
+      "sha256": "e827338c98b1f24e195597989e484e179757da474a79d7854bce19be4af14c19"
+    },
+    {
+      "path": "scripts/paper/cross_ebdm/train_asid_mobile_development.py",
+      "sha256": "cb4ee5cdf8e280ab03fae22fe881debe421fac3c8a4418c5513dd448bae3818d"
+    }
+  ],
+  "source_mechanism": {
+    "body_servo_gain": 1.0,
+    "delay_steps": 0,
+    "payload_mass": 0.65,
+    "servo_gain": 0.85
+  },
+  "target_deployment_seeds": [
+    3404000019,
+    3404000020
+  ],
+  "target_exploration_seed": 3404000018,
+  "target_interaction_budget": {
+    "deployment_episodes": 2,
+    "exploration_episodes": 1
+  },
+  "target_mechanism": {
+    "body_servo_gain": 0.9,
+    "delay_steps": 3,
+    "payload_mass": 0.5,
+    "servo_gain": 0.7
+  },
+  "task": "T4",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/_base.yaml",
+    "sha256": "61b5856d0b16e8fe602f50c7d937e7154abb090af7b5127872606d39e1c0699f"
+  },
+  "task_policy": {
+    "anchor": [
+      0.25,
+      6.0,
+      2.0,
+      0.008,
+      0.004,
+      1.0,
+      0.0
+    ],
+    "elite": 2,
+    "iterations": 2,
+    "lower": [
+      0.1,
+      4.0,
+      0.8,
+      0.004,
+      0.002,
+      0.8,
+      0.0
+    ],
+    "population": 5,
+    "simulator_samples_per_candidate": 2,
+    "upper": [
+      0.5,
+      8.0,
+      2.0,
+      0.01,
+      0.006,
+      1.2,
+      0.08
+    ]
+  },
+  "training_cohort": "independent_main_table_training_v1",
+  "training_seed": 8804007,
+  "version": "asid-t4-complete-chain-development-v2"
+}

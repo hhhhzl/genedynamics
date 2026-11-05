@@ -1,0 +1,24 @@
+{
+  "version": "transfer-source-positive-control-v1",
+  "task": "T3",
+  "method": "fada",
+  "method_identity": "FADA_repaired_source_checkpoint_before_target_lifting",
+  "task_config": "configs/arm/keyed_insertion_recovery/baseline/fada.yaml",
+  "checkpoint": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/fada/training/planner_repair_idm_target_budget_30s/instance_01/source_checkpoint.pt",
+    "sha256": "66ba46fca0d9515f442ba256f35ad0cc1f96e08dbde32c150e4c8fba57eb3d14"
+  },
+  "execution": {"device": "cpu"},
+  "requests": [
+    {"robot": "panda", "requested_mode": 0, "reset_seed": 295300, "physical_initial_slot": 0, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 0, "reset_seed": 295301, "physical_initial_slot": 1, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 0, "reset_seed": 295302, "physical_initial_slot": 2, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 0, "reset_seed": 295303, "physical_initial_slot": 3, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 1, "reset_seed": 295304, "physical_initial_slot": 0, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 1, "reset_seed": 295305, "physical_initial_slot": 1, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 1, "reset_seed": 295306, "physical_initial_slot": 2, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 1, "reset_seed": 295307, "physical_initial_slot": 3, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}}
+  ],
+  "output": "results/arm/keyed_insertion_recovery/baseline/fada/validation/repaired_source_positive_control/seed_295300",
+  "plan_output": "results/arm/keyed_insertion_recovery/baseline/fada/validation/repaired_source_positive_control/plan_seed_295300.json"
+}

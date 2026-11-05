@@ -1,0 +1,151 @@
+{
+  "version": "independent-baseline-source-nominal-roster-v1",
+  "task": "T2",
+  "robot": "xarm7",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/_base.yaml",
+    "sha256": "8dca404194707eee8cdc70a1af375447ea5dd68d6eb979ad626aa9a8ed2a2306"
+  },
+  "methods": [
+    "asid"
+  ],
+  "requests": [
+    {
+      "request_id": "T2/ACTOR-SCREEN/source/s0/m0",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301100000,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ACTOR-SCREEN/source/s0/m1",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3301100001,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ACTOR-SCREEN/source/s1/m0",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301100002,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ACTOR-SCREEN/source/s1/m1",
+      "scene_cell": "source",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3301100003,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ACTOR-SCREEN/nominal/s0/m0",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301100004,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1,
+        "payload_mass": 0.5,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ACTOR-SCREEN/nominal/s0/m1",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3301100005,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1,
+        "payload_mass": 0.5,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ACTOR-SCREEN/nominal/s1/m0",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 3301100006,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1,
+        "payload_mass": 0.5,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "request_id": "T2/ACTOR-SCREEN/nominal/s1/m1",
+      "scene_cell": "nominal",
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 3301100007,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1,
+        "payload_mass": 0.5,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "requests_per_method": 8,
+  "maximum_total_physics_episodes": 64,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 2400,
+    "maximum_gpu_memory_gib": 2
+  },
+  "failure_replacement": false,
+  "formal_performance_evidence": false,
+  "scope": "eight independent asid actor instances; exact existing source/nominal development requests; no formal performance access",
+  "instance_count": 8,
+  "maximum_total_wall_seconds": 19200,
+  "source_roster": {
+    "path": "configs/arm/guided_contact_alignment/validation/method_source_nominal_actor_roster.json",
+    "sha256": "537889f695bc6bcf2a8b9e93da24a1363371d187b5f0c99cc03dc3734f367813"
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "version": "independent-baseline-source-nominal-roster-v1",
+  "task": "T4",
+  "robot": "go2_z1",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/_base.yaml",
+    "sha256": "61b5856d0b16e8fe602f50c7d937e7154abb090af7b5127872606d39e1c0699f"
+  },
+  "methods": [
+    "adaptsim"
+  ],
+  "requests": [
+    {
+      "request_id": "T4/ACTOR-SCREEN-NATIVE/source/s0/m0",
+      "scene_cell": "source",
+      "robot": "go2_z1",
+      "requested_mode": 0,
+      "reset_seed": 3301400000,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      }
+    },
+    {
+      "request_id": "T4/ACTOR-SCREEN-NATIVE/source/s0/m1",
+      "scene_cell": "source",
+      "robot": "go2_z1",
+      "requested_mode": 1,
+      "reset_seed": 3301400001,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      }
+    },
+    {
+      "request_id": "T4/ACTOR-SCREEN-NATIVE/source/s1/m0",
+      "scene_cell": "source",
+      "robot": "go2_z1",
+      "requested_mode": 0,
+      "reset_seed": 3301400002,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      }
+    },
+    {
+      "request_id": "T4/ACTOR-SCREEN-NATIVE/source/s1/m1",
+      "scene_cell": "source",
+      "robot": "go2_z1",
+      "requested_mode": 1,
+      "reset_seed": 3301400003,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      }
+    },
+    {
+      "request_id": "T4/ACTOR-SCREEN-NATIVE/nominal/s0/m0",
+      "scene_cell": "nominal",
+      "robot": "go2_z1",
+      "requested_mode": 0,
+      "reset_seed": 3301400004,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      }
+    },
+    {
+      "request_id": "T4/ACTOR-SCREEN-NATIVE/nominal/s0/m1",
+      "scene_cell": "nominal",
+      "robot": "go2_z1",
+      "requested_mode": 1,
+      "reset_seed": 3301400005,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      }
+    },
+    {
+      "request_id": "T4/ACTOR-SCREEN-NATIVE/nominal/s1/m0",
+      "scene_cell": "nominal",
+      "robot": "go2_z1",
+      "requested_mode": 0,
+      "reset_seed": 3301400006,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      }
+    },
+    {
+      "request_id": "T4/ACTOR-SCREEN-NATIVE/nominal/s1/m1",
+      "scene_cell": "nominal",
+      "robot": "go2_z1",
+      "requested_mode": 1,
+      "reset_seed": 3301400007,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      },
+      "body_support_parameters": {
+        "body_servo_gain": 1.0
+      }
+    }
+  ],
+  "requests_per_method": 8,
+  "maximum_total_physics_episodes": 64,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 7200,
+    "maximum_gpu_memory_gib": 2,
+    "native_library": {
+      "path": ".runtime/cross_ebdm/native/libcross_ebdm.so",
+      "sha256": "40f532dda955a39e99455ecff0d362f310ab31c33cde1d546c6c78f0f43f1a09"
+    }
+  },
+  "failure_replacement": false,
+  "formal_performance_evidence": false,
+  "scope": "eight independent adaptsim actor instances; exact existing source/nominal development requests; no formal performance access",
+  "instance_count": 8,
+  "maximum_total_wall_seconds": 19200,
+  "source_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/method_source_nominal_actor_roster_native.json",
+    "sha256": "70dd4758752e671372132e80d0890ac2d2e7bf18c6bffa00fcffd6d7caa5b50a"
+  }
+}

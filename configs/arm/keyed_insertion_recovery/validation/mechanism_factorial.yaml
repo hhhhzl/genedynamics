@@ -1,0 +1,205 @@
+base: ../_base.yaml
+name: keyed_insertion_recovery_mechanism_factorial
+method: public_geometry
+output_dir: results/arm/keyed_insertion_recovery/validation/mechanism_factorial
+backend: numpy
+device: cpu
+seeds:
+- 940300
+- 940301
+- 940302
+- 940303
+n_steps: 750
+env_params:
+  robot: xarm7
+  initial: jammed
+  reset_task_noise: 0.0005
+  reset_joint_noise: 0.0
+  execution_profile: legacy
+  reset_profile: legacy
+method_params:
+  actor_binding:
+    version: transfer-actor-binding-v1
+    manifest: null
+    feedback:
+      alignment_spatial_stiffness: 1.0
+      compensation_gain: 2.0
+      compensation_limit: 0.04
+      execution_horizon: 1
+      guard_clear_z_m: 0.61
+      guard_prediction_seconds: 0.0
+      guard_retreat_speed: 0.006
+      guard_seat_gap_m: 0.006
+      guard_settle_ticks: 4
+      insertion_force_scale: 1.0
+      insertion_spatial_stiffness: 1.0
+      integral_scale: 0.0
+      issued_reference_gain: 2.0
+      lead_rotation_rad: 0.04
+      lead_xy_m: 0.008
+      lead_z_m: 0.01
+      lift_before_lateral: true
+      normal_admittance_gain: 0.004
+      normal_control: position_admittance
+      normal_velocity_limit: 0.015
+      position_gain: 6.0
+      recovery_spatial_stiffness: 0.25
+      rotation_gain: 4.0
+      twist_damping: 1.0
+metadata:
+  formal_experiment: false
+  formal_seeds: false
+  protocol_status: development
+  run_class: development
+  protocol: transfer_mechanism_factorial
+  cpu_only: true
+  physics_episode_cap: 64
+  failure_replacement: false
+  evaluation_contract: cross-embodiment-mode-correct-v2
+  selection_rule: diagnose public-reference phase/guard/progress; no controller adaptation
+    during matrix
+suites:
+- name: delay_0_gain_1_payload_0p5_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 0
+      servo_gain: 1.0
+      payload_mass: 0.5
+  method_params:
+    mode: 0
+- name: delay_0_gain_1_payload_0p5_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 0
+      servo_gain: 1.0
+      payload_mass: 0.5
+  method_params:
+    mode: 1
+- name: delay_0_gain_1_payload_0p8_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 0
+      servo_gain: 1.0
+      payload_mass: 0.8
+  method_params:
+    mode: 0
+- name: delay_0_gain_1_payload_0p8_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 0
+      servo_gain: 1.0
+      payload_mass: 0.8
+  method_params:
+    mode: 1
+- name: delay_0_gain_0p7_payload_0p5_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 0
+      servo_gain: 0.7
+      payload_mass: 0.5
+  method_params:
+    mode: 0
+- name: delay_0_gain_0p7_payload_0p5_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 0
+      servo_gain: 0.7
+      payload_mass: 0.5
+  method_params:
+    mode: 1
+- name: delay_0_gain_0p7_payload_0p8_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 0
+      servo_gain: 0.7
+      payload_mass: 0.8
+  method_params:
+    mode: 0
+- name: delay_0_gain_0p7_payload_0p8_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 0
+      servo_gain: 0.7
+      payload_mass: 0.8
+  method_params:
+    mode: 1
+- name: delay_3_gain_1_payload_0p5_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 3
+      servo_gain: 1.0
+      payload_mass: 0.5
+  method_params:
+    mode: 0
+- name: delay_3_gain_1_payload_0p5_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 3
+      servo_gain: 1.0
+      payload_mass: 0.5
+  method_params:
+    mode: 1
+- name: delay_3_gain_1_payload_0p8_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 3
+      servo_gain: 1.0
+      payload_mass: 0.8
+  method_params:
+    mode: 0
+- name: delay_3_gain_1_payload_0p8_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 3
+      servo_gain: 1.0
+      payload_mass: 0.8
+  method_params:
+    mode: 1
+- name: delay_3_gain_0p7_payload_0p5_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 3
+      servo_gain: 0.7
+      payload_mass: 0.5
+  method_params:
+    mode: 0
+- name: delay_3_gain_0p7_payload_0p5_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 3
+      servo_gain: 0.7
+      payload_mass: 0.5
+  method_params:
+    mode: 1
+- name: delay_3_gain_0p7_payload_0p8_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 3
+      servo_gain: 0.7
+      payload_mass: 0.8
+  method_params:
+    mode: 0
+- name: delay_3_gain_0p7_payload_0p8_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 3
+      servo_gain: 0.7
+      payload_mass: 0.8
+  method_params:
+    mode: 1

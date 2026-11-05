@@ -1,0 +1,44 @@
+{
+  "task": "T1",
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/baseline/acp/training/native_impedance_teacher_scalar_2175_sparse_dt100ms/ema_update_8000.pt",
+    "sha256": "7e4522ab318b76d9a3e6be6d9aa537fb95a044ccdd8089041379e6abedcb58ee"
+  },
+  "training_report": {
+    "path": "results/arm/obstacle_transfer/baseline/acp/training/native_impedance_teacher_scalar_2175_sparse_dt100ms/report.json",
+    "sha256": "b1d3d73daccedca1a4de2c822e57069d1627b657d5c8e1ffb33e766d79ce0dba"
+  },
+  "demonstration_report": {
+    "path": "results/arm/obstacle_transfer/baseline/acp/demonstrations/native_impedance_teacher_scalar_2175_sparse_dt100ms/report.json",
+    "sha256": "3ece63b798d7c2852394a509160fb1f80784ec884b1e0c45935c36a30d0d90d2"
+  },
+  "teacher_collection_config": {
+    "path": "configs/arm/obstacle_transfer/validation/acp_native_impedance_teacher.json",
+    "sha256": "77dad87ceeffe2c42495fbc1573d1c6de156b8b70bbcb6f6366b7c32e2f04579"
+  },
+  "sampling_seed": 426100,
+  "version": "acp-single-demonstration-fit-diagnostic-v1",
+  "seed": 429100,
+  "fit_seed": 8251000,
+  "learning_rate": 5e-05,
+  "execution": {
+    "device": "cuda:0",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "monitor_updates": [
+    0,
+    128,
+    256,
+    512
+  ],
+  "budget": {
+    "max_updates": 512,
+    "batch_size": 8,
+    "maximum_wall_seconds": 1800,
+    "cpu_threads": 1,
+    "new_demonstrations": 0,
+    "maximum_gpu_gib": 4
+  },
+  "output": "results/arm/obstacle_transfer/baseline/acp/diagnostics/single_demo_fit_gpu0"
+}

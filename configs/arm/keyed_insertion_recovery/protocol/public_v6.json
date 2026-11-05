@@ -1,0 +1,18 @@
+{
+  "version": "cross-embodiment-t3-public-v6",
+  "extends": [
+    {
+      "path": "configs/arm/keyed_insertion_recovery/protocol/public_v5.json",
+      "sha256": "f5c26c3e36d8216e26c1db5ff17a244b03b67ee130b511dcdb2cea433c57cf88"
+    }
+  ],
+  "shared_execution": {
+    "version": "four-task-shared-execution-v3",
+    "insertion_lead_z_m": 0.015,
+    "retreat_release_version": "safe_settled_v1",
+    "retreat_release_predicate": "Release after the existing height condition or after phase 3 is safe and settled for the existing guard clock."
+  },
+  "scope": "Inherited unchanged by every main-table baseline, ablation and Cross-EBDM row.",
+  "status": "common_protocol_bound_requires_fresh_predeployment",
+  "final_test": false
+}

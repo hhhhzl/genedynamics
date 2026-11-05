@@ -1,0 +1,44 @@
+{
+  "device": "cpu",
+  "execution_scales": [0.25, 0.125, 0.0625],
+  "gate": {
+    "failure_replacement": false,
+    "require_all_instances_all_requests": true,
+    "require_exact_physics_contact_evidence": true,
+    "require_mode_match": true,
+    "require_zero_constraint_violations": true,
+    "selection_rule": "largest_predeclared_scale_passing_both_methods"
+  },
+  "instances": [
+    "instance_01", "instance_02", "instance_03", "instance_04",
+    "instance_05", "instance_06", "instance_07", "instance_08"
+  ],
+  "methods": {
+    "cross_ebdm": "main/cross_ebdm.yaml",
+    "task_only": "baseline/task_only.yaml"
+  },
+  "qualification_evidence": {
+    "independent_audit": {
+      "path": "results/_qualification/four_task_transfer/behavioral_predeployment_20261021_v11/independent_audit.json",
+      "sha256": "85db6e46bc88f78083fe8b96398730a8556b35e40caa6c64fbbb81a7923c6761"
+    },
+    "report": {
+      "path": "results/_qualification/four_task_transfer/behavioral_predeployment_20261021_v11/report.json",
+      "sha256": "cf3fe68ed87a4b9bf393645c76bb608e290690ba86835621b3685b92d97c6247"
+    }
+  },
+  "requests": {
+    "mechanism_parameters": {
+      "delay_steps": 0,
+      "payload_mass": 0.5,
+      "servo_gain": 1.0
+    },
+    "requested_modes": [0, 1],
+    "reset_seed_anchor": 3261000,
+    "reset_slots": 4,
+    "robot": "xarm7"
+  },
+  "scope": "Fresh CPU development matrix after predeployment-v5 exposed mode-0 overforce in learned T2 actors. Compare three predeclared common post-transport radii on all eight instances of ours and task-only, with an unchanged public-geometry sentinel. No confirmation state, target performance evidence, adaptive sweep, failed-run replacement, or GPU use.",
+  "task": "T2",
+  "version": "t2-transport-execution-radius-diagnosis-v1"
+}

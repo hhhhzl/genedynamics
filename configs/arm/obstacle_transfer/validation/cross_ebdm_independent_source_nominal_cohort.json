@@ -1,0 +1,42 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "first_instance_audit": {
+    "path": "results/arm/obstacle_transfer/main/cross_ebdm/validation/source_nominal_actor_screen_3301000000/independent_audit.json",
+    "sha256": "cd02f1c75bfb80514e54717e9a1e113c622b2a3be17eefe38028cee78264bd10"
+  },
+  "first_instance_report": {
+    "path": "results/arm/obstacle_transfer/main/cross_ebdm/validation/source_nominal_actor_screen_3301000000/report.json",
+    "sha256": "526b5b04d81b33afe4d8b66c226726bd7f4b09d955bb7c7bfe978abdec567dcc"
+  },
+  "formal_request_seed_access": 0,
+  "instance_ids": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "maximum_cohort_physical_episodes": 64,
+  "maximum_new_physical_episodes": 56,
+  "method": "cross_ebdm",
+  "method_identity": "ours_gated_v2",
+  "output": "results/arm/obstacle_transfer/main/cross_ebdm/validation/independent_source_nominal_cohort_v1",
+  "source_roster": {
+    "path": "configs/arm/obstacle_transfer/validation/method_source_nominal_actor_roster.json",
+    "sha256": "23483cfb756ee4c73a4929abdf73f3a31491dd8497a9d995e47872dd2af24cc1"
+  },
+  "task": "T1",
+  "task_config": {
+    "path": "configs/arm/obstacle_transfer/main/cross_ebdm.yaml",
+    "sha256": "434716dfbfcd2b89c478053b95bcef5fe1200a488c0aa8120411297fb348e7fd"
+  },
+  "version": "transfer-legacy-independent-source-nominal-cohort-v1"
+}

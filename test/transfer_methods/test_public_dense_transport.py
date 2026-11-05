@@ -7,6 +7,7 @@ from genedynamics.tasks.transfer.controllers.cross_ebdm.policies.bias_feedback i
 from genedynamics.solvers.single.cross_ebdm.learning.response import PublicResponseSpec,PublicResponseEnsemble
 from genedynamics.solvers.single.cross_ebdm.learning.residual_transport import PublicTransportSpec,PublicResidualTransport,PublicTransportTrainer,decoder_state,decoder_context,decode_pose_transport,BOUNDS
 from test.transfer_methods.test_fada_task_training import _equal
+from genedynamics.tasks.transfer.controllers.cross_ebdm.dense import PublicAdaptiveStepTaskDominantDenseTransportActor,PublicCompletionValueEnsembleRobustDenseTransportActor,PublicExpandedEnsembleRobustAdaptiveStepTaskDominantDenseTransportActor,PublicModeConditionedAdaptiveStepDenseTransportActor,PublicModeConditionedCompletionValueDenseTransportActor,PublicModeSpecificCalibratedAuthorityDenseTransportActor,PublicModeSpecificRecordedCompletionDenseTransportActor,PublicModeSpecificSupportedPhaseCappedExpansionDenseTransportActor,PublicModeSpecificSupportedPhaseConvexDenseTransportActor,PublicPhaseScheduledAdaptiveStepDenseTransportActor,PublicTransientPhaseAdaptiveStepDenseTransportActor
 
 
 class Capture:
@@ -61,3 +62,110 @@ def test_unused_torch_CPU_rng_does_not_change_dense_objective_update():
     torch.manual_seed(126);first=trainer.step(b);weights=trainer.state();trainer.restore(state);torch.manual_seed(127);second=trainer.step(b);other=trainer.state()
     assert first==second and _equal(weights['checkpoint'],other['checkpoint']) and _equal(weights['optimizer'],other['optimizer'])
     assert not torch.equal(weights['rng']['torch_cpu'],other['rng']['torch_cpu'])
+
+
+def test_transient_phase_transport_gives_terminal_control_to_task_only():
+    actor = object.__new__(PublicTransientPhaseAdaptiveStepDenseTransportActor)
+    candidates = torch.tensor([True, False, True, False])
+    for phase in (0, 1, 2):
+        assert torch.equal(
+            actor._candidate_admission_mask(candidates, phase), candidates,
+        )
+    assert not actor._candidate_admission_mask(candidates, 3).any()
+
+
+def test_phase_scheduled_transport_has_bounded_phase_and_mode_authority():
+    actor = object.__new__(PublicPhaseScheduledAdaptiveStepDenseTransportActor)
+    candidates = torch.ones(7, dtype=torch.bool)
+    actor.mode = 0
+    assert not actor._candidate_admission_mask(candidates, 0)[0]
+    assert actor._candidate_admission_mask(candidates, 2).all()
+    assert torch.equal(
+        actor._candidate_admission_mask(candidates, 3),
+        torch.tensor([False, True, True, True, True, True, True]),
+    )
+    actor.mode = 1
+    assert torch.equal(
+        actor._candidate_admission_mask(candidates, 3),
+        torch.tensor([False, False, True, True, True, True, True]),
+    )
+
+
+def test_mode_conditioned_transport_freezes_the_two_predeclared_branches():
+    assert issubclass(
+        PublicModeConditionedCompletionValueDenseTransportActor,
+        PublicCompletionValueEnsembleRobustDenseTransportActor,
+    )
+    assert issubclass(
+        PublicModeConditionedAdaptiveStepDenseTransportActor,
+        PublicAdaptiveStepTaskDominantDenseTransportActor,
+    )
+    assert (
+        PublicModeConditionedCompletionValueDenseTransportActor.VERSION
+        == PublicModeConditionedAdaptiveStepDenseTransportActor.VERSION
+        == 'public-T3-mode-conditioned-finite-time-dominance-v14'
+    )
+
+
+def test_mode_specific_recorded_completion_uses_robust_public_admission():
+    assert issubclass(
+        PublicModeSpecificRecordedCompletionDenseTransportActor,
+        PublicExpandedEnsembleRobustAdaptiveStepTaskDominantDenseTransportActor,
+    )
+    assert (
+        PublicModeSpecificRecordedCompletionDenseTransportActor.VERSION
+        == 'public-T3-mode-specific-recorded-completion-dominance-v15'
+    )
+
+
+def test_mode_specific_supported_phase_convex_mask():
+    actor = object.__new__(
+        PublicModeSpecificSupportedPhaseConvexDenseTransportActor
+    )
+    actor.mode = 1
+    admitted = torch.ones(len(actor.BLENDS), dtype=torch.bool)
+    assert not actor._candidate_admission_mask(admitted, 0).any()
+    assert not actor._candidate_admission_mask(admitted, 3).any()
+    expected = torch.tensor([False, False, False, True, True, True, True])
+    assert torch.equal(actor._candidate_admission_mask(admitted, 1), expected)
+    actor.mode = 0
+    assert torch.equal(actor._candidate_admission_mask(admitted, 3), admitted)
+    assert (
+        actor.VERSION
+        == 'public-T3-mode-specific-supported-phase-convex-dominance-v16'
+    )
+
+
+def test_mode_specific_supported_phase_capped_expansion_mask():
+    actor = object.__new__(
+        PublicModeSpecificSupportedPhaseCappedExpansionDenseTransportActor
+    )
+    actor.mode = 1
+    admitted = torch.ones(len(actor.BLENDS), dtype=torch.bool)
+    expected = torch.tensor([False, False, True, True, True, True, True])
+    assert torch.equal(actor._candidate_admission_mask(admitted, 2), expected)
+    assert not actor._candidate_admission_mask(admitted, 3).any()
+    assert (
+        actor.VERSION
+        == 'public-T3-mode-specific-supported-phase-capped-expansion-dominance-v17'
+    )
+
+
+def test_mode_specific_calibrated_authority_mask():
+    actor = object.__new__(
+        PublicModeSpecificCalibratedAuthorityDenseTransportActor
+    )
+    actor.mode = 1
+    admitted = torch.ones(len(actor.BLENDS), dtype=torch.bool)
+    for maximum, expected in (
+        (0., torch.tensor([False, False, False, False, False, False, True])),
+        (1., torch.tensor([False, False, False, True, True, True, True])),
+        (8., torch.ones(len(actor.BLENDS), dtype=torch.bool)),
+    ):
+        actor.MODE_ONE_MAX_BLEND = maximum
+        assert torch.equal(actor._candidate_admission_mask(admitted, 2), expected)
+        assert not actor._candidate_admission_mask(admitted, 3).any()
+    assert (
+        actor.VERSION
+        == 'public-T3-mode-specific-calibrated-authority-dominance-v18'
+    )

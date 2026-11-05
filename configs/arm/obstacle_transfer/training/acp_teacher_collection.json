@@ -1,0 +1,19 @@
+{
+  "version": "acp-public-teacher-collection-v1",
+  "task": "T1",
+  "teacher_config": "configs/arm/obstacle_transfer/baseline/public_geometry.yaml",
+  "n_steps": 500,
+  "scalar_stiffness": 800.0,
+  "require_exact_replay": true,
+  "episodes": [
+    {"mode": 0, "purpose": "fit", "seed": 8241000, "sample_id": 8241000, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"mode": 1, "purpose": "fit", "seed": 8241001, "sample_id": 8241001, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"mode": 0, "purpose": "fit", "seed": 8241002, "sample_id": 8241002, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"mode": 1, "purpose": "fit", "seed": 8241003, "sample_id": 8241003, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"mode": 0, "purpose": "fit", "seed": 8241004, "sample_id": 8241004, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"mode": 1, "purpose": "fit", "seed": 8241005, "sample_id": 8241005, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"mode": 0, "purpose": "validation", "seed": 8241006, "sample_id": 8241006, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"mode": 1, "purpose": "validation", "seed": 8241007, "sample_id": 8241007, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}}
+  ],
+  "output": "results/arm/obstacle_transfer/baseline/acp/demonstrations/teacher_collection"
+}

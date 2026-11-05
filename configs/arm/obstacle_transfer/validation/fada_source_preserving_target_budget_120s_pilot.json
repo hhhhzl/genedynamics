@@ -1,0 +1,116 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T1",
+  "method": "fada",
+  "method_identity": "FADA_qualified_source_preserved_planner_frozen_IDM_target_budget_120s",
+  "task_config": "configs/arm/obstacle_transfer/baseline/fada.yaml",
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/baseline/fada/training/source_preserving_idm_target_budget_120s/instance_01/checkpoint.pt",
+    "sha256": "33a41d537b3d40527988da85b86c02e544545c735a696217a5f60189aa0013f4"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "requests": [
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 296100,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 296101,
+      "physical_initial_slot": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 296102,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 296103,
+      "physical_initial_slot": 1,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 296104,
+      "physical_initial_slot": 2,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 296105,
+      "physical_initial_slot": 2,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 0,
+      "reset_seed": 296106,
+      "physical_initial_slot": 3,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "robot": "xarm7",
+      "requested_mode": 1,
+      "reset_seed": 296107,
+      "physical_initial_slot": 3,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "output": "results/arm/obstacle_transfer/baseline/fada/validation/source_preserving_target_data_curve/budget_120s",
+  "plan_output": "results/arm/obstacle_transfer/baseline/fada/validation/source_preserving_target_data_curve/plan_budget_120s.json"
+}

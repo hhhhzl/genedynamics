@@ -1,0 +1,136 @@
+{
+  "version": "adaptsim-mobile-mating-feasibility-v1",
+  "task": "T4",
+  "robot": "go2_z1",
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 900,
+    "maximum_gpu_memory_gib": 2
+  },
+  "shared_execution": {
+    "version": "four-task-shared-execution-v3",
+    "execution_profile": "joint_margin_public_reference",
+    "reset_profile": "folded_stance",
+    "reset_joint_noise_rad": 0.002,
+    "body_intent_profile": "public_planar_v1",
+    "body_velocity_world": [
+      0.005,
+      0.005,
+      0.0
+    ],
+    "body_intent_start_seconds": 0.0,
+    "body_intent_duration_seconds": 6.0
+  },
+  "feedback_base": {
+    "alignment_spatial_stiffness": 1.0,
+    "compensation_gain": 2.0,
+    "compensation_limit": 0.04,
+    "execution_horizon": 1,
+    "guard_clear_z_m": 0.61,
+    "guard_prediction_seconds": 0.0,
+    "guard_retreat_speed": 0.006,
+    "guard_seat_gap_m": 0.006,
+    "guard_settle_ticks": 4,
+    "insertion_force_scale": 1.0,
+    "insertion_spatial_stiffness": 1.0,
+    "integral_scale": 0.0,
+    "issued_reference_gain": 2.0,
+    "lead_rotation_rad": 0.04,
+    "lead_xy_m": 0.008,
+    "lead_z_m": 0.01,
+    "lift_before_lateral": true,
+    "normal_admittance_gain": 0.004,
+    "normal_control": "position_admittance",
+    "normal_velocity_limit": 0.015,
+    "position_gain": 6.0,
+    "recovery_spatial_stiffness": 0.25,
+    "rotation_gain": 4.0,
+    "twist_damping": 1.0,
+    "insertion_lead_z_m": 0.015
+  },
+  "policy_fields": [
+    "recovery_spatial_stiffness",
+    "position_gain",
+    "compensation_gain",
+    "lead_xy_m",
+    "normal_admittance_gain",
+    "insertion_force_scale",
+    "guard_prediction_seconds"
+  ],
+  "policies": [
+    {
+      "name": "anchor",
+      "values": [
+        0.25,
+        6.0,
+        2.0,
+        0.008,
+        0.004,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "name": "conservative_recovery",
+      "values": [
+        0.4,
+        5.0,
+        1.2,
+        0.006,
+        0.003,
+        0.9,
+        0.04
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "scene_cell": "latency_gain_shift",
+      "mode": 0,
+      "seed": 3300700200,
+      "mechanism": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3,
+        "body_servo_gain": 1.0
+      }
+    },
+    {
+      "scene_cell": "latency_gain_shift",
+      "mode": 1,
+      "seed": 3300700201,
+      "mechanism": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 3,
+        "body_servo_gain": 0.9
+      }
+    },
+    {
+      "scene_cell": "payload_shift",
+      "mode": 0,
+      "seed": 3300700202,
+      "mechanism": {
+        "servo_gain": 1.0,
+        "payload_mass": 1.0,
+        "delay_steps": 0,
+        "body_servo_gain": 1.0
+      }
+    },
+    {
+      "scene_cell": "payload_shift",
+      "mode": 1,
+      "seed": 3300700203,
+      "mechanism": {
+        "servo_gain": 1.0,
+        "payload_mass": 1.0,
+        "delay_steps": 0,
+        "body_servo_gain": 0.9
+      }
+    }
+  ],
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/validation/mobile_feedback_joint_diagnosis_3300700200",
+  "formal_performance_evidence": false,
+  "failure_replacement": false
+}

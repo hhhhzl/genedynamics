@@ -1,0 +1,64 @@
+{
+  "version": "four-task-paired-constraint-stress-v1",
+  "name": "same_policy_contact_guard_stress",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cpu"
+  },
+  "seed_anchor": 4521000,
+  "reset_slots_per_cell": 8,
+  "requested_modes": [
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "ablation",
+      "key": "gated_full",
+      "label": "gated_full",
+      "instances": "all"
+    },
+    {
+      "family": "ablation",
+      "key": "gated_full",
+      "label": "ungated_full",
+      "instances": "all",
+      "binding_overrides": {
+        "contact_guard_version": null
+      }
+    }
+  ],
+  "stress_contract": {
+    "comparators": [
+      "gated_full",
+      "ungated_full"
+    ],
+    "event": "measured_force_or_joint_speed_limit",
+    "force_limit_N": 25.0,
+    "lateral_force_limit_N": 10.0,
+    "joint_speed_limit_radps": 3.0,
+    "require_exact_1ms_substeps": true,
+    "claim_rule": "exact_paired_two_sided_p_below_0.05_and_ungated_only_exceeds_gated_only",
+    "predicted_margin_policy": "unavailable_without_a_calibrated_public_predictor"
+  },
+  "source_decision": {
+    "path": "results/arm/guided_contact_alignment/validation/gated_true_ungated_constraint_stress/report.json",
+    "sha256": "bbed13f4b187b777430b3bc13a6deffba7650a81e6b36a43f919300bae0914b3"
+  },
+  "scope": "Fresh paired CPU mechanism diagnosis using the same gated_full checkpoint in both rows; the second row removes only the public contact guard."
+}

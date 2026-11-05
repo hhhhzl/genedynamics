@@ -3,6 +3,79 @@ import numpy as np
 import pytest
 
 
+def _contact_dataset_arrays(environment):
+    """Synthetic file-boundary fixture; no physics state or training update."""
+    if environment == "guided_contact_alignment":
+        positions = [[(.38, -.20, .596), (.40, -.20, .596), (.44, -.19, .596)],
+                     [(.38, -.20, .596), (.38, -.19, .596), (.40, -.19, .596)]]
+    else:
+        positions = [[(.44, -.20, .596), (.44, -.20, .600), (.44, -.20, .610)],
+                     [(.44, -.20, .596), (.44, -.21, .600), (.44, -.21, .610)]]
+    arrays = {
+        "valid": np.ones((2, 1, 3), dtype=bool),
+        "command": np.zeros((2, 1, 3, 13), dtype=np.float32),
+        "carry": np.zeros((2, 1, 197), dtype=np.float32),
+        "delta": np.zeros((2, 1, 197), dtype=np.float32),
+        "risk": np.zeros((2, 1, 3), dtype=np.float32),
+        "position": np.asarray(positions, dtype=np.float32)[:, None],
+        "normal_force": np.full((2, 1, 3), 5., dtype=np.float32),
+        "body": np.asarray([[0., 0., 1.], [0., 0., 1.]], dtype=np.float32),
+        "mechanism": np.asarray([[1., 0., .5], [1., 0., .5]], dtype=np.float32),
+        "status": np.zeros(2, dtype=np.int32),
+        "group": np.arange(2, dtype=np.int32),
+        "mode": np.arange(2, dtype=np.int32),
+        "observed_mode": np.arange(2, dtype=np.int32),
+        "sample_id": np.asarray([11, 12], dtype=np.int64),
+    }
+    metadata = {"artifact_kind": "contact_dataset", "contact_schema": 1,
+                "role": "source_demonstrations", "environment": environment,
+                "carry_dim": 197, "episodes_attempted": 2, "successes": 0,
+                "valid_steps": 6}
+    return arrays, metadata
+
+
+@pytest.mark.parametrize("environment", ["guided_contact_alignment", "keyed_insertion_recovery", "mobile_keyed_insertion_recovery"])
+def test_contact_dataset_loader_keeps_supported_task_modes(tmp_path, environment):
+    from genedynamics.solvers.single.cross_ebdm.learning.artifact_bundle import save_bundle
+    from genedynamics.solvers.single.cross_ebdm.learning.contact_data import load_contact_dataset
+
+    arrays, metadata = _contact_dataset_arrays(environment)
+    save_bundle(tmp_path, arrays, metadata)
+    actual, description = load_contact_dataset(tmp_path)
+    assert description["environment"] == environment
+    for name, value in arrays.items():
+        np.testing.assert_array_equal(actual[name], value)
+
+
+@pytest.mark.parametrize("environment", ["unknown_task", "T2", None])
+def test_contact_dataset_loader_rejects_unknown_environment(tmp_path, environment):
+    from genedynamics.solvers.single.cross_ebdm.learning.artifact_bundle import save_bundle
+    from genedynamics.solvers.single.cross_ebdm.learning.contact_data import load_contact_dataset
+
+    arrays, metadata = _contact_dataset_arrays("keyed_insertion_recovery")
+    metadata["environment"] = environment
+    save_bundle(tmp_path, arrays, metadata)
+    with pytest.raises(ValueError, match="unknown contact dataset environment"):
+        load_contact_dataset(tmp_path)
+
+
+def test_contact_dataset_loader_retains_mode_evidence_and_sha_checks(tmp_path):
+    import json
+    from genedynamics.solvers.single.cross_ebdm.learning.artifact_bundle import save_bundle
+    from genedynamics.solvers.single.cross_ebdm.learning.contact_data import load_contact_dataset
+
+    arrays, metadata = _contact_dataset_arrays("guided_contact_alignment")
+    arrays["observed_mode"] = arrays["observed_mode"][::-1].copy()
+    save_bundle(tmp_path, arrays, metadata)
+    with pytest.raises(ValueError, match="physical trace evidence"):
+        load_contact_dataset(tmp_path)
+    description = json.loads((tmp_path / "metadata.json").read_text())
+    with (tmp_path / description["tensor_file"]).open("ab") as stream:
+        stream.write(b"changed")
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        load_contact_dataset(tmp_path)
+
+
 def test_jax_torch_forward_grad_and_adam(tmp_path):
     import jax
     import jax.numpy as jnp

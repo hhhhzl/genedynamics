@@ -1,0 +1,61 @@
+base: insertion_lead_qualification.yaml
+name: keyed_insertion_recovery_insertion_lead_response
+output_dir: results/arm/keyed_insertion_recovery/validation/insertion_lead_response
+seeds:
+- 940410
+- 940411
+- 940412
+- 940413
+metadata:
+  protocol: transfer_insertion_lead_response
+  physics_episode_cap: 16
+  selection_rule: compare the frozen 10 and 15 mm insertion-only leads on the previously diagnosed delay-3 gain-0.7 payload-0.5 response condition; keep every failure
+suites:
+- name: lead_10mm_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 3
+      servo_gain: 0.7
+      payload_mass: 0.5
+  method_params:
+    mode: 0
+    actor_binding:
+      feedback:
+        insertion_lead_z_m: 0.01
+- name: lead_10mm_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 3
+      servo_gain: 0.7
+      payload_mass: 0.5
+  method_params:
+    mode: 1
+    actor_binding:
+      feedback:
+        insertion_lead_z_m: 0.01
+- name: lead_15mm_mode_0
+  env_params:
+    mode: 0
+    mechanism:
+      delay_steps: 3
+      servo_gain: 0.7
+      payload_mass: 0.5
+  method_params:
+    mode: 0
+    actor_binding:
+      feedback:
+        insertion_lead_z_m: 0.015
+- name: lead_15mm_mode_1
+  env_params:
+    mode: 1
+    mechanism:
+      delay_steps: 3
+      servo_gain: 0.7
+      payload_mass: 0.5
+  method_params:
+    mode: 1
+    actor_binding:
+      feedback:
+        insertion_lead_z_m: 0.015

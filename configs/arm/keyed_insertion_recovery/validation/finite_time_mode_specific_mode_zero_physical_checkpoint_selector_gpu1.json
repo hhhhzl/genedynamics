@@ -1,0 +1,103 @@
+{
+  "acceptance": {
+    "allow_task_only_fallback": true,
+    "candidate_updates": {
+      "mode_zero_selector_update_1100": 1100,
+      "mode_zero_selector_update_1400": 1400,
+      "mode_zero_selector_update_1500": 1500
+    },
+    "require_candidate_to_preserve_every_task_only_success": true,
+    "require_zero_extra_candidate_constraint_violations": true,
+    "required_requests_per_instance": 4,
+    "selection_rule": "maximize_successes_then_minimize_mean_capped_control_steps_then_task_only_fallback_then_lower_update",
+    "task_only": "mode_zero_selector_task_only"
+  },
+  "confirmation_states_opened": 0,
+  "diagnostic_only": true,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_index": 1,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "methods": [
+    {
+      "candidate_policy_set": {
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/aggregation/report.json",
+          "sha256": "3c7e081abe93b1c90150d00120d26c80477c8516b4b1ddb6ec95b8bac5c0ac01"
+        },
+        "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode0",
+        "retained_update": 1100
+      },
+      "family": "main",
+      "instances": "all",
+      "key": "cross_ebdm",
+      "label": "mode_zero_selector_update_1100"
+    },
+    {
+      "candidate_policy_set": {
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/aggregation/report.json",
+          "sha256": "3c7e081abe93b1c90150d00120d26c80477c8516b4b1ddb6ec95b8bac5c0ac01"
+        },
+        "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode0",
+        "retained_update": 1400
+      },
+      "family": "main",
+      "instances": "all",
+      "key": "cross_ebdm",
+      "label": "mode_zero_selector_update_1400"
+    },
+    {
+      "candidate_policy_set": {
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/aggregation/report.json",
+          "sha256": "3c7e081abe93b1c90150d00120d26c80477c8516b4b1ddb6ec95b8bac5c0ac01"
+        },
+        "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode0",
+        "retained_update": 1500
+      },
+      "family": "main",
+      "instances": "all",
+      "key": "cross_ebdm",
+      "label": "mode_zero_selector_update_1500"
+    },
+    {
+      "candidate_policy_set": {
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_0/aggregation/report.json",
+          "sha256": "3c7e081abe93b1c90150d00120d26c80477c8516b4b1ddb6ec95b8bac5c0ac01"
+        },
+        "method_identity": "task_only_shared_start_mode_specific_v9"
+      },
+      "family": "main",
+      "instances": "all",
+      "key": "task_only",
+      "label": "mode_zero_selector_task_only"
+    }
+  ],
+  "name": "finite_time_mode_specific_mode_zero_physical_checkpoint_selector",
+  "performance_evidence": false,
+  "requested_modes": [
+    0
+  ],
+  "reset_slots_per_cell": 4,
+  "scene_cells": [
+    {
+      "body_support_parameters": {},
+      "id": "protocol_hard_target",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.8,
+        "servo_gain": 0.65
+      },
+      "robot": "xarm7"
+    }
+  ],
+  "scope": "Held-out GPU1 full-episode selector for the three mode-zero retained updates that passed the frozen offline compatibility gate for all eight instances. Each candidate and exact task-only fallback receives four paired requests per instance. This is development-only and opens no confirmation state.",
+  "seed_anchor": 8970000,
+  "task": "T3",
+  "version": "four-task-mode-specific-mode-zero-physical-checkpoint-selector-v1"
+}

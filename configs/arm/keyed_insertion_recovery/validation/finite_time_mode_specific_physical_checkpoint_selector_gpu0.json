@@ -1,0 +1,116 @@
+{
+  "version": "four-task-mode-specific-physical-checkpoint-selector-v1",
+  "name": "finite_time_mode_specific_physical_checkpoint_selector",
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_index": 0,
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "methods": [
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "mode_specific_selector_update_1200",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode1",
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/aggregation/report.json",
+          "sha256": "c19ccf758187e8d82f5b03d3e44d04ce7e9f29fd1a974123ebd4fa8c7f8baa3f"
+        },
+        "retained_update": 1200
+      }
+    },
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "mode_specific_selector_update_1300",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode1",
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/aggregation/report.json",
+          "sha256": "c19ccf758187e8d82f5b03d3e44d04ce7e9f29fd1a974123ebd4fa8c7f8baa3f"
+        },
+        "retained_update": 1300
+      }
+    },
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "mode_specific_selector_update_1400",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode1",
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/aggregation/report.json",
+          "sha256": "c19ccf758187e8d82f5b03d3e44d04ce7e9f29fd1a974123ebd4fa8c7f8baa3f"
+        },
+        "retained_update": 1400
+      }
+    },
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "mode_specific_selector_update_1500",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_task_first_mode_specific_recorded_completion_v9_mode1",
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/aggregation/report.json",
+          "sha256": "c19ccf758187e8d82f5b03d3e44d04ce7e9f29fd1a974123ebd4fa8c7f8baa3f"
+        },
+        "retained_update": 1500
+      }
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "mode_specific_selector_task_only",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "task_only_shared_start_mode_specific_v9",
+        "aggregation_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_task_first_mode_specific_recorded_completion/mode_1/aggregation/report.json",
+          "sha256": "c19ccf758187e8d82f5b03d3e44d04ce7e9f29fd1a974123ebd4fa8c7f8baa3f"
+        }
+      }
+    }
+  ],
+  "requested_modes": [1],
+  "scene_cells": [
+    {
+      "id": "protocol_hard_target",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.65,
+        "delay_steps": 3,
+        "payload_mass": 0.8
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 8270000,
+  "acceptance": {
+    "task_only": "mode_specific_selector_task_only",
+    "candidate_updates": {
+      "mode_specific_selector_update_1200": 1200,
+      "mode_specific_selector_update_1300": 1300,
+      "mode_specific_selector_update_1400": 1400,
+      "mode_specific_selector_update_1500": 1500
+    },
+    "required_requests_per_instance": 4,
+    "selection_rule": "maximize_successes_then_minimize_mean_capped_control_steps_then_task_only_fallback_then_lower_update",
+    "require_candidate_to_preserve_every_task_only_success": true,
+    "require_zero_extra_candidate_constraint_violations": true,
+    "allow_task_only_fallback": true
+  },
+  "scope": "Held-out GPU0 physical development selector for the four mode-one retained updates that passed the frozen offline compatibility gate for all eight instances. Every candidate and the paired task-only controller receives the same four full-episode requests per instance. Selection maximizes successes, then minimizes capped control steps, and uses exact task-only fallback on a tie. This run is development-only and opens no confirmation state."
+}

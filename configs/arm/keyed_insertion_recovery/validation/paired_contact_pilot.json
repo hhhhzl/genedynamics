@@ -1,0 +1,136 @@
+{
+  "version": "keyed-insertion-contact-pilot-v1",
+  "status": "frozen_unexecuted",
+  "task": "keyed_insertion_recovery",
+  "legacy_task_alias": "T3",
+  "task_configs": {
+    "full": {
+      "path": "configs/arm/keyed_insertion_recovery/main/cross_ebdm.yaml",
+      "sha256": "d238020cc4e72db9d0e97ebc0bb496155762ce9343f5cf1968299ab555fa937b"
+    },
+    "task_only": {
+      "path": "configs/arm/keyed_insertion_recovery/baseline/task_only.yaml",
+      "sha256": "ad242683fc4a3519fcce4ed3df373b7db4c848f31e32835f7cc1a6f1f4257711"
+    },
+    "response_mpc": {
+      "path": "configs/arm/keyed_insertion_recovery/baseline/response_mpc.yaml",
+      "sha256": "7262445904178c104824ba19a5f03d808175f105035f0219def910ba6d9a0b01"
+    },
+    "adaptsim": {
+      "path": "configs/arm/keyed_insertion_recovery/baseline/adaptsim.yaml",
+      "sha256": "4ed8caadff18c4bc0e052baac7fd4cf445622eb2a5f34aee5636fe38cf58a938"
+    },
+    "asid": {
+      "path": "configs/arm/keyed_insertion_recovery/baseline/asid.yaml",
+      "sha256": "7c90aad38c88c8517fb32773030077212b82d3933aad95a3e5e1a30abee4f16a"
+    }
+  },
+  "actor_manifest": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/actor_bindings.json",
+    "sha256": "94fdcb9e62b71c4e1d653ecb5489a17dcde36743d20483b2beabcc74bcccd460"
+  },
+  "baseline_actor_plans": {
+    "adaptsim": {
+      "path": "results/arm/keyed_insertion_recovery/baseline/adaptsim/confirmation/independent_main_v2/independent_8813001/plan.json",
+      "sha256": "705469a7d1c77030f7258bd49b48fb6fcbcddf85e2f401642cfcd691010760fe"
+    },
+    "asid": {
+      "path": "results/arm/keyed_insertion_recovery/baseline/asid/confirmation/independent_main_v2/independent_8803001/plan.json",
+      "sha256": "60b8881d25b3aa31b15a2aa641c10039f94ff1ecb17af8b744b9255ff02020da"
+    }
+  },
+  "treatment_training_reports": {
+    "full": {
+      "mode_0": {
+        "path": "results/arm/keyed_insertion_recovery/training/clean_ablation/full/mode_0/checkpoints/report.json",
+        "sha256": "6a064e77e4f8ff8e45194e50746633e02fc4ec7398cc938a0e51ae17659827dd"
+      },
+      "mode_1": {
+        "path": "results/arm/keyed_insertion_recovery/training/clean_ablation/full/mode_1/checkpoints/report.json",
+        "sha256": "540a147e7d0ecfcd320607a8cf050260c6ea3a48412beef270dd8d59dada99fa"
+      }
+    },
+    "no_calibration": {
+      "mode_0": {
+        "path": "results/arm/keyed_insertion_recovery/training/clean_ablation/no_calibration/mode_0/checkpoints/report.json",
+        "sha256": "ab34f17c4f5bebc65dc97a0ddabbbd9bf2f433ac5d8e6e0c2913eb242cb461f2"
+      },
+      "mode_1": {
+        "path": "results/arm/keyed_insertion_recovery/training/clean_ablation/no_calibration/mode_1/checkpoints/report.json",
+        "sha256": "c46df8490ea69945545f42d182ee9b7213b62a78362748f6cbebee3350bbc5d4"
+      }
+    },
+    "no_response_anchoring": {
+      "mode_0": {
+        "path": "results/arm/keyed_insertion_recovery/training/clean_ablation/no_response_anchoring/mode_0/checkpoints/report.json",
+        "sha256": "a68e06a00abf9d2b728ed10d2587ff0a34a1f8587fcd67c3a9f009454bd60252"
+      },
+      "mode_1": {
+        "path": "results/arm/keyed_insertion_recovery/training/clean_ablation/no_response_anchoring/mode_1/checkpoints/report.json",
+        "sha256": "3b5bceecbfefd2a564e047df5e238010da78d7d88ca6757181e8150bbfb826c0"
+      }
+    },
+    "unconditional_response_anchoring": {
+      "mode_0": {
+        "path": "results/arm/keyed_insertion_recovery/training/clean_ablation/unconditional_response_anchoring/mode_0/checkpoints/report.json",
+        "sha256": "0b44b086952ae4327ae268ad79aa061c22e580470934a1e1dc815add8281a77a"
+      },
+      "mode_1": {
+        "path": "results/arm/keyed_insertion_recovery/training/clean_ablation/unconditional_response_anchoring/mode_1/checkpoints/report.json",
+        "sha256": "79d05e45df99a3bed9c5f700cc5aaf7b65a0d469c400b1afb5a1b20a27afd7e3"
+      }
+    }
+  },
+  "response_calibration_seconds": {
+    "full": 60,
+    "no_calibration": 0,
+    "no_response_anchoring": 60,
+    "unconditional_response_anchoring": 60
+  },
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      }
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.8,
+        "servo_gain": 1.0
+      }
+    }
+  ],
+  "requested_modes": [
+    0,
+    1
+  ],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 9910000,
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_index": 1,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "limits": {
+    "workers": 2,
+    "maximum_wall_seconds": 5400
+  },
+  "output": "results/arm/keyed_insertion_recovery/validation/paired_contact_pilot",
+  "policy": {
+    "diagnostic_only": true,
+    "performance_evidence": false,
+    "confirmation_states_opened": 0,
+    "failure_replacement": false,
+    "all_failures_retained": true
+  }
+}

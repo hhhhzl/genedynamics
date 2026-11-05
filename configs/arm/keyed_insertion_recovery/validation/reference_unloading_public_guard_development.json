@@ -1,0 +1,40 @@
+{
+  "version": "t3-public-reference-unloading-development-v1",
+  "task": "T3",
+  "sentinel_plan": {
+    "path": "results/arm/keyed_insertion_recovery/validation/finite_time_current_public_geometry_sentinel/gpu1/plan.json",
+    "sha256": "ccf21d7c4c67fe9a4f60122bb425fbf5222ffcaaf42376a66fd683bc17cb2aa2"
+  },
+  "sentinel_report": {
+    "path": "results/arm/keyed_insertion_recovery/validation/finite_time_current_public_geometry_sentinel/gpu1/report.json",
+    "sha256": "1bb0fbad1db7603a25ce471c0f0a6f05f8b661da9e2ef914a59e94baab72a6e8"
+  },
+  "guard": {
+    "release_z_m": 0.5965,
+    "clear_z_m": 0.604,
+    "retreat_speed_mps": 0.008,
+    "unload_seconds": 0.08,
+    "max_planar_speed_mps": 0.025
+  },
+  "source_bindings": [
+    {
+      "path": "genedynamics/tasks/transfer/controllers/mating_feedback.py",
+      "sha256": "1293416cc6c9d7af45e1862d3a0669152d519a661fc942102ac7c9153a07f6f1"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/early_contact_diagnostic.py",
+      "sha256": "4db4809411263f029d06b4193dc56ed7d07c75999b23cfc4cc6c46d0aa429269"
+    },
+    {
+      "path": "scripts/paper/cross_ebdm/diagnose_t3_early_contact.py",
+      "sha256": "9b096e5dd5feb1ceec237b366bffb68687534b56ca544d8be15352aa5c1144d2"
+    }
+  ],
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 360,
+    "maximum_gpu_memory_gib": 2
+  },
+  "output": "results/arm/keyed_insertion_recovery/validation/reference_unloading_public_guard_development/gpu1"
+}

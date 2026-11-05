@@ -1,0 +1,22 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T4",
+  "method": "asid",
+  "method_identity": "ASID_Fisher_32step_grid_CEM_mobile_mating_policy",
+  "task_config": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/asid.yaml",
+  "checkpoint": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/training/full_chain_development_8764802/checkpoint.json",
+    "sha256": "f879937607da882b2fe863bb0dded85c13229fb1f7a4e53bbf8e144e69d1a995"
+  },
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/asid_adaptsim_public_fresh_actor_roster_v2.json",
+    "sha256": "a36bf14e347082aa375216c9487da94ce6123c301e33b8c71dba93002a9c07c2"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/validation/asid_adaptsim_v2_paired_pilot_3302900000",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/validation/asid_adaptsim_v2_paired_pilot_3302900000_plan.json"
+}

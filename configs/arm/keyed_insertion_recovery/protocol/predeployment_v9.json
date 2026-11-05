@@ -1,0 +1,55 @@
+{
+  "version": "four-task-behavioral-predeployment-v9",
+  "task": "T3",
+  "supersedes": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/predeployment_v8.json",
+    "sha256": "ff9da3162bf5263f0610531676cf2fe19a128a000f0d0b3ef663f4e44d5f15ac"
+  },
+  "shared_task_contract": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/public_v6.json",
+    "sha256": "ba1e0aaaaf0591decba128f40e666394ba43c729b16d5de4c817dff617bf8a96"
+  },
+  "actor_manifest": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/actor_bindings.json",
+    "sha256": "94fdcb9e62b71c4e1d653ecb5489a17dcde36743d20483b2beabcc74bcccd460"
+  },
+  "seed_anchor": 9270000,
+  "execution": {
+    "device": "cuda"
+  },
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "gate": {
+    "require_all_mode_correct_task_success": true,
+    "require_zero_constraint_violations": true,
+    "require_evidence_reaudit": true,
+    "failure_replacement": false
+  },
+  "source_admission": "Validate every method's declared source or training artifact and SHA through the task-local actor manifest. Retain algorithm and external-resource rejections; never replace a rejected row or reuse a prior outcome.",
+  "scope": "Fresh GPU1-only qualification of every executable T3 main, baseline and ablation row after the seed-disjoint v21 transport confirmation was migrated into the common public actor resolver. The two mechanism cells exactly match the frozen four-task evaluation roster. Baseline and ablation failures remain in their denominators. This is predeployment evidence, not paper performance evidence."
+}

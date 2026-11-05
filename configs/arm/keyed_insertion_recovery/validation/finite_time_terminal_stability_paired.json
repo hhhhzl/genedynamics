@@ -1,0 +1,74 @@
+{
+  "acceptance": {
+    "band_only": "band_only",
+    "candidate": "cross_ebdm_finite_time",
+    "current": "cross_ebdm_current",
+    "preserve_every_paired_current_success": true,
+    "require_candidate_to_beat_band_only": true,
+    "require_candidate_to_meet_or_exceed_strong_reference": true,
+    "require_zero_candidate_constraint_violations": true,
+    "required_candidate_successes": 64,
+    "strong_reference": "response_mpc"
+  },
+  "confirmation_states_opened": 0,
+  "diagnostic_only": true,
+  "execution": {
+    "device": "cuda"
+  },
+  "failure_replacement": false,
+  "methods": [
+    {
+      "family": "main",
+      "instances": "all",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_current"
+    },
+    {
+      "candidate_policy_set": {
+        "method_identity": "ours_gated_v4_terminal_stable",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_terminal_stability/checkpoints/report.json",
+          "sha256": "129c2e248acbe4d7432cf4b74877f2716995e9fee02c702ebbc8062bf844725a"
+        }
+      },
+      "family": "main",
+      "instances": "all",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_finite_time"
+    },
+    {
+      "family": "ablation",
+      "instances": "all",
+      "key": "band_only",
+      "label": "band_only"
+    },
+    {
+      "family": "main",
+      "instances": "all",
+      "key": "response_mpc",
+      "label": "response_mpc"
+    }
+  ],
+  "name": "finite_time_terminal_stability_paired",
+  "performance_evidence": false,
+  "requested_modes": [
+    1
+  ],
+  "reset_slots_per_cell": 8,
+  "scene_cells": [
+    {
+      "body_support_parameters": {},
+      "id": "payload_shift",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "robot": "xarm7"
+    }
+  ],
+  "scope": "Fresh paired T3 payload-mode-1 qualification of terminal-stable finite-time Cross-EBDM against the frozen current actor, band-only ablation and response MPC. All eight instances use their own SHA-bound checkpoint; the previous qualification is used only as rejected development evidence, and no formal binding, confirmation state or paper performance evidence is opened.",
+  "seed_anchor": 4202000,
+  "task": "T3",
+  "version": "four-task-paired-development-qualification-v3"
+}

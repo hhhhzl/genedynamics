@@ -1,0 +1,28 @@
+{
+  "version": "transfer-independent-actor-development-evaluation-v1",
+  "task": "T4",
+  "method": "adaptsim",
+  "method_identity": "AdaptSim_four_parameter_mobile_population_CEM",
+  "actor_binding_source": "independent_actor_package",
+  "actor_package": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/validation/independent_actor_package_v1/report.json",
+    "sha256": "5c8bd1f798177d201e4a70259d9120bf95a5550039bd549f997b4cc7135a2896"
+  },
+  "instance_id": "independent_8814101",
+  "task_config": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim.yaml",
+  "checkpoint": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/training/independent_training_8814101/inference_and_policy.pt",
+    "sha256": "ffff6cef738321eafddf5b5ff4291218111fe45e149ab8bfc7c695f78908ca39"
+  },
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/adaptsim_independent_actor_source_nominal_roster.json",
+    "sha256": "2d79824df4a7e45cfa5e1dad8815e5503e424992bb8a027822a8b749d338449b"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/validation/independent_source_nominal_8814101",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/validation/plans/independent_source_nominal_8814101.json"
+}

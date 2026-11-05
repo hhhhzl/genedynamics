@@ -1,0 +1,233 @@
+{
+  "deployment_target": {
+    "mechanism": {
+      "delay_steps": 3,
+      "payload_mass": 0.5,
+      "servo_gain": 0.7
+    },
+    "select_particles": true,
+    "updates": 2
+  },
+  "execution": {
+    "cuda_visible_devices": "1",
+    "maximum_gpu_memory_gib": 2,
+    "maximum_wall_seconds": 5400,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "feedback_base": {
+    "alignment_spatial_stiffness": 1.0,
+    "compensation_gain": 2.0,
+    "compensation_limit": 0.04,
+    "execution_horizon": 1,
+    "guard_clear_z_m": 0.61,
+    "guard_prediction_seconds": 0.0,
+    "guard_retreat_speed": 0.006,
+    "guard_seat_gap_m": 0.006,
+    "guard_settle_ticks": 4,
+    "insertion_force_scale": 1.0,
+    "insertion_lead_z_m": 0.015,
+    "insertion_spatial_stiffness": 1.0,
+    "integral_scale": 0.0,
+    "issued_reference_gain": 2.0,
+    "lead_rotation_rad": 0.04,
+    "lead_xy_m": 0.008,
+    "lead_z_m": 0.01,
+    "lift_before_lateral": true,
+    "normal_admittance_gain": 0.004,
+    "normal_control": "position_admittance",
+    "normal_velocity_limit": 0.015,
+    "position_gain": 6.0,
+    "recovery_spatial_stiffness": 0.25,
+    "rotation_gain": 4.0,
+    "twist_damping": 1.0
+  },
+  "meta_training": {
+    "adaptation_steps": 2,
+    "batch_size": 2,
+    "exploration_probability": 0.5,
+    "gradient_steps": 1,
+    "inner_episodes": 2,
+    "inner_spawn_perturbation": 0.05,
+    "kill_frequency": 1,
+    "meta_spawn_perturbation": 0.1,
+    "outer_iterations": 2,
+    "spawn_reward_threshold": 0.65,
+    "update_every": 1
+  },
+  "output": "results/arm/keyed_insertion_recovery/baseline/adaptsim/training/independent_training_8813001",
+  "parameters": [
+    {
+      "distribution": "gaussian",
+      "max_std": 0.25,
+      "maximum": 1.4,
+      "min_std": 0.05,
+      "minimum": 0.4,
+      "name": "servo_gain",
+      "step": 0.1
+    },
+    {
+      "distribution": "gaussian",
+      "max_std": 0.25,
+      "maximum": 1.2,
+      "min_std": 0.05,
+      "minimum": 0.2,
+      "name": "payload_mass",
+      "step": 0.1
+    },
+    {
+      "distribution": "gaussian",
+      "max_std": 1.0,
+      "maximum": 3.0,
+      "min_std": 0.1,
+      "minimum": 0.0,
+      "name": "delay_steps",
+      "step": 1.0
+    }
+  ],
+  "particles": [
+    {
+      "kind": "gaussian",
+      "left": [
+        0.85,
+        0.65,
+        0.0
+      ],
+      "right": [
+        0.1,
+        0.1,
+        0.5
+      ]
+    },
+    {
+      "kind": "gaussian",
+      "left": [
+        1.0,
+        0.8,
+        2.0
+      ],
+      "right": [
+        0.1,
+        0.1,
+        0.5
+      ]
+    }
+  ],
+  "policy_fields": [
+    "recovery_spatial_stiffness",
+    "position_gain",
+    "compensation_gain",
+    "lead_xy_m",
+    "normal_admittance_gain",
+    "insertion_force_scale",
+    "guard_prediction_seconds"
+  ],
+  "robot": "xarm7",
+  "seed": 8813001,
+  "shared_execution": {
+    "insertion_lead_z_m": 0.015,
+    "retreat_release_version": "safe_settled_v1",
+    "version": "four-task-shared-execution-v3"
+  },
+  "source_bindings": [
+    {
+      "path": "genedynamics/core/control/transfer.py",
+      "sha256": "aaa3cf68b3d7f16d0ff23ac2b307eab2a8c4d7402f892cf84b5456257ceb41ab"
+    },
+    {
+      "path": "genedynamics/envs/adapters/transfer_task.py",
+      "sha256": "f14bd0d8769c0da8b9c741db1160f72b382cf34a00acf576757ff5eb8a9a0eea"
+    },
+    {
+      "path": "genedynamics/solvers/single/adaptsim/adaptsim.py",
+      "sha256": "2ac4616156be0c978665f51c913a1da036caaa93a713d2c800f8707c3d9d93d2"
+    },
+    {
+      "path": "genedynamics/solvers/single/adaptsim/backends/branching_q_torch.py",
+      "sha256": "4de8d2c7b7299f00cb1e43f824619771909dfc63d3b99c27c4774a8fc91295ca"
+    },
+    {
+      "path": "genedynamics/solvers/single/adaptsim/learning/adaptation.py",
+      "sha256": "b8c402d452867e0f1233662a3272d6221d7b28394019238ab3dc6a3da7ef5d7b"
+    },
+    {
+      "path": "genedynamics/solvers/single/adaptsim/learning/meta_training.py",
+      "sha256": "ec2ae4605f66a8e27b8fdee4d02a23ca3b09915c86d3617aebb95f36d483f106"
+    },
+    {
+      "path": "genedynamics/solvers/single/adaptsim/learning/task_policy_search.py",
+      "sha256": "e0c71bc1bee7baa0c7f0a1fc8797fb99b71b92a9b69106e00c5052139a26d9b8"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/contact.py",
+      "sha256": "070fd24045a3f971011ed9a0ba678880e5068ebe34757d619e427beabd36eacd"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/bias_feedback.py",
+      "sha256": "660da300dbf2c1383ce3a67c02da81c2fb603cf4b02065fb2714ad1f847b6c22"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/governor_feedback.py",
+      "sha256": "aca05f0682d5427705a98b8edbab77c0259bb9638500fd3f3e697804768fe455"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/cross_ebdm/policies/liveness.py",
+      "sha256": "73146e88b0c9faf51c2ddb49047cc628edb8db9e8ee370262bc8797ac8dae65d"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/controllers/mating_feedback.py",
+      "sha256": "30fc83a11a88799b569ebf6a25372671830af9a7f903f47897b327a84f9f7f23"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/episode.py",
+      "sha256": "dab1ffa1e360fb2f98d1b8a4ab31597a7c01fd8fca3f9d7f1c828083571d6a1f"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/evaluation.py",
+      "sha256": "83e8e48a38ea889f52f6ac2c2e4b0def7ce3d54bac6ba36ba89c162d017c3fae"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/mating_policy_search.py",
+      "sha256": "95cfa8b5e7a5d540d6d9045a86678d76db26668dbafecee51c9b3374eaddf4b2"
+    },
+    {
+      "path": "scripts/paper/cross_ebdm/train_adaptsim_development.py",
+      "sha256": "ab863a33c51eb0a42f6a0580f94687473ede749ca21f0a7913a6019e1048efbd"
+    }
+  ],
+  "task": "T3",
+  "task_policy_search": {
+    "anchor": [
+      0.25,
+      6.0,
+      2.0,
+      0.008,
+      0.004,
+      1.0,
+      0.0
+    ],
+    "elite": 2,
+    "iterations": 2,
+    "lower": [
+      0.1,
+      4.0,
+      0.8,
+      0.004,
+      0.002,
+      0.8,
+      0.0
+    ],
+    "population": 5,
+    "tasks_per_candidate": 2,
+    "upper": [
+      0.5,
+      8.0,
+      2.0,
+      0.01,
+      0.006,
+      1.2,
+      0.08
+    ]
+  },
+  "training_cohort": "independent_main_table_training_v1",
+  "version": "adaptsim-mating-feedback-population-development-v2"
+}

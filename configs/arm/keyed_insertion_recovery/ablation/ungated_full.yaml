@@ -1,0 +1,13 @@
+base: ../_base.yaml
+name: keyed_insertion_recovery_ungated_full
+output_dir: results/arm/keyed_insertion_recovery/ablation/ungated_full
+method_params:
+  ablation_cell: ungated_full
+  actor_binding:
+    family: ablation
+    key: ungated_full
+metadata:
+  legacy_ablation:
+    semantic_predecessor: unconditional_response_anchoring
+    clean_contract: configs/arm/keyed_insertion_recovery/ablation/clean_treatment_contract.json
+    evidence_reusable_for_clean_comparison: false

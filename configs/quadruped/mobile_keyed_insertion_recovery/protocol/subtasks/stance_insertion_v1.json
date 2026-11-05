@@ -1,0 +1,53 @@
+{
+  "schema_version": "transfer-subtask-contract-v1",
+  "contract_version": "transfer-stance-insertion-v1",
+  "semantic_id": "stance_insertion",
+  "family": "support_coupled_assembly",
+  "embodiment": "quadruped_manipulator",
+  "environment": "mobile_keyed_insertion_recovery",
+  "implementation_status": "implemented_contract_frozen",
+  "semantics": {
+    "goal": "Execute keyed insertion and recovery with the Go2-Z1 system while the feet retain the declared stance support and a common bounded planar body request is active.",
+    "excludes": ["claiming a fixed base", "walking or footstep planning", "navigation", "method-specific body support or whole-body control"]
+  },
+  "event_order": [
+    {"id": "stance_prepared", "evidence": ["declared foot contacts", "body height and tilt inside reset tolerances", "whole-body controller preparation completed"]},
+    {"id": "public_body_request_executed", "evidence": ["common planar body request history", "actual base pose and twist"]},
+    {"id": "loaded_recovery_completed", "evidence": ["physical contact load", "requested recovery mode and actual retreat or unloading"]},
+    {"id": "insertion_hold_completed", "evidence": ["fixture-relative insertion depth", "terminal pose, force, support, and dwell conditions"]}
+  ],
+  "interface": {
+    "observations": {
+      "public": ["quadruped and arm proprioception", "base pose and twist", "foot contact and support summary", "tcp and socket-relative state", "measured wrench", "common body request", "issued-action history"],
+      "hidden": ["support gain", "servo gain", "command delay", "ground-contact evaluator state", "whole-body solver internals"]
+    },
+    "action_authority": {
+      "method": ["bounded manipulator Cartesian request and declared stiffness or force request"],
+      "public_execution": ["common finite planar body request", "stance whole-body controller", "joint-margin projection", "common safety termination"],
+      "evaluator_only": ["support polygon and foot-slip classification", "body and joint safety acceptance", "recovery and insertion acceptance"]
+    }
+  },
+  "evaluation": {
+    "success": ["stance preparation completes", "the shared body request executes without leaving the fixed-foot support contract", "the requested recovery chain completes", "insertion is held within pose, force, support, and joint limits"],
+    "violations": ["foot slip or undeclared contact loss", "body height or tilt violation", "whole-body solver failure", "joint-limit or self-collision termination", "axial or lateral overforce", "timeout"],
+    "anti_bypass": ["derive support from physical foot contacts and base state", "reject any undeclared foot relocation", "give every method the identical body request and whole-body controller", "require recovery before insertion credit"]
+  },
+  "mechanism_axes": [
+    {"name": "recovery_mode", "public": true, "train": ["unload", "retreat"], "development": ["unload", "retreat"], "heldout": ["unload", "retreat"]},
+    {"name": "support_gain_class", "public": false, "train": ["nominal"], "development": ["nominal", "derated"], "heldout": ["derated"]},
+    {"name": "arm_servo_gain", "public": false, "train": [1.0], "development": [0.9, 1.0], "heldout": [0.8]},
+    {"name": "command_delay_controls", "public": false, "train": [0], "development": [0, 1], "heldout": [3]}
+  ],
+  "source_qualification": {
+    "status": "fresh_qualification_required_for_new_protocol",
+    "requirements": ["both recovery modes pass with the frozen stance preparation and body request", "qualification records physical foot support, body state, whole-body solver status, and insertion evidence", "source actor and configuration digests are frozen", "no failed source or support episode is replaced"],
+    "evidence_resolution": "every control tick plus physics foot-contact and terminal states"
+  },
+  "evaluator_evidence": {
+    "status": "current_implementation_bound_fresh_protocol_validation_required",
+    "resolution": "control_tick_with_physical_foot_contact_events",
+    "implementation_path": "genedynamics/tasks/transfer/evaluation.py",
+    "required_signals": ["base pose and twist", "foot contact forces and slip", "support polygon", "whole-body solver status", "joint margins", "socket-relative connector state", "measured wrench", "terminal dwell clock"]
+  },
+  "historical_evidence_policy": "Existing mobile insertion evidence remains bound to its original reset, support, and body-intent protocol and is never rewritten under this semantic contract."
+}

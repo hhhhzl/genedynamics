@@ -1,0 +1,43 @@
+{
+  "version": "human2sim2robot-nominal-learning-diagnostic-v1",
+  "task": "T3",
+  "training_config": {
+    "path": "configs/arm/keyed_insertion_recovery/training/human2sim2robot_sanity_1m.json",
+    "sha256": "3047718e5ad0e1fc18de9aab99fe5c273845ed69e7ff81ba49aff680e24c9062"
+  },
+  "training_report": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/human2sim2robot/training/robot_source_sanity_1m/seed_290000/report.json",
+    "sha256": "a247243c5638eaca6552bd1b416ef6ca1975b935eabce8d3145678772f6b7531"
+  },
+  "learning_curve": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/human2sim2robot/training/robot_source_sanity_1m/seed_290000/learning_curve.json",
+    "sha256": "e2e8614e7d5c925ed51601135f45e38cd697811d825a6b3554ba537718a29d3d"
+  },
+  "checkpoints": [
+    {
+      "role": "selected",
+      "checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/baseline/human2sim2robot/training/robot_source_sanity_1m/seed_290000/selected_policy.pt",
+        "sha256": "33df7c77334bd01651696c27d1e666d53ee8d2c9ee601b4e261bbde86c4363ea"
+      }
+    },
+    {
+      "role": "final",
+      "checkpoint": {
+        "path": "results/arm/keyed_insertion_recovery/baseline/human2sim2robot/training/robot_source_sanity_1m/seed_290000/checkpoints/epoch_1024.pt",
+        "sha256": "98a9a2b2460d58bced461588b28d182a45893a1fbc5c72a0c112d56d5dceeb0a"
+      }
+    }
+  ],
+  "seeds": [
+    427102
+  ],
+  "budget": {
+    "episodes": 2,
+    "maximum_wall_seconds": 600,
+    "cpu_threads": 1,
+    "new_training_updates": 0,
+    "gpu_allowed": false
+  },
+  "output": "results/arm/keyed_insertion_recovery/baseline/human2sim2robot/diagnostics/nominal_learning_cpu"
+}

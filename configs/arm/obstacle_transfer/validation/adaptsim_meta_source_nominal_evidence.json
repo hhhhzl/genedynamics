@@ -1,0 +1,71 @@
+{
+  "version": "adaptsim-obstacle-source-nominal-evidence-v3",
+  "task": "T1",
+  "robot": "xarm7",
+  "delay_steps": 0,
+  "training_report": {
+    "path": "results/arm/obstacle_transfer/baseline/adaptsim/training/meta_coordinate_ledger_replay_928505/report.json",
+    "sha256": "c15995927702b88b2c33f4cf2d37db2b78b5a58785ee9bac584896b1684875f1"
+  },
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/baseline/adaptsim/training/meta_coordinate_ledger_replay_928505/inference_and_policy.pt",
+    "sha256": "6861746e088ae1690d96dacd021f9a801279d4f82defcb7aa9d40830c1ba17c4"
+  },
+  "anchor": [
+    0.5678590883444584,
+    0.6581064010126911,
+    0.6270149599348386,
+    0.6097529670246064,
+    1.0,
+    1.0
+  ],
+  "scene_cells": [
+    {
+      "id": "source",
+      "mechanism": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0
+      }
+    },
+    {
+      "id": "deployment_nominal",
+      "mechanism": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      }
+    },
+    {
+      "id": "target_gain_shift",
+      "mechanism": {
+        "servo_gain": 0.7,
+        "payload_mass": 0.5,
+        "delay_steps": 0
+      }
+    }
+  ],
+  "requested_modes": [
+    0,
+    1
+  ],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 3000300000,
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 240,
+    "maximum_gpu_memory_gib": 2
+  },
+  "output": "results/arm/obstacle_transfer/baseline/adaptsim/validation/source_nominal_evidence_ledger_replay_928505",
+  "source_bindings": [
+    {
+      "path": "genedynamics/tasks/transfer/obstacle_policy_search.py",
+      "sha256": "05e21da186a86de4e53d613baff482e888de26d37fa13223686299fc6d264adb"
+    },
+    {
+      "path": "scripts/paper/cross_ebdm/train_adaptsim_development.py",
+      "sha256": "eafbcdda698a06ef241f9dcb3bae88cda0193f0b212fe049d62c646298ac37f6"
+    }
+  ]
+}

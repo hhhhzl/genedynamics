@@ -1,0 +1,121 @@
+{
+  "version": "four-task-paired-development-diagnosis-v1",
+  "name": "terminal_transport_exact_replay",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cpu"
+  },
+  "seed_anchor": 4682000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "ablation",
+      "key": "ungated_full",
+      "label": "ungated_full_terminal_transport",
+      "instances": [
+        "instance_04",
+        "instance_01",
+        "instance_02",
+        "instance_03",
+        "instance_05",
+        "instance_06",
+        "instance_07",
+        "instance_08"
+      ],
+      "task_actor_interface": "public-T2-clearance-terminal-transport-v5"
+    },
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "label": "public_geometry_current",
+      "instances": "fixed"
+    },
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_terminal_transport",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-terminal-transport-v5"
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "task_only_terminal_transport",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-terminal-transport-v5"
+    },
+    {
+      "family": "main",
+      "key": "response_mpc",
+      "label": "response_mpc_terminal_transport",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-terminal-transport-v5"
+    },
+    {
+      "family": "ablation",
+      "key": "frozen_warm",
+      "label": "frozen_warm_terminal_transport",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-terminal-transport-v5"
+    },
+    {
+      "family": "ablation",
+      "key": "task_only",
+      "label": "ablation_task_only_terminal_transport",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-terminal-transport-v5"
+    },
+    {
+      "family": "ablation",
+      "key": "matching_no_band",
+      "label": "matching_no_band_terminal_transport",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-terminal-transport-v5"
+    },
+    {
+      "family": "ablation",
+      "key": "band_only",
+      "label": "band_only_terminal_transport",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-terminal-transport-v5"
+    },
+    {
+      "family": "ablation",
+      "key": "gated_full",
+      "label": "gated_full_terminal_transport",
+      "instances": "all",
+      "task_actor_interface": "public-T2-clearance-terminal-transport-v5"
+    }
+  ],
+  "scope": "Exact CPU counterfactual on the sealed v12 reset seeds. Mode 1 keeps the v3 public clearance-distance envelope, then retains only transport-coordinate residuals through stage-2 descent and terminal dwell, scaled by the existing public terminal force-release factor. Task-owned coordinates remain exact common, mode 0 remains unchanged, and both actors are called every tick. Development diagnosis only; no performance evidence or failure replacement."
+}

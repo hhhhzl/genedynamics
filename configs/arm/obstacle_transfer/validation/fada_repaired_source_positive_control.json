@@ -1,0 +1,24 @@
+{
+  "version": "transfer-source-positive-control-v1",
+  "task": "T1",
+  "method": "fada",
+  "method_identity": "FADA_repaired_source_checkpoint_before_target_lifting",
+  "task_config": "configs/arm/obstacle_transfer/baseline/fada.yaml",
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/baseline/fada/training/planner_repair_idm_target_budget_30s/instance_01/source_checkpoint.pt",
+    "sha256": "826e13ad93ab98fd32b29777b8173cd445be458685c4ae94872d6a4cf3b66ecf"
+  },
+  "execution": {"device": "cpu"},
+  "requests": [
+    {"robot": "panda", "requested_mode": 0, "reset_seed": 295100, "physical_initial_slot": 0, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 0, "reset_seed": 295101, "physical_initial_slot": 1, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 0, "reset_seed": 295102, "physical_initial_slot": 2, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 0, "reset_seed": 295103, "physical_initial_slot": 3, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 1, "reset_seed": 295104, "physical_initial_slot": 0, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 1, "reset_seed": 295105, "physical_initial_slot": 1, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 1, "reset_seed": 295106, "physical_initial_slot": 2, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "panda", "requested_mode": 1, "reset_seed": 295107, "physical_initial_slot": 3, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}}
+  ],
+  "output": "results/arm/obstacle_transfer/baseline/fada/validation/repaired_source_positive_control/seed_295100",
+  "plan_output": "results/arm/obstacle_transfer/baseline/fada/validation/repaired_source_positive_control/plan_seed_295100.json"
+}

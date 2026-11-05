@@ -10,7 +10,7 @@ from genedynamics.envs.adapters.transfer_task import FLAT_FIELDS
 from genedynamics.tasks.transfer.specs import task_spec
 from genedynamics.solvers.single.human2sim2robot.learning.task_env import ObjectTrajectoryTaskEnv
 from genedynamics.solvers.single.human2sim2robot import Human2Sim2RobotSolver
-from genedynamics.experiments.plugins.methods.transfer.human2sim2robot import PublicObjectTrajectoryPPOActor,VERSION
+from genedynamics.tasks.transfer.controllers.human2sim2robot import PublicObjectTrajectoryPPOActor,VERSION
 from genedynamics.solvers.single.human2sim2robot.backends.human2sim2robot_torch import native_lstm_config
 from genedynamics.solvers.single.cross_ebdm.learning.response import PUBLIC_FIELDS
 
@@ -51,5 +51,10 @@ def test_native_clock_player_and_public_continuation(device):
         expected=native.act(obs).detach().cpu().numpy().astype(np.float32)
         np.testing.assert_array_equal(actual,expected);np.testing.assert_array_equal(again,actual);np.testing.assert_array_equal(actor.observation(task.row),obs)
         assert actor.reference_index==env.reference_index[0]
+        count=len(actor.inference_seconds);calls=actor.irreversible_network_calls
+        np.testing.assert_array_equal(actor.act(task.row),actual)
+        assert len(actor.inference_seconds)==count and actor.irreversible_network_calls==calls
+    assert len(actor.inference_seconds)==len(positions) and actor.irreversible_network_calls==len(positions)
+    assert all(value>0 for value in actor.inference_seconds)
     bad=dict(task.row,private_carry=np.zeros(1))
     with pytest.raises(ValueError,match='exact public'):actor.act(bad)

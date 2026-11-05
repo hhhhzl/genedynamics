@@ -1,0 +1,74 @@
+{
+  "version": "four-task-paired-development-diagnosis-v2",
+  "name": "handoff_viability_regression_replay",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda"
+  },
+  "seed_anchor": 4682000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [1],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "ablation",
+      "key": "ungated_full",
+      "label": "ungated_full_handoff_viability",
+      "instances": ["instance_04"],
+      "task_actor_interface": "public-T2-handoff-viability-v7",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.008,
+        "reference_lag_zero_authority_m": 0.012,
+        "maximum_authority_decay_per_control": 0.05
+      }
+    },
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_handoff_viability",
+      "instances": ["instance_01"],
+      "task_actor_interface": "public-T2-handoff-viability-v7",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.008,
+        "reference_lag_zero_authority_m": 0.012,
+        "maximum_authority_decay_per_control": 0.05
+      }
+    },
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "label": "public_geometry_current",
+      "instances": "fixed"
+    }
+  ],
+  "scope": "GPU1-only bounded regression replay for the v7 augmented-state handoff. It must repair the sealed v6 timeout, preserve a sealed successful learned trace, and retain the public-geometry sentinel before any v13 failure-set replay. Mode 0, task limits, task-owned coordinates, candidate policies, and confirmation states remain unchanged. Development diagnosis only; no performance evidence or failure replacement."
+}

@@ -7,7 +7,14 @@ from pathlib import Path
 from .observation import FEATURE_VERSION, CONTEXT_DIM
 from .specs import task_spec
 
-PROTOCOL_VERSION = "cross-embodiment-t1-t3-public-v3"
+PROTOCOL_VERSIONS = {
+    "T1": "cross-embodiment-t1-t3-public-v3",
+    "T3": "cross-embodiment-t3-public-v6",
+}
+PROTOCOL_FILENAMES = {
+    "T1": "public_v3.json",
+    "T3": "public_v6.json",
+}
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -17,13 +24,35 @@ def canonical(value):
 
 def contract_path(task):
     spec = task_spec(task)
-    return ROOT / "configs/arm" / spec.name / "protocol/public_v3.json"
+    if spec.alias not in PROTOCOL_FILENAMES:
+        raise ValueError("only T1/T3 are frozen")
+    return ROOT / "configs/arm" / spec.name / "protocol" / PROTOCOL_FILENAMES[spec.alias]
 
 
 def current_contract(task):
     spec = task_spec(task)
     if spec.alias not in {"T1", "T3"}: raise ValueError("only T1/T3 are frozen")
-    return dict(version=PROTOCOL_VERSION, task=spec.name, alias=spec.alias,
+    if spec.alias == "T3":
+        return {
+            "version": PROTOCOL_VERSIONS["T3"],
+            "extends": [{
+                "path": "configs/arm/keyed_insertion_recovery/protocol/public_v5.json",
+                "sha256": "f5c26c3e36d8216e26c1db5ff17a244b03b67ee130b511dcdb2cea433c57cf88",
+            }],
+            "shared_execution": {
+                "version": "four-task-shared-execution-v3",
+                "insertion_lead_z_m": 0.015,
+                "retreat_release_version": "safe_settled_v1",
+                "retreat_release_predicate": (
+                    "Release after the existing height condition or after phase 3 is safe "
+                    "and settled for the existing guard clock."
+                ),
+            },
+            "scope": "Inherited unchanged by every main-table baseline, ablation and Cross-EBDM row.",
+            "status": "common_protocol_bound_requires_fresh_predeployment",
+            "final_test": False,
+        }
+    return dict(version=PROTOCOL_VERSIONS[spec.alias], task=spec.name, alias=spec.alias,
         physical_configs={robot: asdict(task_spec(task, robot=robot).config) for robot in ("panda", "xarm7")},
         public_schema=spec.describe()["observations"], excluded_policy_fields=spec.describe()["excluded_policy_fields"],
         shared_memory=dict(version=FEATURE_VERSION, dim=CONTEXT_DIM, clock="each observed20ms tick; T3 phase update every10ticks",
@@ -65,12 +94,28 @@ def current_contract(task):
 
 def load_frozen_contract(task):
     path = contract_path(task)
+    value, digest = load_contract_artifact(task, path.name)
+    if canonical(value) != canonical(current_contract(task)):
+        raise ValueError("physical/public contract drift: create a reviewed new version before running")
+    return value, digest
+
+
+def load_contract_artifact(task, filename):
+    """Load one immutable historical contract without treating it as current."""
+    spec = task_spec(task)
+    path = ROOT / "configs/arm" / spec.name / "protocol" / filename
     value = json.loads(path.read_text())
     digest = hashlib.sha256(canonical(value)).hexdigest()
     if path.with_suffix(".sha256").read_text().strip() != digest:
         raise ValueError("frozen contract digest changed")
-    if canonical(value) != canonical(current_contract(task)):
-        raise ValueError("physical/public contract drift: create a reviewed new version before running")
+    parents = value.get("extends", [])
+    if isinstance(parents, dict):
+        parents = [parents]
+    for parent in parents:
+        parent_path = ROOT / parent["path"]
+        parent_digest = hashlib.sha256(parent_path.read_bytes()).hexdigest()
+        if parent_digest != parent["sha256"]:
+            raise ValueError("frozen parent contract digest changed")
     return value, digest
 
 

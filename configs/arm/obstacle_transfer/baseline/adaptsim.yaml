@@ -1,0 +1,31 @@
+base: ../_base.yaml
+name: obstacle_transfer_adaptsim
+method: adaptsim
+output_dir: results/arm/obstacle_transfer/baseline/adaptsim
+metadata:
+  formal_experiment: false
+  formal_seeds: false
+  run_class: development
+method_params:
+  actor_binding:
+    version: transfer-actor-binding-v1
+    manifest: null
+    task: T1
+    family: main
+    binding_key: adaptsim
+    actor: adaptsim
+    status: instances_ready
+    instance_id: development_928505
+    method_identity: AdaptSim_task_adapted_CEM
+    checkpoint:
+      path: results/arm/obstacle_transfer/baseline/adaptsim/training/meta_coordinate_ledger_replay_928505/inference_and_policy.pt
+      sha256: 6861746e088ae1690d96dacd021f9a801279d4f82defcb7aa9d40830c1ba17c4
+    training_recipe:
+      path: results/arm/obstacle_transfer/baseline/adaptsim/training/meta_coordinate_ledger_replay_928505/recipe.json
+      sha256: ec8cdb6857ac7fcc374b7f78b6ed7328a6c820290b0606abc104de6c3f6e2246
+    training_report:
+      path: results/arm/obstacle_transfer/baseline/adaptsim/training/meta_coordinate_ledger_replay_928505/report.json
+      sha256: c15995927702b88b2c33f4cf2d37db2b78b5a58785ee9bac584896b1684875f1
+    training_audit:
+      path: results/arm/obstacle_transfer/baseline/adaptsim/training/meta_coordinate_ledger_replay_928505/candidate_ledger_audit.json
+      sha256: fff0e4314883ad9e0750c9a40eb6eb99c94b5366af8f02082acd847331554466

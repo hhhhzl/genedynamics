@@ -1,0 +1,50 @@
+{
+  "base_factorial_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/transport_completion_factorial.json",
+    "sha256": "cfef6bdb794834140cb99011d13d0923c29d3217c3f533fea7896fef84e238be"
+  },
+  "overrides": {
+    "version": "t4-transport-completion-same-start-factorial-v1",
+    "policy_sets": {
+      "transport": {
+        "training_report": {
+          "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_anchored/checkpoints/report.json",
+          "sha256": "3999e975a031856bbb25c3e71d08b1ee8d31f3d6c9f0cfac222b472d0d9127b0"
+        },
+        "projection_qualification": {
+          "config": {
+            "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/completion_same_start_anchored_projection_preflight.json",
+            "sha256": "e30f490e3eca60c1aa8b10643f23bc4d6873f839ac160ac1d22afd78ec8b370b"
+          },
+          "report": {
+            "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/completion_same_start_anchored/projection_preflight/report.json",
+            "sha256": "67840db671db2a5a842f729d470023e14bc87b03a456cc921a5677ed3c46867d"
+          }
+        },
+        "method_identity": "same_start_response_anchored",
+        "binding_key": "cross_ebdm",
+        "control_policy": "same_start_terminal_checkpoint_plus_shared_projection"
+      },
+      "task_only": {
+        "training_report": {
+          "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_same_start_task_only/checkpoints/report.json",
+          "sha256": "137d7e87311370f104a2e171e10b459dc46ced737b354e106f53e150a7d94fbf"
+        },
+        "projection_qualification": {
+          "config": {
+            "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/completion_same_start_task_only_projection_preflight.json",
+            "sha256": "d21bc329ee166c02a8de19fe145306bc65bf1f18534dbd40fcca228baabedbb8"
+          },
+          "report": {
+            "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/completion_same_start_task_only/projection_preflight/report.json",
+            "sha256": "f9942fc69ac703c3ee32f959a2fd05350d9e008c4a1a1bc5796ea0a7bf21c643"
+          }
+        },
+        "method_identity": "same_start_task_only",
+        "binding_key": "task_only",
+        "control_policy": "same_start_terminal_checkpoint_plus_shared_projection"
+      }
+    },
+    "output": "results/quadruped/mobile_keyed_insertion_recovery/validation/transport_completion_factorial/same_start_response_anchoring_gpu1"
+  }
+}

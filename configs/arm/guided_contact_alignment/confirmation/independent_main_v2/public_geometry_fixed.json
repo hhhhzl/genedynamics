@@ -1,0 +1,26 @@
+{
+  "cell_admission": {
+    "path": "results/arm/guided_contact_alignment/validation/independent_main_table_admission_v2/public_geometry.json",
+    "sha256": "19a213a05bae9e8b9167b660470076b90ab38b969e1097f2d59dca37baf6b376"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "instance_id": "fixed",
+  "method": "public_geometry",
+  "method_identity": "public_geometry",
+  "output": "results/arm/guided_contact_alignment/baseline/public_geometry/confirmation/independent_main_v2/fixed",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/public_geometry/confirmation/independent_main_v2/fixed_plan.json",
+  "request_roster": {
+    "path": "configs/arm/guided_contact_alignment/protocol/independent_main_table_requests_v2.json",
+    "sha256": "fa3947b55097bd988f2f6d2de7b0bc7816213c6dd84ae719e554bb71fc2bfc1d"
+  },
+  "task": "T2",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/baseline/public_geometry.yaml",
+    "sha256": "8a3384efc02d477282b10d4a7aeec76484230b2626e4cb216883bd14b4c7ee6a"
+  },
+  "version": "transfer-independent-main-table-evaluation-v2"
+}

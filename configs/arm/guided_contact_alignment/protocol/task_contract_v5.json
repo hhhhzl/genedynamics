@@ -1,0 +1,89 @@
+{
+  "version": "cross-embodiment-t2-shared-execution-v5",
+  "task": "guided_contact_alignment",
+  "alias": "T2",
+  "extends": [
+    {
+      "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v4.json",
+      "sha256": "b9b3828e1705af00587a2170e11eb14ab4a94a5059bcbaa414c64056f9eb1c60"
+    }
+  ],
+  "shared_execution": {
+    "version": "four-task-shared-execution-v5",
+    "physics_dt_seconds": 0.001,
+    "control_dt_seconds": 0.02,
+    "physics_substeps_per_control": 20,
+    "contact_time_constant_seconds": 0.04,
+    "contact_damping_ratio": 2.0,
+    "execution_profile": "substep_wrench_governor",
+    "strict_evaluator_version": "strict-guide-substep-v4",
+    "guide_mode0_transit_speed_mps": 0.00675,
+    "guide_mode0_post_outlet_route": "concurrent_monotone_lift_v3",
+    "guide_reference_admission": "response_normalized_completion",
+    "guide_controller_version": "public-T2-response-normalized-hybrid-force-v50",
+    "guide_route_version": "public-T2-response-normalized-guide-route-v4",
+    "guide_clearance_route_version": "public-T2-response-normalized-clearance-traverse-route-v3",
+    "terminal_actor_interface": "public-T2-clearance-progress-authority-v3",
+    "surface_force_target_N": 5.0,
+    "terminal_surface_force_target_N": 6.0,
+    "mode0_preoutlet_stiffness_ramp_m": 0.002,
+    "mode0_transition_spring_budget_N": 8.8,
+    "log_stiffness_limit": 1.5,
+    "tangential_wrench_limit_N": 16.0,
+    "timeout_seconds": 20.0,
+    "terminal_position_tolerance_m": 0.002,
+    "terminal_orientation_tolerance_rad": 0.03490658503988659,
+    "terminal_dwell_controls": 15,
+    "force_limit_N": 25.0,
+    "lateral_force_limit_N": 10.0
+  },
+  "controller_observation_contract": {
+    "allowed": [
+      "tcp_position",
+      "tcp_rotation",
+      "goal_position",
+      "goal_rotation",
+      "reference_position",
+      "tcp_twist",
+      "measured_wrench",
+      "elapsed_seconds"
+    ],
+    "forbidden": [
+      "delay_steps",
+      "payload_mass",
+      "servo_gain",
+      "evaluator_state",
+      "method_identity"
+    ]
+  },
+  "qualification": {
+    "config": {
+      "path": "configs/arm/guided_contact_alignment/validation/clearance_progress_release_gate.json",
+      "sha256": "a2383af5ef15933bdca2e74a0aec49026791221a4f39650e714b7845ecd15eae"
+    },
+    "report": {
+      "path": "results/arm/guided_contact_alignment/validation/clearance_progress_release_gate/report.json",
+      "sha256": "4ff64425aa8b1a8532fc02903777c667a36a24e3076bc53505d7e03eb9c5a04e"
+    },
+    "independent_audit": {
+      "path": "results/arm/guided_contact_alignment/validation/clearance_progress_release_gate/independent_audit.json",
+      "sha256": "348a30ad79dbd63dc3715b7c9462492458c12af4a27804cbea8a727d1a199206"
+    },
+    "episodes": 72,
+    "public_successes": 8,
+    "cross_ebdm_successes": 64,
+    "constraint_violations": 0,
+    "execution_errors": 0,
+    "evidence_audits_passed": 72,
+    "confirmation_states_opened": 0
+  },
+  "known_limitations": {
+    "exact_replay": "The selected interface changes one v12 ungated-full success to timeout while removing all 18 paired overforces and preserving Cross-EBDM at 64/64. The timeout remains in the ablation denominator.",
+    "terminal_selector_candidates": "v4, v5 and v6 failed the frozen exact regression preflight and are not release interfaces.",
+    "performance_claim": "Qualification establishes deployment compatibility only and does not show a transport performance advantage."
+  },
+  "scope": "Inherited unchanged by every executable T2 main-table baseline, ablation and Cross-EBDM row through the task-local base and canonical actor factory. Public geometry is the common controller itself and is not redundantly wrapped.",
+  "historical_results": "All T2 runs without this clearance-progress interface remain invalid for the new main table.",
+  "status": "common_protocol_bound_requires_fresh_predeployment",
+  "final_test": false
+}

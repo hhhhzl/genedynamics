@@ -1,0 +1,55 @@
+{
+  "version": "four-task-behavioral-predeployment-v11",
+  "task": "T3",
+  "supersedes": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/predeployment_v10.json",
+    "sha256": "f05b43a09ec5e6e8b8113e89bdebf8ddc0a0216cebc8bbecf7bc691783d4a44e"
+  },
+  "shared_task_contract": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/public_v6.json",
+    "sha256": "ba1e0aaaaf0591decba128f40e666394ba43c729b16d5de4c817dff617bf8a96"
+  },
+  "actor_manifest": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/actor_bindings.json",
+    "sha256": "94fdcb9e62b71c4e1d653ecb5489a17dcde36743d20483b2beabcc74bcccd460"
+  },
+  "seed_anchor": 9275000,
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_index": 1,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "reset_slots_per_cell": 2,
+  "requested_modes": [0, 1],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "gate": {
+    "require_all_mode_correct_task_success": true,
+    "require_zero_constraint_violations": true,
+    "require_evidence_reaudit": true,
+    "failure_replacement": false
+  },
+  "source_admission": "Validate every method's declared source or training artifact and SHA through the task-local actor manifest. Retain algorithm and external-resource rejections; never replace a rejected row or reuse a prior outcome.",
+  "scope": "Fresh physical-GPU1 qualification of every executable T3 main, baseline and ablation row under the unchanged public v6 task contract and v21 actor manifest. It replaces no prior result and uses new reset seeds after the incomplete GPU0 v11 confirmation. Baseline and ablation task failures remain in their denominators. This is execution-compatibility evidence, not paper performance evidence."
+}

@@ -1,0 +1,157 @@
+{
+  "version": "four-task-paired-development-diagnosis-v2",
+  "name": "stage_debt_viability_failure_set_replay",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda"
+  },
+  "seed_anchor": 4692000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_stage_debt_viability",
+      "instances": [
+        "instance_07"
+      ],
+      "task_actor_interface": "public-T2-stage-debt-viability-v8",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.006,
+        "reference_lag_zero_authority_m": 0.01,
+        "maximum_authority_decay_per_control": 0.05,
+        "clearance_debt_full_controls": 343,
+        "clearance_debt_zero_controls": 371
+      }
+    },
+    {
+      "family": "ablation",
+      "key": "gated_full",
+      "label": "gated_full_stage_debt_viability",
+      "instances": [
+        "instance_07"
+      ],
+      "task_actor_interface": "public-T2-stage-debt-viability-v8",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.006,
+        "reference_lag_zero_authority_m": 0.01,
+        "maximum_authority_decay_per_control": 0.05,
+        "clearance_debt_full_controls": 343,
+        "clearance_debt_zero_controls": 371
+      }
+    },
+    {
+      "family": "main",
+      "key": "response_mpc",
+      "label": "response_mpc_stage_debt_viability",
+      "instances": [
+        "instance_04"
+      ],
+      "task_actor_interface": "public-T2-stage-debt-viability-v8",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.006,
+        "reference_lag_zero_authority_m": 0.01,
+        "maximum_authority_decay_per_control": 0.05,
+        "clearance_debt_full_controls": 343,
+        "clearance_debt_zero_controls": 371
+      }
+    },
+    {
+      "family": "ablation",
+      "key": "matching_no_band",
+      "label": "matching_no_band_stage_debt_viability",
+      "instances": [
+        "instance_04"
+      ],
+      "task_actor_interface": "public-T2-stage-debt-viability-v8",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.006,
+        "reference_lag_zero_authority_m": 0.01,
+        "maximum_authority_decay_per_control": 0.05,
+        "clearance_debt_full_controls": 343,
+        "clearance_debt_zero_controls": 371
+      }
+    },
+    {
+      "family": "ablation",
+      "key": "band_only",
+      "label": "band_only_stage_debt_viability",
+      "instances": [
+        "instance_04"
+      ],
+      "task_actor_interface": "public-T2-stage-debt-viability-v8",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.006,
+        "reference_lag_zero_authority_m": 0.01,
+        "maximum_authority_decay_per_control": 0.05,
+        "clearance_debt_full_controls": 343,
+        "clearance_debt_zero_controls": 371
+      }
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "task_only_stage_debt_viability_comparator",
+      "instances": [
+        "instance_04",
+        "instance_07"
+      ],
+      "task_actor_interface": "public-T2-stage-debt-viability-v8",
+      "task_actor_interface_parameters": {
+        "completion_reserve_controls": 150,
+        "reserve_taper_controls": 100,
+        "reference_lag_full_authority_m": 0.006,
+        "reference_lag_zero_authority_m": 0.01,
+        "maximum_authority_decay_per_control": 0.05,
+        "clearance_debt_full_controls": 343,
+        "clearance_debt_zero_controls": 371
+      }
+    },
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "label": "public_geometry_current",
+      "instances": "fixed"
+    }
+  ],
+  "scope": "GPU1-only exact-request replay of the five unique v13 mode-1 terminal-handoff failures, their task-only comparators, and all four public-geometry sentinels under the v8 stage-debt handoff. The 343-371 control clearance-debt interval is frozen from the successful v13 stage-0 residence envelope; the 6-10 mm lag interval is a development revision. This cannot replace the rejected v13 qualification or open confirmation states."
+}

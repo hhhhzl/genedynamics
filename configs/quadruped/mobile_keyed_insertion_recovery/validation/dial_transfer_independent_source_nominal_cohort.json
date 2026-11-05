@@ -1,0 +1,42 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "first_instance_audit": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/dial/validation/source_nominal_actor_screen_3301400000/independent_audit.json",
+    "sha256": "45a475487da024ebecfb3f105706d1d8631f74ef7e31960cfed533588224c99d"
+  },
+  "first_instance_report": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/dial/validation/source_nominal_actor_screen_3301400000/report.json",
+    "sha256": "707836f927ceccee4bd2fd5e798817e421f74da3c8a07f76128b43f3a7d96d47"
+  },
+  "formal_request_seed_access": 0,
+  "instance_ids": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "maximum_cohort_physical_episodes": 64,
+  "maximum_new_physical_episodes": 56,
+  "method": "dial_transfer",
+  "method_identity": "DIAL_MPC",
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/dial/validation/independent_source_nominal_cohort_v1",
+  "source_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/method_source_nominal_actor_roster_native.json",
+    "sha256": "70dd4758752e671372132e80d0890ac2d2e7bf18c6bffa00fcffd6d7caa5b50a"
+  },
+  "task": "T4",
+  "task_config": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/dial.yaml",
+    "sha256": "558ce5e5239a43b7bd047147e50c65eab6b72353160d248d47bb3d34f5a77f47"
+  },
+  "version": "transfer-legacy-independent-source-nominal-cohort-v1"
+}

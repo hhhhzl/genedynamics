@@ -1,0 +1,59 @@
+{
+  "version": "fada-planner-repair-idm-pilot-config-v1",
+  "robot": "xarm7",
+  "evaluation_windows": 256,
+  "wall_seconds": 600,
+  "source_training": {
+    "updates": 1000,
+    "batch_size": 64,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.01,
+    "planner_obs_loss_coef": 0.1,
+    "offline_ratio": 0.2,
+    "online_real_ratio": 0.5,
+    "log_interval": 100
+  },
+  "target_adaptation": {
+    "updates": 1000,
+    "batch_size": 64,
+    "finetune_method": "full",
+    "rank": 8,
+    "alpha": 16.0,
+    "dropout": 0.05,
+    "target_scope": "encoder_decoder_qkv",
+    "learning_rate": 0.0001,
+    "weight_decay": 0.001,
+    "grad_clip": 0.5,
+    "horizon_gamma": 0.0,
+    "log_interval": 100
+  },
+  "acceptance": {
+    "minimum_source_planner_improvement_fraction": 0.5,
+    "maximum_source_idm_mse_ratio": 1.5,
+    "maximum_target_idm_mse_ratio": 1.0
+  },
+  "task": "T3",
+  "seed": 181300,
+  "source_checkpoint": {
+    "path": "results/_development/p4_completion_20261015/results/arm/keyed_insertion_recovery/qualification/p4_fada_native_source_v3/level_source/seed_81000/stage_6/checkpoint.pt",
+    "sha256": "7de582170d4bc0071b9587621b4d35b14c0a842d3390bc216d492b81d8e38b4e"
+  },
+  "source_qualification": {
+    "path": "results/_development/p4_completion_20261015/results/arm/keyed_insertion_recovery/qualification/p4_fada_native_source_v3/level_source/seed_81000/report.json",
+    "sha256": "d8bba80c77dad2491aa73af142d01734f1e56694577cadce3dd948c2bbaac0eb"
+  },
+  "source_data_manifest": {
+    "path": "results/_development/p4_completion_20261015/results/arm/keyed_insertion_recovery/qualification/p4_fada_native_source_v3/level_source/seed_81000/data_manifest.json",
+    "sha256": "70f635a4396c3402f381871a77160456d0967996aeb3c2ccaf52690709d787b4"
+  },
+  "target_data_manifest": {
+    "path": "results/_development/p4_governed_support_20261015/results/arm/keyed_insertion_recovery/validation/cross_ebdm_shared_weak_logs/level_B_log/seed_32300/B_log/budget_120.json",
+    "sha256": "a5dd9dca3b6362acbf83b21009a7da86fc49a20b1aec7498fd4fcea174b37932"
+  },
+  "closed_loop_attribution": {
+    "path": "results/arm/keyed_insertion_recovery/validation/fada_closed_loop_attribution/frozen_instance_01_mode_0_cpu_full/report.json",
+    "sha256": "7b256225764bd2acbb94354079c0fb69be1564c47ded9a8b68daf552c63ddc17"
+  },
+  "output": "results/arm/keyed_insertion_recovery/baseline/fada/training/planner_repair_idm_target_budget_120s/instance_01",
+  "plan_output": "results/arm/keyed_insertion_recovery/baseline/fada/training/planner_repair_idm_target_budget_120s/plan_instance_01.json"
+}

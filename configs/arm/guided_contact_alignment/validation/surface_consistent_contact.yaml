@@ -1,0 +1,14 @@
+base: anisotropic_predictive_contact.yaml
+name: guided_contact_alignment_surface_consistent_contact
+output_dir: results/arm/guided_contact_alignment/validation/surface_consistent_contact
+seeds:
+- 930254
+- 930255
+- 930256
+- 930257
+method_params:
+  actor_binding:
+    reference_version: public_surface_consistent_guide_contact_v7
+metadata:
+  protocol: transfer_surface_consistent_contact
+  selection_rule: require both requested xArm modes on all four fresh resets to satisfy the unchanged strict contact, force, mode, and deadline criteria

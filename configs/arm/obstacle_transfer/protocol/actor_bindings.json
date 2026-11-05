@@ -1,0 +1,599 @@
+{
+  "ablation": {
+    "band_only": {
+      "actor": "cross_ebdm",
+      "method_identity": "band_only",
+      "policy_set": "ablation/band_only",
+      "response_set": "response_models",
+      "sample_stream_set": "band_only",
+      "status": "instances_ready"
+    },
+    "frozen_warm": {
+      "actor": "cross_ebdm",
+      "method_identity": "frozen_warm",
+      "policy_set": "ablation/frozen_warm",
+      "response_set": "response_models",
+      "sample_stream_set": "frozen_warm",
+      "status": "instances_ready"
+    },
+    "gated_full": {
+      "actor": "cross_ebdm",
+      "method_identity": "gated_full",
+      "policy_set": "ablation/gated_full",
+      "response_set": "response_models",
+      "sample_stream_set": "gated_full",
+      "status": "instances_ready"
+    },
+    "matching_no_band": {
+      "actor": "cross_ebdm",
+      "method_identity": "matching_no_band",
+      "policy_set": "ablation/matching_no_band",
+      "response_set": "response_models",
+      "sample_stream_set": "matching_no_band",
+      "status": "instances_ready"
+    },
+    "task_only": {
+      "actor": "cross_ebdm",
+      "method_identity": "task_only",
+      "policy_set": "ablation/task_only",
+      "response_set": "response_models",
+      "sample_stream_set": "task_only",
+      "status": "instances_ready"
+    },
+    "ungated_full": {
+      "actor": "cross_ebdm",
+      "method_identity": "ungated_full",
+      "policy_set": "ablation/ungated_full",
+      "response_set": "response_models",
+      "sample_stream_set": "ungated_full",
+      "status": "instances_ready"
+    }
+  },
+  "ablation_inventory": {
+    "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/protocol/p6_aligned_ablation_inventory_v1/level_read_only/report.json",
+    "sha256": "9aa4c48e3d7a134855a87c50e166cc4e6d0cfcf4acaa6ca07cde1cf20ac3d98a"
+  },
+  "artifacts": {
+    "checkpoint_sets": {
+      "fada": {
+        "instance_01": {
+          "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/validation/p4_fada_robust_full_target_v1/level_B_log_0_30_60_120/seed_139300/budget_60/checkpoint.pt",
+          "sha256": "6dfc5621cfff64cae48e4f3eb793536b2a349ba19e903215bbee87d96154d8de"
+        },
+        "instance_02": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_fada_independent_instances_v1/level_B_log_60/instance_02/T1/budget_60/checkpoint.pt",
+          "sha256": "0942a6fbb985690397c25bb956deef19eb07e68ec9577d9efb170caa3a86543c"
+        },
+        "instance_03": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_fada_independent_instances_v1/level_B_log_60/instance_03/T1/budget_60/checkpoint.pt",
+          "sha256": "b446aa5e1e6b83203e869ace335afaabb835597e9e8b01013faab6566ceca08c"
+        },
+        "instance_04": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_fada_independent_instances_v1/level_B_log_60/instance_04/T1/budget_60/checkpoint.pt",
+          "sha256": "ce0d5a54590c4225babd7a3b8dcbe0eb6473d858687e4676e4f049682b22b056"
+        },
+        "instance_05": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_fada_independent_instances_v1/level_B_log_60/instance_05/T1/budget_60/checkpoint.pt",
+          "sha256": "020de661297c8e027b9258841904a5924e969d8adf7a437e7576c660c96af5f2"
+        },
+        "instance_06": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_fada_independent_instances_v2/level_B_log_60/instance_06/T1/budget_60/checkpoint.pt",
+          "sha256": "ff7fe70003d7316997704adc1dfcbb44a9089da3e03fe6d2d854b7cc6f59f011"
+        },
+        "instance_07": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_fada_independent_instances_v2/level_B_log_60/instance_07/T1/budget_60/checkpoint.pt",
+          "sha256": "1874b9c0bb2ac0307c71ee49c6afd2d5f093aa913bf52b2342c004c7a59f4fb2"
+        },
+        "instance_08": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_fada_independent_instances_v2/level_B_log_60/instance_08/T1/budget_60/checkpoint.pt",
+          "sha256": "dda46b99d0f3a02f232c1a9492b6a5b867ebd2fdfe2faa96b48bc059fafe164d"
+        }
+      }
+    },
+    "fixed_response_companion_policy": {
+      "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/validation/p4_robust_shared_dense_v1/level_B_log_0_30_60_120/seed_139200/budget_60/fit/task_only/checkpoint.pt",
+      "sha256": "2d67f1582c77f973a1e7d1f47bc96610cd972573c4ced8e9a46a00cceca211df"
+    },
+    "known_body_path": [
+      0.5678590883444584,
+      0.6581064010126911,
+      0.6270149599348386,
+      0.6097529670246064
+    ],
+    "policy_sets": {
+      "ablation/band_only": {
+        "instance_01": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_legacy_instance_v1/level_B_log_60/instance_01/T1/band_only/checkpoint.pt",
+          "sha256": "cd74d68e3d380e6b18c78d00f79548e268ce2fb19830b561bc2cb82d2d60c1f7"
+        },
+        "instance_02": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_02/T1/band_only/checkpoint.pt",
+          "sha256": "20149e89b3e2733a9f559cd0c1a012892aee05ad2aae567683105c964f7d649d"
+        },
+        "instance_03": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_03/T1/band_only/checkpoint.pt",
+          "sha256": "07eec743b2906589f3ef3a8ac7681a05c92010710a971d309227775c91ae6aa5"
+        },
+        "instance_04": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_04/T1/band_only/checkpoint.pt",
+          "sha256": "6e25382cb6a42760c0860a81bd37f0a9ea00d590cf637fae644b73f5398a708d"
+        },
+        "instance_05": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_05/T1/band_only/checkpoint.pt",
+          "sha256": "fe6cb6ff13cf2d7a7bee466affbf65eaf79da46894aa9116f5cc2b8bc78547e3"
+        },
+        "instance_06": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v2/level_B_log_60/instance_06/T1/band_only/checkpoint.pt",
+          "sha256": "58c9a4dadceb252044c63c2169fd027ad237813daf2d2c91b05398a49ce40e66"
+        },
+        "instance_07": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v2/level_B_log_60/instance_07/T1/band_only/checkpoint.pt",
+          "sha256": "e44a4ab1d7313c59671ac545cddfb8ecad4172cb92ed036848701f415e3ff712"
+        },
+        "instance_08": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v2/level_B_log_60/instance_08/T1/band_only/checkpoint.pt",
+          "sha256": "976f4d5e96d5fde33ffd01082220a35879952dc4443242f0245324b812838f1c"
+        }
+      },
+      "ablation/frozen_warm": {
+        "instance_01": {
+          "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/validation/p4_robust_shared_dense_v1/level_B_log_0_30_60_120/seed_139200/budget_60/fit/common_warmup/checkpoint.pt",
+          "sha256": "eca22b0045f30a723b374e22eac7980abb6b5cf95fcf6665ae3e1ada67e2a868"
+        },
+        "instance_02": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v1/level_B_log_60/instance_02/T1/paired_base/budget_60/fit/common_warmup/checkpoint.pt",
+          "sha256": "d9078bf45dc43b31c97299ce4b22e32c74fb6821460f059fc05c7500223750b3"
+        },
+        "instance_03": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/T1/paired_base/budget_60/fit/common_warmup/checkpoint.pt",
+          "sha256": "29750e6348d1dab0d89931c2102a80895ce00bbb20f8e8167ea98da6898f0750"
+        },
+        "instance_04": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/T1/paired_base/budget_60/fit/common_warmup/checkpoint.pt",
+          "sha256": "7efaf3ab3ce9db3c7beb7990ec4c05f2a735ee433dad932eec1c1c76863e8ebf"
+        },
+        "instance_05": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/T1/paired_base/budget_60/fit/common_warmup/checkpoint.pt",
+          "sha256": "421cbb5ad5e909ea33691211ce4eff3b000b5d26405bd47c1c83d45887ef8816"
+        },
+        "instance_06": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/T1/paired_base/budget_60/fit/common_warmup/checkpoint.pt",
+          "sha256": "4f790094d0fcb20da32b76f14cc28a8cdcc9998fb1582d3e856f1f9274928479"
+        },
+        "instance_07": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/T1/paired_base/budget_60/fit/common_warmup/checkpoint.pt",
+          "sha256": "ed790e203cd2e562463e6e664d60b4bc602444fe0a2043fd618061fd9f0431ec"
+        },
+        "instance_08": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/T1/paired_base/budget_60/fit/common_warmup/checkpoint.pt",
+          "sha256": "b89ff3940c2a951a396c049292a36a680066159fa0c659777297aa8f5883fdbd"
+        }
+      },
+      "ablation/gated_full": {
+        "instance_01": {
+          "path": "results/_development/p5p6_method_completion_20261017/results/cross_embodiment/four_task_benchmark/method/p5p6_task_compatible_gate_arm_training_v1/level_B_log_60/seed_224100/T1/checkpoint.pt",
+          "sha256": "a3c29b7fbd79a6fab21e693391413822a69c4144e46b15f59c842bd37742e0d5"
+        },
+        "instance_02": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_02/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "190073e934b31341f7e669085249bdc17fc012a8a8795342815b4fa2bc18b305"
+        },
+        "instance_03": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "52fabf1a9695a368d3646a65c899e5b7d065f2f21625d91c70d37c79809a5f17"
+        },
+        "instance_04": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "b74f03a02d04830829401057def843e1651ece729f35428d1112187ae33cc882"
+        },
+        "instance_05": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "24c91997cdcdf6a7f6aaf01b5a89f66b66aafc3bcafe43605d7dd73fd2dbb002"
+        },
+        "instance_06": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "8ee245d33ecc77a7c330e2c6c25875eb96b2360ff3435f2f1c3394cce14dd270"
+        },
+        "instance_07": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "2df19b11f887d6de046783e34c7e9ac08760b0284b27b5cc9abd0da22c8b2718"
+        },
+        "instance_08": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "1aaa1b2aaa97be03e94269eb5701740ce3df7911b1fceac548c11bd87f5f47f9"
+        }
+      },
+      "ablation/matching_no_band": {
+        "instance_01": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_legacy_instance_v1/level_B_log_60/instance_01/T1/matching_no_band/checkpoint.pt",
+          "sha256": "ff59bbaaf154c61ccdd34c2d8e0c0c9008a4c34de8a600693a3578000577a40d"
+        },
+        "instance_02": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_02/T1/matching_no_band/checkpoint.pt",
+          "sha256": "47532e1a7cf58f9eceefc2b08ba1e488bd8587d5138d2bf5442a1de0c4fc493b"
+        },
+        "instance_03": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_03/T1/matching_no_band/checkpoint.pt",
+          "sha256": "e257e2faaf57cf304b6d8c0ba22f5ab626d9add909413f67abac3d4b9c832f01"
+        },
+        "instance_04": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_04/T1/matching_no_band/checkpoint.pt",
+          "sha256": "df6303f1b3caa5061217a4345ecd6922cdf3139abfa2a657938ea47e0b21d90f"
+        },
+        "instance_05": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_05/T1/matching_no_band/checkpoint.pt",
+          "sha256": "3c26506a9edfc85ab3516ff4cc45f26566370b550877655d444b6aad86b1d3fa"
+        },
+        "instance_06": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v2/level_B_log_60/instance_06/T1/matching_no_band/checkpoint.pt",
+          "sha256": "0756d90a1a307df3e7b3ece70d864ea0a4524c618fa32fc13392438087a4740b"
+        },
+        "instance_07": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v2/level_B_log_60/instance_07/T1/matching_no_band/checkpoint.pt",
+          "sha256": "0f4f29ab694e466ec06848632dbb011c9b06e6bfe24e3b421372e71b17e941ec"
+        },
+        "instance_08": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v2/level_B_log_60/instance_08/T1/matching_no_band/checkpoint.pt",
+          "sha256": "f97ad4184f54a726a08e57fb9b5fdf8913fb7d3b862325b88b1619bc2ab984c0"
+        }
+      },
+      "ablation/task_only": {
+        "instance_01": {
+          "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/validation/p4_robust_shared_dense_v1/level_B_log_0_30_60_120/seed_139200/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "2d67f1582c77f973a1e7d1f47bc96610cd972573c4ced8e9a46a00cceca211df"
+        },
+        "instance_02": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v1/level_B_log_60/instance_02/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "69a50a84499d20e7c19fcc30ede9424b90b351b23a75f7aa5ba1345f35cca52a"
+        },
+        "instance_03": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "ea4abae37bec5e4fdad0ec5535318fbb9b1498a732632cc51b294b53fc5c25a3"
+        },
+        "instance_04": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "255d9bde05160f9fe43662088af59bef7a3324edc0ede64e1f96c796e0ce22b3"
+        },
+        "instance_05": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "1f0354a83a33f7f19320b27612a9e2f225f9e6c6f86fdfc1fe00f2867dcc70f7"
+        },
+        "instance_06": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "d056b701ceb26720a6064061b2b83dfd55a7dc504dd2774e75a858382131f0de"
+        },
+        "instance_07": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "3fd5923b78ef5a818c40063d4b3d60b98e15cc66dce8051c84b1530ca905914b"
+        },
+        "instance_08": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "da8c62e4c1e6c0228c84321b1b255ee3d90a0c07e7fde69f6bcb8e25797e50f3"
+        }
+      },
+      "ablation/ungated_full": {
+        "instance_01": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_legacy_instance_v1/level_B_log_60/instance_01/T1/ungated_full/checkpoint.pt",
+          "sha256": "1b650b684e224fc475ce0b492f4e3a79b39fb16c123687e435f6a3c551c1c70f"
+        },
+        "instance_02": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_02/T1/ungated_full/checkpoint.pt",
+          "sha256": "8200e90b4b8f16b6dfb24d583b8e1aea5286dc0c4ecd0a937b31743a5e4e6bae"
+        },
+        "instance_03": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_03/T1/ungated_full/checkpoint.pt",
+          "sha256": "6eb342ba5677825418a3b4f21160c4fe6c62d089a6c29cb36db1d1cfb06253d8"
+        },
+        "instance_04": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_04/T1/ungated_full/checkpoint.pt",
+          "sha256": "0fefcfcd394fab991455302607e8a218eb83d6995991288c80d24a02f2c177ad"
+        },
+        "instance_05": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v1/level_B_log_60/instance_05/T1/ungated_full/checkpoint.pt",
+          "sha256": "f0ac829759248293db2d99c3b12648cbacd7a5d41adf68719c262d8d9046c270"
+        },
+        "instance_06": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v2/level_B_log_60/instance_06/T1/ungated_full/checkpoint.pt",
+          "sha256": "9945f9feeeae300cd9b795dd2e0ced22c175c90ecaabc053832d4dc74839b2e0"
+        },
+        "instance_07": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v2/level_B_log_60/instance_07/T1/ungated_full/checkpoint.pt",
+          "sha256": "b66f9258361b143aa8e6005dd2c30322f3bf6d3195cb563334cd4f5c5e3f5185"
+        },
+        "instance_08": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_aligned_ablation_instances_v2/level_B_log_60/instance_08/T1/ungated_full/checkpoint.pt",
+          "sha256": "2d1f00271661b2870d308e725f02a54c97c33c7bb8f7577a3576e49e2dd1124b"
+        }
+      },
+      "cross_ebdm": {
+        "instance_01": {
+          "path": "results/_development/p5p6_method_completion_20261017/results/cross_embodiment/four_task_benchmark/method/p5p6_task_compatible_gate_arm_training_v1/level_B_log_60/seed_224100/T1/checkpoint.pt",
+          "sha256": "a3c29b7fbd79a6fab21e693391413822a69c4144e46b15f59c842bd37742e0d5"
+        },
+        "instance_02": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_02/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "190073e934b31341f7e669085249bdc17fc012a8a8795342815b4fa2bc18b305"
+        },
+        "instance_03": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "52fabf1a9695a368d3646a65c899e5b7d065f2f21625d91c70d37c79809a5f17"
+        },
+        "instance_04": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "b74f03a02d04830829401057def843e1651ece729f35428d1112187ae33cc882"
+        },
+        "instance_05": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "24c91997cdcdf6a7f6aaf01b5a89f66b66aafc3bcafe43605d7dd73fd2dbb002"
+        },
+        "instance_06": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "8ee245d33ecc77a7c330e2c6c25875eb96b2360ff3435f2f1c3394cce14dd270"
+        },
+        "instance_07": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "2df19b11f887d6de046783e34c7e9ac08760b0284b27b5cc9abd0da22c8b2718"
+        },
+        "instance_08": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/gated_v2_arm/T1/checkpoint.pt",
+          "sha256": "1aaa1b2aaa97be03e94269eb5701740ce3df7911b1fceac548c11bd87f5f47f9"
+        }
+      },
+      "task_only": {
+        "instance_01": {
+          "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/validation/p4_robust_shared_dense_v1/level_B_log_0_30_60_120/seed_139200/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "2d67f1582c77f973a1e7d1f47bc96610cd972573c4ced8e9a46a00cceca211df"
+        },
+        "instance_02": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v1/level_B_log_60/instance_02/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "69a50a84499d20e7c19fcc30ede9424b90b351b23a75f7aa5ba1345f35cca52a"
+        },
+        "instance_03": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "ea4abae37bec5e4fdad0ec5535318fbb9b1498a732632cc51b294b53fc5c25a3"
+        },
+        "instance_04": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "255d9bde05160f9fe43662088af59bef7a3324edc0ede64e1f96c796e0ce22b3"
+        },
+        "instance_05": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "1f0354a83a33f7f19320b27612a9e2f225f9e6c6f86fdfc1fe00f2867dcc70f7"
+        },
+        "instance_06": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "d056b701ceb26720a6064061b2b83dfd55a7dc504dd2774e75a858382131f0de"
+        },
+        "instance_07": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "3fd5923b78ef5a818c40063d4b3d60b98e15cc66dce8051c84b1530ca905914b"
+        },
+        "instance_08": {
+          "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/T1/paired_base/budget_60/fit/task_only/checkpoint.pt",
+          "sha256": "da8c62e4c1e6c0228c84321b1b255ee3d90a0c07e7fde69f6bcb8e25797e50f3"
+        }
+      }
+    },
+    "response_models": {
+      "instance_01": {
+        "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/validation/p4_robust_shared_response_v1/level_B_log_0_30_60_120/seed_139100/budget_60/checkpoint.pt",
+        "sha256": "a22fc357b83c2a4fa77c6242b0c43c9f5c27952f0351989010238e012bd51b4f"
+      },
+      "instance_02": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v1/level_B_log_60/instance_02/T1/response/budget_60/checkpoint.pt",
+        "sha256": "36be242905e8233f6b216a47da37e9f2aeea189c038f5ba3b805ecaffbc66b44"
+      },
+      "instance_03": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/T1/response/budget_60/checkpoint.pt",
+        "sha256": "f3b245fb60990c5d43ad9eeff50cb2fcf9f873de4e924f17d89c85f753b65c83"
+      },
+      "instance_04": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/T1/response/budget_60/checkpoint.pt",
+        "sha256": "66ab60e1b6a7165d2fcd0c721d1cee58a37ca8188b9a0f9d43e252d1c6106fe2"
+      },
+      "instance_05": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/T1/response/budget_60/checkpoint.pt",
+        "sha256": "9fded49b7b9759aadbab165ef260aa7ca938d7baf652aaa713e2afc118fdc880"
+      },
+      "instance_06": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/T1/response/budget_60/checkpoint.pt",
+        "sha256": "c2fdf43d069bf97f313c25a91e4f771805d4152110a70686cade41d4854ab17d"
+      },
+      "instance_07": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/T1/response/budget_60/checkpoint.pt",
+        "sha256": "6607dc33f49c6c10bcc753d67ac01f1276fd7c2f79b37e9e257418650429aab3"
+      },
+      "instance_08": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/T1/response/budget_60/checkpoint.pt",
+        "sha256": "c8ffce583ef8e07019be93d1e90ad69318d08fc1cc83389b1928bb50a027c6eb"
+      }
+    },
+    "sample_streams": {
+      "band_only": {
+        "instance_01": "eb037099bd7838a7411eba13a4494eb6934855cb0001d053e36d2c3eaded416e",
+        "instance_02": "d1df2136b4b670ffc37366cbb4f8ee6f50affb6c511bf52760a97a65c3ce92c5",
+        "instance_03": "06dbf6a853ba4c5af682d9ad5d065a88a92c1394e0fc40e2fb6760864478d365",
+        "instance_04": "a1a3cf52c40c4c16a657300210415e60c26154d5d80b5cf4b87466842307c95b",
+        "instance_05": "b5c9e2160d81e66fa533c0bd2c03a3f7302321f78ccb9d347fbb92f4946aa395",
+        "instance_06": "9ac926704f70d6e8e322601d2ab9fc550cc7ed3bd183e12d31b538af1443b6e3",
+        "instance_07": "0f0c12ce53e8707a16fbdbc8c1b19cf7eb6eac51b74cae6e9b7639f8ce8e15e3",
+        "instance_08": "c65c474e9eb5602af88878687f0b64a37bf170b5e0841ce9939b945906bcf1b3"
+      },
+      "frozen_warm": {
+        "instance_01": "eb037099bd7838a7411eba13a4494eb6934855cb0001d053e36d2c3eaded416e",
+        "instance_02": "d1df2136b4b670ffc37366cbb4f8ee6f50affb6c511bf52760a97a65c3ce92c5",
+        "instance_03": "06dbf6a853ba4c5af682d9ad5d065a88a92c1394e0fc40e2fb6760864478d365",
+        "instance_04": "a1a3cf52c40c4c16a657300210415e60c26154d5d80b5cf4b87466842307c95b",
+        "instance_05": "b5c9e2160d81e66fa533c0bd2c03a3f7302321f78ccb9d347fbb92f4946aa395",
+        "instance_06": "9ac926704f70d6e8e322601d2ab9fc550cc7ed3bd183e12d31b538af1443b6e3",
+        "instance_07": "0f0c12ce53e8707a16fbdbc8c1b19cf7eb6eac51b74cae6e9b7639f8ce8e15e3",
+        "instance_08": "c65c474e9eb5602af88878687f0b64a37bf170b5e0841ce9939b945906bcf1b3"
+      },
+      "gated_full": {
+        "instance_01": "eb037099bd7838a7411eba13a4494eb6934855cb0001d053e36d2c3eaded416e",
+        "instance_02": "d1df2136b4b670ffc37366cbb4f8ee6f50affb6c511bf52760a97a65c3ce92c5",
+        "instance_03": "06dbf6a853ba4c5af682d9ad5d065a88a92c1394e0fc40e2fb6760864478d365",
+        "instance_04": "a1a3cf52c40c4c16a657300210415e60c26154d5d80b5cf4b87466842307c95b",
+        "instance_05": "b5c9e2160d81e66fa533c0bd2c03a3f7302321f78ccb9d347fbb92f4946aa395",
+        "instance_06": "9ac926704f70d6e8e322601d2ab9fc550cc7ed3bd183e12d31b538af1443b6e3",
+        "instance_07": "0f0c12ce53e8707a16fbdbc8c1b19cf7eb6eac51b74cae6e9b7639f8ce8e15e3",
+        "instance_08": "c65c474e9eb5602af88878687f0b64a37bf170b5e0841ce9939b945906bcf1b3"
+      },
+      "matching_no_band": {
+        "instance_01": "eb037099bd7838a7411eba13a4494eb6934855cb0001d053e36d2c3eaded416e",
+        "instance_02": "d1df2136b4b670ffc37366cbb4f8ee6f50affb6c511bf52760a97a65c3ce92c5",
+        "instance_03": "06dbf6a853ba4c5af682d9ad5d065a88a92c1394e0fc40e2fb6760864478d365",
+        "instance_04": "a1a3cf52c40c4c16a657300210415e60c26154d5d80b5cf4b87466842307c95b",
+        "instance_05": "b5c9e2160d81e66fa533c0bd2c03a3f7302321f78ccb9d347fbb92f4946aa395",
+        "instance_06": "9ac926704f70d6e8e322601d2ab9fc550cc7ed3bd183e12d31b538af1443b6e3",
+        "instance_07": "0f0c12ce53e8707a16fbdbc8c1b19cf7eb6eac51b74cae6e9b7639f8ce8e15e3",
+        "instance_08": "c65c474e9eb5602af88878687f0b64a37bf170b5e0841ce9939b945906bcf1b3"
+      },
+      "task_only": {
+        "instance_01": "eb037099bd7838a7411eba13a4494eb6934855cb0001d053e36d2c3eaded416e",
+        "instance_02": "d1df2136b4b670ffc37366cbb4f8ee6f50affb6c511bf52760a97a65c3ce92c5",
+        "instance_03": "06dbf6a853ba4c5af682d9ad5d065a88a92c1394e0fc40e2fb6760864478d365",
+        "instance_04": "a1a3cf52c40c4c16a657300210415e60c26154d5d80b5cf4b87466842307c95b",
+        "instance_05": "b5c9e2160d81e66fa533c0bd2c03a3f7302321f78ccb9d347fbb92f4946aa395",
+        "instance_06": "9ac926704f70d6e8e322601d2ab9fc550cc7ed3bd183e12d31b538af1443b6e3",
+        "instance_07": "0f0c12ce53e8707a16fbdbc8c1b19cf7eb6eac51b74cae6e9b7639f8ce8e15e3",
+        "instance_08": "c65c474e9eb5602af88878687f0b64a37bf170b5e0841ce9939b945906bcf1b3"
+      },
+      "ungated_full": {
+        "instance_01": "eb037099bd7838a7411eba13a4494eb6934855cb0001d053e36d2c3eaded416e",
+        "instance_02": "d1df2136b4b670ffc37366cbb4f8ee6f50affb6c511bf52760a97a65c3ce92c5",
+        "instance_03": "06dbf6a853ba4c5af682d9ad5d065a88a92c1394e0fc40e2fb6760864478d365",
+        "instance_04": "a1a3cf52c40c4c16a657300210415e60c26154d5d80b5cf4b87466842307c95b",
+        "instance_05": "b5c9e2160d81e66fa533c0bd2c03a3f7302321f78ccb9d347fbb92f4946aa395",
+        "instance_06": "9ac926704f70d6e8e322601d2ab9fc550cc7ed3bd183e12d31b538af1443b6e3",
+        "instance_07": "0f0c12ce53e8707a16fbdbc8c1b19cf7eb6eac51b74cae6e9b7639f8ce8e15e3",
+        "instance_08": "c65c474e9eb5602af88878687f0b64a37bf170b5e0841ce9939b945906bcf1b3"
+      }
+    },
+    "source_manifest": {
+      "path": "results/_development/p4_completion_20261015/results/arm/obstacle_transfer/qualification/p4_source_bank/level_source/seed_41000/data_manifest.json",
+      "sha256": "30c4fc42bca038168f78745bb7b437e5004801be82a5ad147ede3bff19f14ea7"
+    }
+  },
+  "binding_version": "transfer-actor-binding-v1",
+  "confirmation_states_opened": 0,
+  "formal_performance_evidence": false,
+  "inventory": {
+    "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/protocol/p6_learned_instance_inventory_v2/level_read_only/report.json",
+    "sha256": "c206f8a7b808583ab47d026960389d5970407ef355b8af89d3a2fbdc2501b45e"
+  },
+  "main": {
+    "acp": {
+      "actor": "acp",
+      "evidence": {
+        "path": "results/_development/p5p6_baseline_completion_20261017/_reports/acp_four_task_closeout_audit_v1.json",
+        "sha256": "ab7793ef6174fed5ed8dc867c009a6fd701d256a9a9bec242f5448064942fb1e"
+      },
+      "instance_role": "planned_evaluation_slot_not_an_independent_trained_instance",
+      "logical_instance_slots": [
+        "instance_01",
+        "instance_02",
+        "instance_03",
+        "instance_04",
+        "instance_05",
+        "instance_06",
+        "instance_07",
+        "instance_08"
+      ],
+      "method_identity": "ACP_task_adapted",
+      "reason": "source_and_known_nominal_gate_failed",
+      "scoring": {
+        "capped_normalized_completion_time": 1.0,
+        "constrained_success": 0.0,
+        "constraint_violation": 1.0,
+        "predeployment_rejection": 1.0,
+        "target_execution": 0.0
+      },
+      "status": "predeployment_rejection",
+      "target_physical_execution": 0
+    },
+    "cross_ebdm": {
+      "actor": "cross_ebdm",
+      "method_identity": "ours_gated_v2",
+      "policy_set": "cross_ebdm",
+      "response_set": "response_models",
+      "status": "instances_ready"
+    },
+    "dial_transfer": {
+      "actor": "dial_transfer",
+      "method_identity": "DIAL_MPC",
+      "policy_set": "task_only",
+      "response_set": "response_models",
+      "status": "instances_ready"
+    },
+    "fada": {
+      "actor": "fada",
+      "checkpoint_set": "fada",
+      "method_identity": "FADA_task_adapted",
+      "status": "instances_ready"
+    },
+    "human2sim2robot": {
+      "actor": "human2sim2robot",
+      "evidence": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/baselines/p6_h2s2r_predeployment_closeout_v2/level_read_only/report.json",
+        "sha256": "482494c3f89eab9c9b3c97c19ab4b7398207d11ab5803e328480dbb9e63e44a6"
+      },
+      "instance_role": "planned_evaluation_slot_not_an_independent_trained_instance",
+      "logical_instance_slots": [
+        "instance_01",
+        "instance_02",
+        "instance_03",
+        "instance_04",
+        "instance_05",
+        "instance_06",
+        "instance_07",
+        "instance_08"
+      ],
+      "method_identity": "H2S2R_source_trajectory",
+      "reason": "algorithm_level_predeployment_rejection_known_nominal",
+      "scoring": {
+        "capped_normalized_completion_time": 1.0,
+        "constrained_success": 0.0,
+        "constraint_violation": 1.0,
+        "predeployment_rejection": 1.0,
+        "target_execution": 0.0
+      },
+      "status": "predeployment_rejection",
+      "target_physical_execution": 0
+    },
+    "public_geometry": {
+      "actor": "public_geometry",
+      "instance_id": "fixed",
+      "method_identity": "public_geometry",
+      "status": "deterministic_single_identity"
+    },
+    "public_source_prior": {
+      "actor": "public_source_prior",
+      "instance_id": "fixed",
+      "method_identity": "public_source_prior",
+      "policy_set": "fixed_response_companion_policy",
+      "status": "deterministic_single_identity"
+    },
+    "response_mpc": {
+      "actor": "response_mpc",
+      "method_identity": "ordinary_response_MPC",
+      "policy_set": "task_only",
+      "response_set": "response_models",
+      "status": "instances_ready"
+    },
+    "task_only": {
+      "actor": "task_only",
+      "method_identity": "task_only",
+      "policy_set": "task_only",
+      "response_set": "response_models",
+      "status": "instances_ready"
+    }
+  },
+  "rejection_scoring": {
+    "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/protocol/predeployment_rejection_scoring_v3/report.json",
+    "sha256": "f4e7468da3b91c7ddd61a3540b17017ece9e73dd53ec952b77eefcf793d31613"
+  },
+  "scope": "Published development artifacts admitted before confirmation access; exact runtime inputs for architecture migration.",
+  "task": "T1",
+  "version": "transfer-actor-binding-manifest-v1"
+}

@@ -1,0 +1,28 @@
+{
+  "version": "transfer-independent-actor-development-evaluation-v1",
+  "task": "T4",
+  "method": "asid",
+  "method_identity": "ASID_Fisher_32step_grid_CEM_mobile_mating_policy",
+  "actor_binding_source": "independent_actor_package",
+  "actor_package": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/validation/independent_actor_package_v1/report.json",
+    "sha256": "fe73fba4f2c3006a0de87b37cb416b39bd9d3a392efb90524572885eedf976d4"
+  },
+  "instance_id": "independent_8804101",
+  "task_config": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/asid.yaml",
+  "checkpoint": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/training/independent_training_8804101/checkpoint.json",
+    "sha256": "80d7c2f40406a175011df0e19874a519c7dbeaca62995312a4af2a5d4e4d584b"
+  },
+  "request_roster": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/validation/asid_independent_actor_source_nominal_roster.json",
+    "sha256": "517229ad162c2fd0b2423a4d8835997c5f0cca88619e6619ca1fb70e7c2a4607"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/validation/independent_source_nominal_8804101",
+  "plan_output": "results/quadruped/mobile_keyed_insertion_recovery/baseline/asid/validation/plans/independent_source_nominal_8804101.json"
+}

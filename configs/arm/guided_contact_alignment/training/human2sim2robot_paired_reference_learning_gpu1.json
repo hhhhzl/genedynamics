@@ -1,0 +1,43 @@
+{
+  "version": "human2sim2robot-paired-termination-learning-v1",
+  "task": "T2",
+  "training_config": {
+    "path": "configs/arm/guided_contact_alignment/training/human2sim2robot_sanity_1m.json",
+    "sha256": "c562ab7d02918d08f828e1a01ecd365689f7079bc41026cf0bff1db7e33a2cb8"
+  },
+  "checkpoint": {
+    "path": "results/arm/guided_contact_alignment/baseline/human2sim2robot/training/robot_source_sanity_1m/seed_275000/selected_policy.pt",
+    "sha256": "0cb718d00b8fe31ba741d768167990a088f2d374e013af300818c7fde17e4f83"
+  },
+  "termination_diagnostic": {
+    "path": "results/arm/guided_contact_alignment/baseline/human2sim2robot/diagnostics/reference_termination_cpu/report.json",
+    "sha256": "f329217ebc308b65c12132d1fcdd664b38656a63a568f38348d585d9f6b5a25c"
+  },
+  "seed": 429200,
+  "monitor_seeds": [
+    429300
+  ],
+  "monitor_epochs": [
+    0,
+    32,
+    64,
+    128
+  ],
+  "execution": {
+    "device": "cuda:0",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "budget": {
+    "actors": 64,
+    "horizon": 16,
+    "epochs": 128,
+    "maximum_wall_seconds": 3600,
+    "cpu_threads": 1,
+    "maximum_gpu_gib": 4
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/human2sim2robot/diagnostics/paired_reference_learning_gpu1",
+  "training_only_change": "Two same-initialization branches differ only in explicit reference-end termination. Shared reward/success/safety remain unchanged. Full task monitoring continues to original timeout.",
+  "resource_policy": "GPU1 physical UUID bound; one visible GPU. Preserve all outcomes; do not use GPU0.",
+  "convergence_claim": false
+}

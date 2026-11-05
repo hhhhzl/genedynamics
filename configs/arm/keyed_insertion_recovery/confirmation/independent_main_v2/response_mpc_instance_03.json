@@ -1,0 +1,26 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v2",
+  "task": "T3",
+  "method": "response_mpc",
+  "method_identity": "ordinary_response_MPC",
+  "instance_id": "instance_03",
+  "task_config": {
+    "path": "configs/arm/keyed_insertion_recovery/baseline/response_mpc.yaml",
+    "sha256": "7262445904178c104824ba19a5f03d808175f105035f0219def910ba6d9a0b01"
+  },
+  "request_roster": {
+    "path": "configs/arm/keyed_insertion_recovery/protocol/independent_main_table_requests_v2.json",
+    "sha256": "7fd20d85bd38ff7c28214e8ad4ee0251231a1ef3da29ea739fda341a6239c866"
+  },
+  "cell_admission": {
+    "path": "results/arm/keyed_insertion_recovery/validation/independent_main_table_admission_v2/response_mpc.json",
+    "sha256": "b75f5beb7eb4f957267bf4877a097be36a4b608ae4bf0f5f4a85d2be9e7702f8"
+  },
+  "output": "results/arm/keyed_insertion_recovery/baseline/response_mpc/confirmation/independent_main_v2/instance_03",
+  "plan_output": "results/arm/keyed_insertion_recovery/baseline/response_mpc/confirmation/independent_main_v2/instance_03_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  }
+}

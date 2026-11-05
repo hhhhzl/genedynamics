@@ -1,0 +1,18 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T2",
+  "method": "public_geometry",
+  "method_identity": "public_geometry",
+  "task_config": "configs/arm/guided_contact_alignment/baseline/public_geometry.yaml",
+  "request_roster": {
+    "path": "configs/arm/guided_contact_alignment/validation/asid_guide_fresh_actor_roster.json",
+    "sha256": "ad3c165350dfbe4033649987f053a0293dc38267e60653bac8f1f731712abfcf"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/public_geometry/validation/asid_paired_pilot_3302200000",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/public_geometry/validation/asid_paired_pilot_3302200000_plan.json"
+}

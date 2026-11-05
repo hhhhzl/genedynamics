@@ -3,7 +3,7 @@ from dataclasses import asdict
 import hashlib
 import json
 
-from .protocol import ROOT,canonical,load_frozen_contract
+from .protocol import ROOT,canonical,load_contract_artifact
 from .guide_observation import FEATURE_VERSION,CONTEXT_DIM
 from .specs import task_spec
 
@@ -17,7 +17,7 @@ def contract_path(task):
 
 
 def current_contract(task):
-    spec=task_spec(task);base,base_sha=load_frozen_contract('T3');mobile=spec.alias=='T4'
+    spec=task_spec(task);base,base_sha=load_contract_artifact('T3','public_v3.json');mobile=spec.alias=='T4'
     if spec.alias not in {'T2','T4'}:raise ValueError('T2/T4 only')
     source=task_spec('T3' if mobile else 'T2',robot='panda');target=task_spec(task,robot='go2_z1' if mobile else 'xarm7')
     return dict(version=VERSION,task=spec.name,alias=spec.alias,

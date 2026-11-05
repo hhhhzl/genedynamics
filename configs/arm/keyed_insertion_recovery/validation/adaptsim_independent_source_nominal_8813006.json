@@ -1,0 +1,28 @@
+{
+  "version": "transfer-independent-actor-development-evaluation-v1",
+  "task": "T3",
+  "method": "adaptsim",
+  "method_identity": "AdaptSim_task_adapted_CEM",
+  "actor_binding_source": "independent_actor_package",
+  "actor_package": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/adaptsim/validation/independent_actor_package_v1/report.json",
+    "sha256": "b1ca03ad00b75d8234a69a4a015d1a494daf39c348b07da4fe59d5ce7ba2ed31"
+  },
+  "instance_id": "independent_8813006",
+  "task_config": "configs/arm/keyed_insertion_recovery/baseline/adaptsim.yaml",
+  "checkpoint": {
+    "path": "results/arm/keyed_insertion_recovery/baseline/adaptsim/training/independent_training_8813006/inference_and_policy.pt",
+    "sha256": "077fe414c82519a5a6eb2d879298318c9fcc69a93745d59f7a2fafd70a9f2098"
+  },
+  "request_roster": {
+    "path": "configs/arm/keyed_insertion_recovery/validation/adaptsim_independent_actor_source_nominal_roster.json",
+    "sha256": "0e22982bf84e65c8a5c312345598a37fe74c343e43e7bcf089d91fd776ffab6f"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/arm/keyed_insertion_recovery/baseline/adaptsim/validation/independent_source_nominal_8813006",
+  "plan_output": "results/arm/keyed_insertion_recovery/baseline/adaptsim/validation/plans/independent_source_nominal_8813006.json"
+}

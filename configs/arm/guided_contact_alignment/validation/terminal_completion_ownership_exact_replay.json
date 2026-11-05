@@ -1,0 +1,112 @@
+{
+  "version": "four-task-paired-development-diagnosis-v1",
+  "name": "terminal_completion_ownership_exact_replay",
+  "task": "T2",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cpu"
+  },
+  "seed_anchor": 4682000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [
+    0,
+    1
+  ],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "methods": [
+    {
+      "family": "main",
+      "key": "public_geometry",
+      "label": "public_geometry_current",
+      "instances": "fixed"
+    },
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "cross_ebdm_terminal_owned",
+      "instances": "all",
+      "task_actor_interface": "public-T2-terminal-completion-ownership-v1"
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "task_only_terminal_owned",
+      "instances": "all",
+      "task_actor_interface": "public-T2-terminal-completion-ownership-v1"
+    },
+    {
+      "family": "main",
+      "key": "response_mpc",
+      "label": "response_mpc_terminal_owned",
+      "instances": "all",
+      "task_actor_interface": "public-T2-terminal-completion-ownership-v1"
+    },
+    {
+      "family": "ablation",
+      "key": "frozen_warm",
+      "label": "frozen_warm_terminal_owned",
+      "instances": "all",
+      "task_actor_interface": "public-T2-terminal-completion-ownership-v1"
+    },
+    {
+      "family": "ablation",
+      "key": "task_only",
+      "label": "ablation_task_only_terminal_owned",
+      "instances": "all",
+      "task_actor_interface": "public-T2-terminal-completion-ownership-v1"
+    },
+    {
+      "family": "ablation",
+      "key": "matching_no_band",
+      "label": "matching_no_band_terminal_owned",
+      "instances": "all",
+      "task_actor_interface": "public-T2-terminal-completion-ownership-v1"
+    },
+    {
+      "family": "ablation",
+      "key": "band_only",
+      "label": "band_only_terminal_owned",
+      "instances": "all",
+      "task_actor_interface": "public-T2-terminal-completion-ownership-v1"
+    },
+    {
+      "family": "ablation",
+      "key": "ungated_full",
+      "label": "ungated_full_terminal_owned",
+      "instances": "all",
+      "task_actor_interface": "public-T2-terminal-completion-ownership-v1"
+    },
+    {
+      "family": "ablation",
+      "key": "gated_full",
+      "label": "gated_full_terminal_owned",
+      "instances": "all",
+      "task_actor_interface": "public-T2-terminal-completion-ownership-v1"
+    }
+  ],
+  "scope": "Exact CPU counterfactual on the sealed v12 reset seeds. The only candidate change is task-owned full-request authority after public terminal capture; candidate actors continue every causal call. This is development-only replay, not performance evidence or failure replacement."
+}

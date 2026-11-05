@@ -1,0 +1,42 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "device": "cuda",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "failure_replacement": false,
+  "first_instance_audit": {
+    "path": "results/arm/obstacle_transfer/baseline/task_only/validation/source_nominal_actor_screen_3301000000/independent_audit.json",
+    "sha256": "a7598cf9c4272efe4a8e836eb423e9de4f99bd81ea6cbd2e6b6c19e1947a3502"
+  },
+  "first_instance_report": {
+    "path": "results/arm/obstacle_transfer/baseline/task_only/validation/source_nominal_actor_screen_3301000000/report.json",
+    "sha256": "fba62b6f383d3f1e73ff72b8f0b0198ed10c1e3d269938a2337d77d7c15e20f9"
+  },
+  "formal_request_seed_access": 0,
+  "instance_ids": [
+    "instance_01",
+    "instance_02",
+    "instance_03",
+    "instance_04",
+    "instance_05",
+    "instance_06",
+    "instance_07",
+    "instance_08"
+  ],
+  "maximum_cohort_physical_episodes": 64,
+  "maximum_new_physical_episodes": 56,
+  "method": "task_only",
+  "method_identity": "task_only",
+  "output": "results/arm/obstacle_transfer/baseline/task_only/validation/independent_source_nominal_cohort_v1",
+  "source_roster": {
+    "path": "configs/arm/obstacle_transfer/validation/method_source_nominal_actor_roster.json",
+    "sha256": "23483cfb756ee4c73a4929abdf73f3a31491dd8497a9d995e47872dd2af24cc1"
+  },
+  "task": "T1",
+  "task_config": {
+    "path": "configs/arm/obstacle_transfer/baseline/task_only.yaml",
+    "sha256": "76cc20304d87319d2ed3d84c9e37da97ce53f2352d7265773b63b6b3ff24489d"
+  },
+  "version": "transfer-legacy-independent-source-nominal-cohort-v1"
+}

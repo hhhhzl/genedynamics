@@ -1,0 +1,40 @@
+{
+  "execution": {
+    "cuda_visible_devices": "1",
+    "maximum_gpu_memory_gib": 2,
+    "maximum_wall_seconds": 360,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "guard": {
+    "clear_z_m": 0.604,
+    "max_planar_speed_mps": 0.02,
+    "release_z_m": 0.5965,
+    "retreat_speed_mps": 0.008,
+    "unload_seconds": 0.08
+  },
+  "output": "results/arm/keyed_insertion_recovery/validation/matched_reference_unloading_public_guard_development/gpu1",
+  "sentinel_plan": {
+    "path": "results/arm/keyed_insertion_recovery/validation/finite_time_current_public_geometry_sentinel/gpu1/plan.json",
+    "sha256": "ccf21d7c4c67fe9a4f60122bb425fbf5222ffcaaf42376a66fd683bc17cb2aa2"
+  },
+  "sentinel_report": {
+    "path": "results/arm/keyed_insertion_recovery/validation/finite_time_current_public_geometry_sentinel/gpu1/report.json",
+    "sha256": "1bb0fbad1db7603a25ce471c0f0a6f05f8b661da9e2ef914a59e94baab72a6e8"
+  },
+  "source_bindings": [
+    {
+      "path": "genedynamics/tasks/transfer/controllers/mating_feedback.py",
+      "sha256": "30fc83a11a88799b569ebf6a25372671830af9a7f903f47897b327a84f9f7f23"
+    },
+    {
+      "path": "genedynamics/tasks/transfer/early_contact_diagnostic.py",
+      "sha256": "4603a5466dcf88c34b9caaba7c84f175316f08babdd9e0dd64f9b716c2ab5b62"
+    },
+    {
+      "path": "scripts/paper/cross_ebdm/diagnose_t3_early_contact.py",
+      "sha256": "9b096e5dd5feb1ceec237b366bffb68687534b56ca544d8be15352aa5c1144d2"
+    }
+  ],
+  "task": "T3",
+  "version": "t3-public-matched-reference-unloading-development-v1"
+}

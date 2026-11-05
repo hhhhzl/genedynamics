@@ -134,6 +134,8 @@ def collect_contact_dataset(path,*,environment,role,robots=("panda",),mechanisms
 def load_contact_dataset(path):
     data,meta=load_bundle(path)
     if meta.get("artifact_kind")!="contact_dataset" or meta.get("contact_schema")!=1: raise ValueError("expected contact dataset")
+    if meta.get("environment") not in ("guided_contact_alignment", "keyed_insertion_recovery", "mobile_keyed_insertion_recovery"):
+        raise ValueError("unknown contact dataset environment")
     b,k,h=data["valid"].shape
     if data["command"].shape!=(b,k,h,13) or data["carry"].shape!=(b,k,meta["carry_dim"]): raise ValueError("contact dataset layout mismatch")
     if meta.get("role") not in {"source_demonstrations","response_development","response_validation"}: raise ValueError("unknown contact data role")

@@ -1,0 +1,34 @@
+{
+  "version": "asid-obstacle-nominal-diagnosis-v1",
+  "task": "T1",
+  "robot": "xarm7",
+  "training_report": {
+    "path": "results/arm/obstacle_transfer/baseline/asid/training/grid_seeded_development_3817251/report.json",
+    "sha256": "44c93745ffb77e904b6571ea401b1c6e7d3b3b3609f372ba077cc94cab2858af"
+  },
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/baseline/asid/training/grid_seeded_development_3817251/checkpoint.json",
+    "sha256": "0bd5aad46be1223fafdca21b82f0c0513e7630ab428250a0b4d2178005548857"
+  },
+  "public_anchor": [0.5678590883444584, 0.6581064010126911, 0.6270149599348386, 0.6097529670246064, 1.0, 1.0],
+  "scene_cells": [
+    {"id": "source", "mechanism": {"servo_gain": 0.85, "payload_mass": 0.65, "delay_steps": 0}},
+    {"id": "deployment_nominal", "mechanism": {"servo_gain": 1.0, "payload_mass": 0.5, "delay_steps": 0}},
+    {"id": "target_gain_shift", "mechanism": {"servo_gain": 0.7, "payload_mass": 0.5, "delay_steps": 0}}
+  ],
+  "requested_modes": [0, 1],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 3000200000,
+  "source_bindings": [
+    {"path": "genedynamics/tasks/transfer/obstacle_asid.py", "sha256": "c949fa382711a4d786883d60e21ddf1c0537b5c64089b870b147477a1afd78f8"},
+    {"path": "genedynamics/tasks/transfer/controllers/obstacle_path.py", "sha256": "b8d03dd2b818a56288665fa9e5b3da2b838259e751b18b5d1332ed51a85af798"},
+    {"path": "scripts/paper/cross_ebdm/diagnose_asid_nominal.py", "sha256": "6c4be73f980be804327ebece67e4cfd2045c8d5438285c863ff9a7720a03306b"}
+  ],
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 240,
+    "maximum_gpu_memory_gib": 2
+  },
+  "output": "results/arm/obstacle_transfer/baseline/asid/validation/nominal_diagnosis_grid_seeded_3817251"
+}

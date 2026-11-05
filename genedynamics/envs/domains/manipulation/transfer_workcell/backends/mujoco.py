@@ -128,8 +128,17 @@ class MujocoExecutionBackend:
         clearance, speed, saturation = task.contact_margin, 0., 0.
         joint_limit, finite = False, input_finite
         tau = np.zeros(model.nu)
+        aperture_events = None
+        if task.scene_profile == "aperture_brake_v1":
+            aperture_events = {
+                "tcp_position_substeps": np.zeros((task.substeps, 3), dtype=np.float64),
+                "tcp_rotation_substeps": np.zeros((task.substeps, 3, 3), dtype=np.float64),
+                "tcp_twist_substeps": np.zeros((task.substeps, 6), dtype=np.float64),
+                "frame_contact_substeps": np.zeros(task.substeps, dtype=bool),
+                "frame_contact_mask_substeps": np.zeros(task.substeps, dtype=np.uint8),
+            }
         if active:
-            for _ in range(task.substeps):
+            for substep in range(task.substeps):
                 jp, jr = np.zeros((3, model.nv)), np.zeros((3, model.nv))
                 mujoco.mj_jacSite(model, data, jp, jr, self.sid)
                 tau, ratio = impedance(np, data.site_xpos[self.sid], data.site_xmat[self.sid].reshape(3,3),
@@ -139,6 +148,28 @@ class MujocoExecutionBackend:
                 data.ctrl[:] = tau
                 mujoco.mj_step(model, data)
                 mujoco.mj_forward(model, data)
+                if aperture_events is not None:
+                    jp_event = np.zeros((3, model.nv))
+                    jr_event = np.zeros((3, model.nv))
+                    mujoco.mj_jacSite(model, data, jp_event, jr_event, self.sid)
+                    aperture_events["tcp_position_substeps"][substep] = data.site_xpos[self.sid]
+                    aperture_events["tcp_rotation_substeps"][substep] = data.site_xmat[self.sid].reshape(3, 3)
+                    aperture_events["tcp_twist_substeps"][substep] = np.r_[jp_event @ data.qvel, jr_event @ data.qvel]
+                    mask = 0
+                    frame_names = (
+                        "aperture_left", "aperture_right",
+                        "aperture_top", "aperture_bottom",
+                    )
+                    for contact in data.contact:
+                        names = {
+                            model.geom(contact.geom1).name,
+                            model.geom(contact.geom2).name,
+                        }
+                        for bit, name in enumerate(frame_names):
+                            if name in names:
+                                mask |= 1 << bit
+                    aperture_events["frame_contact_mask_substeps"][substep] = mask
+                    aperture_events["frame_contact_substeps"][substep] = bool(mask)
                 clearance = min(clearance, min((c.dist for c in data.contact), default=task.contact_margin))
                 speed = max(speed, np.max(np.abs(data.qvel)))
                 saturation = max(saturation, ratio)
@@ -155,6 +186,7 @@ class MujocoExecutionBackend:
                               state.steps+1, int(hold), int(status)) if active else state)
         trace = StepTrace(pos, rot, pe, ae, clearance, speed, saturation, applied, tau,
                           new.status, active, active and new.status != 0)
+        self._last_aperture_event = aperture_events
         return new, trace
 
     def collect_chunk(self, state, commands):
@@ -162,14 +194,26 @@ class MujocoExecutionBackend:
         if commands.ndim != 3 or commands.shape[0] != len(state.sample_id) or commands.shape[2] != 13 or commands.shape[1] < 1:
             raise ValueError("commands must have shape [B,L,13], L>=1")
         self._validate_batch(len(state.sample_id))
-        states, traces = [], []
+        states, traces, event_rows = [], [], []
         for b in range(len(state.sample_id)):
             current, trace = self._slice(state, b), []
+            world_events = []
             for command in commands[b]:
                 current, step = self._step(current, command, b)
                 trace.append(step)
+                if self._last_aperture_event is not None:
+                    world_events.append(self._last_aperture_event)
             states.append(current)
             traces.append(StepTrace(*(np.stack([t[i] for t in trace]) for i in range(len(StepTrace._fields)))))
+            event_rows.append(world_events)
+        if self.task.scene_profile == "aperture_brake_v1":
+            names = tuple(event_rows[0][0])
+            self.last_event_trace = {
+                name: np.stack([
+                    np.stack([event[name] for event in row])
+                    for row in event_rows
+                ]) for name in names
+            }
         return ChunkResult(self._stack(states), StepTrace(*(np.stack([t[i] for t in traces]) for i in range(len(StepTrace._fields)))))
 
     evaluate_chunk = collect_chunk

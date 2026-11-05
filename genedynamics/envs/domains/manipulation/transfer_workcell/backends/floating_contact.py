@@ -5,10 +5,12 @@ The nominal dynamics model is independent of the actual payload mechanism.
 This host OSQP provider makes no device-residency/GPU qualification claim.
 """
 from collections import namedtuple
+from dataclasses import replace
 import copy
 import xml.etree.ElementTree as ET
 import numpy as np
 import scipy.sparse as sparse
+from scipy.spatial.transform import Rotation
 import osqp
 import mujoco
 from genedynamics.tasks.transfer.contact import ContactState,ContactTrace,ContactChunk,ContactCommands,bounded_contact_command,contact_termination,hybrid_wrench
@@ -17,6 +19,34 @@ from ..floating_workcell import build_go2_z1
 
 FloatingState=namedtuple("FloatingState",ContactState._fields+("foot_anchors","body_height","wbc_warm","wbc_residual"))
 FloatingTrace=namedtuple("FloatingTrace",ContactTrace._fields+("base_position","base_tilt","support_count","wbc_residual"))
+
+
+def joint_acceleration_bounds(position, velocity, limits, *, margin=.02,
+                              horizon=.12, braking=4., velocity_limit=2.5):
+    """Nominal joint viability bounds, in rad/s², from public encoders.
+
+    The constant-acceleration preview stays inside the joint range, and a
+    stopping-distance velocity envelope starts braking before the boundary.
+    These are constraints on the nominal QP acceleration, not a certificate
+    for unknown actuator gains or contact-model errors. Empty intersections
+    remain infeasible; callers must never silently swap or relax the bounds.
+    """
+    position, velocity, limits = map(np.asarray, (position, velocity, limits))
+    if position.shape != velocity.shape or limits.shape != (*position.shape, 2):
+        raise ValueError("joint position, velocity and range shape mismatch")
+    if not np.isfinite(np.r_[position.ravel(), velocity.ravel(), limits.ravel()]).all():
+        raise ValueError("finite joint bounds require finite public state")
+    if min(margin, horizon, braking, velocity_limit) <= 0 or not np.all(limits[..., 1]-limits[..., 0]>2*margin):
+        raise ValueError("invalid joint viability parameters")
+    distance_low = position-limits[..., 0]-margin
+    distance_high = limits[..., 1]-margin-position
+    velocity_low = -np.minimum(velocity_limit, np.sqrt(2*braking*np.maximum(distance_low, 0.)))
+    velocity_high = np.minimum(velocity_limit, np.sqrt(2*braking*np.maximum(distance_high, 0.)))
+    lower = np.maximum(2*(-distance_low-velocity*horizon)/horizon**2,
+                       (velocity_low-velocity)/horizon)
+    upper = np.minimum(2*(distance_high-velocity*horizon)/horizon**2,
+                       (velocity_high-velocity)/horizon)
+    return lower, upper
 
 
 class FloatingContact:
@@ -28,6 +58,16 @@ class FloatingContact:
         if not np.isclose(round(config.control_dt/.004)*.004,config.control_dt,rtol=0.,atol=1e-12):
             raise ValueError("floating control_dt must be a multiple of the fixed 4 ms WBC period")
         self.config,self.mechanism=config,mechanism
+        profile=getattr(config,"execution_profile","legacy")
+        self.joint_margin_execution=profile in {
+            "joint_margin", "joint_margin_bounds",
+            "joint_margin_public_reference",
+        }
+        # Historical joint_margin remains reproducible.  New isolation
+        # profiles keep the physical viability bounds in the WBC while moving
+        # reference progress and anti-windup to the public task controller.
+        self.hidden_reference_governor=profile=="joint_margin"
+        self.public_reference_governor=profile=="joint_margin_public_reference"
         if mechanism.delay_steps>4: raise ValueError("delay exceeds buffer")
         self.scene,self.arm_ik=build_go2_z1(config,mechanism); self.model=self.scene.model
         self.sid=self.model.site("mobile_tcp").id
@@ -39,6 +79,18 @@ class FloatingContact:
         nominal=ET.fromstring(self.scene.xml); nominal.find(".//geom[@name='contact_peg']").set("mass",".5")
         self.nominal=mujoco.MjModel.from_xml_string(ET.tostring(nominal,encoding="unicode"))
         self.nominal_data=mujoco.MjData(self.nominal)
+        if self.joint_margin_execution:
+            self.scene.manifest["controller_signature"]=(
+                "stance_inverse_dynamics_qp_joint_margin_legacy_combined_v1"
+                if self.hidden_reference_governor else
+                "stance_inverse_dynamics_qp_joint_bounds_v2"
+            )
+            self.scene.manifest["joint_margin_execution"]={
+                "position_reserve_rad":.02,"preview_seconds":.12,
+                "nominal_braking_rad_s2":4.,"velocity_limit_rad_s":2.5,
+                "hidden_reference_governor":self.hidden_reference_governor,
+                "public_reference_governor":self.public_reference_governor,
+                "scope":"nominal QP prediction; measured physical criteria unchanged; no hidden gain compensation"}
 
     def describe(self): return {**self.scene.manifest,"backend":"numpy","compiled_chunk":False,"wbc_backend":"host_osqp",
         "nominal_dynamics":"known 0.5 kg payload model; no actual gain/delay/mass labels in QP"}
@@ -49,6 +101,20 @@ class FloatingContact:
     def _stack(states): return type(states[0])(tuple(s.physics for s in states),*(np.stack([s[i] for s in states]) for i in range(1,len(states[0]))))
 
     def reset_batch(self,request,*,previous=None,mask=None,initial="clear"):
+        if getattr(self.config,"reset_profile","legacy")=="legacy":
+            return self._reset_batch(request,previous=previous,mask=mask,initial=initial)
+        # Keep the known folded arm as the posture target throughout charged
+        # stance preparation, matching the explicit development reset. The
+        # task's jam placement and all runtime posture targets are unchanged.
+        scene=self.scene;q=scene.start_qpos.copy()
+        q[self.qindices[12:]]=[0.,.785,-.261,-.523,0.,0.]
+        self.scene=replace(scene,start_qpos=q)
+        try:
+            return self._reset_batch(request,previous=previous,mask=mask,initial=initial)
+        finally:
+            self.scene=scene
+
+    def _reset_batch(self,request,*,previous=None,mask=None,initial="clear"):
         if (previous is None)!=(mask is None): raise ValueError("partial reset needs state and mask")
         if previous is not None and (len(previous.sample_id)!=len(request.sample_ids) or np.shape(mask)!=(len(request.sample_ids),)):
             raise ValueError("partial reset batch mismatch")
@@ -65,7 +131,8 @@ class FloatingContact:
             data.qpos[arm]+=self.config.reset_joint_noise*noise
             mujoco.mj_forward(self.model,data)
             one=FloatingState(data,data.site_xpos[self.sid].copy(),data.site_xmat[self.sid].reshape(3,3).copy(),
-                np.zeros(13),np.zeros((5,13)),0.,0.,np.array([q[0],q[1],0.]),0.,identity,0,False,0,0,0,
+                np.zeros(13),np.zeros((5,13)),0.,0.,np.array([q[0],q[1],0.]),0.,
+                0,0,np.zeros(6),0,0,identity,0,False,0,0,0,
                 data.geom_xpos[self.feet].copy(),q[2],np.zeros(self.model.nv+12+(6 if self.config.socket_profile=="matched_keyway" else 0)),0.)
             if self.config.socket_profile=="matched_keyway":
                 # Reset preparation is part of the charged interaction. Settle
@@ -81,7 +148,8 @@ class FloatingContact:
                 base=data.xmat[self.model.body("base").id].reshape(3,3)
                 one=FloatingState(data,data.site_xpos[self.sid].copy(),data.site_xmat[self.sid].reshape(3,3).copy(),
                     np.zeros(13),np.zeros((5,13)),0.,0.,np.array([data.qpos[0],data.qpos[1],np.arctan2(base[1,0],base[0,0])]),
-                    0.,identity,0,False,0,0,0,data.geom_xpos[self.feet].copy(),data.qpos[2],np.zeros(self.model.nv+18),0.)
+                    0.,0,0,np.zeros(6),0,0,identity,0,False,0,0,0,
+                    data.geom_xpos[self.feet].copy(),data.qpos[2],np.zeros(self.model.nv+18),0.)
             states.append(one)
         return self._stack(states)
 
@@ -110,6 +178,32 @@ class FloatingContact:
         return any(c.dist<=0 and tuple(sorted((c.geom1,c.geom2))) in self.allowed and
             any(self.model.geom(g).name in {"contact_peg","contact_key"} for g in (c.geom1,c.geom2)) and
             abs(c.frame.reshape(3,3)[0,2])>.7 for c in data.contact)
+
+    def _govern_reference(self, data, reference, rotation):
+        """Bound Cartesian reference windup without changing the plant state."""
+        position=data.site_xpos[self.sid]
+        current=data.site_xmat[self.sid].reshape(3,3)
+        delta=reference-position
+        angle=Rotation.from_matrix(rotation@current.T).as_rotvec()
+        delta*=min(1.,.02/max(float(np.linalg.norm(delta)),1e-12))
+        angle*=min(1.,.10/max(float(np.linalg.norm(angle)),1e-12))
+        return position+delta,integrate_rotation(np,current,angle,1.)
+
+    def _integral_error(self, data, error):
+        """Remove outward task-integral growth near an arm-joint boundary.
+
+        The local arm Jacobian uses measured geometry. It is deliberately an
+        anti-windup approximation, not an alternative feasibility/success
+        test or access to the hidden actuator mechanism.
+        """
+        p,r=np.zeros((3,self.model.nv)),np.zeros((3,self.model.nv))
+        mujoco.mj_jacSite(self.model,data,p,r,self.sid)
+        jac=np.r_[p,r][:,self.dofs[12:]]
+        increment=np.linalg.solve(jac.T@jac+1e-6*np.eye(6),jac.T@error)
+        position=data.qpos[self.qindices[12:]]
+        limits=self.model.jnt_range[self.model.dof_jntid[self.dofs[12:]]]
+        outward=((position-limits[:,0]<.04)&(increment<0))|((limits[:,1]-position<.04)&(increment>0))
+        return error-jac[:,outward]@increment[outward]
 
     def _qp(self,data,state,ref,refrot,command,body_reference,warm):
         m,d=self.nominal,self.nominal_data; n=m.nv; size=n+12
@@ -188,6 +282,17 @@ class FloatingContact:
                     force_rows.append(row); force_low.append(-np.inf); force_high.append(0.)
         inequalities.append(np.array(force_rows)); low.append(np.array(force_low)); high.append(np.array(force_high))
         inequalities.append(np.c_[np.eye(n),np.zeros((n,12))]); low.append(np.full(n,-80.)); high.append(np.full(n,80.))
+        if self.joint_margin_execution:
+            joint_ids=m.dof_jntid[self.dofs]
+            acceleration_low,acceleration_high=joint_acceleration_bounds(
+                d.qpos[self.qindices],d.qvel[self.dofs],m.jnt_range[joint_ids])
+            inequalities.append(np.c_[selector,np.zeros((len(self.dofs),12))])
+            low.append(acceleration_low);high.append(acceleration_high)
+            if np.any(acceleration_low>acceleration_high):
+                self.last_qp_diagnostic=dict(status="infeasible joint viability interval",
+                    iterations=0,primal_residual=float(np.max(acceleration_low-acceleration_high)),
+                    dual_residual=0.,objective_scale=objective_scale)
+                return np.zeros(m.nu),warm,1e3
         matrix=np.concatenate([equality,*inequalities]); lower=np.concatenate([rhs,*low]); upper=np.concatenate([rhs,*high])
         solver=osqp.OSQP(); solver.setup(P=sparse.csc_matrix(np.triu(h)),q=g,A=sparse.csc_matrix(matrix),l=lower,u=upper,
             verbose=False,eps_abs=1e-5 if self.config.socket_profile=="matched_keyway" else 1e-4,
@@ -196,6 +301,12 @@ class FloatingContact:
         solver.warm_start(x=warm); result=solver.solve()
         self.last_qp_diagnostic=dict(status=result.info.status,iterations=int(result.info.iter),
             primal_residual=float(result.info.prim_res),dual_residual=float(result.info.dual_res),objective_scale=objective_scale)
+        if self.joint_margin_execution:
+            position=d.qpos[self.qindices];limits=m.jnt_range[joint_ids]
+            self.last_qp_diagnostic.update(
+                minimum_joint_margin_rad=float(np.minimum(position-limits[:,0],limits[:,1]-position).min()),
+                joint_acceleration_lower=acceleration_low.tolist(),joint_acceleration_upper=acceleration_high.tolist(),
+                joint_margin_constraint_scope="nominal model; measured q/qd; actual gain not used")
         if result.x is None or result.info.status_val not in (1,2): return np.zeros(m.nu),warm,1e3
         solution=result.x
         residual=max(float(np.max(np.abs(equality@solution-rhs))),float(np.max(np.maximum(lower-matrix@solution,0.))),float(np.max(np.maximum(matrix@solution-upper,0.))))
@@ -209,6 +320,8 @@ class FloatingContact:
         ref=state.reference_position+command[:3]*config.control_dt
         if command[12]>.01: ref[2]=data.site_xpos[self.sid,2]
         refrot=integrate_rotation(np,state.reference_rotation,command[3:6],config.control_dt)
+        if self.hidden_reference_governor:
+            ref,refrot=self._govern_reference(data,ref,refrot)
         bodyref=np.clip(state.body_reference+np.clip(np.nan_to_num(body),-.03,.03)*config.control_dt,[-.03,-.03,-.15],[.03,.03,.15])
         # Explicit admittance memory overcomes posture bias before contact.
         p,r=np.zeros((3,self.model.nv)),np.zeros((3,self.model.nv))
@@ -224,9 +337,12 @@ class FloatingContact:
         if config.socket_profile=="matched_keyway":
             task_error=np.r_[ref-data.site_xpos[self.sid],orientation_error(np,data.site_xmat[self.sid].reshape(3,3),refrot)]
             if command[12]>.01:task_error[2]=0.
+            if self.hidden_reference_governor:
+                task_error=self._integral_error(data,task_error)
             task_integral=np.clip(state.wbc_warm[-6:]+task_error*config.control_dt,[-.02]*3+[-.1]*3,[.02]*3+[.1]*3)
             controlstate=controlstate._replace(wbc_warm=np.r_[warm,task_integral])
         peak=0.; lateral_peak=0.; saturation=0.; forbidden=False; residual=0.; tau=np.zeros(self.model.nu)
+        observed_acceleration_discrepancy=0.
         wrench,_,touch,_,support=self._measure(data)
         if active:
             for substep in range(config.substeps):
@@ -237,8 +353,20 @@ class FloatingContact:
                     actual[:12]=self.mechanism.body_servo_gain*tau[:12]
                 saturation=max(saturation,float(np.max(np.abs(actual)/self.limits)))
                 data.ctrl[:]=np.clip(actual,-self.limits,self.limits)
+                prior_velocity=data.qvel.copy() if self.joint_margin_execution else None
                 mujoco.mj_step(self.model,data); mujoco.mj_forward(self.model,data)
+                if self.joint_margin_execution:
+                    finite_difference=(data.qvel-prior_velocity)/config.physics_dt
+                    observed_acceleration_discrepancy=max(observed_acceleration_discrepancy,
+                        float(np.max(np.abs(finite_difference-warm[:self.model.nv]))))
                 wrench,force,is_contact,bad,support=self._measure(data); peak=max(peak,force); lateral_peak=max(lateral_peak,float(np.linalg.norm(wrench[:2]))); touch|=is_contact; forbidden|=bad
+        if self.joint_margin_execution:
+            self.last_execution_diagnostic={
+                "nominal_constraint_residual":residual,
+                "velocity_difference_vs_nominal_qdd_max":observed_acceleration_discrepancy,
+                "discrepancy_scope":"max generalized velocity finite difference versus held nominal QP acceleration; diagnostic only, not a physical acceleration certificate",
+                "governed_reference_position":ref.tolist(),
+                "governed_reference_rotation":refrot.tolist()}
         status,seen,lost_count,hold,lost=contact_termination(np,state._replace(last_command=np.where(raw[12]>.1,command,np.zeros_like(command))),data.site_xpos[self.sid],wrench[2],peak,
             forbidden,np.isfinite(data.qpos).all()&np.isfinite(data.qvel).all()&np.isfinite(raw).all()&np.isfinite(body).all(),saturation>1,config,rotation=data.site_xmat[self.sid].reshape(3,3),lateral_peak=lateral_peak,
             axial_contact=self._axial_support(data) if config.socket_profile=="matched_keyway" else None,

@@ -1,0 +1,75 @@
+{
+  "version": "four-task-same-start-anchoring-contrast-v1",
+  "name": "finite_time_same_start_anchoring_contrast",
+  "task": "T3",
+  "diagnostic_only": true,
+  "performance_evidence": false,
+  "confirmation_states_opened": 0,
+  "failure_replacement": false,
+  "execution": {
+    "device": "cuda"
+  },
+  "methods": [
+    {
+      "family": "main",
+      "key": "cross_ebdm",
+      "label": "same_start_anchored",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "ours_same_start_anchored_v1",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_same_start_anchored/checkpoints/report.json",
+          "sha256": "bbc3a5a00fa550d380eb07be412c363f492c68b7d838f7c382dcc6594320e058"
+        }
+      }
+    },
+    {
+      "family": "main",
+      "key": "task_only",
+      "label": "same_start_task_only",
+      "instances": "all",
+      "candidate_policy_set": {
+        "method_identity": "same_start_task_only_v1",
+        "training_report": {
+          "path": "results/arm/keyed_insertion_recovery/training/finite_time_same_start_task_only/checkpoints/report.json",
+          "sha256": "6d411045e60653cb337e16d202a5b39a0b5f2301337fc93982a5882c83e5f09c"
+        }
+      }
+    }
+  ],
+  "requested_modes": [0, 1],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.7,
+        "delay_steps": 3,
+        "payload_mass": 0.5
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "servo_gain": 0.85,
+        "delay_steps": 1,
+        "payload_mass": 0.8
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "reset_slots_per_cell": 4,
+  "seed_anchor": 4720000,
+  "acceptance": {
+    "transport": "same_start_anchored",
+    "task_only": "same_start_task_only",
+    "required_pairs": 128,
+    "minimum_aggregate_success_rate_gain": 0.05,
+    "minimum_nonnegative_instances": 6,
+    "maximum_two_sided_exact_mcnemar_p_value": 0.05,
+    "require_zero_extra_transport_constraint_violations": true
+  },
+  "scope": "Fresh T3 causal development contrast. Both branches start from the exact same per-instance task-only checkpoint, use fresh optimizers, identical public data, sample streams, model capacity, 1500-update budgets, terminal endpoint policy, mechanisms, modes, reset requests, and evaluation code. The isolated training factor is response anchoring weight 1.0 versus 0.0. This does not open confirmation state or constitute paper performance evidence."
+}

@@ -1,0 +1,53 @@
+{
+  "schema_version": "transfer-subtask-contract-v1",
+  "contract_version": "transfer-dual-channel-contact-v1",
+  "semantic_id": "dual_channel_contact",
+  "family": "guided_contact_alignment",
+  "embodiment": "fixed_arm",
+  "environment": "guided_contact_alignment",
+  "implementation_status": "implemented_contract_frozen",
+  "semantics": {
+    "goal": "Establish loaded contact before the channel outlet, follow the requested channel with bounded contact loss, and complete the declared post-outlet terminal route.",
+    "excludes": ["requiring zero contact loss for the complete episode", "counting contact created only after the outlet", "treating the declared post-outlet lift as a bypass"]
+  },
+  "event_order": [
+    {"id": "preoutlet_loaded_contact", "evidence": ["physics-substep normal force above 0.3 N", "contact occurs before outlet crossing"]},
+    {"id": "guided_interval_completed", "evidence": ["at least 50 percent loaded-contact coverage", "no continuous contact gap exceeds 150 ms"]},
+    {"id": "outlet_crossed", "evidence": ["tcp and guide progress cross the declared outlet after the guided interval"]},
+    {"id": "postoutlet_terminal_hold", "evidence": ["declared lift or traverse route", "terminal pose, force, and dwell conditions"]}
+  ],
+  "interface": {
+    "observations": {
+      "public": ["tcp pose and twist", "goal and public reference pose", "measured wrench", "elapsed time", "known channel geometry", "issued-action history"],
+      "hidden": ["servo gain", "command delay", "payload mass", "evaluator contact coverage and method identity"]
+    },
+    "action_authority": {
+      "method": ["bounded tangential and rotational request", "declared stiffness and normal-force request"],
+      "public_execution": ["common substep wrench governor", "reference admission", "post-outlet public route", "common safety termination"],
+      "evaluator_only": ["contact-geom classification", "coverage and maximum-gap clocks", "strict terminal acceptance"]
+    }
+  },
+  "evaluation": {
+    "success": ["loaded contact is established before the outlet", "guided coverage is at least 50 percent", "no loaded-contact gap exceeds 150 ms before the outlet", "the post-outlet terminal hold completes within force and pose limits"],
+    "violations": ["normal or lateral overforce", "collision outside declared contact geoms", "joint-limit or workspace termination", "axial-support loss", "timeout"],
+    "anti_bypass": ["read contact from physics substeps rather than actor phase", "require preoutlet loaded contact", "require ordered outlet crossing", "allow post-outlet lift only after the guided interval"]
+  },
+  "mechanism_axes": [
+    {"name": "channel", "public": true, "train": ["primary", "secondary"], "development": ["primary", "secondary"], "heldout": ["primary", "secondary"]},
+    {"name": "contact_friction_class", "public": false, "train": ["nominal"], "development": ["nominal", "moderate"], "heldout": ["low", "high"]},
+    {"name": "servo_gain", "public": false, "train": [1.0], "development": [0.8, 1.0], "heldout": [0.65]},
+    {"name": "command_delay_controls", "public": false, "train": [0], "development": [0, 1], "heldout": [3]}
+  ],
+  "source_qualification": {
+    "status": "fresh_qualification_required_for_new_protocol",
+    "requirements": ["both channels pass the strict substep evaluator", "source qualification includes loaded-contact coverage and maximum-gap evidence", "post-outlet behavior is independently replayed", "source actor and configuration digests are frozen without failed-episode replacement"],
+    "evidence_resolution": "1 ms physics substeps for contact and 20 ms control ticks for command history"
+  },
+  "evaluator_evidence": {
+    "status": "current_implementation_bound_fresh_protocol_validation_required",
+    "resolution": "physics_substep_1ms",
+    "implementation_path": "genedynamics/tasks/transfer/guide_evaluation.py",
+    "required_signals": ["contact geom identities", "normal and tangential wrench", "guide progress and outlet state", "physics time", "tcp pose and twist", "terminal dwell clock"]
+  },
+  "historical_evidence_policy": "Existing dual-channel evidence keeps its original task contract and hashes; this semantic suite only governs new executions."
+}

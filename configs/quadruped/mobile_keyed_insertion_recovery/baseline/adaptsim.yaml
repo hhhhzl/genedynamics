@@ -1,0 +1,31 @@
+base: ../_base.yaml
+name: mobile_keyed_insertion_recovery_adaptsim
+method: adaptsim
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim
+metadata:
+  formal_experiment: false
+  formal_seeds: false
+  run_class: development
+method_params:
+  actor_binding:
+    version: transfer-actor-binding-v1
+    manifest: null
+    task: T4
+    family: main
+    binding_key: adaptsim
+    actor: adaptsim
+    status: instances_ready
+    instance_id: development_8737318
+    method_identity: AdaptSim_four_parameter_mobile_population_CEM
+    checkpoint:
+      path: results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/training/mobile_population_development_8737318/inference_and_policy.pt
+      sha256: c64b42e62d4ab986b12fe823c57064e8d68039f9c8e44f238853ba6983bccde5
+    training_recipe:
+      path: results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/training/mobile_population_development_8737318/recipe.json
+      sha256: c517642feee3d32366d4d27f944464ddbe5f3bbdb49361bcabc76fbecf9c3f5a
+    training_report:
+      path: results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/training/mobile_population_development_8737318/report.json
+      sha256: 5722b0e80a4c21ddbae0c616b10b9784143fc5cb47590deb59dadc207a2d82fe
+    training_audit:
+      path: results/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim/training/mobile_population_development_8737318/independent_audit.json
+      sha256: bddbdc839290a67828a48c57af367f02c209410aa7f47ec442d5d4780c43e785

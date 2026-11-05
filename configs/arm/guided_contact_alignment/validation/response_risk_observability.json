@@ -1,0 +1,66 @@
+{
+  "version": "t2-response-risk-observability-diagnosis-v1",
+  "device": "cpu",
+  "execution_scale": 0.25,
+  "methods": {
+    "cross_ebdm": "main/cross_ebdm.yaml",
+    "task_only": "baseline/task_only.yaml"
+  },
+  "instances": [
+    "instance_01",
+    "instance_02",
+    "instance_04",
+    "instance_05"
+  ],
+  "requests": [
+    {
+      "request_id": "T2-RISK/i00/m0",
+      "physical_initial_slot": 0,
+      "requested_mode": 0,
+      "reset_seed": 3262000,
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "confirmation_state": false,
+      "performance_evidence": false
+    },
+    {
+      "request_id": "T2-RISK/i01/m0",
+      "physical_initial_slot": 1,
+      "requested_mode": 0,
+      "reset_seed": 3262002,
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "confirmation_state": false,
+      "performance_evidence": false
+    }
+  ],
+  "predeclared_gate": {
+    "ensemble_reduction": "maximum",
+    "horizon_control_steps": 10,
+    "candidate_total_force_limit_N": 20.0,
+    "candidate_lateral_force_limit_N": 8.0,
+    "candidate_minus_base_total_limit_N": 2.0,
+    "candidate_minus_base_lateral_limit_N": 1.0
+  },
+  "diagnostic_only": true,
+  "confirmation_states_opened": 0,
+  "old_invalid_outcomes_used": false,
+  "qualification_evidence": {
+    "coordinate_scope_report": {
+      "path": "results/arm/guided_contact_alignment/validation/transport_coordinate_scope/report.json",
+      "sha256": "c0d64ea3ac0e348d3b999df572c3893f16c8e5a561ed949ba52d76d61c42b81f"
+    },
+    "coordinate_scope_audit": {
+      "path": "results/arm/guided_contact_alignment/validation/transport_coordinate_scope/independent_audit.json",
+      "sha256": "0421b963a55b2eaebc5b6ac527894814c9bd8a7f9e19fd34f5c5aea53011bf2a"
+    }
+  }
+}

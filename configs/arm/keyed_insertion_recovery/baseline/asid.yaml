@@ -1,0 +1,31 @@
+base: ../_base.yaml
+name: keyed_insertion_recovery_asid
+method: asid
+output_dir: results/arm/keyed_insertion_recovery/baseline/asid
+metadata:
+  formal_experiment: false
+  formal_seeds: false
+  run_class: development
+method_params:
+  actor_binding:
+    version: transfer-actor-binding-v1
+    manifest: null
+    task: T3
+    family: main
+    binding_key: asid
+    actor: asid
+    status: instances_ready
+    instance_id: development_8764701
+    method_identity: ASID_Fisher_32step_grid_CEM_mating_policy
+    checkpoint:
+      path: results/arm/keyed_insertion_recovery/baseline/asid/training/full_chain_development_8764701/checkpoint.json
+      sha256: 382dd9d6fa96a29772a7ca7ccd3b2cf6ffed3ce47b4b208fbcf4cedf6939ea4b
+    training_recipe:
+      path: results/arm/keyed_insertion_recovery/baseline/asid/training/full_chain_development_8764701/recipe.json
+      sha256: 05790e2cdfcfb24c71e9c0ad0891d5afdaa3952bdaab1ef2b475e786f89d8b5e
+    training_report:
+      path: results/arm/keyed_insertion_recovery/baseline/asid/training/full_chain_development_8764701/report.json
+      sha256: 2b761ee26e1837f8c79ce4400d518c1c786925b1e62fe630ce28eacd0b632757
+    training_audit:
+      path: results/arm/keyed_insertion_recovery/baseline/asid/training/full_chain_development_8764701/independent_audit.json
+      sha256: 20b05913a5554426ba4fdc1e437242038e7714f8f5f41066df50ff3e8a445cc5

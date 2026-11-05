@@ -9,6 +9,7 @@ from .runtime import (
 )
 
 __all__ = [
+    "CANONICAL_TASKS",
     "ExecutionSpec",
     "MechanismSpec",
     "ObstacleTransferConfig",
@@ -19,6 +20,10 @@ __all__ = [
 
 
 def __getattr__(name):
+    if name == "CANONICAL_TASKS":
+        from .task_identity import CANONICAL_TASKS
+
+        return CANONICAL_TASKS
     if name == "task_spec":
         from .specs import task_spec
 

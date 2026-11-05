@@ -1,0 +1,28 @@
+{
+  "version": "transfer-method-development-evaluation-v1",
+  "task": "T1",
+  "method": "fada",
+  "method_identity": "FADA_planner_repair_frozen_planner_IDM_adaptation",
+  "task_config": "configs/arm/obstacle_transfer/baseline/fada.yaml",
+  "checkpoint": {
+    "path": "results/arm/obstacle_transfer/training/fada_planner_repair_idm_pilot/instance_01/checkpoint.pt",
+    "sha256": "a985002dddb85466d51909e461e8fb466341e7c2a2374cc809adcbdc824c68eb"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "requests": [
+    {"robot": "xarm7", "requested_mode": 0, "reset_seed": 181200, "physical_initial_slot": 0, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "xarm7", "requested_mode": 1, "reset_seed": 181201, "physical_initial_slot": 0, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "xarm7", "requested_mode": 0, "reset_seed": 181202, "physical_initial_slot": 1, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "xarm7", "requested_mode": 1, "reset_seed": 181203, "physical_initial_slot": 1, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "xarm7", "requested_mode": 0, "reset_seed": 181204, "physical_initial_slot": 2, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "xarm7", "requested_mode": 1, "reset_seed": 181205, "physical_initial_slot": 2, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "xarm7", "requested_mode": 0, "reset_seed": 181206, "physical_initial_slot": 3, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}},
+    {"robot": "xarm7", "requested_mode": 1, "reset_seed": 181207, "physical_initial_slot": 3, "mechanism_parameters": {"delay_steps": 0, "payload_mass": 0.5, "servo_gain": 1.0}, "body_support_parameters": {}}
+  ],
+  "output": "results/arm/obstacle_transfer/baseline/fada/validation/planner_repair_target_pilot/instance_01",
+  "plan_output": "results/arm/obstacle_transfer/baseline/fada/validation/planner_repair_target_pilot/plan_instance_01.json"
+}

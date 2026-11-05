@@ -1,0 +1,31 @@
+base: ../_base.yaml
+name: guided_contact_alignment_adaptsim
+method: adaptsim
+output_dir: results/arm/guided_contact_alignment/baseline/adaptsim
+metadata:
+  formal_experiment: false
+  formal_seeds: false
+  run_class: development
+method_params:
+  actor_binding:
+    version: transfer-actor-binding-v1
+    manifest: null
+    task: T2
+    family: main
+    binding_key: adaptsim
+    actor: adaptsim
+    status: instances_ready
+    instance_id: development_8764501
+    method_identity: AdaptSim_task_adapted_CEM
+    checkpoint:
+      path: results/arm/guided_contact_alignment/baseline/adaptsim/training/guide_population_development_8764501/inference_and_policy.pt
+      sha256: 36f18020c39bece714d77e9275047ceea3ad3e3b9eac5682c123cdfbe348c59a
+    training_recipe:
+      path: results/arm/guided_contact_alignment/baseline/adaptsim/training/guide_population_development_8764501/recipe.json
+      sha256: 375a1f7673581f7733e6462f2beb67c1e3baa68dd9afd4a07f3066ef7ef96a89
+    training_report:
+      path: results/arm/guided_contact_alignment/baseline/adaptsim/training/guide_population_development_8764501/report.json
+      sha256: cc3b2e5b39bafe756426f9248f69f346ecfd03661df514c1ceaf81eb10be737d
+    training_audit:
+      path: results/arm/guided_contact_alignment/baseline/adaptsim/training/guide_population_development_8764501/independent_audit.json
+      sha256: dcb9fd9a6fe746f864ff25b1ca225b9f83d2ea4f34e3b2108dd7246e4ac72c76

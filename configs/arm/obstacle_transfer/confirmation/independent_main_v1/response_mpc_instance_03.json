@@ -1,0 +1,26 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v1",
+  "task": "T1",
+  "method": "response_mpc",
+  "method_identity": "ordinary_response_MPC",
+  "instance_id": "instance_03",
+  "task_config": {
+    "path": "configs/arm/obstacle_transfer/baseline/response_mpc.yaml",
+    "sha256": "aa1eb88a8cc64b0ec0a3b90fec60d71cb3e3ed072857c0c7440ae9340b06b725"
+  },
+  "request_roster": {
+    "path": "configs/arm/obstacle_transfer/protocol/independent_main_table_requests.json",
+    "sha256": "9a5c2ea0bfebdadd816baf0642dcd7eb6537536e8bdb528d37d2a69882827240"
+  },
+  "cell_admission": {
+    "path": "results/arm/obstacle_transfer/validation/independent_main_table_admission_v1/response_mpc.json",
+    "sha256": "ea86a16024cf49b4231a26c3f080de239428c4c528796ec93cb4520f95411ac6"
+  },
+  "output": "results/arm/obstacle_transfer/baseline/response_mpc/confirmation/independent_main_v1/instance_03",
+  "plan_output": "results/arm/obstacle_transfer/baseline/response_mpc/confirmation/independent_main_v1/instance_03_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  }
+}

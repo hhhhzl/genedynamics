@@ -6,9 +6,10 @@ unchanged. Panda remains exactly the original qualified guide reference.
 import numpy as np
 from genedynamics.core.control.transfer import orientation_error
 from .guide_antiwindup_lift_route import PublicGuideAntiWindupLiftRoutePolicy
-from .guide_lift_route import CLEAR_Z
+from .guide_lift_route import CLEAR_Z, PublicGuideLiftRoutePolicy
 class PublicGuideLeadLiftRoutePolicy(PublicGuideAntiWindupLiftRoutePolicy):
     VERSION='public-T2-order-event-shared-reference-lead-v1'
+    TRANSLATION_LEAD_M=np.asarray([.008,.008,.01])
     def act(self,public):
         tick=int(np.rint(np.asarray(public['elapsed_seconds']).item()/self.spec.config.control_dt))
         if tick==self.tick:return self.cached.copy()
@@ -42,7 +43,30 @@ class PublicGuideLeadLiftRoutePolicy(PublicGuideAntiWindupLiftRoutePolicy):
         # Same public lead limits already used by the shared T3/T4 decoder.
         # Apply throughout free-space travel as well as the loaded approach,
         # so the issued reference cannot accumulate an unbounded intent lead.
-        lead=np.asarray([.008,.008,.01]);velocity[:,:3]=np.clip(velocity[:,:3],(p-lead-rp)/dt,(p+lead-rp)/dt)
+        lead=np.asarray(self.TRANSLATION_LEAD_M);velocity[:,:3]=np.clip(velocity[:,:3],(p-lead-rp)/dt,(p+lead-rp)/dt)
         rotation_lead=np.stack([orientation_error(np,a,b) for a,b in zip(r,public['reference_rotation'])]);velocity[:,3:]=np.clip(velocity[:,3:],(-.04-rotation_lead)/dt,(.04-rotation_lead)/dt)
         velocity[:,:3]=np.clip(velocity[:,:3],-.02,.02);velocity[:,3:]=np.clip(velocity[:,3:],-.12,.12)
         self.cached=np.concatenate((velocity,stiffness,force),-1).astype(np.float32);self.tick=tick;return self.cached.copy()
+
+
+class PublicGuidePlanarLeadLiftRoutePolicy(PublicGuideLeadLiftRoutePolicy):
+    """Bound planar issued intent while preserving the public vertical route."""
+
+    VERSION='public-T2-order-event-planar-reference-lead-v1'
+    TRANSLATION_LEAD_M=np.asarray([.008,.008,np.inf])
+
+
+class PublicGuideRawPlanarLeadLiftRoutePolicy(PublicGuideLiftRoutePolicy):
+    """Add only an x/y issued-reference bound to the raw public lift route."""
+
+    VERSION='public-T2-raw-lift-planar-reference-lead-v1'
+    PLANAR_LEAD_M=np.asarray([.008,.008])
+
+    def act(self,public):
+        action=super().act(public).copy()
+        if self.base is None:
+            p=np.asarray(public['tcp_position']);rp=np.asarray(public['reference_position']);dt=self.spec.config.control_dt;lead=self.PLANAR_LEAD_M
+            action[:,:2]=np.clip(action[:,:2],(p[:,:2]-lead-rp[:,:2])/dt,(p[:,:2]+lead-rp[:,:2])/dt)
+            action[:,:2]=np.clip(action[:,:2],-self.HORIZONTAL_SPEED_LIMIT_MPS,self.HORIZONTAL_SPEED_LIMIT_MPS)
+            self.cached=action.copy()
+        return action

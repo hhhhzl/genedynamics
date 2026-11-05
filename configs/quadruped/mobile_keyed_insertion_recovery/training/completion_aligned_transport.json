@@ -1,0 +1,281 @@
+{
+  "actor_manifest": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/actor_bindings.json",
+    "sha256": "7242a11df4d6da0c5ed7dc5fe88c8235bc6ff694b5face04f0aa4b5e2846c932"
+  },
+  "completion_progress": {
+    "angular_progress_scale": 0.001,
+    "linear_progress_scale": 0.0001,
+    "minimum_candidate_delta": 0.0001,
+    "orientation_tolerance_rad": 0.03490658503988659,
+    "position_tolerance_m": 0.002,
+    "progress_tolerance": 1e-07,
+    "progress_weight": 1.0,
+    "terminal_multiplier": 2.0,
+    "terminal_weight": 1.0
+  },
+  "data": {
+    "frozen_public_inputs": {
+      "path": "results/_development/p4_completion_20261015/results/quadruped/mobile_keyed_insertion_recovery/validation/p4_primary_shared_response_v1/level_B_log_0_30_60_120/seed_153000/frozen_inputs.json",
+      "sha256": "49c307e27d5d725b9ce536e3780288919e46327f399327bdd4ff497c82d59985"
+    },
+    "source_manifest": {
+      "path": "results/_development/p4_derated_20261014/results/arm/keyed_insertion_recovery/qualification/fada_derated_source_opportunity/level_source/seed_28440/qualification.json",
+      "sha256": "0956436687ab283c4f6aa5aaf910a0a3f86d46c5c86dc6d6123a222e1fd3d1c3"
+    },
+    "source_prior": {
+      "path": "results/_development/p0p1_20261013_v2/results/arm/keyed_insertion_recovery/validation/cross_ebdm/_source/prior",
+      "sha256": {
+        "metadata.json": "9299cf19d96042ad4f1007f30087e7d0e994f5f1cb71a98a479f5cd8c83349db",
+        "tensors-6b33a9480cc879ee3d1f470f3d2ad55f79b2682b9575e4bca824a970d7ef22d7.npz": "6b33a9480cc879ee3d1f470f3d2ad55f79b2682b9575e4bca824a970d7ef22d7"
+      }
+    },
+    "state_stride": 5,
+    "weak_log_manifest": {
+      "path": "results/_development/p4_completion_20261015/results/quadruped/mobile_keyed_insertion_recovery/validation/p4_primary_shared_weak_logs_v1/level_B_log_30_60_120/seed_151000/B_log/budget_60.json",
+      "sha256": "fbd58b2505453cac91b69ab74be0144712c44b1a117080e81a68166ffc406070"
+    }
+  },
+  "device": {
+    "logical_device": "cuda:0",
+    "physical_uuid": "58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1",
+    "required_visible_device_count": 1
+  },
+  "feedback": {
+    "alignment_spatial_stiffness": 1.0,
+    "compensation_gain": 2.0,
+    "compensation_limit": 0.04,
+    "execution_horizon": 1,
+    "guard_clear_z_m": 0.61,
+    "guard_prediction_seconds": 0.0,
+    "guard_retreat_speed": 0.006,
+    "guard_seat_gap_m": 0.006,
+    "guard_settle_ticks": 4,
+    "insertion_force_scale": 1.0,
+    "insertion_spatial_stiffness": 1.0,
+    "integral_scale": 0.0,
+    "issued_reference_gain": 2.0,
+    "lead_rotation_rad": 0.04,
+    "lead_xy_m": 0.008,
+    "lead_z_m": 0.01,
+    "lift_before_lateral": true,
+    "normal_admittance_gain": 0.004,
+    "normal_control": "position_admittance",
+    "normal_velocity_limit": 0.015,
+    "position_gain": 6.0,
+    "recovery_spatial_stiffness": 0.25,
+    "rotation_gain": 4.0,
+    "twist_damping": 1.0
+  },
+  "instances": {
+    "instance_01": {
+      "current_checkpoint": {
+        "path": "results/_development/p5p6_method_identity_20261016/results/cross_embodiment/four_task_benchmark/method/p5p6_task_compatible_gate_training_v4/level_B_log_60/seed_221300/T4/checkpoint.pt",
+        "sha256": "56b04fe66c1f658131b530d011d277506da856291bc12208554d1be5775ab8b0"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p5p6_method_identity_20261016/results/cross_embodiment/four_task_benchmark/method/p5p6_task_compatible_gate_training_v4/level_B_log_60/seed_221300/T4/frozen.json",
+        "sha256": "ed56b06cf960b59146029cb394f9316609bfae9d251553c470b63c272fbd602a"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p4_completion_20261015/results/quadruped/mobile_keyed_insertion_recovery/validation/p4_primary_shared_response_v1/level_B_log_0_30_60_120/seed_153000/budget_60/checkpoint.pt",
+        "sha256": "5eee03e0a2b60507a06e8fc71ad79428227c72c38a52fce8a0a25654c4bc95c0"
+      },
+      "seed": 432001,
+      "task_only_checkpoint": {
+        "path": "results/_development/p5_attribution_repair_20261016/results/quadruped/mobile_keyed_insertion_recovery/validation/p5_mobile_transport_factorial_B60_comparable_v2/level_B_log_60/seed_181000/task_only/checkpoint.pt",
+        "sha256": "f9b9bad71dc1e150ee1921676a4e72728176fbec542c780e451e2baa0d91d778"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p4_completion_20261015/results/quadruped/mobile_keyed_insertion_recovery/validation/p4_primary_recovery_dense_v1/level_B_log_0_30_60_120/seed_155000/budget_60/common_warmup/continuation.pt",
+        "sha256": "cecc700fd646eaf191704f35c786e0ea4f3973b6ae94762b99548ad0f91135f0"
+      }
+    },
+    "instance_02": {
+      "current_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_02/gated_v2_contact/T4/checkpoint.pt",
+        "sha256": "764e1f10880cf97237d39a2e127bacb424510b47cf0ae7e5e65c82d8689c6a4e"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_02/gated_v2_contact/T4/frozen.json",
+        "sha256": "9c1ba2bbf3458219b5357f1e155de18d313220e77f4d4b7714e17255cdbb3f4f"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v1/level_B_log_60/instance_02/T4/response/budget_60/checkpoint.pt",
+        "sha256": "849349387e734ef687a7945147ccf1277f05e7d26376bf8ed71782a595f4bd5a"
+      },
+      "seed": 432002,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v1/level_B_log_60/instance_02/T4/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "58bf0f661a09682a6ac44275587e85e0760cf65647e1814b8ef4c37d85ea6080"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v1/level_B_log_60/instance_02/T4/paired_base/budget_60/common_warmup/continuation.pt",
+        "sha256": "5e04f34c2a1cb5a9b7d47d5794480504207667d5fa0fa6a2637f7230a8891adc"
+      }
+    },
+    "instance_03": {
+      "current_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/gated_v2_contact/T4/checkpoint.pt",
+        "sha256": "51569d915cf3bb5d4542be380fe3cbba20e6375faf7373431b2bfc0ccc298ae0"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/gated_v2_contact/T4/frozen.json",
+        "sha256": "14839ce74191ec9d298631b9b7d5e2e04a0ea96293e4f9b593d0fc6110e335d6"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/T4/response/budget_60/checkpoint.pt",
+        "sha256": "a15ce107fbcabc7ff4d63c325fae7200e8577930860d4a91673b85d248fee2a0"
+      },
+      "seed": 432003,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/T4/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "a355c05c0d2ed09fe1bee42bf2ebb501ba11a5c1176a056a2b88a4aeac8f3d34"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_03/T4/paired_base/budget_60/common_warmup/continuation.pt",
+        "sha256": "a299936680315da3e16a2a14b61bc8deafdac29b9e163b7c66e7b0ec9537984e"
+      }
+    },
+    "instance_04": {
+      "current_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/gated_v2_contact/T4/checkpoint.pt",
+        "sha256": "31d8933b8b01b2f36a6f88934c882e96017f9131061f666d84e27d89307b6f58"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/gated_v2_contact/T4/frozen.json",
+        "sha256": "a44f4dc5157020caf59f2b20e647cffe37eee6ff443abc312eb9899f7f94154e"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/T4/response/budget_60/checkpoint.pt",
+        "sha256": "fa74d14c5e49712f149c93b8cfc82ed989dd4f2f94a20c9905865b55ad0d4438"
+      },
+      "seed": 432004,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/T4/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "a3eda3cafa2fca246017f4dc755612d868a927d32c25ab0d12180e91f4458c45"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_04/T4/paired_base/budget_60/common_warmup/continuation.pt",
+        "sha256": "87465b705379cf8f2d6fde6f9a81ea7c3fd57b227c64e943afabe66583caee73"
+      }
+    },
+    "instance_05": {
+      "current_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/gated_v2_contact/T4/checkpoint.pt",
+        "sha256": "e7929dd6f918372f8b02e5d476ba56fba4829f3c3bbd00ba6f47f5d48d8b6f9c"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/gated_v2_contact/T4/frozen.json",
+        "sha256": "a3137539c3e6223a39e059d00a0b2498ade84f0adce36cb4d940b93a48fa3aa9"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/T4/response/budget_60/checkpoint.pt",
+        "sha256": "a34673dea4af0cb3f9a26e6c4de735b906ef1cd75f408f07686418145996f522"
+      },
+      "seed": 432005,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/T4/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "6cdbb3752097ebf0fe567bf196148c895a54501e9c3ef7527ec5cf71bde3b65f"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v2/level_B_log_60/instance_05/T4/paired_base/budget_60/common_warmup/continuation.pt",
+        "sha256": "ccc0527f077aa2474564c9b07b91964dde43e268fdf0fb9a47fb7c936a36ca42"
+      }
+    },
+    "instance_06": {
+      "current_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/gated_v2_contact/T4/checkpoint.pt",
+        "sha256": "5047cd2c146b78a6ae0264fc12d3fff4a42b8f1274021d10506107bcdc774192"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/gated_v2_contact/T4/frozen.json",
+        "sha256": "2f4a582b54651e4fc5438023e8ec38f6c4e557c0a8c7e6135a8a3d0c52c14a5e"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/T4/response/budget_60/checkpoint.pt",
+        "sha256": "624ebf5ab019b0ce06fb6fedc65bce71f4b43321a5b373a693da4c05558b528f"
+      },
+      "seed": 432006,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/T4/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "54f99b5ced838a4932ea618b7c3fb54c771b02c4e057a8c10c28c4fd3efae824"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_06/T4/paired_base/budget_60/common_warmup/continuation.pt",
+        "sha256": "63a83afb76a66a3e53ac7f68520b548e562cc7522e433a2554a2ab7f7f9fa5b5"
+      }
+    },
+    "instance_07": {
+      "current_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/gated_v2_contact/T4/checkpoint.pt",
+        "sha256": "cb8f0577c0c7f47672324d98a7b30b7c47d670300f68c50264245f80b2bf2bf2"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/gated_v2_contact/T4/frozen.json",
+        "sha256": "e2e09c47c0e040cbcc71ba9f81716a9c73add715e4c395ae53cc22414cbc0615"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/T4/response/budget_60/checkpoint.pt",
+        "sha256": "ea085c77106204d4d46c739129689cf61fe806614398fbc9c34529ada12b835a"
+      },
+      "seed": 432007,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/T4/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "56ee7dd1e13d42151f64637c75cdcc4f5f6f5976d060d2b6df860a359de8c5eb"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_07/T4/paired_base/budget_60/common_warmup/continuation.pt",
+        "sha256": "d8f9df13ad9acc6ad6d22a354cf9f098bfa7d3fbd5baf79c084fe67ce0d7dfc4"
+      }
+    },
+    "instance_08": {
+      "current_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/gated_v2_contact/T4/checkpoint.pt",
+        "sha256": "e33174d847a3026899c8f62e326b69c27ce7bef635d468a43a0b214b5c2125dc"
+      },
+      "gate_sidecar": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/gated_v2_contact/T4/frozen.json",
+        "sha256": "c138f3c434d2221c205a9a2732bf95738cf4b84613fbb8d2caa8b0c00f842a81"
+      },
+      "response_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/T4/response/budget_60/checkpoint.pt",
+        "sha256": "9b6940d1e74f355873cb65093cb970408031d0c25ad56b90c41b310a73042301"
+      },
+      "seed": 432008,
+      "task_only_checkpoint": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/T4/paired_base/budget_60/task_only/checkpoint.pt",
+        "sha256": "eb9eb902097b39140cd09238aa2effe27cd44e258786e485fd8dcbd1ec1c5898"
+      },
+      "warm_continuation": {
+        "path": "results/_development/p6_preaccess_instances_20261017/results/cross_embodiment/four_task_benchmark/method/p6_independent_instances_v3/level_B_log_60/instance_08/T4/paired_base/budget_60/common_warmup/continuation.pt",
+        "sha256": "ae1da21ed4c8ae8592d32ee21098adfd64fe00aec28a94e0747e9b80975e3383"
+      }
+    }
+  },
+  "limits": {
+    "maximum_gpu_GiB": 10,
+    "wall_seconds": 1800
+  },
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_aligned_transport/checkpoints",
+  "preflight_output": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_aligned_transport/preflight",
+  "preflight_report": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/training/completion_aligned_transport/preflight_device_bound/report.json",
+    "sha256": "8c07f69fbf2a2c5f8652c8ddf8abb5b6aebdfe44780f4844326c00f138d834e5"
+  },
+  "scope": "T4 public source/known-nominal and unrewarded B_log model training only; no new physics, confirmation state, target reward, evaluator label, or hidden mechanism state.",
+  "selection": {
+    "minimum_useful_fraction": 0.25,
+    "progress_tolerance": 1e-07,
+    "task_tolerance": 0.05
+  },
+  "status": "frozen_gpu1_training",
+  "training": {
+    "batch_size": 64,
+    "log_interval": 100,
+    "target_state_fraction": 0.5,
+    "updates": 2000
+  },
+  "version": "t4-completion-aligned-transport-training-v1"
+}

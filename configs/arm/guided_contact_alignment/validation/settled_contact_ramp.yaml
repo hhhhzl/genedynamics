@@ -1,0 +1,14 @@
+base: channel_centered_contact.yaml
+name: guided_contact_alignment_settled_contact_ramp
+output_dir: results/arm/guided_contact_alignment/validation/settled_contact_ramp
+seeds:
+- 930262
+- 930263
+- 930264
+- 930265
+method_params:
+  actor_binding:
+    reference_version: public_settled_contact_ramp_v9
+metadata:
+  protocol: transfer_settled_contact_ramp
+  selection_rule: require both requested xArm modes on all four fresh resets to satisfy the unchanged strict contact, force, mode, and deadline criteria

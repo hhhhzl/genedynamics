@@ -1,0 +1,8 @@
+base: ../_base.yaml
+name: mobile_keyed_insertion_recovery_task_only
+method: task_only
+output_dir: results/quadruped/mobile_keyed_insertion_recovery/baseline/task_only
+method_params:
+  ablation_cell: task_only
+  actor_binding:
+    key: task_only

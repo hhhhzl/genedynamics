@@ -1,0 +1,95 @@
+{
+  "version": "adaptsim-guide-policy-feasibility-v1",
+  "task": "T2",
+  "robot": "xarm7",
+  "task_config": {
+    "path": "configs/arm/guided_contact_alignment/_base.yaml",
+    "sha256": "8dca404194707eee8cdc70a1af375447ea5dd68d6eb979ad626aa9a8ed2a2306"
+  },
+  "execution": {
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "maximum_wall_seconds": 600,
+    "maximum_gpu_memory_gib": 2
+  },
+  "policy_fields": [
+    "authority_growth_per_control",
+    "nominal_lead_m",
+    "maximum_contact_speed_mps"
+  ],
+  "policies": [
+    {
+      "name": "anchor",
+      "values": [
+        0.02,
+        0.008,
+        0.03
+      ]
+    },
+    {
+      "name": "conservative",
+      "values": [
+        0.01,
+        0.006,
+        0.02
+      ]
+    },
+    {
+      "name": "aggressive",
+      "values": [
+        0.04,
+        0.01,
+        0.04
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "scene_cell": "source",
+      "mode": 0,
+      "seed": 3300800000,
+      "mechanism": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      }
+    },
+    {
+      "scene_cell": "source",
+      "mode": 1,
+      "seed": 3300800001,
+      "mechanism": {
+        "servo_gain": 0.85,
+        "payload_mass": 0.65,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      }
+    },
+    {
+      "scene_cell": "nominal",
+      "mode": 0,
+      "seed": 3300800002,
+      "mechanism": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      }
+    },
+    {
+      "scene_cell": "nominal",
+      "mode": 1,
+      "seed": 3300800003,
+      "mechanism": {
+        "servo_gain": 1.0,
+        "payload_mass": 0.5,
+        "delay_steps": 0,
+        "contact_time_constant": 0.04
+      }
+    }
+  ],
+  "output": "results/arm/guided_contact_alignment/baseline/adaptsim/validation/guide_policy_feasibility_3300800000",
+  "formal_performance_evidence": false,
+  "failure_replacement": false
+}

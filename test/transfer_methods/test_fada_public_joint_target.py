@@ -3,7 +3,7 @@ import torch
 from genedynamics.solvers.single.fada.learning.task_training import released_model_config
 from genedynamics.solvers.single.fada.backends.model import PlannerIDMPolicy
 from genedynamics.solvers.single.fada import FADASolver
-from genedynamics.experiments.plugins.methods.transfer.fada.joint_target import lift_target_joint_checkpoint
+from genedynamics.tasks.transfer.controllers.fada.joint_target import lift_target_joint_checkpoint
 from genedynamics.solvers.single.fada.learning.trainer import FADAIDMAdapter,IDMAdaptationConfig
 
 

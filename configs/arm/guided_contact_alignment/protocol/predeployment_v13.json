@@ -1,0 +1,46 @@
+{
+  "version": "four-task-behavioral-predeployment-v13",
+  "task": "T2",
+  "extends": {
+    "path": "configs/arm/guided_contact_alignment/protocol/predeployment_v12.json",
+    "sha256": "1288d272d60aa64b454513e385dfe75349d38f33f1783562fb732fa4002494cf"
+  },
+  "shared_task_contract": {
+    "path": "configs/arm/guided_contact_alignment/protocol/task_contract_v5.json",
+    "sha256": "0123b8644726df003e61f470fb4078e45d5e404629cea9d86a0c33f0fb9c42bb"
+  },
+  "seed_anchor": 4692000,
+  "reset_slots_per_cell": 2,
+  "requested_modes": [0, 1],
+  "scene_cells": [
+    {
+      "id": "latency_gain_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 3,
+        "payload_mass": 0.5,
+        "servo_gain": 0.7
+      },
+      "body_support_parameters": {}
+    },
+    {
+      "id": "payload_shift",
+      "robot": "xarm7",
+      "mechanism_parameters": {
+        "delay_steps": 1,
+        "payload_mass": 0.8,
+        "servo_gain": 0.85
+      },
+      "body_support_parameters": {}
+    }
+  ],
+  "gate": {
+    "require_all_mode_correct_task_success": true,
+    "require_zero_constraint_violations": true,
+    "require_evidence_reaudit": true,
+    "require_exact_physics_contact_evidence": true,
+    "failure_replacement": false
+  },
+  "source_admission": "Validate every method's declared source or training artifact and SHA through the existing task-local actor manifest. Retain algorithm and external-resource rejections; never replace a rejected row or reuse a prior outcome.",
+  "scope": "Fresh task_contract_v5 behavior qualification for every executable T2 main, baseline and ablation row after the clearance-progress task interface passed its seed-disjoint 72/72 public-and-Cross-EBDM release gate. Baseline and ablation failures remain in their denominators. This is predeployment evidence, not paper performance evidence."
+}

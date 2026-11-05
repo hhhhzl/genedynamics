@@ -1,0 +1,28 @@
+{
+  "version": "transfer-independent-actor-development-evaluation-v1",
+  "task": "T2",
+  "method": "asid",
+  "method_identity": "ASID_Fisher_exploration_grid_and_CEM_identification_CEM_task_policy",
+  "actor_binding_source": "independent_actor_package",
+  "actor_package": {
+    "path": "results/arm/guided_contact_alignment/baseline/asid/validation/independent_actor_package_v1/report.json",
+    "sha256": "b17e04424e0062eee24477c36db1a55cbff072308501bcfbf00a521c04be4348"
+  },
+  "instance_id": "independent_8802005",
+  "task_config": "configs/arm/guided_contact_alignment/baseline/asid.yaml",
+  "checkpoint": {
+    "path": "results/arm/guided_contact_alignment/baseline/asid/training/independent_training_8802005/checkpoint.json",
+    "sha256": "cb5eab59c3cc856290b0f51c7b2fd96a1cf467b559d96d6f122879b1f1b12987"
+  },
+  "request_roster": {
+    "path": "configs/arm/guided_contact_alignment/validation/asid_independent_actor_source_nominal_roster.json",
+    "sha256": "c3f92f326485db3ddc0f727f7bba395b52da12e6e93d4c666341e9813c4a4df3"
+  },
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  },
+  "output": "results/arm/guided_contact_alignment/baseline/asid/validation/independent_source_nominal_8802005",
+  "plan_output": "results/arm/guided_contact_alignment/baseline/asid/validation/plans/independent_source_nominal_8802005.json"
+}

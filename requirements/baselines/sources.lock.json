@@ -2,6 +2,21 @@
   "schema_version": 1,
   "sources": [
     {
+      "method": "dial_transfer",
+      "directory": "DIAL-MPC",
+      "repository": "https://github.com/LeCAR-Lab/dial-mpc.git",
+      "commit": "871c84f1cefbe9fa9d83a06b05ab4f0243c1a05c",
+      "sparse_paths": [
+        "dial_mpc/core"
+      ],
+      "required_source_files": [
+        "dial_mpc/core/dial_core.py"
+      ],
+      "licenses": {
+        "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+      }
+    },
+    {
       "method": "fada",
       "directory": "FADA",
       "repository": "https://github.com/LeCAR-Lab/FADA.git",
@@ -55,6 +70,25 @@
       "licenses": {
         "LICENSE": "d11126ed07cd56eb038ecbaa186368b75d5cc87b88308505b43269450f302c4e"
       }
+    },
+    {
+      "method": "asid",
+      "directory": "ASID",
+      "repository": "https://github.com/WEIRDLabUW/asid.git",
+      "commit": "cf2cb670fb983f67cf2af156d4e17b4a690787e2",
+      "sparse_paths": ["env/wrappers", "configs", "train.py"],
+      "required_source_files": ["env/wrappers/asid_reward.py"],
+      "licenses": {},
+      "license_note": "No license file in the public upstream repository; solver independently implements the published Fisher objective."
+    },
+    {
+      "method": "adaptsim",
+      "directory": "AdaptSim",
+      "repository": "https://github.com/irom-princeton/AdaptSim.git",
+      "commit": "9cf80fb4268749fddf21c39eb861498bc7b052c3",
+      "sparse_paths": ["adaptsim/agent", "adaptsim/param", "adaptsim/learner", "adaptsim/model", "cfg", "script"],
+      "required_source_files": ["adaptsim/param/parameter_base.py", "adaptsim/model/branching_q_network.py", "adaptsim/learner/branching_q.py"],
+      "licenses": {"LICENSE": "cda26ba45a95bf482ea318f6af8e21f6270ecced0cdcfd2477acbc8e29aa0376"}
     },
     {
       "method": "play2perfect",

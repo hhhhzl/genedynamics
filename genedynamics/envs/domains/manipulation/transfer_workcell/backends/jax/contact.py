@@ -8,7 +8,9 @@ from .execution import select_device
 from functools import wraps
 from genedynamics.tasks.transfer.contact import (
     ContactState, ContactTrace, ContactChunk, ContactCommands,
-    bounded_contact_command, hybrid_wrench, contact_termination,
+    bounded_contact_command, hybrid_wrench, govern_substep_reference,
+    govern_substep_wrench,
+    contact_termination,
 )
 from genedynamics.core.control.transfer import integrate_rotation
 from genedynamics.tasks.transfer.runtime import MechanismSpec, RandomRequest, mechanism_specs
@@ -105,7 +107,8 @@ class JaxContact:
         data=mjx.forward(model,self.initial.replace(qpos=qpos+self.config.reset_joint_noise*noise))
         return ContactState(data,data.site_xpos[self.sid],data.site_xmat[self.sid],jp.zeros(13,self.dtype),
             jp.zeros((5,13),self.dtype),self.dtype(0),self.dtype(0),qpos[:3] if self.config.mobile else jp.zeros(3,self.dtype),
-            self.dtype(0),identity,jp.int32(0),jp.bool_(False),jp.int32(0),jp.int32(0),jp.int32(0))
+            self.dtype(0),jp.int32(0),jp.int32(0),jp.zeros(6,self.dtype),jp.int32(0),jp.int32(0),
+            identity,jp.int32(0),jp.bool_(False),jp.int32(0),jp.int32(0),jp.int32(0))
 
     @_contact_scope
     def reset_batch(self,request,*,previous=None,mask=None,initial="clear"):
@@ -200,13 +203,25 @@ class JaxContact:
             body_reference=jp.clip(body_reference+jp.clip(jp.nan_to_num(body_twist),-.05,.05)*config.control_dt,
                                    jp.array([-.15,-.15,-.4]),jp.array([.15,.15,.4]))
         def physics(carry,_):
-            data,peak,lateral_peak,saturation,allowed,forbidden=carry
+            data,ref,peak,lateral_peak,saturation,allowed,forbidden,previous_wrench,phase,phase_age,support_dwell,release_progress,governor_active=carry
             jacp,jacr=support.jac(model,data,data.site_xpos[self.sid],self.body)
             jac=jp.concatenate((jacp.T,jacr.T))
             local_wrench,_,local_touch,_=self._measure(data,model)
             normal_touch=self._axial_support(data) if config.socket_profile=="matched_keyway" else local_touch
+            guide_prefix=((data.site_xpos[self.sid,0]<=.455)
+                          & (data.site_xpos[self.sid,1]<=-.181))
+            measured_support=jp.linalg.norm(local_wrench[:3])>config.contact_threshold
             wrench=hybrid_wrench(jp,data.site_xpos[self.sid],data.site_xmat[self.sid],jac@data.qvel,
                 ref,refrot,command,integral,local_wrench[2],config,state.contact_seen|normal_touch,approach)
+            prior_wrench=previous_wrench
+            wrench,phase,phase_age,previous_wrench,support_dwell,release_progress,governor_active=govern_substep_wrench(
+                jp,wrench,command[:2],local_wrench,data.site_xpos[self.sid],
+                jac@data.qvel,measured_support,guide_prefix,phase,phase_age,
+                previous_wrench,support_dwell,release_progress,config)
+            ref,_,_,_,_,_,admitted_tangent=govern_substep_reference(
+                jp,ref,data.site_xpos[self.sid],jac@data.qvel,command,
+                wrench,phase,config,support_dwell=support_dwell)
+            wrench=jp.concatenate((admitted_tangent,wrench[2:]))
             posture=10.*(self.start-data.qpos)
             if config.mobile: posture=posture.at[:3].set(100.*(body_reference-data.qpos[:3])-20.*data.qvel[:3])
             null=posture-jac.T@jp.linalg.solve(jac@jac.T+1e-6*jp.eye(6),jac@posture)
@@ -214,10 +229,16 @@ class JaxContact:
             saturation=jp.maximum(saturation,jp.max(jp.abs(tau)/self.limits))
             data=mjx.forward(model,mjx.step(model,data.replace(ctrl=jp.clip(tau,-self.limits,self.limits)[self.actuator_dofs])))
             measured,force,touch,bad=self._measure(data,model)
-            return (data,jp.maximum(peak,force),jp.maximum(lateral_peak,jp.linalg.norm(measured[:2])),saturation,allowed|touch,forbidden|bad),measured
+            return (data,ref,jp.maximum(peak,force),jp.maximum(lateral_peak,jp.linalg.norm(measured[:2])),saturation,
+                    allowed|touch,forbidden|bad,previous_wrench,phase,phase_age,
+                    support_dwell,release_progress,governor_active),measured
         old_wrench,_,old_touch,old_bad=self._measure(state.physics,model)
-        result,wrenches=jax.lax.scan(physics,(state.physics,self.dtype(0),self.dtype(0),self.dtype(0),old_touch,old_bad),None,length=config.substeps)
-        data,peak,lateral_peak,saturation,allowed,forbidden=result; wrench=wrenches[-1]; normal=wrench[2]
+        result,wrenches=jax.lax.scan(physics,(state.physics,ref,self.dtype(0),self.dtype(0),self.dtype(0),old_touch,old_bad,
+                                             state.governor_previous_wrench,state.governor_phase,
+                                             state.governor_phase_age,state.governor_support_dwell,
+                                             state.governor_release_progress,jp.bool_(False)),None,length=config.substeps)
+        data,ref,peak,lateral_peak,saturation,allowed,forbidden,governor_previous_wrench,governor_phase,governor_phase_age,governor_support_dwell,governor_release_progress,_=result
+        wrench=wrenches[-1]; normal=wrench[2]
         finite=jp.all(jp.isfinite(data.qpos))&jp.all(jp.isfinite(data.qvel))&jp.all(jp.isfinite(raw))&jp.all(jp.isfinite(body_twist))
         status,seen,loss,hold,lost=contact_termination(jp,state._replace(last_command=jp.where(raw[12]>.1,command,jp.zeros_like(command))),data.site_xpos[self.sid],normal,peak,forbidden,finite,saturation>1,config,rotation=data.site_xmat[self.sid],lateral_peak=lateral_peak,
             axial_contact=self._axial_support(data) if config.socket_profile=="matched_keyway" else None)
@@ -225,7 +246,10 @@ class JaxContact:
         status=jp.where(jp.max(jp.abs(data.qvel))>3.,4,status)
         integral=jp.where(saturation>1,state.force_integral,integral)
         approach=jp.where(saturation>1,state.approach_integral,approach)
-        candidate=ContactState(data,ref,refrot,bounded,buffer,integral,approach,body_reference,normal,state.sample_id,state.steps+1,seen,loss,hold,status)
+        candidate=ContactState(data,ref,refrot,bounded,buffer,integral,approach,body_reference,normal,
+            governor_phase,governor_phase_age,governor_previous_wrench,
+            governor_support_dwell,governor_release_progress,
+            state.sample_id,state.steps+1,seen,loss,hold,status)
         new=jax.tree.map(lambda n,o:jp.where(active,n,o),candidate,state)
         stage=jp.where(self.config.insertion&(new.physics.site_xpos[self.sid,2]<config.goal[2]+.01),3,
             jp.where(normal>config.contact_threshold,1,jp.where(state.contact_seen,2,0)))

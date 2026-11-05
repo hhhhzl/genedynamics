@@ -69,7 +69,7 @@
 \maketitle
 \vspace{-1em}
 \begin{abstract}
-不同机器人可以共享任务语义，但同一个技能分布在不同执行机制下会产生不同的接触、运动和失败分布。本文研究如何将源任务条件行为分布迁移为目标机器人可执行的行为分布。我们以已有源行为先验为起点，通过有限干预校准任务相关的执行响应，再学习一个 source-conditioned deterministic residual transport。训练始终保留原始任务损失，并只在 matched task-only 近优、公开校准支持内、ensemble disagreement 较低且执行阶段允许的样本上施加 source-response anchoring；独立模型验证上的 task-only fallback 防止明显的模型代理退化。该设计给出的是条件性的 selective anchoring 机制，soft task band 与 fallback 都不构成真实任务或安全保证。理论区分 gate 对训练目标的代数作用、二选一 checkpoint 的模型代理界、事件裕度条件与实际任务表现。实验拟以全 3D、6/7 自由度机械臂为起点，依次研究持件进入受限工位、严格导面接触定位和带恢复的 keyed connector 插入；第四项任务保持插入语义并改变移动身体与支撑耦合。四任务使用九行强方法主表、六格对齐消融、两个机制组和独立训练/校准实例。实机平台证据尚未完成，本文不预先声称部署、普遍性能优势或安全保证。
+不同机器人可以共享任务语义，但同一个技能分布在不同执行机制下会产生不同的接触、运动和失败分布。本文研究如何将源任务条件行为分布迁移为目标机器人可执行的行为分布。我们以已有源行为先验为起点，通过有限干预校准任务相关的执行响应，再学习一个 source-conditioned deterministic residual transport。训练始终保留原始任务损失，并只在 matched task-only 近优、源/目标当前状态足够接近、ensemble disagreement 较低且执行阶段允许的样本上施加 source-response anchoring；独立模型验证上的 task-only fallback 防止明显的模型代理退化。该设计给出的是条件性的 selective anchoring 机制，soft task band、公共投影与 fallback 都不构成真实任务或安全保证。理论区分响应对应、模型代理与真实任务效果，并说明公共执行器和 source anchoring 的归因边界。实验以完整方法对成熟外部方法的任务表现、数据需求与执行成本为主比较，以 matched task-only 等内部消融解释机制及适用条件。前三项任务依次研究持件进入受限工位、严格导面接触定位和带恢复的 keyed connector 插入；第四项保持插入语义，检验方法在移动身体与支撑耦合下的可执行性。跨自由度与实机证据仍需完成；本文不预设所有任务、请求或指标均优于对照。
 \end{abstract}
 \tableofcontents
 \newpage
@@ -88,16 +88,16 @@
 
 \subsection{Three Research Questions}
 \begin{enumerate}[label=\textbf{RQ\arabic*.}]
-\item \textbf{Transfer effectiveness.} 在相同目标交互预算下，迁移后的行为分布能否改善跨机械臂与 sim-to-real 的闭环任务表现，并将同一操作技能扩展到移动身体？
-\item \textbf{Calibration efficiency.} 有限任务相关干预能否校准影响迁移的执行响应，并在已声明机制族中泛化到未见初态、控制器和接触条件？
-\item \textbf{Transport mechanism.} 干预响应、任务几何与可行性约束分别如何影响目标分布的任务对应、多模态覆盖和执行稳定性？
+\item \textbf{System effectiveness.} 相对成熟外部方法，完整迁移方法在受约束任务表现、目标数据需求与在线执行成本上有哪些优势与权衡？
+\item \textbf{Calibration and selective transport.} 有限校准、源响应对应和选择性约束在什么机制与预算条件下有帮助；它们的作用如何通过 matched task-only 及对齐消融与公共执行器、continued training 和模型选择区分？
+\item \textbf{Embodiment extension.} 相同任务语义与技能接口能否在不同机械臂运动学和移动支撑形态下实现，适用范围由哪些约束决定？
 \end{enumerate}
 
 \subsection{Three Candidate Contributions}
 \begin{enumerate}[label=\textbf{C\arabic*.}]
 \item \textbf{可执行分布迁移的建模。} 将任务条件源行为先验与目标闭环行为分布分开，通过目标执行机制定义 transport 的可实现集合；目标 marginal 是待构造的行为 law。
-\item \textbf{干预校准的 realization-aware transport 方法。} 结合任务调制响应几何、低维机制校准、可执行约束和 source-conditioned mapping，学习目标行为分布；映射是否需要额外随机性由消融决定，action decoding 为执行接口，已有生成模型可直接作为 prior。
-\item \textbf{预算匹配的分布与任务验证。} 在跨机械臂、接触操作与真实平台上，同时检验闭环效果、干预预算、多模态覆盖和响应分布变化，并用辅助分析解释适用条件。
+\item \textbf{干预校准的 selective realization-aware transport。} 结合任务调制响应几何、低维机制校准、可执行约束和 source-conditioned mapping 学习目标行为分布；以模型支持与任务兼容条件调节响应约束，并用消融检验其收益、偏置与适用范围。action decoding 为共享执行接口，已有生成模型可直接作为 prior。
+\item \textbf{任务、资源与跨形态的实证验证。} 用成熟外部方法比较完整系统表现，以内部消融回答校准和响应迁移的机制问题，再检验同一技能语义向不同身体的扩展；跨任务收益可以具有明确的适用范围与权衡，实机证据另行建立。
 \end{enumerate}
 主要贡献由方法与实验建立。任务相关探索、OT/UOT、flow matching、Lagrange 更新与动作映射均有前例，不单独宣称为新概念。
 
@@ -140,13 +140,23 @@ OT-sim2real 通过联合表示分布对齐、UOT 与时间相关采样进行 sim
 \begin{equation}
  U_s\sim p_s(U\mid q,g).
 \end{equation}
-学习 transport kernel $T_\varphi(dU_t\mid U_s,q,g,c_t)$，诱导目标指令分布
+令 $c_t$ 为当前可用的目标校准 context。学习 transport kernel
+$T_\varphi(dU_t\mid U_s,q,g,c_t)$，其中 $U_t$ 是经过固定公共执行接口
+$\eta$ 的实际请求，而不是未投影的网络候选；在给定 $q,g,c_t$ 时诱导目标指令分布
 \begin{equation}
- p_{t,\varphi}(dU_t\mid q,g)
+ p_{t,\varphi}(dU_t\mid q,g,c_t)
  =\int T_\varphi(dU_t\mid U_s,q,g,c_t)\,p_s(dU_s\mid q,g).
  \label{eq:kerneltransport}
 \end{equation}
-确定性特例为 $p_{t,\varphi}=\Phi_\varphi\#p_s$。目标实际行为 law 为
+确定性特例是在同一 $q,g,c_t$ 下
+$p_{t,\varphi}(\cdot\mid q,g,c_t)
+=\Phi_{\varphi,\eta}(\cdot;q,g,c_t)\#p_s(\cdot\mid q,g)$，
+其中 $\eta$ 表示固定的执行接口与候选接纳规则；后续分布记号省略这一固定参数。
+跨目标历史与校准 context 的边缘指令分布还须按该策略的实际访问分布积分，
+不能只将无条件源 prior 推前。若 transport 另采样 latent，须把该采样 law
+一并纳入 kernel；固定 latent 不额外产生同一条件下的采样多模态。
+完整映射 $\Phi_{\varphi,\eta}$ 包含 learned candidate 到实际请求的变换。
+目标实际行为 law 为
 \begin{equation}
  \mathbb P_{t,\varphi}^{g}
  =\operatorname{Rollout}_{K_t,\pi_{t,\varphi}}\#\mu_0.
@@ -190,7 +200,7 @@ D-oracle 仅作真值诊断；需要目标演示的 OT-sim2real、LAD 等在其�
 \node[box] (prior) {源条件行为分布\\已有策略 / diffusion / flow prior};
 \node[box,right=of prior] (cal) {有限真实干预\\校准目标响应与不确定性};
 \node[box,below=of prior] (geom) {任务响应几何\\进展、接触与模式变化};
-\node[box,below=of cal] (trans) {学习 stochastic transport\\目标机制、任务与可行约束};
+\node[box,below=of cal] (trans) {学习 source-conditioned transport\\目标机制、任务与可行约束};
 \node[box,below=of trans] (exec) {目标行为分布\\action decoding 与闭环执行};
 \draw[->] (prior)--(trans);
 \draw[->] (cal)--(trans);
@@ -198,7 +208,9 @@ D-oracle 仅作真值诊断；需要目标演示的 OT-sim2real、LAD 等在其�
 \draw[->] (trans)--(exec);
 \draw[->] (exec.west) -- ++(-0.3,0) |- (prior.south);
 \end{tikzpicture}
-\caption{方法关系。校准模型用于训练 transport；部署依据实际反馈重新条件化源 prior。回路中的重新采样不是在线轨迹 refinement。}
+\caption{学习关系与闭环接口。校准模型用于训练 transport；部署依据实际反馈
+重新条件化源 prior。此图省略任务执行器与可选的在线候选接纳，完整部署身份
+见 Sec.~\ref{sec:deployment}；它不表示所有实现都仅运行一次网络前向。}
 \end{figure}
 
 \subsection{Task-Modulated Response Representation}
@@ -270,28 +282,49 @@ $c$ 为低维执行 context，例如指令增益、延迟、接触顺应性或�
 
 \subsection{Realization-Aware Distribution Transport}
 \label{sec:transport}
-\textbf{参数化。} 冻结实现为 source-conditioned deterministic residual map：
+\textbf{参数化与残差基准。} 当前网络输出目标公共请求的有界残差。
+令 $U_b=B(q,g,\hat c_t,m)$ 为目标任务控制器根据可用历史、阶段与自身记忆
+生成的基准 request chunk，对应实现中的 \texttt{base\_proto}。
+源查询提供 $U_s$ 及其历史特征作为网络条件；$U_b$ 不必等于 $U_s$。
+在统一的归一化请求坐标中，候选为
 \begin{equation}
- U_t=\Phi_\varphi(U_s,q,g,\hat c_t,m)
- =\operatorname{Bound}\big(U_s+\Delta_\varphi(U_s,q,g,\hat c_t,m)\big).
+ U_t^{\rm cand}=\Phi^{\rm cand}_\varphi(U_s,q,g,\hat c_t,m)
+ =\operatorname{Bound}_{q,\hat c_t}
+   \big[U_b+\Delta_\varphi(U_s,U_b,q,g,\hat c_t,m)\big].
  \label{eq:residual}
 \end{equation}
-$m$ 表示源行为模式，$\operatorname{Bound}$ 实施已知命令边界。随机性来自
-source prior；当前方法不额外注入 transport noise。真实目标响应由 $K_t$
-实现，训练预测由 $\widehat K_\psi$ 实现。约束与损失在最终执行指令上评估，
-不能仅检查投影前输出。
+$m$ 表示请求的源行为模式；为简记，查询所得源历史特征未在
+$\Phi^{\rm cand}_\varphi$ 中单列。$\operatorname{Bound}_{q,\hat c_t}$ 实施已知命令边界、
+局部残差范围和任务持有通道的投影。该操作仍在 request 层；
+候选经公共反馈 decoder、恢复规则及声明的运行时接纳后，才得到实际请求
+$U_t$。真实响应由 $K_t$ 实现，训练预测由 $\widehat K_\psi$ 实现；损失使用
+对应训练规则下的 effective request，不能只检查投影前输出，也不能把训练
+中的公共恢复掩码视为已经覆盖所有运行时 selector。
+随机性来自 source prior；当前 residual 网络不额外注入 transport noise。
 
-\textbf{反馈与表达支持。} 源行为实现包含实际接触阶段与位姿误差；阶段由接触、撤离和对准事件推进，不能只用绝对时钟替代。源 prior 与 transport 可条件于可用历史；由 decoder 提供的位姿反馈对所有方法共享。源停止不意味着目标已到平衡点，因此不得用 $|U_s|$ 将目标所有对应纠偏方向硬置零。采用有界残差及实际 $SE(3)$ 反馈维持终止平衡；力控制期间投影法向位置参考，避免未使用参考积累后在释放时产生突变。反馈 decoder 对所有 baseline 相同，其修正不作为 transport 的独立贡献。
+任务持有的通道限定了可学习支持。例如导面接触实现只允许 transport 改变
+切向与姿态指令，法向接触、刚度与目标力由公共任务控制器产生。
+更换网络不改变这些动作权限；研究其适配作用时须另行声明动作类，并在
+ours 与 matched task-only 等内部消融之间严格匹配动作权限和公共执行接口。
+外部 baseline 保留其方法定义的原生动作与控制结构；比较时统一公共观测权限、
+物理任务、安全边界与资源记账，逐项披露必要的任务适配及附加恢复机制。
 
-conditional flow 可作为未来扩展：
+\textbf{反馈与表达支持。} 源行为实现包含实际接触阶段与位姿误差；阶段由接触、撤离和对准事件推进，不能只用绝对时钟替代。源 prior 与 transport 可条件于可用历史；ours 与其内部 matched 消融共享 decoder 提供的位姿反馈。源停止不意味着目标已到平衡点，因此不得用 $|U_s|$ 将目标所有对应纠偏方向硬置零。采用有界残差及实际 $SE(3)$ 反馈维持终止平衡；力控制期间投影法向位置参考，避免未使用参考积累后在释放时产生突变。这些共享反馈修正不作为 transport 的独立贡献；外部 baseline 使用其声明的控制结构，若额外接入公共反馈或恢复机制，须单独说明其作用与评测范围。
+
+conditional flow 可作为未来参数化扩展：
 \begin{equation}
  \frac{dX_\ell}{d\ell}=v_\varphi(X_\ell,\ell;U_s,q,g,\hat c_t,m),
- \quad X_0\sim\mathcal N(0,I),\quad U_t=\operatorname{Bound}(X_1).
+\quad X_0\sim\mathcal N(0,I),\quad
+U_t^{\rm cand}=\operatorname{Bound}_{q,\hat c_t}(U_b+X_1).
  \label{eq:flow}
 \end{equation}
 这是一个 source-conditioned transport kernel；$\ell$ 是生成/transport 时间，
 不是物理时间。它尚未进入冻结主方法或主张；若加入，必须与 residual map
 使用相同任务目标、数据和预算比较。
+作为参数化消融，也可将单次 residual MLP 换为少步确定性去噪链，并保持
+同一 source 条件、任务损失、动作投影与执行权限。若该链仅由本文任务目标
+端到端训练、没有噪声预测或 score matching 目标，它只检验迭代参数化的
+作用，不表示学到了概率 score，也不自动增加 source prior 之外的模式覆盖。
 
 \textbf{实际响应目标。} 当前实现不把所有 source response 都强制写入目标。
 对一个训练样本，记校准模型中的原始任务成本为 $C_i(\varphi)$，冻结的
@@ -304,43 +337,67 @@ matched task-only 策略在同一批样本上的成本为 $C_i^T$，source-condi
 任务损失 $C_i$ 在 band 内外都保留；$H_i$ 只是超出 matched task-only
 模型代理容差后的附加惩罚，不替代 $C_i$。
 
-响应 anchoring 只在 detached gate 内生效。令 $d_i^{\rm sup}$ 为相对公开
-校准支持的距离，$d_i^{\rm ens}$ 为 response ensemble disagreement，
+响应 anchoring 只在离线训练的 detached gate 内生效。令 $d_i^{\rm state}$ 为
+目标当前状态与所查询源状态在位姿及 wrench 上的归一化距离，
+$d_i^{\rm ens}$ 为 response ensemble disagreement，
 $M_i^{\rm exec}$ 为当前阶段允许改变命令的执行掩码，则
 \begin{equation}
  G_i=M_i^{\rm exec}
  \ind\{C_i(\varphi)\le C_i^T+\delta\}
- \ind\{d_i^{\rm sup}\le q_{.95}^{\rm sup}\}
+ \ind\{d_i^{\rm state}\le q_{.95}^{\rm state}\}
  \ind\{d_i^{\rm ens}\le q_{.95}^{\rm ens}\}.
  \label{eq:selective-gate}
 \end{equation}
 两个分位阈值只由 source/known-nominal 校准数据确定；$G_i$ 不参与反向传播。
+$d_i^{\rm state}$ 不测量候选动作与响应模型训练动作的距离，
+$d_i^{\rm ens}$ 也不是经覆盖校准的误差上界；动作支持需另行检查。
+该 $G_i$ 控制训练损失，不是部署时比较候选动作的 selector。
 恢复任务把 recovery mask 并入 $M_i^{\rm exec}$，因此 response loss 比较实际
 会被恢复控制器采用的 effective action。冻结的核心目标为
 \begin{equation}
  J_{\rm gated}(\varphi)=
  \E_i\!\left[C_i(\varphi)+\beta H_i(\varphi)
-       +\lambda G_i R_i(\varphi)\right].
+       +\lambda G_i R_i(\varphi)+\Omega_i(\varphi)\right].
  \label{eq:objective}
 \end{equation}
-实现中 $\delta=0.05$、$\beta=100$；二者都是模型侧训练和选择常数，
-不是实际任务容差或安全裕度。训练后只比较候选 checkpoint 与 matched
+其中 $\Omega_i$ 包含两分支共享的模型风险与命令变化惩罚；后者相对于
+$U_b$ 计算。核心训练规则使用 $\delta=0.05$、$\beta=100$；二者都是模型侧
+常数，不是实际任务容差或安全裕度。核心二选一规则在训练后比较候选 checkpoint 与 matched
 task-only：若独立 held-out 模型任务代理超过 task-only 加 $0.05$，则直接
-回退到 task-only checkpoint。最终目标数据不参与该选择。
+回退到 task-only checkpoint。这是离线短时模型代理选择，不能代替 episode
+评估或运行时接纳。使用额外 progress loss、逐模式 checkpoint 或多候选
+验证的实现须单独声明训练和选择流程；它们不与该核心二选一规则自动等同。
+封存的最终目标数据不参与选择。
+通过模型筛选不自动说明 source anchoring 有任务增量。为隔离它的作用，
+消融令两分支从相同 warm start 出发，使用相同数据、sample stream、优化器、
+更新与验证预算和 checkpoint 规则。同一经过 task 训练的 checkpoint 也可作为
+共同 warm start，只要两分支获得相同的后续训练机会；不能只给 anchoring
+分支额外 refinement。令 $P$ 为共同公共 decoder、completion
+及 feasibility projection，则比较 $P\circ\phi_A$ 与 $P\circ\phi_T$。
+这是组件归因的实验要求，不是部署前必须逐请求战胜 task-only 的算法规则。
+完整系统的外部比较允许各方法采用合理的独立训练流程，并披露其资源成本。
 
-完整六格定义为 frozen-warm，$C$，$C+R$，$C+H$，$C+H+R$ 与
+省略共享 $\Omega$ 后，完整六格定义为 frozen-warm，$C$，$C+R$，$C+H$，$C+H+R$ 与
 $C+H+G R$。其中 $C,C+R,C+H,C+H+R$ 构成严格的无 gate $2\times2$
 比较，$C+H+G R$ 与 $C+H+R$ 的差异才单独识别 selective gate。
 历史上以 $H$ 替换 $C$ 的 band-only/Full 目标不属于这一实现。
 
 \textbf{从 coupling 到 distribution。} Eq.~\eqref{eq:objective} 对 $U_s\sim p_s$ 与 $U_t\sim T_\varphi(\cdot\mid U_s)$ 的联合 law 优化，其目标 marginal 是 Eq.~\eqref{eq:kerneltransport}。因此它在改变整个目标行为分布及其支持，而非给源 replay 赋权。需要比较的 realized response law 为
 \begin{equation}
- \rho_{t,\varphi}^{\delta}(dy\mid q,g)
+ \rho_{t,\varphi}^{\delta}(dy\mid q,g,\hat c_t)
  =\int K_t^\delta(dy\mid q,U_t)\,
  T_\varphi(dU_t\mid U_s,q,g,\hat c_t)\,p_s(dU_s\mid q,g).
  \label{eq:responselaw}
 \end{equation}
 为避免 samplewise coupling 过强，可增加批内 Wasserstein/UOT 响应对齐，但它是已有工具的增强版。基准实现先使用可解释的 coupling 和目标任务成本，再比较 nominal feature UOT 与 realized-response UOT。UOT 中未匹配质量不是消失的实际任务；实际策略仍是归一化行为 law。
+
+\textbf{执行支持与可观测效果。} 设 $\eta$ 包含公共投影、decoder 与候选接纳。
+若两个 transport 在所有可达历史 $h$ 上经过 $\eta$ 后具有相同的实际请求
+kernel，则在共同初态与目标动力学下诱导相同的闭环 path law；其内部残差或
+response loss 不同也不会带来任务分布差异。有限残差半径、饱和投影和任务
+持有通道都可能压缩这种可观测处理差异。因此归因实验除匹配动作权限外，
+还须报告有效请求的分离度、各通道边界占用和 selector 接纳率；只比较网络
+参数或未投影候选不足以证明 source-response anchoring 改变了实际行为。
 
 \textbf{硬约束与接触风险。} 已知运动学、速度/命令变化率和工作空间边界进入可行域。Eq.~\eqref{eq:additive-band} 是 soft penalty，Eq.~\eqref{eq:selective-gate} 是训练掩码；二者均不构成真实系统的不变集或安全证书。模型相关风险可使用 ensemble：
 \begin{equation}
@@ -366,7 +423,7 @@ $C+H+G R$。其中 $C,C+R,C+H,C+H+R$ 构成严格的无 gate $2\times2$
 \end{equation}
 hard constraints 通过公共执行接口和在线监测实施，soft semantic costs 通过目标体现。当前冻结的比较实现使用 Eq.~\eqref{eq:objective} 与公共监测，不把尚未进入主实验的 Lagrange/CVaR 扩展写成已完成模块。
 
-\textbf{训练实现。} 首版采用短时可微 surrogate，固定 $p_s$ 和校准模型，对 transport 反向传播。模型先以公开训练机制预训练，再用目标 context 校准；隐藏目标真值不参与训练。若可实例化校准 physics twin，可在其中生成同预算数据或用已有 SAC 学习 residual actor，并保持源语义与风险目标。仅有 latent surrogate 时，换优化器仍受同一模型误差限制。两条路线分别报告；不声称黑箱接触天然可微。
+\textbf{训练实现。} 首版采用短时可微 surrogate，固定 $p_s$ 和校准模型，对 transport 反向传播。冻结 response 参数仍保留预测对候选请求的输入梯度；source/reference 分支与 gate 使用 stop-gradient。模型先以公开训练机制预训练，再用目标 context 校准；隐藏目标真值不参与训练。若可实例化校准 physics twin，可在其中生成同预算数据或用已有 SAC 学习 residual actor，并保持源语义与风险目标。仅有 latent surrogate 时，换优化器仍受同一模型误差限制。两条路线分别报告；不声称黑箱接触天然可微。
 
 \subsection{Training Algorithm and Amortized Closed-Loop Deployment}
 \label{sec:deployment}
@@ -376,13 +433,31 @@ hard constraints 通过公共执行接口和在线监测实施，soft semantic c
 \item 在声明候选集内选择 $B$ 次校准交互，划分拟合与独立验证；拟合目标 context 和 ensemble 不确定性。
 \item 检查动作接口与模式支持；固定接口，标记验证不足区域。
 \item 采样 $q,g,m,U_s,\delta$，通过 $T_\varphi$ 得到 $U_t$；在源与 calibrated target model 中 rollout。
-\item 计算 $C,H,G R$，更新 transport；记录 gate coverage、support distance、ensemble disagreement 与任务代理。
-\item 在独立模型验证集上执行 matched task-only $+0.05$ checkpoint fallback；锁定方法、校准阈值与拒绝规则后再进行 held-out 目标评估。
+\item 计算 $C,H,G R,\Omega$，更新 transport；记录离线训练 gate coverage、源/目标状态对应距离、候选动作支持、ensemble disagreement 与任务代理。
+\item 在独立模型验证集上执行 matched task-only $+0.05$ checkpoint fallback；锁定最终方法、校准阈值与拒绝规则后进行 held-out 目标评估，并用训练、选择预算和公共执行器匹配的消融检验组件作用。
 \end{enumerate}
 
-\textbf{在线阶段。} 每个技能边界读取实际 $q$，从 $p_s(\cdot\mid q,g)$ 采样，调用 transport，再通过 action decoding 执行固定短时技能；新的真实反馈用于下一次条件化。低层保持闭环。没有每次在线求解轨迹优化的必要。
+\textbf{在线候选生成与执行。} 每个控制时刻读取实际 $q$，查询 source skill
+并生成 $U_t^{\rm cand}$。当前 request chunk 为 $0.2\,\mathrm{s}$，每
+$20\,\mathrm{ms}$ 使用新反馈重算并执行首个请求；低层控制保持闭环。
+基本执行路径使用公共 decoder 和任务恢复规则；source 查询超出声明支持时
+回退到公共任务请求。离线训练 gate $G_i$ 不在这里重新计算训练损失。
 
-若不确定性超过预设验证范围，则调用已有 hold/retreat/recovery 接口或停止。该事件单列为覆盖不足，并在未完成任务时计为失败。fallback 不能提供只对本文开放的额外任务监督。
+\textbf{运行时接纳是独立的策略组件。} 配有在线接纳的实现还生成 matched
+task-only 或公共请求作为参照，在共同 decoder 后比较候选及有限混合请求。
+部分恢复任务实现使用冻结 response ensemble 预测任务代理，结合进展、阶段
+和约束规则选择本次请求；没有候选通过时执行参照请求。因此这些实现在线
+调用 response model，不能描述为仅一次网络前向或无模型部署。
+令 $\eta$ 表示锁定的 decoder、候选集和接纳规则，则实际闭环策略应记为
+$\pi_{\varphi,\eta}$，其行为 law 是
+$\operatorname{Rollout}_{K_t,\pi_{\varphi,\eta}}\#\mu_0$。
+此前 $\pi_{t,\varphi}$ 的简记均条件于固定 $\eta$；改变 selector 就改变策略。
+
+纯摊销执行可以选择只含公共执行规则的 $\eta$，但须作为单独实现评估；
+带在线接纳的结果不自动归属于这个简化路径。参数化对照与 anchoring 消融
+必须固定相同 $\eta$，并计入全部 policy/response 调用、候选比较及端到端
+时延。离线 checkpoint fallback、在线候选回退和公共 hold/retreat/recovery
+分别记账；未完成任务仍计入失败，任何回退都不能提供只对本文开放的监督。
 
 \section{Supporting Analysis}
 \label{sec:theory}
@@ -450,6 +525,14 @@ hard constraints 通过公共执行接口和在线监测实施，soft semantic c
  d_k\le\varepsilon_{\mathcal B}\sum_{j=0}^{k-1}L^j.
  \label{eq:propagation}
 \end{equation}
+若只在首次接触模式分叉前可建立逐时域、逐模式的误差
+$\varepsilon_{k,m_k}$ 与局部传播常数 $L_{k,m_k}$，则同一 coupling 下更合适的界是
+\begin{equation}
+ d_K\le\sum_{j=0}^{K-1}\varepsilon_{j,m_j}
+       \prod_{i=j+1}^{K-1}L_{i,m_i},
+ \label{eq:mode-local-propagation}
+\end{equation}
+其中空乘积为 $1$；模式分叉本身仍须用事件 margin 单独控制。跨窗口平均响应误差不能替代所有 $\varepsilon_{k,m_k}$，未经覆盖校准的 ensemble 分歧也不能作为这些误差的置信上界。因此经验验证按预测时域与接触事件拆分，支持外请求单独拒绝或报告。
 对于由期望任务成本和 source-coupled trajectory cost 组成的目标，若相关成本具有统一 Lipschitz 常数，可得到
 \begin{equation}
  |F_t(\varphi)-\widehat F_t(\varphi)|\le\varepsilon_F.
@@ -569,6 +652,7 @@ hard constraints 通过公共执行接口和在线监测实施，soft semantic c
 \bibitem{gat} J. P. Hanna, P. Stone. Grounded Action Transformation for Robot Learning in Simulation. AAAI, 2017. \url{https://ojs.aaai.org/index.php/AAAI/article/view/11044}
 \bibitem{rma} A. Kumar et al. RMA: Rapid Motor Adaptation for Legged Robots. RSS, 2021. \url{https://arxiv.org/abs/2107.04034}
 \bibitem{asid} M. Memmel et al. ASID: Active Exploration for System Identification in Robotic Manipulation. ICLR, 2024. \url{https://weirdlabuw.github.io/asid/}
+\bibitem{adaptsim} A. Z. Ren, H. Dai, B. Burchfiel, A. Majumdar. AdaptSim: Task-Driven Simulation Adaptation for Sim-to-Real Transfer. CoRL, 2023. \url{https://arxiv.org/abs/2302.04903}
 \bibitem{spi} N. Sobanbabu et al. Sampling-based System Identification with Active Exploration for Legged Sim2Real Learning. CoRL, 2025. \url{https://proceedings.mlr.press/v305/sobanbabu25a.html}
 \bibitem{optimalexploration} A. Wagenmaker, G. Shi, K. G. Jamieson. Optimal Exploration for Model-Based RL in Nonlinear Systems. NeurIPS, 2023. \url{https://proceedings.neurips.cc/paper_files/paper/2023/hash/31e018f43ab9c7065c058cc2c5848128-Abstract-Conference.html}
 \bibitem{otreal} S. Cheng, L. Ma, Z. Chen, A. Mandlekar, C. Garrett, D. Xu. Generalizable Domain Adaptation for Sim-and-Real Policy Co-Training. NeurIPS, 2025. \url{https://arxiv.org/abs/2509.18631}

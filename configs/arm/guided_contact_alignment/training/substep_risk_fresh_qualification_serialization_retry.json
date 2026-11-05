@@ -1,0 +1,109 @@
+{
+  "calibration": {
+    "exchangeability_unit": "recorded_episode_development_block",
+    "interpolation_fractions": [
+      1.0,
+      0.5,
+      0.25,
+      0.0
+    ],
+    "miscoverage": 0.01,
+    "reason": "Use the maximum development block residual across the two accessed physical slots before opening the six-slot fresh cohort.",
+    "soft_force_limits_N": [
+      20.0,
+      8.0
+    ]
+  },
+  "data_policy": {
+    "confirmation_states_opened": 0,
+    "development_prototype_only": true,
+    "failure_replacement": false,
+    "final_budget_must_be_refrozen": true,
+    "final_paper_checkpoint": false,
+    "fresh_cohort_used_for_model_or_calibration_selection": false,
+    "old_invalid_outcomes_used": false,
+    "performance_evidence": false
+  },
+  "development_dataset": {
+    "calibration_splits": [
+      "calibration",
+      "validation"
+    ],
+    "episodes": {
+      "path": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset/episodes.json",
+      "sha256": "6be2ed07d4e73d46f80c1c4202f7110c46bc27256fe19b71294ac604b5c6ed88"
+    },
+    "independent_audit": {
+      "path": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset/independent_audit.json",
+      "sha256": "39a409c019aa55baa895f5ac33351acaf92a04169328ad062691ae981c4cb34f"
+    },
+    "report": {
+      "path": "results/arm/guided_contact_alignment/training/pooled_substep_risk_dataset/report.json",
+      "sha256": "b1ea5d64528256ac8daa2c365b416528867f8f9f82db5d31e4371e716e408c62"
+    },
+    "status": "both splits accessed for revision and permanently development-only"
+  },
+  "device": {
+    "logical_device": "cuda:0",
+    "physical_index": 1,
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739",
+    "process_visible_devices": "1",
+    "required_visible_device_count": 1
+  },
+  "fresh_cohort": {
+    "independent_audit": {
+      "path": "results/arm/guided_contact_alignment/training/substep_risk_fresh_validation_data/independent_audit.json",
+      "sha256": "cc83c7bb38941e3c2dff9dcc9c955d28f9337253e923bacfa0f1fc6eaaa63d64"
+    },
+    "plan": {
+      "path": "results/arm/guided_contact_alignment/training/substep_risk_fresh_validation_data/plan.json",
+      "sha256": "7ad0349134203822cc91bf019f8055e633ea6e5df973d373966005745953fcf3"
+    },
+    "progress": {
+      "path": "results/arm/guided_contact_alignment/training/substep_risk_fresh_validation_data/progress.jsonl",
+      "sha256": "3889158ce186d0bc163ddf499cea54603f674f722de2c3173a4b0032176f2c12"
+    },
+    "report": {
+      "path": "results/arm/guided_contact_alignment/training/substep_risk_fresh_validation_data/report.json",
+      "sha256": "7096b04a41bd29ce1b205c5c350ef95ab8b2427de4b7a5d5ce88f17c26b9cdba"
+    }
+  },
+  "infrastructure_retry": {
+    "path": "results/arm/guided_contact_alignment/training/substep_risk_fresh_qualification/INVALID_RUN.json",
+    "sha256": "a827849d030e2dbd98a60e9e70a9b8511095a604907a8b5a5ebe1d9002589d79"
+  },
+  "model": {
+    "hidden": [
+      128,
+      128
+    ],
+    "history_len": 4,
+    "horizon": 10,
+    "learning_rate": 0.0003,
+    "maximum_joints": 32,
+    "members": 3
+  },
+  "output": "results/arm/guided_contact_alignment/training/substep_risk_fresh_qualification_serialization_retry",
+  "scope": "Single complete infrastructure retry after a JSON scalar serialization failure; models, cohort, calibration, gates and grouping are unchanged.",
+  "source_models": {
+    "report": {
+      "path": "results/arm/guided_contact_alignment/training/substep_risk_models_conservative/report.json",
+      "sha256": "6819996407c3ea5a301555dc39b86bb421c1ca174f2afabe39686d797d738866"
+    }
+  },
+  "validation_gates": {
+    "groups": [
+      "method_key",
+      "scale",
+      "physical_initial_slot",
+      "requested_mode"
+    ],
+    "maximum_safe_window_rejection_rate": 0.5,
+    "minimum_group_episode_block_coverage": 0.8,
+    "minimum_high_risk_recall": 0.9,
+    "minimum_lateral_force_episode_block_coverage": 0.9,
+    "minimum_total_force_episode_block_coverage": 0.9,
+    "require_all_eight_instances": true
+  },
+  "version": "t2-substep-risk-fresh-qualification-v1"
+}

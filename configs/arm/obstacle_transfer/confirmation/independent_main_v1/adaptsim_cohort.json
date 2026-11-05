@@ -1,0 +1,39 @@
+{
+  "version": "transfer-independent-main-table-evaluation-v1",
+  "task": "T1",
+  "method": "adaptsim",
+  "method_identity": "AdaptSim_task_adapted_CEM",
+  "instance_ids": [
+    "independent_8811001",
+    "independent_8811002",
+    "independent_8811003",
+    "independent_8811004",
+    "independent_8811005",
+    "independent_8811006",
+    "independent_8811007",
+    "independent_8811008"
+  ],
+  "task_config": {
+    "path": "configs/arm/obstacle_transfer/baseline/adaptsim.yaml",
+    "sha256": "2c860cdc08ffe58e07605e1343e88cfeaefcb0510436baec0bc3331c5d3f91de"
+  },
+  "request_roster": {
+    "path": "configs/arm/obstacle_transfer/protocol/independent_main_table_requests.json",
+    "sha256": "9a5c2ea0bfebdadd816baf0642dcd7eb6537536e8bdb528d37d2a69882827240"
+  },
+  "cell_admission": {
+    "path": "results/arm/obstacle_transfer/validation/independent_main_table_admission_v1/adaptsim.json",
+    "sha256": "a4d683c26d5a95a2d5e1f7d500eae188353836c281b2626b30ada39176c70c29"
+  },
+  "actor_package": {
+    "path": "results/arm/obstacle_transfer/baseline/adaptsim/validation/independent_actor_package_v1/report.json",
+    "sha256": "6255fbced92618446a38986cfe93e378464f73d33219504fd0599d69582e87af"
+  },
+  "output": "results/arm/obstacle_transfer/baseline/adaptsim/confirmation/independent_main_v1/{instance_id}",
+  "plan_output": "results/arm/obstacle_transfer/baseline/adaptsim/confirmation/independent_main_v1/{instance_id}_plan.json",
+  "execution": {
+    "device": "cuda",
+    "cuda_visible_devices": "1",
+    "physical_uuid": "GPU-58b54684-3577-11d3-f039-0e8469190739"
+  }
+}
