@@ -14,34 +14,14 @@ from genedynamics.experiments.plugins.obstacles.empty import (
     EmptyObstacleGeneratorPlugin,
 )
 
+ROOT = Path(__file__).resolve().parents[2]
+
 
 def _runner(output: Path) -> ExperimentRunner:
-    config = ExperimentConfig(
-        name="prepared_planner",
-        output_dir=output,
-        env_name="single_integrator_box_2d",
-        method="mdoc",
-        env_params={
-            "dt": 0.05,
-            "horizon": 4,
-            "p_max": 2.0,
-            "control_limit": 1.0,
-        },
-        method_params={
-            "Nsample": 4,
-            "Ndiffuse": 2,
-            "num_modes": 1,
-            "show_tqdm": False,
-        },
-        obstacle_levels=[0],
-        obstacle_config={"generator": "none"},
-        seeds=[7],
-        backend="numpy",
-        device="cpu",
-        metrics=[],
-        visualizations=[],
-        auto_report=False,
+    config = ExperimentConfig.from_yaml(
+        ROOT / "configs/validation/single_2d/mdoc_prepared_smoke.yaml"
     )
+    config.output_dir = output
     runner = ExperimentRunner(config)
     runner.register_plugin(SingleIntegrator2DPlugin(), "environment")
     runner.register_plugin(MDOCMethodPlugin(), "method")

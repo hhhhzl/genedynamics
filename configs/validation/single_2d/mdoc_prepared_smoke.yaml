@@ -1,0 +1,31 @@
+name: mdoc_prepared_planner_smoke
+output_dir: results/validation/single_2d/mdoc_prepared_smoke
+
+env_name: single_integrator_box_2d
+env_params:
+  dt: 0.05
+  horizon: 4
+  p_max: 2.0
+  control_limit: 1.0
+
+method: mdoc
+method_params:
+  Nsample: 4
+  Ndiffuse: 2
+  num_modes: 1
+  show_tqdm: false
+
+obstacle_levels: [0]
+obstacle_config:
+  generator: none
+
+seeds: [7]
+backend: numpy
+device: cpu
+metrics: []
+visualizations: []
+auto_report: false
+
+metadata:
+  protocol: prepared_planner_interface_smoke
+  formal_experiment: false
