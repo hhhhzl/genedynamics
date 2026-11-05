@@ -12,7 +12,9 @@ class ExecutionRegistry:
 
     def create(self, name, **configuration):
         if name not in self._factories:
-            raise ValueError(f"Unknown execution backend {name!r}; available: {self.names()}")
+            raise ValueError(
+                f"Unknown execution backend {name!r}; available: {self.names()}"
+            )
         return self._factories[name](**configuration)
 
     def names(self):

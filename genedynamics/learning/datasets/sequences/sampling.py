@@ -1,6 +1,7 @@
 """Windows remain inside a single episode; padding and burn-in are explicit."""
 
 import numpy as np
+
 from .schema import SequenceBatch
 
 
@@ -25,12 +26,19 @@ class SequenceSampler:
             indices = start + np.arange(total)
             valid = indices < len(episode)
             for name, value in episode.arrays.items():
-                arrays.setdefault(name, []).append(value[np.minimum(indices, len(episode) - 1)])
+                arrays.setdefault(name, []).append(
+                    value[np.minimum(indices, len(episode) - 1)]
+                )
             masks.append(valid)
             identifiers.append(episode.identifier)
             starts.append(start)
         valid = np.stack(masks)
         loss_mask = valid.copy()
         loss_mask[:, :burn_in] = False
-        return SequenceBatch({name: np.stack(values) for name, values in arrays.items()},
-                             valid, loss_mask, tuple(identifiers), np.asarray(starts))
+        return SequenceBatch(
+            {name: np.stack(values) for name, values in arrays.items()},
+            valid,
+            loss_mask,
+            tuple(identifiers),
+            np.asarray(starts),
+        )

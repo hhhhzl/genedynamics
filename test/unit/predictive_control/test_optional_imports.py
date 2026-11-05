@@ -5,7 +5,7 @@ import sys
 
 
 def test_imports_without_jax_or_torch():
-    source = '''
+    source = """
 import importlib.abc, sys
 class Block(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
@@ -18,5 +18,5 @@ from genedynamics.learning.datasets import EpisodeStore
 from genedynamics.solvers.single.budgeted_repair import ControlProblem
 from genedynamics.experiments.framework import BaseRunner
 assert make_runtime('numpy').name == 'numpy'
-'''
+"""
     subprocess.run([sys.executable, "-c", source], check=True)

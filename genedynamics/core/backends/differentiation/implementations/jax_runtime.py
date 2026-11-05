@@ -34,7 +34,9 @@ class JaxRuntime:
         return jnp.eye(size, dtype=like.dtype)
 
     def normal(self, shape, seed):
-        return jax.device_put(jax.random.normal(jax.random.PRNGKey(seed), shape, self.dtype), self.device)
+        return jax.device_put(
+            jax.random.normal(jax.random.PRNGKey(seed), shape, self.dtype), self.device
+        )
 
     def value_and_grad(self, function, value):
         return jax.value_and_grad(function)(value)

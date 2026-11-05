@@ -25,7 +25,9 @@ class ExecutionCapabilities:
     def require(self, **requirements):
         for key, expected in requirements.items():
             if not hasattr(self, key) or getattr(self, key) != expected:
-                raise ValueError(f"Execution backend does not satisfy {key}={expected!r}")
+                raise ValueError(
+                    f"Execution backend does not satisfy {key}={expected!r}"
+                )
 
     def as_mapping(self):
         return asdict(self)

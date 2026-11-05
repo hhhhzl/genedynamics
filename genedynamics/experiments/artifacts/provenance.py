@@ -2,21 +2,32 @@
 
 import hashlib
 import json
-from pathlib import Path
+import os
 import subprocess
 import tempfile
-import os
+from pathlib import Path
 
 
 def digest_mapping(mapping):
-    return hashlib.sha256(json.dumps(mapping, sort_keys=True, default=str).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps(mapping, sort_keys=True, default=str).encode()
+    ).hexdigest()
 
 
 def checkout_record(root):
     root = Path(root).resolve()
     try:
-        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
-        dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=root, text=True).strip())
+        revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=root, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        dirty = bool(
+            subprocess.check_output(
+                ["git", "status", "--porcelain"],
+                cwd=root,
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+        )
     except (subprocess.CalledProcessError, FileNotFoundError):
         revision, dirty = "unversioned", True
     return {"path": str(root), "revision": revision, "dirty": dirty}
@@ -34,3 +45,13 @@ def atomic_json(path, content):
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def source_tree_digest(root):
+    """Fingerprint Python source bytes independent of checkout/install location."""
+    root = Path(root)
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*.py")):
+        digest.update(str(path.relative_to(root)).encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()

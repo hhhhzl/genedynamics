@@ -1,7 +1,8 @@
 """Task callbacks supply normalized residuals; positive means violation."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -22,7 +23,17 @@ class RepairBudget:
     tolerance: float = 1e-4
 
     def __post_init__(self):
-        if self.iterations < 0 or min(self.deadline_seconds, self.trust_radius, self.learning_rate, self.penalty) <= 0:
+        if (
+            self.iterations < 0
+            or self.tolerance < 0
+            or min(
+                self.deadline_seconds,
+                self.trust_radius,
+                self.learning_rate,
+                self.penalty,
+            )
+            <= 0
+        ):
             raise ValueError("Invalid repair budget")
 
 
@@ -35,4 +46,6 @@ class RepairResult:
     iterations: int
     elapsed_seconds: float
     termination_reason: str
+    # Explicit candidate assessments. Instrument callbacks for actual model-forward counts;
+    # derivatives can perform additional callback evaluations, especially finite differences.
     model_evaluations: int

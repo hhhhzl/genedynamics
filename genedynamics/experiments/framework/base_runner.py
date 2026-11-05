@@ -20,6 +20,12 @@ class BaseRunner(ABC):
                 if persist is not None:
                     persist(entry, result)
                 results.append(result)
-            except Exception as error:
-                self.failures.append({"entry": str(entry), "error_type": type(error).__name__, "error": str(error)})
+            except Exception as error:  # noqa: BLE001 - study failures are persisted per entry
+                self.failures.append(
+                    {
+                        "entry": str(entry),
+                        "error_type": type(error).__name__,
+                        "error": str(error),
+                    }
+                )
         return results

@@ -3,4 +3,4 @@
 from .contracts import ControlProblem, RepairBudget, RepairResult
 from .solver import BudgetedRepairSolver
 
-__all__ = ["ControlProblem", "RepairBudget", "RepairResult", "BudgetedRepairSolver"]
+__all__ = ["BudgetedRepairSolver", "ControlProblem", "RepairBudget", "RepairResult"]

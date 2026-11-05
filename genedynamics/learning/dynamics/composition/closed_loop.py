@@ -1,7 +1,8 @@
 """Functional composition supports Torch graphs and JAX traced arrays alike."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -20,9 +21,16 @@ class RolloutPrediction:
 
 
 class ClosedLoopRollout:
-    def __init__(self, *, dynamics: Callable, controller: Callable,
-                 reference: Callable, observe: Callable, update_controller: Callable,
-                 advance_task: Callable):
+    def __init__(
+        self,
+        *,
+        dynamics: Callable,
+        controller: Callable,
+        reference: Callable,
+        observe: Callable,
+        update_controller: Callable,
+        advance_task: Callable,
+    ):
         self.dynamics = dynamics
         self.controller = controller
         self.reference = reference
@@ -35,14 +43,20 @@ class ClosedLoopRollout:
         states, actions, references = [current.physical], [], []
         for control in controls:
             reference = self.reference(current.task, control, context)
-            action = self.controller(current.physical, current.controller, reference, context)
+            action = self.controller(
+                current.physical, current.controller, reference, context
+            )
             physical = self.dynamics(current.physical, action, context)
             task = self.advance_task(current.task, control, context)
             next_reference = self.reference(task, control, context)
             observation = self.observe(physical, action, next_reference, context)
-            memory = self.update_controller(current.controller, observation, action, context)
+            memory = self.update_controller(
+                current.controller, observation, action, context
+            )
             current = ClosedLoopState(physical, memory, task)
             states.append(physical)
             actions.append(action)
             references.append(reference)
-        return RolloutPrediction(tuple(states), tuple(actions), tuple(references), current)
+        return RolloutPrediction(
+            tuple(states), tuple(actions), tuple(references), current
+        )

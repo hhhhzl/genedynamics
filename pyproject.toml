@@ -10,6 +10,7 @@ readme = "README.md"
 license = "MIT AND Apache-2.0 AND BSD-3-Clause"
 license-files = [
   "LICENSE",
+  "LICENSE.supermimic_vibed",
   "THIRD_PARTY_NOTICES.md",
   "third_party/diffuser/LICENSE*",
   "third_party/environments/d3il/LICENSE*",

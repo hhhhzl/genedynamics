@@ -8,7 +8,11 @@ class TorchRuntime:
     autodiff = True
 
     def __init__(self, device="cpu", dtype="float32"):
-        self.device, self.dtype, self.xp = torch.device(device), getattr(torch, dtype), torch
+        self.device, self.dtype, self.xp = (
+            torch.device(device),
+            getattr(torch, dtype),
+            torch,
+        )
         if self.device.type == "cuda" and not torch.cuda.is_available():
             raise RuntimeError("CUDA was requested but is unavailable")
 
@@ -32,13 +36,17 @@ class TorchRuntime:
 
     def normal(self, shape, seed):
         generator = torch.Generator(device=self.device).manual_seed(seed)
-        return torch.randn(shape, dtype=self.dtype, device=self.device, generator=generator)
+        return torch.randn(
+            shape, dtype=self.dtype, device=self.device, generator=generator
+        )
 
     def value_and_grad(self, function, value):
         argument = value.detach().clone().requires_grad_(True)
         result = function(argument)
-        gradient, = torch.autograd.grad(result, argument)
+        (gradient,) = torch.autograd.grad(result, argument)
         return result.detach(), gradient.detach()
 
     def jacobian(self, function, value):
-        return torch.autograd.functional.jacobian(function, value, vectorize=True).detach()
+        return torch.autograd.functional.jacobian(
+            function, value, vectorize=True
+        ).detach()
