@@ -14,12 +14,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-import matplotlib.cm as cm
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Wedge
 
+from .colormaps import get_colormap
 from ..scene_ir import RobotPoseIR, SceneIR
 
 
@@ -399,7 +399,7 @@ def render_corridor_top(
     # Multi-modal: other candidate trajectories as thin faded centerlines
     # (revealed up to the current step when animating).
     if mode_paths:
-        mcmap = cm.get_cmap("tab10")
+        mcmap = get_colormap("tab10")
         for mi, path in enumerate(mode_paths):
             p = np.asarray(path, dtype=np.float32).reshape(-1, 2)[:T_vis]
             if p.shape[0] < 2:
@@ -418,7 +418,7 @@ def render_corridor_top(
     else:
         idxs = sorted(set(np.linspace(0, T_vis - 1, n_ghosts).round().astype(int).tolist()))
 
-    cmap = cm.get_cmap(ghost_cmap)
+    cmap = get_colormap(ghost_cmap)
     for t in idxs:
         frac = t / max(T - 1, 1)
         a = a_lo + (a_hi - a_lo) * frac

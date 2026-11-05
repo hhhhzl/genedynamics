@@ -298,8 +298,9 @@ def _tint_rgba(
 
 def _ghost_palette(n: int) -> List[Tuple[float, float, float]]:
     """Rainbow palette using matplotlib's `viridis` for N ghosts."""
-    import matplotlib.cm as cm
-    cmap = cm.get_cmap("turbo")
+    from .colormaps import get_colormap
+
+    cmap = get_colormap("turbo")
     return [tuple(cmap(i / max(n - 1, 1))[:3]) for i in range(n)]
 
 
