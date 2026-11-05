@@ -39,6 +39,8 @@ def test_prepared_planner_exposes_native_plugin_and_plan(tmp_path):
     result = prepared.plan()
     assert len(result["actions"]) == 4
     np.testing.assert_allclose(result["initial_state"], prepared.initial_state)
+    assert result["model_calls"] == 24
+    assert result["model_call_unit"] == "scalar_dynamics_transition"
 
 
 def test_native_experiment_uses_public_prepared_planner_boundary(

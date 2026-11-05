@@ -27,7 +27,11 @@ class TwoGOMethodPlugin(MethodPlugin):
         dt = float(config.get("dt", getattr(env, "dt", 0.05)))
 
         backend = RuntimeBackendManager.get_backend()
-        dynamics = DynamicsToEnvAdapter(env, dt=dt)
+        dynamics = DynamicsToEnvAdapter(
+            env,
+            dt=dt,
+            count_model_calls=backend.name == "numpy",
+        )
 
         task_spec = get_default_task_spec(config.get("env_plugin"), config.get("env_name"))
         # Phase-1: use full-trajectory CFS filter to preserve high-quality feasibility path.

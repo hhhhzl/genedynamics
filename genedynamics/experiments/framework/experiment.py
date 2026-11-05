@@ -154,13 +154,39 @@ class PreparedPlanner:
         return self.backend.create_rng(self.seed)
 
     def plan(self, initial_state: Any = None, rng: Any = None) -> Dict[str, Any]:
-        """Invoke the native method plugin without result reinterpretation."""
+        """Invoke the native plugin and attach source-measured planning effort."""
 
         state = self.initial_state if initial_state is None else initial_state
         key = self.create_rng() if rng is None else rng
+        dynamics = getattr(self.planner, "dynamics", None)
+        model_calls_before = getattr(dynamics, "model_call_count", None)
+        model_call_unit = getattr(dynamics, "model_call_unit", None)
         result = self.method_plugin.plan(self.planner, state, key)
         if result is None:
             raise ValueError("Planning returned None. Planning may have failed.")
+        if not isinstance(result, dict):
+            raise TypeError("Planning must return a result mapping.")
+        model_calls_after = getattr(dynamics, "model_call_count", None)
+        if model_calls_before is not None or model_calls_after is not None:
+            if not isinstance(model_calls_before, int) or not isinstance(
+                model_calls_after, int
+            ):
+                raise TypeError("Planner model-call counter changed availability")
+            model_calls = model_calls_after - model_calls_before
+            if model_calls < 0:
+                raise RuntimeError("Planner model-call counter moved backwards")
+            if not isinstance(model_call_unit, str) or not model_call_unit:
+                raise TypeError("Planner model-call counter has no unit")
+            existing_calls = result.get("model_calls")
+            existing_unit = result.get("model_call_unit")
+            if existing_calls not in {None, model_calls} or existing_unit not in {
+                None,
+                model_call_unit,
+            }:
+                raise ValueError("Planner result conflicts with measured model calls")
+            result = dict(result)
+            result["model_calls"] = model_calls
+            result["model_call_unit"] = model_call_unit
         return result
 
 

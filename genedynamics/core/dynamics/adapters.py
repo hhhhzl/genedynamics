@@ -84,6 +84,9 @@ class EnvDynamicsAdapter(DynamicsModel):
         return jnp.ones(pos.shape[:-1], dtype=jnp.float32) * 1e5
 
 
+MODEL_CALL_UNIT = "scalar_dynamics_transition"
+
+
 class DynamicsToEnvAdapter:
     """
     Adapter that converts a DynamicsModel or environment object to an
@@ -94,7 +97,14 @@ class DynamicsToEnvAdapter:
     2. A DynamicsModel - wraps step() method
     """
     
-    def __init__(self, dynamics_or_env, dt: float = None, act_dim: int = None):
+    def __init__(
+        self,
+        dynamics_or_env,
+        dt: float = None,
+        act_dim: int = None,
+        *,
+        count_model_calls: bool = False,
+    ):
         """
         Initialize adapter.
         
@@ -102,9 +112,13 @@ class DynamicsToEnvAdapter:
             dynamics_or_env: Either a DynamicsModel or an environment object
             dt: Time step (optional, inferred from env if available)
             act_dim: Action dimension (inferred if not provided)
+            count_model_calls: Count exact scalar transition evaluations. This is
+                enabled only by source runtimes that do not hide calls inside a
+                compiled/vectorized backend.
         """
         self.dynamics = dynamics_or_env
         self.dt = dt
+        self._model_call_count = 0 if count_model_calls else None
         
         # Try to infer dt and act_dim from environment if available
         if hasattr(dynamics_or_env, 'dt') and self.dt is None:
@@ -119,12 +133,39 @@ class DynamicsToEnvAdapter:
             # Default fallback
             self.act_dim = 1
 
+    @property
+    def model_call_count(self):
+        """Exact scalar transition count, or ``None`` when not instrumented."""
+
+        return self._model_call_count
+
+    @property
+    def model_call_unit(self):
+        """Unit attached to an exact transition count."""
+
+        return MODEL_CALL_UNIT if self._model_call_count is not None else None
+
+    def _record_model_calls(self, state, action):
+        if self._model_call_count is None:
+            return
+        state_shape = np.shape(state)
+        action_shape = np.shape(action)
+        try:
+            leading = np.broadcast_shapes(state_shape[:-1], action_shape[:-1])
+        except ValueError as error:
+            raise ValueError(
+                "State/action batches cannot define scalar transition calls"
+            ) from error
+        calls = int(np.prod(leading, dtype=np.int64)) if leading else 1
+        self._model_call_count += calls
+
     def __getattr__(self, name: str):
         """Forward attribute lookups (e.g. robot_radius, target) to wrapped dynamics/env."""
         return getattr(self.dynamics, name)
     
     def transition(self, state, action):
         """Numpy transition function."""
+        self._record_model_calls(state, action)
         state_np = np.asarray(state, dtype=np.float32)
         action_np = np.asarray(action, dtype=np.float32)
         
@@ -148,6 +189,8 @@ class DynamicsToEnvAdapter:
         1. An environment object with jax_transition/jax_model_transition methods
         2. A DynamicsModel that needs to be called via step()
         """
+        self._record_model_calls(state, action)
+
         # Case 1: If dynamics is an environment object (most common case in run_diffusion)
         # Use jax_transition (with state projection) so planning matches deploy rollout.
         # jax_model_transition has no projection and causes plan/deploy divergence (SSR!=1).

@@ -18,6 +18,7 @@ from genedynamics.core.dynamics.base import (
 from genedynamics.core.dynamics.adapters import (
     EnvDynamicsAdapter,
     DynamicsToEnvAdapter,
+    MODEL_CALL_UNIT,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "StochasticDynamicsModel",
     "EnvDynamicsAdapter",
     "DynamicsToEnvAdapter",
+    "MODEL_CALL_UNIT",
 ]

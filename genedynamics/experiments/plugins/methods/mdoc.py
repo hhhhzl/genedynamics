@@ -34,7 +34,11 @@ class MDOCMethodPlugin(MethodPlugin):
         dt = float(config.get("dt", getattr(env, "dt", 0.05)))
 
         backend = RuntimeBackendManager.get_backend()
-        dynamics = DynamicsToEnvAdapter(env, dt=dt)
+        dynamics = DynamicsToEnvAdapter(
+            env,
+            dt=dt,
+            count_model_calls=backend.name == "numpy",
+        )
 
         # Select constraint filter based on YAML mode
         mode = config.get("mdoc_constraint_mode", "noop")
