@@ -93,6 +93,11 @@ class EnvironmentPlugin(ABC):
             Environment instance
         """
         pass
+
+    @property
+    def accepts_experiment_context(self) -> bool:
+        """Whether runner-private seed/controller/execution keys are supported."""
+        return False
     
     @abstractmethod
     def create_energy(self) -> Any:

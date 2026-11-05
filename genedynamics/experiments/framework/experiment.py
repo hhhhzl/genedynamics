@@ -195,12 +195,13 @@ class ExperimentRunner:
         controller_method = self.config.method_params.get(
             "controller_method", self.config.method
         )
-        env_create_params = {
-            **self.config.env_params,
-            "_experiment_seed": int(seed),
-            "_controller_method": controller_method,
-            "_execution_env_params": self.config.execution_env_params,
-        }
+        env_create_params = dict(self.config.env_params)
+        if env_plugin.accepts_experiment_context:
+            env_create_params.update(
+                _experiment_seed=int(seed),
+                _controller_method=controller_method,
+                _execution_env_params=self.config.execution_env_params,
+            )
         temp_env = env_plugin.create_env(env_create_params)
         target_pos = np.asarray(
             getattr(temp_env, "target", np.zeros(1)), dtype=np.float32

@@ -75,6 +75,10 @@ class ContactTaskEnvironmentPlugin(EnvironmentPlugin):
     def name(self) -> str:
         return self.task
 
+    @property
+    def accepts_experiment_context(self) -> bool:
+        return True
+
     def create_env(self, config: Dict[str, Any]) -> Any:
         model_kwargs = _env_kwargs(self.task, config)
         env = make_env(self.task, **model_kwargs)
