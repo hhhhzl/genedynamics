@@ -10,6 +10,7 @@ __all__ = [
     "MetricsPlugin",
     "ObstacleGeneratorPlugin",
     "PluginRegistry",
+    "PreparedPlanner",
     "VisualizationPlugin",
 ]
 
@@ -35,6 +36,10 @@ _EXPORTS = {
     "ExperimentRunner": (
         "genedynamics.experiments.framework.experiment",
         "ExperimentRunner",
+    ),
+    "PreparedPlanner": (
+        "genedynamics.experiments.framework.experiment",
+        "PreparedPlanner",
     ),
     "PluginRegistry": ("genedynamics.experiments.framework.registry", "PluginRegistry"),
 }

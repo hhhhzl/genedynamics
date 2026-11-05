@@ -6,10 +6,12 @@ experiment execution using the plugin system.
 """
 
 import inspect
-import time
 import json
+import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 
 
@@ -21,13 +23,13 @@ def _accepts_env(fn: Any) -> bool:
     except Exception:
         return False
 
-from genedynamics.core.types import Trajectory
 from genedynamics.core.backends.runtime import RuntimeBackendManager
 from genedynamics.core.task_spec import get_default_task_spec
+from genedynamics.core.types import Trajectory
 
+from ..common.constraints import create_constraint_pipeline
 from .config import ExperimentConfig
 from .registry import PluginRegistry
-from ..common.constraints import create_constraint_pipeline
 
 
 def convert_to_json_serializable(obj: Any) -> Any:
@@ -121,6 +123,47 @@ def _compact_contact_state(state: Any) -> Dict[str, Any]:
     return out
 
 
+@dataclass
+class PreparedPlanner:
+    """One source-configured environment/planner pair ready for direct use.
+
+    This is the reusable boundary shared by the experiment runner and external
+    task adapters.  It deliberately retains the native plugin and planner
+    objects rather than translating solver semantics into a second runtime.
+    """
+
+    config: ExperimentConfig
+    level: Any
+    seed: int
+    backend: Any
+    env_plugin: Any
+    env: Any
+    initial_state: Any
+    target_state: Any
+    obstacles: Any
+    energy: Any
+    constraint_pipeline: Any
+    scheduler: Any
+    method_plugin: Any
+    method_config: Dict[str, Any]
+    planner: Any
+
+    def create_rng(self) -> Any:
+        """Create the configured backend RNG at the preparation seed."""
+
+        return self.backend.create_rng(self.seed)
+
+    def plan(self, initial_state: Any = None, rng: Any = None) -> Dict[str, Any]:
+        """Invoke the native method plugin without result reinterpretation."""
+
+        state = self.initial_state if initial_state is None else initial_state
+        key = self.create_rng() if rng is None else rng
+        result = self.method_plugin.plan(self.planner, state, key)
+        if result is None:
+            raise ValueError("Planning returned None. Planning may have failed.")
+        return result
+
+
 class ExperimentRunner:
     """
     Unified experiment execution framework.
@@ -160,38 +203,29 @@ class ExperimentRunner:
             name: Optional custom name (uses plugin.name if not provided)
         """
         self.registry.register(plugin, plugin_type, name)
-    
-    def run_single_experiment(self, level: Any, seed: int) -> Dict[str, Any]:
+
+    def prepare_planner(self, level: Any, seed: int) -> PreparedPlanner:
+        """Construct the exact environment and planner used by an experiment.
+
+        Preparation owns backend selection, task reset, obstacle/SDF creation,
+        constraint and scheduler construction, and method-plugin configuration.
+        The returned object can be invoked directly by a typed adapter while
+        ``run_single_experiment`` uses the same object for native reporting.
         """
-        Run single experiment instance.
-        
-        Args:
-            level: Obstacle difficulty level
-            seed: Random seed for reproducibility
-            
-        Returns:
-            Dictionary containing experiment results
-        """
-        experiment_start_time = time.time()
-        
-        # Reset global random state for reproducibility
-        # This ensures that each experiment run starts from the same random state
+
         np.random.seed(seed)
-        
-        # 1. Setup backend
         env_name = getattr(self.config, "env_name", "") or ""
         if "brax" in env_name.lower() and self.config.backend != "jax":
             raise ValueError(
                 f"Brax env '{env_name}' requires JAX backend. "
                 f"Set backend: jax in config (got: {self.config.backend})."
             )
-        RuntimeBackendManager.set_backend(self.config.backend, device=self.config.device)
+        RuntimeBackendManager.set_backend(
+            self.config.backend, device=self.config.device
+        )
         backend = RuntimeBackendManager.get_backend()
-        
-        # 2. Setup environment
-        env_plugin = self.registry.get_plugin('environment', self.config.env_name)
-        
-        # 3. Generate start/target positions (before obstacles, for obstacle generation)
+        env_plugin = self.registry.get_plugin("environment", self.config.env_name)
+
         controller_method = self.config.method_params.get(
             "controller_method", self.config.method
         )
@@ -206,20 +240,21 @@ class ExperimentRunner:
         target_pos = np.asarray(
             getattr(temp_env, "target", np.zeros(1)), dtype=np.float32
         )
-        obstacle_gen_name = self.config.obstacle_config.get('generator', 'box2d')
-        obstacle_gen = self.registry.get_plugin('obstacle_generator', obstacle_gen_name)
+        obstacle_gen_name = self.config.obstacle_config.get("generator", "box2d")
+        obstacle_gen = self.registry.get_plugin(
+            "obstacle_generator", obstacle_gen_name
+        )
         obstacle_config_with_env = {
             **self.config.obstacle_config,
-            'env_name': self.config.env_name,
+            "env_name": self.config.env_name,
         }
-        if self.config.env_name == 'quadruped_stepping_stones_2d':
-            for key in ('start_mid', 'goal_mid', 'fore_hind_offset', 'stance_width'):
+        if self.config.env_name == "quadruped_stepping_stones_2d":
+            for key in ("start_mid", "goal_mid", "fore_hind_offset", "stance_width"):
                 if key in self.config.env_params:
                     obstacle_config_with_env[key] = self.config.env_params[key]
-        # 保证 start/goal 为圆心、robot_radius 为半径的圆不在障碍上；失败则重试采样 start
-        max_start_retries = 5
+
         obstacles = None
-        for start_retry in range(max_start_retries):
+        for start_retry in range(5):
             start_pos = self._generate_start_position(
                 level, seed + 1000 * start_retry, temp_env, env_plugin
             )
@@ -228,159 +263,209 @@ class ExperimentRunner:
                     level, seed, start_pos, target_pos, obstacle_config_with_env
                 )
                 break
-            except RuntimeError as e:
-                if "Start position" in str(e) or "Goal/target position" in str(e):
-                    if start_retry == max_start_retries - 1:
+            except RuntimeError as error:
+                if (
+                    "Start position" in str(error)
+                    or "Goal/target position" in str(error)
+                ):
+                    if start_retry == 4:
                         raise
                     continue
                 raise
-        assert obstacles is not None, "obstacle_gen.generate did not return"
-        
-        # 5. Create environment with obstacles (for physics backends that need obstacles in model)
-        env_params_with_obstacles = {**env_create_params}
-        # Add obstacles to env_params if using physics backend that needs them
-        physics_backend = env_params_with_obstacles.get('physics_backend', None)
-        if physics_backend in ['mujoco', 'mjx', 'isaac', 'brax'] and len(obstacles) > 0:
-            env_params_with_obstacles['obstacles'] = obstacles
-        if self.config.env_name == 'quadruped_stepping_stones_2d':
-            env_params_with_obstacles['scene_level'] = int(level)
-            env_params_with_obstacles['scene_seed'] = int(seed)
-        # For D3IL avoiding envs: pass obstacle info for MuJoCo scene sync.
-        if self.config.env_name in ['d3il_avoiding_9d', 'd3il_avoiding']:
-            env_params_with_obstacles['obstacle_level'] = level
-            env_params_with_obstacles['obstacle_radius_by_level'] = (
-                self.config.obstacle_config.get('obstacle_radius_by_level')
-            )
-            env_params_with_obstacles['obstacles'] = obstacles
-            # EE-only collision settings are only used by the 9D env implementation.
-            if self.config.env_name == 'd3il_avoiding_9d':
-                env_params_with_obstacles['robot_radius'] = float(
-                    self.config.obstacle_config.get('robot_radius', 0.05)
-                )
-                env_params_with_obstacles['collision_ee_only'] = True
+        if obstacles is None:
+            raise RuntimeError("obstacle generator did not return a scene")
 
-        # Contact scenes own all collision geometry.  Reuse the task env rather
-        # than recompiling it after an intentionally empty obstacle pass.
+        env_params_with_obstacles = dict(env_create_params)
+        physics_backend = env_params_with_obstacles.get("physics_backend")
+        if (
+            physics_backend in ["mujoco", "mjx", "isaac", "brax"]
+            and len(obstacles) > 0
+        ):
+            env_params_with_obstacles["obstacles"] = obstacles
+        if self.config.env_name == "quadruped_stepping_stones_2d":
+            env_params_with_obstacles["scene_level"] = int(level)
+            env_params_with_obstacles["scene_seed"] = int(seed)
+        if self.config.env_name in ["d3il_avoiding_9d", "d3il_avoiding"]:
+            env_params_with_obstacles["obstacle_level"] = level
+            env_params_with_obstacles["obstacle_radius_by_level"] = (
+                self.config.obstacle_config.get("obstacle_radius_by_level")
+            )
+            env_params_with_obstacles["obstacles"] = obstacles
+            if self.config.env_name == "d3il_avoiding_9d":
+                env_params_with_obstacles["robot_radius"] = float(
+                    self.config.obstacle_config.get("robot_radius", 0.05)
+                )
+                env_params_with_obstacles["collision_ee_only"] = True
+
         env = (
-            temp_env if obstacle_gen_name == "none"
+            temp_env
+            if obstacle_gen_name == "none"
             else env_plugin.create_env(env_params_with_obstacles)
         )
-        if self.config.env_name == 'quadruped_stepping_stones_2d':
-            from genedynamics.envs.obstacles.stepping_stones import make_stepping_stones_obstacles
+        if self.config.env_name == "quadruped_stepping_stones_2d":
+            from genedynamics.envs.obstacles.stepping_stones import (
+                make_stepping_stones_obstacles,
+            )
+
             obstacles = make_stepping_stones_obstacles(env.scene)
-            if hasattr(env, 'obstacles'):
+            if hasattr(env, "obstacles"):
                 env.obstacles = obstacles
-        energy = env_plugin.create_energy(env) if _accepts_env(env_plugin.create_energy) else env_plugin.create_energy()
-        
-        # Build SDF texture if needed (for CBF/MDOC/CFS filters that use sample_sdf_and_grad_2d)
-        # Level 0 must also build texture so obstacles are seen by the filter
+        energy = (
+            env_plugin.create_energy(env)
+            if _accepts_env(env_plugin.create_energy)
+            else env_plugin.create_energy()
+        )
+
         if len(obstacles) > 0:
-            physics_backend = self.config.env_params.get('physics_backend', None)
+            physics_backend = self.config.env_params.get("physics_backend")
             is_3d_env = (
-                self.config.env_name in ['drone_box_3d', 'drone', 'drone_full_3d', 'drone_full_3d_physics',
-                                         'drone_full_3d_mujoco', 'drone_full_3d_isaac',
-                                         'quadruped_flat_mjx', 'quadruped_go2_mjx',
-                                         'quadruped_go2_brax', 'humanoid_run_brax',
-                                         'humanoid_simplified_mjx', 'humanoid_g1_mjx'] or
-                self.config.obstacle_config.get('generator', '') == 'box3d' or
-                physics_backend in ['mujoco', 'mjx', 'isaac']
+                self.config.env_name
+                in [
+                    "drone_box_3d",
+                    "drone",
+                    "drone_full_3d",
+                    "drone_full_3d_physics",
+                    "drone_full_3d_mujoco",
+                    "drone_full_3d_isaac",
+                    "quadruped_flat_mjx",
+                    "quadruped_go2_mjx",
+                    "quadruped_go2_brax",
+                    "humanoid_run_brax",
+                    "humanoid_simplified_mjx",
+                    "humanoid_g1_mjx",
+                ]
+                or self.config.obstacle_config.get("generator", "") == "box3d"
+                or physics_backend in ["mujoco", "mjx", "isaac"]
             )
             if not is_3d_env:
-                map_bounds = self.config.obstacle_config.get('map_bounds', {})
+                map_bounds = self.config.obstacle_config.get("map_bounds", {})
                 obstacles.build_sdf_texture_2d(
-                    x_min=float(map_bounds.get('x_min', -2.0)),
-                    x_max=float(map_bounds.get('x_max', 2.0)),
-                    y_min=float(map_bounds.get('y_min', -2.0)),
-                    y_max=float(map_bounds.get('y_max', 2.0)),
+                    x_min=float(map_bounds.get("x_min", -2.0)),
+                    x_max=float(map_bounds.get("x_max", 2.0)),
+                    y_min=float(map_bounds.get("y_min", -2.0)),
+                    y_max=float(map_bounds.get("y_max", 2.0)),
                     res=0.01,
                     force_rebuild=True,
                 )
-                # Pre-warm SDF texture to JAX when using JAX backend (avoids tracer leaks in JIT)
-                if getattr(self.config, 'backend', None) == 'jax':
-                    tex = obstacles.get_sdf_texture_2d()
-                    if tex is not None and hasattr(tex, 'to_jax'):
-                        tex.to_jax()
-        
-        # 6. Setup constraints
-        constraint_config = self.config.constraint_config or {}
-        
-        # Use new pipeline architecture (preferred)
+                if self.config.backend == "jax":
+                    texture = obstacles.get_sdf_texture_2d()
+                    if texture is not None and hasattr(texture, "to_jax"):
+                        texture.to_jax()
+
         constraint_pipeline = create_constraint_pipeline(
-            obstacles, level, env, constraint_config, self.config.backend,
+            obstacles,
+            level,
+            env,
+            self.config.constraint_config or {},
+            self.config.backend,
             obstacle_config=self.config.obstacle_config,
             method_params=self.config.method_params,
         )
-        
-        # Legacy constraint_manager removed; rely on pipeline only.
-        
-        # 7. Create scheduler (if configured)
+
         scheduler = None
-        scheduler_config = getattr(self.config, 'scheduler_config', None)
+        scheduler_config = self.config.scheduler_config
         if scheduler_config:
             from ..common.constraints import create_scheduler_from_config
+
             scheduler = create_scheduler_from_config(
-                scheduler_config, 
+                scheduler_config,
                 self.config.backend,
                 method_params=self.config.method_params,
-                obstacle_config=self.config.obstacle_config,  # Fix B3: Pass obstacle_config for robot_radius
+                obstacle_config=self.config.obstacle_config,
             )
-        
-        # 8. Create planner
-        method_plugin = self.registry.get_plugin('method', self.config.method)
+
+        method_plugin = self.registry.get_plugin("method", self.config.method)
         method_config = {
             **self.config.method_params,
-            'constraint_pipeline': constraint_pipeline,  # New architecture (preferred)
-            'scheduler': scheduler,  # New scheduler system
-            'obstacles': obstacles,  # Provide obstacles to methods that can use fast SDF (e.g., EB-MBD)
-            'obstacle_config': self.config.obstacle_config,  # Provide robot_radius/map bounds, etc.
-            'np_random_seed': seed,  # Pass seed for reproducibility
-            'env_plugin': env_plugin,  # For TaskSpec / position_extractor
-            'env_name': getattr(self.config, 'env_name', None),
-            'task': getattr(self.config, 'env_name', None),
-            'task_level': self.config.env_params.get('level', level),
-            'n_steps': int(getattr(self.config, 'n_steps', 100)),
-            'controller_method': controller_method,
-            'env_params': self.config.env_params,
-            'execution_env_params': self.config.execution_env_params,
-            'suite': (self.config.metadata or {}).get('suite', level),
-            # Internal execution scope used by method plugins to guard
-            # development-only mechanisms.  These fields are never forwarded
-            # to solver constructors.
-            'experiment_run_class': (self.config.metadata or {}).get(
-                'run_class', 'formal'
+            "constraint_pipeline": constraint_pipeline,
+            "scheduler": scheduler,
+            "obstacles": obstacles,
+            "obstacle_config": self.config.obstacle_config,
+            "np_random_seed": seed,
+            "env_plugin": env_plugin,
+            "env_name": self.config.env_name,
+            "task": self.config.env_name,
+            "task_level": self.config.env_params.get("level", level),
+            "n_steps": int(self.config.n_steps),
+            "controller_method": controller_method,
+            "env_params": self.config.env_params,
+            "execution_env_params": self.config.execution_env_params,
+            "suite": (self.config.metadata or {}).get("suite", level),
+            "experiment_run_class": (self.config.metadata or {}).get(
+                "run_class", "formal"
             ),
-            'experiment_formal_experiment': (self.config.metadata or {}).get(
-                'formal_experiment', True
+            "experiment_formal_experiment": (self.config.metadata or {}).get(
+                "formal_experiment", True
             ),
         }
-        # Pass top-level scheduler_config so method plugins can read
-        # Ndiffuse / beta0 / betaT / M_k / T_k from diffusion_schedulers.
-        if scheduler_config and 'scheduler_config' not in method_config:
-            method_config['scheduler_config'] = scheduler_config
-        # Merge first diffusion_scheduler's M_k / Ndiffuse / T_k / beta into method_config
-        # so method plugins (MDOC, MBD, etc.) use YAML diffusion_schedulers values instead of defaults
-        if scheduler is not None and getattr(scheduler, 'diffusion_schedulers', None):
-            ds_list = scheduler.diffusion_schedulers
-            if ds_list:
-                from genedynamics.core.constraints.core.types import ScheduleState
-                params = ds_list[0].diffusion_params(ScheduleState(k=0, K=1))
-                if params:
-                    if 'M_k' in params:
-                        method_config['Nsample'] = int(params['M_k'])
-                        method_config['action_nsample'] = int(params['M_k'])
-                    if 'Ndiffuse' in params and params.get('Ndiffuse') is not None:
-                        method_config['Ndiffuse'] = int(params['Ndiffuse'])
-                        method_config['action_diffuse_steps'] = int(params['Ndiffuse'])
-                    if 'T_k' in params:
-                        method_config['temp_sample'] = float(params['T_k'])
-                    if params.get('beta0') is not None:
-                        method_config['beta0'] = float(params['beta0'])
-                    if params.get('betaT') is not None:
-                        method_config['betaT'] = float(params['betaT'])
+        if scheduler_config and "scheduler_config" not in method_config:
+            method_config["scheduler_config"] = scheduler_config
+        diffusion_schedulers = getattr(scheduler, "diffusion_schedulers", None)
+        if diffusion_schedulers:
+            from genedynamics.core.constraints.core.types import ScheduleState
+
+            parameters = diffusion_schedulers[0].diffusion_params(
+                ScheduleState(k=0, K=1)
+            )
+            if parameters:
+                if "M_k" in parameters:
+                    method_config["Nsample"] = int(parameters["M_k"])
+                    method_config["action_nsample"] = int(parameters["M_k"])
+                if parameters.get("Ndiffuse") is not None:
+                    method_config["Ndiffuse"] = int(parameters["Ndiffuse"])
+                    method_config["action_diffuse_steps"] = int(
+                        parameters["Ndiffuse"]
+                    )
+                if "T_k" in parameters:
+                    method_config["temp_sample"] = float(parameters["T_k"])
+                if parameters.get("beta0") is not None:
+                    method_config["beta0"] = float(parameters["beta0"])
+                if parameters.get("betaT") is not None:
+                    method_config["betaT"] = float(parameters["betaT"])
         planner = method_plugin.create_planner(env, energy, method_config)
+        return PreparedPlanner(
+            config=self.config,
+            level=level,
+            seed=int(seed),
+            backend=backend,
+            env_plugin=env_plugin,
+            env=env,
+            initial_state=start_pos,
+            target_state=target_pos,
+            obstacles=obstacles,
+            energy=energy,
+            constraint_pipeline=constraint_pipeline,
+            scheduler=scheduler,
+            method_plugin=method_plugin,
+            method_config=method_config,
+            planner=planner,
+        )
+
+    def run_single_experiment(self, level: Any, seed: int) -> Dict[str, Any]:
+        """
+        Run single experiment instance.
         
-        # 8. Run planning
-        rng = backend.create_rng(seed)
+        Args:
+            level: Obstacle difficulty level
+            seed: Random seed for reproducibility
+
+        Returns:
+            Dictionary containing experiment results
+        """
+        experiment_start_time = time.time()
+
+        prepared = self.prepare_planner(level, seed)
+        backend = prepared.backend
+        env_plugin = prepared.env_plugin
+        env = prepared.env
+        start_pos = prepared.initial_state
+        obstacles = prepared.obstacles
+        constraint_pipeline = prepared.constraint_pipeline
+        method_plugin = prepared.method_plugin
+        planner = prepared.planner
+
+        # 8. Run planning through the same prepared object exposed to adapters.
+        rng = prepared.create_rng()
         
         # Warmup call to exclude JIT compilation time from planning time measurement
         # Only needed for JAX backend with JIT enabled (NumPy backend doesn't need warmup)
@@ -401,7 +486,7 @@ class ExperimentRunner:
         
         if needs_warmup:
             try:
-                warmup_result = method_plugin.plan(planner, start_pos, rng)
+                warmup_result = prepared.plan(rng=rng)
                 # For JAX, ensure computation is complete before timing
                 import jax
                 jax.block_until_ready(warmup_result)
@@ -409,15 +494,11 @@ class ExperimentRunner:
                 pass  # If warmup fails, continue anyway
             
             # Recreate rng to ensure same random seed for actual planning
-            rng = backend.create_rng(seed)
+            rng = prepared.create_rng()
         
         planning_start = time.time()
-        result = method_plugin.plan(planner, start_pos, rng)
+        result = prepared.plan(rng=rng)
         planning_time = time.time() - planning_start
-        
-        # Check if planning returned a valid result
-        if result is None:
-            raise ValueError("Planning returned None. Planning may have failed.")
 
         # 8b. Recompute best_idx: prefer (safe AND success) + lowest cost; else lowest cost.
         # D3IL: best_idx is set in 8b2 from execution results (among exec success & no collision, lowest cost).
