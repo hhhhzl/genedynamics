@@ -284,12 +284,11 @@ class TwoGOBackendTorch:
 
     def _retract(self, state, trajectory, schedule_state, schedule_params):
         _require_finite("retraction input", trajectory)
-        maximum = float(trajectory.detach().abs().amax().cpu())
-        if maximum > self.action_limit + 1.0e-6:
-            raise ValueError(
-                "Torch 2GO retraction input exceeds the configured action limit: "
-                f"max_abs={maximum:.9g}, action_limit={self.action_limit:.9g}"
-            )
+        # The evaluator-backed Torch filter has an explicit bounded-action
+        # contract.  Diffusion transport can leave that domain before the
+        # end-of-step projection, so project onto the action box before asking
+        # the task evaluator for CFS feasibility evidence.
+        trajectory = trajectory.clamp(-self.action_limit, self.action_limit)
         before = self._binding_model_call_count()
         result = self.retraction.retract(
             state,

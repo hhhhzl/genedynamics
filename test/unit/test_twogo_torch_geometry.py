@@ -282,3 +282,59 @@ def test_torch_twogo_executes_full_geometry_path_with_exact_call_accounting():
     assert result["model_calls"] > 3 * 8 * 4
     assert result["model_call_unit"] == "scalar_dynamics_transition"
     assert np.isfinite(result["actions"]).all()
+
+
+def test_torch_twogo_projects_retraction_input_to_action_domain():
+    from genedynamics.core.backends.runtime import RuntimeBackendManager
+    from genedynamics.core.constraints.action_filters import (
+        TorchTrajectoryFeasibilityFilter,
+    )
+    from genedynamics.core.energy import EnergyTerm, LegacyEnergyFunctional
+    from genedynamics.solvers.single.twogo.twogo import TwoGOSolver
+
+    class BoundedEvaluator:
+        act_dim = 2
+        device = torch.device("cpu")
+
+        def __init__(self):
+            self.model_call_count = 0
+            self.evaluated = []
+
+        def transition(self, state, action, dt=None):
+            return np.asarray(state) + np.asarray(action)
+
+        def evaluate_action_sequences(self, actions):
+            assert bool((actions.abs() <= 1.0).all())
+            self.evaluated.append(actions.detach().clone())
+            batch, horizon, _ = actions.shape
+            self.model_call_count += batch * horizon
+            return SimpleNamespace(
+                maximum_violation=torch.zeros(batch),
+                predicted_feasible=torch.ones(batch, dtype=torch.bool),
+            )
+
+        def constraint_geometry(self, actions):
+            raise AssertionError("Geometry is not used by this retraction test")
+
+    RuntimeBackendManager.set_backend("torch", device="cpu")
+    backend = RuntimeBackendManager.get_backend()
+    dynamics = BoundedEvaluator()
+    solver = TwoGOSolver(
+        dynamics=dynamics,
+        energy=LegacyEnergyFunctional(
+            {"zero": EnergyTerm(lambda state, action, info: 0.0)}
+        ),
+        backend=backend,
+        horizon=2,
+        Nsample=2,
+        Ndiffuse=1,
+        constraint_filter=TorchTrajectoryFeasibilityFilter((0.0,)),
+    )
+    implementation = solver._get_backend_impl()
+    proposed = torch.tensor([[1.25, -1.5], [0.4, -0.3]])
+    actual = implementation._retract(
+        np.zeros(2, dtype=np.float32), proposed, {}, {}
+    )
+    expected = proposed.clamp(-1.0, 1.0)
+    torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(dynamics.evaluated[0][0], expected)
