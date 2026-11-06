@@ -2080,6 +2080,40 @@ def test_arm_cpu_low_memory_batch_matches_vector_width():
         _cpu_low_memory_ppo_kwargs(0)
 
 
+def test_arm_ppo_step_schedule_binds_actual_environment_budget():
+    from scripts.tasks.robot.arm.train_rl_baseline import _ppo_step_schedule
+
+    frozen = {
+        "batch_size": 8,
+        "unroll_length": 10,
+        "num_minibatches": 2,
+        "action_repeat": 1,
+        "num_resets_per_eval": 0,
+        "num_evals": 27,
+    }
+    assert _ppo_step_schedule(4_096, frozen) == {
+        "requested_environment_steps": 4_096,
+        "environment_step_quantum": 160,
+        "evaluation_intervals": 26,
+        "reset_cycles_per_interval": 1,
+        "training_steps_per_interval": 1,
+        "expected_executed_environment_steps": 4_160,
+    }
+
+    inherited_formal_slots = {**frozen, "num_evals": 101}
+    assert _ppo_step_schedule(4_096, inherited_formal_slots)[
+        "expected_executed_environment_steps"
+    ] == 16_000
+
+
+def test_arm_progress_does_not_relabel_disabled_eval_as_nan():
+    from scripts.tasks.robot.arm.train_rl_baseline import _progress_reward_text
+
+    assert _progress_reward_text({"training/loss": 1.0}) == "unavailable"
+    assert _progress_reward_text({"eval/episode_reward": 1.25}) == "1.25"
+    assert _progress_reward_text({"eval/episode_reward": float("nan")}) == "nan"
+
+
 def test_arm_atacom_training_options_match_deployment_contract():
     from scripts.tasks.robot.arm.train_rl_baseline import (
         _atacom_training_options,

@@ -125,6 +125,10 @@ metadata:
         learning_rate: 0.0001
         batch_size: 8
         num_minibatches: 2
+        # Freeze the Brax step quantum instead of inheriting version defaults.
+        unroll_length: 10
+        action_repeat: 1
+        num_resets_per_eval: 0
         num_updates_per_batch: 1
         reward_scaling: 0.05
         max_grad_norm: 1.0

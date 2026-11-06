@@ -23,6 +23,12 @@ metadata:
   training:
     rl:
       num_timesteps: 4096
+      # Brax partitions training across ``num_evals - 1`` intervals even when
+      # evaluation is disabled.  With the frozen 160-step PPO quantum, 27 slots
+      # execute 26 updates = 4,160 steps, the nearest legal upper alignment.
+      # Inheriting the formal recipe's 101 slots would silently execute 16,000.
+      train_kwargs:
+        num_evals: 27
       action_scale: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.075, 0.075, 0.075, 0.075, 0.075, 0.075, 0.1]
       residual_action_penalty: 0.05
       checkpoint: results/_development/peg_insert_mga_residual_safe_smoke/shared_ppo_seed{seed}.pkl

@@ -21,25 +21,25 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from pathlib import Path
+import math
 import time
+from pathlib import Path
 
 import numpy as np
-
-from genedynamics.envs.factories import make_env
 from genedynamics.envs.domains.manipulation.panda_brax import (
     PandaResidualActionEnv,
     PandaSurfaceScanDomainEnv,
+)
+from genedynamics.envs.factories import make_env
+from genedynamics.experiments.framework.config import (
+    ExperimentConfig,
+    deep_merge,
 )
 from genedynamics.learning.train_rl_policy import (
     load_policy,
     save_policy,
     scalar_metrics,
     train_rl_policy,
-)
-from genedynamics.experiments.framework.config import (
-    ExperimentConfig,
-    deep_merge,
 )
 
 ARM_TASK = "manipulator_surface_scan"
@@ -110,6 +110,63 @@ def _cpu_low_memory_ppo_kwargs(num_envs: int) -> dict:
         "num_updates_per_batch": 1,
         "policy_hidden_layer_sizes": (16, 16),
     }
+
+
+def _ppo_step_schedule(num_timesteps: int, train_kwargs: dict) -> dict:
+    """Mirror Brax PPO's exact environment-step rounding contract.
+
+    Brax partitions training over ``num_evals - 1`` intervals even when
+    ``run_evals`` is false.  A small requested budget combined with many
+    intervals can therefore execute several times the declared budget unless
+    the source recipe freezes and audits the resulting schedule.
+    """
+
+    requested = int(num_timesteps)
+    if requested < 1:
+        raise ValueError("num_timesteps must be positive")
+    values = {
+        "batch_size": int(train_kwargs.get("batch_size", 32)),
+        "unroll_length": int(train_kwargs.get("unroll_length", 10)),
+        "num_minibatches": int(train_kwargs.get("num_minibatches", 16)),
+        "action_repeat": int(train_kwargs.get("action_repeat", 1)),
+        "num_evals": int(train_kwargs.get("num_evals", 1)),
+        "num_resets_per_eval": int(train_kwargs.get("num_resets_per_eval", 0)),
+    }
+    if any(value < 1 for name, value in values.items() if name not in {
+        "num_evals", "num_resets_per_eval"
+    }):
+        raise ValueError("PPO batch, unroll, minibatch and action-repeat values must be positive")
+    if values["num_evals"] < 0 or values["num_resets_per_eval"] < 0:
+        raise ValueError("PPO eval/reset counts must be non-negative")
+    quantum = (
+        values["batch_size"]
+        * values["unroll_length"]
+        * values["num_minibatches"]
+        * values["action_repeat"]
+    )
+    intervals = max(values["num_evals"] - 1, 1)
+    reset_cycles = max(values["num_resets_per_eval"], 1)
+    training_steps_per_interval = math.ceil(
+        requested / (intervals * quantum * reset_cycles)
+    )
+    expected = (
+        intervals * quantum * reset_cycles * training_steps_per_interval
+    )
+    return {
+        "requested_environment_steps": requested,
+        "environment_step_quantum": quantum,
+        "evaluation_intervals": intervals,
+        "reset_cycles_per_interval": reset_cycles,
+        "training_steps_per_interval": training_steps_per_interval,
+        "expected_executed_environment_steps": expected,
+    }
+
+
+def _progress_reward_text(record: dict) -> str:
+    """Do not render a disabled evaluation metric as a numerical NaN."""
+
+    reward = record.get("eval/episode_reward")
+    return "unavailable" if reward is None else f"{float(reward):.6g}"
 
 
 def _atacom_training_options(resolved: dict) -> dict:
@@ -628,6 +685,10 @@ def main() -> int:
         train_kwargs.update(_cpu_low_memory_ppo_kwargs(num_envs))
     if a.skip_inline_eval and algo == "ppo":
         train_kwargs["run_evals"] = False
+    ppo_step_schedule = (
+        _ppo_step_schedule(num_timesteps, train_kwargs)
+        if algo == "ppo" else None
+    )
     progress_history = []
     select_best = (
         bool(rl_cfg.get("select_best_eval", False))
@@ -664,6 +725,7 @@ def main() -> int:
             "action_scale": action_scale.tolist() if action_scale is not None else None,
             "residual_action_penalty": residual_action_penalty,
             "atacom_transform": atacom_transform,
+            "training_step_schedule": ppo_step_schedule,
             "progress_history": list(progress_history),
             "selection_metric": selection_metric,
             "selected_step": int(selected_step),
@@ -689,10 +751,10 @@ def main() -> int:
         progress_history.append(record)
         if selector is not None:
             selector.observe(num_steps, record)
-        reward = record.get("eval/episode_reward", float("nan"))
         print(
             f"  progress steps={int(num_steps)} "
-            f"reward={reward:.6g} elapsed={record['elapsed_seconds']:.1f}s",
+            f"reward={_progress_reward_text(record)} "
+            f"elapsed={record['elapsed_seconds']:.1f}s",
             flush=True,
         )
 
@@ -716,6 +778,22 @@ def main() -> int:
         seed=seed,
         **train_kwargs,
     )
+    if ppo_step_schedule is not None:
+        if not progress_history:
+            raise RuntimeError("PPO completed without an auditable progress history")
+        actual_environment_steps = int(progress_history[-1]["num_steps"])
+        expected_environment_steps = int(
+            ppo_step_schedule["expected_executed_environment_steps"]
+        )
+        if actual_environment_steps != expected_environment_steps:
+            raise RuntimeError(
+                "PPO executed environment steps differ from the frozen schedule: "
+                f"{actual_environment_steps} != {expected_environment_steps}"
+            )
+        ppo_step_schedule = {
+            **ppo_step_schedule,
+            "actual_executed_environment_steps": actual_environment_steps,
+        }
     if selector is not None and selector.params is not None:
         params = selector.params
     config.update({
@@ -733,6 +811,7 @@ def main() -> int:
         ),
         "residual_action_penalty": residual_action_penalty,
         "atacom_transform": atacom_transform,
+        "training_step_schedule": ppo_step_schedule,
         "progress_history": progress_history,
         "training_wall_seconds": float(time.monotonic() - train_started),
         "selection_metric": selector.metric if selector is not None else None,
