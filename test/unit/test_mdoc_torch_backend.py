@@ -3,6 +3,9 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 from genedynamics.core.backends.runtime import RuntimeBackendManager
+from genedynamics.core.constraints.action_filters import (
+    TorchTrajectoryFeasibilityFilter,
+)
 from genedynamics.core.energy import EnergyTerm, LegacyEnergyFunctional
 from genedynamics.solvers.single.mdoc import MDOCSolver
 
@@ -21,8 +24,12 @@ class QuadraticTrajectoryBinding:
     action_dim = 2
     device = "cpu"
 
+    def __init__(self):
+        self.model_call_count = 0
+
     def evaluate_action_sequences(self, candidates):
         batch, horizon, _ = candidates.shape
+        self.model_call_count += batch * horizon
         positions = torch.cumsum(candidates, dim=1)
         initial = torch.zeros(batch, 1, 2)
         states = torch.cat((initial, positions), dim=1)
@@ -42,7 +49,7 @@ class QuadraticTrajectoryBinding:
         return state + action
 
 
-def _solver(seed=7):
+def _solver(seed=7, constraint_filter=None):
     RuntimeBackendManager.set_backend("torch", device="cpu")
     binding = QuadraticTrajectoryBinding()
     energy = LegacyEnergyFunctional(
@@ -58,6 +65,7 @@ def _solver(seed=7):
         temp_sample=0.3,
         action_limit=1.0,
         seed=seed,
+        constraint_filter=constraint_filter,
     )
 
 
@@ -84,4 +92,20 @@ def test_torch_mdoc_is_seed_deterministic():
     np.testing.assert_array_equal(
         first.info["diffusion_sampled_actions"],
         second.info["diffusion_sampled_actions"],
+    )
+
+
+def test_torch_mdoc_counts_filter_rollouts_in_model_budget():
+    solver = _solver(
+        constraint_filter=TorchTrajectoryFeasibilityFilter((0.5,))
+    )
+
+    result = solver.solve(np.zeros(2), horizon=4, rng_key=7)
+
+    # Each of three diffusion steps evaluates the 8 sampled plans, the filtered
+    # plans and the filtered mean; the terminal mean is then evaluated once.
+    assert result.info["model_calls"] == 3 * (8 * 4 + 8 * 4 + 4) + 4
+    assert (
+        solver._env_adapter.dynamics.model_call_count
+        == result.info["model_calls"]
     )

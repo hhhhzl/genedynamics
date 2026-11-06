@@ -144,6 +144,38 @@ class MDOCBackendTorch:
             raise ValueError("Torch MDOC task model-call evidence is not exact")
         return result
 
+    def _binding_model_call_count(self):
+        dynamics = getattr(self.env, "dynamics", None)
+        count = getattr(dynamics, "model_call_count", None)
+        if count is None:
+            count = getattr(self.env, "model_call_count", None)
+        return None if count is None else int(count)
+
+    def _apply_filter(self, method, x0, actions, **kwargs):
+        before = self._binding_model_call_count()
+        if before is None and getattr(
+            self.constraint_filter, "requires_model_call_counter", False
+        ):
+            raise TypeError(
+                "Torch MDOC evaluator-driven filters require an exact "
+                "binding model_call_count"
+            )
+        filtered = method(
+            x0,
+            actions,
+            env=self.env,
+            obstacles=self.obstacles,
+            **kwargs,
+        )
+        after = self._binding_model_call_count()
+        if (before is None) != (after is None) or (
+            before is not None and after < before
+        ):
+            raise RuntimeError(
+                "Torch MDOC filter model-call counter changed contract"
+            )
+        return filtered, 0 if before is None else after - before
+
     def plan(self, x0: State, rng_key: Any | None = None) -> dict[str, Any]:
         device = self._device()
         generator = self._generator(rng_key, device)
@@ -173,14 +205,14 @@ class MDOCBackendTorch:
             )
             step = self.Ndiffuse - 1 - index
             schedule_state, schedule_params = self._schedule(step, total_steps)
-            candidates = self.constraint_filter.apply_actions_batch(
+            candidates, filter_calls = self._apply_filter(
+                self.constraint_filter.apply_actions_batch,
                 x0,
                 candidates,
-                env=self.env,
-                obstacles=self.obstacles,
                 schedule_state=schedule_state,
                 schedule_params=schedule_params,
             )
+            model_calls += filter_calls
             if not isinstance(candidates, torch.Tensor):
                 candidates = torch.as_tensor(
                     candidates, dtype=dtype, device=device
@@ -207,14 +239,14 @@ class MDOCBackendTorch:
                 (rewards - rewards.mean()) / (deviation * temperature), dim=0
             )
             mean = torch.einsum("n,nha->ha", weights, candidates)
-            mean = self.constraint_filter.apply_actions(
+            mean, filter_calls = self._apply_filter(
+                self.constraint_filter.apply_actions,
                 x0,
                 mean,
-                env=self.env,
-                obstacles=self.obstacles,
                 schedule_state=schedule_state,
                 schedule_params=schedule_params,
             )
+            model_calls += filter_calls
             if not isinstance(mean, torch.Tensor):
                 mean = torch.as_tensor(mean, dtype=dtype, device=device)
             reward_history.append(rewards.mean().detach().cpu())

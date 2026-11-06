@@ -1,0 +1,55 @@
+name: recoverymimic_g1_reference_mdoc_dodgeball
+output_dir: results/external/g1_reference/mdoc_dodgeball
+
+# RecoveryMimic owns the causal task binding and frozen G1 WBC/world model.
+# GD owns the MDOC diffusion/filter algorithm and this immutable solver recipe.
+env_name: external_trajectory_binding
+env_params:
+  dt: 0.02
+  horizon: 10
+  action_dim: 36
+  control_limit: 1.0
+
+method: mdoc
+method_params:
+  Nsample: 32
+  Ndiffuse: 5
+  temp_sample: 0.3
+  beta0: 1.0e-4
+  betaT: 1.0e-2
+  action_limit: 1.0
+  mdoc_constraint_mode: trajectory_feasibility
+  contraction_factors: [0.5, 0.25, 0.0]
+  replan_after_steps: 1
+  clearance_margin: 0.05
+  constraint_penalty: 100.0
+  prior_weight: 0.01
+  smoothness_weight: 0.01
+  feasibility_tolerance: 1.0e-4
+  # Exact worst case including sample filtering, mean filtering and final plan.
+  maximum_model_calls: 6570
+  repair_trust_region:
+    root_position_metres: 0.15
+    root_rotation_radians: 0.35
+    joint_position_radians: 0.25
+    phase_rate: 0.25
+  show_tqdm: false
+  num_modes: 1
+
+obstacle_levels: [0]
+obstacle_config:
+  generator: external_causal_belief
+
+seeds: [0]
+backend: torch
+device: gpu
+metrics: []
+visualizations: []
+auto_report: false
+
+metadata:
+  protocol: external_trajectory_binding_v1
+  task_family: dodgeball
+  control_space: reference_control
+  lineage: task_adaptation
+  formal_experiment: true
