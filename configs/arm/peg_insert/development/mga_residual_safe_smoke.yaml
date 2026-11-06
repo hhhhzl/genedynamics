@@ -1,0 +1,28 @@
+base: ../main/mga.yaml
+name: mga_residual_safe_smoke
+output_dir: results/_development/peg_insert_mga_residual_safe_smoke/evaluation
+method_params:
+  policy_ckpt: results/_development/peg_insert_mga_residual_safe_smoke/shared_ppo_seed0.pkl
+metadata:
+  protocol: mga_peg_insert_residual_safe_smoke_v1
+  protocol_status: development_candidate
+  run_class: development
+  formal_seeds: false
+  learned_component_lock_status: development_candidate_not_promoted
+  learned_component_lock:
+    policy:
+      path: results/_development/peg_insert_mga_residual_safe_smoke/shared_ppo_seed0.pkl
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      protocol: manipulator_peg_insert_shared_mga_v1
+      training_seeds: [0]
+      training_budget: {unit: environment_steps, value: 4096}
+      training_domains: [wide_seed100, tight_seed101, ood_seed102, ood_seed103]
+      architecture: ppo_mlp_16x16
+      selection_rule: development_smoke_then_independent_health_gate
+      selected_step: null
+  training:
+    rl:
+      num_timesteps: 4096
+      action_scale: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.075, 0.075, 0.075, 0.075, 0.075, 0.075, 0.1]
+      residual_action_penalty: 0.05
+      checkpoint: results/_development/peg_insert_mga_residual_safe_smoke/shared_ppo_seed{seed}.pkl

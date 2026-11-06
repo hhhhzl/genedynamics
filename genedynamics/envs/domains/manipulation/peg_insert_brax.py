@@ -2024,9 +2024,21 @@ class PegInsertDomainEnv:
 
 
 class PegInsertResidualActionEnv:
-    """Train a residual policy around an executable insertion primitive."""
+    """Train a regularized residual around an executable insertion primitive.
 
-    def __init__(self, env, action_bias, action_scale=None):
+    The wrapped task evaluates the executed primitive, while the regularizer
+    keeps the learned correction near the independently validated action bias.
+    Penalizing the executed action itself would also penalize that safe bias
+    and can teach PPO to cancel the very primitive it is meant to refine.
+    """
+
+    def __init__(
+        self,
+        env,
+        action_bias,
+        action_scale=None,
+        residual_action_penalty: float = 0.0,
+    ):
         self.env = env
         self.action_bias = jnp.asarray(action_bias, dtype=jnp.float32)
         expected = (int(env.action_size),)
@@ -2046,6 +2058,10 @@ class PegInsertResidualActionEnv:
             )
         if bool(jnp.any(self.action_scale <= 0.0)):
             raise ValueError("action_scale entries must be positive")
+        penalty = float(residual_action_penalty)
+        if not math.isfinite(penalty) or penalty < 0.0:
+            raise ValueError("residual_action_penalty must be finite and non-negative")
+        self.residual_action_penalty = penalty
 
     @property
     def action_size(self):
@@ -2067,12 +2083,25 @@ class PegInsertResidualActionEnv:
         return self.env.reset(rng)
 
     def step(self, state, residual_action):
+        residual = jnp.clip(jnp.asarray(residual_action), -1.0, 1.0)
         action = jnp.clip(
-            self.action_scale * jnp.asarray(residual_action) + self.action_bias,
+            self.action_scale * residual + self.action_bias,
             -1.0,
             1.0,
         )
-        return self.env.step(state, action)
+        next_state = self.env.step(state, action)
+        residual_mean_square = jnp.mean(residual**2)
+        residual_penalty = self.residual_action_penalty * residual_mean_square
+        reward = next_state.reward - residual_penalty
+        return next_state.replace(
+            reward=reward,
+            metrics={
+                **next_state.metrics,
+                "reward": reward,
+                "residual_action_rms": jnp.sqrt(residual_mean_square),
+                "residual_action_penalty": residual_penalty,
+            },
+        )
 
 
 def make_execution_pair(

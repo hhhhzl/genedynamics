@@ -492,20 +492,31 @@ def main() -> int:
 
     action_bias = None
     action_scale = None
+    residual_action_penalty = 0.0
     if domain_specs and not a.atacom and rl_cfg.get("action_bias") is not None:
         action_bias = np.asarray(rl_cfg["action_bias"], dtype=np.float32)
         action_scale = np.asarray(
             rl_cfg.get("action_scale", np.ones_like(action_bias)),
             dtype=np.float32,
         )
+        residual_action_penalty = float(
+            rl_cfg.get("residual_action_penalty", 0.0)
+        )
         if task == INSERT_TASK:
             from genedynamics.envs.domains.manipulation.peg_insert_brax import (
                 PegInsertResidualActionEnv,
             )
-            env = PegInsertResidualActionEnv(env, action_bias, action_scale)
+            env = PegInsertResidualActionEnv(
+                env,
+                action_bias,
+                action_scale,
+                residual_action_penalty=residual_action_penalty,
+            )
         else:
             env = PandaResidualActionEnv(env, action_bias, action_scale)
         env_desc += " + residual action prior"
+        if residual_action_penalty:
+            env_desc += f" (penalty={residual_action_penalty:g})"
 
     expected_action_size = int(rl_cfg.get(
         "expected_action_size", 13 if task == INSERT_TASK else 10
@@ -651,6 +662,7 @@ def main() -> int:
             "domain_count": len(domain_specs),
             "action_bias": action_bias.tolist() if action_bias is not None else None,
             "action_scale": action_scale.tolist() if action_scale is not None else None,
+            "residual_action_penalty": residual_action_penalty,
             "atacom_transform": atacom_transform,
             "progress_history": list(progress_history),
             "selection_metric": selection_metric,
@@ -719,6 +731,7 @@ def main() -> int:
         "action_scale": (
             action_scale.tolist() if action_scale is not None else None
         ),
+        "residual_action_penalty": residual_action_penalty,
         "atacom_transform": atacom_transform,
         "progress_history": progress_history,
         "training_wall_seconds": float(time.monotonic() - train_started),

@@ -307,6 +307,57 @@ def test_h1_policy_interface_checks_semantics_and_preserves_legacy_loads():
         )
 
 
+def test_peg_insert_residual_wrapper_regularizes_residual_not_safe_bias():
+    from dataclasses import dataclass, replace
+
+    import jax.numpy as jnp
+
+    from genedynamics.envs.domains.manipulation.peg_insert_brax import (
+        PegInsertResidualActionEnv,
+    )
+
+    @dataclass(frozen=True)
+    class FakeState:
+        reward: object
+        metrics: dict
+
+        def replace(self, **updates):
+            return replace(self, **updates)
+
+    class FakeEnv:
+        action_size = 2
+        observation_size = 3
+        backend = "test"
+        dt = 0.02
+
+        def step(self, state, action):
+            reward = jnp.sum(action)
+            return state.replace(reward=reward, metrics={"reward": reward})
+
+    env = PegInsertResidualActionEnv(
+        FakeEnv(),
+        action_bias=[0.4, -0.2],
+        action_scale=[0.5, 0.25],
+        residual_action_penalty=2.0,
+    )
+    state = FakeState(jnp.asarray(0.0), {})
+
+    centered = env.step(state, jnp.zeros(2))
+    assert float(centered.reward) == pytest.approx(0.2)
+    assert float(centered.metrics["residual_action_penalty"]) == pytest.approx(0.0)
+
+    corrected = env.step(state, jnp.asarray([1.0, -1.0]))
+    # Executed action is [0.9, -0.45], while the raw residual mean-square is 1.
+    assert float(corrected.reward) == pytest.approx(0.45 - 2.0)
+    assert float(corrected.metrics["residual_action_rms"]) == pytest.approx(1.0)
+    assert float(corrected.metrics["residual_action_penalty"]) == pytest.approx(2.0)
+
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        PegInsertResidualActionEnv(
+            FakeEnv(), [0.0, 0.0], residual_action_penalty=-0.1
+        )
+
+
 def _h1_reliability_contract_env(*, walk=False):
     from genedynamics.envs.domains.humanoid.box_push_brax import (
         HumanoidBoxPushConfig, HumanoidBoxPushEnv,
