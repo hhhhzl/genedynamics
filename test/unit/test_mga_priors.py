@@ -330,6 +330,10 @@ def test_peg_insert_residual_wrapper_regularizes_residual_not_safe_bias():
         backend = "test"
         dt = 0.02
 
+        def reset(self, _rng):
+            zero = jnp.asarray(0.0)
+            return FakeState(zero, {"reward": zero})
+
         def step(self, state, action):
             reward = jnp.sum(action)
             return state.replace(reward=reward, metrics={"reward": reward})
@@ -340,11 +344,29 @@ def test_peg_insert_residual_wrapper_regularizes_residual_not_safe_bias():
         action_scale=[0.5, 0.25],
         residual_action_penalty=2.0,
     )
-    state = FakeState(jnp.asarray(0.0), {})
+    state = env.reset(None)
+    assert set(state.metrics) == {
+        "reward",
+        "residual_action_rms",
+        "residual_action_penalty",
+    }
 
     centered = env.step(state, jnp.zeros(2))
+    assert set(centered.metrics) == set(state.metrics)
     assert float(centered.reward) == pytest.approx(0.2)
     assert float(centered.metrics["residual_action_penalty"]) == pytest.approx(0.0)
+
+    def scan_step(metrics, residual):
+        next_state = env.step(FakeState(jnp.asarray(0.0), metrics), residual)
+        return next_state.metrics, next_state.reward
+
+    scanned_metrics, scanned_rewards = jax.lax.scan(
+        scan_step,
+        state.metrics,
+        jnp.zeros((2, 2)),
+    )
+    assert set(scanned_metrics) == set(state.metrics)
+    assert scanned_rewards.shape == (2,)
 
     corrected = env.step(state, jnp.asarray([1.0, -1.0]))
     # Executed action is [0.9, -0.45], while the raw residual mean-square is 1.

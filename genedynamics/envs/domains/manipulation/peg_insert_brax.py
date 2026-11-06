@@ -2080,7 +2080,15 @@ class PegInsertResidualActionEnv:
         return self.env.dt
 
     def reset(self, rng):
-        return self.env.reset(rng)
+        state = self.env.reset(rng)
+        zero = jnp.zeros((), dtype=jnp.asarray(state.reward).dtype)
+        return state.replace(
+            metrics={
+                **state.metrics,
+                "residual_action_rms": zero,
+                "residual_action_penalty": zero,
+            }
+        )
 
     def step(self, state, residual_action):
         residual = jnp.clip(jnp.asarray(residual_action), -1.0, 1.0)
