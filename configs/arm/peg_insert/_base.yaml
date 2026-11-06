@@ -118,6 +118,10 @@ metadata:
       checkpoint: results/arm/peg_insert/_policies/shared_ppo_seed{seed}.pkl
       atacom_checkpoint: results/arm/peg_insert/_policies/shared_atacom_ppo_seed{seed}.pkl
       train_kwargs:
+        # This is part of the frozen learned-component contract.  Do not rely on
+        # train_rl_policy's 32x32x32x32 default or --cpu-low-memory (which also
+        # changes batch/unroll semantics).
+        policy_hidden_layer_sizes: [16, 16]
         learning_rate: 0.0001
         batch_size: 8
         num_minibatches: 2

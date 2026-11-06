@@ -517,6 +517,11 @@ def test_peg_insert_core_only_freeze_retires_learned_reliability_ablation():
     )
     assert full.metadata["protocol_status"] == "frozen_core_only"
     assert full.metadata["learned_component_lock_status"] == "frozen_core_only"
+    training = full.metadata["training"]["rl"]
+    assert training["train_kwargs"]["policy_hidden_layer_sizes"] == [16, 16]
+    assert full.metadata["learned_component_lock"]["policy"]["architecture"] == (
+        "ppo_mlp_16x16"
+    )
     assert full.method_params["learned_reliability"] is False
     assert full.method_params["reliability_ckpt"] is None
     assert retired.method_params == full.method_params

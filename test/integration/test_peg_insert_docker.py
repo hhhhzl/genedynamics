@@ -777,6 +777,9 @@ def _p4_algorithms_metrics():
     config_ok = config_ok and full.method_params["prior_atacom_samples"] == 0
     config_ok = config_ok and "reliability_ckpt" in full.method_params
     config_ok = config_ok and full.metadata["training"]["rl"]["num_timesteps"] == 200000
+    config_ok = config_ok and full.metadata["training"]["rl"]["train_kwargs"][
+        "policy_hidden_layer_sizes"
+    ] == [16, 16]
 
     plans = {}
     for method in ("dial", "mppi", "mga_controllable_gate"):
