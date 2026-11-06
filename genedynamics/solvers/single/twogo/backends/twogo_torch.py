@@ -283,6 +283,13 @@ class TwoGOBackendTorch:
         )
 
     def _retract(self, state, trajectory, schedule_state, schedule_params):
+        _require_finite("retraction input", trajectory)
+        maximum = float(trajectory.detach().abs().amax().cpu())
+        if maximum > self.action_limit + 1.0e-6:
+            raise ValueError(
+                "Torch 2GO retraction input exceeds the configured action limit: "
+                f"max_abs={maximum:.9g}, action_limit={self.action_limit:.9g}"
+            )
         before = self._binding_model_call_count()
         result = self.retraction.retract(
             state,
