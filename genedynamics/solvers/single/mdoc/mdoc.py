@@ -36,9 +36,17 @@ def _get_mdoc_backend(backend_name: str):
 
         return MDOCBackendJax
     if backend_name == "numpy":
-        from genedynamics.solvers.single.mdoc.backends.mdoc_numpy import MDOCBackendNumpy
+        from genedynamics.solvers.single.mdoc.backends.mdoc_numpy import (
+            MDOCBackendNumpy,
+        )
 
         return MDOCBackendNumpy
+    if backend_name == "torch":
+        from genedynamics.solvers.single.mdoc.backends.mdoc_torch import (
+            MDOCBackendTorch,
+        )
+
+        return MDOCBackendTorch
     return None
 
 
@@ -79,9 +87,10 @@ class MDOCSolver(BaseModelBasedDiffusionSolver):
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
 
-        if backend.name not in {"jax", "numpy"}:
+        if backend.name not in {"jax", "numpy", "torch"}:
             raise ValueError(
-                f"MDOC solver currently supports backends {{'jax','numpy'}}, got {backend.name}."
+                "MDOC solver currently supports backends "
+                f"{{'jax','numpy','torch'}}, got {backend.name}."
             )
 
         self.horizon = int(horizon)
