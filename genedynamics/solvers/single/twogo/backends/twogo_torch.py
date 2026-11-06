@@ -38,6 +38,14 @@ def _host(value):
     return np.asarray(value)
 
 
+def _require_finite(stage, *values):
+    if not all(
+        isinstance(value, torch.Tensor) and bool(torch.isfinite(value).all())
+        for value in values
+    ):
+        raise FloatingPointError(f"Torch 2GO {stage} produced a non-finite tensor")
+
+
 class TwoGOBackendTorch:
     """Geometry-aware gated diffusion over an exact Torch task binding."""
 
@@ -417,6 +425,11 @@ class TwoGOBackendTorch:
                 effective_candidates = candidates
                 probe_geometry = torch.zeros_like(mean)
                 probed = 0
+            _require_finite(
+                "probe update",
+                effective_candidates,
+                probe_geometry,
+            )
 
             base_geometry = self._constraint_geometry(mean) * window[:, None]
             geometry = self.modulator.modulate(
@@ -425,8 +438,15 @@ class TwoGOBackendTorch:
                 window_mask=window,
                 alpha=self.probe_geom_alpha,
             )
+            _require_finite("constraint geometry", base_geometry, geometry)
             active = min(max(1, self.active_topk), self.horizon)
             bundle = self.manifold.geometry(geometry, active, self.stability_eps)
+            _require_finite(
+                "manifold construction",
+                bundle.A_rows,
+                bundle.metric_sys,
+                bundle.tan_sys,
+            )
 
             deviation = rewards.std(unbiased=False)
             if float(deviation) < 1.0e-4:
@@ -437,6 +457,7 @@ class TwoGOBackendTorch:
                 dim=0,
             )
             weighted = torch.einsum("n,nha->ha", weights, effective_candidates)
+            _require_finite("weighted update", weights, weighted)
             gate = self.gate.evaluate(
                 candidates,
                 mean,
@@ -468,6 +489,7 @@ class TwoGOBackendTorch:
             if self.enable_geometry and bool(bundle.is_valid):
                 score = self.manifold.project(score, bundle, mode="metric")
                 extra_noise = self.manifold.project(extra_noise, bundle, mode="tangent")
+            _require_finite("manifold projection", score, extra_noise)
 
             sigma_effective = gamma_previous * (
                 sigma + self.action_extra_sigma * (1.0 - step / total)
@@ -483,7 +505,9 @@ class TwoGOBackendTorch:
                 )
                 retain = torch.sqrt((numerator / denominator).clamp(0.0, 1.0))
                 transported = (1.0 - retain) * weighted + retain * mean
+            _require_finite("transport update", transported)
             proposed = transported + eta * score + sigma_effective * extra_noise
+            _require_finite("proposal update", proposed)
 
             high_risk = bool(cvar > delta)
             retract = (
@@ -498,6 +522,7 @@ class TwoGOBackendTorch:
                     schedule_state,
                     dict(schedule_params, qp_gate=True, qp_prob=1.0),
                 )
+                _require_finite("mean retraction", proposed)
             mean = proposed.clamp(-self.action_limit, self.action_limit)
 
             histories["reward"].append(rewards.mean().detach().cpu())
