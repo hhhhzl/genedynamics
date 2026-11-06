@@ -8,8 +8,13 @@ from abc import abstractmethod
 from typing import Any, Dict, List
 
 import numpy as np
-import jax
-import jax.numpy as jnp
+
+try:
+    import jax
+    import jax.numpy as jnp
+except ImportError:  # Optional for NumPy/Torch solver backends.
+    jax = None
+    jnp = None
 
 from genedynamics.core.solvers import SamplingSolver
 from genedynamics.core.backends.runtime import RuntimeBackendManager
@@ -31,10 +36,19 @@ class BaseModelBasedDiffusionSolver(SamplingSolver):
             self._backend_impl = None
 
     def _prepare_state(self, x0: State) -> Any:
-        return np.asarray(x0, dtype=np.float32) if not isinstance(x0, jnp.ndarray) else x0
+        if jnp is not None and isinstance(x0, jnp.ndarray):
+            return x0
+        return np.asarray(x0, dtype=np.float32)
 
     def _resolve_rng_key(self, kwargs: Dict[str, Any]) -> Any:
-        return kwargs.get("rng_key", jax.random.PRNGKey(int(getattr(self, "seed", 0))))
+        if kwargs.get("rng_key") is not None:
+            return kwargs["rng_key"]
+        seed = int(getattr(self, "seed", 0))
+        if self._get_backend_name() != "jax":
+            return seed
+        if jax is None:
+            raise ImportError("The JAX solver backend requires JAX")
+        return jax.random.PRNGKey(seed)
 
     def _get_backend_name(self) -> str:
         return RuntimeBackendManager.get_backend().name

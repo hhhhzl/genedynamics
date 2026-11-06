@@ -10,8 +10,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-import jax
-import jax.numpy as jnp
 
 from genedynamics.solvers.common.model_based_diffusion import BaseModelBasedDiffusionSolver
 from genedynamics.core.dynamics import DynamicsModel, DynamicsToEnvAdapter
@@ -209,7 +207,8 @@ def run_mdoc(args):
         env.control_limit = args.action_limit
 
     dynamics = DynamicsToEnvAdapter(env, dt=args.dt)
-    backend = get_backend(getattr(args, "backend", "jax"))
+    backend_name = getattr(args, "backend", "jax")
+    backend = get_backend(backend_name)
 
     solver = MDOCSolver(
         dynamics=dynamics,
@@ -228,7 +227,16 @@ def run_mdoc(args):
         obstacles=getattr(args, "obstacles", None),
     )
 
-    traj = solver.solve(x0=env.reset()[0], horizon=args.horizon, rng_key=jax.random.PRNGKey(args.seed))
+    rng_key = None
+    if backend_name == "jax":
+        import jax
+
+        rng_key = jax.random.PRNGKey(args.seed)
+    traj = solver.solve(
+        x0=env.reset()[0],
+        horizon=args.horizon,
+        rng_key=rng_key,
+    )
     return traj.info if hasattr(traj, "info") else {"actions": np.stack(traj.actions), "states": np.stack(traj.states)}
 
 

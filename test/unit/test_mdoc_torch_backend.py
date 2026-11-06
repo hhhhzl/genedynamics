@@ -10,6 +10,28 @@ from genedynamics.core.energy import EnergyTerm, LegacyEnergyFunctional
 from genedynamics.solvers.single.mdoc import MDOCSolver
 
 
+def test_mdoc_solver_import_does_not_require_optional_jax(monkeypatch):
+    import builtins
+    import importlib
+    import sys
+
+    module_name = "genedynamics.solvers.single.mdoc.mdoc"
+    original_module = sys.modules.pop(module_name)
+    original_import = builtins.__import__
+
+    def import_without_jax(name, *args, **kwargs):
+        if name == "jax" or name.startswith("jax."):
+            raise ImportError("JAX intentionally unavailable in this test")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_jax)
+    try:
+        module = importlib.import_module(module_name)
+        assert module.MDOCSolver is not None
+    finally:
+        sys.modules[module_name] = original_module
+
+
 @dataclass(frozen=True)
 class Evaluation:
     costs: torch.Tensor

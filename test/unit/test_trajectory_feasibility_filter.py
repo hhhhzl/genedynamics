@@ -1,9 +1,34 @@
 from dataclasses import dataclass
 
+import pytest
 import torch
 from genedynamics.core.constraints.action_filters import (
     TorchTrajectoryFeasibilityFilter,
 )
+
+
+def test_torch_filter_package_import_does_not_require_optional_jax(monkeypatch):
+    import builtins
+    import importlib
+    import sys
+
+    package_name = "genedynamics.core.constraints.action_filters"
+    original_package = sys.modules.pop(package_name)
+    original_import = builtins.__import__
+
+    def import_without_jax(name, *args, **kwargs):
+        if name == "jax" or name.startswith("jax."):
+            raise ImportError("JAX intentionally unavailable in this test")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_jax)
+    try:
+        package = importlib.import_module(package_name)
+        assert package.TorchTrajectoryFeasibilityFilter is not None
+        with pytest.raises(ImportError, match="intentionally unavailable"):
+            _ = package.ClosedFormCBFFilter
+    finally:
+        sys.modules[package_name] = original_package
 
 
 @dataclass(frozen=True)

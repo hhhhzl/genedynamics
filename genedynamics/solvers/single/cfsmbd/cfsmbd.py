@@ -11,8 +11,6 @@ from typing import Any, Dict, List, Optional
 
 import time
 import numpy as np
-import jax
-import jax.numpy as jnp
 
 from genedynamics.solvers.common.model_based_diffusion import BaseModelBasedDiffusionSolver
 from genedynamics.core.dynamics import DynamicsModel, DynamicsToEnvAdapter

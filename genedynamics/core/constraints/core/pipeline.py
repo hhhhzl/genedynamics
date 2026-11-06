@@ -18,6 +18,8 @@ Architecture:
     Output: repaired trajectory, info dict
 """
 
+from __future__ import annotations
+
 from typing import List, Tuple, Dict, Optional, Any
 from dataclasses import dataclass
 

@@ -7,13 +7,20 @@ from __future__ import annotations
 from typing import Any, Dict, List, Sequence
 
 import numpy as np
-import jax
-import jax.numpy as jnp
+
+try:
+    import jax
+    import jax.numpy as jnp
+except ImportError:  # Optional for NumPy/Torch solver backends.
+    jax = None
+    jnp = None
 
 
 def split_multirun_keys(rng_key: Any, num_modes: int, backend_name: str, seed: int) -> Any:
     """Split a root RNG into per-run keys for JAX or integer seeds for NumPy/Torch-like backends."""
     if backend_name == "jax":
+        if jax is None:
+            raise ImportError("The JAX multirun backend requires JAX")
         key = rng_key
         if not isinstance(key, jnp.ndarray) or key.shape != (2,):
             if isinstance(key, (int, np.integer)):
@@ -23,7 +30,7 @@ def split_multirun_keys(rng_key: Any, num_modes: int, backend_name: str, seed: i
         return jax.random.split(key, int(num_modes))
 
     # Non-JAX backend: use reproducible integer seeds.
-    if isinstance(rng_key, jnp.ndarray) and rng_key.shape == (2,):
+    if jnp is not None and isinstance(rng_key, jnp.ndarray) and rng_key.shape == (2,):
         base_seed = int(rng_key[0]) ^ int(rng_key[1])
     elif isinstance(rng_key, (int, np.integer)):
         base_seed = int(rng_key)
