@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import numpy as np
@@ -16,6 +18,23 @@ from genedynamics.genemetry import (
     SlidingWindow,
 )
 from genedynamics.genemetry.schedule.config import OverlayConfig
+
+
+def test_twogo_torch_backend_import_does_not_require_optional_jax():
+    script = """
+import sys
+sys.modules['jax'] = None
+sys.modules['jax.numpy'] = None
+from genedynamics.solvers.single.twogo.backends.twogo_torch import TwoGOBackendTorch
+assert TwoGOBackendTorch.__name__ == 'TwoGOBackendTorch'
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_torch_manifold_matches_jax_geometry_and_projection():
