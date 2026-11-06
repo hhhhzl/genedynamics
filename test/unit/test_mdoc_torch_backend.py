@@ -28,6 +28,7 @@ def test_mdoc_solver_import_does_not_require_optional_jax(monkeypatch):
     try:
         module = importlib.import_module(module_name)
         assert module.MDOCSolver is not None
+        assert module._get_mdoc_backend("torch").__name__ == "MDOCBackendTorch"
     finally:
         sys.modules[module_name] = original_module
 
