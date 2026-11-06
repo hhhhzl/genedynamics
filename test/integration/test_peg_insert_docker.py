@@ -255,6 +255,30 @@ def _p1_impedance_and_recovery():
     max_depth = max(float(s.info["max_depth"]) for s in states)
     centered_ok = max_depth >= env._config.success_depth and bool(final.info["success"] > 0.5)
 
+    # Fixed-window evaluation continues after the success event.  The task's
+    # absorbing action must unload that post-success window without converting
+    # a valid insertion into a jam or a force/torque violation.
+    terminal_state = next(s for s in states if bool(s.done > 0.5))
+    terminal_action = env.safe_terminal_action(terminal_state)
+    terminal_final, terminal_states = _roll(
+        env, terminal_state, [terminal_action] * 20
+    )
+    terminal_components = [
+        env.wrench_components(s.info["true_wrench"])
+        for s in terminal_states[1:]
+    ]
+    terminal_safe = bool(
+        terminal_final.info["jammed_once"] < 0.5
+        and max(float(c["lateral_force"]) for c in terminal_components)
+        <= env._config.lateral_force_limit
+        and max(float(c["axial_force"]) for c in terminal_components)
+        <= env._config.f_max
+        and max(float(c["bending_torque"]) for c in terminal_components)
+        <= env._config.bending_torque_limit
+        and max(float(c["torsional_torque"]) for c in terminal_components)
+        <= env._config.torsional_torque_limit
+    )
+
     # Deliberately hit the rim laterally, retract with zero force, recenter, and
     # insert.  This is an environment-feasibility oracle, not a learned policy.
     jam_env = make_env(
@@ -275,10 +299,11 @@ def _p1_impedance_and_recovery():
     recovery_seen = max(float(s.info["recovered"]) for s in recovery_states) > 0.5
     recovery_depth = max(float(s.info["max_depth"]) for s in recovery_states)
     recovery_ok = jam_seen and recovery_seen and recovery_depth >= 0.025
-    ok = force_steps_ok and centered_ok and recovery_ok
+    ok = force_steps_ok and centered_ok and terminal_safe and recovery_ok
     print(
         f"[P1] force steps={force_steps} finite/bounded={force_steps_ok}; "
-        f"centered success={centered_ok} depth={max_depth:.4f}; "
+        f"centered success={centered_ok} depth={max_depth:.4f} "
+        f"terminal_safe={terminal_safe}; "
         f"jam={jam_seen} recovered={recovery_seen} recovery_depth={recovery_depth:.4f} "
         f"-> {'PASS' if ok else 'FAIL'}"
     )

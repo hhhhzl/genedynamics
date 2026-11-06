@@ -41,9 +41,24 @@ class RLPolicyController:
         synchronize_steps: bool = False,
     ):
         import jax
+        import jax.numpy as jnp
+
         from genedynamics.solvers.common.receding_horizon import RecedingHorizonResult
 
         project_jax = getattr(self.action_projection, "project_jax", None)
+        safe_terminal_action = getattr(self.env, "safe_terminal_action", None)
+
+        def policy_or_terminal_action(state, key):
+            policy_action = self.act_fn(state.obs, key)
+            if not callable(safe_terminal_action):
+                return policy_action
+            return jax.lax.cond(
+                jnp.any(jnp.asarray(state.done) > 0.5),
+                lambda current: safe_terminal_action(current),
+                lambda _: policy_action,
+                state,
+            )
+
         if not collect_states and (
             self.action_projection is None or callable(project_jax)
         ):
@@ -55,7 +70,7 @@ class RLPolicyController:
                 def body(carry, _):
                     current, current_key = carry
                     current_key, action_key = jax.random.split(current_key)
-                    action = self.act_fn(current.obs, action_key)
+                    action = policy_or_terminal_action(current, action_key)
 
                     if callable(project_jax):
                         action, projection_info = project_jax(current, action)
@@ -92,7 +107,7 @@ class RLPolicyController:
             # memory budget of a 16-GB CPU Mac, while leaving the two calls
             # separate accumulates many small MJX executables.
             def _closed_loop_step(current, action_key):
-                action = self.act_fn(current.obs, action_key)
+                action = policy_or_terminal_action(current, action_key)
                 return self.env.step(current, action), action
 
             closed_loop_step = jax.jit(_closed_loop_step)
@@ -101,7 +116,7 @@ class RLPolicyController:
             if closed_loop_step is not None:
                 state, a = closed_loop_step(state, k)
             else:
-                a = self.act_fn(state.obs, k)                   # policy action
+                a = policy_or_terminal_action(state, k)
             if self.action_projection is not None:
                 project_and_step = getattr(
                     self.action_projection, "project_and_step_with_info", None

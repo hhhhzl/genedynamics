@@ -1861,6 +1861,41 @@ def test_raw_rl_controller_matches_receding_horizon_contract():
     np.testing.assert_allclose(result.states[-1].obs, [0.75, 0.75])
 
 
+@pytest.mark.parametrize("collect_states", [False, True])
+def test_raw_rl_controller_uses_environment_terminal_action(collect_states):
+    class State(NamedTuple):
+        obs: jax.Array
+        done: jax.Array
+
+    class Env:
+        def step(self, state, action):
+            obs = state.obs + action
+            done = jnp.maximum(state.done, obs[0] >= 0.25)
+            return State(obs=obs, done=done)
+
+        def safe_terminal_action(self, state):
+            del state
+            return jnp.full((2,), -0.5, jnp.float32)
+
+    controller = RLPolicyController(
+        Env(), lambda obs, key: jnp.ones_like(obs) * 0.25
+    )
+    result = controller.run_receding(
+        State(
+            obs=jnp.zeros((2,), jnp.float32),
+            done=jnp.asarray(0.0, jnp.float32),
+        ),
+        3,
+        jax.random.PRNGKey(0),
+        collect_states=collect_states,
+    )
+    np.testing.assert_allclose(
+        np.asarray(result.actions),
+        [[0.25, 0.25], [-0.5, -0.5], [-0.5, -0.5]],
+    )
+    np.testing.assert_allclose(result.states[-1].obs, [-0.75, -0.75])
+
+
 def test_formal_surface_algorithm_matrix_and_policy_routing():
     root = Path("configs/arm/surface_scan")
     paths = [root / "main/mga.yaml", *sorted((root / "baseline").glob("*.yaml"))]

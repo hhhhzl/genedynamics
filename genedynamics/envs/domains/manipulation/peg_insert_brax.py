@@ -404,6 +404,30 @@ class PegInsertEnv(PipelineEnv):
         lo, hi = cfg.f_min - cfg.f_cmd_pad, cfg.f_max + cfg.f_cmd_pad
         return jnp.clip(2.0 * (force - lo) / (hi - lo) - 1.0, -1.0, 1.0)
 
+    def safe_terminal_action(self, state):
+        """Return the task-owned absorbing action after insertion succeeds.
+
+        PPO episodes terminate as soon as ``success`` is latched, while the
+        paper protocol intentionally observes the controller for a fixed
+        64-step window.  Re-querying a policy outside its training episode
+        keeps commanding insertion force and can turn a safe completion into
+        a post-success jam.  Hold the achieved pose, command zero axial force,
+        and lower axial stiffness so the contact can unload without erasing
+        the completed insertion.
+
+        The closed-loop controller invokes this only after ``state.done`` is
+        true.  It therefore does not help the policy reach success and cannot
+        hide a pre-completion force, torque, or jam event.
+        """
+        del state
+        action = jnp.zeros((self.action_size,), dtype=jnp.float32)
+        action = action.at[self.spec.s_slice].set(
+            jnp.asarray([0.0, 0.0, 0.0, 0.0, 0.0, -1.0], action.dtype)
+        )
+        return action.at[self.spec.nu_slice].set(
+            self._force_action_raw(self._config.f_min)
+        )
+
     def _stiffness(self, svec):
         mode = self._config.stiffness_mode
         if mode == "fixed":
