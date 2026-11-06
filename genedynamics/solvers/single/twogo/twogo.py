@@ -1,9 +1,8 @@
-"""
-2GO solver (Phase-1 minimal runnable).
+"""2GO geometry-aware gated flow/diffusion solver.
 
-2GO currently reuses the high-performance CFS-MBD JAX kernel and adds
-geometry/gating diagnostics. This keeps the execution path stable while
-providing a dedicated method entry-point for iterative upgrades.
+The solver shares CFS-MBD's construction contract, while its dedicated
+backends own probe selection/retraction, active constraint geometry, CVaR and
+multimodality gating, and transport-family updates.
 """
 
 from __future__ import annotations
@@ -29,10 +28,18 @@ def _get_twogo_backend(backend_name: str):
         from genedynamics.solvers.single.twogo.backends.twogo_jax import TwoGOBackendJax
 
         return TwoGOBackendJax
+    if backend_name == "torch":
+        from genedynamics.solvers.single.twogo.backends.twogo_torch import (
+            TwoGOBackendTorch,
+        )
+
+        return TwoGOBackendTorch
     return None
 
 
 class TwoGOSolver(CFSMBDSolver):
+    SUPPORTED_BACKENDS = frozenset({"jax", "torch"})
+
     def __init__(
         self,
         dynamics: DynamicsModel,
@@ -49,10 +56,13 @@ class TwoGOSolver(CFSMBDSolver):
             constraint_filter=constraint_filter,
             **kwargs,
         )
-        # 2GO-specific scheduling/gating knobs (Phase-1 proxy diagnostics).
+        # Retain every resolved method knob so no backend silently falls back
+        # to a default after the plugin has parsed the source recipe.
         self.config.update(
             dict(
-                twogo_gate_vrate_threshold=float(kwargs.get("twogo_gate_vrate_threshold", 0.01)),
+                twogo_gate_vrate_threshold=float(
+                    kwargs.get("twogo_gate_vrate_threshold", 0.01)
+                ),
                 twogo_cvar_alpha=float(kwargs.get("twogo_cvar_alpha", 0.9)),
                 twogo_window_size=int(kwargs.get("twogo_window_size", 16)),
                 twogo_window_stride=int(kwargs.get("twogo_window_stride", 8)),
@@ -61,23 +71,47 @@ class TwoGOSolver(CFSMBDSolver):
                 twogo_agp_eta=float(kwargs.get("twogo_agp_eta", 0.08)),
                 twogo_cfs_gain=float(kwargs.get("twogo_cfs_gain", 0.35)),
                 twogo_multi_scale=float(kwargs.get("twogo_multi_scale", 0.25)),
-                twogo_enable_agp_refine=bool(kwargs.get("twogo_enable_agp_refine", False)),
-                twogo_enable_local_gating=bool(kwargs.get("twogo_enable_local_gating", True)),
-                twogo_enable_sample_tail=bool(kwargs.get("twogo_enable_sample_tail", True)),
-                twogo_enable_agp_batch=bool(kwargs.get("twogo_enable_agp_batch", False)),
-                twogo_use_jax_scan_core=bool(kwargs.get("twogo_use_jax_scan_core", True)),
+                twogo_enable_agp_refine=bool(
+                    kwargs.get("twogo_enable_agp_refine", False)
+                ),
+                twogo_enable_local_gating=bool(
+                    kwargs.get("twogo_enable_local_gating", True)
+                ),
+                twogo_enable_sample_tail=bool(
+                    kwargs.get("twogo_enable_sample_tail", True)
+                ),
+                twogo_enable_agp_batch=bool(
+                    kwargs.get("twogo_enable_agp_batch", False)
+                ),
+                twogo_use_jax_scan_core=bool(
+                    kwargs.get("twogo_use_jax_scan_core", True)
+                ),
                 twogo_retract_qp_boost=bool(kwargs.get("twogo_retract_qp_boost", True)),
                 twogo_stability_eps=float(kwargs.get("twogo_stability_eps", 1e-6)),
                 twogo_gamma_init=float(kwargs.get("twogo_gamma_init", 1.0)),
                 twogo_retract_qp_every=int(kwargs.get("twogo_retract_qp_every", 2)),
                 twogo_probe_enable=bool(kwargs.get("twogo_probe_enable", True)),
                 twogo_probe_tail_mix=float(kwargs.get("twogo_probe_tail_mix", 0.5)),
-                twogo_probe_tail_pool_ratio=float(kwargs.get("twogo_probe_tail_pool_ratio", 0.25)),
-                twogo_probe_geom_alpha=float(kwargs.get("twogo_probe_geom_alpha", 0.25)),
+                twogo_probe_tail_pool_ratio=float(
+                    kwargs.get("twogo_probe_tail_pool_ratio", 0.25)
+                ),
+                twogo_probe_geom_alpha=float(
+                    kwargs.get("twogo_probe_geom_alpha", 0.25)
+                ),
                 twogo_probe_frac=float(kwargs.get("twogo_probe_frac", 0.5)),
                 twogo_probe_b=kwargs.get("twogo_probe_b", None),
                 twogo_probe_m_cap=kwargs.get("twogo_probe_m_cap", None),
                 twogo_overlay=kwargs.get("twogo_overlay", None),
+                twogo_gate_ema_beta=float(kwargs.get("twogo_gate_ema_beta", 0.7)),
+                twogo_gate_risk_theta=float(kwargs.get("twogo_gate_risk_theta", 0.05)),
+                twogo_task_dir_alpha=float(kwargs.get("twogo_task_dir_alpha", 0.15)),
+                twogo_cluster_reweight_alpha=float(
+                    kwargs.get("twogo_cluster_reweight_alpha", 1.0)
+                ),
+                twogo_cluster_retract_mu=float(
+                    kwargs.get("twogo_cluster_retract_mu", 0.1)
+                ),
+                twogo_enable_geometry=bool(kwargs.get("twogo_enable_geometry", True)),
                 # Goal-deceleration distance (m); >0 ramps forward-push vx to 0 near goal.
                 twogo_goal_decel_dist=float(kwargs.get("twogo_goal_decel_dist", 0.0)),
                 # Goal push-back gain; >0 lets the decel ramp go negative to pull an
@@ -87,14 +121,20 @@ class TwoGOSolver(CFSMBDSolver):
                 twogo_goal_hardstop=bool(kwargs.get("twogo_goal_hardstop", False)),
                 # Hard goal-stop budget margin (m); shrinks the budget to offset the
                 # body-frame ∫vx vs world-x gap for heading-rotating modes.
-                twogo_goal_hardstop_margin=float(kwargs.get("twogo_goal_hardstop_margin", 0.0)),
+                twogo_goal_hardstop_margin=float(
+                    kwargs.get("twogo_goal_hardstop_margin", 0.0)
+                ),
                 # rho_k transport-family schedule (the unified-update transport knob,
                 # SEPARATE from the sigma_eff noise gate). None/"ddpm" => constant DDPM
                 # (byte-identical MBD special case). "adaptive" => per-step signal-driven
                 # (CVaR risk + Pi_multi). "progress"/"ddim"/"fm" also available.
                 twogo_transport_schedule=kwargs.get("twogo_transport_schedule", None),
-                twogo_transport_ddim_frac=float(kwargs.get("twogo_transport_ddim_frac", 1.0 / 3.0)),
-                twogo_transport_fm_frac=float(kwargs.get("twogo_transport_fm_frac", 2.0 / 3.0)),
+                twogo_transport_ddim_frac=float(
+                    kwargs.get("twogo_transport_ddim_frac", 1.0 / 3.0)
+                ),
+                twogo_transport_fm_frac=float(
+                    kwargs.get("twogo_transport_fm_frac", 2.0 / 3.0)
+                ),
             )
         )
 
@@ -134,4 +174,3 @@ if register_solver is not None:
         register_solver("2go", TwoGOSolver)
     except Exception:
         pass
-

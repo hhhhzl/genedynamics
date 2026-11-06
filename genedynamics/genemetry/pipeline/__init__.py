@@ -13,6 +13,11 @@ except ImportError:
     pass
 
 try:
+    from genedynamics.genemetry.pipeline.backends import probe_torch
+except ImportError:
+    pass
+
+try:
     from genedynamics.genemetry.pipeline.backends import refine_numpy  
 except ImportError:
     pass

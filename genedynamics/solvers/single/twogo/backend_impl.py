@@ -1,9 +1,4 @@
-"""
-Backend protocol/base for 2GO solver.
-
-2GO (Geometry-aware gated flow/diffusion) reuses model-based diffusion backbone
-with additional gating/retraction diagnostics.
-"""
+"""Backend protocol/base for the 2GO geometry-aware gated solver."""
 
 from __future__ import annotations
 
@@ -22,6 +17,6 @@ class TwoGOBackend(Protocol):
 
 
 def to_unified_backend(backend_impl: Any) -> Any:
-    """Phase-1 bridge: expose unified plan/plan_batch backend interface."""
+    """Expose the unified plan/plan_batch backend interface."""
     return ensure_unified_backend(backend_impl)
 

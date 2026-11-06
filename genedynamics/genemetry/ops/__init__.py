@@ -19,6 +19,11 @@ try:
 except ImportError:
     pass
 
+try:
+    from genedynamics.genemetry.ops.backends import torch_ops
+except ImportError:
+    pass
+
 
 def get_ops(backend: str = "jax") -> GeometryOps:
     """Return the :class:`GeometryOps` instance for *backend*."""

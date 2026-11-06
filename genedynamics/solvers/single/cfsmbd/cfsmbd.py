@@ -51,6 +51,8 @@ class CFSMBDSolver(BaseModelBasedDiffusionSolver):
     - CFS-based per-step QP projection for constraint satisfaction
     """
 
+    SUPPORTED_BACKENDS = frozenset({"jax", "numpy"})
+
     def __init__(
         self,
         dynamics: DynamicsModel,
@@ -84,9 +86,10 @@ class CFSMBDSolver(BaseModelBasedDiffusionSolver):
     ):
         super().__init__(dynamics, energy, backend, **kwargs)
 
-        if backend.name not in {"jax", "numpy"}:
+        if backend.name not in self.SUPPORTED_BACKENDS:
             raise ValueError(
-                f"CFS-MBD solver currently supports backends {{'jax','numpy'}}, got {backend.name}."
+                f"{type(self).__name__} supports backends "
+                f"{sorted(self.SUPPORTED_BACKENDS)}, got {backend.name}."
             )
 
         self.horizon = int(horizon)

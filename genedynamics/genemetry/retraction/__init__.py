@@ -15,6 +15,11 @@ except ImportError:
     pass
 
 try:
+    from genedynamics.genemetry.retraction.backends import cfs_torch
+except ImportError:
+    pass
+
+try:
     from genedynamics.genemetry.retraction.backends import local_cfs_numpy  
 except ImportError:
     pass

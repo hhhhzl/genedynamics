@@ -1,6 +1,4 @@
-"""
-2GO method plugin (Phase-1 minimal runnable).
-"""
+"""2GO method plugin with explicit geometry and scheduling parameters."""
 
 from __future__ import annotations
 
@@ -33,8 +31,10 @@ class TwoGOMethodPlugin(MethodPlugin):
             count_model_calls=backend.name == "numpy",
         )
 
-        task_spec = get_default_task_spec(config.get("env_plugin"), config.get("env_name"))
-        # Phase-1: use full-trajectory CFS filter to preserve high-quality feasibility path.
+        task_spec = get_default_task_spec(
+            config.get("env_plugin"), config.get("env_name")
+        )
+        # Full-trajectory CFS supplies the method's native retraction operator.
         constraint_filter = CFSQPFullFilter(
             max_constraints_per_point=int(config.get("max_constraints_per_point", 8)),
             constraint_margin=float(config.get("constraint_margin", 0.25)),
@@ -50,11 +50,15 @@ class TwoGOMethodPlugin(MethodPlugin):
             horizon=horizon,
             dt=dt,
             Nsample=int(config.get("action_nsample", config.get("Nsample", 256))),
-            Ndiffuse=int(config.get("action_diffuse_steps", config.get("Ndiffuse", 100))),
+            Ndiffuse=int(
+                config.get("action_diffuse_steps", config.get("Ndiffuse", 100))
+            ),
             temp_sample=float(config.get("temp_sample", 0.3)),
             beta0=float(config.get("beta0", 1e-4)),
             betaT=float(config.get("betaT", 1e-2)),
-            action_limit=float(config.get("action_limit", getattr(env, "control_limit", 1.0))),
+            action_limit=float(
+                config.get("action_limit", getattr(env, "control_limit", 1.0))
+            ),
             seed=int(config.get("np_random_seed", 0)),
             scheduler=config.get("scheduler"),
             constraint_filter=constraint_filter,
@@ -70,7 +74,9 @@ class TwoGOMethodPlugin(MethodPlugin):
             diversity_use_state=bool(config.get("diversity_use_state", True)),
             position_extractor=task_spec.extract_position,
             position_dim=task_spec.position_dim,
-            twogo_gate_vrate_threshold=float(config.get("twogo_gate_vrate_threshold", 0.01)),
+            twogo_gate_vrate_threshold=float(
+                config.get("twogo_gate_vrate_threshold", 0.01)
+            ),
             twogo_cvar_alpha=float(config.get("twogo_cvar_alpha", 0.9)),
             twogo_window_size=int(config.get("twogo_window_size", 16)),
             twogo_window_stride=int(config.get("twogo_window_stride", 8)),
@@ -80,7 +86,9 @@ class TwoGOMethodPlugin(MethodPlugin):
             twogo_cfs_gain=float(config.get("twogo_cfs_gain", 0.35)),
             twogo_multi_scale=float(config.get("twogo_multi_scale", 0.25)),
             twogo_enable_agp_refine=bool(config.get("twogo_enable_agp_refine", False)),
-            twogo_enable_local_gating=bool(config.get("twogo_enable_local_gating", True)),
+            twogo_enable_local_gating=bool(
+                config.get("twogo_enable_local_gating", True)
+            ),
             twogo_enable_sample_tail=bool(config.get("twogo_enable_sample_tail", True)),
             twogo_enable_agp_batch=bool(config.get("twogo_enable_agp_batch", False)),
             twogo_use_jax_scan_core=bool(config.get("twogo_use_jax_scan_core", True)),
@@ -90,12 +98,22 @@ class TwoGOMethodPlugin(MethodPlugin):
             twogo_retract_qp_every=int(config.get("twogo_retract_qp_every", 2)),
             twogo_probe_enable=bool(config.get("twogo_probe_enable", True)),
             twogo_probe_tail_mix=float(config.get("twogo_probe_tail_mix", 0.5)),
-            twogo_probe_tail_pool_ratio=float(config.get("twogo_probe_tail_pool_ratio", 0.25)),
+            twogo_probe_tail_pool_ratio=float(
+                config.get("twogo_probe_tail_pool_ratio", 0.25)
+            ),
             twogo_probe_geom_alpha=float(config.get("twogo_probe_geom_alpha", 0.25)),
             twogo_probe_frac=float(config.get("twogo_probe_frac", 0.5)),
             twogo_probe_b=config.get("twogo_probe_b", None),
             twogo_probe_m_cap=config.get("twogo_probe_m_cap", None),
             twogo_overlay=config.get("twogo_overlay", None),
+            twogo_gate_ema_beta=float(config.get("twogo_gate_ema_beta", 0.7)),
+            twogo_gate_risk_theta=float(config.get("twogo_gate_risk_theta", 0.05)),
+            twogo_task_dir_alpha=float(config.get("twogo_task_dir_alpha", 0.15)),
+            twogo_cluster_reweight_alpha=float(
+                config.get("twogo_cluster_reweight_alpha", 1.0)
+            ),
+            twogo_cluster_retract_mu=float(config.get("twogo_cluster_retract_mu", 0.1)),
+            twogo_enable_geometry=bool(config.get("twogo_enable_geometry", True)),
             # Goal-deceleration distance (m); >0 ramps the forward-push vx to 0 near
             # the goal so modes stop instead of overshooting (SSR task_success).
             twogo_goal_decel_dist=float(config.get("twogo_goal_decel_dist", 0.0)),
@@ -104,17 +122,27 @@ class TwoGOMethodPlugin(MethodPlugin):
             twogo_goal_pushback=float(config.get("twogo_goal_pushback", 0.0)),
             # Hard goal-stop; True => clamp forward travel at goal (kills zone_c overshoot).
             twogo_goal_hardstop=bool(config.get("twogo_goal_hardstop", False)),
+            twogo_goal_hardstop_margin=float(
+                config.get("twogo_goal_hardstop_margin", 0.0)
+            ),
             # rho_k transport-family schedule (transport knob, SEPARATE from sigma_eff).
             # None/"ddpm"=constant DDPM (byte-identical); "adaptive"=per-step signal-driven
             # (CVaR risk + Pi_multi); "progress"/"ddim"/"fm" also available.
             twogo_transport_schedule=config.get("twogo_transport_schedule", None),
-            twogo_transport_ddim_frac=float(config.get("twogo_transport_ddim_frac", 1.0 / 3.0)),
-            twogo_transport_fm_frac=float(config.get("twogo_transport_fm_frac", 2.0 / 3.0)),
+            twogo_transport_ddim_frac=float(
+                config.get("twogo_transport_ddim_frac", 1.0 / 3.0)
+            ),
+            twogo_transport_fm_frac=float(
+                config.get("twogo_transport_fm_frac", 2.0 / 3.0)
+            ),
         )
         solver.env = env
         return solver
 
     def plan(self, planner: Any, initial_state: np.ndarray, rng: Any) -> Dict[str, Any]:
-        result_traj = planner.solve(initial_state, horizon=getattr(planner, "horizon", 64), rng_key=rng)
-        return normalize_result_from_trajectory(result_traj, initial_state=initial_state, preserve_info=True)
-
+        result_traj = planner.solve(
+            initial_state, horizon=getattr(planner, "horizon", 64), rng_key=rng
+        )
+        return normalize_result_from_trajectory(
+            result_traj, initial_state=initial_state, preserve_info=True
+        )

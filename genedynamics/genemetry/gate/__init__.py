@@ -11,4 +11,9 @@ try:
 except ImportError:
     pass
 
+try:
+    from genedynamics.genemetry.gate.backends import multimodal_torch
+except ImportError:
+    pass
+
 __all__ = ["MultimodalGate"]

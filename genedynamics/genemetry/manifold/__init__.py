@@ -11,4 +11,9 @@ try:
 except ImportError:
     pass
 
+try:
+    from genedynamics.genemetry.manifold.backends import sdf_torch
+except ImportError:
+    pass
+
 __all__ = ["SdfManifold"]

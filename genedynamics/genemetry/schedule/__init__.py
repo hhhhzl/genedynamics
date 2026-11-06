@@ -24,4 +24,9 @@ try:
 except ImportError:
     pass
 
+try:
+    from genedynamics.genemetry.schedule.backends import overlay_torch
+except ImportError:
+    pass
+
 __all__ = ["ScheduleOverlay", "OverlayConfig", "resolve_overlay_config"]

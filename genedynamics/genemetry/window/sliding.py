@@ -59,6 +59,15 @@ class SlidingWindow(WindowPolicy):
         size = min(self._size, horizon)
         return (((idxs - w_start) % horizon) < size).astype(np.float32)
 
+    def mask_torch(self, step_k: int, horizon: int, *, device=None) -> Any:
+        """Pure-Torch variant used by eager Torch planners."""
+        import torch
+
+        idxs = torch.arange(horizon, dtype=torch.int64, device=device)
+        w_start = (int(step_k) * self._stride) % horizon
+        size = min(self._size, horizon)
+        return (((idxs - w_start) % horizon) < size).to(torch.float32)
+
     def slices(self, horizon: int) -> List[Tuple[int, int]]:
         """Non-overlapping window slices covering the full horizon."""
         W = min(self._size, horizon)
