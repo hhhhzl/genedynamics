@@ -1,0 +1,10 @@
+base: ../baseline/standalone_rl.yaml
+name: standalone_rl_residual_safe_smoke
+output_dir: results/_development/peg_insert_mga_residual_safe_smoke/validation
+method_params:
+  policy_ckpt: results/_development/peg_insert_mga_residual_safe_smoke/shared_ppo_seed0.pkl
+metadata:
+  protocol: mga_peg_insert_residual_safe_smoke_validation_v1
+  protocol_status: development_candidate_validation
+  run_class: development
+  formal_seeds: false
