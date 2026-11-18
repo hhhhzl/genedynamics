@@ -326,6 +326,397 @@ def evaluate_aperture_records(records, spec):
     return report
 
 
+def evaluate_sequential_aperture_episode(record, spec):
+    """Recompute both envelope crossings and the intervening reorientation."""
+    from .aperture import (
+        aperture_rotation, fixed_orientation_fits_both_apertures,
+        object_pose_and_twist, object_vertices,
+    )
+
+    cfg = spec.config
+    legacy = evaluate_episode(record, spec)
+    positions, rotations, twists, contacts, masks = [], [], [], [], []
+    required = (
+        "tcp_position_substeps", "tcp_rotation_substeps",
+        "tcp_twist_substeps", "frame_contact_substeps",
+        "frame_contact_mask_substeps",
+    )
+    for row in record.traces:
+        if not row["valid"]:
+            continue
+        if any(name not in row for name in required):
+            raise ValueError("sequential aperture episode lacks physics-rate evidence")
+        positions.extend(np.asarray(row["tcp_position_substeps"], dtype=float))
+        rotations.extend(np.asarray(row["tcp_rotation_substeps"], dtype=float))
+        twists.extend(np.asarray(row["tcp_twist_substeps"], dtype=float))
+        contacts.extend(np.asarray(row["frame_contact_substeps"], dtype=bool))
+        masks.extend(np.asarray(row["frame_contact_mask_substeps"], dtype=np.uint8))
+    if not positions:
+        return {
+            **legacy,
+            "evaluation_version": "sequential-aperture-reorientation-v1",
+            "success": False, "constrained_success": False,
+            "task_cost": 1., "capped_normalized_completion_time": 1.,
+            "outcome": record.rejection_reason or "no_physical_transition",
+            "constraint_violation": True,
+            "exact_physics_aperture_evidence": False,
+        }
+    positions, rotations, twists = map(np.asarray, (positions, rotations, twists))
+    contacts, masks = np.asarray(contacts), np.asarray(masks)
+    envelopes = np.asarray([
+        object_vertices(position, rotation)
+        for position, rotation in zip(positions, rotations)
+    ])
+    states = [
+        object_pose_and_twist(position, rotation, twist)
+        for position, rotation, twist in zip(positions, rotations, twists)
+    ]
+    object_positions = np.asarray([state[0] for state in states])
+    object_twists = np.asarray([state[2] for state in states])
+    first_front, first_rear = envelopes[:, :, 0].max(1), envelopes[:, :, 0].min(1)
+    second_front, second_rear = envelopes[:, :, 1].max(1), envelopes[:, :, 1].min(1)
+    indices = np.arange(len(positions))
+
+    def first(mask, *, start=0):
+        found = np.flatnonzero(np.asarray(mask) & (indices >= start))
+        return int(found[0]) if len(found) else None
+
+    first_inside = (
+        (envelopes[:, :, 1] >= cfg.aperture_center_y - cfg.aperture_half_width).all(1)
+        & (envelopes[:, :, 1] <= cfg.aperture_center_y + cfg.aperture_half_width).all(1)
+        & (envelopes[:, :, 2] >= cfg.aperture_center_z - cfg.aperture_half_height).all(1)
+        & (envelopes[:, :, 2] <= cfg.aperture_center_z + cfg.aperture_half_height).all(1)
+    )
+    second_inside = (
+        (envelopes[:, :, 0] >= cfg.second_aperture_center_x - cfg.second_aperture_half_width).all(1)
+        & (envelopes[:, :, 0] <= cfg.second_aperture_center_x + cfg.second_aperture_half_width).all(1)
+        & (envelopes[:, :, 2] >= cfg.second_aperture_center_z - cfg.second_aperture_half_height).all(1)
+        & (envelopes[:, :, 2] <= cfg.second_aperture_center_z + cfg.second_aperture_half_height).all(1)
+    )
+    first_angles = np.asarray([
+        _angle(rotation, aperture_rotation(0.)) for rotation in rotations
+    ])
+    second_angles = np.asarray([
+        _angle(rotation, aperture_rotation(np.pi / 2)) for rotation in rotations
+    ])
+    approach1 = first(
+        (first_front >= cfg.aperture_plane_x - .05)
+        & (first_rear < cfg.aperture_plane_x)
+    )
+    aligned1 = first(
+        (first_front < cfg.aperture_plane_x - cfg.aperture_frame_thickness)
+        & first_inside & (first_angles <= cfg.aperture_alignment_tolerance),
+        start=0 if approach1 is None else approach1,
+    )
+    whole1 = first(
+        first_rear > cfg.aperture_plane_x + cfg.aperture_frame_thickness,
+        start=0 if aligned1 is None else aligned1,
+    )
+    in_reorientation_zone = (
+        (object_positions[:, 0] >= cfg.reorientation_zone_x[0])
+        & (object_positions[:, 0] <= cfg.reorientation_zone_x[1])
+        & (object_positions[:, 1] >= cfg.reorientation_zone_y[0])
+        & (object_positions[:, 1] <= cfg.reorientation_zone_y[1])
+    )
+    reoriented = first(
+        in_reorientation_zone
+        & (second_angles <= cfg.aperture_alignment_tolerance),
+        start=0 if whole1 is None else whole1,
+    )
+    approach2 = first(
+        (second_front >= cfg.second_aperture_plane_y - .05)
+        & (second_rear < cfg.second_aperture_plane_y),
+        start=0 if reoriented is None else reoriented,
+    )
+    aligned2 = first(
+        (second_front < cfg.second_aperture_plane_y - cfg.aperture_frame_thickness)
+        & second_inside & (second_angles <= cfg.aperture_alignment_tolerance),
+        start=0 if approach2 is None else approach2,
+    )
+    whole2 = first(
+        second_rear > cfg.second_aperture_plane_y + cfg.aperture_frame_thickness,
+        start=0 if aligned2 is None else aligned2,
+    )
+    crossing1 = (
+        (first_front >= cfg.aperture_plane_x - cfg.aperture_frame_thickness)
+        & (first_rear <= cfg.aperture_plane_x + cfg.aperture_frame_thickness)
+    )
+    crossing2 = (
+        (second_front >= cfg.second_aperture_plane_y - cfg.aperture_frame_thickness)
+        & (second_rear <= cfg.second_aperture_plane_y + cfg.aperture_frame_thickness)
+    )
+    envelope_clear = bool(
+        crossing1.any() and crossing2.any()
+        and first_inside[crossing1].all() and second_inside[crossing2].all()
+    )
+    speeds = np.linalg.norm(object_twists[:, :3], axis=1)
+    in_exit = (
+        (object_positions[:, 1] >= cfg.sequential_exit_zone_y[0])
+        & (object_positions[:, 1] <= cfg.sequential_exit_zone_y[1])
+    )
+    brake = first(
+        in_exit & (speeds <= cfg.aperture_brake_speed),
+        start=0 if whole2 is None else whole2,
+    )
+    overshoot = bool(
+        brake is None
+        and np.any(object_positions[:, 1] > cfg.sequential_exit_zone_y[1])
+    )
+    mode = int(record.requested_mode)
+    mode_match = bool(
+        approach1 is not None
+        and ((object_positions[approach1, 1] <= cfg.aperture_center_y)
+             if mode == 0 else
+             (object_positions[approach1, 1] >= cfg.aperture_center_y))
+    )
+    events = (approach1, aligned1, whole1, reoriented, approach2, aligned2, whole2, brake)
+    ordered = bool(
+        all(value is not None for value in events)
+        and list(events) == sorted(events)
+    )
+    terminal = bool(legacy["physical_success"])
+    fixed_orientation_bypass = fixed_orientation_fits_both_apertures(cfg)
+    frame_clear = bool(not contacts.any())
+    success = bool(
+        ordered and envelope_clear and frame_clear and not overshoot
+        and not fixed_orientation_bypass and terminal and mode_match
+    )
+    if not frame_clear:
+        outcome = "aperture_frame_contact"
+    elif fixed_orientation_bypass:
+        outcome = "fixed_orientation_contract_invalid"
+    elif not envelope_clear:
+        outcome = "object_envelope_bypass"
+    elif whole1 is None:
+        outcome = "first_aperture_not_crossed"
+    elif reoriented is None:
+        outcome = "in_chamber_reorientation_missing"
+    elif whole2 is None:
+        outcome = "second_aperture_not_crossed"
+    elif overshoot:
+        outcome = "second_exit_overshoot"
+    elif brake is None:
+        outcome = "second_exit_braking_missing"
+    elif not terminal:
+        outcome = legacy["outcome"]
+    elif not mode_match:
+        outcome = "mode_mismatch"
+    else:
+        outcome = "success"
+    return {
+        **legacy,
+        "evaluation_version": "sequential-aperture-reorientation-v1",
+        "success": success, "constrained_success": success,
+        "physical_success": terminal, "mode_match": mode_match,
+        "observed_mode": mode if mode_match else -1,
+        "task_cost": 0. if success else 1.,
+        "capped_normalized_completion_time": (
+            legacy["physical_control_steps"] / cfg.timeout_steps if success else 1.
+        ),
+        "outcome": outcome, "constraint_violation": bool(not success),
+        "exact_physics_aperture_evidence": True,
+        "frame_contact": bool(contacts.any()),
+        "first_frame_contact_mask": int(np.bitwise_or.reduce(masks, initial=0) & 0x0F),
+        "second_frame_contact_mask": int((np.bitwise_or.reduce(masks, initial=0) >> 4) & 0x0F),
+        "both_crossing_envelopes_inside": envelope_clear,
+        "fixed_orientation_fits_both": fixed_orientation_bypass,
+        "exit_zone_overshoot": overshoot,
+        "event_physics_steps": {
+            "first_approach_entered": approach1,
+            "first_orientation_aligned": aligned1,
+            "whole_object_crossed_first_aperture": whole1,
+            "in_chamber_reorientation_completed": reoriented,
+            "second_approach_entered": approach2,
+            "second_orientation_aligned": aligned2,
+            "whole_object_crossed_second_aperture": whole2,
+            "second_exit_braking_completed": brake,
+            "terminal_hold_completed": len(positions) - 1 if terminal else None,
+        },
+        "minimum_second_exit_speed_mps": (
+            float(speeds[in_exit].min()) if in_exit.any() else None
+        ),
+    }
+
+
+def evaluate_sequential_aperture_records(records, spec):
+    rows = [evaluate_sequential_aperture_episode(record, spec) for record in records]
+    report = aggregate_episode_rows(
+        rows,
+        scope=(
+            "independent two-frame whole-envelope and reorientation evaluator; "
+            "every requested episode remains in the denominator"
+        ),
+    )
+    report["evaluation_version"] = "sequential-aperture-reorientation-v1"
+    return report
+
+
+def evaluate_reposition_dock_episode(record, spec):
+    """Recompute target motion, settling, support, recovery, and docking order."""
+    from .reposition_dock import (
+        BASE_SPEED_TOLERANCE_MPS, FOOT_SLIP_LIMIT_M,
+        POSITION_TOLERANCE_M, STABILITY_DWELL_CONTROLS,
+        TCP_SPEED_TOLERANCE_MPS, YAW_RATE_TOLERANCE_RADPS,
+        YAW_TOLERANCE_RAD,
+    )
+
+    legacy = evaluate_episode(record, spec)
+    rows = [row for row in record.traces if row["valid"]]
+    required = {
+        "body_planar_pose", "body_target", "body_twist", "foot_positions",
+        "foot_anchor_positions", "support_count", "base_tilt", "body_height",
+        "wbc_residual", "normal_force", "loading", "tcp_position",
+    }
+    if not rows or any(required - set(row) for row in rows):
+        return {
+            **legacy, "evaluation_version": "semantic-reposition-then-dock-v1",
+            "success": False, "constrained_success": False,
+            "task_cost": 1., "capped_normalized_completion_time": 1.,
+            "outcome": record.rejection_reason or "missing_physical_event_evidence",
+            "constraint_violation": True, "exact_reposition_evidence": False,
+        }
+
+    body = np.asarray([row["body_planar_pose"] for row in rows], dtype=float)
+    targets = np.asarray([row["body_target"] for row in rows], dtype=float)
+    twists = np.asarray([row["body_twist"] for row in rows], dtype=float)
+    tcp = np.asarray([row["tcp_position"] for row in rows], dtype=float)
+    tcp_speed = np.r_[0., np.linalg.norm(np.diff(tcp, axis=0), axis=1) / spec.config.control_dt]
+    foot_slip = np.asarray([
+        np.linalg.norm(
+            np.asarray(row["foot_positions"], dtype=float)[:, :2]
+            - np.asarray(row["foot_anchor_positions"], dtype=float)[:, :2],
+            axis=1,
+        ).max()
+        for row in rows
+    ])
+    support_ok = np.asarray([row["support_count"] >= 2 for row in rows])
+    body_valid = np.asarray([
+        row["body_height"] >= .15 and row["base_tilt"] <= .5
+        and row["wbc_residual"] <= .01
+        for row in rows
+    ])
+    position_error = np.linalg.norm(targets[:, :2] - body[:, :2], axis=1)
+    yaw_error = np.abs(targets[:, 2] - body[:, 2])
+    start = np.asarray(record.reset_evidence.get("body_start_planar"), dtype=float)
+    target = np.asarray(record.reset_evidence.get("body_target"), dtype=float)
+    valid_target = start.shape == target.shape == (3,) and np.isfinite(np.r_[start, target]).all()
+    displacement = np.linalg.norm(body[:, :2] - start[:2], axis=1) if valid_target else np.zeros(len(rows))
+    required_displacement = .65 * np.linalg.norm(target[:2] - start[:2]) if valid_target else np.inf
+    reached_mask = (
+        (position_error <= POSITION_TOLERANCE_M)
+        & (yaw_error <= YAW_TOLERANCE_RAD)
+        & (displacement >= required_displacement)
+        & support_ok & body_valid & (foot_slip <= FOOT_SLIP_LIMIT_M)
+    )
+    reached_ids = np.flatnonzero(reached_mask)
+    reached = int(reached_ids[0]) if len(reached_ids) else None
+
+    stable = None
+    dwell = 0
+    if reached is not None:
+        for index in range(reached, len(rows)):
+            settled = bool(
+                reached_mask[index]
+                and np.linalg.norm(twists[index, :2]) <= BASE_SPEED_TOLERANCE_MPS
+                and abs(twists[index, 5]) <= YAW_RATE_TOLERANCE_RADPS
+                and tcp_speed[index] <= TCP_SPEED_TOLERANCE_MPS
+            )
+            dwell = dwell + 1 if settled else 0
+            if dwell >= STABILITY_DWELL_CONTROLS:
+                stable = index
+                break
+
+    loaded = recovery = None
+    if stable is not None:
+        for index in range(stable + 1, len(rows)):
+            row = rows[index]
+            if row["loading"] and row["normal_force"] > spec.config.contact_threshold:
+                loaded = index
+                break
+    if loaded is not None:
+        loaded_height = float(tcp[loaded, 2])
+        for index in range(loaded + 1, len(rows)):
+            if (tcp[index, 2] >= loaded_height + .004
+                    and rows[index]["normal_force"] < spec.config.contact_threshold):
+                recovery = index
+                break
+
+    terminal = len(rows) - 1 if legacy["physical_success"] else None
+    ordered = bool(
+        reached is not None and stable is not None and loaded is not None
+        and recovery is not None and terminal is not None
+        and reached <= stable < loaded < recovery <= terminal
+    )
+    support_clean = bool(
+        support_ok.all() and body_valid.all()
+        and np.all(foot_slip <= FOOT_SLIP_LIMIT_M)
+    )
+    requested_mode = int(record.requested_mode)
+    target_direction = target[1] - start[1] if valid_target else 0.
+    mode_match = bool(
+        valid_target and (
+            target_direction > 0. if requested_mode == 0 else target_direction < 0.
+        )
+    )
+    success = bool(ordered and support_clean and mode_match)
+    if not valid_target:
+        outcome = "public_body_target_missing"
+    elif not support_clean:
+        outcome = "fixed_foot_support_violation"
+    elif reached is None:
+        outcome = "body_reposition_missing"
+    elif stable is None:
+        outcome = "predock_stability_missing"
+    elif loaded is None:
+        outcome = "loaded_contact_missing"
+    elif recovery is None:
+        outcome = "loaded_recovery_missing"
+    elif terminal is None:
+        outcome = legacy["outcome"]
+    elif not mode_match:
+        outcome = "mode_mismatch"
+    else:
+        outcome = "success"
+    return {
+        **legacy,
+        "evaluation_version": "semantic-reposition-then-dock-v1",
+        "success": success, "constrained_success": success,
+        "mode_match": mode_match,
+        "observed_mode": requested_mode if mode_match else -1,
+        "task_cost": 0. if success else 1.,
+        "capped_normalized_completion_time": (
+            legacy["physical_control_steps"] / spec.config.timeout_steps
+            if success else 1.
+        ),
+        "outcome": outcome,
+        "constraint_violation": bool(not success),
+        "exact_reposition_evidence": True,
+        "maximum_foot_slip_m": float(foot_slip.max()),
+        "final_body_target_error_m": float(position_error[-1]),
+        "event_control_steps": {
+            "dock_target_observed": 0,
+            "body_reposition_completed": reached,
+            "predock_stability_completed": stable,
+            "loaded_contact_observed": loaded,
+            "loaded_recovery_completed": recovery,
+            "docking_hold_completed": terminal,
+        },
+    }
+
+
+def evaluate_reposition_dock_records(records, spec):
+    rows = [evaluate_reposition_dock_episode(record, spec) for record in records]
+    report = aggregate_episode_rows(
+        rows,
+        scope=(
+            "independent semantic fixed-foot reposition, settle, recovery, and "
+            "docking evaluator; every requested episode remains in the denominator"
+        ),
+    )
+    report["evaluation_version"] = "semantic-reposition-then-dock-v1"
+    return report
+
+
 def aggregate_episode_rows(rows, *, scope):
     count = len(rows)
     successes = sum(row["success"] for row in rows)
@@ -369,6 +760,10 @@ def evaluate_records(records, spec):
         return evaluate_corner_guide_records(records,spec)
     if spec.name == "aperture_brake":
         return evaluate_aperture_records(records, spec)
+    if spec.name == "sequential_aperture_reorientation":
+        return evaluate_sequential_aperture_records(records, spec)
+    if spec.name == "reposition_then_dock":
+        return evaluate_reposition_dock_records(records, spec)
     if spec.alias == "T2":
         from .guide_evaluation import evaluate_strict_guide_records
 

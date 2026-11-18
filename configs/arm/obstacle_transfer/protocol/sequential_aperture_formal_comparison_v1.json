@@ -1,0 +1,133 @@
+{
+  "version": "semantic-task-formal-comparison-v1",
+  "status": "frozen_unexecuted",
+  "task": "sequential_aperture_reorientation",
+  "methods": ["cross_ebdm", "task_only", "adaptsim", "asid", "response_mpc"],
+  "method_configs": {
+    "cross_ebdm": {"path": "configs/arm/obstacle_transfer/main/cross_ebdm.yaml", "sha256": "434716dfbfcd2b89c478053b95bcef5fe1200a488c0aa8120411297fb348e7fd"},
+    "task_only": {"path": "configs/arm/obstacle_transfer/baseline/task_only.yaml", "sha256": "76cc20304d87319d2ed3d84c9e37da97ce53f2352d7265773b63b6b3ff24489d"},
+    "adaptsim": {"path": "configs/arm/obstacle_transfer/baseline/adaptsim.yaml", "sha256": "2c860cdc08ffe58e07605e1343e88cfeaefcb0510436baec0bc3331c5d3f91de"},
+    "asid": {"path": "configs/arm/obstacle_transfer/baseline/asid.yaml", "sha256": "eab89dd821ab29500684f794260ebfb3337a2a082d17d0ec8d180b792b83dae8"},
+    "response_mpc": {"path": "configs/arm/obstacle_transfer/baseline/response_mpc.yaml", "sha256": "aa1eb88a8cc64b0ec0a3b90fec60d71cb3e3ed072857c0c7440ae9340b06b725"}
+  },
+  "contract": {"path": "configs/arm/obstacle_transfer/protocol/subtasks/sequential_aperture_reorientation_v1.json", "sha256": "8cf9f951aec6479920fac554b1e5bb034bf9c7b154486b14f575dc7ba966cdaf"},
+  "source_qualification": {"path": "results/arm/obstacle_transfer/validation/sequential_aperture_reorientation/report.json", "sha256": "8dc5a41b6729ba53b6d7ed11ff8fcd60ab2de1b87e42126c7c6b1db738e59e4b"},
+  "response_transport_checkpoint": {"path": "results/arm/obstacle_transfer/training/sequential_aperture_response_transport/full_budget_120.json", "sha256": "a640cff8f22c8083f7af7439bcd17cd287ea6b7b40c6f483ef09dfc9ea2a9ed7"},
+  "native_library": {"path": ".runtime/cross_ebdm/native/libcross_ebdm.so", "sha256": "40f532dda955a39e99455ecff0d362f310ab31c33cde1d546c6c78f0f43f1a09"},
+  "requests": [
+    {
+      "seed": 949100,
+      "mode": 0,
+      "initial": "clear",
+      "mechanism_group": "moderate_lag",
+      "mechanism": {
+        "servo_gain": 0.8,
+        "delay_steps": 1,
+        "payload_mass": 0.65
+      }
+    },
+    {
+      "seed": 949101,
+      "mode": 1,
+      "initial": "clear",
+      "mechanism_group": "moderate_lag",
+      "mechanism": {
+        "servo_gain": 0.8,
+        "delay_steps": 1,
+        "payload_mass": 0.65
+      }
+    },
+    {
+      "seed": 949102,
+      "mode": 0,
+      "initial": "clear",
+      "mechanism_group": "gain_delay_shift",
+      "mechanism": {
+        "servo_gain": 0.75,
+        "delay_steps": 2,
+        "payload_mass": 0.7
+      }
+    },
+    {
+      "seed": 949103,
+      "mode": 1,
+      "initial": "clear",
+      "mechanism_group": "gain_delay_shift",
+      "mechanism": {
+        "servo_gain": 0.75,
+        "delay_steps": 2,
+        "payload_mass": 0.7
+      }
+    },
+    {
+      "seed": 949104,
+      "mode": 0,
+      "initial": "clear",
+      "mechanism_group": "delay_payload_shift",
+      "mechanism": {
+        "servo_gain": 0.9,
+        "delay_steps": 3,
+        "payload_mass": 0.8
+      }
+    },
+    {
+      "seed": 949105,
+      "mode": 1,
+      "initial": "clear",
+      "mechanism_group": "delay_payload_shift",
+      "mechanism": {
+        "servo_gain": 0.9,
+        "delay_steps": 3,
+        "payload_mass": 0.8
+      }
+    },
+    {
+      "seed": 949106,
+      "mode": 0,
+      "initial": "clear",
+      "mechanism_group": "low_gain_payload_shift",
+      "mechanism": {
+        "servo_gain": 0.7,
+        "delay_steps": 1,
+        "payload_mass": 0.75
+      }
+    },
+    {
+      "seed": 949107,
+      "mode": 1,
+      "initial": "clear",
+      "mechanism_group": "low_gain_payload_shift",
+      "mechanism": {
+        "servo_gain": 0.7,
+        "delay_steps": 1,
+        "payload_mass": 0.75
+      }
+    },
+    {
+      "seed": 949108,
+      "mode": 0,
+      "initial": "clear",
+      "mechanism_group": "mixed_shift",
+      "mechanism": {
+        "servo_gain": 0.85,
+        "delay_steps": 2,
+        "payload_mass": 0.8
+      }
+    },
+    {
+      "seed": 949109,
+      "mode": 1,
+      "initial": "clear",
+      "mechanism_group": "mixed_shift",
+      "mechanism": {
+        "servo_gain": 0.85,
+        "delay_steps": 2,
+        "payload_mass": 0.8
+      }
+    }
+  ],
+  "execution": {"cuda_visible_devices": "0", "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a", "actor_device": "cuda", "physics_device": "cpu", "maximum_wall_seconds": 7200},
+  "policy": {"formal_performance_evidence": true, "failure_replacement": false, "all_failures_retained": true, "confirmation_states_opened": 0, "task_adaptation_is_reported": true},
+  "output": "results/arm/obstacle_transfer/formal/sequential_aperture_reorientation_v1"
+}
+

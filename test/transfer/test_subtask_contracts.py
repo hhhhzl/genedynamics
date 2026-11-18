@@ -1,4 +1,4 @@
-"""Schema and admission gates for the eight semantic transfer subtasks."""
+"""Schema and admission gates for implemented semantic transfer subtasks."""
 from copy import deepcopy
 from pathlib import Path
 
@@ -19,23 +19,23 @@ from genedynamics.tasks.transfer.subtask_contracts import (
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_eight_semantic_contracts_are_unique_versioned_and_path_bound():
+def test_semantic_contracts_are_unique_versioned_and_path_bound():
     contracts = load_all_subtask_contracts()
     ids = [contract.semantic_id for contract in contracts]
 
-    assert len(contracts) == len(ids) == 8
-    assert len(set(ids)) == 8
+    assert len(contracts) == len(ids) == 9
+    assert len(set(ids)) == 9
     assert set(ids) == set(CONTRACT_PATHS)
     assert not ({"T1", "T2", "T3", "T4"} & set(ids))
     assert all(contract.path.is_file() for contract in contracts)
     assert all(contract.payload["contract_version"].endswith("-v1") for contract in contracts)
 
 
-def test_four_families_each_bind_two_frozen_semantic_suites():
+def test_four_families_bind_their_frozen_semantic_suites():
     assert len(FAMILY_SUITES) == 4
     for family in FAMILY_SUITES:
         suite = load_family_suite(family)
-        assert len(suite) == 2
+        assert len(suite) == (3 if family == "constrained_object_transport" else 2)
         assert {contract.family for contract in suite} == {family}
         assert {contract.implementation_status for contract in suite} <= {
             RUNNABLE_STATUS, PENDING_STATUS,
@@ -44,19 +44,17 @@ def test_four_families_each_bind_two_frozen_semantic_suites():
             if contract.runnable} == {
         "dual_route_carry", "dual_channel_contact", "corner_guided_seating",
         "jam_recovery", "compliant_fixture_insertion", "stance_insertion",
-        "aperture_brake",
+        "aperture_brake", "sequential_aperture_reorientation",
+        "reposition_then_dock",
     }
 
 
-def test_pending_suites_fail_before_physics_when_execution_is_requested():
-    for semantic_id in ("reposition_then_dock",):
-        with pytest.raises(RuntimeError, match="implementation_pending"):
-            load_subtask_contract(semantic_id, require_runnable=True)
-
+def test_all_frozen_suites_are_now_runnable():
     for semantic_id in (
         "dual_route_carry", "dual_channel_contact", "corner_guided_seating",
         "jam_recovery", "compliant_fixture_insertion", "stance_insertion",
-        "aperture_brake",
+        "aperture_brake", "sequential_aperture_reorientation",
+        "reposition_then_dock",
     ):
         assert load_subtask_contract(semantic_id, require_runnable=True).runnable
 

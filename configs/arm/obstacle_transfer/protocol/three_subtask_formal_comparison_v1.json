@@ -1,0 +1,44 @@
+{
+  "version": "obstacle-family-three-subtask-formal-comparison-v1",
+  "status": "frozen_pending_release_gate",
+  "family": "constrained_object_transport",
+  "semantic_tasks": ["dual_route_carry", "aperture_brake", "sequential_aperture_reorientation"],
+  "methods": ["cross_ebdm", "task_only", "adaptsim", "asid", "response_mpc"],
+  "metrics": ["constrained_task_success", "key_event_completion", "peak_force_N", "failure_penalized_normalized_time"],
+  "task_protocols": {
+    "dual_route_carry": {
+      "state": "formal_complete_reused",
+      "request_roster": {"path": "configs/arm/obstacle_transfer/protocol/independent_main_table_requests_v2.json", "sha256": "0b478de1d640a7cde0eab59bd1745d604a301b835e2bb7fb98de6e7557b07510"},
+      "confirmation_root": "results/arm/obstacle_transfer",
+      "instances_per_method": 8,
+      "requests_per_instance": 40
+    },
+    "aperture_brake": {
+      "state": "released_unexecuted",
+      "formal_plan": {"path": "configs/arm/obstacle_transfer/protocol/aperture_brake_formal_comparison_v1.json", "sha256": "24fa5ce747977e554553770c6906144cd146981c45d713ff3d2eac522ffaf06e"},
+      "development_pilot": {"path": "results/arm/obstacle_transfer/validation/aperture_brake_response_paired_pilot/report.json", "sha256": "e3c62ba17cafd3a44bd265b381e9f1e2702d042f8fae545002b4739407eaab64"},
+      "planned_episodes": 50
+    },
+    "sequential_aperture_reorientation": {
+      "state": "released_unexecuted",
+      "formal_plan": {"path": "configs/arm/obstacle_transfer/protocol/sequential_aperture_formal_comparison_v1.json", "sha256": "5d504311b58d9b71f2771fe5e5907959fb54e5059e4abe5b97550f6e811c19c9"},
+      "development_pilot": {"path": "results/arm/obstacle_transfer/validation/sequential_aperture_response_paired_pilot/report.json", "sha256": "ce3ace58eb424d6d81fcf3a60d586f9e458a6a8d7a8a2ad3a384ab2639b51f4b"},
+      "planned_episodes": 50
+    }
+  },
+  "learning_evidence": {
+    "aperture_response_training": {"path": "results/arm/obstacle_transfer/training/aperture_brake_response_transport/report.json", "sha256": "d3f67ac47070aa37cec364b964b4b6ffa0bff9de49db4c74b938eee41f969f6e"},
+    "old_semantic_phase_policy": "invalid_development_only_response_model_not_used_for_selection"
+  },
+  "release_requirements": {
+    "source_qualification_passed_for_new_tasks": true,
+    "paired_reset_audits_passed": true,
+    "response_model_used_before_selection": true,
+    "full_icdt_success_on_two_added_cells_and_both_modes": true,
+    "all_five_methods_executed_on_both_added_cells": true,
+    "formal_seed_access_before_release": 0,
+    "failure_replacement": false
+  },
+  "execution": {"device": "GPU0", "formal_task_order": ["aperture_brake", "sequential_aperture_reorientation"], "new_formal_episodes": 100, "maximum_total_wall_seconds": 14400},
+  "output": "results/arm/obstacle_transfer/formal/three_subtask_comparison_v1"
+}

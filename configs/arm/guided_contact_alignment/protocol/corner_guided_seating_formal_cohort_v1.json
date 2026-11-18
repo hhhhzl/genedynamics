@@ -1,0 +1,268 @@
+{
+  "clean_ablation_treatments": [
+    "no_calibration",
+    "no_response_anchoring",
+    "unconditional_response_anchoring"
+  ],
+  "contract": {
+    "path": "configs/arm/guided_contact_alignment/protocol/subtasks/corner_guided_seating_v1.json",
+    "sha256": "c1b443ba41e2e590b0ca642d94245ba05ed21196c885f7234ee1dbe028db6b85"
+  },
+  "device": {
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "evaluation_requests": [
+    {
+      "cell": "sustained_corner_load_high_friction",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_friction": 0.8,
+        "contact_time_constant": 0.04
+      },
+      "physical_initial_slot": 0,
+      "request_id": "SEMANTIC-EIGHT-TASK/corner_guided_seating/sustained_corner_load_high_friction/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 12821000,
+      "task": "corner_guided_seating"
+    },
+    {
+      "cell": "sustained_corner_load_high_friction",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_friction": 0.8,
+        "contact_time_constant": 0.04
+      },
+      "physical_initial_slot": 1,
+      "request_id": "SEMANTIC-EIGHT-TASK/corner_guided_seating/sustained_corner_load_high_friction/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 12821001,
+      "task": "corner_guided_seating"
+    },
+    {
+      "cell": "sustained_corner_load_high_friction",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_friction": 0.8,
+        "contact_time_constant": 0.04
+      },
+      "physical_initial_slot": 2,
+      "request_id": "SEMANTIC-EIGHT-TASK/corner_guided_seating/sustained_corner_load_high_friction/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 12821002,
+      "task": "corner_guided_seating"
+    },
+    {
+      "cell": "sustained_corner_load_high_friction",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_friction": 0.8,
+        "contact_time_constant": 0.04
+      },
+      "physical_initial_slot": 3,
+      "request_id": "SEMANTIC-EIGHT-TASK/corner_guided_seating/sustained_corner_load_high_friction/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 12821003,
+      "task": "corner_guided_seating"
+    },
+    {
+      "cell": "sustained_corner_load_high_friction",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_friction": 0.8,
+        "contact_time_constant": 0.04
+      },
+      "physical_initial_slot": 4,
+      "request_id": "SEMANTIC-EIGHT-TASK/corner_guided_seating/sustained_corner_load_high_friction/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 12821004,
+      "task": "corner_guided_seating"
+    },
+    {
+      "cell": "sustained_corner_load_slow_response",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_friction": 0.4,
+        "contact_time_constant": 0.08
+      },
+      "physical_initial_slot": 0,
+      "request_id": "SEMANTIC-EIGHT-TASK/corner_guided_seating/sustained_corner_load_slow_response/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 12821005,
+      "task": "corner_guided_seating"
+    },
+    {
+      "cell": "sustained_corner_load_slow_response",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_friction": 0.4,
+        "contact_time_constant": 0.08
+      },
+      "physical_initial_slot": 1,
+      "request_id": "SEMANTIC-EIGHT-TASK/corner_guided_seating/sustained_corner_load_slow_response/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 12821006,
+      "task": "corner_guided_seating"
+    },
+    {
+      "cell": "sustained_corner_load_slow_response",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_friction": 0.4,
+        "contact_time_constant": 0.08
+      },
+      "physical_initial_slot": 2,
+      "request_id": "SEMANTIC-EIGHT-TASK/corner_guided_seating/sustained_corner_load_slow_response/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 12821007,
+      "task": "corner_guided_seating"
+    },
+    {
+      "cell": "sustained_corner_load_slow_response",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_friction": 0.4,
+        "contact_time_constant": 0.08
+      },
+      "physical_initial_slot": 3,
+      "request_id": "SEMANTIC-EIGHT-TASK/corner_guided_seating/sustained_corner_load_slow_response/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 12821008,
+      "task": "corner_guided_seating"
+    },
+    {
+      "cell": "sustained_corner_load_slow_response",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_friction": 0.4,
+        "contact_time_constant": 0.08
+      },
+      "physical_initial_slot": 4,
+      "request_id": "SEMANTIC-EIGHT-TASK/corner_guided_seating/sustained_corner_load_slow_response/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 12821009,
+      "task": "corner_guided_seating"
+    }
+  ],
+  "failure_replacement": false,
+  "formal_policy_episodes_accessed": 0,
+  "methods": [
+    "icdt",
+    "task_only",
+    "asid",
+    "adaptsim",
+    "response_mpc",
+    "dial_mpc"
+  ],
+  "metrics": [
+    "task_success",
+    "key_event_completion",
+    "peak_force_N",
+    "failure_penalized_normalized_time"
+  ],
+  "readiness_evidence": {
+    "path": "results/arm/guided_contact_alignment/validation/corner_guided_seating_paired_development/report.json",
+    "sha256": "f6f741cc49a510d0c34e478781ff63b8a33559f225cdfa356f1cd10ce9f882bd"
+  },
+  "status": "sealed_unaccessed",
+  "task": "corner_guided_seating",
+  "training_instances": [
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12820000,
+      "instance_id": "instance_01",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12820001,
+      "instance_id": "instance_02",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12820002,
+      "instance_id": "instance_03",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12820003,
+      "instance_id": "instance_04",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12820004,
+      "instance_id": "instance_05",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12820005,
+      "instance_id": "instance_06",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12820006,
+      "instance_id": "instance_07",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12820007,
+      "instance_id": "instance_08",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    }
+  ],
+  "version": "semantic-eight-task-formal-cohort-v1"
+}

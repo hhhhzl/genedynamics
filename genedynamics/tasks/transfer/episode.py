@@ -50,12 +50,23 @@ class TaskSpec:
             "body_twist": "measured world linear/angular body velocity",
             "controller_feedback": "WBC residual and base tilt; zero for fixed base",
         }
-        if self.name == "aperture_brake":
+        if self.name in {"aperture_brake", "sequential_aperture_reorientation"}:
             value["observations"].update({
                 "carried_object_position": "known rigid payload-envelope center, world m",
                 "carried_object_rotation": "world-from-payload-envelope frame",
                 "carried_object_twist": "payload-envelope center spatial velocity",
                 "aperture_geometry": "known plane, opening center/half-size, and exit interval",
+            })
+            if self.name == "sequential_aperture_reorientation":
+                value["observations"]["aperture_geometry"] = (
+                    "two known orthogonal planes, opening centers/half-sizes, "
+                    "reorientation chamber, and final exit interval"
+                )
+        if self.name == "reposition_then_dock":
+            value["observations"].update({
+                "body_planar_pose": "measured world x/y/yaw of the base",
+                "body_target": "public task-directed world x/y/yaw target",
+                "body_target_bounds": "public fixed-foot target-request bounds",
             })
         value["excluded_policy_fields"] = [
             "physics", "mechanism", "gain", "delay_steps", "payload_mass", "friction",
@@ -248,8 +259,10 @@ def _evaluator_source_names(spec):
              "routes.py", "contact_reference.py")
     if spec.name == "compliant_keyed_insertion_recovery":
         names += ("compliant_socket.py",)
-    if spec.name == "aperture_brake":
+    if spec.name in {"aperture_brake", "sequential_aperture_reorientation"}:
         names += ("aperture.py",)
+    if spec.name == "reposition_then_dock":
+        names += ("reposition_dock.py",)
     return names
 
 

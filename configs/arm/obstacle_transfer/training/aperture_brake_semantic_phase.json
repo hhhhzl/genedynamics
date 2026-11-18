@@ -1,0 +1,32 @@
+{
+  "version": "aperture-brake-semantic-phase-training-v1",
+  "status": "frozen_unexecuted",
+  "task": "aperture_brake",
+  "robot": "xarm7",
+  "contract": {"path": "configs/arm/obstacle_transfer/protocol/subtasks/aperture_brake_v1.json", "sha256": "8f007931fcbd9329491569dccb9a44c5a0d331c17ea40a4d9d9b26b35373e621"},
+  "source_qualification": {"path": "results/arm/obstacle_transfer/validation/aperture_brake/report.json", "sha256": "f13eb5b0bd2fabc7eb8a9f2c39e081757a6b2c6ec0aabffae157a60c3ae8ca05"},
+  "mechanism": {"servo_gain": 1.0, "delay_steps": 0, "payload_mass": 0.5},
+  "task_overrides": {"aperture_exit_zone": [0.56, 0.61]},
+  "budget_seconds": [0, 30, 60, 120],
+  "candidate_stream": [
+    {"seed": 944000, "mode": 0, "scale": 1.0},
+    {"seed": 944001, "mode": 1, "scale": 1.0},
+    {"seed": 944010, "mode": 0, "scale": 1.15},
+    {"seed": 944011, "mode": 1, "scale": 1.15},
+    {"seed": 944020, "mode": 0, "scale": 1.2},
+    {"seed": 944021, "mode": 1, "scale": 1.2},
+    {"seed": 944030, "mode": 0, "scale": 1.25},
+    {"seed": 944031, "mode": 1, "scale": 1.25},
+    {"seed": 944040, "mode": 0, "scale": 1.1},
+    {"seed": 944041, "mode": 1, "scale": 1.1}
+  ],
+  "evaluation_requests": [
+    {"seed": 945000, "mode": 0},
+    {"seed": 945001, "mode": 0},
+    {"seed": 945100, "mode": 1},
+    {"seed": 945101, "mode": 1}
+  ],
+  "execution": {"cuda_visible_devices": "0", "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a", "physics_device": "cpu", "response_fit_device": "cuda", "maximum_wall_seconds": 1800},
+  "output": "results/arm/obstacle_transfer/training/aperture_brake_semantic_phase",
+  "policy": {"formal_performance_evidence": false, "failure_replacement": false, "all_failures_retained": true, "confirmation_states_opened": 0, "selection_seed_reuse_for_evaluation": false}
+}

@@ -1,0 +1,55 @@
+{
+  "schema_version": "transfer-subtask-contract-v1",
+  "contract_version": "transfer-sequential-aperture-reorientation-v1",
+  "semantic_id": "sequential_aperture_reorientation",
+  "family": "constrained_object_transport",
+  "embodiment": "fixed_arm",
+  "environment": "obstacle_transfer",
+  "implementation_status": "implemented_contract_frozen",
+  "semantics": {
+    "goal": "Pass the complete carried-object envelope through an x-normal aperture, reorient inside the bounded chamber, pass a y-normal aperture that rejects the first orientation, brake, and hold the terminal pose.",
+    "excludes": ["tcp-only crossing", "one fixed orientation for both frames", "motion above or around either solid frame", "frame contact used for reorientation or braking", "geometry selected after observing method rankings"]
+  },
+  "event_order": [
+    {"id": "whole_object_crossed_first_aperture", "evidence": ["front and rear object extrema cross the first plane", "complete envelope remains inside the first opening"]},
+    {"id": "in_chamber_reorientation_completed", "evidence": ["payload is inside the declared chamber", "second-aperture orientation error is below threshold"]},
+    {"id": "whole_object_crossed_second_aperture", "evidence": ["front and rear object extrema cross the second plane", "complete envelope remains inside the second opening"]},
+    {"id": "second_exit_braking_completed", "evidence": ["object speed is below threshold inside the declared exit interval", "no overshoot"]},
+    {"id": "terminal_hold_completed", "evidence": ["terminal pose error", "continuous low-velocity dwell"]}
+  ],
+  "interface": {
+    "observations": {
+      "public": ["robot proprioception", "tcp and carried-object pose and twist", "goal pose", "both aperture geometries", "reorientation chamber", "final exit interval", "issued-action history"],
+      "hidden": ["servo gain", "command delay", "payload mass", "frame-contact and evaluator acceptance state"]
+    },
+    "action_authority": {
+      "method": ["bounded Cartesian translation", "bounded Cartesian rotation", "declared stiffness and force request"],
+      "public_execution": ["robot inverse kinematics", "joint and workspace projection", "common safety termination"],
+      "evaluator_only": ["whole-envelope crossings", "per-frame contact classification", "ordered reorientation and braking acceptance"]
+    }
+  },
+  "evaluation": {
+    "success": ["the complete envelope crosses both frames in order", "the second orientation is reached only inside the chamber", "no frame contact occurs", "the object brakes in the final exit interval", "terminal hold completes before timeout"],
+    "violations": ["contact with either frame", "crossing outside either opening", "second crossing before chamber reorientation", "exit overshoot", "joint-limit or safety termination", "timeout"],
+    "anti_bypass": ["two orthogonal frame planes", "first opening rejects the second yaw and second opening rejects the first yaw", "dense geometry audit finds no fixed yaw that fits both", "separate four-bit contact masks for each frame", "front and rear extrema must cross each plane"]
+  },
+  "mechanism_axes": [
+    {"name": "paired_aperture_clearance_class", "public": true, "train": ["wide"], "development": ["wide", "medium"], "heldout": ["narrow"]},
+    {"name": "reorientation_chamber_length_class", "public": true, "train": ["long"], "development": ["long", "medium"], "heldout": ["short"]},
+    {"name": "servo_gain", "public": false, "train": [1.0], "development": [0.8, 1.0], "heldout": [0.65]},
+    {"name": "command_delay_controls", "public": false, "train": [0], "development": [0, 1], "heldout": [3]},
+    {"name": "payload_mass_kg", "public": false, "train": [0.5], "development": [0.5, 0.65], "heldout": [0.8]}
+  ],
+  "source_qualification": {
+    "status": "cpu_source_qualified_4_of_4",
+    "requirements": ["both requested approach modes complete every ordered event", "complete envelope clears both frames", "no fixed yaw fits both openings", "every physics-substep frame contact is retained", "compressed evidence independently reevaluates"],
+    "evidence_resolution": "results/arm/obstacle_transfer/validation/sequential_aperture_reorientation/report.json"
+  },
+  "evaluator_evidence": {
+    "status": "implemented_contract_frozen",
+    "resolution": "physics_substep_for_each_frame_contact_and_control_tick_for_ordered_events",
+    "implementation_path": "genedynamics/tasks/transfer/evaluation.py",
+    "required_signals": ["complete object envelope", "separate frame collision masks", "both plane crossings", "payload orientation", "chamber membership", "final exit membership", "terminal dwell clock"]
+  },
+  "historical_evidence_policy": "No prior obstacle-transfer or single-aperture evidence is reusable as sequential-aperture performance evidence."
+}

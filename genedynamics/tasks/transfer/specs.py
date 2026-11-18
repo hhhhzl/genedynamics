@@ -214,7 +214,7 @@ def mechanism_spec(task, values=None, *, body_support_parameters=None):
         MobileContactMechanismSpec,
     )
 
-    if task=="aperture_brake":
+    if task in {"aperture_brake", "sequential_aperture_reorientation"}:
         if body_support_parameters:
             raise ValueError("fixed-arm aperture transfer has no body-support parameters")
         return MechanismSpec(**dict(values or {}))
@@ -223,7 +223,7 @@ def mechanism_spec(task, values=None, *, body_support_parameters=None):
             raise ValueError("fixed-arm corner guide has no body-support parameters")
         return ContactMechanismSpec(**dict(values or {}))
 
-    alias = legacy_task_id(task)
+    alias = "T4" if task == "reposition_then_dock" else legacy_task_id(task)
     parameters = dict(values or {})
     support = dict(body_support_parameters or {})
     if alias == "T4":
@@ -263,6 +263,40 @@ def task_spec(task, *, robot=None, config_overrides=None):
             mode_semantics=("lower-side approach", "upper-side approach"),
             qualification="semantic CPU whole-envelope aperture qualification",
         )
+    if task == "sequential_aperture_reorientation":
+        if config_overrides:
+            forbidden = set(config_overrides) & {"robot", "scene_profile"}
+            if forbidden:
+                raise ValueError(
+                    f"task identity/profile cannot be overridden: {sorted(forbidden)}"
+                )
+        config = ObstacleTransferConfig(
+            robot=robot or "xarm7",
+            start_position=(.38, -.09, .55),
+            goal_position=(.57, .12, .55),
+            goal_yaw=math.pi / 2,
+            scene_profile="sequential_aperture_reorientation_v1",
+            aperture_half_width=.052,
+            aperture_half_height=.03,
+            timeout_seconds=22.,
+        )
+        if config_overrides:
+            config = replace(config, **dict(config_overrides))
+        return TaskSpec(
+            name=task, alias="T1", config=config, family="obstacle",
+            body_scope=(
+                "fixed arm carrying a rigid L-shaped object through two "
+                "orthogonal solid framed apertures"
+            ),
+            mode_semantics=(
+                "lower-side first-aperture approach",
+                "upper-side first-aperture approach",
+            ),
+            qualification=(
+                "semantic CPU two-envelope crossing and in-chamber "
+                "reorientation qualification"
+            ),
+        )
     if task=="corner_guided_seating":
         if config_overrides:
             forbidden=set(config_overrides)&{"robot","environment","mobile","socket_profile","guide_profile","wrench_semantics"}
@@ -274,6 +308,41 @@ def task_spec(task, *, robot=None, config_overrides=None):
         return TaskSpec(name=task,alias="T2",config=config,family="contact",
                         body_scope="fixed arm with solid planar right-angle guide and end stop",
                         mode_semantics=("right-angle corner traversal",))
+
+    if task == "reposition_then_dock":
+        if robot not in (None, "go2_z1"):
+            raise ValueError("reposition_then_dock requires the Go2+Z1 embodiment")
+        if config_overrides:
+            forbidden = set(config_overrides) & {
+                "robot", "environment", "mobile", "socket_profile",
+                "guide_profile", "wrench_semantics", "execution_profile",
+                "reset_profile",
+            }
+            if forbidden:
+                raise ValueError(
+                    f"task identity/profile cannot be overridden: {sorted(forbidden)}"
+                )
+        config = replace(
+            mating_contact_config("xarm7"),
+            environment=task, robot="go2_z1", mobile=True,
+            reset_task_noise=0., reset_joint_noise=.002,
+            execution_profile="joint_margin_public_reference",
+            reset_profile="folded_stance", timeout_seconds=25.,
+        )
+        if config_overrides:
+            config = replace(config, **dict(config_overrides))
+        return TaskSpec(
+            name=task, alias="T4", config=config, family="contact",
+            body_scope=(
+                "floating Go2+Z1 with fixed-foot host OSQP stance WBC and a "
+                "public task-directed body target"
+            ),
+            mode_semantics=(
+                "positive-y support-region reposition then dock",
+                "negative-y support-region reposition then dock",
+            ),
+            qualification="semantic CPU fixed-foot reposition and docking qualification",
+        )
 
     name = canonical_task_id(task)
     alias = legacy_task_id(name)

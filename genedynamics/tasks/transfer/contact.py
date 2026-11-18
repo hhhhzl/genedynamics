@@ -97,7 +97,10 @@ class ContactConfig:
         if self.guide_profile!="legacy" and self.insertion:raise ValueError("spatial guide requires guided contact alignment")
         if self.socket_profile!="legacy" and not self.insertion:
             raise NotImplementedError("matched keyway requires insertion")
-        if self.environment not in {"guided_contact_alignment","keyed_insertion_recovery","mobile_keyed_insertion_recovery"}:
+        if self.environment not in {
+                "guided_contact_alignment", "keyed_insertion_recovery",
+                "mobile_keyed_insertion_recovery", "reposition_then_dock",
+        }:
             raise ValueError("unknown contact environment")
         if self.robot not in {"panda","xarm7","ur5e","go2_z1"}: raise ValueError("unsupported contact arm")
         if any(not math.isfinite(x) or x<=0 for x in (self.physics_dt,self.control_dt,self.timeout_seconds,

@@ -214,7 +214,9 @@ def build_workcell(task, mechanism, *, validate_scene=True):
                   ("payload_bar", (0., 0., .07), (.06, .01, .01), mechanism.payload_mass / 2),
                   ("payload_leg", (-.05, .04, .07), (.01, .03, .01), mechanism.payload_mass / 2)]
     for name, pos, size, mass in tool_geoms:
-        payload_only_frame = task.scene_profile == "aperture_brake_v1" and name.startswith("payload")
+        payload_only_frame = task.scene_profile in {
+            "aperture_brake_v1", "sequential_aperture_reorientation_v1",
+        } and name.startswith("payload")
         ET.SubElement(tool, "geom", name=name, type="box", pos=_vec(pos), size=_vec(size),
                       mass=str(mass), contype="4" if payload_only_frame else "1",
                       conaffinity="7" if payload_only_frame else "3", margin=str(task.contact_margin),
@@ -222,7 +224,8 @@ def build_workcell(task, mechanism, *, validate_scene=True):
     # The attached tool and two preceding links have intended mounting overlap.
     for name in names[-3:]:
         ET.SubElement(contact, "exclude", body1=name, body2="transfer_tool")
-    if task.scene_profile == "aperture_brake_v1":
+    if task.scene_profile in {
+            "aperture_brake_v1", "sequential_aperture_reorientation_v1"}:
         outer_half_width = .24
         outer_half_height = .25
         side_half_width = (outer_half_width - task.aperture_half_width) / 2
@@ -247,14 +250,52 @@ def build_workcell(task, mechanism, *, validate_scene=True):
                 task.aperture_center_z - task.aperture_half_height - cap_half_height,
             ), (task.aperture_frame_thickness, task.aperture_half_width, cap_half_height)),
         ]
+        if task.scene_profile == "sequential_aperture_reorientation_v1":
+            second_side_half_width = (
+                outer_half_width - task.second_aperture_half_width
+            ) / 2
+            second_cap_half_height = (
+                outer_half_height - task.second_aperture_half_height
+            ) / 2
+            obstacles.extend([
+                ("aperture2_left", (
+                    task.second_aperture_center_x
+                    - task.second_aperture_half_width - second_side_half_width,
+                    task.second_aperture_plane_y,
+                    task.second_aperture_center_z,
+                ), (second_side_half_width, task.aperture_frame_thickness,
+                    outer_half_height)),
+                ("aperture2_right", (
+                    task.second_aperture_center_x
+                    + task.second_aperture_half_width + second_side_half_width,
+                    task.second_aperture_plane_y,
+                    task.second_aperture_center_z,
+                ), (second_side_half_width, task.aperture_frame_thickness,
+                    outer_half_height)),
+                ("aperture2_top", (
+                    task.second_aperture_center_x,
+                    task.second_aperture_plane_y,
+                    task.second_aperture_center_z
+                    + task.second_aperture_half_height + second_cap_half_height,
+                ), (task.second_aperture_half_width,
+                    task.aperture_frame_thickness, second_cap_half_height)),
+                ("aperture2_bottom", (
+                    task.second_aperture_center_x,
+                    task.second_aperture_plane_y,
+                    task.second_aperture_center_z
+                    - task.second_aperture_half_height - second_cap_half_height,
+                ), (task.second_aperture_half_width,
+                    task.aperture_frame_thickness, second_cap_half_height)),
+            ])
     else:
         obstacles = [("blocker", (.50, 0., .42), (.035, .055, .09)),
                      ("side_panel", (.50, .40, .52), (.18, .015, .17)),
                      ("crossbeam", (.50, 0., 1.10), (.18, .30, .025))]
     for name, pos, size in obstacles:
+        is_aperture = name.startswith(("aperture_", "aperture2_"))
         ET.SubElement(world, "geom", name=name, type="box", pos=_vec(pos), size=_vec(size),
-                      contype="4" if name.startswith("aperture_") else "2",
-                      conaffinity="4" if name.startswith("aperture_") else "1",
+                      contype="4" if is_aperture else "2",
+                      conaffinity="4" if is_aperture else "1",
                       margin=str(task.contact_margin), rgba=".6 .6 .6 1")
     ET.SubElement(world, "geom", name="floor", type="plane", pos="0 0 -.15", size="2 2 .05",
                   contype="2", conaffinity="1", margin=str(task.contact_margin))
@@ -302,8 +343,12 @@ def build_workcell(task, mechanism, *, validate_scene=True):
                 "start_ik_seed": start_seed.tolist(),
                 "scene_profile": task.scene_profile,
                 "aperture_frame_geoms": (
-                    [name for name, _, _ in obstacles if name.startswith("aperture_")]
-                    if task.scene_profile == "aperture_brake_v1" else []
+                    [name for name, _, _ in obstacles
+                     if name.startswith(("aperture_", "aperture2_"))]
+                    if task.scene_profile in {
+                        "aperture_brake_v1",
+                        "sequential_aperture_reorientation_v1",
+                    } else []
                 ),
                 "clearance": "contact-derived, censored at contact_margin; not exact distance",
                 "start_qpos": start.tolist(), "goal_qpos": goal.tolist()}

@@ -67,13 +67,15 @@ class CpuTaskAdapter:
         # CPU contact tasks retain exact physics-rate contact evidence for
         # independent evaluation.  The provider keeps it on a diagnostic side
         # channel; it never enters observe(), histories, or policy inputs.
-        if spec.family != "obstacle" or spec.name == "aperture_brake":
+        if spec.family != "obstacle" or spec.name in {
+                "aperture_brake", "sequential_aperture_reorientation"}:
             self._provider.record_events = True
         self._model, self._sid = self._provider.model, self._provider.sid
         self._state = None
         self._episodes = []
         self._current = []
         self._mode = None
+        self._body_start_planar = self._body_target = None
         self._previous_request = None
         self._previous_action = None
         self._public_reference_position = self._public_reference_rotation = None
@@ -121,6 +123,16 @@ class CpuTaskAdapter:
 
     def public_body_intent(self, public):
         """Return the task-owned body request shared by every T4 method row."""
+        if self.spec.name == "reposition_then_dock":
+            actual = np.asarray(public["body_planar_pose"], dtype=np.float32)
+            target = np.asarray(public["body_target"], dtype=np.float32)
+            if actual.shape != target.shape or actual.ndim != 2 or actual.shape[1] != 3:
+                raise ValueError("public planar body pose/target shape differs")
+            return np.clip(
+                2. * (target - actual),
+                np.asarray([-.010, -.010, -.025], dtype=np.float32),
+                np.asarray([.010, .010, .025], dtype=np.float32),
+            ).astype(np.float32)
         if self.shared_execution.get("body_intent_profile") != "public_planar_v1":
             return None
         elapsed = np.asarray(public["elapsed_seconds"], dtype=float).reshape(-1)
@@ -229,6 +241,21 @@ class CpuTaskAdapter:
             self._history_obs = np.zeros((len(sample_ids), self.history_len, self.observation_size), dtype=np.float32)
             self._history_act = np.zeros((len(sample_ids), self.history_len, 13), dtype=np.float32)
             self._history_valid = np.zeros((len(sample_ids), self.history_len), dtype=bool)
+            if self.spec.name == "reposition_then_dock":
+                from genedynamics.tasks.transfer.reposition_dock import target_from_reset
+                starts = []
+                for data in self._state.physics:
+                    rotation = data.xmat[self._model.body("base").id].reshape(3, 3)
+                    starts.append([
+                        data.xpos[self._model.body("base").id, 0],
+                        data.xpos[self._model.body("base").id, 1],
+                        np.arctan2(rotation[1, 0], rotation[0, 0]),
+                    ])
+                self._body_start_planar = np.asarray(starts, dtype=np.float32)
+                self._body_target = np.stack([
+                    target_from_reset(start, mode)
+                    for start, mode in zip(self._body_start_planar, self._mode)
+                ])
         else:
             self._mode[reset_mask] = reset_modes[reset_mask]
             self._previous_request[reset_mask] = 0
@@ -239,6 +266,26 @@ class CpuTaskAdapter:
             for index in np.flatnonzero(reset_mask):
                 self._public_reference_position[index] = self._state.physics[index].site_xpos[self._sid]
                 self._public_reference_rotation[index] = self._state.physics[index].site_xmat[self._sid].reshape(3, 3)
+            if self.spec.name == "reposition_then_dock":
+                from genedynamics.tasks.transfer.reposition_dock import target_from_reset
+                for index in np.flatnonzero(reset_mask):
+                    data = self._state.physics[index]
+                    rotation = data.xmat[self._model.body("base").id].reshape(3, 3)
+                    self._body_start_planar[index] = [
+                        data.xpos[self._model.body("base").id, 0],
+                        data.xpos[self._model.body("base").id, 1],
+                        np.arctan2(rotation[1, 0], rotation[0, 0]),
+                    ]
+                    self._body_target[index] = target_from_reset(
+                        self._body_start_planar[index], self._mode[index],
+                    )
+        if self.spec.name == "reposition_then_dock":
+            for index in np.flatnonzero(reset_mask):
+                record = self._episodes[self._current[index]]
+                record.reset_evidence.update(
+                    body_start_planar=self._body_start_planar[index].copy(),
+                    body_target=self._body_target[index].copy(),
+                )
         if self._acp_executor is not None:
             self._acp_executor.reset(reset_mask, self._state)
         self._push_history(reset_mask)
@@ -252,6 +299,12 @@ class CpuTaskAdapter:
         if modes.shape != (self.num_envs,) or not np.isin(modes, (0, 1)).all():
             raise ValueError("one declared source-mode request (0/1) per world is required")
         self._mode = modes.copy()
+        if self.spec.name == "reposition_then_dock":
+            from genedynamics.tasks.transfer.reposition_dock import target_from_reset
+            self._body_target = np.stack([
+                target_from_reset(start, mode)
+                for start, mode in zip(self._body_start_planar, self._mode)
+            ])
         for slot, mode in enumerate(modes):
             current = self._current[slot]
             if current >= 0:
@@ -305,7 +358,23 @@ class CpuTaskAdapter:
             elapsed_seconds=np.asarray(state.steps)[:, None] * self.config.control_dt,
             body_position=body_positions, body_twist=body_twists, controller_feedback=feedback,
         )
-        if self.spec.name == "aperture_brake":
+        if self.spec.name == "reposition_then_dock":
+            from genedynamics.tasks.transfer.reposition_dock import TARGET_BOUNDS
+            planar = []
+            for value in state.physics:
+                rotation = value.xmat[model.body("base").id].reshape(3, 3)
+                planar.append([
+                    value.xpos[model.body("base").id, 0],
+                    value.xpos[model.body("base").id, 1],
+                    np.arctan2(rotation[1, 0], rotation[0, 0]),
+                ])
+            data.update(
+                body_planar_pose=planar,
+                body_target=self._body_target,
+                body_target_bounds=np.tile(TARGET_BOUNDS[None], (self.num_envs, 1, 1)),
+            )
+        if self.spec.name in {
+                "aperture_brake", "sequential_aperture_reorientation"}:
             from genedynamics.tasks.transfer.aperture import object_pose_and_twist
             object_positions, object_rotations, object_twists = [], [], []
             for position, rotation_value, twist in zip(positions, rotations, twists):
@@ -315,15 +384,27 @@ class CpuTaskAdapter:
                 object_positions.append(object_position)
                 object_rotations.append(object_rotation)
                 object_twists.append(object_twist)
+            geometry = [
+                self.config.aperture_plane_x, self.config.aperture_center_y,
+                self.config.aperture_center_z, self.config.aperture_half_width,
+                self.config.aperture_half_height, *self.config.aperture_exit_zone,
+            ]
+            if self.spec.name == "sequential_aperture_reorientation":
+                geometry.extend([
+                    self.config.second_aperture_plane_y,
+                    self.config.second_aperture_center_x,
+                    self.config.second_aperture_center_z,
+                    self.config.second_aperture_half_width,
+                    self.config.second_aperture_half_height,
+                    *self.config.reorientation_zone_x,
+                    *self.config.reorientation_zone_y,
+                    *self.config.sequential_exit_zone_y,
+                ])
             data.update(
                 carried_object_position=object_positions,
                 carried_object_rotation=object_rotations,
                 carried_object_twist=object_twists,
-                aperture_geometry=np.tile(np.asarray([
-                    self.config.aperture_plane_x, self.config.aperture_center_y,
-                    self.config.aperture_center_z, self.config.aperture_half_width,
-                    self.config.aperture_half_height, *self.config.aperture_exit_zone,
-                ]), (self.num_envs, 1)),
+                aperture_geometry=np.tile(np.asarray(geometry), (self.num_envs, 1)),
             )
         # Own every array. A policy cannot mutate simulator/controller/history
         # state by modifying an observation it was given.
@@ -370,8 +451,14 @@ class CpuTaskAdapter:
             raise ValueError("order must be a permutation of the current world slots")
         self._state = _take(self._state, order)
         self._current = [self._current[int(index)] for index in order]
-        for name in ("_mode", "_previous_request", "_previous_action", "_public_reference_position", "_public_reference_rotation",
-                     "_history_obs", "_history_act", "_history_valid"):
+        names = [
+            "_mode", "_previous_request", "_previous_action",
+            "_public_reference_position", "_public_reference_rotation",
+            "_history_obs", "_history_act", "_history_valid",
+        ]
+        if self.spec.name == "reposition_then_dock":
+            names.extend(("_body_start_planar", "_body_target"))
+        for name in names:
             setattr(self, name, getattr(self, name)[order].copy())
         if self._acp_executor is not None:
             self._acp_executor.reorder(order)
@@ -387,7 +474,8 @@ class CpuTaskAdapter:
                "finite": bool(np.isfinite(data.qpos).all() and np.isfinite(data.qvel).all() and np.isfinite(requested).all())}
         if self.spec.family == "obstacle":
             row.update(clearance=float(scalar("clearance_lower_bound")), joint_speed_peak=float(scalar("max_joint_speed")))
-            if self.spec.name == "aperture_brake":
+            if self.spec.name in {
+                    "aperture_brake", "sequential_aperture_reorientation"}:
                 events = getattr(self._provider, "last_event_trace", None)
                 required = (
                     "tcp_position_substeps", "tcp_rotation_substeps",
@@ -408,6 +496,21 @@ class CpuTaskAdapter:
                        body_height=float(trace.base_position[index, 0, 2]),
                        base_tilt=float(scalar("base_tilt")), support_count=int(scalar("support_count")),
                        wbc_residual=float(scalar("wbc_residual")))
+            if self.spec.name == "reposition_then_dock":
+                rotation = data.xmat[model.body("base").id].reshape(3, 3)
+                row.update(
+                    body_planar_pose=np.asarray([
+                        data.xpos[model.body("base").id, 0],
+                        data.xpos[model.body("base").id, 1],
+                        np.arctan2(rotation[1, 0], rotation[0, 0]),
+                    ]),
+                    body_target=self._body_target[index].copy(),
+                    body_twist=np.r_[data.qvel[:3], data.qvel[3:6]].copy(),
+                    foot_positions=data.geom_xpos[self._provider.feet].copy(),
+                    foot_anchor_positions=np.asarray(
+                        self._state.foot_anchors[index], dtype=float,
+                    ).copy(),
+                )
         else:
             joint_pos, joint_ids = data.qpos, np.arange(model.njnt)
             row["joint_speed_peak"] = float(np.max(np.abs(data.qvel)))
@@ -621,6 +724,10 @@ class CpuTaskAdapter:
                 })
                 recording_errors.append(error)
                 continue
+            if isinstance(request, dict) and "body_twist" in request:
+                row["issued_body_twist"] = np.asarray(
+                    request["body_twist"], dtype=float,
+                ).copy()
             record.requested_actions.append(request)
             record.traces.append(row)
             record.control_diagnostics.append({"recording": "unavailable"})
@@ -716,9 +823,13 @@ class CpuTaskAdapter:
                     state=encode(self._state), seed=self.seed, episodes=[asdict(row) for row in self._episodes],
                     current=list(self._current), accounting=dict(self.accounting),
                     lifetime_accounting_at_export=dict(self.lifetime_accounting),
-                    buffers={name: deepcopy(getattr(self, name)) for name in
-                             ("_mode", "_previous_request", "_previous_action", "_public_reference_position", "_public_reference_rotation",
-                              "_history_obs", "_history_act", "_history_valid")},
+                    buffers={name: deepcopy(getattr(self, name)) for name in (
+                        "_mode", "_previous_request", "_previous_action",
+                        "_public_reference_position", "_public_reference_rotation",
+                        "_history_obs", "_history_act", "_history_valid",
+                        *(("_body_start_planar", "_body_target")
+                          if self.spec.name == "reposition_then_dock" else ()),
+                    )},
                     acp=None if self._acp_executor is None else self._acp_executor.get_checkpoint())
 
     def restore_checkpoint(self, payload):

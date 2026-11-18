@@ -1,0 +1,94 @@
+{
+  "schema_version": "icdt-cold-start-rebuild-plan-v1",
+  "automatic_end_to_end_training_available": false,
+  "required_order": [
+    {
+      "id": "environment_and_assets",
+      "ready_without_results": true,
+      "instructions": "README.md environment section; vendored robot assets; new native build and GPU0 binding"
+    },
+    {
+      "id": "public_source_qualification",
+      "ready_without_results": true,
+      "recipes": [
+        {
+          "task": "aperture_brake",
+          "recipe": "configs/arm/obstacle_transfer/validation/aperture_brake_cpu.json",
+          "entry": "scripts/paper/cross_ebdm/qualify_aperture_brake.py",
+          "robot": "panda"
+        },
+        {
+          "task": "sequential_aperture_reorientation",
+          "recipe": "configs/arm/obstacle_transfer/validation/sequential_aperture_reorientation_cpu.json",
+          "entry": "scripts/paper/cross_ebdm/qualify_sequential_aperture_reorientation.py",
+          "robot": "xarm7"
+        },
+        {
+          "task": "corner_guided_seating",
+          "recipe": "configs/arm/guided_contact_alignment/validation/corner_guided_seating_cpu.json",
+          "entry": "scripts/paper/cross_ebdm/qualify_corner_guide.py",
+          "robot": "xarm7"
+        }
+      ],
+      "policy": "derive fresh development seeds/output paths as in README; retain all failures"
+    },
+    {
+      "id": "method_identity_and_response_objective",
+      "ready_without_results": false,
+      "blocker": "requires implementation work before full ICDT contribution test",
+      "priority_task": "corner_guided_seating"
+    },
+    {
+      "id": "regenerate_training_artifacts",
+      "ready_without_results": false,
+      "must_generate": [
+        "source bank",
+        "response datasets and normalization",
+        "source/nominal response models",
+        "matched full and three ablation actors",
+        "ASID/AdaptSim task actors",
+        "MPC model/qualification"
+      ],
+      "source_code_roots": [
+        "genedynamics/solvers/single/cross_ebdm/learning",
+        "genedynamics/solvers/single/asid",
+        "genedynamics/solvers/single/adaptsim"
+      ],
+      "policy": "existing recipes referencing omitted artifacts require dependency regeneration; no placeholders"
+    },
+    {
+      "id": "paired_development",
+      "ready_without_results": false,
+      "requires": [
+        "regenerate_training_artifacts"
+      ],
+      "tasks": [
+        "corner_guided_seating"
+      ],
+      "initial_cells": [
+        "sustained_corner_load_high_friction",
+        "sustained_corner_load_slow_response"
+      ],
+      "design": "new paired resets and independent training seeds; common total target budget"
+    },
+    {
+      "id": "formal_cohort",
+      "ready_without_results": false,
+      "requires": [
+        "paired_development"
+      ],
+      "policy": "new explicit protocol revision, artifact SHA, resource identity; do not resume historical execution logs"
+    }
+  ],
+  "parallel_cpu_work": [
+    "edge_slide_pivot physical geometry/source/evaluator",
+    "compliant_fixture_insertion requalification",
+    "jam shared unloading diagnosis"
+  ],
+  "later": [
+    "insert_then_lock",
+    "disturbed_docking_recovery",
+    "Franka-to-UR evidence",
+    "twelve-task six-method main table"
+  ]
+}

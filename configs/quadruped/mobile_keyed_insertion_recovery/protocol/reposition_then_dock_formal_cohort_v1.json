@@ -1,0 +1,288 @@
+{
+  "clean_ablation_treatments": [
+    "no_calibration",
+    "no_response_anchoring",
+    "unconditional_response_anchoring"
+  ],
+  "contract": {
+    "path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/subtasks/reposition_then_dock_v1.json",
+    "sha256": "c58b22df36e199c7f1d86fc692e0eecb002e8daca2a656a829b2db6a5ce01936"
+  },
+  "device": {
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "evaluation_requests": [
+    {
+      "cell": "nominal_reposition_dock",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "SEMANTIC-EIGHT-TASK/reposition_then_dock/nominal_reposition_dock/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 12841000,
+      "task": "reposition_then_dock"
+    },
+    {
+      "cell": "nominal_reposition_dock",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "SEMANTIC-EIGHT-TASK/reposition_then_dock/nominal_reposition_dock/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 12841001,
+      "task": "reposition_then_dock"
+    },
+    {
+      "cell": "nominal_reposition_dock",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "SEMANTIC-EIGHT-TASK/reposition_then_dock/nominal_reposition_dock/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 12841002,
+      "task": "reposition_then_dock"
+    },
+    {
+      "cell": "nominal_reposition_dock",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "SEMANTIC-EIGHT-TASK/reposition_then_dock/nominal_reposition_dock/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 12841003,
+      "task": "reposition_then_dock"
+    },
+    {
+      "cell": "nominal_reposition_dock",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "SEMANTIC-EIGHT-TASK/reposition_then_dock/nominal_reposition_dock/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 12841004,
+      "task": "reposition_then_dock"
+    },
+    {
+      "cell": "nominal_reposition_dock",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "SEMANTIC-EIGHT-TASK/reposition_then_dock/nominal_reposition_dock/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 12841005,
+      "task": "reposition_then_dock"
+    },
+    {
+      "cell": "nominal_reposition_dock",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "SEMANTIC-EIGHT-TASK/reposition_then_dock/nominal_reposition_dock/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 12841006,
+      "task": "reposition_then_dock"
+    },
+    {
+      "cell": "nominal_reposition_dock",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "SEMANTIC-EIGHT-TASK/reposition_then_dock/nominal_reposition_dock/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 12841007,
+      "task": "reposition_then_dock"
+    },
+    {
+      "cell": "nominal_reposition_dock",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "SEMANTIC-EIGHT-TASK/reposition_then_dock/nominal_reposition_dock/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 12841008,
+      "task": "reposition_then_dock"
+    },
+    {
+      "cell": "nominal_reposition_dock",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "contact_time_constant": 0.02,
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "SEMANTIC-EIGHT-TASK/reposition_then_dock/nominal_reposition_dock/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 12841009,
+      "task": "reposition_then_dock"
+    }
+  ],
+  "failure_replacement": false,
+  "formal_policy_episodes_accessed": 0,
+  "methods": [
+    "icdt",
+    "task_only",
+    "asid",
+    "adaptsim",
+    "response_mpc",
+    "dial_mpc"
+  ],
+  "metrics": [
+    "task_success",
+    "key_event_completion",
+    "peak_force_N",
+    "failure_penalized_normalized_time"
+  ],
+  "readiness_evidence": {
+    "path": "results/quadruped/mobile_keyed_insertion_recovery/validation/reposition_then_dock_paired_pilot/report.json",
+    "sha256": "26632f76c275a77aec5086777224f8b4af71cbe5646a6c09fd0aa2d11db80fdf"
+  },
+  "status": "sealed_unaccessed",
+  "task": "reposition_then_dock",
+  "training_instances": [
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12840000,
+      "instance_id": "instance_01",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12840001,
+      "instance_id": "instance_02",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12840002,
+      "instance_id": "instance_03",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12840003,
+      "instance_id": "instance_04",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12840004,
+      "instance_id": "instance_05",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12840005,
+      "instance_id": "instance_06",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12840006,
+      "instance_id": "instance_07",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12840007,
+      "instance_id": "instance_08",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    }
+  ],
+  "version": "semantic-eight-task-formal-cohort-v1"
+}

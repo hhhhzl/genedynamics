@@ -1,301 +1,382 @@
-# 走廊 AR 实机实验 · 完整操作手册
+# Corridor AR Hardware Experiment · Complete Operating Guide
 
-把本仓库的 AR 数字孪生 pipeline 跑到**真 Unitree G1 + AR 障碍**的逐步手册。
-障碍是**虚拟的**(只在 AR 里),机器人靠 Vicon + 障碍几何"感知"并避让;人戴
-Vision Pro / 举 iPad 看到对齐的全息障碍。
+Step-by-step instructions for running this repository's AR digital-twin pipeline on
+**a real Unitree G1 with AR obstacles**. Obstacles are virtual and exist only in AR.
+The robot uses Vicon plus obstacle geometry to perceive/avoid them; a person wearing
+Vision Pro or holding an iPad sees aligned holographic obstacles.
 
-> 适用场景默认 **zone_d**(走廊长 4.0m、宽 1.6m、start=(0.5,0)、goal=(3.5,0),
-> 2 个虚拟球)。换 zone 时把对应数字替换即可。
+> Default scene: **zone_d**, corridor length 4.0m, width 1.6m, start=(0.5,0),
+> goal=(3.5,0), and 2 virtual spheres. Substitute corresponding values for other zones.
 
 ---
 
-## 0. 机器角色与网络
+## 0. Machine Roles and Networking
 
-| 角色 | 机器 | 跑什么 | 关键软件 |
+| Role | Machine | Workload | Key software |
 |---|---|---|---|
-| **动捕机** | 动捕主机 | Motive(NatNet 流)+ `natnet_ros2` 驱动 + `natnet_shm_writer`(写 `mocap_state_shm`) | ROS2 + `natnet_ros2`(本仓库 writer) |
-| **孪生服务机** | 任意 Linux/Mac(可与机器人机同台) | `run_twin_server.py`(world_ws :8766) | conda `fedguide` + `websockets` |
-| **机器人机** | 连 G1 的 Linux | `run_real_g1.py`(governor + 真机 IO) | `unitree_sdk2py` + 本仓库 |
-| **规划机** | 任意(可与上同台) | `replan_from_scene.py`(2GO,Docker) | Docker `genedynamics/dev-cpu:torch` |
-| **AR 设备** | Vision Pro / iPad | 渲染孪生 | 见 Part B |
-| **构建机(苹果端)** | **Mac(Apple Silicon)** | Xcode 出包(Vision Pro/iPad 必需) | Xcode + (Unity) |
+| **Motion-capture host** | Mocap computer | Motive NatNet stream, `natnet_ros2` driver, `natnet_shm_writer` writing `mocap_state_shm` | ROS2, `natnet_ros2`, repository writer |
+| **Twin server** | Linux/Mac, optionally the robot host | `run_twin_server.py`, world_ws :8766 | Conda `fedguide`, `websockets` |
+| **Robot host** | Linux connected to G1 | `run_real_g1.py`, governor and hardware IO | `unitree_sdk2py`, this repository |
+| **Planner host** | Any host, optionally shared | `replan_from_scene.py`, 2GO in Docker | Docker `genedynamics/dev-cpu:torch` |
+| **AR device** | Vision Pro / iPad | Twin rendering | Part B |
+| **Apple build host** | **Apple Silicon Mac** | Xcode packages for Vision Pro/iPad | Xcode and optionally Unity |
 
-**网络**:四台机 + AR 设备接同一局域网(千兆交换机)。记下**孪生服务机 IP**(下称 `TWIN_IP`,例 `192.168.1.50`),AR 客户端要连 `ws://TWIN_IP:8766/`。G1 用网线直连机器人机(默认网口 `eth0`)。
+Connect the four machines and AR device to one LAN through a gigabit switch. Record
+the twin server IP as `TWIN_IP`, e.g. `192.168.1.50`; AR clients connect to
+`ws://TWIN_IP:8766/`. Connect G1 directly to the robot host by Ethernet, default `eth0`.
 
 ---
 
-## 1. 软件安装(按机器,一次性)
+## 1. One-Time Software Installation by Machine
 
-**动捕机(ROS2)** — 装好 ROS2(如 humble)+ `natnet_ros2` 驱动:
+**Motion-capture host (ROS2):** install ROS2, e.g. Humble, and `natnet_ros2`:
+
 ```bash
-# 在 ROS2 工作空间里
+# In the ROS2 workspace
 git clone https://github.com/L2S-lab/natnet_ros2 src/natnet_ros2
 colcon build --packages-select natnet_ros2 && source install/setup.bash
-python -m pip install numpy scipy        # natnet_shm_writer 的 finite-diff 用
+python -m pip install numpy scipy        # Finite differences in natnet_shm_writer
 ```
-> 本仓库的 `natnet_shm_writer` 只在**这台 ROS2 机**上跑;它把 NatNet 位姿写进
-> `mocap_state_shm`,下游(孪生服务机/机器人机)**不需要 rclpy**,仍用
-> `--localization vicon` 读共享内存。详见 §A7。
 
-**孪生服务机(fedguide)**
+> The repository's `natnet_shm_writer` runs only on this ROS2 host, writing NatNet
+> poses to `mocap_state_shm`. Downstream twin/robot hosts need no rclpy and continue
+> reading shared memory through `--localization vicon`. See A7.
+
+**Twin server (fedguide):**
+
 ```bash
 /opt/anaconda3/envs/fedguide/bin/python -m pip install "websockets>=12" "flatbuffers>=2.0"
 ```
 
-**规划机**:确认 Docker 镜像可用:`docker images | grep genedynamics/dev-cpu`。
+**Planner host:** confirm the Docker image with
+`docker images | grep genedynamics/dev-cpu`.
 
-**机器人机**:按 Unitree 文档装 `unitree_sdk2py`;克隆本仓库;确认 `python -c "import unitree_sdk2py"` 不报错。
+**Robot host:** install `unitree_sdk2py` following Unitree instructions, clone this
+repository, and confirm `python -c "import unitree_sdk2py"` succeeds.
 
-**Mac 构建机**:App Store 装 **Xcode**(最新版,含 visionOS SDK);首次打开跑一次 `xcodebuild -runFirstLaunch`。Unity 路线另装 Unity Hub + Editor(见 Part B 选项2/3)。
+**Mac build host:** install the latest Xcode including visionOS SDK from the App Store;
+run `xcodebuild -runFirstLaunch` once. Unity routes also need Unity Hub/Editor
+(Part B options 2/3).
 
 ---
 
-# Part A — 物理与 Vicon 准备(地面标定)
+# Part A — Physical Setup and Vicon Floor Calibration
 
-目标:① 在地面建立一个明确的"走廊场景坐标系";② 量出它在 Vicon 世界系里的位姿
-`T_world_scene=(x0,y0,yaw0)`;③ 让 Vicon 输出机器人(和可选 AR 设备)的位姿到共享内存。
+Goals: establish an unambiguous corridor scene frame on the floor; measure its pose
+`T_world_scene=(x0,y0,yaw0)` in the Vicon world; stream robot and optional AR-device
+poses into shared memory.
 
-## A1 硬件清单
-卷尺(≥5m)、粉线/激光水平仪、**美纹纸胶带**(彩色,3 种颜色)、记号笔、角尺(画垂线)、
-Vicon 标定杆(calibration wand)、G1 基座 marker 簇、打印的 fiducial(A3,见 A6)、龙门吊架/吊带、**物理急停**。
+## A1 Hardware Checklist
 
-## A2 Vicon 相机标定
-1. 按 Vicon 流程做 wand 标定(挥杆采样)直到残差达标。
-2. 设地面为 z=0 平面、设一个 Vicon 世界原点(L 形标定块);**Vicon 原点不必和走廊原点重合**——我们用 A4 的变换桥接。
-3. 量 Vicon→控制环端到端延迟(可后续);先确保覆盖整条走廊都能稳定看到 marker(无遮挡盲区)。
+Tape measure ≥5m, chalk line/laser level, masking tape in three colors, marker pen,
+right-angle square, Vicon calibration wand, G1 base marker cluster, printed A3 fiducial
+(A6), gantry/harness, and a physical emergency stop.
 
-## A3 地面标出走廊坐标系(**具体怎么贴**)
-场景坐标系约定:**x = 走廊前进方向,y = 左为正,z = 向上,右手系,单位米**。
-zone_d:走廊长 4.0m、半宽 0.8m、start=(0.5,0)、goal=(3.5,0)。
+## A2 Vicon Camera Calibration
 
-逐步贴(在空地上选一段直、平、无遮挡的 ≥5m×2.5m 区域):
-1. **定原点 O**(场景 (0,0)):在地面选一点,贴一个**红色十字**,中心就是 O。
-2. **定 +x 轴(中线)**:从 O 用粉线/激光打一条**直线**,长 4.0m,贴**黄色胶带**当中线。线尾就是场景 (4.0, 0)。沿线每 0.5m 贴一个小刻度并标数字(0.0、0.5、…、4.0)。
-3. **定 +y 方向**:在 O 处用角尺画与中线**垂直**的方向(面向 +x 时的**左手边**为 +y),贴一小段标 "+y"。
-4. **标 start / goal**:在中线 x=0.5m 处贴**绿色十字**(start),x=3.5m 处贴**蓝色十字**(goal)。
-5. **标走廊两壁**(仅作参考,墙是 AR 虚拟的):在中线两侧各 0.8m、平行中线,各贴一条 4.0m 的细胶带(`y=+0.8` 和 `y=-0.8`)。用卷尺逐点量 0.8m 保证平行。
-6. **标机器人朝向**:在 start 十字上加一个箭头指向 +x(机器人摆放时脚尖/正面朝它)。
+1. Perform wand calibration according to Vicon procedures until residuals meet requirements.
+2. Set the floor to z=0 and establish a Vicon origin with the L-shaped calibration object.
+   Vicon and corridor origins need not coincide; the A4 transform connects them.
+3. Measure Vicon-to-control-loop latency, possibly later. First ensure stable marker
+   visibility across the entire corridor without occlusion gaps.
 
-> 贴完检查:O→(4,0) 是直线;start/goal 在线上;两壁到中线恒为 0.8m;+y 在面向 +x 的左侧。
+## A3 Mark the Corridor Frame on the Floor
 
-## A4 测量 `T_world_scene`(**具体怎么测**)
-`T_world_scene` 把"场景系"放进"Vicon 世界系":`world = R(yaw0)·scene + (x0,y0)`。
-只需在 Vicon 里探**两个点**:
-1. 用标定杆,杆尖**精确放到 O(场景 (0,0))**,在 Vicon 软件读取杆尖世界坐标 → 记为 `(X0, Y0)`。
-2. 杆尖**放到中线 x=1.0m 处(场景 (1,0))** → 记为 `(X1, Y1)`。
-3. 计算:
-   - `x0 = X0`,`y0 = Y0`
-   - `yaw0 = atan2(Y1 − Y0, X1 − X0)`(弧度)
-4. 记录测量表:
+Scene convention: x forward along the corridor, y left, z up, right-handed, meters.
+For zone_d: length 4.0m, half-width 0.8m, start=(0.5,0), goal=(3.5,0).
 
-   | 点 | 场景坐标 | Vicon 世界坐标 |
+Choose a straight, flat, unobstructed area at least 5m×2.5m:
+
+1. **Origin O**, scene (0,0): place a red tape cross; its center defines O.
+2. **+x centerline:** use chalk/laser to mark a straight 4.0m line from O, then yellow
+   tape. The endpoint is (4.0,0). Add labeled ticks every 0.5m: 0.0, 0.5, …, 4.0.
+3. **+y direction:** use a square at O to mark the perpendicular toward the left when
+   facing +x; label a short segment "+y".
+4. **Start/goal:** green cross at x=0.5m, blue cross at x=3.5m on the centerline.
+5. **Corridor walls**, reference only because walls are virtual: tape two 4.0m lines
+   parallel to the centerline at `y=+0.8` and `y=-0.8`. Measure the 0.8m offset at
+   multiple points to ensure parallelism.
+6. **Robot heading:** add a +x arrow at the start cross; align robot toes/front with it.
+
+> Verify a straight O→(4,0), start/goal on that line, constant 0.8m wall offsets,
+> and +y to the left when facing +x.
+
+## A4 Measure `T_world_scene`
+
+`T_world_scene` places the scene in Vicon world coordinates:
+`world = R(yaw0)·scene + (x0,y0)`. Probe two points in Vicon:
+
+1. Place the wand tip precisely at O, scene (0,0); record world coordinates `(X0,Y0)`.
+2. Place it at centerline x=1.0m, scene (1,0); record `(X1,Y1)`.
+3. Compute `x0=X0`, `y0=Y0`, and `yaw0=atan2(Y1−Y0,X1−X0)` in radians.
+4. Record:
+
+   | Point | Scene coordinates | Vicon world coordinates |
    |---|---|---|
    | O | (0, 0) | (X0=____, Y0=____) |
    | P | (1, 0) | (X1=____, Y1=____) |
    | → | `x0`=____ `y0`=____ `yaw0`=____ rad | |
 
-   这三个数(`x0 y0 yaw0`)后面所有命令都要用,记为 **`TWS = "x0 y0 yaw0"`**。
-   > 例:O 在 Vicon (1.20, 0.40),P 在 (2.20, 0.40) → yaw0=atan2(0,1)=0 → `TWS="1.2 0.4 0.0"`。
+   All subsequent commands use these three numbers as **`TWS = "x0 y0 yaw0"`**.
+   Example: O=(1.20,0.40), P=(2.20,0.40) gives yaw0=atan2(0,1)=0,
+   hence `TWS="1.2 0.4 0.0"`.
 
-## A5 机器人 marker / 刚体
-1. 在 G1 **骨盆/基座**刚性贴一组(≥4 个)marker,确保走动时不被手臂遮挡。
-2. 在 Vicon 里把这组 marker 定义成一个**刚体(rigid body)**,命名如 `g1_base`,设其本地原点=骨盆中心、x 轴朝机器人正前方。
-3. 让 Vicon 实时输出 `g1_base` 的 6DoF。
+## A5 Robot Markers / Rigid Body
 
-## A6 打印 fiducial(给 AR 配准用)
-1. 打印一张**高对比度图案**(ARKit/ARCore 参考图,纹理丰富、非对称),A3 尺寸,平整裱在硬板上。量出**实际宽度**(米,例 0.40m × 0.28m),记下。
-2. 把它**平放或竖立**在走廊旁一个 Vicon 可见、AR 设备方便看到的位置。
-3. 用标定杆探它的**中心点**和**+x 边方向**两个点,算出 fiducial 在 Vicon 世界系的位姿 `T_world_fiducial`(同 A4 方法:中心给平移,边方向给 yaw;若竖立还需记法向)。记下。
-   > AR 客户端会"看到"这张图算出它在设备系的位姿,再用 `T_world_fiducial` 反推出世界原点 —— 见 Part B 各选项的"配准"。
+1. Rigidly attach at least 4 markers to G1's pelvis/base, clear of arm occlusion while walking.
+2. Define the cluster as a rigid body such as `g1_base` in Vicon, with origin at pelvis
+   center and x pointing forward.
+3. Stream `g1_base` 6DoF in real time.
 
-## A7 动捕接入(NatNet / `natnet_ros2`)+ 共享内存验证
+## A6 Print a Fiducial for AR Registration
 
-> 本项目动捕走 **NatNet 协议**(OptiTrack/Motive),用 [`natnet_ros2`](https://github.com/L2S-lab/natnet_ros2)
-> 把刚体位姿发成 `geometry_msgs/PoseStamped`(话题 `/<刚体名>/pose`,单位**米**)。
-> 我们用本仓库的 `natnet_shm_writer` 把它桥接进 `mocap_state_shm`,**ROS2 只活在动捕机这一侧**,
-> 下游照旧 `--localization vicon` 读共享内存——无需在 fedguide / 机器人机装 rclpy。
-> (若你的动捕是 **Vicon DataStream(非 NatNet)**,改用 `vicon_shm_plugin.py` 里的
-> `ViconDemoWriter`(需 `pyvicon_datastream`,注意它是 mm→需 ÷1000);其余完全一致。)
+1. Print a high-contrast, textured, asymmetric ARKit/ARCore reference image at A3 size
+   and mount flat on a rigid board. Measure its actual width in meters, e.g. 0.40m×0.28m.
+2. Place it flat or upright beside the corridor, visible to Vicon and the AR device.
+3. Probe its center and +x edge direction to compute `T_world_fiducial`, using A4's
+   method: center supplies translation, edge supplies yaw; record the normal if upright.
+   AR clients detect its device-frame pose and combine it with `T_world_fiducial` to
+   recover the world origin; see registration in Part B.
 
-**坐标/单位约定(配错则下游整体被旋转/缩放,务必核对):**
-- Motive → Streaming 设置:**Up Axis = Z**、**单位 = 米**(NatNet/ROS 直接发米,writer **不再 ÷1000**)。
-- 世界系:右手系、z 朝上、x 朝前、y 朝左(`ar/schema/conventions.md` §1)。
-- 在 Motive 里把 G1 骨盆刚体的**枢轴(pivot)设在骨盆中心、+x = 机器人正前方**(同 §A5);
-  这样发布的位姿无需再补 mount 偏移。刚体命名 `g1_base` → 话题 `/g1_base/pose`。
+## A7 Motion-Capture Input: NatNet / `natnet_ros2` and Shared-Memory Validation
 
-1. **起 NatNet → shm 桥接(动捕机,ROS2 env)**:
+> This setup uses OptiTrack/Motive NatNet. [`natnet_ros2`](https://github.com/L2S-lab/natnet_ros2)
+> publishes rigid-body poses as `geometry_msgs/PoseStamped` on `/<rigid-body-name>/pose`,
+> in meters. The repository's `natnet_shm_writer` bridges them into `mocap_state_shm`.
+> ROS2 is confined to the mocap host; downstream readers continue using
+> `--localization vicon`, without rclpy in fedguide/on the robot host.
+> For Vicon DataStream rather than NatNet, use `ViconDemoWriter` in `vicon_shm_plugin.py`,
+> requiring `pyvicon_datastream` and mm→m division by 1000. Everything else is unchanged.
+
+**Check coordinate/unit conventions; errors rotate or scale the entire downstream system:**
+
+- Motive Streaming: Up Axis=Z, units=meters. NatNet/ROS already send meters; the writer
+  does not divide by 1000 again.
+- World frame: right-handed, z up, x forward, y left (`ar/schema/conventions.md`, Section 1).
+- Set G1 pelvis rigid-body pivot to pelvis center and +x to robot forward (A5), avoiding
+  a further mounting offset. Body `g1_base` publishes `/g1_base/pose`.
+
+1. **Start NatNet→shm on the mocap host in its ROS2 environment:**
+
    ```bash
-   # ① 起 natnet_ros2 驱动(serverIP=Motive 主机, clientIP=本机, serverType=multicast/unicast)
-   ros2 launch natnet_ros2 natnet_ros2.launch.py    # 或按其 README 配 config/initiate.yaml
-   # 验证:话题在发
+   # ① Start the driver: serverIP=Motive, clientIP=this host, serverType=multicast/unicast
+   ros2 launch natnet_ros2 natnet_ros2.launch.py    # Or configure config/initiate.yaml per its README
+   # Verify pose publication
    ros2 topic echo /g1_base/pose --once
-   # ② 起本仓库的桥接,把 /g1_base/pose 写进 mocap_state_shm
+   # ② Bridge /g1_base/pose into mocap_state_shm
    python -m genedynamics.deploy.localization.natnet_shm_writer --rigid-body g1_base
    ```
-   看到 `subscribing /g1_base/pose … → shm 'mocap_state_shm'` 且开始周期性打印 `pos=(…)` 即成功。
-   写入结构 `q13d` = int64 utime(µs) + 13 float64:pos3 + quat_xyzw4 + vel3 + omega3
-   (vel/omega 由位姿有限差分得到;噪声大可加 `--vel-lpf 0.2`;pivot 离地可加 `--z-offset`)。
-   **quat 顺序、字节布局已和 `vicon_shm_plugin.py` 对齐**,无需手工核对。
-2. 在**机器人机**验证读得到: 
+
+   Success prints `subscribing /g1_base/pose … → shm 'mocap_state_shm'`, followed by
+   periodic `pos=(…)`. Layout `q13d` is int64 utime (µs) plus 13 float64 values:
+   pos3 + quat_xyzw4 + vel3 + omega3. Velocities are finite differences of poses;
+   use `--vel-lpf 0.2` for noise or `--z-offset` for an elevated pivot.
+   Quaternion order and byte layout already match `vicon_shm_plugin.py`.
+2. **Verify reading on the robot host:**
+
    ```bash
    python -c "from genedynamics.deploy.localization.vicon_shm_plugin import ViconShmPlugin; \
    p=ViconShmPlugin({}); import time; time.sleep(0.3); print('state=',p.get_state(),'health=',p.health())"
    ```
-   移动机器人,再跑一次,pose 应跟着变、`health()=ok`。
+
+   Move the robot and repeat; the pose should change and `health()=ok`.
 
 ---
 
-# Part B — AR 客户端(四选一,详细 build)
+# Part B — Four AR Client Options and Build Instructions
 
-四种都连**同一个** `ws://TWIN_IP:8766/`、渲染同一份 WorldSnapshot;差别只在引擎与打包。
-**苹果设备(选项 1/2/3)出包都要 Mac + Xcode;选项 4(WebXR)不用 build、仅 Android Chrome。**
+All connect to the same `ws://TWIN_IP:8766/` and render the same WorldSnapshot;
+only engine and packaging differ. Apple options 1/2/3 require Mac+Xcode.
+WebXR option 4 needs no build and uses Android Chrome only.
 
-| 选项 | 设备 | 引擎 | 在哪 build |
+| Option | Device | Engine | Build host |
 |---|---|---|---|
-| 1 | Vision Pro | RealityKit(原生 Swift) | Mac/Xcode |
+| 1 | Vision Pro | Native Swift/RealityKit | Mac/Xcode |
 | 2 | Vision Pro | Unity + PolySpatial | Unity → Mac/Xcode |
 | 3 | iPad/iPhone | Unity + ARKit | Unity → Mac/Xcode |
-| 4 | Android 手机/平板 | WebXR(three.js 网页) | 不 build(浏览器打开) |
+| 4 | Android phone/tablet | WebXR/three.js webpage | No build; browser |
 
 ---
 
-## 选项 1:RealityKit → Vision Pro(原生 Swift)
+## Option 1: RealityKit → Vision Pro, Native Swift
 
-**在哪 build**:**Mac**(Xcode)。**装到**:Vision Pro。
+Build on Mac/Xcode; install on Vision Pro.
 
-### 1.1 建工程
-1. Mac 上 Xcode → File → New → Project → **visionOS → App**,命名 `CorridorTwinAR`,Interface=SwiftUI。
-2. 把本仓库 `genedynamics/deploy/ar/clients/swift/Sources/CorridorTwin/` 里的 4 个 `.swift`
-   (`Contract / EntityState / WorldClient / WorldRenderer`)拖进工程 target(或作为本地 SPM 包 `Package.swift` 引入)。
+### 1.1 Create the Project
 
-### 1.2 写 app 入口(把 client+renderer 接起来)
-新建 `ImmersiveView.swift`:
+1. Xcode → File → New → Project → visionOS → App, named `CorridorTwinAR`, Interface=SwiftUI.
+2. Add the four `.swift` files `Contract / EntityState / WorldClient / WorldRenderer`
+   from `genedynamics/deploy/ar/clients/swift/Sources/CorridorTwin/` to the target,
+   or import the local SPM package via `Package.swift`.
+
+### 1.2 Connect Client and Renderer in the App Entry
+
+Create `ImmersiveView.swift`:
+
 ```swift
 import SwiftUI
 import RealityKit
 import ARKit
-import CorridorTwin   // 若作为 SPM 包
+import CorridorTwin   // If imported as an SPM package
 
 struct ImmersiveView: View {
     @State private var renderer: WorldRenderer?
     @State private var client: WorldClient?
-    let twinURL = URL(string: "ws://TWIN_IP:8766/")!         // ← 改成你的孪生服务机 IP
-    // fiducial 在 Vicon 世界系的位姿(A6 测得),先用平移近似:
-    let fiducialWorld = SIMD3<Float>(/*X*/0, /*Y*/0, /*Z*/0) // ← 填 A6
+    let twinURL = URL(string: "ws://TWIN_IP:8766/")!         // Replace with the twin server IP
+    // Fiducial pose in Vicon world from A6; initially approximate with translation:
+    let fiducialWorld = SIMD3<Float>(/*X*/0, /*Y*/0, /*Z*/0) // Fill from A6
 
     var body: some View {
         RealityView { content in
-            let worldAnchor = AnchorEntity(world: .zero)     // 先放原点,配准后更新其 transform
+            let worldAnchor = AnchorEntity(world: .zero)     // Start at origin; registration updates transform
             content.add(worldAnchor)
             let r = WorldRenderer(worldAnchor: worldAnchor)
             let c = WorldClient(url: twinURL)
             c.onMessage = { [weak r] m in r?.enqueue(m) }
             c.connect()
             renderer = r; client = c
-            // 每帧驱动插值
+            // Drive interpolation each frame
             _ = content.subscribe(to: SceneEvents.Update.self) { _ in
                 r.update(now: CACurrentMediaTime())
             }
         }
-        .task { await runImageTracking() }                   // 配准:见 1.3
+        .task { await runImageTracking() }                   // Registration, see 1.3
     }
 
-    // 1.3 配准:ARKit 图像追踪 → 把 worldAnchor 放到 Vicon 世界原点
+    // 1.3 Registration: ARKit image tracking places worldAnchor at the Vicon world origin
     func runImageTracking() async {
         let session = ARKitSession()
-        // 把 A6 的 fiducial 图(实际宽度)放进 app 的 ARReferenceImage 资源
+        // Add A6's fiducial and actual width to the app's ARReferenceImage resources
         guard let refs = try? ReferenceImage.loadReferenceImages(inGroupNamed: "Fiducials") else { return }
         let provider = ImageTrackingProvider(referenceImages: refs)
         try? await session.run([provider])
         for await update in provider.anchorUpdates where update.anchor.isTracked {
-            let T_device_fiducial = update.anchor.originFromAnchorTransform   // fiducial 在设备系
+            let T_device_fiducial = update.anchor.originFromAnchorTransform   // Fiducial in device frame
             // worldOrigin_in_device = T_device_fiducial * inv(T_fiducial_world)
-            // 即:已知 fiducial 的 Vicon 世界位姿(A6)→ 反推世界原点在设备系的位姿
-            // (此处按你的 T_world_fiducial 组装 4x4;平移近似时仅用位置)
+            // Use known Vicon-world fiducial pose (A6) to recover device-frame world origin.
+            // Assemble a 4x4 from T_world_fiducial; translation-only approximation uses position.
             // renderer?.worldAnchor.transform = Transform(matrix: worldOrigin_in_device)
         }
     }
 }
 ```
-> 说明:配准的本质是"app 看到 fiducial → 结合它已知的 Vicon 世界位姿 → 把 `worldAnchor` 摆到 Vicon 世界原点"。最稳的替代:**给 Vision Pro 也贴 Vicon marker**,让 Vicon 直接给头显世界位姿、做一次性 hand-eye(免依赖图像追踪)。
 
-### 1.3 编译上设备
-1. Xcode → 选 target `CorridorTwinAR` → Signing & Capabilities → 选你的 Apple ID/Team。
-2. 顶部设备选 **Apple Vision Pro**(真机,需开发者模式配对)或 visionOS Simulator(先验逻辑)。
-3. **Cmd+R** 编译运行。首次需在 Vision Pro 上信任开发者证书。
-4. 戴上 → 进入沉浸空间 → 看向 fiducial 完成配准 → 应看到障碍锁定在地面。
+> Registration combines the detected fiducial with its known Vicon-world pose to place
+> `worldAnchor` at the Vicon origin. A more stable alternative is to add Vicon markers
+> to Vision Pro, obtain headset world pose directly, and perform one-time hand-eye
+> calibration without depending on image tracking.
+
+### 1.3 Build and Deploy
+
+1. In Xcode target `CorridorTwinAR`, select Apple ID/Team under Signing & Capabilities.
+2. Select Apple Vision Pro hardware, paired in developer mode, or visionOS Simulator
+   for initial logic checks.
+3. Cmd+R to build/run; trust the developer certificate on Vision Pro on first use.
+4. Enter the immersive space and look at the fiducial to register. Obstacles should
+   remain fixed on the floor.
 
 ---
 
-## 选项 2:Unity → Vision Pro(PolySpatial)
+## Option 2: Unity → Vision Pro, PolySpatial
 
-**在哪 build**:Unity(任意 OS 开发)→ 生成 Xcode 工程 → **Mac/Xcode 出包**。**装到**:Vision Pro。
+Develop in Unity on any OS, export an Xcode project, and package on Mac/Xcode.
+Install on Vision Pro.
 
-### 2.1 工程与包
-1. Unity Hub → 新建 **3D (URP)** 工程(PolySpatial 推荐 URP),Editor 选装 **visionOS Build Support**。
-2. Package Manager 安装:
-   - **AR Foundation**、**Apple visionOS XR Plugin**、**PolySpatial**(`com.unity.polyspatial` 全家桶,**需 Unity Pro/Industry 授权**)、
-   - **Newtonsoft Json**(`com.unity.nuget.newtonsoft-json`)。
-3. Project Settings → XR Plug-in Management → **visionOS** 勾选;PolySpatial 选 **Mixed Reality**(Unbounded volume 适合大场景)。
+### 2.1 Project and Packages
 
-### 2.2 脚本与场景
-1. 把 `clients/unity/Scripts/` 的 `WorldEntities.cs / WorldClient.cs / WorldRenderer.cs / FrameRegistration.cs` 复制进 `Assets/Scripts/`。
-2. 新建一个**遮挡材质**:`Assets/CorridorTwin/Occluder.shader`(只写深度不画颜色):
+1. Create a Unity Hub 3D (URP) project, recommended for PolySpatial; install visionOS
+   Build Support in the Editor.
+2. Install AR Foundation, Apple visionOS XR Plugin, the `com.unity.polyspatial` packages
+   requiring Unity Pro/Industry licensing, and Newtonsoft Json
+   (`com.unity.nuget.newtonsoft-json`).
+3. Enable visionOS in XR Plug-in Management; set PolySpatial to Mixed Reality,
+   using an unbounded volume for large scenes.
+
+### 2.2 Scripts and Scene
+
+1. Copy `WorldEntities.cs / WorldClient.cs / WorldRenderer.cs / FrameRegistration.cs`
+   from `clients/unity/Scripts/` into `Assets/Scripts/`.
+2. Create the depth-only `Assets/CorridorTwin/Occluder.shader`:
+
    ```shader
    Shader "CorridorTwin/Occluder" {
      SubShader { Tags{"Queue"="Geometry-1"} ColorMask 0 ZWrite On Pass {} }
    }
    ```
-   据它建一个 Material `OccluderMat`。
-3. 场景里建空物体 `CorridorTwin`,挂三个组件:
-   - `WorldClient`:`Url = ws://TWIN_IP:8766/`
-   - `FrameRegistration`:`WorldOriginAnchor` = 拖一个子空物体(配准后被设到 Vicon 原点)
-   - `WorldRenderer`:`Client`=本物体的 WorldClient、`Frame`=FrameRegistration、`OccluderMaterial`=`OccluderMat`、`InterpolationDelay`=0.08
-4. **配准**:加 `ARTrackedImageManager` + 一个 Reference Image Library(放 A6 的 fiducial,填实际尺寸);写个小脚本在 `trackedImagesChanged` 里把 `FrameRegistration.WorldOriginAnchor` 的 transform 设成 fiducial 的 Vicon 世界位姿换算结果(同选项1思路)。
 
-### 2.3 出包
-1. File → Build Settings → 平台切 **visionOS** → Build → 选输出目录 → 生成一个 **Xcode 工程**。
-2. 在 **Mac** 上打开该 Xcode 工程 → Signing 选 Team → 设备选 **Apple Vision Pro** → **Cmd+R**。
+   Create `OccluderMat` from this shader.
+3. Create an empty `CorridorTwin` object with:
+   - `WorldClient`: `Url = ws://TWIN_IP:8766/`.
+   - `FrameRegistration`: assign a child empty object to `WorldOriginAnchor`, positioned
+     at the Vicon origin after registration.
+   - `WorldRenderer`: assign local `WorldClient` to `Client`, registration to `Frame`,
+     `OccluderMat` to `OccluderMaterial`, and `InterpolationDelay`=0.08.
+4. Add `ARTrackedImageManager` and a Reference Image Library containing A6's fiducial
+   with actual dimensions. In `trackedImagesChanged`, set
+   `FrameRegistration.WorldOriginAnchor` from the fiducial's Vicon-world pose,
+   following option 1's transform logic.
+
+### 2.3 Build
+
+1. File → Build Settings → visionOS → Build; choose an output directory to create Xcode project.
+2. Open it on Mac, choose Signing Team and Apple Vision Pro, then Cmd+R.
 
 ---
 
-## 选项 3:Unity → iPad /iPhone / 平板(ARKit)
+## Option 3: Unity → iPad/iPhone/Tablet, ARKit
 
-**在哪 build**:Unity(任意 OS 开发)→ 生成 Xcode 工程 → **Mac/Xcode 出包**。**装到**:iPad/iPhone。
+Develop in Unity on any OS, export Xcode, and package on Mac/Xcode for iPad/iPhone.
 
-### 3.1 工程与包
-1. Unity Hub → 新建 **3D (URP)** 工程,Editor 选装 **iOS Build Support**。
-2. Package Manager 安装:**AR Foundation**、**ARKit XR Plugin**、**Newtonsoft Json**。
-3. Project Settings → XR Plug-in Management → **iOS** → 勾 **ARKit**。
+### 3.1 Project and Packages
 
-### 3.2 脚本与场景
-1. 同选项2 复制 4 个脚本 + 建 `OccluderMat`(同 2.2 的遮挡 shader)。
-2. 场景:加 **AR Session** + **XR Origin (AR)**;空物体 `CorridorTwin` 挂 `WorldClient`(URL)、`FrameRegistration`、`WorldRenderer`(同 2.2 赋值)。
-3. **配准(iPad 最简单)**:`ARTrackedImageManager` + Reference Image Library 放 A6 fiducial(填实际宽度)。在 `trackedImagesChanged` 回调里:
+1. Create a Unity Hub 3D (URP) project with iOS Build Support.
+2. Install AR Foundation, ARKit XR Plugin, and Newtonsoft Json.
+3. Enable ARKit under Project Settings → XR Plug-in Management → iOS.
+
+### 3.2 Scripts and Scene
+
+1. Copy the four scripts and create `OccluderMat` as in option 2, including its depth shader.
+2. Add AR Session and XR Origin (AR); add `WorldClient`, `FrameRegistration`, and
+   `WorldRenderer` to an empty `CorridorTwin`, with assignments from 2.2.
+3. Register using `ARTrackedImageManager` and A6's fiducial in a Reference Image Library
+   with its measured width. In `trackedImagesChanged`:
+
    ```csharp
-   // 伪代码:已知 fiducial 的 Vicon 世界位姿 Twf(A6),AR 检测到它在 AR-session 系的位姿 Taf
-   // 则世界原点在 AR-session 系 = Taf * inverse(Twf)
+   // Pseudocode: known fiducial Vicon pose Twf (A6), detected AR-session pose Taf.
+   // World origin in AR-session coordinates = Taf * inverse(Twf).
    frameRegistration.WorldOriginAnchor.SetPositionAndRotation(worldOriginPos, worldOriginRot);
    ```
 
-### 3.3 出包
-1. File → Build Settings → 平台切 **iOS** → Build → 生成 Xcode 工程。
-2. **Mac** 上打开该 Xcode 工程 → Signing 选 Team → 设备选你的 **iPad/iPhone** → **Cmd+R**。
-3. iPad 上首次"信任"开发者;举 iPad 对准 fiducial 完成配准 → 看到障碍。
+### 3.3 Build
 
-> iPad 必须在 **ARCore 列表对 Android / ARKit 对 iPad/iPhone** 支持范围内(iPad 近年款都支持 ARKit)[[Link](https://developers.google.com/ar/devices#ios)]。
+1. File → Build Settings → iOS → Build to generate an Xcode project.
+2. Open on Mac, select Signing Team and the iPad/iPhone, then Cmd+R.
+3. Trust the developer on first use; point the device at the fiducial to register
+   and view obstacles.
+
+> Devices must be supported by ARCore for Android or ARKit for iPad/iPhone;
+> recent iPads support ARKit. [[Link](https://developers.google.com/ar/devices#ios)]
 
 ---
 
-## 选项 4:WebXR(Android 浏览器,零安装)
+## Option 4: WebXR, Android Browser Without Installation
 
-**在哪 build**:不用 build —— 一个静态网页;**用 Chrome 打开网址**即可。**装到**:Android 手机/平板(浏览器)。
-最省事的演示路线:不进 App Store、不用 Mac、不装 app。代价:**仅 Android Chrome 支持沉浸式 AR(`immersive-ar`)**;**iOS Safari 不支持**(苹果未开放),visionOS Safari 仅部分支持(visionOS 2+)。配准精度也不如前三种。
+No build is needed: open a static webpage in Chrome on Android phones/tablets.
+This is the easiest demonstration route, without App Store, Mac, or app installation.
+Tradeoffs: immersive AR (`immersive-ar`) is supported only in Android Chrome here;
+iOS Safari does not expose it, and visionOS Safari has partial support from visionOS 2+.
+Registration accuracy is lower than the first three options.
 
-现成起步页:`genedynamics/deploy/ar/clients/web/index.html`(three.js + WebXR,自带 WebSocket 订阅 + 插值 + 遮挡 holdout;轴映射同 RealityKit `(-y,z,-x)`)。
+Starter page: `genedynamics/deploy/ar/clients/web/index.html`, using three.js/WebXR,
+WebSocket subscription, interpolation, and occluder holdout. Axis mapping matches
+RealityKit: `(-y,z,-x)`.
 
-### 4.1 前置:必须 HTTPS
-WebXR 要求**安全上下文**:除 `localhost` 外,页面**必须经 HTTPS 提供**(否则浏览器不给开 AR 会话)。局域网里给平板访问 → 用自签证书起一个 HTTPS 静态服务(在 `clients/web/` 下):
+### 4.1 HTTPS Is Required
+
+WebXR requires a secure context. Except on `localhost`, serve the page via HTTPS
+or the browser will not start AR. For LAN tablet access, start a self-signed HTTPS
+static server in `clients/web/`:
+
 ```bash
 cd genedynamics/deploy/ar/clients/web
 openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=twin"
@@ -305,106 +386,145 @@ c=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); c.load_cert_chain('cert.pem','key.pem
 s.socket=c.wrap_socket(s.socket,server_side=True); s.serve_forever()"
 ```
 
-### 4.2 WebSocket 连接(注意混合内容)
-页面默认连 `ws://<页面host>:8766/`(即 `run_twin_server`)。**坑**:HTTPS 页面连明文 `ws://` 会被"混合内容"拦截。两条路:
-- **演示用**:Android Chrome 里临时允许该站点的不安全内容(站点设置 → 不安全内容 → 允许),或
-- **正式用**:给 world_ws 套 **TLS**(`wss://`,用反代如 nginx/caddy 终结 TLS),页面里把 `WS_URL` 改成 `wss://...`。
+### 4.2 WebSocket Connections and Mixed Content
 
-### 4.3 运行
-1. 先按 Part C 起好 `run_twin_server`(C2)。
-2. 平板 **Chrome** 打开 `https://<TWIN_IP>:8443/` → 接受自签证书警告。
-3. 点页面里的 **"Start AR"**(ARButton)→ 授权相机 → 进入 AR。
-4. **配准**:起步页用 **tap-to-place**(命中测试点地面 → 放世界原点)——**不是 Vicon 级精度**,够快速演示。要 Vicon 精度:在 `index.html` 里换成基于 fiducial(A6)的图像配准,用 `T_world_fiducial` 设 `worldOrigin`(同前三选项思路);或直接用选项 1/2/3。
-5. 应看到障碍 + 机器人 + occluder 锁定地面,随 `run_twin_server` 实时更新。
+The page defaults to `ws://<page-host>:8766/`, the `run_twin_server` endpoint.
+HTTPS pages may block plaintext `ws://` as mixed content. Options:
 
-> 详见 `clients/web/README.md`(浏览器支持矩阵、HTTPS/wss、配准、FlatBuffers 切换)。
+- For demonstrations, temporarily allow insecure content for the site in Android Chrome
+  under Site Settings → Insecure content → Allow.
+- For regular operation, add TLS to world_ws using `wss://` and an nginx/caddy reverse
+  proxy terminating TLS; set page `WS_URL` to `wss://...`.
+
+### 4.3 Run
+
+1. Start `run_twin_server` as in C2.
+2. Open `https://<TWIN_IP>:8443/` in tablet Chrome and accept the self-signed certificate warning.
+3. Select “Start AR” (ARButton), grant camera access, and enter AR.
+4. The starter page registers by tap-to-place: hit-test the floor and place the world origin.
+   This is sufficient for a quick demo, not Vicon-level accuracy. For greater accuracy,
+   replace registration in `index.html` with A6 fiducial tracking and set `worldOrigin`
+   using `T_world_fiducial`, as in options 1–3, or use those clients directly.
+5. Obstacles, robot, and occluder should remain fixed to the floor and update with the server.
+
+> See `clients/web/README.md` for browser support, HTTPS/wss, registration, and FlatBuffers.
 
 ---
 
-# Part C — 每次实验的启动顺序(逐步,照着做)
+# Part C — Per-Experiment Startup Order
 
-> 约定:`TWS` = A4 测得的 `"x0 y0 yaw0"`;`TWIN_IP` = 孪生服务机 IP。
+> `TWS` is A4's measured `"x0 y0 yaw0"`; `TWIN_IP` is the twin server IP.
 
-## C1 起动捕 + 共享内存(动捕机,ROS2)
-1. 开 Motive,确认 `g1_base`(和 fiducial 若用刚体)被稳定追踪、无丢帧;Streaming = **Z-up / 米**。
-2. 起 `natnet_ros2` 驱动 → `ros2 topic echo /g1_base/pose --once` 能看到位姿。
-3. 起桥接 `python -m genedynamics.deploy.localization.natnet_shm_writer --rigid-body g1_base` → `mocap_state_shm` 有数据。
-4. **验证**(机器人机):跑 A7 第 2 步那段 `ViconShmPlugin` 检查,`health()=ok`、移动机器人 pose 变化。
+## C1 Start Motion Capture and Shared Memory, ROS2 Host
 
-## C2 起孪生服务(孪生服务机)
+1. Start Motive; confirm stable `g1_base` tracking, and the fiducial if a rigid body,
+   without dropped frames. Streaming must be Z-up/meters.
+2. Start `natnet_ros2`; confirm `ros2 topic echo /g1_base/pose --once` shows a pose.
+3. Start `python -m genedynamics.deploy.localization.natnet_shm_writer --rigid-body g1_base`
+   to populate `mocap_state_shm`.
+4. On the robot host, perform A7 step 2's `ViconShmPlugin` check: `health()=ok`,
+   with pose changing when the robot moves.
+
+## C2 Start the Twin Server
+
 ```bash
 /opt/anaconda3/envs/fedguide/bin/python scripts/tasks/robot/humanoid/run_twin_server.py \
     --preset zone_d --t-world-scene <TWS> --localization vicon --port 8766
 ```
-- 看到 `[world_ws] serving ws://0.0.0.0:8766/ ... N entities`。
-- **验证**:浏览器或 `wscat -c ws://TWIN_IP:8766/` 能收到 JSON;含 `ball_L1/ball_R1/wall_*/goal/start` + `g1/base` + `g1/occluder`,且 `g1/base` 的 pose 随机器人移动而变。
-- 没接 Vicon 想先验流程:把 `--localization vicon` 换 `--localization mock`(机器人固定在 start)。
 
-## C3 重规划出 certified 计划(规划机,Docker)
+- Expect `[world_ws] serving ws://0.0.0.0:8766/ ... N entities`.
+- Verify JSON via browser or `wscat -c ws://TWIN_IP:8766/`, containing
+  `ball_L1/ball_R1/wall_*/goal/start`, `g1/base`, and `g1/occluder`.
+  `g1/base` pose must follow the moving robot.
+- For an initial check without Vicon, use `--localization mock`; the robot stays at start.
+
+## C3 Generate a Certified Plan, Planner Host/Docker
+
 ```bash
 docker run --rm -v "$PWD:/work" -w /work genedynamics/dev-cpu:torch \
     python scripts/tasks/robot/humanoid/replan_from_scene.py --preset zone_d --out results/ar/run1
 ```
-- 结束打印 `calibrated: best_idx=… m_track=… (CERT)`,产物 `results/ar/run1/level_1/seed_0/trajectory/trajectory.json`。
-- 已有现成 certified 计划可跳过本步。
 
-## C4 启动 AR 客户端 + 配准(AR 设备)
-1. 打开 Part B 选定的 app。
-2. 看向(或举设备对准)**A6 的 fiducial** → app 完成配准(`worldAnchor` 落到 Vicon 原点)。
-3. **验证**:在 start 十字处放一个已知小物,AR 里对应位置应有障碍/标记重合(偏差应 < 安全裕度,Vicon 1–2cm 足够)。空场地里应看到 2 个虚拟球 + 走廊墙。
+- Expect `calibrated: best_idx=… m_track=… (CERT)` and artifact
+  `results/ar/run1/level_1/seed_0/trajectory/trajectory.json`.
+- Skip this step if a certified plan already exists.
 
-## C5 机器人:干跑 → 落地运行(机器人机)
-1. **摆放**:把 G1 基座**踩在 start 绿十字上,正面朝 +x 箭头**;先**吊装/半承重**。
-2. **干跑(不发运动,验通信+坐标)**:
+## C4 Start and Register the AR Client
+
+1. Open the chosen Part B app.
+2. Look/point the device at A6's fiducial to register `worldAnchor` at the Vicon origin.
+3. Verify alignment using a known small object at the start cross: its AR counterpart
+   should coincide within the safety margin; Vicon's 1–2cm is sufficient here.
+   The empty floor should show 2 virtual spheres and corridor walls.
+
+## C5 Robot: Dry Run, Suspended Run, Ground Run
+
+1. Place the G1 base at the green start cross, facing the +x arrow; begin suspended
+   or partially supported.
+2. Dry-run communications and coordinates without movement:
+
    ```bash
    python scripts/tasks/robot/humanoid/run_real_g1.py \
        --plan results/ar/run1/level_1/seed_0/trajectory/trajectory.json \
        --preset zone_d --t-world-scene <TWS> --network-interface eth0 --dry-run
    ```
-   看到 `frame glue check: world start → scene pose (0.500, 0.000)` 与 `wiring OK`。
-3. **吊装空走**:去掉 `--dry-run`,跑同命令。检查步态启动、不失步、governor 命令平滑。**手握急停**。
-4. **落地**:确认安全层 + 急停就位,机器人落地踩在 start,运行:
+
+   Expect `frame glue check: world start → scene pose (0.500, 0.000)` and `wiring OK`.
+3. Remove `--dry-run` for suspended walking. Check gait startup, no missed steps,
+   and smooth governor commands. Keep the emergency stop in hand.
+4. With safety layers and emergency stop ready, place the robot on the start mark and run:
+
    ```bash
    python scripts/tasks/robot/humanoid/run_real_g1.py \
        --plan results/ar/run1/level_1/seed_0/trajectory/trajectory.json \
        --preset zone_d --t-world-scene <TWS> --network-interface eth0
    ```
-   机器人沿 certified 计划穿行,governor 用注入的 AR 障碍实时避让。
 
-## C6 观察与验收
-- **终端**:结束打印 `Exec min body-SDF: +0.xxx → CERTIFIED`、`endpoint dist`、是否摔倒。
-- **AR**:人眼看障碍锁定空场地;**occluder 让真机器人正确挡在虚拟墙前**;插值丝滑无跳变。
-- **数据**:`results/g1_corridor/real/` 下有逐步 JSONL + npz,用于回放/对比。
-- **通过标准**:`certified_safe=True`、无碰撞、实际轨迹 vs 计划误差 < 余量、AR 对齐偏差 < 余量。
+   The robot follows the certified plan; the governor avoids injected AR obstacles online.
+
+## C6 Observation and Acceptance
+
+- Terminal: final `Exec min body-SDF: +0.xxx → CERTIFIED`, endpoint distance, and fall status.
+- AR: floor-locked obstacles, correct real-robot occlusion in front of virtual walls,
+  and smooth interpolation without jumps.
+- Data: per-step JSONL and npz under `results/g1_corridor/real/` for replay/comparison.
+- Acceptance: `certified_safe=True`, no collisions, actual-versus-planned error below
+  the margin, and AR alignment error below the margin.
 
 ---
 
-# D. 安全
-- 全程**物理急停在手**;首次落地用**最易场景**(zone_a/zone_d),不要先碰 zone_c 挤压。
-- Spark sport-mode 横移钳在 ±0.3 m/s,zone_d 真值余量 ~+0.08m;留足空间。
-- 落地前务必挂 `joint_limit + torque_limit + self_collision` 安全层 + 摔倒检测。
+# D. Safety
 
-# E. 故障排查
-| 现象 | 排查 |
-|---|---|
-| `ViconShmPlugin` 读不到 | `natnet_shm_writer` 没起 / shm 名不是 `mocap_state_shm` / 上游 `natnet_ros2` 没发位姿(先 `ros2 topic echo /g1_base/pose`) |
-| `natnet_shm_writer` 收不到位姿 | 话题名 ≠ `/<刚体名>/pose`(用 `ros2 topic list` 核对)/ QoS 不匹配(发布端是 reliable 就加 `--reliable`)/ serverIP·clientIP·multicast-unicast 配错 |
-| 姿态被旋转 90° / 上下颠倒 | Motive Streaming 不是 **Z-up**(改成 Z-up);或刚体 pivot 朝向不对(§A5) |
-| 位置数值差 1000 倍 | 走了 Vicon DataStream(mm)路径却没 ÷1000;NatNet 路径本就发米,用 `natnet_shm_writer` 即可 |
-| AR 收不到流 | `TWIN_IP`/端口、防火墙、`run_twin_server` 是否在跑 |
-| AR 障碍漂移/不对齐 | fiducial 实际尺寸填错 / A6 的 `T_world_fiducial` 量不准 |
-| 机器人起点不对 | 没摆在 start / `--t-world-scene` 填错(重核 A4) |
-| 干跑 pose 不是 (0.5,0) | `T_world_scene` 或 marker 刚体方向错 |
-| 计划 `VIOL` 不认证 | 用满配 `replan_from_scene`(非 --fast);必要时调 governor `m_track`(实测 ~0.08 最优) |
+- Keep the physical emergency stop in hand throughout. Start ground runs with easy
+  zone_a/zone_d, not zone_c's squeeze geometry.
+- Spark sport-mode lateral speed is clamped to ±0.3 m/s; zone_d's ground-truth margin
+  is approximately +0.08m. Leave sufficient space.
+- Before ground operation, enable `joint_limit + torque_limit + self_collision`
+  safety layers and fall detection.
 
-# F. 速查
-| 项 | 值 |
+# E. Troubleshooting
+
+| Symptom | Check |
 |---|---|
-| 孪生服务 | `scripts/tasks/robot/humanoid/run_twin_server.py` → `ws://TWIN_IP:8766/` |
-| 重规划 | `scripts/tasks/robot/humanoid/replan_from_scene.py`(Docker) |
-| 实机运行 | `scripts/tasks/robot/humanoid/run_real_g1.py`(`--dry-run` 先验) |
-| 动捕桥接 | `python -m genedynamics.deploy.localization.natnet_shm_writer --rigid-body g1_base`(NatNet→shm,ROS2 机) |
-| 坐标变换 | `genedynamics/deploy/localization/scene_frame_plugin.py`(world→scene) |
-| 契约/约定 | `genedynamics/deploy/ar/schema/{world.fbs, conventions.md}` |
-| AR 客户端 | `genedynamics/deploy/ar/clients/{swift, unity, web}/` |
-| 仿真复核 | `scripts/tasks/robot/humanoid/run_sport_mode_zones.py`(Docker) |
+| `ViconShmPlugin` cannot read | Writer not started, shared-memory name differs from `mocap_state_shm`, or upstream `natnet_ros2` has no poses; first run `ros2 topic echo /g1_base/pose` |
+| `natnet_shm_writer` receives no poses | Topic differs from `/<rigid-body-name>/pose` (check `ros2 topic list`); QoS mismatch (add `--reliable` for a reliable publisher); wrong serverIP/clientIP/multicast-unicast settings |
+| Pose rotated 90° or upside down | Motive Streaming is not Z-up, or rigid-body pivot orientation is wrong (A5) |
+| Position differs by factor 1000 | Vicon DataStream mm path lacks division by 1000; NatNet already sends meters, use `natnet_shm_writer` |
+| No AR stream | `TWIN_IP`, port, firewall, or inactive `run_twin_server` |
+| AR obstacles drift/misalign | Wrong fiducial dimensions or inaccurate A6 `T_world_fiducial` |
+| Wrong robot starting position | Not at start or incorrect `--t-world-scene`; recheck A4 |
+| Dry-run pose is not (0.5,0) | Incorrect `T_world_scene` or marker-body orientation |
+| Plan reports `VIOL`, not certified | Use full `replan_from_scene`, not `--fast`; adjust governor `m_track` if needed, measured optimum ~0.08 |
+
+# F. Quick Reference
+
+| Item | Value |
+|---|---|
+| Twin server | `scripts/tasks/robot/humanoid/run_twin_server.py` → `ws://TWIN_IP:8766/` |
+| Replanning | `scripts/tasks/robot/humanoid/replan_from_scene.py`, Docker |
+| Hardware execution | `scripts/tasks/robot/humanoid/run_real_g1.py`; check with `--dry-run` first |
+| Mocap bridge | `python -m genedynamics.deploy.localization.natnet_shm_writer --rigid-body g1_base`; NatNet→shm on ROS2 host |
+| Coordinate transform | `genedynamics/deploy/localization/scene_frame_plugin.py`, world→scene |
+| Contract/conventions | `genedynamics/deploy/ar/schema/{world.fbs, conventions.md}` |
+| AR clients | `genedynamics/deploy/ar/clients/{swift, unity, web}/` |
+| Simulation recheck | `scripts/tasks/robot/humanoid/run_sport_mode_zones.py`, Docker |

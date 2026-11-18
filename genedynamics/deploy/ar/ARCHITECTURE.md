@@ -255,7 +255,7 @@ RENDER, the frame glue, the occluder proxy) is identical:
 + latency: tight (~cm) for mocap, looser (or easier scenes) for SLAM/VIO. The
 architecture is identical across all of them — swap the plugin, set the margin.
 
-## 5. Performance tactics ("极致")
+## 5. Performance tactics (maximum performance)
 
 1. **Zero-copy serialization** — FlatBuffers; clients read poses without parse.
 2. **Delta + keyframe** — never resend the static scene; send changed entities +

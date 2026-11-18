@@ -1,0 +1,418 @@
+{
+  "clean_ablation_treatments": [
+    "no_calibration",
+    "no_response_anchoring",
+    "unconditional_response_anchoring"
+  ],
+  "contract": {
+    "path": "configs/arm/compliant_keyed_insertion_recovery/protocol/subtasks/compliant_fixture_insertion_v1.json",
+    "sha256": "a25a98cb84c9e62505c7787dc1a648acf9460b588b21eb3f4893bc5c430375a7"
+  },
+  "device": {
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "evaluation_requests": [
+    {
+      "cell": "moving_fixture_nominal",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 12.0,
+        "fixture_mass_kg": 0.5,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_nominal/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 12831000,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_nominal",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 12.0,
+        "fixture_mass_kg": 0.5,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_nominal/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 12831001,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_nominal",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 12.0,
+        "fixture_mass_kg": 0.5,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_nominal/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 12831002,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_nominal",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 12.0,
+        "fixture_mass_kg": 0.5,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_nominal/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 12831003,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_nominal",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 12.0,
+        "fixture_mass_kg": 0.5,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_nominal/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 12831004,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_nominal",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 12.0,
+        "fixture_mass_kg": 0.5,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_nominal/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 12831005,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_nominal",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 12.0,
+        "fixture_mass_kg": 0.5,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_nominal/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 12831006,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_nominal",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 12.0,
+        "fixture_mass_kg": 0.5,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_nominal/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 12831007,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_nominal",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 12.0,
+        "fixture_mass_kg": 0.5,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_nominal/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 12831008,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_nominal",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 12.0,
+        "fixture_mass_kg": 0.5,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_nominal/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 12831009,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_underdamped",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 4.0,
+        "fixture_mass_kg": 0.8,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_underdamped/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 12831010,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_underdamped",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 4.0,
+        "fixture_mass_kg": 0.8,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_underdamped/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 12831011,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_underdamped",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 4.0,
+        "fixture_mass_kg": 0.8,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_underdamped/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 12831012,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_underdamped",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 4.0,
+        "fixture_mass_kg": 0.8,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_underdamped/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 12831013,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_underdamped",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 4.0,
+        "fixture_mass_kg": 0.8,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_underdamped/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 12831014,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_underdamped",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 4.0,
+        "fixture_mass_kg": 0.8,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_underdamped/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 12831015,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_underdamped",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 4.0,
+        "fixture_mass_kg": 0.8,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_underdamped/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 12831016,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_underdamped",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 4.0,
+        "fixture_mass_kg": 0.8,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_underdamped/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 12831017,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_underdamped",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 4.0,
+        "fixture_mass_kg": 0.8,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_underdamped/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 12831018,
+      "task": "compliant_fixture_insertion"
+    },
+    {
+      "cell": "moving_fixture_underdamped",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "fixture_damping_Nspm": 4.0,
+        "fixture_mass_kg": 0.8,
+        "fixture_stiffness_Npm": 800.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "SEMANTIC-EIGHT-TASK/compliant_fixture_insertion/moving_fixture_underdamped/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 12831019,
+      "task": "compliant_fixture_insertion"
+    }
+  ],
+  "failure_replacement": false,
+  "formal_policy_episodes_accessed": 0,
+  "methods": [
+    "icdt",
+    "task_only",
+    "asid",
+    "adaptsim",
+    "response_mpc",
+    "dial_mpc"
+  ],
+  "metrics": [
+    "task_success",
+    "key_event_completion",
+    "peak_force_N",
+    "failure_penalized_normalized_time"
+  ],
+  "readiness_evidence": {
+    "path": "results/arm/compliant_keyed_insertion_recovery/validation/compliant_fixture_insertion_paired_development/report.json",
+    "sha256": "87b64801dad3f394eb76b8ba5f7965e2251803d225cf1ac317646a9e1c20e56b"
+  },
+  "status": "sealed_unaccessed",
+  "task": "compliant_fixture_insertion",
+  "training_instances": [
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12830000,
+      "instance_id": "instance_01",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12830001,
+      "instance_id": "instance_02",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12830002,
+      "instance_id": "instance_03",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12830003,
+      "instance_id": "instance_04",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12830004,
+      "instance_id": "instance_05",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12830005,
+      "instance_id": "instance_06",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12830006,
+      "instance_id": "instance_07",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12830007,
+      "instance_id": "instance_08",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    }
+  ],
+  "version": "semantic-eight-task-formal-cohort-v1"
+}

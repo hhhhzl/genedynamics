@@ -1,236 +1,279 @@
 \section{Experiments}
 \label{sec:experiments}
-实验围绕三个问题组织：完整方法相对成熟方法的任务与资源权衡；校准及
-选择性响应迁移的机制与适用条件；同一技能接口在不同身体上的可执行性。
-T1--T3 是主要操作性能比较，T4 是形态扩展，所有方法均报告四任务结果。
-本节给出下一轮拟采用的比较协议，正式结果表和结论留待独立评估。
+Experiments address three questions: task/resource tradeoffs of the complete method
+against established methods; mechanisms and applicability of calibration and selective
+response transfer; and executability of a shared skill interface across bodies.
+T1--T3 provide the main manipulation-performance comparisons, while T4 extends morphology.
+Every method reports all four tasks. This section specifies the proposed next-round
+protocol; formal tables and conclusions await independent evaluation.
 
 \subsection{Tasks, Bodies, and Shared Control Interface}
-源机器人为 Panda，固定臂目标为 xArm7，并以 UR5e 检验跨自由度迁移。
-目标几何、关节边界、工具与控制能力对全部方法公开；未知控制响应和接触
-参数通过声明的目标交互获得。身体变化与机制变化独立交叉，分别比较同身体
-不同响应、不同身体相近响应，以及身体与响应同时变化。
+The source robot is Panda, the fixed-arm target is xArm7, and UR5e tests transfer
+across degrees of freedom. Target geometry, joint limits, tools, and control capabilities
+are public to all methods. Unknown control responses and contact parameters are learned
+through declared target interaction. Cross body and mechanism changes independently:
+same body/different response, different bodies/similar response, and simultaneous changes.
 
-四项任务使用任务空间技能 $U\in\R^{H\times13}$：
+All four tasks use task-space skills $U\in\R^{H\times13}$:
 \begin{equation}
  U_j=\big[v_j^\top,\ \omega_j^\top,
  (\log k^{\rm trans}_j)^\top,
  (\log k^{\rm rot}_j)^\top,\ F^d_{n,j}\big]^\top.
  \label{eq:experimentalprimitive}
 \end{equation}
-其中 $v,\omega$ 为线速度与角速度，$k$ 为相对参考值的对角刚度，
-$F_n^d$ 为法向力设定值。各身体通过自己的低层控制接口实现这些指令；
-自由空间阶段屏蔽力指令。任务阈值、坐标系、控制周期、碰撞白名单、
-终止规则和初态分布在开发阶段确定，并在正式评估前冻结。
+Here $v,\omega$ are linear/angular velocities, $k$ denotes diagonal stiffness relative
+to reference values, and $F_n^d$ is the normal-force setpoint. Each body executes these
+commands through its own low-level interface; force commands are masked in free space.
+Determine thresholds, frames, control periods, collision allowlists, termination rules,
+and initial-state distributions during development, then freeze them before formal evaluation.
 
 \begin{enumerate}[label=\textbf{Task \arabic*.},leftmargin=2.1em]
-\item \textbf{ObstacleTransfer.} 持带方向性的刚性工件绕过横梁与侧板，
-穿过姿态受限的三维开口，到达指定 $SE(3)$ 位姿。源行为包含上绕与侧绕
-路径；评估几何差异、执行延迟与负载变化对无碰撞完成、制动和跟踪的影响。
-\item \textbf{GuidedContactAlignment.} 沿三维导面建立接触，通过滑移和旋转
-到达定位区域。比较控制响应、摩擦与柔顺性变化，重点检验自由空间跟踪
-相近时，是否仍需调整压靠、速度、刚度和接触序列。
-\item \textbf{KeyedInsertionRecovery.} 从横向与角度偏移启动，将非轴对称
-connector 插入匹配 socket；包含受限搜索、回撤、重对齐和再次推进。
-重点评价整体完成、卡滞后的恢复及瞬时侧向力，而非仅评价平均接触力。
-\item \textbf{MobileKeyedInsertionRecovery.} 保持 Task 3 的工件、夹具、
-力限和恢复语义，改变身体支撑与接触耦合。检验固定臂技能在移动机械臂
-和带臂腿式平台上的受约束实现。
+\item \textbf{ObstacleTransfer.} Carry an orientation-sensitive rigid object around
+beams and side panels, through a pose-constrained 3D opening, to a specified $SE(3)$
+pose. Source behavior includes overpass and side-route paths. Evaluate how geometric
+differences, execution delay, and payload changes affect collision-free completion,
+braking, and tracking.
+\item \textbf{GuidedContactAlignment.} Establish contact with a 3D guide surface and
+slide/rotate into an alignment region. Vary control response, friction, and compliance;
+test whether pressure, speed, stiffness, and contact sequence still need adaptation
+when free-space tracking is similar.
+\item \textbf{KeyedInsertionRecovery.} Start with lateral/angular offsets and insert
+an asymmetric connector into a matching socket, including bounded search, retraction,
+realignment, and reinsertion. Evaluate overall completion, post-jam recovery, and
+instantaneous lateral forces rather than average contact force alone.
+\item \textbf{MobileKeyedInsertionRecovery.} Preserve Task 3's object, fixture, force
+limits, and recovery semantics while changing body-support/contact coupling. Test
+constrained realization of fixed-arm skills on mobile manipulators and legged platforms
+with arms.
 \end{enumerate}
 
 \begin{table}[ht]
 \centering\small
 \begin{tabularx}{\linewidth}{L{2.1cm}YY}
 \toprule
-任务 & 主要任务指标 & 机制与鲁棒性指标\\\midrule
-Task 1 & 无碰撞完成、位姿误差、时间 & 全臂/持件间隙、跟踪误差、饱和\\
-Task 2 & 限力定位、定位误差、时间 & 接触丢失、滑移/停滞、力峰值\\
-Task 3 & 受约束插入、深度、时间 & 卡滞、条件恢复、重试、侧向力峰值\\
-Task 4 & 插入且身体约束满足、总时间 & 支撑失败、滑移、身体偏移、WBC 饱和\\
+Task & Main task metrics & Mechanism/robustness metrics\\\midrule
+Task 1 & Collision-free completion, pose error, time & Arm/object clearance, tracking error, saturation\\
+Task 2 & Force-limited alignment, alignment error, time & Contact loss, slip/stall, force peaks\\
+Task 3 & Constrained insertion, depth, time & Jams, conditional recovery, retries, lateral force peaks\\
+Task 4 & Insertion with body constraints, total time & Support failures, slip, body displacement, WBC saturation\\
 \bottomrule
 \end{tabularx}
-\caption{四任务的比较重点。各任务均保留全部请求的失败与拒绝分母。}
+\caption{Comparison focus for four tasks. All requests, including failures and rejections, remain in the denominators.}
 \end{table}
 
 \subsubsection{Task 4: Same Operation with Mobile Support}
 \label{sec:task4}
-Task 4 复用冻结的 Panda Task 3 prior。先比较固定与移动的同一机械臂，
-再检验带臂腿式身体；真实轮地或足地动力学与平台约束分别定义。
-平面运动代理只能用于接口诊断。跨移动支撑类型的结论需要多个有效支撑
-类型的独立证据；人形平台取决于实际控制接口，不作为预设完成项。
+Task 4 reuses the frozen Panda Task 3 prior. First compare the same arm with fixed
+and mobile support, then test legged bodies with arms. Define actual wheel/ground or
+foot/ground dynamics and platform constraints separately. Planar-motion proxies are
+interface diagnostics only. Claims across mobile-support types require independent
+evidence from multiple valid support types. Humanoid inclusion depends on available
+control interfaces and is not assumed complete.
 
-同一身体上的全部高层方法共享 WBC、站位规则和可行性投影。
-任务条件包含可用的基座姿态/速度、支撑接触、关节余量与控制器历史，
-身体专属状态不直接塞入冻结的 Panda prior。末端响应对应允许为完成任务
-所需的合法身体运动，身体稳定进入目标约束。
-UMI-on-Legs 提供操作策略与全身控制分层的参照\cite{umilegs}；
-改变 WBC 的系统比较与固定 WBC 的高层方法比较分别报告。
+All high-level methods on one body share WBC, stance rules, and feasibility projection.
+Task conditions include available base pose/velocity, support contacts, joint margins,
+and controller history; body-specific state is not inserted directly into the frozen
+Panda prior. End-effector response correspondence permits legal body motion needed
+for task completion, while body stability enters target constraints. UMI-on-Legs
+provides a reference for manipulation-policy/whole-body-control hierarchy\cite{umilegs}.
+Report system comparisons changing WBC separately from high-level comparisons with fixed WBC.
 
 \subsection{Strong Baselines and Data Permissions}
-\textbf{受控校准协议 A。} 全部方法获得相同源数据、公开任务目标、
-已知身体模型、可用传感与低层控制接口。目标仅提供预算内短探针；不提供
-完整任务成功演示或目标在线 RL。校准后的模拟训练只能使用由公开模型和
-预算内记录构建的模型。隐藏目标环境仅提供计费探针及封存评估，
-实际机制参数不向训练开放。
+\textbf{Controlled calibration protocol A.} All methods receive identical source data,
+public task goals, known body models, available sensing, and low-level interfaces.
+The target provides only budgeted short probes, without complete successful task
+demonstrations or target online RL. Post-calibration simulated training uses only models
+built from public models and budgeted records. The hidden target environment supplies
+charged probes and sealed evaluation; its actual mechanism parameters are unavailable
+for training.
 
-\textbf{四任务主表。} 预定的方法名册为九行：本文方法、同容量 matched
-task-only、FADA task-adapted、DIAL-MPC task-adapted、ordinary response MPC、
-public geometry/feedback、public source prior、AdaptSim task-adapted 和
-ASID task-adapted。每行在四个任务保留位置；只有具备可核验任务 actor、
-训练/目标访问账本及统一合同下的物理执行证据时才填入任务指标。
-缺少资产、未完成适配或部署前不合格的格子明确记为未执行，不能将其记作
-零成功来支撑优越性结论。同容量 task-only 同时进入主表与机制消融；
-它检验 transport 的增量，不替代成熟外部方法比较。这一名册兼有近期完整
-方法、辨识/仿真适配方法及强公共控制\cite{fada,dialmpc,adaptsim,asid}。
+\textbf{Four-task main table.} The planned roster has nine rows: ours, same-capacity
+matched task-only, task-adapted FADA, task-adapted DIAL-MPC, ordinary response MPC,
+public geometry/feedback, public source prior, task-adapted AdaptSim, and task-adapted
+ASID. Each row retains a position in all four tasks. Fill metrics only with a verifiable
+task actor, training/target-access ledger, and physical execution under the common
+contract. Missing assets, unfinished adaptations, or predeployment disqualification
+are explicitly unexecuted, not zero success used to support superiority. Same-capacity
+task-only appears in both the main table and mechanism ablations; it tests transport's
+increment and does not replace established external comparisons. The roster combines
+recent complete methods, identification/simulation adaptation, and strong public
+control\cite{fada,dialmpc,adaptsim,asid}.
 
 \begingroup\small
 \begin{longtable}{L{3.2cm}L{2.2cm}L{2.7cm}L{4.5cm}}
 \toprule
-主表行 & 权限 & 身份 & 可解释的比较范围\\\midrule\endfirsthead
-\toprule 主表行 & 权限 & 身份 & 可解释的比较范围\\\midrule\endhead
-Ours & B-log & selective transport system & 与外部方法比较任务与资源表现；response/gate 的作用由对齐消融识别。\\
-Matched task-only & B-log & 同容量、同公共执行器 & 与 Ours 配对识别 source anchoring 增量；任务性能也进入主表。\\
-FADA & B-log & Planner/IDM task adaptation & 保留公开 planner/IDM 核心；标为任务适配，不冒充原人形定量复现\cite{fada}。\\
-DIAL-\newline MPC & B-log\newline model & annealed diffusion\newline online MPC & 保留在线 candidate rollout 与 receding horizon；模型调用与 deadline miss 进入资源列\cite{dialmpc}。\\
-Ordinary response MPC & B-log\newline model & online Adam shooting & 与 DIAL-MPC 使用同一公共 response model 和 decoder/WBC。\\
-Public geometry & no-target-learning & 固定几何/反馈 & 检验任务是否已可由强公共反馈解决。\\
-Public source prior & no-target-learning & 冻结 source skill & 检验不做目标适配时的直接迁移与部署前拒绝。\\
-AdaptSim & B-online & 粒子适配与任务策略搜索 & 保留目标交互及模拟候选账本；任务适配 CEM 不冒充原生策略训练器\cite{adaptsim}。\\
-ASID & B-log & Fisher 探索、辨识及重训 & 报告主动探索与参数估计链；任务适配搜索不冒充作者特定任务 SAC\cite{asid}。\\
+Main-table row & Access & Identity & Interpretable comparison scope\\\midrule\endfirsthead
+\toprule Main-table row & Access & Identity & Interpretable comparison scope\\\midrule\endhead
+Ours & B-log & selective transport system & Compare task/resource performance with external methods; identify response/gate effects through aligned ablations.\\
+Matched task-only & B-log & Same capacity and public executor & Paired with Ours to identify source-anchoring gains; task performance also enters the main table.\\
+FADA & B-log & Planner/IDM task adaptation & Retain public planner/IDM core; label task adaptation, not quantitative reproduction of the native humanoid system\cite{fada}.\\
+DIAL-\newline MPC & B-log\newline model & annealed diffusion\newline online MPC & Retain online candidate rollouts and receding horizon; count model calls and deadline misses as resources\cite{dialmpc}.\\
+Ordinary response MPC & B-log\newline model & online Adam shooting & Share the public response model and decoder/WBC with DIAL-MPC.\\
+Public geometry & no-target-learning & Fixed geometry/feedback & Test whether strong public feedback already solves the task.\\
+Public source prior & no-target-learning & Frozen source skill & Test direct transfer and predeployment rejection without target adaptation.\\
+AdaptSim & B-online & Particle adaptation and task-policy search & Retain target-interaction/simulated-candidate ledgers; task-adapted CEM is not the native policy trainer\cite{adaptsim}.\\
+ASID & B-log & Fisher exploration, identification, retraining & Report active exploration/parameter estimation; task-adapted search is not the author's task-specific SAC\cite{asid}.\\
 \bottomrule
 \end{longtable}
 \endgroup
 
-ACP 与 Human2Sim2Robot 的不完整任务适配保留在表外诊断，不把它们的
-未执行请求记成零分\cite{acp,human2sim}。
-Play2Perfect、ASAP、SPI-Active 与 XMoP 保留为相关或后续扩展路线，
-不以不完整代理占据主表位置\cite{play2perfect,asap,spi,xmop}。
-原生复现、完整系统比较与共同接口改编不能互相替代；每个 task-adapted 行
-均报告 source、known-nominal 与目标三段漏斗。
+Incomplete task adaptations of ACP and Human2Sim2Robot remain outside-table diagnostics;
+unexecuted requests are not zero-scored\cite{acp,human2sim}. Play2Perfect, ASAP,
+SPI-Active, and XMoP remain related/future routes rather than incomplete main-table
+proxies\cite{play2perfect,asap,spi,xmop}. Native reproduction, complete-system comparison,
+and common-interface adaptation are distinct; report source, known-nominal, and target
+funnels for every task-adapted row.
 
-\textbf{有效实现与部署前拒绝。} 方法应具有正确动作/数据接口、忠实的核心
-训练机制及合理训练和调参机会，质量检查不要求所有名义请求都成功。
-没有训练出的 policy 或未完成的适配标为未完成，不能用合成零分支持胜过该
-方法。已经形成可评估算法的部署拒绝计入全部请求分母，未完成请求的 capped
-time 取一；拒绝率与物理执行数单列。实际物理 violation 只由已执行轨迹判定，
-未执行请求不自动视为物理超限。真实低成功率与失败均保留并解释。
+\textbf{Valid implementations and predeployment rejection.} Methods require correct
+action/data interfaces, faithful core training mechanisms, and reasonable training/tuning
+opportunities. Quality checks do not require success on every nominal request. Missing
+trained policies or unfinished adaptations are incomplete, not synthetic zeros supporting
+superiority. Deployment rejections by evaluable algorithms remain in the full request
+denominator, with capped time one for unfinished requests. Report rejection rates and
+physical execution counts separately. Physical violations come only from executed
+trajectories; unexecuted requests do not automatically violate physical limits. Retain
+and explain actual low success and failures.
 
-DR/recurrent PPO、经典 Residual RL、通用校准 MPC 和 Mirage
-保留为基础参照\cite{dr,ppo,rppo,residualrl,mjpc,mirage}。
-FORGE 是 RA-L 2025 接触参照，不列作已核验的近期顶会主会方法\cite{forge}。
-同容量 task-only、deterministic transport、reweighting-only 和去响应/模式/
-风险项属于内部消融。强对照可使用连续动作、技能 chunk、历史条件与合理
-网络容量，不限制在有限映射候选库。
+DR/recurrent PPO, classical Residual RL, generic calibrated MPC, and Mirage remain
+foundational references\cite{dr,ppo,rppo,residualrl,mjpc,mirage}. FORGE is a RA-L 2025
+contact reference, not a verified recent main-conference method\cite{forge}.
+Same-capacity task-only, deterministic transport, reweighting-only, and removal of
+response/mode/risk terms are internal ablations. Strong controls may use continuous
+actions, skill chunks, history conditioning, and reasonable network capacity; they
+are not restricted to a finite mapping-candidate library.
 
-\textbf{共同权限的完整适应比较。} B-log 向本文方法和 FADA/ASAP 等对照
-开放相同总时长、可测信息、reset 与执行约束下的完整自采 action/observation
-轨迹，不含目标 reward 或专家示范，各方法自行选择采集策略。
-另做共享同一记录缓冲的控制实验，区分采集与适应收益。
-ASAP 所需状态对齐与额外测量权限单列；同组方法获得相同可用信息。
-不使用 reward 不会使完整目标轨迹自动变成 A 短探针。
-B-online 允许计费的目标任务交互与 reward；
-C-supervised 比较向本文扩展版本提供相同可用示范并标明监督；信息不同的
-原生系统另报性能--成本前沿，不作同预算排名。外部预训练单列。
-完整系统允许在资源已声明的前提下比较表现，不能仅因权限标签字符串不同
-就否定比较。是否同信息量取决于实际数据与模型来源；在共同模型上进行在线
-优化主要改变计算量，应通过在线延迟、模型调用及 deadline miss 描述。
-D-oracle 仅作
-具有目标真参数的封存诊断。需要大量随机目标数据的 latent alignment、
-目标演示训练的 diffusion/latent-action policy，以及目标在线 residual RL
-分别报告数据曲线\cite{lsa,lad}。充分目标训练的策略与真值规划器不并入
-少量校准主表，也不被解释为已证明的性能上界。
+\textbf{Complete adaptation under common permissions.} B-log gives ours and controls
+such as FADA/ASAP complete self-collected action/observation trajectories under identical
+total duration, measurable information, resets, and execution constraints, without
+target rewards or expert demonstrations. Each method chooses its collection strategy.
+An additional shared-record-buffer control separates collection from adaptation gains.
+List ASAP's state alignment and additional measurement permissions separately; methods
+within a group receive the same available information. Omitting rewards does not turn
+complete target trajectories into protocol A short probes. B-online permits charged
+target-task interaction and reward. C-supervised supplies our extended version with
+the same available demonstrations and labels supervision. Native systems with different
+information report performance--cost frontiers separately rather than equal-budget
+rankings. External pretraining is listed separately. Full systems may compare performance
+with declared resources; differing permission-label strings alone do not invalidate
+comparison. Information equivalence depends on actual data/model provenance. Online
+optimization on a common model mainly changes computation, measured by online latency,
+model calls, and deadline misses. D-oracle is sealed diagnosis with true target parameters.
+Report separate data curves for latent alignment using large random target datasets,
+diffusion/latent-action policies trained on target demonstrations, and target online
+residual RL\cite{lsa,lad}. Extensively target-trained policies and ground-truth planners
+are excluded from the small-calibration main table and are not proven performance bounds.
 
-\textbf{接口与训练公平性。} 受控比较共享传感、可用历史、公开任务 reward、
-控制周期、命令边界和安全判据。需要特权 critic 的方法只能读取其训练模型的
-状态，隐藏目标参数不得进入训练。原生实现的复现检查与统一任务接口的改编
-结果分别记录，不能把本项目同名策略直接视为原论文复现。
+\textbf{Interface and training fairness.} Controlled comparisons share sensing,
+available history, public task reward, control period, command bounds, and safety
+criteria. Privileged critics may access only their training model's state, never hidden
+target parameters. Record native reproduction checks separately from common-task-interface
+adaptations; an identically named repository policy is not automatically a paper reproduction.
 
 \subsection{Budget, Generalization, and Statistical Evaluation}
-目标访问按秒数、transitions、reset 和数据类型报告。
-短探针子协议可采用 $B\in\{0,5,10,30\}$，每次时长与 fit/validation
-分配在正式测试前冻结。需要约两分钟动作/观测记录的 FADA 等方法，
-另包含原生时长的数据点\cite{fada}，不能用不合适的极短缓冲代表完整性能。
-目标轨迹即使不含 reward，也须声明是否为完整任务执行；原生示范另列。
-接口调整、验证与失败尝试全部计费，主动方法受相同总访问预算限制。
+Report target access in seconds, transitions, resets, and data types. A short-probe
+subprotocol may use $B\in\{0,5,10,30\}$; freeze duration and fit/validation allocation
+before formal testing. Methods such as FADA requiring roughly two minutes of action/
+observation logs also receive a native-duration point\cite{fada}; an unsuitable tiny
+buffer cannot represent full performance. Declare whether target trajectories are
+complete task executions even without rewards; list native demonstrations separately.
+Charge interface adjustments, validation, and failed attempts. Active methods share
+the same total target-access budget.
 
-训练模拟 transitions、离线更新、调参次数、GPU 时间和部署在线模型调用
-另列。比较同模拟量的学习曲线与固定时延下的表现；不同优化器的更新次数
-不直接视为相同计算量。MPC 超时须按预先固定的执行规则记入结果。
+List simulated training transitions, offline updates, tuning attempts, GPU time,
+and deployment-time model calls separately. Compare learning curves at matched simulated
+data and performance at fixed latency. Update counts across optimizers are not equal
+compute. Account for MPC overruns using a prespecified execution rule.
 
-测试分别留出初态、机制组合与身体。UR5e 的两项协议分开：
-冻结 transport 仅拟合 context；以及允许在校准模型内继续更新策略的
-few-shot adaptation。已知目标形态上的训练不等于未见身体的冻结泛化。
-仿真任务结果与实机结果单列；平台与传感接口未确定时不预设实机结论。
+Hold out initial states, mechanism combinations, and bodies separately. Distinguish
+UR5e protocols: frozen transport with context fitting only, versus few-shot adaptation
+allowing policy updates in the calibrated model. Training on known target morphology
+is not frozen generalization to unseen bodies. Report simulation and hardware separately;
+do not presuppose hardware conclusions before platforms/sensing interfaces are defined.
 
-正式评估冻结为八个独立训练/校准实例、两个目标机制组和配对请求。
-Task 1--3 每实例为 $10$ 个不同物理初态 $\times2$ 个请求模式
-$\times2$ 个机制组，共 $40$ 个请求；Task 4 再交叉两个 body/support cells，
-共 $80$ 个请求。确定性公共控制只保留一个方法身份，在同一 request package
-上执行，不伪造八个训练重复。所有方法共享相同 task/mechanism/body/initial/mode
-键，失败不替换。完整 post-reset 物理与控制器状态 hash 才定义物理初态；
-episode 标签或相同 deterministic reset 上的 policy seed 不构成新初态。
+Formal evaluation freezes eight independent training/calibration instances, two target
+mechanism groups, and paired requests. Tasks 1--3 use $10$ distinct physical initial
+states $\times2$ requested modes $\times2$ mechanism groups: $40$ requests/instance.
+Task 4 additionally crosses two body/support cells: $80$ requests. Deterministic public
+controllers retain one method identity and execute the same request package, without
+fabricated eight-fold training replication. All methods share task/mechanism/body/initial/
+mode keys; failures are not replaced. Complete post-reset physics/controller-state
+hashes define physical initial conditions. Episode labels or policy seeds on identical
+deterministic resets do not create new initial states.
 
-八实例由开发数据上的预声明配对 discordance power simulation 冻结。
-中等 discordance 场景达到目标 power；高训练异质性仍可能不足，作为限制报告，
-不能在查看最终结果后追加实例。推断以训练/校准实例为最高随机层，再对
-mechanism/body/initial request block 做 $10{,}000$ 次层级配对 bootstrap。
-每个研究问题预声明一个主对比，RQ family 内使用 Holm 修正；报告效应量、
-区间和原始分子/分母，不给出无权跨任务总排名。全部支持失败、验证拒绝、
-超力、超时和身体失败进入整体分母。
+The eight-instance count is frozen through prespecified paired-discordance power
+simulation on development data. Moderate discordance reaches target power; high training
+heterogeneity may remain underpowered and is reported as a limitation, without adding
+instances after final-result inspection. Inference uses training/calibration instance
+as the highest random level, followed by mechanism/body/initial request blocks in
+$10{,}000$ hierarchical paired bootstrap samples. Prespecify one primary contrast per
+RQ and apply Holm correction within each RQ family. Report effects, intervals, and
+raw numerators/denominators, without an unjustified overall cross-task ranking. All
+support failures, validation rejections, overforce, timeouts, and body failures enter
+the overall denominator.
 
 \subsection{Aligned Six-Cell Ablation}
-六格消融与主方法使用相同 warm checkpoint、数据流、优化器、更新数、
-sample stream、checkpoint 规则、held-out 模型代理和 task-only $+0.05$
-fallback。所有 learned cell 都通过相同公共 decoder、completion 与 feasibility
-projection 执行：
+The six cells share the main method's warm checkpoint, data flow, optimizer, update
+count, sample stream, checkpoint rules, held-out model proxy, and task-only $+0.05$
+fallback. All learned cells execute through the same public decoder, completion,
+and feasibility projection:
 \begin{center}
 \begin{tabular}{lll}
 \toprule
-单元 & 目标 & 识别作用\\\midrule
-frozen-warm & 不继续训练 & continued training 控制\\
-task-only & $C$ & task-first 基准\\
-matching-no-band & $C+R$ & response matching 主效应\\
-band-only & $C+H$ & additive task band 主效应\\
-ungated-full & $C+H+R$ & 无 gate 的 $2\times2$ 完整角\\
-gated-full & $C+H+GR$ & selective gate\\
+Cell & Objective & Identified effect\\\midrule
+frozen-warm & No further training & Continued-training control\\
+task-only & $C$ & Task-first reference\\
+matching-no-band & $C+R$ & Response-matching main effect\\
+band-only & $C+H$ & Additive task-band main effect\\
+ungated-full & $C+H+R$ & Complete ungated $2\times2$ corner\\
+gated-full & $C+H+GR$ & Selective gate\\
 \bottomrule
 \end{tabular}
 \end{center}
-$C,C+R,C+H,C+H+R$ 是严格的无 gate $2\times2$；只用
-gated-full$-$ungated-full 识别 gate。六格都参加四任务记账；若整个任务族在
-冻结资格门失败，则六格均按部署前拒绝进入分母，不训练或查看目标结果。
-历史上用 hinge $H$ 替换 $C$ 的五格工件与当前方法身份不一致，不进入推断。
-公共执行器的 on/off 另构成 matched task-only/anchoring $\times$ executor
-off/on 的 $2\times2$ 归因实验；它不替代六格目标消融。主方法的 transport
-增量只由 executor-on 的 anchoring 与 task-only 配对差识别，公共投影带来的
-改善单独记入 executor 增量。两分支必须从相同 warm start 训练；不同
-continuation 或不同 checkpoint 不能进入该因果比较。
+$C,C+R,C+H,C+H+R$ form the strict ungated $2\times2$; identify gating only through
+gated-full$-$ungated-full. All six cells enter four-task accounting. If an entire
+family fails frozen qualification, all six enter the denominator as predeployment
+rejections, without training or target-result inspection. Historical five-cell artifacts
+that replaced $C$ with hinge $H$ have a different method identity and are excluded
+from inference. Public-executor on/off yields a separate matched task-only/anchoring
+$\times$ executor off/on $2\times2$ attribution study; it does not replace objective
+ablations. Identify the main method's transport increment only through executor-on
+anchoring versus task-only paired differences. Attribute public-projection improvements
+to the executor separately. Both branches must train from the same warm start;
+different continuation or checkpoints cannot enter this causal comparison.
 
 \subsection{Performance Evidence and Contribution Tests}
-四任务主表统一报告受约束成功率、物理约束违规率、失败记为一的截断归一化
-完成时间，以及机制组中最低的受约束成功率；T1--T3 等权宏平均，T4 单列
-为形态扩展。成功率饱和时仍比较完成时间与风险，不能只挑双方成功的 episode
-报告速度。目标交互、训练计算与在线时延另列，权限不同的方法不据此作
-同信息量因果排名。dense reward 用于训练；统一的任务
-成功判据用于评估，累计 reward 不能跨任务代替成功与安全表现。
+The four-task main table reports constrained success, physical-constraint violation,
+capped normalized completion time with failures set to one, and worst-mechanism-group
+constrained success. T1--T3 receive equal-weight macro-averaging; T4 is a separate
+morphology extension. At saturated success, still compare completion time/risk;
+do not report speed only on mutually successful episodes. List target interaction,
+training compute, and online latency separately. Different permissions do not support
+same-information causal ranking. Dense reward trains policies; common task-success
+criteria evaluate them. Cumulative rewards cannot replace cross-task success/safety.
 
 \begin{enumerate}
-\item \textbf{交互效率。} 在同等目标访问权限下，比较成功率--预算曲线，
-以及达到预声明成功水平所需的目标交互量。
-\item \textbf{接触与恢复。} 在相同约束下比较接触定位、卡滞后的整体恢复、
-力峰值与失效概率，并检验未见机制组合。
-\item \textbf{任务--行为权衡。} 首先控制任务成本，再比较有任务意义的模式
-覆盖、响应和条件对应。无模式请求时允许 baseline 选择更可靠的模式；
-有明确模式请求时，向全部方法提供相同条件，并分别评价按请求完成和自主完成。
-\item \textbf{摊销执行。} 在与校准模型 MPC 相当的任务表现下，检验 transport
-是否降低端到端在线时延；WBC、状态处理与模型计算均计入。
+\item \textbf{Interaction efficiency.} Under equal target-access permissions, compare
+success--budget curves and target interaction needed to reach a prespecified success level.
+\item \textbf{Contact and recovery.} Under common constraints, compare contact alignment,
+overall post-jam recovery, force peaks, and failure probabilities, including unseen
+mechanism combinations.
+\item \textbf{Task--behavior tradeoff.} First control task cost, then compare meaningful
+mode coverage, responses, and conditional correspondence. Without mode requests, let
+baselines choose more reliable modes. With explicit requests, provide identical
+conditioning and evaluate requested-mode and autonomous completion separately.
+\item \textbf{Amortized execution.} At task performance comparable to calibrated-model
+MPC, test whether transport reduces end-to-end online latency, including WBC,
+state processing, and model computation.
 \end{enumerate}
-源--目标响应距离下降、额外噪声或更大模型本身不构成性能贡献。
-方法是否成立取决于上述比较，不能预设所有任务或指标均优于现有方法。
-完整系统的主比较在新测试前确定任务集合、效应量与比较家族，以 T1--T3
-等权任务指标及逐任务结果评价总体权衡；T4 单列形态扩展表现。部分任务
-持平或小幅退步不自动否定其他任务上的收益，但风险、失败及不确定性均须
-完整报告。task-only 消融用于解释响应项在特定条件下的作用，不要求逐请求
-支配或四任务全胜。公共执行器、continued training 与 checkpoint 选择带来的
-收益可以属于完整系统表现，但只有匹配这些因素的消融才能把差异单独归因
-于 source response 或 gate。条件性收益的适用范围须与评估条件一致。
+Reduced source--target response distance, added noise, or larger models alone do not
+constitute performance contributions. Validity depends on these comparisons; superiority
+on every task/metric cannot be presumed. Before new tests, fix the task set, effects,
+and comparison families for full-system comparisons. Evaluate overall tradeoffs using
+equal-weight T1--T3 metrics and per-task results, with T4 separately reporting morphology.
+Ties or small regressions on some tasks do not automatically negate gains elsewhere,
+but risks, failures, and uncertainty must be fully reported. Task-only ablation explains
+response terms in specific conditions; it need not show per-request dominance or wins
+on all four tasks. Public execution, continued training, and checkpoint selection may
+improve the complete system, but only ablations matching those factors attribute
+differences specifically to source response or gating. Conditional benefits must be
+claimed only within the evaluated conditions.

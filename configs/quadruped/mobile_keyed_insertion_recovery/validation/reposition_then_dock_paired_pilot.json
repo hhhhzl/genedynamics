@@ -1,0 +1,23 @@
+{
+  "version": "semantic-task-paired-development-pilot-v1",
+  "status": "frozen_unexecuted",
+  "task": "reposition_then_dock",
+  "methods": ["cross_ebdm", "task_only", "adaptsim", "asid", "dial_transfer"],
+  "method_configs": {
+    "cross_ebdm": {"path": "configs/quadruped/mobile_keyed_insertion_recovery/main/cross_ebdm.yaml", "sha256": "343620e2b6010257f11fe1871884ab0820d65b74dfee8467412039ca113bc3cf"},
+    "task_only": {"path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/task_only.yaml", "sha256": "b082a5d1127bb1b94614ca04b4a78d4431d8a902a77dcfc6d13d3aae40e57d72"},
+    "adaptsim": {"path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/adaptsim.yaml", "sha256": "0bde6cc1de06f979a28a99aa0f41c42bc302f5c440299e475f67273787d52921"},
+    "asid": {"path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/asid.yaml", "sha256": "571bfee5deb8eb504f1b885ff628a36f5a6e8f2e2ca741ff554e4a0a041d02a0"},
+    "dial_transfer": {"path": "configs/quadruped/mobile_keyed_insertion_recovery/baseline/dial.yaml", "sha256": "558ce5e5239a43b7bd047147e50c65eab6b72353160d248d47bb3d34f5a77f47"}
+  },
+  "contract": {"path": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/subtasks/reposition_then_dock_v1.json", "sha256": "c58b22df36e199c7f1d86fc692e0eecb002e8daca2a656a829b2db6a5ce01936"},
+  "source_qualification": {"path": "results/quadruped/mobile_keyed_insertion_recovery/validation/reposition_then_dock/report.json", "sha256": "017ae1037c2cba71856a3bb59e07031b24e8599cea460028be167911a91158bb"},
+  "native_library": {"path": ".runtime/cross_ebdm/native/libcross_ebdm.so", "sha256": "40f532dda955a39e99455ecff0d362f310ab31c33cde1d546c6c78f0f43f1a09"},
+  "requests": [
+    {"seed": 944000, "mode": 0, "initial": "jammed", "mechanism_group": "nominal_support", "mechanism": {"servo_gain": 1.0, "delay_steps": 0, "payload_mass": 0.5, "contact_friction": 0.4, "contact_time_constant": 0.02}, "body_support_parameters": {"body_servo_gain": 1.0}},
+    {"seed": 944001, "mode": 1, "initial": "jammed", "mechanism_group": "nominal_support", "mechanism": {"servo_gain": 1.0, "delay_steps": 0, "payload_mass": 0.5, "contact_friction": 0.4, "contact_time_constant": 0.02}, "body_support_parameters": {"body_servo_gain": 1.0}}
+  ],
+  "execution": {"cuda_visible_devices": "0", "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a", "actor_device": "cuda", "physics_device": "cpu", "maximum_wall_seconds": 1800},
+  "output": "results/quadruped/mobile_keyed_insertion_recovery/validation/reposition_then_dock_paired_pilot",
+  "policy": {"formal_performance_evidence": false, "failure_replacement": false, "all_failures_retained": true, "confirmation_states_opened": 0, "task_adaptation_is_reported": true}
+}

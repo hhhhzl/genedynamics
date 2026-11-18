@@ -129,7 +129,8 @@ class MujocoExecutionBackend:
         joint_limit, finite = False, input_finite
         tau = np.zeros(model.nu)
         aperture_events = None
-        if task.scene_profile == "aperture_brake_v1":
+        if task.scene_profile in {
+                "aperture_brake_v1", "sequential_aperture_reorientation_v1"}:
             aperture_events = {
                 "tcp_position_substeps": np.zeros((task.substeps, 3), dtype=np.float64),
                 "tcp_rotation_substeps": np.zeros((task.substeps, 3, 3), dtype=np.float64),
@@ -159,6 +160,8 @@ class MujocoExecutionBackend:
                     frame_names = (
                         "aperture_left", "aperture_right",
                         "aperture_top", "aperture_bottom",
+                        "aperture2_left", "aperture2_right",
+                        "aperture2_top", "aperture2_bottom",
                     )
                     for contact in data.contact:
                         names = {
@@ -206,7 +209,8 @@ class MujocoExecutionBackend:
             states.append(current)
             traces.append(StepTrace(*(np.stack([t[i] for t in trace]) for i in range(len(StepTrace._fields)))))
             event_rows.append(world_events)
-        if self.task.scene_profile == "aperture_brake_v1":
+        if self.task.scene_profile in {
+                "aperture_brake_v1", "sequential_aperture_reorientation_v1"}:
             names = tuple(event_rows[0][0])
             self.last_event_trace = {
                 name: np.stack([

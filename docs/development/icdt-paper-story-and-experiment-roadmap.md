@@ -1,180 +1,259 @@
-# ICDT 论文叙事与实验完成路线
+# ICDT Paper Narrative and Experiment Completion Roadmap
 
-更新：2026-11-05（America/New_York）  
-目标：RSS 2027  
-论文入口：[`latex/latex_icdt`](../../latex/latex_icdt/)  
-结构参考：[`latex/latex_mga`](../../latex/latex_mga/)  
+Migration handoff supplement (2026-11-18): see the
+[device migration and research handoff](icdt-device-migration-handoff.md) for migration,
+result validity, the latest nine-implemented/three-pending subtask state, and execution
+order. This document retains research design and development history. “Formal release”
+does not mean new formal results have been executed or independent mechanism benefits
+validated. When leaving old artifacts behind, follow the reconstruction order in the
+[cold-start handoff](icdt-cold-start/README.md). Historical summaries preserve research
+knowledge; they are not completed formal experiments on the new device.
 
-本文档记录本轮对话形成的论文逻辑、当前证据边界和后续实施顺序。论文正文只
-保留方法、理论、实验协议和可引用结果；诊断过程、阶段状态、无效运行、代码迁移
-和待办事项留在开发文档。已有冻结结果按其原协议保留，不因叙事更新而重命名或
-重判。
+Updated: 2026-11-05 (America/New_York)
 
-## 1. 本轮确定的研究中心
+Target: RSS 2027
 
-论文不再围绕“把 source action 直接搬到 target”展开，而围绕以下问题：
+Manuscript: [`latex/latex_icdt`](../../latex/latex_icdt/)
 
-> 源技能包含有用的接近、接触、模式选择和恢复结构；不同身体和控制器会改变
-> 这些指令的实际响应。有限目标交互下，如何识别仍有用的源响应，将其变成目标
-> 身体可执行的行为，并在源结构与目标任务冲突时有条件地偏离？
+Structural reference: [`latex/latex_mga`](../../latex/latex_mga/)
 
-这个中心把已有工作分成三条互补路线：
 
-- Human2Sim2Robot、Play2Perfect、TactAlign、KITE 等说明物体运动、交互意图、
-  触觉和精密操作先验可以跨 embodiment 提供结构。
-- ASID、AdaptSim、FADA 等说明部署差异需要目标侧辨识、仿真适应或执行模块
-  适应。
-- DIAL-MPC 和普通 response MPC 说明可以在线利用模型重新优化，但会引入额外
-  在线计算。
+This document records the paper logic, current evidence boundaries, and implementation
+order established in this discussion. The manuscript contains only methods, theory,
+experimental protocols, and citable results. Diagnostics, phase states, invalid runs,
+code migration, and outstanding work belong in development documents. Preserve existing
+frozen results under their original protocols; narrative revisions do not rename or
+reclassify them.
 
-ICDT 的位置不是否定这些路线，而是连接“源行为结构”和“目标执行响应”：目标
-干预用于校准响应，source-conditioned map 产生目标指令，选择性响应约束决定何时
-保留源行为。任务目标始终存在，源对应关系不能定义任务成功。
+Decision in this revision: each of four task families has three **core** subtasks,
+for twelve total. The four formerly optional extensions enter the formal experimental
+design. This revision updates only the manuscript and development plan; the four new
+items are not yet registered or implemented and cannot be described as qualified or
+measured. Within each family, complexity progresses from basic events to compound
+events and then new contact topology/disturbance recovery. Mechanism parameter changes
+remain conditions within a subtask. This document also corrects the prior claim that
+phase-gain selection validated ICDT mechanisms. Formal performance experiments are
+not yet released.
 
-## 2. Introduction 的六段逻辑
+## 1. Research Focus Established in This Revision
 
-1. **技能复用需求。** 已有技能包含路径之外的交互结构；重新收集完整目标演示
-   和完整目标训练成本高。
-2. **近期方向已经解决的部分。** 共享意图、物体运动先验、目标辨识、任务驱动
-   适应和在线规划都已显示价值。
-3. **剩余缺口。** 共享坐标不说明 target 能安全实现 source response；模型更准
-   也不自动决定是否保留某个恢复模式；纯 task optimization 在有限数据下又可能
-   丢失有用结构。
-4. **贯穿全文的例子。** 插入时相同横向修正可能在 source 解卡、在 target 产生
-   力峰值。正确迁移可能需要改幅值、速度、时序，甚至放弃该模式。
-5. **方法。** 有限干预校准 task-relevant response；bounded residual transport
-   改变实际请求；task band、历史兼容、模型支持和执行阶段共同控制 source
-   anchoring。
-6. **贡献与证据。** 每项贡献对应一个 RQ、一组主表比较和最多三项主要消融。
-   不要求方法在每个 cell 都获胜；要求预先指定的现象可重复、可归因，并完整
-   保留反例。
+The paper now centers on this question rather than directly copying source actions
+to the target:
 
-## 3. 三项贡献及其成立条件
+> Source skills contain useful approach, contact, mode-selection, and recovery
+> structure. Different bodies and controllers change the actual responses to those
+> commands. With limited target interaction, how can we identify useful source
+> responses, turn them into executable target behavior, and conditionally deviate
+> when source structure conflicts with the target task?
 
-### C1：通过执行机制定义的行为迁移
+This focus groups related work into three complementary directions:
 
-**主张。** Cross-embodiment transfer 应区分 source command prior、target skill
-map、target execution kernel 和最终行为分布。内部 command 或 embedding 更接近
-并不等于任务事件被保留。
+- Human2Sim2Robot, Play2Perfect, TactAlign, and KITE show how object motion, interaction
+  intent, touch, and precision-manipulation priors can supply cross-embodiment structure.
+- ASID, AdaptSim, and FADA show that deployment differences require target identification,
+  simulation adaptation, or execution-module adaptation.
+- DIAL-MPC and ordinary response MPC use models for online reoptimization, with additional
+  online computation.
 
-**需要的证据。**
+ICDT connects source behavior structure to target execution response: target
+interventions calibrate responses, a source-conditioned map produces target commands,
+and selective response constraints determine when to preserve source behavior.
+The task objective always remains active; source correspondence cannot define task success.
 
-- transport 必须改变经过 decoder、bounds、recovery 和 selector 后的实际请求；
-- 同一语义任务在不同身体上产生正确的事件顺序，而不只到达终点；
-- source mode 在 target 可行时可被实现，不可行时的偏离单独报告；
-- Panda→xArm7、Panda→UR5e 和固定臂→Go2+Z1 中至少形成两类不同形态证据。
+## 2. Six-Paragraph Introduction Logic
 
-### C2：干预校准的选择性响应约束
+1. **Need for skill reuse.** Existing skills contain interaction structure beyond paths;
+   collecting complete target demonstrations and retraining fully on target is expensive.
+2. **What recent directions already solve.** Shared intent, object-motion priors, target
+   identification, task-driven adaptation, and online planning have demonstrated value.
+3. **Remaining gap.** Shared coordinates do not establish that the target can safely realize
+   a source response. A more accurate model does not automatically decide whether to retain
+   a recovery mode; pure task optimization may discard useful structure with limited data.
+4. **Running example.** The same lateral correction can release a source insertion jam
+   but create a target force peak. Correct transfer may require different amplitude,
+   speed, timing, or even abandoning that mode.
+5. **Method.** Limited interventions calibrate task-relevant responses; bounded residual
+   transport changes actual requests. Task bands, history compatibility, model support,
+   and execution phase jointly control source anchoring.
+6. **Contributions and evidence.** Each contribution maps to an RQ, a set of main-table
+   comparisons, and at most three principal ablations. Winning every cell is unnecessary;
+   prespecified phenomena must be reproducible, attributable, and accompanied by counterexamples.
 
-**主张。** 有限目标交互提供 task-relevant execution information；source response
-只在任务兼容、历史匹配、模型有支持且执行阶段相关时形成额外偏好。
+## 3. Three Contributions and Their Conditions
 
-**需要的证据。**
+### C1: Behavior Transfer Defined Through Execution Mechanisms
 
-- 相同总目标访问预算下，full 与无校准对照在预声明条件上比较；
-- full 与“保留 task band、去 response”的对照隔离 source response 的增量；
-- full 与 ungated response 对照展示 selective anchoring 在 source-compatible 与
-  source-incompatible 条件中的不同作用；
-- 改善必须出现在受约束任务成功或预声明任务事件上，不能只依赖 response MSE。
+**Claim.** Cross-embodiment transfer must distinguish the source command prior, target
+skill map, target execution kernel, and final behavior distribution. Closer internal
+commands or embeddings do not establish preservation of task events.
 
-### C3：条件性事件分析与递增复杂度验证
+**Required evidence.**
 
-**主张。** 任务事件能否迁移取决于 source margin、calibration error、anchoring
-error 和 unsupported mass。这个条件性结论应在从受限几何到身体支撑耦合的复杂度
-阶梯中验证。
+- Transport must change actual requests after decoder, bounds, recovery, and selector.
+- The same semantic task must yield correct event order across bodies, not just endpoints.
+- Realize source modes where feasible on target; report deviations under infeasibility separately.
+- Establish at least two distinct morphology cases among Panda→xArm7, Panda→UR5e,
+  and fixed arm→Go2+Z1.
 
-**需要的证据。**
+### C2: Intervention-Calibrated Selective Response Anchoring
 
-- 八个语义子任务覆盖几何时序、持续接触、混合恢复、动态环境和身体稳定；
-- 九行 general table 使用共同的四个指标；
-- 事件图解释成功或失败发生在哪个 contact phase；
-- matched-budget 性能、端到端 latency 和最差组边界同时报告。
+**Claim.** Limited target interaction supplies task-relevant execution information.
+Source response adds a preference only where task-compatible, history-matched,
+model-supported, and relevant to the execution phase.
 
-如果 clean ablation 不能显示 response anchoring 的独立价值，C2 必须收缩；如果
-有效指令没有变化，C1 不能由内部 loss 下降支持；如果只在 stance system 中出现
-差异，论文只能写系统级 morphology case，不能写普遍 transport 收益。
+**Required evidence.**
+
+- Compare full and no-calibration under the same total target-access budget in
+  prespecified conditions.
+- Isolate source-response gains with a control retaining the task band but removing response.
+- Compare full and ungated response in source-compatible and source-incompatible conditions
+  to expose selective anchoring's different roles.
+- Improvements must appear in constrained task success or prespecified task events,
+  not merely response MSE.
+
+### C3: Conditional Event Analysis and Increasing-Complexity Validation
+
+**Claim.** Task-event transfer depends on source margin, calibration error, anchoring
+error, and unsupported mass. Test this conditional result across a complexity ladder
+from constrained geometry to body-support coupling.
+
+**Required evidence.**
+
+- Twelve semantic subtasks span geometric timing, sustained contact, hybrid recovery,
+  dynamic environments, and body stability.
+- A six-row general table uses four shared metrics.
+- Event figures explain the contact phase where success or failure occurs.
+- Report matched-budget performance, end-to-end latency, and worst-group boundaries.
+
+If clean ablations cannot show independent response-anchoring value, narrow C2.
+If effective commands do not change, reduced internal loss cannot support C1.
+If differences appear only in the stance system, the claim is a system-level
+morphology case, not general transport gains.
 
 ## 4. Research Questions
 
-| RQ | 问题 | 主要贡献 | 主要任务 | 决定性比较 |
+| RQ | Question | Main contribution | Main tasks | Decisive comparisons |
 |---|---|---|---|---|
-| **RQ1** | 有限目标交互能否识别足以改善迁移的任务相关执行响应？ | C1、C2 | `dual_route_carry`、`aperture_brake`，并以 `dual_channel_contact` 加入首个接触条件 | full vs no-calibration；ASID、AdaptSim、FADA；预算曲线 |
-| **RQ2** | 持续接触、阶段切换和环境运动出现时，何时应保留 source response，何时应偏离？ | C2、C3 | `corner_guided_seating`、`jam_recovery`、`compliant_fixture_insertion` | full vs no-response vs ungated；最强 task baseline；事件与力峰值 |
-| **RQ3** | 相同语义能否跨臂自由度和支撑形态实现，并保持合理在线成本？ | C1、C3 | Panda→xArm7／UR5e；`stance_insertion`、`reposition_then_dock` | direct source、ASID、AdaptSim、DIAL-MPC、response MPC；端到端 latency |
+| **RQ1** | Can limited target interaction identify task-relevant execution responses sufficient to improve transfer? | C1, C2 | `dual_route_carry` → `aperture_brake` → `sequential_aperture_reorientation`; `dual_channel_contact` as a contact reference | Full vs no-calibration; ASID, AdaptSim; budget curves and phase-completion events |
+| **RQ2** | With sustained contact, phase transitions, and environment motion, when should source response be retained or relaxed? | C2, C3 | Guided contact: `dual_channel_contact` → `corner_guided_seating` → `edge_slide_pivot`; assembly: `jam_recovery` → `compliant_fixture_insertion` → `insert_then_lock` | Full vs no-response vs ungated; ASID, AdaptSim, response MPC; adapted DIAL-MPC; events and force peaks |
+| **RQ3** | Can the same semantics transfer across arm DOFs and support morphologies with reasonable online cost? | C1, C3 | Panda→xArm7/UR5e; `stance_insertion` → `reposition_then_dock` → `disturbed_docking_recovery` | Direct source, ASID, AdaptSim, DIAL-MPC, response MPC; recovery, support, end-to-end latency |
 
-RQ 级结论来自其指定任务和 matched mechanism test 的共同模式，不要求 full 在
-八个子任务的每一个 seed、mechanism 或 baseline 上都占优。正式运行前仍需根据
-pilot 方差冻结最小有意义效应和统计规则，不能看到最终结果后再定义“多数”。
+RQ-level conclusions come from common patterns across designated tasks and matched
+mechanism tests. Full need not dominate every seed, mechanism, and baseline in all
+twelve subtasks. Before formal execution, freeze the minimum meaningful effect and
+statistical rules using pilot variance; do not define “a majority” after seeing final results.
 
-## 5. 四个环境家族与八个核心子任务
+## 5. Four Environment Families and Twelve Core Subtasks
 
-| 家族 | 核心子任务一 | 核心子任务二 | 可选扩展 |
+| Family | Basic event | Compound event | Third core subtask (pending implementation) |
 |---|---|---|---|
-| 受限空间持件转运 | `dual_route_carry`：双路线持件绕障和定姿保持 | `aperture_brake`：完整持件穿过实体开口、短距制动、低速保持 | `sequential_aperture_reorientation` |
-| 导面接触定位 | `dual_channel_contact`：双物理通道、受载接触、模式出口 | `corner_guided_seating`：L 形导槽转向、持续载荷、末端止挡 | `edge_slide_pivot` |
-| 连接器装配恢复 | `jam_recovery`：受载卡滞、卸载撤回、重对齐、插入保持 | `compliant_fixture_insertion`：被动单轴夹具在接触下运动 | `insert_then_lock` |
-| 身体支撑耦合装配 | `stance_insertion`：固定足支撑下执行同一恢复语义 | `reposition_then_dock`：支撑域内目标重定位、settle、对接 | `disturbed_docking_recovery` |
+| Constrained-space object transport | `dual_route_carry`: two-route obstacle avoidance while carrying an object, followed by pose holding | `aperture_brake`: complete object crossing through a physical aperture, short-distance braking, low-speed hold | `sequential_aperture_reorientation`: cross the first narrow opening, reorient in limited space, cross a differently oriented second opening, and brake |
+| Guided-contact alignment | `dual_channel_contact`: two physical channels, loaded contact, mode-specific exits | `corner_guided_seating`: turn in an L-shaped guide, maintain load, reach a physical endstop | `edge_slide_pivot`: slide an asymmetric object along a loaded edge, establish physical pivot contact, and rotate into place |
+| Connector assembly with recovery | `jam_recovery`: loaded jam, unload/retract, realign, insert and hold | `compliant_fixture_insertion`: passive single-axis fixture moves under contact | `insert_then_lock`: axial insertion, contact-mode transition, rotational locking, and pull-out resistance after releasing axial pressure |
+| Body-support-coupled assembly | `stance_insertion`: the same recovery semantics under fixed-foot support | `reposition_then_dock`: body repositioning within support limits, settling, docking | `disturbed_docking_recovery`: physical disturbance during contact, preserve/recover contact and support stability, then hold docking after disturbance |
 
-当前八份合同已放入五个既有 config family 的 `protocol/subtasks/`，共享 loader 为
-[`subtask_contracts.py`](../../genedynamics/tasks/transfer/subtask_contracts.py)。状态为：
+Eight current contracts reside in `protocol/subtasks/` under five existing config
+families, with shared loader
+[`subtask_contracts.py`](../../genedynamics/tasks/transfer/subtask_contracts.py).
+Their state is:
 
-- 已实现合同：`dual_route_carry`、`aperture_brake`、`dual_channel_contact`、
-  `corner_guided_seating`、`jam_recovery`、`compliant_fixture_insertion`、
-  `stance_insertion`。其中 `aperture_brake`、`corner_guided_seating` 与
-  `compliant_fixture_insertion` 已各完成 4/4 fresh CPU source qualification、物理子步
-  evaluator 与 anti-bypass／行程稳定检查；其余既有子任务仍需按新协议做 fresh
-  source qualification 和 evaluator 复核。
-- 合同冻结、实现待完成：`reposition_then_dock`。
-- pending suite 在 `require_runnable=True` 时必须于 physics 启动前拒绝，不能用旧
-  环境冒充新子任务。
+- The first eight tasks are runnable in the current registry. The four third subtasks
+  are designs defined here, with no configurations or registered entry points yet.
+  Implement them in existing directories with pending status; do not launch them as
+  a runnable suite before physics, source, and evaluators are ready. Design agreement
+  does not freeze numerical geometry, public sources, or algorithm qualification.
+- The 4/4 CPU source reports for `aperture_brake`, `corner_guided_seating`, and
+  `reposition_then_dock` match current contract SHAs. The old 4/4 report for
+  `compliant_fixture_insertion` has a different contract SHA and needs review and
+  requalification. The other four existing subtasks still need fresh source qualification
+  and evaluator review under the new semantic protocols.
+- `reposition_then_dock` uses a task-provided body target, public fixed-foot WBC,
+  a 12-control predock stability dwell, and recovery-before-docking event order.
+  Old timed body drift cannot stand in for this task.
 
-机制轴仍是每个子任务内部的 train/development/heldout 变化，不能把两个摩擦系数
-命名成两个任务。第二核心子任务必须具有新的事件关系、实体几何或身体协调要求。
+Mechanism axes remain train/development/heldout variations within each subtask;
+two friction values are not different tasks. Three core subtasks require distinct
+event relations, physical geometry, or body-coordination demands. Progression adds
+behavioral requirements; it does not assume the third task has lower success for every method.
 
-## 6. General table 与 targeted studies
+### Third-Subtask Designs and Implementation Boundaries
 
-### 九行 general table
+| Subtask | Required physical events | Prohibited shortcuts | Prerequisites and main research question |
+|---|---|---|---|
+| `sequential_aperture_reorientation` | Entire object clears frame one → reorients between frames → entirely clears frame two → brakes and holds | One fixed orientation through both frames; bypassing frames; advancing events before the tail clears; braking by frame collision | Two separate physical frames, relative orientation, and full-envelope evaluation per frame. Verify no common passable orientation but a collision-free rotation path between them. Study translation/angular response and phase-error accumulation; compare ASID, AdaptSim, MPC, and no-calibration |
+| `edge_slide_pivot` | Establish loaded edge contact → slide to pivot → rotate under physical pivot constraint → seat and hold | A sphere merely changing yaw; lifting and rotating in air; reaching only the endpoint pose; using controller phase as contact evidence | The current spherical tip/fixed orientation is insufficient. Add an asymmetric object, physical pivot, contact-point trajectory, and angular response. Study response retention from translational to rotational contact; main ablations are no-response and unconditional |
+| `insert_then_lock` | Finish axial insertion → enter a real twist-lock slot → rotate to lock → release axial pressure → resist a shared small pull force and hold | Adding only a rotation target; treating terminal IK pose as locking; relying on arm position holding, continuous pushing, or friction as pull-out resistance | Existing straight-slot shoulders prevent internal rotation; add bayonet/locking-slot geometry. A shared low-axial-stiffness or bounded-retraction test must show load transfer to the locking shoulder and an unlocked negative control. Do not claim retention after gripper release. Study axial/torsional phase incompatibility; torque is an RQ diagnostic, not a fifth main-table metric |
+| `disturbed_docking_recovery` | Stabilize before contact → establish loaded contact → apply prespecified physical disturbance → preserve/recover safe contact and support → hold docking afterward | Ending before disturbance; teleporting the base; anticipating a hidden disturbance clock; foot changes/walking; checking only terminal success | Reuse fixed-foot WBC; add physical-substep external force, actual impulse records, and a controller state machine that can return to stabilization. Allow direct stabilization while maintaining contact; do not force retraction or prior contact loss. Trigger disturbance from physical task events with the same dose for every method in a condition; actors observe measurable states only. Use for morphology robustness, without requiring a main SOTA-performance claim |
 
-| 行 | 角色 |
+Determine numerical geometry, thresholds, disturbance directions/impulses, and
+train/development/heldout splits through source feasibility, joint body reachability,
+and public-controller tests, then freeze them. Do not tune by target-method ranking.
+Mechanism categories in existing contracts define design scope, not necessarily
+implemented runtime parameter bindings.
+
+The first edge-pivot version is limited to planar yaw rotation around a vertical
+physical edge, with a common Cartesian orientation/impedance interface supplying
+lateral edge pressure. The existing scalar normal-force channel cannot stand in for
+arbitrary 3D wrench authority. Start insert/lock with a static fixture to isolate
+locking topology, without compliant-fixture motion. The third task adds event relations;
+it need not combine every mechanism from the first two.
+
+The main table covers all twelve tasks. Main-text mechanism ablations avoid an
+unmotivated full twelve-task factorial sweep. RQ1 emphasizes aperture and sequential
+aperture; RQ2 emphasizes prespecified representative conditions in corner, edge pivot,
+compliant fixture, and insert/lock; the support family mainly answers RQ3. The three
+ablation names/objectives stay fixed. More tasks do not create new contribution or
+ablation categories.
+
+## 6. General Table and Targeted Studies
+
+### Six-Row General Table
+
+| Row | Role |
 |---|---|
-| ICDT | 完整方法 |
-| Task-only | 同容量内部系统参照；不是外部 SOTA |
-| FADA† | planner 固定、执行适应的近期对照 |
-| DIAL-MPC† | 在线扩散式 annealing / replanning 对照 |
-| Response MPC | 普通模型优化对照 |
-| Public geometry/feedback | 共同几何和反馈是否已经足够 |
-| Public source prior | 直接源迁移 |
-| AdaptSim† | task-driven simulation adaptation |
-| ASID† | active identification 后的任务学习 |
+| ICDT | Full method |
+| Task-only | Same-capacity internal system reference; not external SOTA |
+| DIAL-MPC† | Online diffusion-style annealing/replanning control |
+| Response MPC | Ordinary model-optimization control |
+| AdaptSim† | Task-driven simulation adaptation |
+| ASID† | Task learning after active identification |
 
-† 表示本仓库 task adaptation。每种 adaptation 必须说明保留的作者机制、改动的
-训练链、可访问数据和原生系统差异。当前 FADA 名义能力不足，因此其低分只能描述
-当前适配，不能用来宣布原论文方法失败。
+† denotes a task adaptation in this repository. Each adaptation must state retained
+author mechanisms, changed training chains, accessible data, and differences from
+the native system. Public geometry/source priors remain qualification and diagnostic
+references. FADA currently lacks nominal competence and moves to targeted study;
+its low scores do not establish failure of the original method.
 
-ACP 与 Human2Sim2Robot 按已确认决策转到表外。它们只有在任务适配策略完成
-source/nominal qualification 后，才进入对应 RQ 的资源分离专项比较；缺失策略不记
-为 0。Play2Perfect、KITE、TactAlign 等只在任务接口和公开实现允许忠实复现时增加，
-不能因为论文新就删除其核心机制后占一行。
+ACP and Human2Sim2Robot remain outside the table, as agreed. They enter resource-separated
+RQ-specific comparisons only after their adapted policies pass source/nominal qualification.
+Missing policies are not scored 0. Add Play2Perfect, KITE, TactAlign, or similar work only
+when task interfaces and public implementations permit faithful reproduction; do not
+remove a recent paper's core mechanisms simply to fill a row.
 
-### General table 的四个指标
+### Four General-Table Metrics
 
-1. **Constrained success ↑**：完成任务且所有碰撞、接触、力、支撑和身体条件通过。
-2. **Physical-constraint violation rate ↓**：任一物理约束失败的 episode 比例。
-3. **Failure-penalized normalized completion time ↓**：成功用完成时间／时限，失败取 1。
-4. **End-to-end p95 control latency ↓**：状态处理、网络或 planner、模型查询、
-   selector、projection、decoder 和 WBC 的完整同步控制路径。
+1. **Constrained success ↑**: complete the task while satisfying all collision, contact,
+   force, support, and body conditions.
+2. **Key-event completion ↑**: complete prespecified aperture crossing/braking, corner
+   endstop, recovery/reinsertion, or fixture-settling events.
+3. **Peak force ↓**: episode peak contact force at physical-substep resolution.
+4. **Failure-penalized normalized completion time ↓**: completion time/time limit for
+   successes; 1 for failures.
 
-峰值力、模式完成率、恢复率、最差组成功率、模型误差和目标交互预算是 RQ 图或
-附表指标，不再继续扩充 general table。家族内两个子任务等权，四个家族是否再聚合
-须在正式协议中冻结。支撑形态展示不能掩盖前三类操作任务的退步。
+Physical-constraint violations, end-to-end p95 latency, mode completion, worst-group
+success, model errors, and target-interaction budgets belong in RQ figures or appendices,
+without expanding the general table. Weight the three subtasks within each family
+equally; freeze any further four-family aggregation in the formal protocol. Support-
+morphology demonstrations must not conceal regressions in the first three manipulation families.
 
-## 7. 当前结果能够支持的故事
+## 7. Stories Supported by Current Results
 
-当前 GPU0 独立正式批次 v2 已完成 36 个方法×任务单元、232 个 actor 作业和
-11,600 条物理结果。下表是目标身体上 source-like、nominal、delay/gain shift 和
-payload shift 的合并受约束成功率；不是未来八子任务、等预算 general table。
+The independent GPU0 formal v2 batch completed 36 method-by-task cells, 232 actor jobs,
+and 11,600 physical outcomes. The table reports constrained success pooled over
+source-like, nominal, delay/gain-shift, and payload-shift mechanisms on target bodies.
+It is not the future equal-budget twelve-subtask general table.
 
-| 方法 | Dual-route | Dual-channel | Jam recovery | Stance insertion | 前三类均值 |
+| Method | Dual-route | Dual-channel | Jam recovery | Stance insertion | First-three-family mean |
 |---|---:|---:|---:|---:|---:|
 | **ICDT** | 100.00 | 98.75 | 42.19 | 86.88 | 80.31 |
 | Task-only | 100.00 | 97.50 | 47.19 | 60.16 | 81.56 |
@@ -186,285 +265,430 @@ payload shift 的合并受约束成功率；不是未来八子任务、等预算
 | AdaptSim† | 98.44 | 99.06 | 62.81 | 86.72 | 86.77 |
 | ASID† | 96.88 | 98.44 | 59.69 | 87.50 | 85.00 |
 
-### 当前可以讲的现象
+### Current Observations
 
-1. **简单任务饱和，不能证明 transport。** Dual-route 中多种方法达到 100%；
-   dual-channel 中 ICDT 比 task-only 高 1.25 pp，95% 区间为
-   $[-2.19,5.00]$ pp。这支持增加 aperture braking 和 corner contact，而不是把
-   小差异写成稳定优势。
-2. **静态恢复暴露当前方法缺陷。** Jam recovery 中 ICDT 为 42.19%，AdaptSim
-   为 62.81%，差值为 -20.63 pp，区间 $[-33.13,-7.19]$ pp；ICDT 的 185/320
-   失败均为 overforce。CPU 配对审计进一步发现 158 次是 ICDT 与 task-only 共同
-   超力，27 次是 ICDT 独有退化，11 次是 ICDT 独有收益；160/185 涉及 lateral
-   force limit，185/185 终止时 `retreating=false`。27 次独有退化全部属于 mode 0，
-   之前都发生过 transport admission，但只有 8 次在终止控制当下仍 admission，
-   说明主要问题包含共享 early-contact/reference-unloading recovery 和延迟力后果，
-   不能只调最后一 tick 的 transport gate。这使“事件充分的 response 和
-   contact-phase anchoring”成为方法问题，而不是需要隐藏的负结果。
-3. **支撑形态上完整系统有效，但尚未完成 attribution。** Stance insertion 中
-   ICDT 比 task-only 高 26.72 pp，区间 $[21.56,31.41]$ pp；它与 AdaptSim/ASID/
-   public references 接近。现有 full 与 task-only 使用的 completion、selector 和
-   projection 不完全匹配，因此只能写 system-level gain，不能单独归因 transport。
-4. **三个复杂子任务已完成可运行性闭环，但还不是方法结果。**
-   `aperture_brake` 已实现四边实体开口、完整 L 形物体包络、frame-contact 物理子步
-   证据和短距制动保持，fresh CPU source qualification 为 4/4；
-   `corner_guided_seating` 的 fresh CPU source qualification 为 4/4，四次峰值力
-   10.57--10.61 N、侧向峰值 5.79--5.81 N，均按加载接触、第一段、拐角、第二段、
-   实体止挡的顺序完成；`compliant_fixture_insertion` 也是 4/4，夹具最大位移
-   0.227--0.273 mm、峰值速度 1.92--2.56 mm/s、峰值加速度 0.637--0.666 m/s$^2$，
-   无行程端支撑并完成相对插入和共同稳定。它们证明环境、公共 source 与 evaluator
-   可执行，尚不能证明 ICDT 优于 baseline；下一步必须在同一冻结协议上做 paired
-   method pilot。
-5. **关键接触的现有正式结果只支持局部机制故事。** 对 jam recovery 的 320 条／方法
-   结果按 actor instance、request 和 reset hash 重新配对后，ICDT 的总成功率为
-   42.19%，低于 AdaptSim 20.63 pp、ASID 17.50 pp、response MPC 6.25 pp 和
-   task-only 5.00 pp，只高于 DIAL-MPC 5.94 pp。在 `latency_gain` mode 1 cell 中，
-   ICDT 为 40%，分别高于 AdaptSim 10 pp、ASID 22.5 pp、response MPC 15 pp，并与
-   task-only／DIAL-MPC 持平；这可以动机化“延迟接触响应”研究，但不能替代 overall
-   ranking。新一轮 clean actor paired pilot 没有复现该性能差异，见第 7 点。
-6. **初步预算证据是负向模型诊断。** 目标响应模型在 30/60/120 秒预算下的 held-out
-   log MSE 分别为 0.007443、0.007861、0.008412，source/nominal held-out MSE 也不单调；
-   当前没有“更多目标数据稳定降低误差”的证据。fresh physical pilot 中 full（60 秒）
-   与 no-calibration（0 秒）均为 16/16 成功、零违规；full 的归一化完成时间为 0.7185，
-   no-calibration 为 0.7572，但均值差 -0.0387 主要由 `payload_shift/mode_0` 的
-   -0.1783 驱动，四个 cell 中有两个方向相反。这是局部时间信号，不是稳定预算收益。
-7. **fresh 关键接触 pilot 证明当前两类 cell 区分力不足。** full、AdaptSim、ASID、
-   response MPC、task-only 和三个 clean ablation 在相同 16 个 fresh reset 上全部
-   16/16 成功、零违规；128 份物理证据均独立复审通过。full 的归一化完成时间 0.7185，
-   ASID 为 0.6984、AdaptSim 为 0.7400、task-only 为 0.7213；full 并未稳定领先。
-   no-response-anchoring 和 unconditional-response-anchoring 分别为 0.7169 和 0.7161，
-   没有 response term 或 selective gate 的正增量。response MPC 的 episode-level actor
-   p95 中位数为 0.282 s，明显高于 full 的 0.079 s，但这仍是 actor-only development
-   指标，不能替代正式端到端 latency。
+1. **Simple tasks saturate and cannot establish transport gains.** Several methods reach
+   100% on dual-route. ICDT exceeds task-only by 1.25 pp on dual-channel, with a 95%
+   interval of $[-2.19,5.00]$ pp. This motivates aperture braking and corner contact,
+   not a claim of a stable advantage from a small difference.
+2. **Static recovery exposes current method weaknesses.** Jam recovery is 42.19% for
+   ICDT versus 62.81% for AdaptSim: -20.63 pp, interval $[-33.13,-7.19]$ pp.
+   All 185/320 ICDT failures are overforce. CPU paired auditing finds 158 shared
+   ICDT/task-only overforce failures, 27 ICDT-only regressions, and 11 ICDT-only gains.
+   Lateral force limits affect 160/185; `retreating=false` at termination in 185/185.
+   All 27 unique regressions are mode 0 and had prior transport admission, but only
+   8 still admitted transport at the terminating control. The problem therefore includes
+   shared early-contact/reference-unloading recovery and delayed force consequences;
+   tuning only the final tick's transport gate is insufficient. This makes event-sufficient
+   response and contact-phase anchoring a method question, not a negative result to hide.
+3. **The full system works on the supported morphology, but attribution is incomplete.**
+   ICDT exceeds task-only by 26.72 pp on stance insertion, interval $[21.56,31.41]$ pp,
+   and is close to AdaptSim/ASID/public references. Full and task-only currently differ
+   in completion, selector, and projection. Report a system-level gain, not transport-only
+   attribution.
+4. **Four complex subtasks are runnable and have development paired pilots.**
+   `aperture_brake` implements a four-sided physical opening, complete L-shaped object
+   envelope, physical-substep frame-contact evidence, and short-distance braking/holding;
+   fresh CPU source qualification is 4/4. `corner_guided_seating` also qualifies 4/4,
+   with peak forces 10.57--10.61 N and lateral peaks 5.79--5.81 N. All four follow loaded
+   contact, first segment, corner, second segment, physical endstop. Old-contract
+   `compliant_fixture_insertion` qualification is also 4/4 (current binding requires
+   revalidation): maximum fixture displacement 0.227--0.273 mm, peak speed
+   1.92--2.56 mm/s, peak acceleration 0.637--0.666 m/s$^2$, no travel-end support,
+   and completed relative insertion/tool-and-fixture settling. `reposition_then_dock` qualifies
+   4/4 with target repositioning, predock stability, loaded recovery, and docking hold;
+   maximum foot slip is 1.87 mm. These establish runnable environments, public sources,
+   and evaluators. Development pilots with only one trajectory per mode do not establish
+   formal overall rankings.
+5. **Existing formal critical-contact results support only a local mechanism story.**
+   Re-pairing 320 jam outcomes/method by actor instance, request, and reset hash gives
+   ICDT 42.19% overall: below AdaptSim by 20.63 pp, ASID by 17.50 pp, response MPC by
+   6.25 pp, and task-only by 5.00 pp; above DIAL-MPC by 5.94 pp. In the `latency_gain`
+   mode 1 cell, ICDT reaches 40%, exceeding AdaptSim by 10 pp, ASID by 22.5 pp,
+   response MPC by 15 pp, and matching task-only/DIAL-MPC. This motivates delayed-contact
+   response research but cannot replace overall ranking. A fresh clean-actor paired
+   pilot did not reproduce that performance gap; see item 7.
+6. **Preliminary budget evidence is a negative model diagnostic.** Target-response held-out
+   log MSE at 30/60/120 seconds is 0.007443/0.007861/0.008412; source/nominal held-out
+   MSE is also nonmonotonic. There is no evidence that more target data consistently
+   reduces error. In the fresh physical pilot, full (60 seconds) and no-calibration
+   (0 seconds) both achieve 16/16 with zero violations. Full normalized completion time
+   is 0.7185 versus 0.7572, but the mean difference -0.0387 is driven mainly by
+   `payload_shift/mode_0` at -0.1783; two of four cells point the other way. This is
+   a local timing signal, not a stable budget benefit.
+7. **The fresh critical-contact pilot shows insufficient discrimination in the two current
+   cell types.** Full, AdaptSim, ASID, response MPC, task-only, and three clean ablations
+   all achieve 16/16 with zero violations on the same 16 fresh resets. All 128 physical
+   evidence files pass independent re-audit. Full normalized time is 0.7185, compared
+   with ASID 0.6984, AdaptSim 0.7400, and task-only 0.7213; full does not consistently
+   lead. No-response-anchoring and unconditional-response-anchoring score 0.7169/0.7161,
+   with no positive response-term or selective-gate increment. Response MPC's median
+   episode-level actor p95 is 0.282 s versus full 0.079 s. This remains an actor-only
+   development metric, not formal end-to-end latency.
+8. **The old aperture pilot has been superseded by actual response-learning results.**
+   On two fresh paired requests with servo gain 0.8, 1-control delay, and 0.65 kg payload,
+   response-trained ICDT and AdaptSim achieve 2/2; task-only, ASID, and response MPC
+   achieve 0/2. Failure-penalized normalized time is 0.9200 for ICDT and 0.9850 for
+   AdaptSim. The checkpoint first fits source/target public responses, then computes
+   the task-band/response objective. The old `semantic-phase` 0/2 and post-hoc fixed-gain
+   results remain only as invalid development lineage. On `reposition_then_dock`,
+   all five methods succeed on two paired requests: ICDT/task-only/AdaptSim/ASID/DIAL-MPC
+   times are 0.7104/0.7576/0.7172/0.7332/0.7004. This provides a preliminary ICDT
+   efficiency signal over task-only, but DIAL-MPC is slightly faster and there is only
+   one reset/mode; it is not a formal ranking. Reset pairing and all 20 compressed
+   evidence files from both pilots pass re-audit.
+9. **Old phase-gain selection remains invalid; the new v2 learning chain repairs causal
+   ordering.** Old aperture `semantic-phase` improved from 0/4 to 4/4, with normalized
+   time 0.9204 at the 120-second label; both corner cells achieved 2/2; all moving-fixture
+   variants succeeded, with selected-gain times 0.5093/0.5000. Retain these trajectories
+   as development references. Code review found that the actor merely multiplied public
+   planner outputs by fixed phase coefficients; response models were fitted after model
+   selection and used only diagnostically. Aperture no-calibration/no-response were
+   hard-coded to unit coefficients; full and unconditional shared action rules; corner/
+   fixture no-response used manually larger coefficients. These treatments did not change
+   the manuscript's response objective, and task-only used a different old actor. Their
+   differences cannot be attributed to calibration, response anchoring, or selective
+   gating, nor establish that gates have no benefit. Their budget curves are parameter-
+   selection curves, not equal-budget ICDT evidence. New `semantic-response-transport-v2`
+   checkpoints store source/target linear response weights and each candidate's task loss,
+   calibrated/uncalibrated response loss, gate, and objective; loading recomputes selection
+   term by term. The 0/30/60/120-second aperture success curve is 0/0/1/1; 120 seconds
+   selects scale 1.25. Three clean ablations genuinely recompute their objectives, but
+   all four treatments select 1.25 and achieve 4/4 evaluation requests. Thus the learning
+   chain is operational, while this cell does not establish independent performance
+   gains from calibration, response anchoring, or selective gating.
+10. **The obstacle family's third task is implemented and released for formal comparison.**
+    `sequential_aperture_reorientation` uses two orthogonal physical frames; geometry
+    auditing finds no fixed yaw that passes both. Final source qualification is 4/4,
+    with two four-bit frame masks recorded per physical substep. All five methods achieve
+    2/2 in the two-mode pilot. ICDT/task-only/AdaptSim/ASID/response MPC normalized times
+    are 0.8709/0.8923/0.8073/0.8918/0.8914. ICDT is faster than task-only/ASID/MPC,
+    while AdaptSim is faster still. Dual-aperture transport is admitted only in the
+    terminal phase after the entire object clears both frames: residuals during crossing
+    or adjacent alignment cause envelope bypass. Retain those failures. Existing formal
+    dual-route results, paired pilots for the two new cells, and the actual learning chain
+    release the three-task family for 100 unopened formal episodes.
 
-### 目前不能写的结论
+Audit references:
+[`semantic_phase.py`](../../genedynamics/solvers/single/cross_ebdm/learning/semantic_phase.py),
+[`train_aperture_brake_response_transport.py`](../../scripts/paper/cross_ebdm/train_aperture_brake_response_transport.py),
+[`run_contact_complexity_paired_development.py`](../../scripts/paper/cross_ebdm/run_contact_complexity_paired_development.py).
+This revision corrects documentation interpretation only, preserving original artifacts,
+labels, and SHAs. Implementation repairs and renewed comparisons follow the order below.
 
-- 不能写 ICDT 总体优于 ASID 或 AdaptSim；前三类均值仍落后。
-- 不能写 response matching 已稳定改善 task performance。
-- 不能用 FADA 当前适配低分推断原方法机制无效。
-- 不能写 Go2+Z1 结果证明导航或 learned locomotion；当前是 fixed-foot stance。
-- 不能写 Panda→UR5e 已完成；当前正式固定臂 target 是 xArm7。
-- 不能写等预算 sample efficiency 或 latency 优势；现有主表预算不相等且尚无
-  共同口径的九方法端到端 p95。
+### Claims Not Currently Supported
 
-## 8. 三个主要消融
+- ICDT cannot be claimed to outperform ASID or AdaptSim overall; its first-three-family
+  mean remains lower.
+- Old public phase-gain selection cannot be presented as response-aware transport gains.
+  The obstacle formal cohort is released based on the v2 learning chain and same-reset
+  comparisons, but clean ablations still choose identical actions, so independent
+  calibration/anchoring/gating performance gains are not established.
+- Current poor FADA adaptation scores do not establish failure of its original mechanism.
+- Go2+Z1 results do not establish navigation or learned locomotion; this is fixed-foot stance.
+- Panda→UR5e is not completed; the current formal fixed-arm target is xArm7.
+- Equal-budget sample-efficiency or latency superiority is not established. Existing
+  main-table budgets differ, and comparable six-method end-to-end p95 is unavailable.
 
-只保留以下三项作为正文主要消融：
+## 8. Three Principal Ablations
 
-| 名称 | 目标函数或模型变化 | 必须保持相同的部分 | 回答 |
+Keep only these three as the principal main-text ablations:
+
+| Name | Objective/model change | What must remain identical | Question |
 |---|---|---|---|
-| No calibration | 使用 nominal response model/context | 数据权限以外的网络、warm state、训练步、selector、执行接口 | 目标干预是否提供有效信息 |
-| No response anchoring | $C+\beta h+\Omega$ | task band、模型、数据流、网络、optimizer、sample stream、execution | source response 是否有独立增量 |
-| Unconditional anchoring | $C+\beta h+\lambda R+\Omega$ | 与 full 完全相同，只去掉 gate 的选择作用 | 选择性是否避免 source bias |
+| No calibration | Use nominal response model/context | Network, warm state, training steps, selector, execution interface; only data access differs | Do target interventions provide useful information? |
+| No response anchoring | $C+\beta h+\Omega$ | Task band, model, data flow, network, optimizer, sample stream, execution | Does source response add independent value? |
+| Unconditional anchoring | $C+\beta h+\lambda R+\Omega$ | Identical to full except removing gate selection | Does selectivity avoid source bias? |
 
-现有 task-only 只有 $C$，同时删除 response 和 task band，仍作为 system reference，
-不能代替 no-response ablation。三项消融必须共享实际 command authority、mode
-policy、checkpoint budget、online admission 和 recovery wrapper。若这些条件不同，
-结果改为系统比较，不能写单因素归因。
+Existing task-only contains only $C$, removing both response and task band. It remains
+a system reference and cannot replace the no-response ablation. All three ablations
+must share actual command authority, mode policy, checkpoint budget, online admission,
+and recovery wrapper. If these differ, report a system comparison rather than
+single-factor attribution.
 
-## 9. 理论目前的缺口与修改方向
+## 9. Current Theory Gaps and Revision Directions
 
-### 9.1 保留的理论核心
+### 9.1 Theory to Retain
 
-- command law 与 target execution kernel 共同决定 behavior law；
-- reweighting 不能产生 source support 外的 command，transport 可以移动 support；
-- task-relevant identifiability 只要求 probe null space 不影响 task quantity；
-- 条件性事件界把 source failure、small margin、calibration/anchoring error 和
-  unsupported mass 分开。
+- The command law and target execution kernel jointly determine the behavior law.
+- Reweighting cannot create commands outside source support; transport can move support.
+- Task-relevant identifiability requires only that the probe null space not affect
+  the task quantity.
+- Conditional event bounds separate source failure, small margins, calibration/anchoring
+  error, and unsupported mass.
 
-### 9.2 必须补强的部分
+### 9.2 Required Strengthening
 
-1. **Response descriptor 尚不 event-sufficient。** 当前短时增量和控制频率峰值
-   不足以编码恢复顺序、持续接触、物理子步冲击、fixture settling 或 body support。
-   下一版定义任务共享的 event response：事件发生时间／顺序、阶段内接触覆盖、
-   子步力风险、相对 fixture motion 和 body feasibility。训练可用可微 proxy，正式
-   success 仍由独立 evaluator 判定。
-2. **短时界不能直接推出整段任务成功。** 需要按 phase 写有限时域组合：每阶段
-   的 response error、margin 和 support risk 单独估计，再明确组合损失。先采用
-   有限阶段 union bound 或 stopping-event 分解，不宣称无限时域统一保证。
-3. **Ensemble spread 不是校准误差上界。** 当前动态夹具开发结果显示 spread 与
-   实际误差相关性不足。它只能作为经验 gate 特征；若要理论使用，必须用独立
-   holdout 做 coverage calibration，或把未校准部分放入 $p_{\rm bad}$。
-4. **Self-collected logs 不保证新 contact branch 可辨识。** 理论和实验同时报告
-   task-relevant excitation、事件覆盖和未访问分支；不能用总体 MSE 代替覆盖。
-5. **条件性事件界不证明优于 task-only。** ICDT 与 matched task-only 具有相同
-   表达能力。论文将优势定位为有限数据和优化下的 source-informed bias，由消融和
-   budget curve 验证；除非新增明确假设和证明，不写 sample-complexity theorem。
-6. **Training gate、checkpoint fallback 和 online admission 必须分开。** $G=0$
-   只删除该样本的 response term，不等于运行时回退 task-only。理论符号和方法图要
-   分别表示三种选择。
-7. **执行接口 $\eta$ 是 attribution 边界。** completion、projection、selector、
-   recovery 和 WBC 的变化会改变实际 trajectory law。所有 component claim 都要
-   固定 $\eta$，并用 issued request 证明处理确实进入物理执行。
+1. **Response descriptors are not yet event-sufficient.** Current short-term increments
+   and control-rate peaks do not encode recovery order, sustained contact, physical-
+   substep impacts, fixture settling, or body support. Define shared event responses:
+   event times/order, within-phase contact coverage, substep force risk, relative fixture
+   motion, and body feasibility. Differentiable training proxies are acceptable;
+   independent evaluators still determine formal success.
+2. **Short-term bounds do not directly imply whole-task success.** Write finite-horizon
+   composition by phase, estimating response error, margin, and support risk separately
+   and making composition losses explicit. Start with a finite-phase union bound or
+   stopping-event decomposition, without claiming uniform infinite-horizon guarantees.
+3. **Ensemble spread is not an upper bound on calibration error.** Current dynamic-fixture
+   development data show insufficient spread/error correlation. Treat spread as an
+   empirical gate feature. Theoretical use requires independent holdout coverage
+   calibration, or placing uncalibrated components in $p_{\rm bad}$.
+4. **Self-collected logs do not guarantee identification of new contact branches.**
+   Report task-relevant excitation, event coverage, and unvisited branches in both theory
+   and experiments; aggregate MSE does not replace coverage.
+5. **Conditional event bounds do not prove superiority to task-only.** ICDT and matched
+   task-only have the same expressive capacity. Frame the advantage as source-informed
+   bias under finite data/optimization, tested through ablations and budget curves.
+   Do not claim a sample-complexity theorem without explicit new assumptions and proof.
+6. **Separate training gates, checkpoint fallback, and online admission.** $G=0$ removes
+   only that sample's response term; it does not imply runtime fallback to task-only.
+   Theory notation and method diagrams must distinguish all three selections.
+7. **Execution interface $\eta$ is the attribution boundary.** Completion, projection,
+   selector, recovery, and WBC changes alter the actual trajectory law. Fix $\eta$ for
+   component claims and use issued requests to show that treatments reach physical execution.
 
-理论修改完成后，RQ2 的 positive/negative contact cells 应直接对应事件界中的
-large-margin supported、small-margin 和 unsupported 三类条件，而不是事后按胜负
-解释 gate。
+After revision, RQ2's positive/negative contact cells should directly correspond to
+large-margin supported, small-margin, and unsupported conditions in the event bound,
+not post-hoc explanations of gating based on wins and losses.
 
-## 10. 从当前结果到论文级大表还缺什么
+## 10. What Remains Before a Paper-Level Main Table
 
-### 任务闭环
+### Complete Task Validation
 
-- `aperture_brake` 已完成四边实体开口、完整 L 形 object-envelope evaluator、物理
-  子步 frame-contact 证据、公共 braking/hold source skill 和 4/4 CPU 资格；下一步是
-  learned method／baseline 小规模 paired pilot；
-- `corner_guided_seating` 已完成实体折角导槽、公共 source、受载转向、实体止挡和
-  4/4 CPU 资格；下一步是 learned method／baseline 小规模 paired pilot；
-- `compliant_fixture_insertion` 已完成接触后公共激励、物理子步证据、行程端拒绝、
-  相对插入与共同稳定判据，并以 4/4 CPU source qualification 闭环；下一步是
-  learned method／baseline 小规模 paired pilot；
-- 实现 `reposition_then_dock` 的目标重定位、稳定窗口和 docking 闭环；
-- 四个既有任务用新语义合同重新做 source qualification，不重贴旧结果标签。
+- `aperture_brake` has a four-sided physical opening, complete L-shaped object-envelope
+  evaluator, physical-substep frame-contact evidence, public braking/holding source skill,
+  4/4 CPU qualification, v2 response learning, and a 0/30/60/120-second budget curve.
+  The five-method paired pilot passes. All three ablations execute valid objectives
+  but select the same residual; independent mechanism gains need more discriminating cells.
+- `sequential_aperture_reorientation` has orthogonal frames, a fixed-orientation
+  infeasibility audit, 90-degree inter-frame reorientation, per-frame contact bitmasks,
+  4/4 source qualification, and a five-method paired pilot. Its formal 50-episode
+  protocol is frozen but unexecuted.
+- `corner_guided_seating` has a physical corner guide, public source, loaded turning,
+  physical endstop, 4/4 CPU qualification, and a two-cell/two-seed/eight-method paired pilot.
+- `compliant_fixture_insertion` has public post-contact excitation, physical-substep
+  evidence, travel-end rejection, relative-insertion and shared settling criteria, and
+  development comparisons including DIAL-MPC. The old 4/4 source report's contract SHA
+  differs from the current contract; review bindings and requalify.
+- `reposition_then_dock` has target repositioning, a stability window, closed-loop docking,
+  4/4 source qualification, and a five-method paired pilot. Add independent resets and
+  support/mechanism shifts to test whether ICDT's time signal over task-only persists
+  across seeds.
+- Requalify the four existing tasks under new semantic contracts; do not relabel old results.
+- Implement the remaining three third subtasks according to Section 5. Each needs real
+  physics, a public source, an independent evaluator, anti-bypass negative controls,
+  and source qualification. Keep unfinished tasks unimplemented; do not fill new columns
+  with old-task results.
 
-### 方法与 baseline 闭环
+### Complete Method and Baseline Validation
 
-- 先放行共享 early-contact/reference-unloading recovery，再验证覆盖延迟力后果的
-  force-aware admission；CPU 诊断已经排除“185 次均由 transport 单独造成”的解释；
-- 三项 clean ablation 已冻结为 no-calibration、no-response-anchoring 和
-  unconditional-response-anchoring；full 与三项消融共八个 mode-specific CPU
-  preflight、GPU 训练和 selector 已通过；同 mode 的 batch-index stream 与 task-only
-  起点完全一致。128-episode paired task pilot 已完成但全部饱和，不能扩成正式规模；
-- 对 FADA、ASID、AdaptSim、DIAL-MPC 逐项完成 source/nominal qualification，记录
-  原生机制和 task adaptation 边界；
-- 九行方法铺满八个核心子任务。未执行保留 missing，不能填 0；资格失败和真实
-  目标执行失败分开；
-- ACP/H2S2R 只做有资格的 targeted study，不阻塞 general table。
+- First release shared early-contact/reference-unloading recovery, then validate
+  force-aware admission covering delayed force consequences. CPU diagnostics have
+  ruled out transport alone as the cause of all 185 failures.
+- Three clean ablations are frozen as no-calibration, no-response-anchoring, and
+  unconditional-response-anchoring. Full plus three ablations completed eight
+  mode-specific CPU preflights, GPU training, and selectors. Within each mode, batch-index
+  streams and task-only initialization match exactly. The 128-episode paired task pilot
+  completed but fully saturated, so it should not simply scale to formal size.
+- Qualify FADA, ASID, AdaptSim, and DIAL-MPC individually on source/nominal, documenting
+  native mechanisms and task-adaptation boundaries.
+- Fix the formal table at six rows: ICDT, task-only, ASID, AdaptSim, response MPC,
+  DIAL-MPC. Repair corner/DIAL observer-interface gaps before judging applicability.
+  Unconnected methods are pending, not 0; engineering gaps do not directly imply
+  theoretical inapplicability. Retain FADA/ACP/H2S2R only for qualified targeted studies.
+- Qualified ACP/H2S2R targeted studies do not block the general table.
 
-### 统计与资源闭环
+### Complete Statistics and Resource Accounting
 
-- pilot 后冻结 interaction-time grid、独立训练实例数、每实例条件数和最小效应；
-- 目标数据、主动 probe、完整 task rollout、选模和失败全部计费；
-- 预先冻结 train/development/heldout mechanism split；
-- 保持 paired initial conditions，按训练实例和物理初态层次重采样；
-- 统一测量九方法的 end-to-end p50/p95、deadline miss、GPU time 和 wall time；
-- 按 family 和 subtask 报告，不让聚合均值隐藏某个 contact 或 support group 为零。
+- Freeze interaction-time grids, independent training-instance counts, per-instance
+  condition counts, and minimum effects after pilots.
+- Charge all target data, active probes, complete task rollouts, model selection, and failures.
+- Prespecify train/development/heldout mechanism splits.
+- Preserve paired initial conditions and resample hierarchically by training instance
+  and physical initial state.
+- Measure six-method end-to-end p50/p95, deadline misses, GPU time, and wall time consistently.
+- Report by family/subtask so pooled means cannot hide zero success in a contact/support group.
 
-### 形态与可视化闭环
+### Complete Morphology and Visualization Evidence
 
-- 完成 Panda source、xArm7 target、UR5e target 的同任务可达性和 source skill
-  qualification；
-- 生成相同初态、相同语义和相同相机的 source→target episode GIF；
-- `stance_insertion` 作为不同形态可行性和支撑约束展示，headline performance 仍由前三类
-  操作任务和 matched morphology comparison 决定；
-- 如果加入实机，至少提供一类接触任务的 source/target transfer、力和失败全分母；
-  没有实机时标题和主张保持 cross-embodiment simulation，不写 sim-to-real 结论。
+- Qualify same-task reachability and source skills for Panda source, xArm7 target,
+  and UR5e target.
+- Generate source→target episode GIFs with matched initial conditions, semantics, and cameras.
+- Use `stance_insertion` to demonstrate morphology feasibility and support constraints;
+  headline performance still depends on the first three manipulation families and matched
+  morphology comparisons.
+- If adding hardware, provide at least one contact task's source/target transfer,
+  forces, and full failure denominators. Without hardware, titles/claims remain
+  cross-embodiment simulation, not sim-to-real conclusions.
 
-## 11. 命名与代码迁移规则
+## 11. Naming and Code-Migration Rules
 
-新论文、配置、runner 输出和分析只使用语义 ID：
+New manuscript text, configurations, runner outputs, and analyses use semantic IDs only:
 
-| 历史别名 | 新语义 ID |
+| Historical alias | New semantic ID |
 |---|---|
 | T1 | `dual_route_carry` |
 | T2 | `dual_channel_contact` |
 | T3 | `jam_recovery` |
 | T4 | `stance_insertion` |
 
-迁移规则：
+Migration rules:
 
-1. 旧结果、旧 SHA、旧报告和历史命令不可改名；它们是不可变证据。
-2. 旧 `T1`--`T4` 只允许在一个 legacy reader 边界映射为语义 ID；新写出的 manifest、
-   result、figure、CLI help 和 LaTeX 不再产生数字别名。
-3. `configs` 继续按现有 robot/task family 组织，subtask 语义放在
-   `protocol/subtasks/`；不创建 `results/<project>/<run_id>/`。
-4. `scripts/paper/cross_ebdm` 保持论文入口，逐步把 `run_t2_*`、`train_t3_*` 等
-   主动脚本迁移为由 config 和 semantic ID 驱动的通用入口。算法、task physics、
-   evaluator 和统计逻辑分别留在既有 package 层，paper script 只做薄编排。
-5. `genedynamics/solvers/single/<method>` 保存各算法内部实现；task-specific controller
-   与 evaluator 留在 `genedynamics/tasks/transfer`；高层 `learning` 不出现算法名。
-6. 每次迁移先用 `rg` 分类 active code、compatibility reader 和 immutable evidence。
-   只有 active code 需要重命名；禁止为“清理”而修改历史结果内容。
+1. Do not rename old results, SHAs, reports, or historical commands; they are immutable evidence.
+2. Map old `T1`--`T4` to semantic IDs only at a legacy-reader boundary. New manifests,
+   results, figures, CLI help, and LaTeX must not produce numeric aliases.
+3. Keep `configs` organized by existing robot/task family, with subtask semantics in
+   `protocol/subtasks/`. Do not create `results/<project>/<run_id>/`.
+4. Keep `scripts/paper/cross_ebdm` as the paper entry. Gradually migrate active scripts
+   such as `run_t2_*`/`train_t3_*` to general entries driven by configs and semantic IDs.
+   Algorithms, task physics, evaluators, and statistics stay in existing package layers;
+   paper scripts provide thin orchestration.
+5. Keep algorithm internals in `genedynamics/solvers/single/<method>`; task-specific
+   controllers/evaluators in `genedynamics/tasks/transfer`. No algorithm names in
+   high-level `learning`.
+6. Before each migration, use `rg` to classify active code, compatibility readers,
+   and immutable evidence. Rename active code only. Never change historical result
+   contents for cleanup.
 
-## 12. 实施顺序与放行门槛
+## 12. Implementation Order and Release Criteria
 
-### A. 语义和证据冻结
+### A. Freeze Semantics and Evidence
 
-- 八份合同、共享 loader、source snapshot 和 semantic entry 完成；
-- active runner 不再把数字别名当 canonical identity；
-- 唯一仍 pending 的 suite `reposition_then_dock` 在 physics 前被拒绝；aperture、
-  corner 与 compliant 已通过 runnable gate 和 fresh source qualification；
-- 当前 v2 结果只作为已有四子任务 evidence preview。
+- The design is four families of three tasks; Section 5 defines twelve names/event
+  chains. This revision adds no runtime or configuration files. Later add four pending
+  contracts and shared-loader registrations in existing directories.
+- Active runners stop treating numeric aliases as canonical identities.
+- Eight runnable registrations do not imply complete qualification under the new protocol.
+  Add four existing-task qualifications and compliant contract binding per Section 5;
+  qualify each of the four new tasks after implementation.
+- Current v2 results serve only as an evidence preview for four existing subtasks.
 
-**出口：** 合同测试、legacy read 测试、result path 测试通过，历史 artifact hash
-不变。
+**Exit:** contract, legacy-read, and result-path tests pass; historical artifact hashes
+remain unchanged.
 
-### B. 静态接触归因
+### B. Static-Contact Attribution
 
-- CPU 配对诊断已完成；下一步配对放行共享 early-contact/reference-unloading
-  recovery，并在 heldout 请求验证 delayed-force-aware admission；
-- 训练同架构 nominal response artifact；
-- 在 matched execution 下完成 no-calibration、no-response-anchoring、
-  unconditional-response-anchoring 三项消融；full 与三项消融的八个 mode-specific
-  CPU preflight、单实例 GPU 训练和 128-episode paired pilot 已完成；三个消融均未在
-  当前两类 cell 上表现出成功率或时间收益，下一版必须先建立有区分力的事件条件；
-- 用 contact phase、首个冲击、issued request 和子步峰值回答原因。
+- CPU paired diagnostics are complete. Next, release shared early-contact/reference-
+  unloading recovery in paired tests and validate delayed-force-aware admission on
+  heldout requests.
+- Train a nominal-response artifact with matched architecture.
+- Complete no-calibration, no-response-anchoring, and unconditional-response-anchoring
+  under matched execution. New corner/moving-fixture phase-gain selection cannot
+  replace these ablations; compare again using the genuine ICDT learning chain.
+- Explain causes using contact phases, first impacts, issued requests, and substep peaks.
 
-**出口：** full 与每个消融只差声明因素；source/nominal qualification 通过；失败
-全保留。若 response 没有独立增量，先收缩贡献再扩展规模。
+**Exit:** full and each ablation differ only in the declared factor; source/nominal
+qualification passes; all failures are retained. If response adds no independent value,
+narrow the contribution before scaling.
 
-### C. 新复杂度闭环
+### C. Complete New Complexity Levels
 
-- aperture、corner、compliant fixture 已完成物理、evaluator、source skill 与 fresh
-  qualification；下一项是 reposition/dock，并为前三项补 learned method／baseline
-  paired pilot；
-- 每个任务先物理／evaluator、再 source skill、再公共 feedback、最后 learned method；
-- 先跑小规模 paired pilot 验证任务有区分力且没有 evaluator bypass。
+- Aperture, corner, compliant fixture, and reposition/dock have physics, evaluators,
+  source skills, and development pilots; qualification boundaries remain as in Section 5.
+- Sequential aperture has physics, negative geometry audits, source, independent
+  evaluation, paired pilots, and formal-protocol release. Edge pivot, insert/lock,
+  and disturbed docking remain required third subtasks. Parallel implementation is
+  allowed, without skipping geometric feasibility, negative controls, or independent evaluation.
+- Per task: physics/evaluator first, then source skill, public feedback, learned method.
+- Use small paired pilots to establish discrimination and absence of evaluator bypass.
 
-**出口：** 四个新任务均由 pending 变为 runnable，并有 fresh source qualification、
-anti-bypass 测试和至少一个非 oracle 公共参照成功。
+**Exit:** all twelve tasks pass physics/source/evaluator qualification. The four third
+subtasks move from pending to runnable, with anti-bypass negative controls and at least
+one successful non-oracle public reference.
 
-### D. Baseline 资格和八任务 pilot
+### D. Baseline Qualification and Twelve-Task Pilots
 
-- 九行方法逐任务做 source/nominal 资格；
-- 给合理原生训练预算，记录 learning curve 和失效原因；
-- targeted ACP/H2S2R 独立决定，不拖延主表。
+- Qualify each of the six formal methods on source/nominal for every task.
+- Provide reasonable native training budgets and record learning curves/failure causes.
+- Decide targeted ACP/H2S2R studies independently, without delaying the main table.
 
-**出口：** 每个 general-table cell 有 qualified executable policy 或明确的 pre-run
-missing reason；正式 freeze 前不能根据 target 排名删 baseline。
+**Exit:** every general-table cell has a qualified executable policy or an explicit
+pre-run missing reason. Do not remove baselines by target ranking before formal freeze.
 
-### E. 协议冻结和正式 GPU cohort
+### E. Protocol Freeze and Formal GPU Cohort
 
-- 根据 pilot 方差冻结实例数、seeds、预算、机制组合、指标和统计脚本；
-- 新鲜 train/development/heldout split；
-- GPU0-only 要求如未被用户更新则继续执行；正式运行不在中途调参或替换失败。
+- Formal freeze remains unreleased. Original `semantic_main_table_freeze_v1` compared
+  unmatched phase-gain actors with old task-only and does not establish mechanism gating.
+  Its eight-task index also references executed four-task v2 requests, so the entire
+  index cannot be called `sealed_unaccessed`. Preserve old records and correct them
+  through explicit subsequent revisions.
+- Use genuine ICDT and structurally matched ablations to verify directionally consistent
+  mechanism benefits across seeds in at least two prespecified critical-contact cells.
+  Wins on all twelve tasks are unnecessary. Revise theory claims first if the mechanism
+  provides no benefit.
+- Choose independent training-instance counts from pilot variance and training cost.
+  Eight instances are an existing design reference; a configuration with only a calibration
+  seed is not a trained instance. Freeze actual training recipes, selection rules,
+  0/30/60/120-second target-interaction accounting, and unaccessed formal requests.
+- Use fresh train/development/heldout splits.
+- Maintain GPU0-only unless the user updates it. Do not tune midway through formal runs
+  or replace failures.
 
-**出口：** 8 subtasks × 9 rows 的四指标 general table，三项 clean ablation，三组
-RQ 图，分层区间、预算和 latency 审计齐全。
+**Exit:** four-metric general table for 12 subtasks × 6 rows, three clean ablations,
+three RQ figure sets, hierarchical intervals, and complete budget/latency audits.
 
-### F. 论文证据闭环
+### F. Complete Manuscript Evidence
 
-- Introduction 的三项贡献逐条链接到主表、ablation 或 event figure；
-- 结论按最终 evidence 缩放，保留失败边界；
-- 统一 GIF、主图、表格和 appendix provenance；
-- 运行 LaTeX、引用、版面、数字来源和 artifact hash 检查。
+- Link each Introduction contribution to the main table, an ablation, or an event figure.
+- Scale conclusions to final evidence and retain failure boundaries.
+- Align GIFs, main figures, tables, and appendix provenance.
+- Check LaTeX compilation, references, layout, numerical sources, and artifact hashes.
 
-## 13. 预期论文图表
+## 13. Planned Paper Figures and Tables
 
-1. **方法总图：** source prior、target intervention、response calibration、selective
-   anchoring、target execution kernel 和行为事件。
-2. **任务复杂度图：** 四个 family 每个展示两个 core subtasks，箭头表示增加的事件
-   关系，不表示简单参数变难。
-3. **General table：** 九方法 × 四 family／八 subtask 的四个指标。
-4. **RQ1 图：** constrained success 与 heldout response error 对总目标 interaction time。
-5. **RQ2 图：** full/no-calibration/no-response-anchoring/
-   unconditional-response-anchoring 在 compatible 与 incompatible contact cells 的
-   事件成功、首次力峰值和 recovery timeline。
-6. **RQ3 图：** Panda→xArm7/UR5e 和 Go2+Z1 的同语义 GIF／轨迹，附 p95 latency 与
-   support failure boundary。
-7. **失败图：** jam overforce、corner contact loss、fixture travel/settling 和 support
-   infeasibility 的首个失败事件，不只展示成功样例。
+1. **Method overview:** source prior, target intervention, response calibration,
+   selective anchoring, target execution kernel, and behavioral events.
+2. **Task-complexity figure:** three core subtasks in each of four families, with arrows
+   showing added event relations rather than harder parameter values.
+3. **General table:** four metrics over six methods × four families/twelve subtasks.
+   Main text may use equal-weight family summaries; show all twelve tasks in four
+   three-subtask panels without hiding individual failures.
+4. **RQ1 figure:** constrained success and heldout response error versus total target
+   interaction time.
+5. **RQ2 figure:** full/no-calibration/no-response-anchoring/unconditional-response-anchoring
+   event success, first force peaks, and recovery timelines in compatible/incompatible
+   contact cells.
+6. **RQ3 figure:** same-semantics Panda→xArm7/UR5e and Go2+Z1 GIFs/trajectories with p95
+   latency and support-failure boundaries.
+7. **Failure figure:** first failures in jam overforce, corner contact loss, fixture
+   travel/settling, and support infeasibility, alongside successful examples.
 
-## 14. 下一项具体工作
+## 14. Next Concrete Work
 
-论文 draft 已使用三个贡献、三个 RQ、八个语义子任务、九行 baseline 和四个主表
-指标。aperture、corner 和 compliant fixture 已完成 source 可运行性闭环；静态 jam
-recovery 的离线配对强 baseline 对照、三项 clean ablation 合同和 0/30/60/120 秒模型
-预算诊断也已完成。full 与三项消融的八个 mode-specific 单实例训练和 128-episode
-fresh paired pilot 已闭环，但八方法全部成功，拒绝了“直接扩大这两个 cell 即可回答
-RQ1/RQ2”的设计。下一项工作是在不观察方法排名的条件下，按物理事件预先定义更有
-区分力的 contact cells：优先使用 `corner_guided_seating` 的转角持续载荷和
-`compliant_fixture_insertion` 的夹具运动／settling，再为 `aperture_brake` 加入 heldout
-短制动距离。每个新 cell 先要求公共 source 可行且 task-only 不饱和，再以同一套
-full／强 baseline／三消融做小规模 paired pilot。只有出现跨 seed 和至少两个 cell
-一致的机制增量，才冻结多实例正式设计；与此同时实现 `reposition_then_dock`，不能把
-本次单实例饱和结果写成正式大表排名。
+The obstacle family's three-task implementation cycle is now complete: new tasks are
+registered, v2 response learning actually ran, paired evidence for both new cells was
+re-audited, and the formal release report is `released_for_formal_execution`.
+The 100 new formal episodes remain unopened.
+
+Proceed in this order:
+
+1. **Align qualification and evidence.** Add new-protocol qualifications for four existing
+   tasks and review compliant contract binding. Explicitly correct phase-gain experiment
+   identities and old eight-task freeze credentials, retaining all old evidence.
+2. **Execute the released obstacle protocols.** Run two 50-episode protocols in the frozen
+   aperture-then-sequential order. Do not replace failures or revise thresholds after
+   inspecting outcomes. Reuse completed dual-route formal results from 5 methods,
+   8 instances, and 40 requests/instance. After execution, perform only SHA auditing
+   and prespecified four-metric aggregation. Two-seed pilots are not final rankings.
+3. **Build core contact/recovery evidence.** Complete genuine method controls on existing
+   corner/compliant tasks while repairing jam's shared unloading and delayed force
+   consequences. Add edge pivot's asymmetric object, pivot, and angular-contact evidence;
+   add insert/lock's physical bayonet, retention test, and unlocked negative control.
+   The latter introduces new contact topology and requires CPU physics/source validation
+   before GPU training.
+4. **Complete the support family's third task.** Add replayable external-force pulses
+   and a post-disturbance termination chain to existing fixed-foot WBC. Validate both
+   maintaining contact and re-establishing it when needed. This family serves morphology
+   demonstration and RQ3, without expanding into walking/navigation.
+5. **Method qualification, representative-cell pilots, then formal freeze.** Complete
+   new-task adaptation and source/nominal qualification for all six methods. Give
+   ASID/AdaptSim corresponding task training opportunities; MPC needs relevant angular-
+   response, contact, or support rollouts. Answer RQs in representative conditions first,
+   then freeze the full twelve-task table and matched-budget curves. Mark unqualified
+   implementations pending; they do not establish original-algorithm failure.
+
+Theory still needs event-sufficient responses, finite-phase error composition, and
+execution-interface attribution boundaries. Sequential/pivot/lock/disturbance tasks
+test those conditions; their addition does not prove the theory. Evaluate selective
+anchoring through actual gated/ungated objectives. If independent benefits cannot be
+reproduced, narrow the claim instead of manufacturing contrast with aggressive gains.

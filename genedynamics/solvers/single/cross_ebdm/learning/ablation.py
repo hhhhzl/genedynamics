@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-CONTRACT_VERSION = "keyed-insertion-clean-ablation-v1"
+LEGACY_CONTRACT_VERSION = "keyed-insertion-clean-ablation-v1"
+CONTRACT_VERSION = "cross-embodiment-clean-ablation-v2"
 SHARED_LOCK_KEYS = (
     "warm_start",
     "data",
@@ -90,10 +91,12 @@ def treatment(name: str) -> AblationTreatment:
         raise ValueError(f"unknown clean ablation treatment: {name}") from error
 
 
-def treatment_metadata(name: str) -> dict[str, Any]:
+def treatment_metadata(
+    name: str, *, contract_version: str = CONTRACT_VERSION,
+) -> dict[str, Any]:
     """Metadata that every trained checkpoint and evaluation must persist."""
     return {
-        "contract_version": CONTRACT_VERSION,
+        "contract_version": contract_version,
         "treatment": name,
         **asdict(treatment(name)),
         "treatment_only": True,
@@ -132,10 +135,19 @@ def _different_fields(left: AblationTreatment, right: AblationTreatment) -> tupl
 
 def validate_contract(document: Mapping[str, Any]) -> None:
     """Validate treatment isolation and the shared execution/training lock."""
-    if document.get("schema_version") != CONTRACT_VERSION:
+    version = document.get("schema_version")
+    if version not in {CONTRACT_VERSION, LEGACY_CONTRACT_VERSION}:
         raise ValueError("clean ablation contract version differs")
-    if document.get("task") != "keyed_insertion_recovery":
-        raise ValueError("clean ablation contract is for keyed insertion")
+    task = document.get("task")
+    if (version == LEGACY_CONTRACT_VERSION
+            and task != "keyed_insertion_recovery"):
+        raise ValueError("legacy clean ablation contract is for keyed insertion")
+    if version == CONTRACT_VERSION and (
+            not isinstance(task, str) or not task
+            or document.get("objective_family") not in {
+                "response_conditioned_transport", "recovery_transport",
+            }):
+        raise ValueError("semantic task and objective family are required")
     shared = document.get("shared")
     if not isinstance(shared, Mapping) or tuple(shared) != SHARED_LOCK_KEYS:
         raise ValueError("shared ablation lock keys or order differ")
@@ -179,6 +191,7 @@ def load_contract(path: str | Path) -> dict[str, Any]:
 __all__ = [
     "AblationTreatment",
     "CONTRACT_VERSION",
+    "LEGACY_CONTRACT_VERSION",
     "EXPECTED_TREATMENT_DIFFERENCES",
     "SHARED_LOCK_KEYS",
     "TREATMENTS",

@@ -96,6 +96,14 @@ class ObstacleTransferConfig:
     aperture_exit_zone: tuple = (0.58, 0.66)
     aperture_brake_speed: float = 0.012
     aperture_alignment_tolerance: float = math.radians(4.)
+    second_aperture_plane_y: float = -0.02
+    second_aperture_center_x: float = 0.60
+    second_aperture_center_z: float = 0.48
+    second_aperture_half_width: float = 0.052
+    second_aperture_half_height: float = 0.03
+    reorientation_zone_x: tuple = (0.575, 0.625)
+    reorientation_zone_y: tuple = (-0.11, -0.055)
+    sequential_exit_zone_y: tuple = (0.065, 0.125)
 
     def __post_init__(self):
         if self.robot not in {"panda", "xarm7", "ur5e"}:
@@ -114,13 +122,18 @@ class ObstacleTransferConfig:
             raise ValueError("reset_joint_noise must be finite and nonnegative")
         if not math.isfinite(self.goal_yaw) or not math.isfinite(self.collision_tolerance) or self.collision_tolerance < 0:
             raise ValueError("invalid yaw/collision tolerance")
-        if self.scene_profile not in {"dual_route", "aperture_brake_v1"}:
+        if self.scene_profile not in {
+                "dual_route", "aperture_brake_v1",
+                "sequential_aperture_reorientation_v1"}:
             raise ValueError("unsupported obstacle-transfer scene profile")
         aperture_values = (
             self.aperture_plane_x, self.aperture_center_y,
             self.aperture_center_z, self.aperture_half_width,
             self.aperture_half_height, self.aperture_frame_thickness,
             self.aperture_brake_speed, self.aperture_alignment_tolerance,
+            self.second_aperture_plane_y, self.second_aperture_center_x,
+            self.second_aperture_center_z, self.second_aperture_half_width,
+            self.second_aperture_half_height,
         )
         if not all(math.isfinite(value) for value in aperture_values):
             raise ValueError("aperture geometry must be finite")
@@ -133,6 +146,24 @@ class ObstacleTransferConfig:
                 or not all(math.isfinite(value) for value in self.aperture_exit_zone)
                 or not self.aperture_plane_x < self.aperture_exit_zone[0] < self.aperture_exit_zone[1]):
             raise ValueError("aperture exit zone must lie beyond its plane")
+        if any(value <= 0 for value in (
+                self.second_aperture_half_width,
+                self.second_aperture_half_height)):
+            raise ValueError("second aperture dimensions must be positive")
+        intervals = (
+            ("reorientation_zone_x", self.reorientation_zone_x),
+            ("reorientation_zone_y", self.reorientation_zone_y),
+            ("sequential_exit_zone_y", self.sequential_exit_zone_y),
+        )
+        for name, interval in intervals:
+            if (len(interval) != 2
+                    or not all(math.isfinite(value) for value in interval)
+                    or not interval[0] < interval[1]):
+                raise ValueError(f"{name} must be a finite ordered interval")
+        if (self.scene_profile == "sequential_aperture_reorientation_v1"
+                and not self.sequential_exit_zone_y[0]
+                > self.second_aperture_plane_y):
+            raise ValueError("sequential exit zone must lie beyond the second aperture")
         for pos in (self.start_position, self.goal_position):
             if len(pos) != 3 or not all(math.isfinite(x) for x in pos):
                 raise ValueError("task positions must be finite xyz triples")

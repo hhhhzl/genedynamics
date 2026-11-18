@@ -1,0 +1,278 @@
+{
+  "clean_ablation_treatments": [
+    "no_calibration",
+    "no_response_anchoring",
+    "unconditional_response_anchoring"
+  ],
+  "contract": {
+    "path": "configs/arm/obstacle_transfer/protocol/subtasks/aperture_brake_v1.json",
+    "sha256": "8f007931fcbd9329491569dccb9a44c5a0d331c17ea40a4d9d9b26b35373e621"
+  },
+  "device": {
+    "cuda_visible_devices": "0",
+    "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a"
+  },
+  "evaluation_requests": [
+    {
+      "cell": "nominal_short_brake",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "SEMANTIC-EIGHT-TASK/aperture_brake/nominal_short_brake/i00/m0",
+      "requested_mode": 0,
+      "reset_seed": 12811000,
+      "task": "aperture_brake"
+    },
+    {
+      "cell": "nominal_short_brake",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 0,
+      "request_id": "SEMANTIC-EIGHT-TASK/aperture_brake/nominal_short_brake/i00/m1",
+      "requested_mode": 1,
+      "reset_seed": 12811001,
+      "task": "aperture_brake"
+    },
+    {
+      "cell": "nominal_short_brake",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "SEMANTIC-EIGHT-TASK/aperture_brake/nominal_short_brake/i01/m0",
+      "requested_mode": 0,
+      "reset_seed": 12811002,
+      "task": "aperture_brake"
+    },
+    {
+      "cell": "nominal_short_brake",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 1,
+      "request_id": "SEMANTIC-EIGHT-TASK/aperture_brake/nominal_short_brake/i01/m1",
+      "requested_mode": 1,
+      "reset_seed": 12811003,
+      "task": "aperture_brake"
+    },
+    {
+      "cell": "nominal_short_brake",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "SEMANTIC-EIGHT-TASK/aperture_brake/nominal_short_brake/i02/m0",
+      "requested_mode": 0,
+      "reset_seed": 12811004,
+      "task": "aperture_brake"
+    },
+    {
+      "cell": "nominal_short_brake",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 2,
+      "request_id": "SEMANTIC-EIGHT-TASK/aperture_brake/nominal_short_brake/i02/m1",
+      "requested_mode": 1,
+      "reset_seed": 12811005,
+      "task": "aperture_brake"
+    },
+    {
+      "cell": "nominal_short_brake",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "SEMANTIC-EIGHT-TASK/aperture_brake/nominal_short_brake/i03/m0",
+      "requested_mode": 0,
+      "reset_seed": 12811006,
+      "task": "aperture_brake"
+    },
+    {
+      "cell": "nominal_short_brake",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 3,
+      "request_id": "SEMANTIC-EIGHT-TASK/aperture_brake/nominal_short_brake/i03/m1",
+      "requested_mode": 1,
+      "reset_seed": 12811007,
+      "task": "aperture_brake"
+    },
+    {
+      "cell": "nominal_short_brake",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "SEMANTIC-EIGHT-TASK/aperture_brake/nominal_short_brake/i04/m0",
+      "requested_mode": 0,
+      "reset_seed": 12811008,
+      "task": "aperture_brake"
+    },
+    {
+      "cell": "nominal_short_brake",
+      "formal_policy_episodes_accessed": 0,
+      "mechanism_parameters": {
+        "delay_steps": 0,
+        "payload_mass": 0.5,
+        "servo_gain": 1.0
+      },
+      "physical_initial_slot": 4,
+      "request_id": "SEMANTIC-EIGHT-TASK/aperture_brake/nominal_short_brake/i04/m1",
+      "requested_mode": 1,
+      "reset_seed": 12811009,
+      "task": "aperture_brake"
+    }
+  ],
+  "failure_replacement": false,
+  "formal_policy_episodes_accessed": 0,
+  "methods": [
+    "icdt",
+    "task_only",
+    "asid",
+    "adaptsim",
+    "response_mpc",
+    "dial_mpc"
+  ],
+  "metrics": [
+    "task_success",
+    "key_event_completion",
+    "peak_force_N",
+    "failure_penalized_normalized_time"
+  ],
+  "readiness_evidence": {
+    "path": "results/arm/obstacle_transfer/training/aperture_brake_semantic_phase/report.json",
+    "sha256": "004c52bd917af59022b036d6beaa8d41b00f8dcd0e570891d5c791a86a849a61"
+  },
+  "status": "sealed_unaccessed",
+  "task": "aperture_brake",
+  "training_instances": [
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12810000,
+      "instance_id": "instance_01",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12810001,
+      "instance_id": "instance_02",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12810002,
+      "instance_id": "instance_03",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12810003,
+      "instance_id": "instance_04",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12810004,
+      "instance_id": "instance_05",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12810005,
+      "instance_id": "instance_06",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12810006,
+      "instance_id": "instance_07",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    },
+    {
+      "budget_curve_seconds": [
+        0,
+        30,
+        60,
+        120
+      ],
+      "calibration_seed": 12810007,
+      "instance_id": "instance_08",
+      "maximum_target_interaction_seconds": 120,
+      "selection_or_evaluation_seed_reuse": false
+    }
+  ],
+  "version": "semantic-eight-task-formal-cohort-v1"
+}

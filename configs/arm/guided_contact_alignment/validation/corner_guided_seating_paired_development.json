@@ -1,0 +1,25 @@
+{
+  "version": "contact-complexity-paired-development-v1",
+  "status": "frozen_unexecuted",
+  "task": "corner_guided_seating",
+  "robot": "xarm7",
+  "contract": {"path": "configs/arm/guided_contact_alignment/protocol/subtasks/corner_guided_seating_v1.json", "sha256": "c1b443ba41e2e590b0ca642d94245ba05ed21196c885f7234ee1dbe028db6b85"},
+  "source_qualification": {"path": "results/arm/guided_contact_alignment/validation/corner_guided_seating/report.json", "sha256": "f89368350c5d799fef52e0e4054506d6a2b13c53e5cf652d7b97b9f3f9bbfa73"},
+  "method_configs": {
+    "task_only": {"path": "configs/arm/guided_contact_alignment/baseline/task_only.yaml", "sha256": "a91998e5452e1d25b86e6608f73d94c73b022d633a3eba78ac97406bb8620118"},
+    "adaptsim": {"path": "configs/arm/guided_contact_alignment/baseline/adaptsim.yaml", "sha256": "5efb4a42be5955385db0e28aa1ac2d504515343203107a17b8004d5897cd6661"},
+    "asid": {"path": "configs/arm/guided_contact_alignment/baseline/asid.yaml", "sha256": "88dfaf6b3bb75650b04fff5b0170035cbde96bf9349fc896810035ecc3edad7e"},
+    "response_mpc": {"path": "configs/arm/guided_contact_alignment/baseline/response_mpc.yaml", "sha256": "50d20b71a29416c14386d4c4e9341f860242ad8a95457411280aedbe25115f90"}
+  },
+  "cells": [
+    {"id": "sustained_corner_load_high_friction", "mechanism": {"contact_friction": 0.8, "contact_time_constant": 0.04}},
+    {"id": "sustained_corner_load_slow_response", "mechanism": {"contact_friction": 0.4, "contact_time_constant": 0.08}}
+  ],
+  "selection": {"candidate_scales": [1.0, 1.15, 1.3], "cell_indices": [1], "seed_anchor": 947000, "interaction_budget_seconds": 120},
+  "evaluation": {"seeds_by_cell": [[948000, 948001], [948100, 948101]], "modes_by_cell": [[0, 0], [0, 0]]},
+  "treatment_scales": {"no_calibration": 1.0, "no_response_anchoring": 1.3},
+  "probe": null,
+  "execution": {"cuda_visible_devices": "0", "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a", "actor_device": "cuda", "physics_device": "cpu", "maximum_wall_seconds": 2400},
+  "output": "results/arm/guided_contact_alignment/validation/corner_guided_seating_paired_development",
+  "policy": {"formal_performance_evidence": false, "failure_replacement": false, "all_failures_retained": true, "confirmation_states_opened": 0, "paired_resets": true}
+}

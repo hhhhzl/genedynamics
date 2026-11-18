@@ -7,6 +7,9 @@ from typing import Any
 import numpy as np
 
 from .obstacle_scaled_path import PublicScaledObstaclePathPolicy
+from genedynamics.tasks.transfer.reposition_dock import (
+    mobile_mating_training_config_compatible,
+)
 
 
 def public_obstacle_actor(
@@ -136,8 +139,11 @@ def public_mobile_mating_checkpoint_actor(
 
     if (task.spec.alias != "T4" or task.spec.config.robot != "go2_z1"
             or mode not in (0, 1)
-            or task_spec("T4", robot="go2_z1", config_overrides=MOBILE_CONFIG).config
-            != task.spec.config
+            or (
+                task_spec("T4", robot="go2_z1", config_overrides=MOBILE_CONFIG).config
+                != task.spec.config
+                and not mobile_mating_training_config_compatible(task)
+            )
             or checkpoint.get("schema_version") != "asid-mobile-public-policy-checkpoint-v2"
             or checkpoint.get("task") != "T4"
             or checkpoint.get("robot") != "go2_z1"

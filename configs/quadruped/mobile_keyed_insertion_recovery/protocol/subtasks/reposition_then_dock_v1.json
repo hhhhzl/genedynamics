@@ -5,7 +5,7 @@
   "family": "support_coupled_assembly",
   "embodiment": "quadruped_manipulator",
   "environment": "mobile_keyed_insertion_recovery",
-  "implementation_status": "contract_frozen_implementation_pending",
+  "implementation_status": "implemented_contract_frozen",
   "semantics": {
     "goal": "Issue a task-directed body target within the fixed-foot support region, stabilize the base and tool, then execute recovery and insertion at the docking fixture.",
     "excludes": ["renaming the existing fixed-duration body drift", "walking, stepping, or navigation", "allowing only one method to command the body target", "using unreachable initial states to manufacture failures"]
@@ -40,12 +40,12 @@
     {"name": "insertion_reaction_class", "public": false, "train": ["nominal"], "development": ["nominal", "moderate"], "heldout": ["high"]}
   ],
   "source_qualification": {
-    "status": "contract_frozen_coordinated_source_skill_pending",
+    "status": "cpu_source_qualified_4_of_4",
     "requirements": ["source performs task-directed body reposition rather than a timed drift", "source completes reposition, predock stabilization, recovery, insertion, and hold in order", "qualification demonstrates joint arm-body feasibility without foot relocation", "source actor, reachable-state roster, and configuration digests are frozen before target development"],
-    "evidence_resolution": "control ticks for ordered body-arm events plus physics foot-contact and wrench evidence"
+    "evidence_resolution": "results/quadruped/mobile_keyed_insertion_recovery/validation/reposition_then_dock/report.json; every control tick, public target and issued body request, physical foot contacts and slip, WBC residual, wrench, ordered recovery, insertion, and hold evidence; four compressed episodes independently reevaluated"
   },
   "evaluator_evidence": {
-    "status": "contract_frozen_implementation_pending",
+    "status": "implemented_contract_frozen",
     "resolution": "control_tick_with_physical_support_and_contact_events",
     "implementation_path": "genedynamics/tasks/transfer/evaluation.py",
     "required_signals": ["public body target", "actual base pose and twist", "foot contact forces and slip", "support polygon", "whole-body solver status", "joint margins", "dock-relative connector state", "measured wrench", "predock and terminal dwell clocks"]

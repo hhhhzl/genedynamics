@@ -8,6 +8,9 @@ import numpy as np
 
 from .obstacle_scaled_path import PublicScaledObstaclePathPolicy
 from .guide_contact import PublicResponseNormalizedGuideCompletionPolicy
+from genedynamics.tasks.transfer.reposition_dock import (
+    mobile_mating_training_config_compatible,
+)
 
 
 GUIDE_POLICY_FIELDS = (
@@ -179,8 +182,11 @@ def public_mobile_mating_actor(
             or recipe.get("task") != "T4" or recipe.get("robot") != "go2_z1"
             or recipe.get("policy_fields") != list(POLICY_FIELDS)
             or recipe.get("shared_execution") != task.shared_execution
-            or task_spec("T4", robot="go2_z1", config_overrides=MOBILE_CONFIG).config
-            != task.spec.config
+            or (
+                task_spec("T4", robot="go2_z1", config_overrides=MOBILE_CONFIG).config
+                != task.spec.config
+                and not mobile_mating_training_config_compatible(task)
+            )
             or report.get("version") != TRAINING_VERSION
             or report.get("task") != "T4"
             or report.get("status") != "complete_development"

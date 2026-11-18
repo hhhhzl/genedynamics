@@ -8,7 +8,7 @@ from pathlib import Path
 import time
 
 from genedynamics.envs.adapters.transfer_task import instantiate_task
-from .aperture import PublicApertureBrakePolicy
+from .aperture import PublicApertureBrakePolicy, PublicSequentialAperturePolicy
 from .episode import audit_episode_evidence, episode_evidence
 from .runtime import MechanismSpec
 
@@ -16,7 +16,10 @@ from .runtime import MechanismSpec
 def qualify_aperture(config_path, *, progress=None):
     config_path = Path(config_path)
     plan = json.loads(config_path.read_text())
-    if plan.get("device") != "cpu" or plan.get("task") != "aperture_brake":
+    if (plan.get("device") != "cpu"
+            or plan.get("task") not in {
+                "aperture_brake", "sequential_aperture_reorientation",
+            }):
         raise ValueError("explicit semantic CPU aperture plan required")
     output = Path(plan["output_dir"])
     output.mkdir(parents=True, exist_ok=False)
@@ -32,7 +35,12 @@ def qualify_aperture(config_path, *, progress=None):
                 "start_position": tuple(request["start_position"]),
             },
         )
-        actor = PublicApertureBrakePolicy(task.spec, mode=mode)
+        actor_type = (
+            PublicApertureBrakePolicy
+            if plan["task"] == "aperture_brake"
+            else PublicSequentialAperturePolicy
+        )
+        actor = actor_type(task.spec, mode=mode)
         public = task.reset((seed,), seed=seed, modes=[mode])
         for _ in range(task.spec.config.timeout_steps):
             if task.state.status[0] != 0:

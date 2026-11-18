@@ -304,11 +304,23 @@ class PublicCornerGuidePolicy:
     VERSION="public-corner-guided-seating-v1"
     STAGES=("establish_contact","first_segment","corner_settle","second_segment","terminal")
 
-    def __init__(self,spec,*,mode=0):
+    def __init__(self,spec,*,mode=0,authority_growth_per_control=.02,
+                 nominal_lead_m=.008,maximum_contact_speed_mps=.03):
         if (spec.name!="corner_guided_seating" or
                 spec.config.guide_profile!="planar_corner_v1" or mode!=0):
             raise ValueError("corner guide policy requires semantic mode 0")
         self.spec,self.mode=spec,int(mode)
+        # Frozen T2 response actors read this public-planner field when they
+        # construct their task-reference chart.  The corner route uses the
+        # same declared surface-force target throughout its transit stages.
+        self.transit_force_N=spec.config.desired_force
+        self.authority_growth_per_control=float(authority_growth_per_control)
+        self.nominal_lead_m=float(nominal_lead_m)
+        self.maximum_contact_speed_mps=float(maximum_contact_speed_mps)
+        if (not .01<=self.authority_growth_per_control<=.04
+                or not .006<=self.nominal_lead_m<=.01
+                or not .02<=self.maximum_contact_speed_mps<=.04):
+            raise ValueError("corner public policy parameters outside declared T2 support")
         self.reset()
 
     def reset(self):
@@ -317,11 +329,26 @@ class PublicCornerGuidePolicy:
 
     def get_state(self):
         return deepcopy(dict(version=self.VERSION,stage=self.stage,tick=self.tick,
+                             authority_growth_per_control=self.authority_growth_per_control,
+                             nominal_lead_m=self.nominal_lead_m,
+                             maximum_contact_speed_mps=self.maximum_contact_speed_mps,
                              contact_ticks=self.contact_ticks,stage_entry_tick=self.stage_entry_tick,compensation=self.compensation,
                              cached=self.cached))
 
     def restore(self,state):
-        if state.get("version")!=self.VERSION:raise ValueError("corner guide continuation differs")
+        binding=(
+            state.get("version"),
+            state.get("authority_growth_per_control"),
+            state.get("nominal_lead_m"),
+            state.get("maximum_contact_speed_mps"),
+        )
+        expected=(
+            self.VERSION,
+            self.authority_growth_per_control,
+            self.nominal_lead_m,
+            self.maximum_contact_speed_mps,
+        )
+        if binding!=expected:raise ValueError("corner guide continuation differs")
         for name in ("stage","tick","contact_ticks","stage_entry_tick","compensation","cached"):
             setattr(self,name,deepcopy(state[name]))
 
@@ -359,9 +386,11 @@ class PublicCornerGuidePolicy:
         error=np.concatenate((target-p,angular),axis=-1)
         issued=np.concatenate((target-rp,issued_angular),axis=-1)
         twist=np.asarray(public["tcp_twist"],float)
-        gains=np.asarray([6.,6.,6.,4.,4.,4.]);limits=np.asarray([.0045,.0045,.01,.12,.12,.12])
+        gains=np.asarray([6.,6.,6.,4.,4.,4.])
+        tangent_scale=self.maximum_contact_speed_mps/.03
+        limits=np.asarray([.0045*tangent_scale,.0045*tangent_scale,.01,.12,.12,.12])
         raw=gains*error+2.*issued-twist+self.compensation
-        increment=2.*dt*error
+        increment=(self.authority_growth_per_control/.02)*2.*dt*error
         integrate=(np.abs(raw)<limits)|(raw*increment<=0.)
         self.compensation=np.clip(self.compensation+np.where(integrate,increment,0.),-.025,.025)
         self.compensation[:,2]=0.
@@ -370,7 +399,7 @@ class PublicCornerGuidePolicy:
         if self.stage==0 and not loaded:
             normal_velocity=max(normal_velocity,-.003)
         velocity[:,2]=np.clip(normal_velocity,-.006,.006)
-        lead=np.asarray([.008,.008,.01])
+        lead=np.asarray([self.nominal_lead_m,self.nominal_lead_m,.01])
         velocity[:,:3]=np.clip(velocity[:,:3],(p-lead-rp)/dt,(p+lead-rp)/dt)
         rotation_lead=np.stack([orientation_error(np,a,b) for a,b in zip(r,public["reference_rotation"])])
         velocity[:,3:]=np.clip(velocity[:,3:],(-.04-rotation_lead)/dt,(.04-rotation_lead)/dt)
@@ -379,6 +408,90 @@ class PublicCornerGuidePolicy:
                                     np.full((1,1),self.spec.config.desired_force)),axis=1).astype(np.float32)
         self.tick=tick
         return self.cached.copy()
+
+
+def bind_corner_public_planner(actor, spec, *, mode):
+    """Install the semantic corner planner under a frozen T2 method actor.
+
+    The learned response, transport, or online optimizer is retained.  The
+    right-angle route and contact schedule are equally public task geometry,
+    so every admitted method receives this same planner.  This is a declared
+    development task adaptation; it does not claim that the original T2
+    training covered the corner geometry.
+    """
+    if spec.name != "corner_guided_seating" or int(mode) != 0:
+        raise ValueError("semantic corner-guided seating mode 0 required")
+    if not hasattr(actor, "base"):
+        raise ValueError("T2 method actor has no task-owned public planner")
+    actor.spec = spec
+    actor.base = PublicCornerGuidePolicy(spec, mode=mode)
+    return PublicCornerGuideMethodExecution(actor)
+
+
+def adapt_corner_public_policy(actor, spec, *, mode):
+    """Map an admitted ASID/AdaptSim T2 gain policy onto corner geometry.
+
+    The original actor must first pass its exact T2 artifact and training
+    checks on a construction-only surrogate.  This adapter retains only its
+    three declared public policy coordinates; route geometry, force target,
+    stage transitions, and evaluation remain task-shared.
+    """
+    names=("AUTHORITY_GROWTH_PER_CONTROL","NOMINAL_LEAD_M",
+           "MAXIMUM_CONTACT_SPEED_MPS")
+    if any(not hasattr(actor,name) for name in names):
+        raise ValueError("admitted T2 parameter policy required")
+    policy=PublicCornerGuidePolicy(
+        spec,mode=mode,
+        authority_growth_per_control=getattr(actor,names[0]),
+        nominal_lead_m=getattr(actor,names[1]),
+        maximum_contact_speed_mps=getattr(actor,names[2]),
+    )
+    return PublicCornerParameterizedExecution(actor,policy)
+
+
+class PublicCornerParameterizedExecution:
+    """Task-adapt an admitted three-parameter T2 policy to the corner route."""
+
+    VERSION="public-corner-parameterized-execution-v1"
+
+    def __init__(self,source_actor,policy):
+        self.source_actor=source_actor
+        self.policy=policy
+
+    def act(self,public):
+        return self.policy.act(public)
+
+    def reset(self):
+        return self.policy.reset()
+
+    def get_state(self):
+        return {"version":self.VERSION,"policy":self.policy.get_state(),
+                "source_actor_type":type(self.source_actor).__name__}
+
+
+class PublicCornerGuideMethodExecution:
+    """Preserve the frozen response chart around the new corner planner."""
+
+    VERSION = "public-corner-guide-method-execution-v1"
+
+    def __init__(self, actor):
+        self.actor = actor
+        self.base = actor.base
+
+    def act(self, public):
+        from genedynamics.solvers.single.cross_ebdm.learning.response import (
+            PUBLIC_FIELDS,
+        )
+        return self.actor.act({key: public[key] for key in PUBLIC_FIELDS})
+
+    def reset(self):
+        return self.actor.reset()
+
+    def get_state(self):
+        return {
+            "version": self.VERSION,
+            "actor": self.actor.get_state() if hasattr(self.actor, "get_state") else None,
+        }
 
 
 class PublicPredictiveGuideContactPolicy(PublicGuideContactPolicy):

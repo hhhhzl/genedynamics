@@ -1,58 +1,55 @@
-# 通用 AR 架构 —— 多机器人数字孪生（中文版）
+# General AR Architecture: Multi-Robot Digital Twins
 
-引擎无关（Swift/RealityKit **和** Unity/AR Foundation 并存）、多设备（Vision
-Pro / 手机 / 平板 / HoloLens / Quest / 网页）、性能极致、且对接边缘/分布式。
-在现有 `deploy/ar`（`SceneSource` + `scene_server`）之上**生长**,不推倒重来。
+Engine-independent, with Swift/RealityKit **and** Unity/AR Foundation; supports Vision Pro, phones, tablets, HoloLens, Quest, and browsers; targets high performance and edge/distributed integration. **Extend** existing `deploy/ar` (`SceneSource` + `scene_server`) rather than replacing it.
 
-> 英文版见 `ARCHITECTURE.md`。本版额外说明 **P3 分布式层下沉到你的 `edgecloud` 模块**。
+> See also `ARCHITECTURE.md`. This document additionally explains **delegating the P3 distributed layer to the existing `edgecloud` module**. Its filename is retained for compatibility with existing links.
 >
-> **未来兼容生态路线图**(还能接哪些 OpenXR 头显、Unreal、ROS2、传输、非 AR 消费者等,
-> 含逐项状态:已做 / 可达 / 红线外)见 `future.md`。
+> The **future compatibility roadmap** in `future.md` covers other OpenXR headsets, Unreal, ROS2, transports, non-AR consumers, and itemized implemented/reachable/out-of-scope status.
 
-## 0. 唯一的原则
+## 0. One Principle
 
-下面一切都来自**把系统拆成四层、每层可独立替换**。兼容性、性能、分布式,本质上都只是"某一层选了哪种实现"。
+Everything follows from **four independently replaceable layers**. Compatibility, performance, and distribution depend on the implementation chosen for each layer.
 
 ```
   ┌────────────┐   ┌──────────┐   ┌─────────────┐   ┌──────────────┐
   │  STATE     │ → │  SCHEMA  │ → │  TRANSPORT  │ → │   RENDER     │
-  │ 世界模型    │   │ 中立契约  │   │ 发布订阅 +   │   │ 各引擎薄适配  │
-  │ 聚合器      │   │          │   │ 边缘网关     │   │              │
+  │ World-model│   │ Neutral  │   │ Pub/sub +   │   │ Thin engine  │
+  │ aggregator │   │ contract │   │ edge gateway│   │ adapters     │
   └────────────┘   └──────────┘   └─────────────┘   └──────────────┘
-   机器人/障碍/      FlatBuffers     ▼ 下沉到 edgecloud   Swift/RealityKit
-   位姿/计划/目标     IDL + ICD       NATS 总线 + 边缘网关  Unity/ARF
-   (共享世界系)      (兼容核心)       + controller 编排    WebXR
+   Robots/obstacles/ FlatBuffers    Delegated to edgecloud Swift/RealityKit
+   poses/plans/goals IDL + ICD      NATS bus + gateways    Unity/ARF
+   (shared world)   (compatibility) + controller           WebXR
 ```
 
-- **两个引擎能互通**:因为它们只共享 **SCHEMA**(一份 IDL → 生成 Swift + C# 代码)+ **约定(ICD)**。别的什么都不共享,各自是独立视图客户端。
-- **性能极致**:在 **TRANSPORT + SCHEMA**(零拷贝二进制、增量+关键帧、数据报、客户端插值)。
-- **边缘/分布式**:在 **TRANSPORT**——**整层下沉给 `edgecloud`**(见第 6 节)。
-- **通用(多机器人)**:在 **STATE**(实体化,而非写死走廊)。
+- **Engine interoperability:** share only **SCHEMA** (one IDL generates Swift/C#) and **ICD conventions**; clients otherwise remain independent views.
+- **Performance:** **TRANSPORT + SCHEMA**, using zero-copy binary data, deltas/keyframes, datagrams, and client interpolation.
+- **Edge/distribution:** delegate the entire **TRANSPORT** layer to `edgecloud` (§6).
+- **Generality/multiple robots:** **STATE** uses entities rather than a hard-coded corridor.
 
 ---
 
-## 1. STATE —— 世界模型(把 `SceneSource` 泛化)
+## 1. STATE: Generalize `SceneSource` into a World Model
 
-现在 `SceneSource` 只持有一个走廊场景。泛化成 **`WorldState`**:一组**实体**,每个 `{id, type, pose, frame, geometry, meta, rev}`。障碍、墙、机器人基座、机械臂连杆、目标、规划路径、**机器人遮挡代理**,统统是实体。
+Currently `SceneSource` holds one corridor. Generalize to **`WorldState`**, a set of entities, each `{id, type, pose, frame, geometry, meta, rev}`. Obstacles, walls, robot bases, arm links, goals, paths, and **robot occlusion proxies** are all entities.
 
-- **生产者(producers)** 往 `WorldState` 喂数据(每个都是小适配器):走廊障碍(`SceneSource`)、机器人位姿(任意 tracker)、关节状态、规划器、ROS2 话题。`SceneSource` 变成**其中一个**生产者,而非全部。
-- `WorldState` 记每个实体的 `rev`,让编码器能发**增量**。
-- 记录系:**一个可插拔 tracker 提供的共享世界系**(`BaseLocalizationPlugin` 抽象——Vicon / OptiTrack / SLAM / VIO / fiducial 都是可互换后端,见下文"坐标系来源与配准——与跟踪系统无关")。**唯一**的结构性要求是:机器人**和** AR 设备定位进**同一个**世界系。子系(`<robot>/base`、`<arm>/link_k`)引用父系(TF 式)→ 多机器人/机械臂"免费"获得,只要发它们的变换。
+- Small **producer adapters** feed `WorldState`: corridor obstacles (`SceneSource`), robot poses from any tracker, joints, planners, ROS2 topics. `SceneSource` becomes one producer rather than the whole state.
+- Per-entity `rev` enables delta encoding.
+- Reference frame: **a shared world frame supplied by a pluggable tracker**, via `BaseLocalizationPlugin`. Vicon, OptiTrack, SLAM, VIO, and fiducials are interchangeable backends; see frame registration below. The only structural requirement is that **both robots and AR devices localize in the same world**. Child frames (`<robot>/base`, `<arm>/link_k`) reference parents as in TF; multiple robots/arms then need only their transforms.
 
-> 多机器人/机械臂的扩展是 **STATE** 的事:N 个机器人 = N 个生产者按 id 往同一个 `WorldState` 写。**无需新架构**。
+> Multiple robots/arms are a **STATE** extension: N producers write IDs into one `WorldState`. No new architecture is needed.
 
 ---
 
-## 2. SCHEMA —— 兼容核心(一份 IDL,多语言生成)
+## 2. SCHEMA: One IDL, Generated Multi-Language Compatibility
 
-这是让 Swift + Unity 互通的关键。契约**只定义一次**,用 **FlatBuffers** IDL;`flatc` 生成 **Swift、C#、Python、TS** 结构体。FlatBuffers **读时零拷贝**(客户端每帧读位姿,无需解析步骤),并支持 schema 演进。
+Define the contract once in **FlatBuffers** IDL; `flatc` generates **Swift, C#, Python, TS** structures. FlatBuffers offers **zero-copy reads**, avoiding per-frame pose parsing, and supports schema evolution.
 
 ```fbs
-// deploy/ar/schema/world.fbs (草图)
+// deploy/ar/schema/world.fbs (sketch)
 namespace twin;
 struct Vec3 { x:float; y:float; z:float; }
 struct Quat { w:float; x:float; y:float; z:float; }
-struct Pose  { p:Vec3; q:Quat; }                  // 在 `frame` 系
+struct Pose  { p:Vec3; q:Quat; }                  // Expressed in `frame`
 enum GeomKind:byte { Box, Sphere, Cylinder, Capsule, Usd, Urdf, Path }
 enum EntityType:byte { Obstacle, Wall, Robot, ArmLink, Goal, Path, Occluder }
 table Geometry { kind:GeomKind; half_extents:Vec3; radius:float; height:float;
@@ -60,167 +57,166 @@ table Geometry { kind:GeomKind; half_extents:Vec3; radius:float; height:float;
 table Entity   { id:string(key); type:EntityType; frame:string; pose:Pose;
                  geom:Geometry; color_rgba:uint; rev:uint; meta:string; }
 table WorldSnapshot { schema_version:uint; site:string; stamp_ns:ulong;
-                      frame:string;   // 根世界系名,如 "world"
-                      tracker:string; // 来源:"vicon"|"optitrack"|"slam"|"vio"|"fiducial"|...
+                      frame:string;   // Root-world frame name, e.g. "world"
+                      tracker:string; // Source: "vicon"|"optitrack"|"slam"|"vio"|"fiducial"|...
                       units:string; is_keyframe:bool;
                       entities:[Entity]; removed_ids:[string]; }
 ```
 
-再提供同 schema 的 **JSON 投影**用于调试/浏览器/现有 `scene_server`(保留)。JSON = 人看/调试视图;FlatBuffers = 热路径。
+Provide a same-schema **JSON projection** for debugging, browsers, and retained `scene_server`. JSON is the human/debug view; FlatBuffers is the hot path.
 
-**约定(ICD —— `schema/conventions.md`)** 是兼容性的另一半:
-- 坐标系:单一共享世界系(与跟踪系统无关;见下一节),**米/弧度,右手系,z 向上,x 向前**。
-- 各引擎基变换(每个客户端各自做;用已知点实测验符号):
-  - Unity(左手, y-up):`unity = (-y, z, x)` —— 已在 `FrameRegistration.cs`。
-  - RealityKit(右手, y-up, −z 前):`rk ≈ (-y, z, -x)`。
-  - three.js/WebXR(右手, y-up, −z 前):同 RealityKit。
-- 稳定 `id`(跨帧实体身份)、`rev` 语义、资产格式(**USD/USDZ** 网格、**URDF** 机器人)、颜色/单位。
-
----
-
-## 3. TRANSPORT —— 下沉到 `edgecloud`(性能 + 分布式)
-
-**这一层整体交给你的 `edgecloud` 模块,不在 enerdynamics 里重造。** 见第 6 节的边界与映射。两个要点照旧:
-
-- **通道拆分**:高频位姿走"丢旧"的尽力而为(NATS core);低频场景/配置走可靠(NATS JetStream)。两种速率解耦。
-- **传输载荷**:FlatBuffers(零拷贝);增量 + 周期关键帧,不重发静态场景。
+**ICD conventions, `schema/conventions.md`,** complete compatibility:
+- One tracker-independent shared world, **meters/radians, right-handed, z up, x forward**.
+- Per-client basis conversion, checked against known measured points:
+  - Unity, left-handed/y-up: `unity = (-y, z, x)`, already in `FrameRegistration.cs`.
+  - RealityKit, right-handed/y-up/−z forward: `rk ≈ (-y, z, -x)`.
+  - three.js/WebXR uses the RealityKit mapping.
+- Stable cross-frame `id`, `rev` semantics, **USD/USDZ** meshes/**URDF** robots, colors, and units.
 
 ---
 
-## 4. RENDER —— 各引擎薄适配器(两个生态)
+## 3. TRANSPORT: Delegate Performance and Distribution to `edgecloud`
 
-每个引擎 = 几百行的适配器:连网关、反序列化 FlatBuffers(零拷贝)、做自己的基变换、按 `id` 实例化/更新实体、做**客户端插值/外推**(用 30Hz 状态渲染出 90Hz)。两端共享的只有:生成的 schema 代码 + ICD。
+**The entire layer belongs to the existing `edgecloud` module; do not rebuild it in enerdynamics.** Boundaries/mappings are in §6. Retain two principles:
 
-- **Unity/AR Foundation** —— 已有脚手架(`CorridorRenderer` + `FrameRegistration`);把 JSON→FlatBuffers、泛化成实体、加 `URDF-Importer` 导机器人。一份代码 → iOS/Android/visionOS(PolySpatial)/HoloLens·Quest(OpenXR)。
-- **Swift/RealityKit** —— 对应适配器(WebSocket:P2 用 URLSession 连 `scene_server`,P3 起改 NATS-WS;+ FlatBuffers-Swift + RealityKit 实体 + `rk=(-y,z,-x)`)。**复用你现有的 Vision Pro 框架**。
-- **WebXR/three.js** —— 零安装的 Android/网页视图。
-- **真实机器人遮挡(你的 Q3)**:发一个 `Occluder` 实体到机器人**被跟踪的世界位姿**(URDF/代理网格);各引擎用"只写深度、不画颜色"的隐形材质渲染它 → 真实机器人正确遮挡虚拟墙。
-
-### 4a. Meta / Quest 目标(OpenXR + Meta XR SDK)
-
-**默认头显目标:Meta Quest 3 / 3S / Pro**(passthrough MR)。它们是真正的 MR 设备——6-DoF inside-out 跟踪 + 彩色透视——所以能像 Vision Pro 一样渲染世界锁定的全息体。**Ray-Ban / Ray-Ban Display 不是目标**:单目 HUD,无第三方 6-DoF、无空间渲染 runtime,锁不住全息体。这是硬件/SDK 限制,不是引擎选择问题。
-
-**ARCore 和 Quest 是两个不同的 runtime,不是迁移路径。** ARCore 是 Android **手机**端 runtime;Quest 是 **OpenXR + Meta XR SDK**,不调用 ARCore。这套架构的意义在于:你把每个 runtime 当成**同一棵树的叶子**——**STATE / SCHEMA / TRANSPORT 以及整个 RENDER 适配器(`WorldRenderer` + `WorldClient` + `EntityState` + `(-y,z,x)` 基变换)全不变**。Quest 是 Android,所以 WebSocket / WebTransport 末端也不变。相对手机路径**只有两处不同**:
-
-1. **XR provider 插件** —— 把 *ARCore XR Plugin* 换成 **Meta OpenXR feature / Meta XR SDK**,build target 改 Quest。这是 Unity player settings,**不是代码**——`WorldRenderer.cs` 不 import 任何 XR 包。
-2. **配准** —— *谁驱动* `FrameRegistration.WorldOriginAnchor`。手机用 `ARTrackedImageManager` 认 surveyed fiducial;OpenXR 头显用 **`OpenXRAnchorProvider`**(`clients/unity/Scripts/OpenXRAnchorProvider.cs`),即**厂商无关**的"头显贴 Vicon marker"配准器——同一个可替换契约(它只写那一个 anchor Transform)。`QuestAnchorProvider` 是它的薄 Quest 子类;**Pico / Magic Leap 2 / Android XR / Vive XR 直接挂 `OpenXRAnchorProvider`**——配准完全一致,只有 OpenXR feature group 不同(player settings)。
-
-**配准(对应 §4b 表里 Vision Pro 那一行——用你已有的 Vicon):** 头显贴一组刚性 Vicon marker。Vicon 流出头显世界位姿;Quest 自带跟踪给头显在 Unity 里的位姿;anchor 即闭式解 `anchor = headset_unity ∘ L⁻¹`,其中 `L` 是头显 Vicon 位姿过同一个 `(-y,z,x)` 映射(`FrameRegistration.WorldToAnchorLocalRot`,现已成为渲染与配准共用的**单一真源**)。`OpenXRAnchorProvider` 每个 Vicon 样本解一次,并对(准静态的)anchor 做 **EMA 平滑**——既去抖动,又**持续重新钉到 Vicon 真值**,所以一整段会话里全息体都不会漂离真机(一次性 fiducial 会漂)。头部高频运动由 Quest 低延迟本地跟踪渲染,Vicon 流的网络延迟只喂慢速漂移纠正——无害。**不需要 fiducial,也不需要 passthrough 相机权限**,且机器人 + 头显天然在同一个 Vicon 世界系(满足 §1)。
-
-> **安装偏移在上游。** marker→头帧的刚性偏移是生产者/标定的事(在 `producers/tracker_pose.py` 里处理,和机器人 base 一样),所以 Unity 端保持干净:它通过 `SetHeadsetPoseWorld(...)` 消费**已在 Vicon 世界系**的头显位姿,与传输无关(专用 headset-pose WS,或现有流上的一个 `headset/<id>`(`viewer`)实体——见 §1 / `populate_headset`)。Vicon 头显流不稳时把 `LockWhenConverged` 打开。
-
-> 其余生态仍是同一份 Unity 代码:iOS/Android(AR Foundation → ARKit/ARCore)、visionOS(PolySpatial)、**以及所有 OpenXR 头显(Quest、Pico、Magic Leap 2、Android XR、Vive XR…)经 `OpenXRAnchorProvider`**——每个目标只有 XR feature group +(手机上)配准 provider 不同。
+- **Separate channels:** high-frequency poses use best-effort/drop-old NATS core; low-frequency scenes/configuration use reliable NATS JetStream. Decouple rates.
+- **Payload:** zero-copy FlatBuffers, deltas and periodic keyframes, without retransmitting static scenes.
 
 ---
 
-## 4b. 坐标系来源与配准 —— 与跟踪系统无关
+## 4. RENDER: Thin Engine Adapters for Both Ecosystems
 
-整个设计**只假设一件事:有一个机器人和 AR 设备都能被定位进去的共享世界系。** 谁提供这个系是**可插拔后端**——`deploy/localization/BaseLocalizationPlugin.get_state() -> (qpos, qvel)`,而 #2 的坐标胶水 `Se2Transform.scene_base_from_world(qpos, qvel)` **吃任何后端**。**Vicon 只是一个后端,不是假设。**
+Each adapter is a few hundred lines: connect to gateway, read FlatBuffers without copies, apply its basis mapping, instantiate/update by `id`, and interpolate/extrapolate client-side, rendering90 Hz from30 Hz state. Clients share generated schema and ICD only.
 
-随 tracker 变化的只有两件事;其余(STATE / SCHEMA / TRANSPORT / RENDER、坐标胶水、遮挡代理)全不变:
-1. **定位后端** —— 每个来源一个 `BaseLocalizationPlugin`。
-2. **共同配准** —— 机器人**和** AR 设备怎么进**同一个**系。
+- **Unity/AR Foundation:** existing `CorridorRenderer`/`FrameRegistration` scaffolding; replace JSON with FlatBuffers, generalize entities, add `URDF-Importer`. One codebase targets iOS/Android/visionOS(PolySpatial)/HoloLens/Quest(OpenXR).
+- **Swift/RealityKit:** adapter uses URLSession WebSocket to `scene_server` inP2, NATS-WS fromP3, FlatBuffers-Swift, RealityKit entities, and `rk=(-y,z,-x)`. Reuse the existing Vision Pro framework.
+- **WebXR/three.js:** installation-free Android/browser view.
+- **Real-robot occlusion (Q3):** publish an `Occluder` at the tracked robot world pose using URDF/proxy mesh. Engines render invisible depth-only/no-color material, allowing the real robot to occlude virtual walls correctly.
 
-| 跟踪系统 | 定位后端 | AR 设备进同一系的方式 | 精度 |
+### 4a. Meta/Quest Targets: OpenXR and Meta XR SDK
+
+Default headsets are **Meta Quest3/3S/Pro**, with passthrough MR,6-DoF inside-out tracking, and color passthrough, enabling world-locked holograms as on Vision Pro. **Ray-Ban/Ray-Ban Display are not targets:** monocular HUD, no third-party6-DoF or spatial-rendering runtime, hence no world-locked holograms. This is a hardware/SDK boundary, not engine choice.
+
+**ARCore and Quest are different runtimes, not a migration sequence.** ARCore serves Android phones; Quest uses **OpenXR + Meta XR SDK**, not ARCore. Treat runtimes as leaves of one tree: **STATE/SCHEMA/TRANSPORT and the entire RENDER adapter (`WorldRenderer` + `WorldClient` + `EntityState` + `(-y,z,x)`) remain unchanged**. Quest is Android, so WebSocket/WebTransport endpoints also remain. Only two differences from phones:
+
+1. **XR provider plugin:** replace ARCore XR Plugin with Meta OpenXR features/Meta XR SDK and target Quest. These are Unity player settings, not renderer code; `WorldRenderer.cs` imports no XR package.
+2. **Registration:** change the provider driving `FrameRegistration.WorldOriginAnchor`. Phones detect surveyed fiducials with `ARTrackedImageManager`; OpenXR headsets use vendor-neutral **`OpenXRAnchorProvider`** (`clients/unity/Scripts/OpenXRAnchorProvider.cs`), attaching Vicon markers and writing the same anchor Transform. `QuestAnchorProvider` is a thin Quest subclass; **Pico/Magic Leap2/Android XR/Vive XR use `OpenXRAnchorProvider` directly**. Registration is identical; only player-setting OpenXR feature groups differ.
+
+**Registration using existing Vicon, corresponding to the Vision Pro approach in §4b:** attach rigid markers to the headset. Vicon provides world pose; local Quest tracking provides Unity pose. Solve `anchor = headset_unity ∘ L⁻¹`, where `L` is Vicon pose through the same `(-y,z,x)` mapping. `FrameRegistration.WorldToAnchorLocalRot` is the shared rendering/registration source of truth. Solve per Vicon sample and EMA-smooth the quasistatic anchor, filtering jitter while continually realigning to Vicon truth so session holograms remain aligned; one-shot fiducials may drift. Quest's low-latency tracking handles fast head motion; Vicon network delay feeds slow drift correction only. No fiducial/passthrough-camera permission is needed, and robot/headset naturally share Vicon world.
+
+> **Mounting offsets belong upstream.** Marker→head rigid calibration is a producer/calibration responsibility in `producers/tracker_pose.py`, as for robot bases. Unity consumes already-world-frame poses through `SetHeadsetPoseWorld(...)`, independent of transport: dedicated pose WS or a `headset/<id>` (`viewer`) entity on the existing stream; see §1/`populate_headset`. Enable `LockWhenConverged` for unstable Vicon headset streams.
+
+> Other targets retain the same Unity code: iOS/Android via ARKit/ARCore AR Foundation, visionOS via PolySpatial, and all OpenXR headsets through `OpenXRAnchorProvider`. Only XR feature groups and, for phones, registration providers vary.
+
+---
+
+## 4b. Frame Sources and Registration: Tracker-Independent
+
+The design assumes only **one world frame in which both robots and AR devices can localize**. Its source is pluggable: `deploy/localization/BaseLocalizationPlugin.get_state() -> (qpos, qvel)`. Coordinate glue `Se2Transform.scene_base_from_world(qpos, qvel)` accepts any backend. **Vicon is a backend, not an assumption.**
+
+Only two components vary with tracker; STATE/SCHEMA/TRANSPORT/RENDER, coordinate glue, and occlusion proxies remain:
+1. One `BaseLocalizationPlugin` per localization source.
+2. A registration mechanism putting robot and AR device into the same frame.
+
+| Tracker | Localization backend | AR registration into the shared frame | Accuracy |
 |---|---|---|---|
-| 光学动捕(Vicon / OptiTrack / Qualisys) | NatNet / RT / shm 插件 | 设备贴 marker → 动捕直接给世界位姿(最省事) | mm–cm |
-| LiDAR SLAM / AMCL | ROS2 odom 插件 | AR 设备在同一张地图重定位,或已知地图位姿放 fiducial | cm–dm,有漂移 |
-| VIO / 机载里程计 | 新插件 | 靠共享 fiducial 锚定(VIO 会漂) | 短期 cm / 漂移 |
-| 外部相机 + AprilTag/ArUco | fiducial 插件 | 双方都对同一套 fiducial 解算 | 近处 cm |
-| AR 设备自带追踪 + 识别机器人 | (无全局)设备算机器人相对位姿 | 世界系=设备系,机器人计划绑上去 | 较脆弱 |
-| 共享空间锚(ARCore Cloud / ARKit 协作) | 机器人靠 fiducial 接入 | 多 AR 设备共享一个锚系 | cm–dm |
+| Optical capture: Vicon/OptiTrack/Qualisys | NatNet/RT/shm plugin | Markers provide direct world pose, simplest route | mm–cm |
+| LiDAR SLAM/AMCL | ROS2 odom plugin | Relocalize AR device in the same map, or fiducial at known map pose | cm–dm, with drift |
+| VIO/onboard odometry | New plugin | Shared fiducial anchors drifting VIO | Short-term cm, then drift |
+| External camera + AprilTag/ArUco | Fiducial plugin | Both solve against the same fiducial set | Nearby cm |
+| AR device tracking + robot detection | Device estimates relative robot pose; no global backend | Device frame becomes world; robot plans attach to it | More fragile |
+| Shared spatial anchors: ARCore Cloud/ARKit collaboration | Robot joins through fiducials | Multiple AR devices share one anchor frame | cm–dm |
 
-**精度是参数,不是结构假设。** 把规划 `collision_margin` 和 governor 的 `m_track` 按 tracker 的**精度+延迟**来设:动捕(~cm)可以很薄,SLAM/VIO 就调大或先跑宽松场景。**架构对所有 tracker 完全一致——换插件、设余量即可。**
+**Accuracy is a parameter, not a structural assumption.** Set planning `collision_margin` and governor `m_track` from tracker accuracy+latency. Motion capture(~cm) permits tighter margins; SLAM/VIO needs larger margins or wider initial scenes. The architecture stays identical: change plugin and margins.
 
-## 5. 性能极致
+## 5. Performance
 
-1. **零拷贝序列化** —— FlatBuffers;客户端读位姿无需解析。
-2. **增量 + 关键帧** —— 不重发静态场景;只发变化实体 + 周期关键帧。
-3. **通道拆分** —— 高频位姿走 **数据报(尽力,丢旧)**;低频场景走 **可靠流**。
-4. **客户端插值/外推** —— 帧间航位推算 → 30Hz 网络渲染出 90Hz。渲染率 ⟂ 网络率。
-5. **同主机共享内存** —— 机器人→网关那一跳免序列化(NATS 同机/边缘网关本地)。
-6. **兴趣管理 + LOD** —— 按空间区域/subject 订阅;远处/大量实体降细节。撑多机器人。
-7. **QUIC/WebSocket 末端** —— 比裸 TCP 低延迟。
-8. **PTP/NTP 时间同步** —— 跨边缘对时;每条消息带 `stamp_ns`,用于插值与多源融合。
+1. **Zero-copy serialization:** FlatBuffers avoids client pose parsing.
+2. **Deltas/keyframes:** send changed entities and periodic snapshots, not repeated static scenes.
+3. **Separate channels:** high-rate poses on best-effort/drop-old datagrams; low-rate scenes on reliable streams.
+4. **Client interpolation/extrapolation:** dead-reckon between frames, rendering90 Hz from30 Hz networking; render and network rates are independent.
+5. **Same-host shared memory:** avoid serialization between robot and local gateway/NATS edge endpoint.
+6. **Interest management/LOD:** spatial/subject subscriptions and reduced detail for distant/numerous entities support multiple robots.
+7. **QUIC/WebSocket endpoints:** lower latency than raw TCP.
+8. **PTP/NTP synchronization:** synchronize edges; messages carry `stamp_ns` for interpolation/multisource fusion.
 
 ---
 
-## 6. 边缘与分布式 —— 下沉到 `edgecloud`(回答你的问题)
+## 6. Edge and Distributed Deployment Through `edgecloud`
 
-**可以,而且应该。** `edgecloud`(`WorkGetBetter/edgeforest/edgecloud`,Go)已经是一套**边缘编排/控制面**,正好提供 P3 需要的分布式底座。映射如下:
+The existing Go `edgecloud` (`WorkGetBetter/edgeforest/edgecloud`) is an edge-orchestration/control plane providing P3's distributed foundation:
 
-| P3 需要的 | enerdynamics 不再自造,改调 edgecloud 的 | edgecloud 现有 |
+| P3 need | Delegate from enerdynamics to edgecloud | Existing edgecloud capability |
 |---|---|---|
-| 发布订阅总线 | **NATS**(替代原方案的 Zenoh) | NATS(`tasks.submit` / `node.score.*` / `wasm.metrics.*` 等已在用) |
-| 兴趣管理/路由 | **NATS subject + 通配符** `twin.{site}.{robot}.pose` | NATS 原生 subject 路由 |
-| 高频/可靠分流 | NATS **core**(丢旧位姿)+ **JetStream**(可靠场景) | NATS |
-| 边缘层级 | NATS **leaf nodes**(每站一个边缘) | edge/gateway(Go,http/mqtt/media + spool 队列) |
-| AR 末端扇出 | **NATS over WebSocket**(Unity C# / Swift / 浏览器 nats.ws 直接订阅)或经 edge/gateway | edge/gateway 协议层 |
-| 编排/调度/可观测 | **controller**(跨边缘部署/扩缩网关、Prom/Grafana) | controller + edgectl/schedctl + Prometheus/Grafana |
+| Pub/sub bus | **NATS**, replacing the original Zenoh proposal | Already uses `tasks.submit`, `node.score.*`, `wasm.metrics.*`, etc. |
+| Interest management/routing | **NATS subjects/wildcards**, `twin.{site}.{robot}.pose` | Native subject routing |
+| High-rate/reliable split | NATS **core** for drop-old poses, **JetStream** for reliable scenes | NATS |
+| Edge hierarchy | NATS **leaf nodes**, one edge per site | Go edge/gateway: http/mqtt/media and spool queues |
+| AR endpoint fan-out | **NATS over WebSocket** directly to Unity C#/Swift/browser nats.ws, or via edge/gateway | Gateway protocol layer |
+| Orchestration/scheduling/observability | **controller** deploys/scales gateways across edges, Prom/Grafana | controller,edgectl/schedctl,Prometheus/Grafana |
 
-**边界(谁负责什么):**
+**Responsibility boundary:**
 ```
-enerdynamics/deploy/ar  ──发布 FlatBuffers WorldSnapshot 到 NATS subject──►  edgecloud
-  STATE(WorldState)                                                          NATS(core+JetStream)
-  SCHEMA(world.fbs)                                                          edge/gateway(扇出)
-  RENDER 适配器  ◄──────── 经 NATS-WS / edge gateway 订阅 ────────────────  controller(编排/可观测)
+enerdynamics/deploy/ar ── FlatBuffers WorldSnapshot on NATS subjects ──► edgecloud
+  STATE (WorldState)                                                    NATS(core+JetStream)
+  SCHEMA (world.fbs)                                                     edge/gateway(fan-out)
+  RENDER adapters ◄──────── NATS-WS / edge gateway subscriptions ─────── controller(orchestration/observability)
      │
-     └─ 世界原点配准(任意 tracker;见 §4b)
+     └─ World-origin registration with any tracker (§4b)
 ```
-- **enerdynamics 只负责** STATE + SCHEMA + RENDER,并**向下调用 edgecloud**(发/订 NATS subject)。
-- **edgecloud 负责** TRANSPORT + 分布式 + 边缘编排(NATS、边缘网关、controller、监控)。
-- 接口 = **NATS subject + FlatBuffers 载荷**(契约即 `world.fbs`)。
-- **ROS2 互通**:加一个小的 **NATS↔ROS2 桥**(或机器人直接发 NATS);可挂在 enerdynamics 现有 ROS2 IO 上。
+- **enerdynamics owns** STATE+SCHEMA+RENDER and calls edgecloud for NATS publish/subscribe.
+- **edgecloud owns** TRANSPORT,distribution,edge orchestration: NATS,gateways,controller,monitoring.
+- Interface: **NATS subject + FlatBuffers payload**, defined by `world.fbs`.
+- **ROS2 interoperability:** a small **NATS↔ROS2 bridge**, or robots publishing NATS directly, can attach to existing ROS2 IO.
 
-这样分布式/边缘的脏活全在 edgecloud,enerdynamics 这边的 AR 层保持轻、专注机器人+渲染;edgecloud 的 fleet/调度/WASM/可观测也能复用到多机器人多机械臂场景。
+This keeps distribution/edge infrastructure in edgecloud and AR focused on robots/rendering, while reusing fleet,scheduling,WASM,observability for multiple robots/arms.
 
 ---
 
-## 7. 落到 `deploy/ar` 的模块布局与迁移
+## 7. `deploy/ar` Modules and Migration
 
 ```
 deploy/ar/
   schema/
-    world.fbs            # 兼容核心(IDL)
-    conventions.md       # ICD:坐标系/单位/各引擎轴映射/配准/资产
+    world.fbs            # Compatibility IDL
+    conventions.md       # ICD: frames/units/engine mappings/registration/assets
     generated/           # flatc → swift/ csharp/ python/ ts/
-  world_state.py         # 通用 WorldState(实体 + 每实体 rev)  [泛化 SceneSource]
+  world_state.py         # Entities and per-entity rev; generalizes SceneSource
   producers/
-    corridor.py          # SceneSource 作为生产者
-    tracker_pose.py      # 机器人 base+occluder 以及 viewer 头显的世界位姿,来自任意 BaseLocalizationPlugin
-    ros2.py              # ROS2 话题 → 实体
+    corridor.py          # SceneSource producer
+    tracker_pose.py      # Robot base/occluder and viewer-headset world poses from BaseLocalizationPlugin
+    ros2.py              # ROS2 topics → entities
   encoders/
-    json_codec.py        # 调试/浏览器(今天的契约)
-    flatbuffers_codec.py # 热路径;增量 + 关键帧
+    json_codec.py        # Debug/browser/current contract
+    flatbuffers_codec.py # Hot path; deltas/keyframes
   transport/
-    nats_pub.py          # 发布 WorldSnapshot 到 edgecloud 的 NATS  ← 下沉边界
-    ws_json.py           # == 今天的 scene_server(留作调试/浏览器)
-  registration/          # 世界原点助手,与跟踪系统无关(Se2Transform 在此)
+    nats_pub.py          # Publish WorldSnapshot to edgecloud NATS: delegation boundary
+    ws_json.py           # Existing scene_server retained for debug/browser
+  registration/          # Tracker-independent world-origin helpers, including Se2Transform
   clients/
-    unity/   # AR Foundation(手机/visionOS) + WorldRenderer/WorldClient;
-             #   OpenXRAnchorProvider.cs = 厂商无关 OpenXR 配准器
-             #   (Quest/Pico/ML2/Android XR);QuestAnchorProvider.cs = Quest 子类(§4a)
+    unity/   # AR Foundation(phone/visionOS) + WorldRenderer/WorldClient
+             # OpenXRAnchorProvider.cs: vendor-neutral registration for
+             # Quest/Pico/ML2/Android XR; QuestAnchorProvider.cs: Quest subclass (§4a)
     swift/   # RealityKit(Vision Pro)
-    web/     # WebXR / three.js
+    web/     # WebXR/three.js
 ```
 
-> **Quest/Meta XR 工程配置清单**见 `clients/README.md` 的 "Setup — Meta Quest"
-> 一节(包/player settings/场景接线/部署),配准原理见 §4a。
+> Quest/Meta XR setup—packages,player settings,scene connections,deployment—is in `clients/README.md`, “Setup — Meta Quest.” Registration principles are in §4a.
 
-**迁移(每阶段都出价值,旧的不丢):**
-- **P0(已完成):** `SceneSource` + `scene_server`(WS+JSON)、`Se2Transform`、Unity 脚手架。
-- **P1 泛化:** `world.fbs` + `conventions.md`;`WorldState`(实体);`SceneSource`→生产者;同时出 JSON **和** FlatBuffers。Unity/Swift 适配器读实体。
-- **P2 性能(仍跑在现有 `scene_server` 上,不需要 NATS):** WS 载荷从 JSON 换成 **FlatBuffers**(二进制帧);增量+关键帧;客户端插值;(可选)再加 WebTransport 数据报通道。**NATS 属于 P3,这一步不引入。**
-- **P3 分布式(下沉 edgecloud):** 接 **edgecloud 的 NATS + edge/gateway + controller**;subject 兴趣管理;多机器人经 ROS2↔NATS 桥接入。
+**Incremental migration, preserving existing value:**
+- **P0, complete:** `SceneSource`/`scene_server`(WS+JSON),`Se2Transform`,Unity scaffolding.
+- **P1, generalization:** `world.fbs`/`conventions.md`,entity-based`WorldState`,`SceneSource` producer,both JSON/FlatBuffers. Unity/Swift read entities.
+- **P2, performance on existing `scene_server`, without NATS:** binary FlatBuffers WS payloads,deltas/keyframes,client interpolation,and optional WebTransport datagrams. NATS begins inP3 only.
+- **P3, distributed through edgecloud:** NATS+edge/gateway+controller,subject interests,multi-robot ROS2↔NATS integration.
 
-> 今天的 `scene_server`/契约是**向前兼容**的:它变成 `ws_json` 调试网关 + `world.fbs` 的 JSON 投影。永远不重写,只是"长过它"。
+> Existing `scene_server`/contract is forward-compatible: it becomes the `ws_json` debug gateway/JSON projection of `world.fbs`. Extend beyond it rather than rewriting it.
 
 ---
 
-## 8. 待确认的决策
-- 序列化:**FlatBuffers**(零拷贝、多语言)vs Cap'n Proto vs Protobuf。
-- 总线:**NATS(edgecloud 已有)** ——故放弃原 Zenoh 提案,与 edgecloud 对齐。
-- 末端:**P2 用现有 `scene_server`(WebSocket,无需 NATS);P3 起改 NATS-over-WebSocket**(+ 可选 WebTransport)。
-- **Tracker:可插拔**(动捕 / SLAM / VIO / fiducial / 共享锚)——**不假设**任何一种,每个来源一个 `BaseLocalizationPlugin`(见 §4b)。
-- 机器人模型源:**URDF**(→ Unity URDF-Importer;→ USD 给 RealityKit)。
-- edgecloud 接入点:确认 NATS subject 命名规范、JetStream stream 配置、edge/gateway 是否要加专门的 AR 协议(还是直接用 NATS-WS)。
+## 8. Decisions to Confirm
+- Serialization: **FlatBuffers**, zero-copy/multilanguage, versus Cap'n Proto or Protobuf.
+- Bus: **NATS, already in edgecloud**, replacing the original Zenoh proposal.
+- Endpoints: existing WebSocket `scene_server` inP2 without NATS; NATS-over-WebSocket fromP3, optionally WebTransport.
+- **Pluggable tracker:** motion capture,SLAM,VIO,fiducials,shared anchors; no mandatory tracker. One `BaseLocalizationPlugin` per source (§4b).
+- Robot models: **URDF**, via Unity URDF-Importer and conversion to USD for RealityKit.
+- edgecloud integration: confirm NATS subject naming,JetStream stream setup,and whether edge/gateway needs a dedicated AR protocol or direct NATS-WS suffices.

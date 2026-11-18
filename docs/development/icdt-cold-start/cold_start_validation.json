@@ -1,0 +1,53 @@
+{
+  "schema_version": "icdt-no-results-cold-start-smoke-v1",
+  "status": "passed",
+  "mirror_has_results": false,
+  "mirror_has_runtime": false,
+  "source_module": "/tmp/icdt-cold-start-check-20261118/genedynamics/genedynamics/__init__.py",
+  "runtime_dependencies": "borrowed existing Python site-packages only; no fresh install claimed",
+  "guard": "reject source-repository code/config/assets/results file opens after imports",
+  "physics": "CPU",
+  "training_calls": 0,
+  "gpu_calls": 0,
+  "rows": [
+    {
+      "task": "aperture_brake",
+      "robot": "panda",
+      "seed": 12010000,
+      "controls": 10,
+      "status": "constructed_reset_and_stepped",
+      "full_episode_completed": false
+    },
+    {
+      "task": "sequential_aperture_reorientation",
+      "robot": "xarm7",
+      "seed": 12010001,
+      "controls": 10,
+      "status": "constructed_reset_and_stepped",
+      "full_episode_completed": false
+    },
+    {
+      "task": "corner_guided_seating",
+      "robot": "xarm7",
+      "seed": 12010002,
+      "controls": 10,
+      "status": "constructed_reset_and_stepped",
+      "full_episode_completed": false
+    }
+  ],
+  "formal_performance_evidence": false,
+  "full_source_qualification_performed": false,
+  "tests": {
+    "passed": 20,
+    "failed": 0,
+    "scope": [
+      "test/transfer/test_subtask_contracts.py",
+      "test/transfer/test_aperture.py",
+      "test/transfer/test_semantic_method_binding.py",
+      "test/learning/test_semantic_phase.py",
+      "test/transfer_methods/test_evidence_visualization.py"
+    ],
+    "cwd": "/tmp/icdt-cold-start-check-20261118/genedynamics",
+    "seconds": 1.34
+  }
+}

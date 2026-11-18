@@ -1,0 +1,25 @@
+{
+  "schema_version": "cross-embodiment-clean-ablation-v2",
+  "task": "obstacle_transfer",
+  "objective_family": "response_conditioned_transport",
+  "shared": {
+    "warm_start": {"actor": "task-owned public planner", "initial_residual": "identity"},
+    "data": {"candidate_episode_stream": "exact paired scale/mode order", "failure_policy": "retain all"},
+    "optimizer": {"candidate_grid": "shared bounded phase residuals", "selection": "minimum declared learned objective"},
+    "action_authority": {"coordinates": [0, 1, 2], "bounds": "shared 13D skill bounds"},
+    "recovery": {"task_owned_events": true, "method_cannot_read_evaluator_state": true},
+    "runtime_selector": {"selected_once": true, "online_method_switching": false},
+    "checkpoint_selection": {"selected_once": true, "evaluation_seed_access": false}
+  },
+  "treatments": {
+    "full": {"calibration": "target_calibrated", "response_weight": 1.0, "task_band": true, "anchoring_gate": "selective", "only_difference_from_full": []},
+    "no_calibration": {"calibration": "nominal_uncalibrated", "response_weight": 1.0, "task_band": true, "anchoring_gate": "selective", "only_difference_from_full": ["calibration"]},
+    "no_response_anchoring": {"calibration": "target_calibrated", "response_weight": 0.0, "task_band": true, "anchoring_gate": "selective", "only_difference_from_full": ["response_weight"]},
+    "unconditional_response_anchoring": {"calibration": "target_calibrated", "response_weight": 1.0, "task_band": true, "anchoring_gate": "unconditional", "only_difference_from_full": ["anchoring_gate"]}
+  },
+  "legacy_compatibility": {
+    "semantic_phase_fixed_gain_v1": {"evidence_reusable": false, "reason": "response model was diagnostic only"},
+    "band_only": {"evidence_reusable": false, "reason": "historical objective changed multiple terms"},
+    "ungated_full": {"evidence_reusable": false, "reason": "historical objective was not treatment-isolated"}
+  }
+}

@@ -1,98 +1,98 @@
-# G1 走廊 2GO · 实机 + AR 部署手册
+# G1 Corridor 2GO: Real-Robot and AR Deployment Manual
 
-> **重写于 2026-06-23,基于真机 bring-up 实测。** 机器人**起身 / 站立 / 行走已在硬件上验证通过**;走廊全程 + 收臂 + 动捕闭环 + AR 闭环为**待验证**(本文逐项标注)。这是从零到跑通的完整 runbook。
+> **Rewritten 2026-06-23 from hardware bring-up measurements.** Standing up, standing, and walking have **passed hardware validation**. Full-corridor execution, arm folding, motion-capture feedback, and AR feedback remain **unverified**, as marked below. This is the complete setup-to-execution runbook.
 >
-> 控制路线已确定并实测:**高层 sport(不是低层 lowcmd)** —— 腿走 `LocoClient.Move`(sport 内置 RL 步态),臂走 `rt/arm_sdk`,起身走 sport FSM `SetFsmId(4)→(200)`。参考 CMU SPARK `g1_real_agent`。
+> The selected, hardware-tested control route is **high-level sport, rather than low-level lowcmd**: legs use `LocoClient.Move` (sport's built-in RL gait), arms use `rt/arm_sdk`, and standing uses sport FSM `SetFsmId(4)→(200)`. Reference: CMU SPARK `g1_real_agent`.
 
 ---
 
-## 0. 总览:三台设备 + 一个原理
+## 0. Overview: Three Devices and One Principle
 
-你的真实拓扑:
+Actual topology:
 ```
-[iPhone]    Unity→Xcode AR app  ── WiFi ──► 连 Mac 孪生服务
+[iPhone]    Unity→Xcode AR app ── WiFi ──► Mac twin service
 
-[Mac]  算法/控制(~/g1 原生 env)
-   └─ 网线 en7 ─► [交换机] ─┬─► [G1 机器人  192.168.123.161]
-                            └─► [动捕主机 Motive  192.168.0.77]
-                                  NatNet 多播,直接发,无 ROS
+[Mac]  Algorithms/control (native ~/g1 environment)
+   └─ Ethernet en7 ─► [Switch] ─┬─► [G1 robot 192.168.123.161]
+                                └─► [Motive host 192.168.0.77]
+                                      Direct NatNet multicast, no ROS
 ```
-> Mac 一张 `en7`(设 /16)同时够到机器人(`.123.x`)和动捕(`.0.x`),两者在同一以太段。**动捕走有线 NatNet,不是 WiFi、不是 ROS。** 详细动捕接入 + 踩坑见 [`localization/mocap.md`](localization/mocap.md)。
+> A single Mac `en7` interface with a /16 subnet reaches both robot (`.123.x`) and motion capture (`.0.x`) on one Ethernet segment. **Motion capture uses wired NatNet, not WiFi or ROS.** See [`localization/mocap.md`](localization/mocap.md) for detailed setup and pitfalls.
 
-**原理 —— 共享数字孪生:** 一份 `SceneSource`(唯一障碍源)+ 一个**动捕世界系** + 一个 `T_world_scene`。**AR 渲染的障碍 = governor 避的障碍 = 同一物理位置。** 机器人靠**自身动捕定位 + 共享障碍几何**"感知"虚拟障碍 —— 没有视觉感知栈,障碍是虚拟的。
+**Principle: a shared digital twin.** One `SceneSource` (the sole obstacle source), one **motion-capture world frame**, and one `T_world_scene`. **AR-rendered obstacles and governor-avoided obstacles occupy the same physical locations.** The robot “perceives” virtual obstacles through its motion-capture localization and shared geometry; there is no vision-perception stack, and obstacles are virtual.
 
-**机器分工:**
+**Device responsibilities:**
 
-| 机器 | 跑什么 |
+| Device | Runs |
 |---|---|
-| **Mac** | 控制(`run_real_g1`)+ 孪生服务(`run_twin_server`)+ **动捕直连解析(`natnet_shm_writer --natnet`)** + 规划(Docker,离线) |
-| **动捕主机** | **只跑 Motive**(NatNet 多播直接发,无 ROS、无桥) |
-| **iPhone** | Unity ARKit AR app(连 Mac 的孪生服务渲染) |
-| **G1** | 网线连 Mac;sport 高层被 SDK 驱动 |
+| **Mac** | Control (`run_real_g1`), twin service (`run_twin_server`), **direct motion-capture parsing (`natnet_shm_writer --natnet`)**, and offline planning in Docker |
+| **Motion-capture host** | **Motive only**, directly streaming NatNet multicast, without ROS or a bridge |
+| **iPhone** | Unity ARKit app rendering from the Mac twin service |
+| **G1** | Ethernet-connected to Mac; SDK drives high-level sport |
 
 ---
 
-## 1. 一次性:Mac 原生环境 + 网络
+## 1. One-Time Native Mac Environment and Network Setup
 
-### 1.1 为什么是 Mac 原生(不用 Docker / fedguide / 机载 PC)
-真机控制要 `unitree_sdk2py` + `mujoco`(arm64)+ DDS 直连机器人。`fedguide` 是 Rosetta x86(跑不了 arm64 mujoco);Docker-on-Mac 跑不了到机器人的 DDS 多播;机载 PC 没外网 + py3.8。→ 用一个独立的 **Mac 原生 arm64 venv(`~/g1/venv`)+ 源码编译的 CycloneDDS**。
+### 1.1 Why Native Mac Rather Than Docker, fedguide, or the Onboard PC
+Hardware control requires `unitree_sdk2py`, arm64 `mujoco`, and direct robot DDS. `fedguide` is Rosetta x86 and cannot run arm64 mujoco; Docker on Mac cannot provide the required robot DDS multicast; the onboard PC lacks Internet access and uses Python3.8. Use an independent **native arm64 Mac venv (`~/g1/venv`) and source-built CycloneDDS**.
 
-### 1.2 装(一次性)
-**CycloneDDS**(macOS 上 `cyclonedds==0.10.2` 无轮子、无 brew formula,而 `unitree_sdk2py` 硬 pin 这个版本 → 必须源码编译):
+### 1.2 Install Once
+**CycloneDDS:** macOS has no wheel or brew formula for `cyclonedds==0.10.2`, which `unitree_sdk2py` pins, so build from source:
 ```bash
 git clone --depth 1 -b 0.10.2 https://github.com/eclipse-cyclonedds/cyclonedds /tmp/cdds
 cmake -S /tmp/cdds -B /tmp/cdds/build -DCMAKE_INSTALL_PREFIX=$HOME/g1/cyclonedds -DBUILD_IDLC=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build /tmp/cdds/build --target install -j4    # 产出 libddsc + idlc
+cmake --build /tmp/cdds/build --target install -j4    # Produces libddsc and idlc
 ```
-**venv + 依赖**(homebrew py3.12 原生 arm64):
+**venv and dependencies:** native arm64 Homebrew Python3.12:
 ```bash
 /opt/homebrew/bin/python3 -m venv $HOME/g1/venv
 CYCLONEDDS_HOME=$HOME/g1/cyclonedds $HOME/g1/venv/bin/pip install "cyclonedds==0.10.2"
 CYCLONEDDS_HOME=$HOME/g1/cyclonedds $HOME/g1/venv/bin/pip install "git+https://github.com/unitreerobotics/unitree_sdk2_python.git"
 $HOME/g1/venv/bin/pip install "mujoco" "numpy<2" scipy "jax[cpu]" "websockets>=12" "flatbuffers>=2.0"
 ```
-**每次运行必带的环境变量**(建议做成 shell 别名):
+**Required environment variables for every run** (a shell alias is convenient):
 ```bash
 export CYCLONEDDS_HOME=$HOME/g1/cyclonedds DYLD_LIBRARY_PATH=$HOME/g1/cyclonedds/lib
 ```
 
-### 1.3 网络
-- 网线 Mac↔G1。Mac 的 USB 网卡(本机是 **`en7`**)设静态 IP:
+### 1.3 Network
+- Connect Mac↔G1 by Ethernet. Configure the Mac USB adapter (**`en7`** on this machine) with a static address:
   ```bash
-  sudo networksetup -setmanual "USB 10/100/1000 LAN" 192.168.123.222 255.255.255.0   # 路由器留空
+  sudo networksetup -setmanual "USB 10/100/1000 LAN" 192.168.123.222 255.255.255.0   # Leave router blank
   ```
-  验证:`ping 192.168.123.161`(机器人主控板)通。`--network-interface en7`(Mac 上是 en7,机载 PC 上才是 eth0)。
-- **Mac 的 WiFi 接实验室网**(够到动捕主机 + iPhone)。
+  Check `ping 192.168.123.161` (robot mainboard). Use `--network-interface en7`; `eth0` applies to the onboard PC, not this Mac.
+- **Connect Mac WiFi to the lab network** to reach the motion-capture host and iPhone.
 
 ---
 
-## 2. 已验证 vs 待验证(诚实清单)
+## 2. Validated and Pending Capabilities
 
-✅ **已在硬件验证(2026-06-23):**
-- Mac↔G1 DDS 通信:读 `rt/lowstate`(35 路电机,**0–28 为活动关节**,29–34 手部/保留;`mode_machine=5`)。
-- **起身**:`GetFsmId → SetFsmId(4)[LockStand,站起锁定] → SetFsmId(200)[MainMode,可行走]`。
-  - ⚠️ **pip SDK 的 `Start()`=SetFsmId(500)、`Squat2StandUp()`=706 是错的 id**,本固件拒(Invalid FSM ID 7302)。**必须用通用 `SetFsmId` + `4`/`200`**(SPARK 的 id)。
-- **站立平衡**:MainMode 下机器人"活的",会自主小幅踏步保持平衡 —— **正常,不是失控**。
-- **行走**:`Move(vx)` 迈步。**脚必须承重**(sport 步态接触门控,完全离地只会站不会走)。`vx=0.1` 太慢只原地碎步;`0.2+` 明显向前迈步。
-- **动捕直连(2026-06-24,无机器人):** `Motive NatNet 多播 → natnet_shm_writer --natnet → mocap_state_shm → ViconShmPlugin` 端到端读出 G1 base 位姿(毫米级稳定)。**全程无 ROS。** 详见 [`localization/mocap.md`](localization/mocap.md)。
+✅ **Hardware-validated on 2026-06-23:**
+- Mac↔G1 DDS: reads `rt/lowstate`, with35 motor channels; **0–28 are active joints**,29–34 hands/reserved; `mode_machine=5`.
+- **Standing up:** `GetFsmId → SetFsmId(4)` (LockStand) `→ SetFsmId(200)` (MainMode, walking enabled).
+  - ⚠️ The pip SDK's **`Start()`=SetFsmId(500)** and **`Squat2StandUp()`=706** use IDs rejected by this firmware (`Invalid FSM ID 7302`). Use generic **`SetFsmId` with4/200**, following SPARK.
+- **Standing balance:** in MainMode, small autonomous balance steps are normal, not loss of control.
+- **Walking:** `Move(vx)` produces steps. **Feet must bear weight** because sport uses contact gating; a fully suspended robot stands but does not walk. `vx=0.1` produces shuffling; `0.2+` produces clear forward steps.
+- **Direct motion capture, 2026-06-24, without robot:** `Motive NatNet multicast → natnet_shm_writer --natnet → mocap_state_shm → ViconShmPlugin` reads G1 base pose end to end, with millimeter-level stability. **No ROS anywhere.** See [`localization/mocap.md`](localization/mocap.md).
 
-⏳ **待验证:**
-- `run_real_g1` 全程走廊(起身 + governor + 走 + 收臂一起跑)。
-- **arm_sdk 收臂**(第一次真机);若乱甩,调 `arm_sdk` 的 `motor_cmd.mode`(SPARK 留默认 0,官方 arm_sdk 例子设 1)。
-- **动捕闭环**:机器人 + 动捕一起,`run_real_g1 --localization vicon`(修掉 mock 开环转身飘逸);含刚体 +x 朝向校验。
-- AR 闭环(iPhone 注册 + 机器人绕虚拟障碍)。
+⏳ **Pending validation:**
+- Full `run_real_g1` corridor: stand-up, governor, walking, arm folding together.
+- **arm_sdk folding** on hardware for the first time. If arms swing erratically, adjust `motor_cmd.mode`: SPARK leaves default0, official arm_sdk example uses1.
+- **Motion-capture feedback:** robot and capture together with `run_real_g1 --localization vicon`, replacing mock's open-loop heading drift, including rigid-body +x calibration.
+- AR feedback: iPhone registration and robot avoidance of virtual obstacles.
 
-**deploy 已覆盖的代码**(`genedynamics/deploy/io/unitree_g1_io.py`):`_bring_up_sport()`(按当前 FSM 走 `…→4→200`,已修为完整路径)、`_send_arm_sdk()`(`rt/arm_sdk` + `kNotUsedJoint=29` 权重位)、`LowCmd_` 默认工厂构造 + `mode_machine`。所以 `run_real_g1` 不用改,reset 自动起身、腿 Move、臂 arm_sdk。
+**Implemented deployment support** in `genedynamics/deploy/io/unitree_g1_io.py`: `_bring_up_sport()` follows the current FSM through the repaired full `…→4→200` sequence; `_send_arm_sdk()` uses `rt/arm_sdk` and `kNotUsedJoint=29` weight channel; `LowCmd_` uses its default factory and `mode_machine`. `run_real_g1` therefore needs no changes: reset stands up automatically, legs use Move, arms use arm_sdk.
 
 ---
 
-## 3. 机器人运动验证阶梯(每次开机照走)
+## 3. Robot Motion Validation Ladder: Repeat After Each Power-On
 
-> **安全(实验室无 e-stop):所有运动在你自己终端跑(Ctrl-C 在手),机器人吊龙门 / 自承重,手放电源开关附近。** 运动指令用 1 秒自动过期的速度,脚本一停机器人 ~1s 内停。
+> **Safety: this lab has no e-stop. Run all motion from your own terminal with Ctrl-C ready, a gantry/support arrangement, and a hand near the power switch.** Velocity commands expire automatically after1 second; stopping the script stops the robot in approximately1 s.
 
-环境 + 网络就绪(`ping .161` 通)后:
+After environment/network setup and successful `ping .161`:
 
-### 3.0 只读通信自检(无运动)
+### 3.0 Read-Only Communication Check: No Motion
 ```bash
 $HOME/g1/venv/bin/python - <<'PY'
 import time
@@ -101,166 +101,166 @@ from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
 ChannelFactoryInitialize(0, "en7")
 got={}; ChannelSubscriber("rt/lowstate", LowState_).Init(lambda m: got.__setitem__('m',m), 10)
 t=time.time()
-while time.time()-t<10 and 'm' not in got: time.sleep(0.2)   # 刚上电要等 DDS 服务起来(~数十秒)
+while time.time()-t<10 and 'm' not in got: time.sleep(0.2)   # DDS startup may take tens of seconds after power-on
 m=got.get('m')
-print("lowstate:", "OK" if m else "无(机器人还没启动完?)", "| mode_machine=", m.mode_machine if m else None)
+print("lowstate:", "OK" if m else "None (robot still starting?)", "| mode_machine=", m.mode_machine if m else None)
 from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
 lc=LocoClient(); lc.SetTimeout(3.0); lc.Init(); print("current FSM:", lc.GetFsmId())
 PY
 ```
-> 刚上电时 `ping` 先通,但 `rt/lowstate` 的运动服务要几十秒才起 —— **收不到先等一会再试**。
+> After power-on, ping works before the `rt/lowstate` motion service starts. **Wait tens of seconds and retry if no state arrives.**
 
-### 3.1 起身(`~/g1/bringup_test.py`,每步等回车)
-开机机器人在 **ZeroTorque(FSM 0,软)**。脚踩地有空间 / 吊龙门:
+### 3.1 Stand Up: `~/g1/bringup_test.py`, Enter Between Steps
+At startup the robot is in **ZeroTorque, FSM0, compliant**. Provide ground contact/clearance or gantry support:
 ```bash
 $HOME/g1/venv/bin/python $HOME/g1/bringup_test.py
 ```
-它读当前 FSM,走 `0→1→4→200`(每步回车确认)。**`SetFsmId(4)` 那步机器人发力站起来。** 到 `FSM 200` = 成功。放软:`… bringup_test.py --damp`。
-> ⚠️ 自承重站着时**别直接 `--damp`**(一软腿就塌);要放软先把它降到支撑/吊住。
+The script reads current FSM and follows `0→1→4→200`, requiring Enter at each step. **`SetFsmId(4)` makes the robot exert force and stand.** FSM200 means success. To relax: `… bringup_test.py --damp`.
+> ⚠️ **Never apply `--damp` directly while the robot supports itself:** the legs will collapse. Lower it onto support or suspend it first.
 
-### 3.2 小步走(`~/g1/move_test.py`)
-**脚要承重**(接触门控)。已在 MainMode 则跳过起身,直接 Move:
+### 3.2 Short Walk: `~/g1/move_test.py`
+**Feet must bear weight** for contact gating. In MainMode, skip stand-up and issue Move:
 ```bash
 $HOME/g1/venv/bin/python $HOME/g1/move_test.py --vx 0.2 --sec 3.0
 ```
-看是否从"原地碎步"变"明显向前迈步"。还不迈 → `--vx 0.3`。
+Check for clear forward stepping rather than shuffling. If still not stepping, try `--vx 0.3`.
 
-### 3.3 全程 `run_real_g1`(起身 + governor + 走 + 收臂)
+### 3.3 Full `run_real_g1`: Stand-Up, Governor, Walking, Arm Folding
 ```bash
 $HOME/g1/venv/bin/python scripts/tasks/robot/humanoid/run_real_g1.py \
     --plan results/humanoid/corridor_2d/main/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json \
     --preset zone_a --localization mock --network-interface en7 \
     --plan-speed 0.35 --max-steps 150
 ```
-- `--localization mock` = 无动捕,固定起点位姿驱动 governor → 先验**软件全链**(起身 + governor + Move + arm_sdk)。
-- reset 自动 `4→200` 起身(已在 MainMode 则 no-op)。
-- **⚠️ 盯手臂第一次收拢:平稳收向收拢姿态 = 好;乱甩 = 立刻 Ctrl-C**(然后调 arm_sdk 的 mode)。
+- `--localization mock` uses a fixed initial pose without capture, first checking the **complete software chain**: stand-up, governor, Move, arm_sdk.
+- Reset automatically performs `4→200`; already being in MainMode is a no-op.
+- **⚠️ Watch the first arm fold: smooth folding is expected; erratic swinging requires immediate Ctrl-C**, followed by arm_sdk mode inspection.
 
 ---
 
-## 4. 动捕(NatNet)接入 —— 直连,无 ROS
+## 4. Direct NatNet Motion Capture: No ROS
 
-> **2026-06-24 端到端实测通过。完整步骤 + 踩坑全记录见 [`localization/mocap.md`](localization/mocap.md);这里是要点。**
+> **Validated end to end on2026-06-24. Full instructions/pitfalls are in [`localization/mocap.md`](localization/mocap.md); essentials follow.**
 
-数据流:`Motive(NatNet 多播,Z-up,Rigid Bodies)→ Mac en7 → natnet_shm_writer --natnet → mocap_state_shm → --localization vicon`。**Motive 直接发 NatNet,Mac 直接解析,全程无 ROS、无 UDP 桥**(之前的 `mocap_udp_bridge.py` / `natnet_ros2` 路线对本套设置作废)。
+Flow: `Motive (NatNet multicast, Z-up, Rigid Bodies) → Mac en7 → natnet_shm_writer --natnet → mocap_state_shm → --localization vicon`. **Motive sends NatNet directly; Mac parses directly; no ROS/UDP bridge.** Earlier `mocap_udp_bridge.py`/`natnet_ros2` routes are obsolete for this setup.
 
-### 4.1 网络(临时,重启重做)
+### 4.1 Network: Temporary, Repeat After Restart
 ```bash
-sudo networksetup -setmanual "USB 10/100/1000 LAN" 192.168.0.100 255.255.0.0  # /16 同时够到动捕+机器人
-sudo route -n add -host 239.255.42.99 -interface en7                          # 多播路由掰到有线口
-ping 192.168.0.77   # Motive 主机通
+sudo networksetup -setmanual "USB 10/100/1000 LAN" 192.168.0.100 255.255.0.0  # /16 reaches capture and robot
+sudo route -n add -host 239.255.42.99 -interface en7                          # Route multicast through Ethernet
+ping 192.168.0.77   # Motive host
 ```
-⚠️ **别把 Mac 设成 `.0.77`(撞 Motive 自己);多播路由这条必加**(macOS 默认走 WiFi,不加 en7 收不到包)。
+⚠️ **Do not assign Mac `.0.77`, which conflicts with Motive. The multicast route is required:** macOS otherwise defaults to WiFi and en7 receives nothing.
 
-### 4.2 Motive 侧(持久,一次配好)
-Settings → Streaming:**Enable** / **Local Interface=`192.168.0.77`**(朝 Mac 那张网卡,关键) / **Multicast** / **Rigid Bodies=ON** / **Up Axis=Z**。在 Motive 里给 G1 建刚体(`+x = 机器人前向`,原点在骨盆),记下它的 **Streaming ID(本机 = `5`)**。
+### 4.2 Motive: Persistent One-Time Settings
+Settings → Streaming: **Enable**, **Local Interface=`192.168.0.77`** (the adapter toward Mac, critical), **Multicast**, **Rigid Bodies=ON**, **Up Axis=Z**. Create G1's rigid body with **+x forward and origin at the pelvis**; record its **Streaming ID, `5` here**.
 
-### 4.3 跑订阅 + 验证
+### 4.3 Subscribe and Verify
 ```bash
-# 写 shm（一直跑）
+# Keep this shared-memory writer running
 PYTHONPATH=<repo> $HOME/g1/venv/bin/python -m genedynamics.deploy.localization.natnet_shm_writer \
     --natnet --local-ip 192.168.0.100 --server 192.168.0.77 --rigid-body-id 5
-# 验证（机器人真正读的那条路）
+# Verify the exact path read by the robot
 python -c "from genedynamics.deploy.localization.vicon_shm_plugin import ViconShmPlugin; \
 import time,numpy as np; p=ViconShmPlugin({}); time.sleep(0.3); print(np.round(p.get_state()[0],3))"
 ```
-站着不动读到稳定位姿 = 闭环就绪。之后 `run_twin_server` / `run_real_g1` 用 `--localization vicon`。
-> **无线?** Motive 改 `Unicast` + 加 `--unicast` 即可,**仅调试用;真机闭环用有线**(WiFi 抖动/丢包会劣化控制)。见 [`localization/mocap.md`](localization/mocap.md) §5。
+A stable stationary pose indicates readiness for feedback. Use `--localization vicon` for `run_twin_server`/`run_real_g1`.
+> **Wireless:** select Motive `Unicast` and add `--unicast`, **for debugging only**. Hardware feedback uses Ethernet because WiFi jitter/loss degrades control. See [`localization/mocap.md`](localization/mocap.md) §5.
 
-### 4.4 `T_world_scene`(场景系 ↔ 动捕世界系)
-**Motive 世界原点已固定(你已确认)—— 不去改它**,只把"场景系"和它对上。两条:
-- **对齐法(最省事 → `TWS = "0 0 0"`,不用量):** 去 Motive 里看世界原点的位置和 +x 方向,**贴地面走廊时让场景原点 O 压在 Motive 原点上、中线 +x 对齐 Motive +x**。
-- **两点法(场景不方便压在 Motive 原点时):** 放一个反光 marker 到 O 读 Motive 世界坐标 `(X0,Y0)`、放场景 (1,0) 读 `(X1,Y1)` → `x0=X0, y0=Y0, yaw0=atan2(Y1-Y0, X1-X0)`,传 `--t-world-scene x0 y0 yaw0`(**孪生和真机用同一个**)。
-- 量点用一个 marker 读 Motive 坐标即可,**不是用校准杆(那是校相机的)**。
+### 4.4 `T_world_scene`: Scene Versus Motion-Capture World
+**The Motive world origin is already fixed and confirmed; do not change it.** Align the scene to it:
+- **Direct alignment, simplest:** `TWS = "0 0 0"`, no measurement required. Locate Motive origin/+x, then place scene originO there and align corridor+x with Motive+x.
+- **Two-point method when origins cannot coincide:** place a reflective marker atO and read `(X0,Y0)`, then at scene(1,0) and read `(X1,Y1)`. Set `x0=X0, y0=Y0, yaw0=atan2(Y1-Y0, X1-X0)`; pass `--t-world-scene x0 y0 yaw0` identically to twin and robot.
+- Use a marker to read Motive coordinates, **not the camera-calibration wand**.
 
 ---
 
-## 5. AR(iPhone Unity→Xcode)接入
+## 5. iPhone AR Through Unity→Xcode
 
-### 5.1 让机器人"吃"AR 障碍
-`run_twin_server` 渲染的 scene 和 `run_real_g1` 吃的 scene **必须同一份**(同一 `SceneSource`):
-- **静态障碍**:两边传**同一个 `--preset`**(如 `zone_a`)。
-- **改过 / 动态**:把孪生当前 contract 存成 JSON → `run_real_g1 --scene-file <ar_scene.json>`。
+### 5.1 Make the Robot Use AR Obstacles
+The scene rendered by `run_twin_server` and consumed by `run_real_g1` **must be the same `SceneSource`**:
+- **Static obstacles:** identical `--preset`, such as `zone_a`.
+- **Edited/dynamic scene:** save the twin contract as JSON and use `run_real_g1 --scene-file <ar_scene.json>`.
 
-governor 经 `body_sdf_scene = corridor_scene_to_dict(scene)` 自动避(`run_real_g1` 已接好,见 [run_real_g1.py](../../scripts/tasks/robot/humanoid/run_real_g1.py) 第 77–81 行)。**机器人是解析感知:共享几何 + 自身动捕定位 → governor 收紧命令包络横向 steer。没有视觉栈。**
+The governor automatically avoids through `body_sdf_scene = corridor_scene_to_dict(scene)`, already connected in [run_real_g1.py](../../scripts/tasks/robot/humanoid/run_real_g1.py), lines77–81. **Perception is analytical: shared geometry + motion-capture pose → tightened command envelope and lateral steering. There is no vision stack.**
 
-### 5.2 把 AR 标定到机器人起始位(详细)
+### 5.2 Register AR to the Robot's Starting Frame
 
-> **先记住一句、别焦虑:AR 注册误差只影响"看着准不准",不影响机器人避不避。** 机器人靠**动捕定位 + 共享障碍列表**避障,跟 AR 对齐**无关**(见 [ar/clients/README.md](ar/clients/README.md))。所以注册"差不多对上"就够,不必追求完美。
+> **AR registration error affects visual alignment, not obstacle avoidance.** The robot avoids using motion capture/shared obstacles, independently of AR alignment; see [ar/clients/README.md](ar/clients/README.md). Approximate visual registration is sufficient; perfection is unnecessary.
 
-**坐标链(因你确认 Motive 原点 = 场景原点而大幅简化):**
-- Motive 世界原点 = 场景原点 O、+x 沿走廊 → **`T_world_scene` 恒等(`"0 0 0"`),场景坐标 = 世界坐标**。
-- 障碍在 contract 里是**场景=世界坐标**;渲染时按世界→Unity 轴映射 **`(-y, z, x)`**(一次 RH→LH 翻转,都在 [ar/clients/unity/Scripts/FrameRegistration.cs](ar/clients/unity/Scripts/FrameRegistration.cs))。
-- **AR 要做的只有一件:把 `WorldOriginAnchor` 放到"动捕世界原点(=场景原点 O)在 iPhone AR 会话里的位姿"**。障碍是它的子物体,自动跟着对齐。
+**The frame chain simplifies because Motive origin equals scene origin:**
+- World origin=sceneO, +x along corridor, so **`T_world_scene` is identity (`"0 0 0"`)**.
+- Contract obstacles are in scene=world coordinates. World→Unity mapping is **`(-y, z, x)`**, one right-to-left-handed conversion in [FrameRegistration.cs](ar/clients/unity/Scripts/FrameRegistration.cs).
+- **AR only places `WorldOriginAnchor` at the motion-capture world origin's pose within the iPhone AR session.** Obstacles are its children and align together.
 
-iPhone(Unity→Xcode ARKit)有两条注册路 —— **A 是你现在的路、最快;B 最稳(动捕室推荐升级)。**
+Two registration routes: **A is the current/fastest route; B is the more stable motion-capture-room upgrade.**
 
-#### 方法 A — fiducial 图像注册(你现在的 Unity ARKit 路,最快)
-原理:放一张**已知世界位姿**的打印图,ARKit 认出它 → 反推世界原点。**因 TWS 恒等,最干净的是把 fiducial 正好贴在场景原点 O。**
-1. **打印 fiducial**:高对比、纹理丰富、**非对称**的图(当 ARKit Reference Image),A3 裱硬板,量出实际宽高(米)。
-2. **贴在原点 O、压平、对齐场景轴**(图 +x 沿走廊 +x,图平面贴地)→ 这样 **fiducial 世界位姿 = 世界原点本身(`T_world_fiducial` 恒等)**。
-   - O 处不便放图就放别处,但要知道它的世界位姿 —— 最省事:**给图板也贴 marker,在 Motive 里当刚体**,Motive 直接给 `T_world_fiducial`。
-3. **Unity 工程**(AR Foundation + ARKit XR Plugin + Newtonsoft Json):
-   - `AR Session` + `XR Origin (AR)`;加 `ARTrackedImageManager` + Reference Image Library(放这张图、填实际尺寸)。
-   - 空物体 `CorridorTwin` 挂:`WorldClient`(`Url = ws://<Mac的WiFi_IP>:8766/`)、`FrameRegistration`(`WorldOriginAnchor` 拖一个空子物体)、`WorldRenderer`(`Client`/`Frame` 连好,occluder 材质)。
-4. **写一个注册脚本**(仓库只有 OpenXR/Quest 的,iPhone 这条要你自己加,给骨架):在 `trackedImagesChanged` 里,认到图就把 `WorldOriginAnchor` 设成图的位姿:
+#### Method A: Fiducial Image Registration, Current Unity ARKit Route
+Place a printed image at a known world pose; ARKit detects it and recovers world origin. With identityTWS, place it exactly atO.
+1. Print a high-contrast, richly textured, **asymmetric** ARKit Reference Image on rigid A3 backing; measure width/height in meters.
+2. Place it flat atO with image+x along corridor+x: **`T_world_fiducial` becomes identity**.
+   - IfO is unavailable, use another known world pose. Easiest: add markers to the board, create a Motive rigid body, and read `T_world_fiducial` directly.
+3. Unity project: AR Foundation + ARKit XR Plugin + Newtonsoft Json.
+   - Add `AR Session`, `XR Origin (AR)`, `ARTrackedImageManager`, and a Reference Image Library containing the image/physical dimensions.
+   - On empty `CorridorTwin`, attach `WorldClient` (`Url = ws://<Mac_WiFi_IP>:8766/`), `FrameRegistration` (assign an empty child to `WorldOriginAnchor`), and `WorldRenderer` (connect `Client`/`Frame`, assign occluder material).
+4. Add an iPhone registration script; the repository currently has the OpenXR/Quest route only. In `trackedImagesChanged`, set the anchor from the recognized image:
    ```csharp
-   // ARKitImageRegistration.cs —— 挂在带 ARTrackedImageManager 的物体上
-   public FrameRegistration Frame;          // 它的 WorldOriginAnchor 我们来设
+   // ARKitImageRegistration.cs: attach beside ARTrackedImageManager
+   public FrameRegistration Frame;          // This script sets its WorldOriginAnchor
    public string FiducialName = "corridor_origin";
    void Apply(ARTrackedImage img) {
        if (img.referenceImage.name != FiducialName) return;
        if (img.trackingState != TrackingState.Tracking) return;
-       // fiducial 贴在世界原点 O → 它在 AR 里的位姿 ≈ 世界原点的位姿
+       // Fiducial at world origin O: image pose in AR approximates world-origin pose
        Frame.WorldOriginAnchor.SetPositionAndRotation(img.transform.position, img.transform.rotation);
-       // 若 fiducial 不在 O：anchor = imgPose * inverse(T_world_fiducial)
+       // If not at O: anchor = imgPose * inverse(T_world_fiducial)
    }
    ```
-   - ⚠️ **唯一要调的是"朝向约定"**:ARKit 给的图朝向,和我们 世界轴(x前/y左/z上)+ Unity 映射 `(-y,z,x)` 之间,可能差一个**固定旋转**(取决于图怎么贴、ARKit 图坐标约定)。**先按上面跑,看 AR 障碍是不是整体转了个角**;转了就在 rotation 上乘一个固定补偿(贴图时让图 +x 对齐走廊 +x 能把它降到最小)。
-5. iPhone 和 Mac 同 WiFi → 开 app → **对准 fiducial 一下**完成注册 → 障碍锁地面。
+   - ⚠️ Check the **orientation convention**: ARKit's image axes may differ by a fixed rotation from world(x forward/y left/z up) and Unity `(-y,z,x)`, depending on placement/ARKit conventions. Run first and inspect whole-scene rotation; multiply a fixed correction if needed. Aligning image+x with corridor+x minimizes this.
+5. Connect iPhone/Mac to the same WiFi, launch, and **briefly view the fiducial**; obstacles should lock to the floor.
 
-#### 方法 B — iPhone 当动捕刚体(最稳,推荐升级 —— 真正"直接用世界原点")
-不用 fiducial、不漂、连续校正:
-1. iPhone 贴 3–4 个 marker,Motive 建刚体(如 `ar_phone`,本地原点=相机)→ NatNet 直接发它世界位姿(同 §4 直连方式读取)。
-2. 把这个位姿喂给孪生服务的 `populate_headset`([ar/producers/tracker_pose.py](ar/producers/tracker_pose.py))→ 它作为 `viewer` 实体(`headset/base`)随同一条流推给客户端。
-3. Unity 端用现成的 [ar/clients/unity/Scripts/OpenXRAnchorProvider.cs](ar/clients/unity/Scripts/OpenXRAnchorProvider.cs) —— 它**厂商无关、只依赖一个 Camera + FrameRegistration,iPhone 的 AR 相机也能用**:`HeadPoseSource` = AR 相机,`Frame` = FrameRegistration。它每帧解 `anchor = camera_unity ∘ L⁻¹` 并 EMA 平滑 → **连续把全息钉到动捕真值,自动校正 ARKit 漂移**。
-4. `WorldRenderer` 的 `AnchorProvider` 连它、`LocalHeadsetId = headset/base`(自己那台不画自己的代理)。
-- 代价:多一步把 iPhone 动捕位姿喂进来;好处:长时间不漂、亚毫米,比一次性 fiducial 稳。
+#### Method B: Track iPhone as a Rigid Body, Recommended Stable Upgrade
+No fiducial, continuous drift correction, direct world-origin registration:
+1. Attach3–4 markers, create Motive body `ar_phone` with camera-centered local origin, and read its world pose through the §4 NatNet route.
+2. Feed pose to twin `populate_headset` in [ar/producers/tracker_pose.py](ar/producers/tracker_pose.py), publishing a `viewer` entity (`headset/base`) in the same stream.
+3. Use [OpenXRAnchorProvider.cs](ar/clients/unity/Scripts/OpenXRAnchorProvider.cs). It is **vendor-neutral and needs only Camera + FrameRegistration**, so iPhone's AR camera works: `HeadPoseSource`=AR camera, `Frame`=FrameRegistration. It solves `anchor = camera_unity ∘ L⁻¹` each frame and EMA-smooths, continuously aligning holograms to motion capture and correcting ARKit drift.
+4. Connect `WorldRenderer.AnchorProvider`; set `LocalHeadsetId = headset/base` to hide the device's own proxy.
+- Cost: an extra phone-motion-capture feed. Benefit: persistent alignment without drift, submillimeter precision, more stable than one-shot fiducials.
 
-#### 验证对齐
-- 站到起点绿十字(场景 (0.5,0)):AR 的起点标记 / 中线墙应和地面胶带重合,**偏差 < 几 cm**。
-- 沿中线走,AR 中线跟着;AR 墙立在 x=1.7–2.0。
-- 偏大 → fiducial 贴歪 / 尺寸填错 / 朝向补偿没加(方法 A),或 iPhone 刚体没喂进来(方法 B)。
-- 再说一遍:**注册误差只是视觉的,机器人避障不受它影响** —— 演示对齐差几 cm 完全能跑。
+#### Verify Alignment
+- At the green start mark, scene(0.5,0), AR start/centerline walls should match floor tape within **a few centimeters**.
+- Walk along centerline; the AR centerline follows and the wall stands atx=1.7–2.0.
+- Large offsets suggest skewed fiducial,wrong dimensions,missing orientation correction(A),or missing phone rigid-body feed(B).
+- **Registration error is visual only; robot avoidance is unaffected.** A demonstration offset by a few centimeters can still run.
 
-### 5.3 撞上 AR 障碍会摔么? —— **不会因虚拟障碍物理摔**
-- 障碍是虚拟的,**无物理接触**,撞不到全息影像、绊不倒。
-- governor **提前 steer 避开**(实测:盲跟冲进 −0.267m,governor 感知后避到 +0.004m)。
-- 万一避不够 → 机器人**穿过**虚拟障碍(仍不摔),**唯一后果是日志 body-SDF 违例**(`certified_safe=False`),是软 / 逻辑失败。
-- 真摔风险来自**步态不稳 / sim-to-real**,与虚拟障碍无关。
-- ⚠️ tight 场景(zone_d/b)执行间隙上限 ~**+0.08m**(`m_track≈0.08`);**首次选最宽的 zone_a**。
-- **这正是 AR 的价值:安全测避障 —— 失败只是日志,不撞坏机器人。**
+### 5.3 Virtual-Obstacle Collisions and Falls
+- Virtual obstacles have **no physical contact**; holograms cannot physically trip the robot.
+- Governor steering acts in advance: observed blind following penetrated−0.267 m; governor avoidance achieved+0.004 m.
+- Insufficient avoidance lets the robot pass through the hologram, producing a body-SDF log violation (`certified_safe=False`), a logical failure rather than a physical collision.
+- Actual falling risk comes from unstable gait/sim-to-real, independently of virtual obstacles.
+- ⚠️ Tight scenes(zone_d/b) have execution-clearance limits around**+0.08 m** (`m_track≈0.08`). **Start with the widest zone_a.**
+- This is AR's value for avoidance testing: virtual-collision failures are recorded without collision damage to the robot.
 
 ---
 
-## 6. 动捕闭环联调(从 mock 台阶到 vicon)
+## 6. Motion-Capture Feedback Integration: Mock to Vicon
 
-> **跑完整走廊前,先单独验证"动捕 → 闭环"这一跳。** `mock` 是**开环**(固定起点位姿,转身后机器人飘出走廊);`vicon` 是**闭环**(真实位姿)。但闭环还有**另一个飘逸源:刚体朝向**——本节核心就是把它校掉。
+> Before a full corridor, isolate **motion capture→feedback**. `mock` is open-loop, using a fixed starting pose and drifting after turns; `vicon` uses actual pose. Another drift source is **rigid-body heading**, calibrated below.
 
-### 6.1 前置(网络 + 两进程就绪)
-- en7 设 **/16**:`sudo networksetup -setmanual "USB 10/100/1000 LAN" 192.168.0.100 255.255.0.0` → `ping 192.168.0.77`(动捕)和 `ping 192.168.123.161`(机器人)都通;多播路由加好(§4.1)。
-- **终端 A**:`natnet_shm_writer --natnet …`(一直跑,写 shm)。
-- **终端 B**:`ViconShmPlugin({}).get_state()` 能读到稳定位姿(§4.3)。
+### 6.1 Prerequisites: Network and Two Processes
+- Set en7 **/16**: `sudo networksetup -setmanual "USB 10/100/1000 LAN" 192.168.0.100 255.255.0.0`; both `ping 192.168.0.77` and `ping 192.168.123.161` must work, with §4.1 multicast routing.
+- **TerminalA:** keep `natnet_shm_writer --natnet …` running.
+- **TerminalB:** `ViconShmPlugin({}).get_state()` returns stable pose (§4.3).
 
-### 6.2 刚体 +x 朝向校验(关键,首次必做)
-**为什么:** 刚体本体 **+x 必须 = 机器人前进方向**。否则流里的 `yaw` 与真实朝向差一个常量 α → governor 把"机体系速度命令"整体转了 α → 机器人走斜 / 飘(这是 mock 开环之外的**第二个飘逸源**)。
+### 6.2 Rigid-Body +x Heading Calibration: Required Initially
+**Why:** rigid-body **+x must match robot forward**. A constant offsetα between streamed yaw/actual heading rotates body-frame velocity requests byα, causing diagonal motion/drift: a second source beyond mock open-loop drift.
 
-**怎么测(走一小段,比对"位移朝向"和"刚体 yaw"):** 存成 `~/g1/heading_check.py`,`PYTHONPATH=<repo>` 跑:
+Walk briefly and compare displacement heading with rigid-body yaw. Save as `~/g1/heading_check.py`, run with `PYTHONPATH=<repo>`:
 ```python
 import time, math, numpy as np
 from genedynamics.deploy.localization.vicon_shm_plugin import ViconShmPlugin
 
-def yaw_deg(pose):                       # pose=[x,y,z, qw,qx,qy,qz]（z-up）
+def yaw_deg(pose):                       # pose=[x,y,z, qw,qx,qy,qz] (z-up)
     w,x,y,z = pose[3],pose[4],pose[5],pose[6]
     return math.degrees(math.atan2(2*(w*z+x*y), 1-2*(y*y+z*z)))
 
@@ -268,43 +268,43 @@ p = ViconShmPlugin({})
 def read():
     pose,_ = p.get_state(); return np.array(pose[:2]), yaw_deg(pose)
 
-t0=time.time(); P=[]; Y=[]                # 静态 2s：起点 + yaw
+t0=time.time(); P=[]; Y=[]                # Stationary 2 s: initial position and yaw
 while time.time()-t0<2.0:
     xy,yw=read(); P.append(xy); Y.append(yw); time.sleep(0.05)
 p0=np.mean(P,axis=0); yaw0=float(np.mean(Y))
-print(f"[静态] 位置=({p0[0]:+.3f},{p0[1]:+.3f})  yaw_world={yaw0:+.1f}°")
-input("→ 让机器人【朝走廊 +x】向前走 ~0.5m（另开终端: move_test.py --vx 0.2 --sec 3），走完按回车…")
+print(f"[Stationary] position=({p0[0]:+.3f},{p0[1]:+.3f})  yaw_world={yaw0:+.1f}°")
+input("→ Walk robot forward ~0.5 m toward corridor +x (another terminal: move_test.py --vx 0.2 --sec 3), then press Enter…")
 
-far=p0.copy(); d=0.0; t0=time.time()      # 取离起点最远的一帧
+far=p0.copy(); d=0.0; t0=time.time()      # Select the frame farthest from the starting point
 while time.time()-t0<1.0:
     xy,_=read()
     if np.linalg.norm(xy-p0)>d: d=np.linalg.norm(xy-p0); far=xy
     time.sleep(0.05)
 disp=far-p0; dist=float(np.linalg.norm(disp))
 if dist<0.15:
-    print(f"⚠️ 只走了 {dist:.2f}m，太短不可靠，重来（走够 0.3m+）"); raise SystemExit
+    print(f"⚠️ Traveled only {dist:.2f} m; too short for a reliable check. Repeat over at least 0.3 m."); raise SystemExit
 heading=math.degrees(math.atan2(disp[1],disp[0]))
 delta=(heading-yaw0+180)%360-180
-print(f"[行走] 位移=({disp[0]:+.3f},{disp[1]:+.3f}) |{dist:.2f}m|  位移朝向={heading:+.1f}°")
-print(f"刚体 +x 与机器人前向偏差 Δ = {delta:+.1f}°  →  " +
-      ("✅ 对齐(|Δ|<10°)" if abs(delta)<10 else "⚠️ 不对齐：Motive 转正刚体朝向，或把 Δ 折进 --t-world-scene 的 yaw"))
-print(f"若机器人此刻就朝场景 +x 站：--t-world-scene 的 yaw 设为 {math.radians(yaw0):+.3f} rad（={yaw0:+.1f}°）")
+print(f"[Walking] displacement=({disp[0]:+.3f},{disp[1]:+.3f}) |{dist:.2f}m|  heading={heading:+.1f}°")
+print(f"Rigid-body +x versus robot-forward offset Δ = {delta:+.1f}°  →  " +
+      ("✅ Aligned (|Δ|<10°)" if abs(delta)<10 else "⚠️ Misaligned: correct the Motive rigid-body orientation or include Δ in --t-world-scene yaw"))
+print(f"If the robot currently faces scene +x, set --t-world-scene yaw to {math.radians(yaw0):+.3f} rad (={yaw0:+.1f}°)")
 ```
-**判读:** `|Δ|<~10°` → 对齐,OK;`Δ≈常量` → 去 Motive 把刚体朝向转正(最好),或把 Δ 折进 `--t-world-scene` 的 yaw;`Δ≈±90/180°` → 刚体建歪,重建朝向。脚本最后一行给的 `yaw0` 是 §6.3 注册的输入。
+**Interpretation:** `|Δ|<~10°` is aligned; constantΔ means correct the rigid-body heading in Motive(preferred) or include it in `--t-world-scene` yaw; `Δ≈±90/180°` means rebuild the rigid-body orientation. Final `yaw0` feeds §6.3 registration.
 
-### 6.3 注册 `T_world_scene`(把机器人摆到场景起点)
-机器人**物理摆在场景起点**(zone_a:`(0.5,0)`)、**朝场景 +x**,让它的世界位姿映射到 scene `(0.5,0,0)`:
-- **(a) Motive 原点=场景原点**(你已定)→ 物理把机器人摆到对应世界点,`--t-world-scene 0 0 0`。
-- **(b) 机器人就地不便挪** → 用读到的世界位姿 `(Xr,Yr,yaw_r)` 反算:`yaw0=yaw_r`;`(x0,y0)=(Xr,Yr) − R(yaw0)·(0.5,0)`,传 `--t-world-scene x0 y0 yaw0`。
-- 公式 / 两点法细节见 §4.4。
+### 6.3 Register `T_world_scene`: Place Robot at Scene Start
+Physically place the robot at zone_a **(0.5,0), facing+x**, mapping world pose to scene(0.5,0,0):
+- **(a) Motive origin=scene origin:** place the robot at the corresponding world point; use `--t-world-scene 0 0 0`.
+- **(b) Robot cannot be moved:** from measured `(Xr,Yr,yaw_r)`, set `yaw0=yaw_r`, `(x0,y0)=(Xr,Yr) − R(yaw0)·(0.5,0)`; pass `--t-world-scene x0 y0 yaw0`.
+- Formula/two-point details: §4.4.
 
-### 6.4 live frame-glue 核对(不动电机,读真实动捕)
-用 `run_real_g1` 同款 `SceneFrameLocalization` 读**实时**动捕,确认机器人在场景里的位姿对:
+### 6.4 Live Frame-Glue Check: Actual Capture, No Motor Motion
+Read live capture through the same `SceneFrameLocalization` as `run_real_g1`:
 ```python
 import time, math
 from genedynamics.deploy.localization.vicon_shm_plugin import ViconShmPlugin
 from genedynamics.deploy.localization.scene_frame_plugin import SceneFrameLocalization
-TWS={"x":0.0,"y":0.0,"yaw":0.0}          # 改成你的 --t-world-scene
+TWS={"x":0.0,"y":0.0,"yaw":0.0}          # Replace with your --t-world-scene values
 loc=SceneFrameLocalization(ViconShmPlugin({}), TWS)
 for _ in range(6):
     pose,_=loc.get_state(); w,x,y,z=pose[3],pose[4],pose[5],pose[6]
@@ -312,75 +312,75 @@ for _ in range(6):
     print(f"scene pose=({pose[0]:+.3f},{pose[1]:+.3f})  yaw_scene={yaw:+.1f}°")
     time.sleep(0.3)
 ```
-机器人摆在场景起点朝 +x 时,应读到 **≈ `(0.5, 0)`、`yaw_scene≈0°`**。对不上 → TWS 没设对 / 机器人没摆正 / 刚体朝向没校(回 §6.2)。
-> `run_real_g1 --dry-run` 是用**固定起点**验 frame-glue **数学**(不读 shm);本脚本是验**实时动捕→场景**的真实映射,两者互补。
+At the start facing+x, expect approximately **(0.5,0),yaw_scene≈0°**. Otherwise checkTWS,placement,and rigid-body heading (§6.2).
+> `run_real_g1 --dry-run` checks frame-glue **mathematics at a fixed start**, without shared memory. This script checks the actual live motion-capture→scene mapping; both are needed.
 
-### 6.5 首次闭环跑(最小,无障碍)
-确认 §6.2/§6.4 都过后,跑最小闭环(先别上 AR/障碍):
+### 6.5 First Minimal Feedback Run: No Obstacles
+After §6.2/§6.4 pass, run minimal feedback before AR/obstacles:
 ```bash
-# 终端A：writer 一直跑（§4.3）
-# 终端B：
+# Terminal A: keep the writer running (§4.3)
+# Terminal B:
 $HOME/g1/venv/bin/python scripts/tasks/robot/humanoid/run_real_g1.py \
     --plan results/humanoid/corridor_2d/main/twogo_zone_a/level_1/seed_0/trajectory/trajectory.json \
     --preset zone_a --localization vicon --t-world-scene 0 0 0 \
     --network-interface en7 --plan-speed 0.3 --max-steps 150
 ```
-- **安全**:龙门 / 手扶,Ctrl-C 在手,手放电源(同 §3 红线)。
-- **看什么**:不再像 mock 那样转身飘出走廊 —— 机器人按**真实动捕位姿**闭环跟踪;`Pelvis z range` 是真实高度(不再恒定 0.793)。
-- 顺了再进 §7 完整 zone_a(加 AR + 中线墙)。
+- **Safety:** gantry/manual support, Ctrl-C ready, hand near power, following §3.
+- **Observe:** feedback follows real capture instead of mock's turn-related drift; `Pelvis z range` is measured height, no longer constant0.793.
+- Once stable, proceed to §7 full zone_a with AR/center wall.
 
 ---
 
-## 7. zone_a 端到端(动捕室全流程)
+## 7. End-to-End zone_a in the Motion-Capture Room
 
-**zone_a 几何:** 走廊长 **4.0m**、宽 **1.6m**(墙 y=±0.8);起点**场景 (0.5,0)**、终点 (3.5,0);**一道中线薄墙** x∈[1.7,2.0]、y≈0(机器人要侧绕)。
+**Geometry:** corridor4.0 m long,1.6 m wide(walls y=±0.8); start scene(0.5,0),goal(3.5,0); **one thin centerline wall** x∈[1.7,2.0],y≈0,requiring lateral avoidance.
 
-> **首次先过 §6 联调**(刚体 +x 朝向校验 + 最小闭环跑)——本节是在此基础上加 AR + 中线墙的完整流程。
+> Complete §6 heading calibration/minimal feedback first. This adds AR and the center wall.
 
-1. **贴地面场景系**:红十字定 O(0,0);粉线/激光拉 +x 中线 4m,每 0.5m 标刻度;**起点绿十字 x=0.5 + 朝 +x 箭头**;终点蓝十字 x=3.5;**障碍位置**标 x=1.7–2.0(不放实物);两壁 y=±0.8 参考线。
-2. **`TWS`**:Motive 原点已固定 → 贴地面时让场景 O 对齐它(`TWS="0 0 0"`),或两点法量(§4.4)。
-3. **把 G1 放进捕捉区、启动 Motive** → NatNet 多播自动推刚体 pose(记下 streaming ID,本机=`5`)。
-4. **动捕订阅(Mac)**:`natnet_shm_writer --natnet --local-ip 192.168.0.100 --server 192.168.0.77 --rigid-body-id 5`(详见 §4 / [`localization/mocap.md`](localization/mocap.md))。
-5. **孪生**:Mac `run_twin_server.py --preset zone_a --t-world-scene <TWS> --localization vicon`。
-6. **iPhone**:连 `ws://<Mac>:8766/` + fiducial 注册 → 看到全息走廊 + 中线墙锁在地面 x=1.85 处。
-7. **干跑核 frame glue**(不动电机):`run_real_g1.py --plan <…twogo_zone_a…trajectory.json> --preset zone_a --t-world-scene <TWS> --localization vicon --dry-run` → 应打印 `world start → scene pose (0.500, 0.000)`。
-8. **落地跑**:机器人踩绿十字朝 +x,去掉 `--dry-run`(留 `--plan-speed 0.35 --max-steps` 先短):真机**侧绕中线墙**走,AR 同步显示绕开,occluder 让真机正确遮挡墙。
+1. **Mark the floor frame:** red crossO(0,0); chalk/laser+x centerline4 m with0.5 m marks; green start crossx=0.5/forward arrow; blue goalx=3.5; obstacle intervalx=1.7–2.0 without a physical object; sidewall linesy=±0.8.
+2. **TWS:** align sceneO with fixed Motive origin (`TWS="0 0 0"`) or measure by two points (§4.4).
+3. **Place G1 in capture volume/start Motive:** NatNet streams pose automatically; record streaming ID,here`5`.
+4. **Mac capture subscriber:** `natnet_shm_writer --natnet --local-ip 192.168.0.100 --server 192.168.0.77 --rigid-body-id 5`; see §4/[mocap.md](localization/mocap.md).
+5. **Twin:** Mac `run_twin_server.py --preset zone_a --t-world-scene <TWS> --localization vicon`.
+6. **iPhone:** connect `ws://<Mac>:8766/`,register fiducial; holographic corridor/center wall lock atx=1.85.
+7. **Dry-run frame glue, no motors:** `run_real_g1.py --plan <…twogo_zone_a…trajectory.json> --preset zone_a --t-world-scene <TWS> --localization vicon --dry-run`; expect `world start → scene pose (0.500, 0.000)`.
+8. **Hardware run:** robot on green cross facing+x; remove `--dry-run`,initially keep short `--plan-speed 0.35 --max-steps` execution. Robot laterally avoids center wall,AR shows avoidance,and occluder makes the real robot correctly occlude the wall.
 
-> 计划来源:`results/humanoid/corridor_2d/main/twogo_zone_a/level_1/seed_*/trajectory/trajectory.json`(已有)。重规划 / 标定到 AR 场景:Docker 跑 `replan_from_scene.py` / `governor_calibrate.py`(`m_track` 实测最优 ≈0.08;未标定时 run_real_g1 回退 0.08)。
+> Existing plans: `results/humanoid/corridor_2d/main/twogo_zone_a/level_1/seed_*/trajectory/trajectory.json`. Replan/calibrate AR scenes in Docker via `replan_from_scene.py`/`governor_calibrate.py`. Measured best `m_track≈0.08`; uncalibrated run_real_g1 defaults to0.08.
 
 ---
 
-## 8. 安全 / 故障排查 / 速查
+## 8. Safety, Troubleshooting, and Quick Reference
 
-### 安全红线
-- **无 e-stop**:运动你自己终端跑、Ctrl-C 在手、手放电源;首次吊龙门 / 自承重 + 防摔。
-- 自承重站着时**别突然 Damp**(会塌);先支撑。
-- 速度只升不跳;先验最易 zone_a;tight 场景(zone_d/b)留足物理裕度。
-- arm_sdk 第一次跑盯手臂,乱甩立刻 Ctrl-C。
+### Safety Requirements
+- **No e-stop:** run motion yourself with Ctrl-C ready,hand near power,and initial gantry/support/fall protection.
+- Never suddenly Damp a self-supporting robot; support it first.
+- Increase speed gradually;start with easy zone_a and sufficient clearance for tight zone_d/b.
+- Watch the first arm_sdk run; immediate Ctrl-C for erratic arms.
 
-### 故障排查
-| 现象 | 排查 |
+### Troubleshooting
+| Symptom | Check |
 |---|---|
-| `ping .161` 不通 | 网线 / en7 静态 IP(`192.168.123.222/24`) |
-| `ping` 通但读不到 `rt/lowstate` | 机器人还没启动完,等几十秒再试 |
-| `SetFsmId(4)/(200)` 被拒 | 确认用的是 **4/200**(不是 pip 的 500/706);或遥控器/App 先到 LockStand |
-| 站起来但 Move 不迈步 | **脚没承重**(接触门控)/ vx 太小(提到 0.2–0.3) |
-| `--localization mock` 跑 run_real_g1 第 1 步就 `Fell over` | mock 无真高度、报 z=0 → 摔倒检测误判;**已修**(mock 报 0.793 站立高度)。真机用 `vicon` 是真高度。verdict 里 "SparkRL policy diverged" 是 sim 文案,真机忽略 |
-| 手臂乱甩 | arm_sdk 的 `motor_cmd.mode`(SPARK 0 / 官方例子 1)—— 改 `_send_arm_sdk` |
-| `--localization vicon` 读不到 | `natnet_shm_writer --natnet` 没起 / Motive **Local Interface 选错** / **Rigid Bodies 没开** / 多播路由没加(`route add 239.255.42.99 en7`)→ 按 [`localization/mocap.md`](localization/mocap.md) §2 分层探针 |
-| AR 障碍漂移 / 不对齐 | `T_world_scene` 或 fiducial 世界位姿量不准 |
-| 干跑 pose 不是 (0.5,0) | `T_world_scene` 错 / 机器人没摆在起点 / 刚体方向错 |
+| Cannot `ping .161` | Cable/en7 static IP `192.168.123.222/24` |
+| Ping works, no `rt/lowstate` | Robot still booting; wait tens of seconds |
+| `SetFsmId(4)/(200)` rejected | Use4/200,not pip500/706; alternatively enter LockStand using remote/App |
+| Standing, Move produces no steps | Feet not weight-bearing/contact gate,or vx too low; try0.2–0.3 |
+| Mock run reports `Fell over` immediately | Mock formerly reported z=0,causing false fall detection; repaired to0.793 standing height. Hardware `vicon` uses actual height. “SparkRL policy diverged” verdict text is simulation wording,ignore on hardware |
+| Erratic arms | `motor_cmd.mode`: SPARK0/official1; inspect `_send_arm_sdk` |
+| No `--localization vicon` data | Writer absent,wrong Motive Local Interface,Rigid Bodies disabled,or missing multicast route `route add 239.255.42.99 en7`; use layered probes in [mocap.md](localization/mocap.md) §2 |
+| AR drift/misalignment | Incorrect `T_world_scene` or measured fiducial world pose |
+| Dry-run pose not(0.5,0) | Incorrect TWS,robot not at start,or rigid-body orientation error |
 
-### 速查
-| 项 | 值 |
+### Quick Reference
+| Item | Value |
 |---|---|
-| Mac 原生 env | `~/g1/venv`;`CYCLONEDDS_HOME=$HOME/g1/cyclonedds DYLD_LIBRARY_PATH=$HOME/g1/cyclonedds/lib` |
-| 网卡 | Mac `en7`(192.168.123.222);机器人 `.161` |
-| 起身 FSM | `GetFsmId → SetFsmId(4) → SetFsmId(200)`(LockStand → MainMode) |
-| 起身/走 脚本 | `~/g1/bringup_test.py`、`~/g1/move_test.py` |
-| 动捕订阅 | `natnet_shm_writer --natnet --local-ip 192.168.0.100 --server 192.168.0.77 --rigid-body-id 5`(详见 [`localization/mocap.md`](localization/mocap.md))|
-| 真机入口 | `scripts/tasks/robot/humanoid/run_real_g1.py`(`--dry-run` 先验) |
-| 孪生服务 | `scripts/tasks/robot/humanoid/run_twin_server.py` → `ws://<Mac>:8766/` |
-| 真机 IO | `genedynamics/deploy/io/unitree_g1_io.py`(`_bring_up_sport` / `_send_arm_sdk`) |
-| 计划 | `results/humanoid/corridor_2d/main/twogo_zone_a/.../trajectory.json` |
-| 参考 | CMU SPARK `g1_real_agent`(`enerdynamics/spark/`);Unitree G1 SDK 文档 |
+| Native Mac environment | `~/g1/venv`; `CYCLONEDDS_HOME=$HOME/g1/cyclonedds DYLD_LIBRARY_PATH=$HOME/g1/cyclonedds/lib` |
+| Interface | Mac `en7`(192.168.123.222);robot`.161` |
+| Stand-up FSM | `GetFsmId → SetFsmId(4) → SetFsmId(200)` (LockStand→MainMode) |
+| Stand/walk scripts | `~/g1/bringup_test.py`, `~/g1/move_test.py` |
+| Capture subscription | `natnet_shm_writer --natnet --local-ip 192.168.0.100 --server 192.168.0.77 --rigid-body-id 5`; see [mocap.md](localization/mocap.md) |
+| Hardware entry | `scripts/tasks/robot/humanoid/run_real_g1.py`; check `--dry-run` first |
+| Twin service | `scripts/tasks/robot/humanoid/run_twin_server.py` → `ws://<Mac>:8766/` |
+| Hardware IO | `genedynamics/deploy/io/unitree_g1_io.py` (`_bring_up_sport`/`_send_arm_sdk`) |
+| Plan | `results/humanoid/corridor_2d/main/twogo_zone_a/.../trajectory.json` |
+| References | CMU SPARK `g1_real_agent` (`enerdynamics/spark/`);Unitree G1 SDK documentation |

@@ -1,0 +1,202 @@
+{
+  "schema_version": "icdt-cold-start-research-state-v1",
+  "date": "2026-11-18",
+  "timezone": "America/New_York",
+  "target_venue": "RSS 2027",
+  "mode": "knowledge_and_source_only_cold_start",
+  "raw_evidence_included": false,
+  "resume_training_possible": false,
+  "historical_formal": {
+    "source": "results/_analysis/four_task_transfer/independent_main_table_formal_v2/main_table.json",
+    "sha256": "8f82057a268249147c7721a2c3b6e764d1f82d81de02fc479ae4a424624c3822",
+    "method_task_cells": 36,
+    "actor_jobs": 232,
+    "physical_outcomes": 11600,
+    "status_at_source": "FORMAL_TABLE_ASSEMBLED",
+    "status_after_cold_transfer": "historical_summary_only_unverifiable_without_original_artifacts"
+  },
+  "source_qualifications": [
+    {
+      "task": "aperture_brake",
+      "report": "results/arm/obstacle_transfer/validation/aperture_brake/report.json",
+      "passed": true,
+      "episode_count": 4,
+      "report_contract_sha256": "8f007931fcbd9329491569dccb9a44c5a0d331c17ea40a4d9d9b26b35373e621",
+      "current_contract_sha256": "8f007931fcbd9329491569dccb9a44c5a0d331c17ea40a4d9d9b26b35373e621",
+      "contract_matches": true
+    },
+    {
+      "task": "sequential_aperture_reorientation",
+      "report": "results/arm/obstacle_transfer/validation/sequential_aperture_reorientation/report.json",
+      "passed": true,
+      "episode_count": 4,
+      "report_contract_sha256": "8cf9f951aec6479920fac554b1e5bb034bf9c7b154486b14f575dc7ba966cdaf",
+      "current_contract_sha256": "8cf9f951aec6479920fac554b1e5bb034bf9c7b154486b14f575dc7ba966cdaf",
+      "contract_matches": true
+    },
+    {
+      "task": "corner_guided_seating",
+      "report": "results/arm/guided_contact_alignment/validation/corner_guided_seating/report.json",
+      "passed": true,
+      "episode_count": 4,
+      "report_contract_sha256": "c1b443ba41e2e590b0ca642d94245ba05ed21196c885f7234ee1dbe028db6b85",
+      "current_contract_sha256": "c1b443ba41e2e590b0ca642d94245ba05ed21196c885f7234ee1dbe028db6b85",
+      "contract_matches": true
+    },
+    {
+      "task": "compliant_fixture_insertion",
+      "report": "results/arm/compliant_keyed_insertion_recovery/validation/compliant_fixture_insertion/report.json",
+      "passed": true,
+      "episode_count": 4,
+      "report_contract_sha256": "fac5136b235233705dc324f178c6c9d71344c439246d737847b44d5af29d8d1e",
+      "current_contract_sha256": "a25a98cb84c9e62505c7787dc1a648acf9460b588b21eb3f4893bc5c430375a7",
+      "contract_matches": false
+    },
+    {
+      "task": "reposition_then_dock",
+      "report": "results/quadruped/mobile_keyed_insertion_recovery/validation/reposition_then_dock/report.json",
+      "passed": true,
+      "episode_count": 4,
+      "report_contract_sha256": "c58b22df36e199c7f1d86fc692e0eecb002e8daca2a656a829b2db6a5ce01936",
+      "current_contract_sha256": "c58b22df36e199c7f1d86fc692e0eecb002e8daca2a656a829b2db6a5ce01936",
+      "contract_matches": true
+    }
+  ],
+  "tasks": [
+    {
+      "family": "constrained_object_transport",
+      "task": "dual_route_carry",
+      "status": "implemented_historical_formal",
+      "limitation": "saturated_success",
+      "next_action": "rebuild actors and new matched comparison"
+    },
+    {
+      "family": "constrained_object_transport",
+      "task": "aperture_brake",
+      "status": "implemented_source_qualified_pilot",
+      "limitation": "matched ablations identical",
+      "next_action": "rebuild calibration/actors; new formal evidence"
+    },
+    {
+      "family": "constrained_object_transport",
+      "task": "sequential_aperture_reorientation",
+      "status": "implemented_source_qualified_pilot",
+      "limitation": "residual terminal phase only; AdaptSim faster in pilot",
+      "next_action": "new paired evaluation and multi-instance design"
+    },
+    {
+      "family": "guided_contact_alignment",
+      "task": "dual_channel_contact",
+      "status": "implemented_historical_formal",
+      "limitation": "small uncertain difference",
+      "next_action": "fresh source/evaluator qualification"
+    },
+    {
+      "family": "guided_contact_alignment",
+      "task": "corner_guided_seating",
+      "status": "implemented_source_qualified",
+      "limitation": "old fixed-phase-gain pilot not an ICDT mechanism ablation",
+      "next_action": "real matched ICDT/ablations first"
+    },
+    {
+      "family": "guided_contact_alignment",
+      "task": "edge_slide_pivot",
+      "status": "design_only",
+      "limitation": "no runtime registration",
+      "next_action": "CPU geometry/pivot/anti-bypass/source/evaluator"
+    },
+    {
+      "family": "connector_assembly_recovery",
+      "task": "jam_recovery",
+      "status": "implemented_historical_formal",
+      "limitation": "185/320 ICDT failures all overforce",
+      "next_action": "shared early-contact unloading and delayed force effects"
+    },
+    {
+      "family": "connector_assembly_recovery",
+      "task": "compliant_fixture_insertion",
+      "status": "implemented_requalification_required",
+      "limitation": "source report/current contract SHA mismatch; weak fixture motion",
+      "next_action": "fresh source qualification and informative settling cells"
+    },
+    {
+      "family": "connector_assembly_recovery",
+      "task": "insert_then_lock",
+      "status": "design_only",
+      "limitation": "no runtime registration",
+      "next_action": "physical bayonet geometry and retention negative control"
+    },
+    {
+      "family": "support_coupled_assembly",
+      "task": "stance_insertion",
+      "status": "implemented_historical_formal",
+      "limitation": "system gain confounded by execution differences",
+      "next_action": "matched authority and morphology evidence"
+    },
+    {
+      "family": "support_coupled_assembly",
+      "task": "reposition_then_dock",
+      "status": "implemented_source_qualified_pilot",
+      "limitation": "two requests per method; all succeed",
+      "next_action": "independent instances and support conditions"
+    },
+    {
+      "family": "support_coupled_assembly",
+      "task": "disturbed_docking_recovery",
+      "status": "design_only",
+      "limitation": "no runtime registration",
+      "next_action": "physical perturbation and recovery events"
+    }
+  ],
+  "new_obstacle_formal": {
+    "planned_episodes": 100,
+    "executed_episodes": 0,
+    "cold_start_action": "regenerate dependencies and explicit execution revision before evaluation"
+  },
+  "main_methods": [
+    "cross_ebdm",
+    "task_only",
+    "asid",
+    "adaptsim",
+    "response_mpc",
+    "dial_mpc"
+  ],
+  "outside_main_table": [
+    "acp",
+    "human2sim2robot"
+  ],
+  "fada_scope": "qualified targeted comparisons only",
+  "main_metrics": [
+    "constrained_success",
+    "key_event_completion",
+    "peak_force_N",
+    "failure_penalized_normalized_time"
+  ],
+  "ablations": [
+    "no_calibration",
+    "no_response_anchoring",
+    "unconditional_response_anchoring"
+  ],
+  "priority": "corner matched training and new paired development; parallel edge pivot CPU implementation",
+  "theory_gaps": [
+    "event-sufficient response features",
+    "task band implementation vs metadata",
+    "history/model support/stage gating",
+    "multi-stage error composition",
+    "execution-authority attribution",
+    "full target interaction accounting and episode-disjoint splits"
+  ],
+  "unsupported_claims": [
+    "stable overall transport superiority over strong baselines",
+    "independent anchoring benefit on aperture",
+    "formal Franka-to-UR transfer",
+    "all twelve tasks already implemented"
+  ],
+  "constraints": {
+    "gpu": "GPU0-only with destination UUID",
+    "commit_authorized": false,
+    "old_artifacts_delete_authorized": false,
+    "architecture_reference": "docs/development/cross-ebdm-architecture-refactor.md"
+  },
+  "old_experiment_checkpoints_included": false
+}

@@ -1,0 +1,15 @@
+{
+  "version": "sequential-aperture-reorientation-cpu-source-qualification-v1",
+  "task": "sequential_aperture_reorientation",
+  "output_dir": "results/arm/obstacle_transfer/validation/sequential_aperture_reorientation",
+  "device": "cpu",
+  "robot": "xarm7",
+  "contract": "configs/arm/obstacle_transfer/protocol/subtasks/sequential_aperture_reorientation_v1.json",
+  "mechanism": {"servo_gain": 1.0, "delay_steps": 0, "payload_mass": 0.5},
+  "episodes": [
+    {"seed": 947000, "mode": 0, "start_position": [0.38, -0.09, 0.55]},
+    {"seed": 947001, "mode": 1, "start_position": [0.38, -0.09, 0.55]},
+    {"seed": 947010, "mode": 0, "start_position": [0.375, -0.088, 0.55]},
+    {"seed": 947011, "mode": 1, "start_position": [0.385, -0.092, 0.55]}
+  ]
+}

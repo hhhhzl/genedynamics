@@ -24,6 +24,10 @@ CONTRACT_PATHS: Mapping[str, str] = {
         "configs/arm/obstacle_transfer/protocol/subtasks/"
         "aperture_brake_v1.json"
     ),
+    "sequential_aperture_reorientation": (
+        "configs/arm/obstacle_transfer/protocol/subtasks/"
+        "sequential_aperture_reorientation_v1.json"
+    ),
     "dual_channel_contact": (
         "configs/arm/guided_contact_alignment/protocol/subtasks/"
         "dual_channel_contact_v1.json"
@@ -50,8 +54,11 @@ CONTRACT_PATHS: Mapping[str, str] = {
     ),
 }
 
-FAMILY_SUITES: Mapping[str, tuple[str, str]] = {
-    "constrained_object_transport": ("dual_route_carry", "aperture_brake"),
+FAMILY_SUITES: Mapping[str, tuple[str, ...]] = {
+    "constrained_object_transport": (
+        "dual_route_carry", "aperture_brake",
+        "sequential_aperture_reorientation",
+    ),
     "guided_contact_alignment": (
         "dual_channel_contact", "corner_guided_seating",
     ),
@@ -255,8 +262,8 @@ def load_subtask_contract(
 
 def load_family_suite(
     family: str, *, require_runnable: bool = False,
-) -> tuple[SubtaskContract, SubtaskContract]:
-    """Load the two frozen semantic suites that make up one task family."""
+) -> tuple[SubtaskContract, ...]:
+    """Load the frozen semantic suites that make up one task family."""
     try:
         semantic_ids = FAMILY_SUITES[family]
     except KeyError as exc:

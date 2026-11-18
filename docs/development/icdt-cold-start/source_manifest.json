@@ -1,0 +1,76 @@
+{
+  "schema_version": "icdt-cold-start-source-manifest-v1",
+  "repos": [
+    {
+      "path": ".",
+      "head": "9deb25e85896418655b1f26ae3eb7dd4cba8b6cc",
+      "status_short": " M configs/humanoid/corridor_2d/README.md\n M configs/quadruped/mobile_keyed_insertion_recovery/protocol/subtasks/reposition_then_dock_v1.json\n M docs/development/cross-embodiment-baseline-comparison-plan.md\n M docs/development/cross-embodiment-baseline-survey.md\n M docs/development/cross-embodiment-current-results-and-final-experiment-plan.md\n M docs/development/cross-embodiment-four-task-protocol.md\n M docs/development/cross-embodiment-transport-plan.md\n M docs/development/icdt-paper-story-and-experiment-roadmap.md\n M genedynamics/deploy/EDGECLOUD_DEPLOY_CN.md\n M genedynamics/deploy/REAL_DEPLOY_G1_CN.md\n M genedynamics/deploy/ar/ARCHITECTURE.md\n M genedynamics/deploy/ar/ARCHITECTURE_CN.md\n M genedynamics/deploy/ar/instruction.md\n M genedynamics/deploy/localization/mocap.md\n M genedynamics/envs/adapters/transfer_task.py\n M genedynamics/envs/domains/manipulation/transfer_workcell/backends/mujoco.py\n M genedynamics/envs/domains/manipulation/transfer_workcell/workcell.py\n M genedynamics/solvers/single/cross_ebdm/learning/ablation.py\n M genedynamics/tasks/transfer/aperture.py\n M genedynamics/tasks/transfer/aperture_qualification.py\n M genedynamics/tasks/transfer/contact.py\n M genedynamics/tasks/transfer/controllers/adaptsim.py\n M genedynamics/tasks/transfer/controllers/asid.py\n M genedynamics/tasks/transfer/controllers/guide_contact.py\n M genedynamics/tasks/transfer/episode.py\n M genedynamics/tasks/transfer/evaluation.py\n M genedynamics/tasks/transfer/runtime.py\n M genedynamics/tasks/transfer/specs.py\n M genedynamics/tasks/transfer/subtask_contracts.py\n M genedynamics/tasks/transfer/visualization.py\n M latex/cross_ebdm/intervention_calibrated_sim2real_blueprint.tex\n M latex/cross_ebdm/sections/experimental_design.tex\n M latex/cross_ebdm/sections/finite_feasibility_theory.tex\n M scripts/paper/cross_ebdm/render_transfer_episode.py\n M test/transfer/test_aperture.py\n M test/transfer/test_subtask_contracts.py\n M test/transfer_methods/test_evidence_visualization.py\n m third_party/mujoco_menagerie\n?? configs/arm/compliant_keyed_insertion_recovery/protocol/compliant_fixture_insertion_formal_cohort_v1.json\n?? configs/arm/compliant_keyed_insertion_recovery/validation/compliant_fixture_insertion_paired_development.json\n?? configs/arm/guided_contact_alignment/protocol/corner_guided_seating_formal_cohort_v1.json\n?? configs/arm/guided_contact_alignment/validation/corner_guided_seating_paired_development.json\n?? configs/arm/obstacle_transfer/ablation/clean_treatment_contract.json\n?? configs/arm/obstacle_transfer/protocol/aperture_brake_formal_cohort_v1.json\n?? configs/arm/obstacle_transfer/protocol/aperture_brake_formal_comparison_v1.json\n?? configs/arm/obstacle_transfer/protocol/sequential_aperture_formal_comparison_v1.json\n?? configs/arm/obstacle_transfer/protocol/subtasks/sequential_aperture_reorientation_v1.json\n?? configs/arm/obstacle_transfer/protocol/three_subtask_formal_comparison_v1.json\n?? configs/arm/obstacle_transfer/training/aperture_brake_response_transport.json\n?? configs/arm/obstacle_transfer/training/aperture_brake_semantic_phase.json\n?? configs/arm/obstacle_transfer/validation/aperture_brake_paired_pilot.json\n?? configs/arm/obstacle_transfer/validation/aperture_brake_response_paired_pilot.json\n?? configs/arm/obstacle_transfer/validation/sequential_aperture_reorientation_cpu.json\n?? configs/arm/obstacle_transfer/validation/sequential_aperture_response_paired_pilot.json\n?? configs/quadruped/mobile_keyed_insertion_recovery/protocol/reposition_then_dock_formal_cohort_v1.json\n?? configs/quadruped/mobile_keyed_insertion_recovery/validation/reposition_then_dock_cpu.json\n?? configs/quadruped/mobile_keyed_insertion_recovery/validation/reposition_then_dock_paired_pilot.json\n?? docs/development/icdt-cold-start/\n?? docs/development/icdt-device-migration-handoff.md\n?? genedynamics/solvers/single/cross_ebdm/learning/semantic_phase.py\n?? genedynamics/tasks/transfer/reposition_dock.py\n?? genedynamics/tasks/transfer/reposition_dock_qualification.py\n?? scripts/paper/cross_ebdm/derive_sequential_aperture_response_checkpoint.py\n?? scripts/paper/cross_ebdm/freeze_obstacle_family_comparison.py\n?? scripts/paper/cross_ebdm/freeze_semantic_eight_task_cohorts.py\n?? scripts/paper/cross_ebdm/qualify_reposition_then_dock.py\n?? scripts/paper/cross_ebdm/qualify_sequential_aperture_reorientation.py\n?? scripts/paper/cross_ebdm/run_contact_complexity_paired_development.py\n?? scripts/paper/cross_ebdm/run_semantic_task_paired_pilot.py\n?? scripts/paper/cross_ebdm/train_aperture_brake_response_transport.py\n?? scripts/paper/cross_ebdm/train_aperture_brake_semantic_phase.py\n?? test/learning/\n?? test/transfer/test_reposition_dock.py\n?? test/transfer/test_semantic_method_binding.py"
+    },
+    {
+      "path": "latex/latex_icdt",
+      "head": "c82b87bcae99f09910378d411fc3b2af6fc848b9",
+      "status_short": " M sections/abstract.tex\n M sections/baseline_table.tex\n M sections/conclusion.tex\n M sections/exp.tex\n M sections/intro.tex\n M sections/task_table.tex"
+    },
+    {
+      "path": "latex/latex_mga",
+      "head": "11f4b16294ad80a74d9d6cf5590867494c7c50ee",
+      "status_short": ""
+    },
+    {
+      "path": "third_party/mujoco_menagerie",
+      "head": "a03e87bf13502b0b48ebbf2808928fd96ebf9cf3",
+      "status_short": " M unitree_go2/go2_mjx.xml"
+    },
+    {
+      "path": "baselines/ACP",
+      "head": "74d68eca3bfb5cb59da131c6351d9e1c9b129ff6",
+      "status_short": ""
+    },
+    {
+      "path": "baselines/ACP_multimodal_representation",
+      "head": "e4bd73e3e6ff0d4334d12aabbe0e9575669b63e7",
+      "status_short": ""
+    },
+    {
+      "path": "baselines/ASID",
+      "head": "cf2cb670fb983f67cf2af156d4e17b4a690787e2",
+      "status_short": ""
+    },
+    {
+      "path": "baselines/AdaptSim",
+      "head": "9cf80fb4268749fddf21c39eb861498bc7b052c3",
+      "status_short": ""
+    },
+    {
+      "path": "baselines/DIAL-MPC",
+      "head": "871c84f1cefbe9fa9d83a06b05ab4f0243c1a05c",
+      "status_short": ""
+    },
+    {
+      "path": "baselines/FADA",
+      "head": "290b3a9c5c0ebe2e9851b61350617544be05e9bc",
+      "status_short": ""
+    },
+    {
+      "path": "baselines/Human2Sim2Robot",
+      "head": "894eae2ec3ae39a573b81bd1860d14cc6bdfa6df",
+      "status_short": ""
+    },
+    {
+      "path": "baselines/Play2Perfect",
+      "head": "ff2fc62873f6c6cd93164123c8358e9ce2d65c9b",
+      "status_short": ""
+    }
+  ],
+  "working_tree_included": true,
+  "untracked_files_included_except_exclusions": true,
+  "git_commit_created": false,
+  "archive_excludes": [
+    "results/",
+    ".runtime/"
+  ],
+  "baseline_sources_lock": "requirements/baselines/sources.lock.json",
+  "baseline_resources_lock": "requirements/baselines/resources.lock.json",
+  "paper": "latex/latex_icdt",
+  "external_brainstorm_included": false
+}

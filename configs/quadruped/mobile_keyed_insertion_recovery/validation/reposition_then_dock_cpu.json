@@ -1,0 +1,24 @@
+{
+  "version": "reposition-then-dock-cpu-source-qualification-v1",
+  "task": "reposition_then_dock",
+  "output_dir": "results/quadruped/mobile_keyed_insertion_recovery/validation/reposition_then_dock",
+  "device": "cpu",
+  "robot": "go2_z1",
+  "contract": "configs/quadruped/mobile_keyed_insertion_recovery/protocol/subtasks/reposition_then_dock_v1.json",
+  "mechanism": {
+    "servo_gain": 1.0,
+    "delay_steps": 0,
+    "payload_mass": 0.5,
+    "contact_friction": 0.4,
+    "contact_time_constant": 0.02
+  },
+  "body_support_parameters": {
+    "body_servo_gain": 1.0
+  },
+  "episodes": [
+    {"seed": 940101, "mode": 0, "purpose": "disjoint_source_qualification"},
+    {"seed": 940102, "mode": 0, "purpose": "disjoint_source_qualification"},
+    {"seed": 940201, "mode": 1, "purpose": "disjoint_source_qualification"},
+    {"seed": 940202, "mode": 1, "purpose": "disjoint_source_qualification"}
+  ]
+}

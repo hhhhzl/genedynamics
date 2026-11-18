@@ -1,0 +1,25 @@
+{
+  "version": "semantic-task-paired-development-pilot-v1",
+  "status": "frozen_unexecuted",
+  "task": "aperture_brake",
+  "methods": ["cross_ebdm", "task_only", "adaptsim", "asid", "response_mpc"],
+  "method_configs": {
+    "cross_ebdm": {"path": "configs/arm/obstacle_transfer/main/cross_ebdm.yaml", "sha256": "434716dfbfcd2b89c478053b95bcef5fe1200a488c0aa8120411297fb348e7fd"},
+    "task_only": {"path": "configs/arm/obstacle_transfer/baseline/task_only.yaml", "sha256": "76cc20304d87319d2ed3d84c9e37da97ce53f2352d7265773b63b6b3ff24489d"},
+    "adaptsim": {"path": "configs/arm/obstacle_transfer/baseline/adaptsim.yaml", "sha256": "2c860cdc08ffe58e07605e1343e88cfeaefcb0510436baec0bc3331c5d3f91de"},
+    "asid": {"path": "configs/arm/obstacle_transfer/baseline/asid.yaml", "sha256": "eab89dd821ab29500684f794260ebfb3337a2a082d17d0ec8d180b792b83dae8"},
+    "response_mpc": {"path": "configs/arm/obstacle_transfer/baseline/response_mpc.yaml", "sha256": "aa1eb88a8cc64b0ec0a3b90fec60d71cb3e3ed072857c0c7440ae9340b06b725"}
+  },
+  "contract": {"path": "configs/arm/obstacle_transfer/protocol/subtasks/aperture_brake_v1.json", "sha256": "8f007931fcbd9329491569dccb9a44c5a0d331c17ea40a4d9d9b26b35373e621"},
+  "source_qualification": {"path": "results/arm/obstacle_transfer/validation/aperture_brake/report.json", "sha256": "f13eb5b0bd2fabc7eb8a9f2c39e081757a6b2c6ec0aabffae157a60c3ae8ca05"},
+  "response_transport_checkpoint": {"path": "results/arm/obstacle_transfer/training/aperture_brake_response_transport/checkpoints/full_budget_120.json", "sha256": "bc71be836bc96f8a97c3d54d9fa791f27afe2ed45c6aff2dfacc84d081f10ecb"},
+  "native_library": {"path": ".runtime/cross_ebdm/native/libcross_ebdm.so", "sha256": "40f532dda955a39e99455ecff0d362f310ab31c33cde1d546c6c78f0f43f1a09"},
+  "requests": [
+    {"seed": 948000, "mode": 0, "initial": "clear", "mechanism_group": "calibrated_short_brake", "mechanism": {"servo_gain": 0.8, "delay_steps": 1, "payload_mass": 0.65}, "config_overrides": {"aperture_exit_zone": [0.56, 0.61]}},
+    {"seed": 948001, "mode": 1, "initial": "clear", "mechanism_group": "calibrated_short_brake", "mechanism": {"servo_gain": 0.8, "delay_steps": 1, "payload_mass": 0.65}, "config_overrides": {"aperture_exit_zone": [0.56, 0.61]}}
+  ],
+  "execution": {"cuda_visible_devices": "0", "physical_uuid": "GPU-253f0813-4432-2d51-a149-3e73b38bf77a", "actor_device": "cuda", "physics_device": "cpu", "maximum_wall_seconds": 1800},
+  "output": "results/arm/obstacle_transfer/validation/aperture_brake_response_paired_pilot",
+  "policy": {"formal_performance_evidence": false, "failure_replacement": false, "all_failures_retained": true, "confirmation_states_opened": 0, "task_adaptation_is_reported": true}
+}
+

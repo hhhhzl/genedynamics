@@ -1,0 +1,12 @@
+/results/
+/.runtime/
+/.pytest_cache/
+/.env
+/.aws/
+/.ssh/
+/.codex/
+/.agents/
+/.claude/
+__pycache__/
+*.pyc
+*.egg-info/

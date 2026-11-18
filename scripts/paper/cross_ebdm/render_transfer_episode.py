@@ -17,6 +17,12 @@ def main():
     parser.add_argument("--fps", type=float, default=12.0)
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
+    parser.add_argument("--title")
+    parser.add_argument("--subtitle")
+    parser.add_argument("--frame-opacity", type=float, default=1.0)
+    parser.add_argument("--camera-azimuth", type=float)
+    parser.add_argument("--camera-elevation", type=float)
+    parser.add_argument("--camera-distance", type=float)
     args = parser.parse_args()
     result = render_episode_evidence(
         args.evidence,
@@ -26,6 +32,12 @@ def main():
         fps=args.fps,
         width=args.width,
         height=args.height,
+        title=args.title,
+        subtitle=args.subtitle,
+        frame_opacity=args.frame_opacity,
+        camera_azimuth=args.camera_azimuth,
+        camera_elevation=args.camera_elevation,
+        camera_distance=args.camera_distance,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
 

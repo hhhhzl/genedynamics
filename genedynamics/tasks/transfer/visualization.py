@@ -64,9 +64,10 @@ def _recorded_states(record, model):
                 "qpos": np.asarray(initial["qpos"], dtype=float),
                 "qvel": np.asarray(initial.get("qvel", np.zeros(model.nv)), dtype=float),
                 "normal_force": 0.0,
+                "control_index": 0,
             }
         )
-    for trace in record.traces:
+    for trace_index, trace in enumerate(record.traces):
         if not trace.get("valid", False):
             continue
         qpos = np.asarray(trace.get("joint_position", ()), dtype=float)
@@ -81,6 +82,7 @@ def _recorded_states(record, model):
                 "qpos": qpos,
                 "qvel": qvel,
                 "normal_force": float(trace.get("normal_force", 0.0)),
+                "control_index": trace_index + 1,
             }
         )
     if not states:
@@ -136,7 +138,7 @@ def _copy_mesh_geoms(target_root, donor_root, *, body_prefix="", mesh_prefix="")
     return copied
 
 
-def _presentation_model(scene, spec, states):
+def _presentation_model(scene, spec, states, *, frame_opacity=1.0):
     """Restore vendored visual-only meshes and prove recorded-pose FK parity."""
     import mujoco
 
@@ -169,6 +171,9 @@ def _presentation_model(scene, spec, states):
             geom.set("rgba", "0.14 0.16 0.20 1")
         elif name.startswith(("guide_", "socket_", "keyway_")):
             geom.set("rgba", "0.52 0.58 0.66 1")
+        elif name.startswith(("aperture_", "aperture2_")) and frame_opacity < 1.0:
+            color = "0.33 0.68 0.88" if name.startswith("aperture_") else "0.66 0.48 0.85"
+            geom.set("rgba", f"{color} {frame_opacity}")
     assets = root.find("asset")
     if assets is None:
         assets = ET.Element("asset")
@@ -235,6 +240,8 @@ def _presentation_model(scene, spec, states):
         "mesh_geoms": copied,
         "physics_modified": False,
         "maximum_saved_pose_fk_error": maximum_error,
+        "aperture_frame_opacity": frame_opacity,
+        "opacity_scope": "presentation only; original collision geometry retained",
     }
 
 
@@ -268,15 +275,32 @@ def _camera(spec, states, model):
 
 
 def _annotate(frame, lines):
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageFont
 
     image = Image.fromarray(frame)
     draw = ImageDraw.Draw(image, "RGBA")
-    height = 19 * len(lines) + 12
-    draw.rounded_rectangle((8, 8, 330, 8 + height), radius=6, fill=(12, 18, 28, 190))
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", max(12, round(image.width / 60)))
+    except OSError:
+        font = ImageFont.load_default()
+    line_height = max(19, round(image.width / 40))
+    height = line_height * len(lines) + 12
+    text_width = max(draw.textbbox((0, 0), line, font=font)[2] for line in lines)
+    draw.rounded_rectangle((8, 8, min(image.width - 8, text_width + 30), 8 + height),
+                           radius=6, fill=(12, 18, 28, 190))
     for index, line in enumerate(lines):
-        draw.text((17, 14 + 19 * index), line, fill=(245, 247, 250, 255))
+        draw.text((17, 14 + line_height * index), line, font=font, fill=(245, 247, 250, 255))
     return image
+
+
+def recorded_event_at_time(episode_evaluation, elapsed, physics_dt):
+    """Display only evaluator-recorded events already reached in replay time."""
+    events = episode_evaluation.get("event_physics_steps", {})
+    reached = [(int(step), name) for name, step in events.items()
+               if step is not None and int(step) * physics_dt <= elapsed + 1e-9]
+    if not reached:
+        return "approach / carry"
+    return max(reached)[1].replace("_", " ")
 
 
 def render_episode_evidence(
@@ -288,6 +312,12 @@ def render_episode_evidence(
     fps: float = 12.0,
     width: int = 640,
     height: int = 480,
+    title: str | None = None,
+    subtitle: str | None = None,
+    frame_opacity: float = 1.0,
+    camera_azimuth: float | None = None,
+    camera_elevation: float | None = None,
+    camera_distance: float | None = None,
 ):
     """Render one recorded episode to GIF and write a provenance manifest."""
     import mujoco
@@ -298,6 +328,13 @@ def render_episode_evidence(
         raise ValueError("output path must end in .gif")
     if fps <= 0 or width <= 0 or height <= 0:
         raise ValueError("fps and image dimensions must be positive")
+    if not np.isfinite(frame_opacity) or not 0.0 < frame_opacity <= 1.0:
+        raise ValueError("frame_opacity must be in (0, 1]")
+    for value in (camera_azimuth, camera_elevation, camera_distance):
+        if value is not None and not np.isfinite(value):
+            raise ValueError("camera overrides must be finite")
+    if camera_distance is not None and camera_distance <= 0:
+        raise ValueError("camera_distance must be positive")
     records, spec, evaluation = load_episode_evidence(evidence_path)
     if not 0 <= record_index < len(records):
         raise IndexError("record_index is outside the evidence record list")
@@ -305,13 +342,26 @@ def render_episode_evidence(
     scene = _scene_for(spec)
     states = _recorded_states(record, scene.model)
     indices = replay_frame_indices(len(states), maximum_frames)
-    model, visual_manifest = _presentation_model(scene, spec, states)
+    model, visual_manifest = _presentation_model(scene, spec, states, frame_opacity=frame_opacity)
     camera = _camera(spec, states, model)
+    for name, value in (("azimuth", camera_azimuth), ("elevation", camera_elevation),
+                        ("distance", camera_distance)):
+        if value is not None:
+            setattr(camera, name, value)
+    model.vis.global_.offwidth = max(model.vis.global_.offwidth, width)
+    model.vis.global_.offheight = max(model.vis.global_.offheight, height)
     data = mujoco.MjData(model)
     renderer = mujoco.Renderer(model, height=height, width=width)
     scene_option = mujoco.MjvOption()
     scene_option.geomgroup[3] = 0
     frames = []
+    # GIF encodes centiseconds, so record and use the actual quantized cadence.
+    frame_duration_ms = max(10, round(100.0 / fps) * 10)
+    elapsed_seconds = states[-1]["control_index"] * float(spec.config.control_dt)
+    playback_seconds = len(indices) * frame_duration_ms / 1000.0
+    playback_speed = elapsed_seconds / playback_seconds
+    episodes = evaluation.get("episodes", [])
+    episode_evaluation = episodes[record_index] if len(episodes) == len(records) else {}
     try:
         for ordinal, state_index in enumerate(indices):
             state = states[int(state_index)]
@@ -320,15 +370,17 @@ def render_episode_evidence(
             mujoco.mj_forward(model, data)
             renderer.update_scene(data, camera=camera, scene_option=scene_option)
             frame = renderer.render().copy()
-            elapsed = state_index * float(spec.config.control_dt)
+            elapsed = state["control_index"] * float(spec.config.control_dt)
+            lines = [title or spec.name.replace("_", " "),
+                     subtitle or f"{spec.config.robot} | mode {record.requested_mode} | recorded replay",
+                     f"t = {elapsed:5.2f} s | playback {playback_speed:.2f}x",
+                     recorded_event_at_time(episode_evaluation, elapsed, float(spec.config.physics_dt))]
+            if frame_opacity < 1.0:
+                lines.append("Aperture frames translucent for visibility only")
             frames.append(
                 _annotate(
                     frame,
-                    (
-                        f"{spec.alias} | {spec.config.robot} | mode {record.requested_mode}",
-                        f"recorded replay {elapsed:5.2f} s | frame {ordinal + 1}/{len(indices)}",
-                        f"normal force {state['normal_force']:5.2f} N",
-                    ),
+                    lines,
                 )
             )
     finally:
@@ -339,7 +391,7 @@ def render_episode_evidence(
         output_path,
         save_all=True,
         append_images=frames[1:],
-        duration=max(1, round(1000.0 / fps)),
+        duration=frame_duration_ms,
         loop=0,
         optimize=True,
     )
@@ -350,7 +402,10 @@ def render_episode_evidence(
         "gif_sha256": hashlib.sha256(output_path.read_bytes()).hexdigest(),
         "evidence": str(evidence_path),
         "evidence_sha256": hashlib.sha256(evidence_bytes).hexdigest(),
-        "task": spec.alias,
+        "task": spec.name,
+        "legacy_task_alias": spec.alias,
+        "presentation_title": title,
+        "presentation_subtitle": subtitle,
         "robot": spec.config.robot,
         "task_spec": asdict(spec),
         "record_index": record_index,
@@ -363,6 +418,10 @@ def render_episode_evidence(
         "recorded_state_count": len(states),
         "rendered_state_indices": indices.tolist(),
         "fps": fps,
+        "frame_duration_ms": frame_duration_ms,
+        "playback_seconds": playback_seconds,
+        "recorded_duration_seconds": elapsed_seconds,
+        "playback_speed": playback_speed,
         "width": width,
         "height": height,
         "camera": {
